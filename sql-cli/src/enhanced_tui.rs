@@ -1627,8 +1627,8 @@ impl EnhancedTuiApp {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(5),    // History list
-                Constraint::Length(3), // Selected command preview
+                Constraint::Percentage(50), // History list - 50% of space
+                Constraint::Percentage(50), // Selected command preview - 50% of space
             ])
             .split(area);
 
@@ -1709,11 +1709,17 @@ impl EnhancedTuiApp {
         if let Some(selected_match) = self.history_state.matches.get(self.history_state.selected_index) {
             let entry = &selected_match.entry;
             
-            // Show the full command with syntax highlighting
-            let full_command = &entry.command;
-            let highlighted_command = self.sql_highlighter.simple_sql_highlight(full_command);
+            // Pretty format the SQL command
+            use crate::recursive_parser::format_sql_pretty;
+            let pretty_lines = format_sql_pretty(&entry.command);
             
-            let preview_text = Text::from(vec![highlighted_command]);
+            // Convert to Text with syntax highlighting
+            let mut highlighted_lines = Vec::new();
+            for line in pretty_lines {
+                highlighted_lines.push(self.sql_highlighter.simple_sql_highlight(&line));
+            }
+            
+            let preview_text = Text::from(highlighted_lines);
             
             let duration_text = entry.duration_ms
                 .map(|d| format!("{}ms", d))
@@ -1724,8 +1730,8 @@ impl EnhancedTuiApp {
             let preview = Paragraph::new(preview_text)
                 .block(Block::default()
                     .borders(Borders::ALL)
-                    .title(format!("Preview: {} | {} | Used {}x", success_text, duration_text, entry.execution_count)))
-                .wrap(ratatui::widgets::Wrap { trim: true });
+                    .title(format!("Pretty SQL Preview: {} | {} | Used {}x", success_text, duration_text, entry.execution_count)))
+                .scroll((0, 0)); // Allow scrolling if needed
             
             f.render_widget(preview, area);
         } else {

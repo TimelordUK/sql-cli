@@ -672,6 +672,156 @@ pub fn tokenize_query(query: &str) -> Vec<String> {
     tokens.iter().map(|t| format!("{:?}", t)).collect()
 }
 
+pub fn format_sql_pretty(query: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut parser = Parser::new(query);
+    
+    match parser.parse() {
+        Ok(stmt) => {
+            // SELECT clause
+            if !stmt.columns.is_empty() {
+                lines.push("SELECT".to_string());
+                for (i, col) in stmt.columns.iter().enumerate() {
+                    let comma = if i < stmt.columns.len() - 1 { "," } else { "" };
+                    lines.push(format!("    {}{}", col, comma));
+                }
+            }
+            
+            // FROM clause
+            if let Some(table) = &stmt.from_table {
+                lines.push(format!("FROM {}", table));
+            }
+            
+            // WHERE clause
+            if let Some(where_clause) = &stmt.where_clause {
+                lines.push("WHERE".to_string());
+                for (i, condition) in where_clause.conditions.iter().enumerate() {
+                    if i > 0 {
+                        // Add the connector from the previous condition
+                        if let Some(prev_condition) = where_clause.conditions.get(i - 1) {
+                            if let Some(connector) = &prev_condition.connector {
+                                match connector {
+                                    LogicalOp::And => lines.push("    AND".to_string()),
+                                    LogicalOp::Or => lines.push("    OR".to_string()),
+                                }
+                            }
+                        }
+                    }
+                    lines.push(format!("    {}", format_expression(&condition.expr)));
+                }
+            }
+            
+            // ORDER BY clause
+            if let Some(order_by) = &stmt.order_by {
+                let order_str = order_by.join(", ");
+                lines.push(format!("ORDER BY {}", order_str));
+            }
+            
+            // GROUP BY clause
+            if let Some(group_by) = &stmt.group_by {
+                let group_str = group_by.join(", ");
+                lines.push(format!("GROUP BY {}", group_str));
+            }
+        }
+        Err(_) => {
+            // If parsing fails, fall back to simple tokenization
+            let mut lexer = Lexer::new(query);
+            let tokens = lexer.tokenize_all();
+            let mut current_line = String::new();
+            let mut indent = 0;
+            
+            for token in tokens {
+                match &token {
+                    Token::Select | Token::From | Token::Where | Token::OrderBy | Token::GroupBy => {
+                        if !current_line.is_empty() {
+                            lines.push(current_line.trim().to_string());
+                            current_line.clear();
+                        }
+                        lines.push(format!("{:?}", token).to_uppercase());
+                        indent = 1;
+                    }
+                    Token::And | Token::Or => {
+                        if !current_line.is_empty() {
+                            lines.push(format!("{}{}", "    ".repeat(indent), current_line.trim()));
+                            current_line.clear();
+                        }
+                        lines.push(format!("    {:?}", token).to_uppercase());
+                    }
+                    Token::Comma => {
+                        current_line.push(',');
+                        if indent > 0 {
+                            lines.push(format!("{}{}", "    ".repeat(indent), current_line.trim()));
+                            current_line.clear();
+                        }
+                    }
+                    Token::Eof => break,
+                    _ => {
+                        if !current_line.is_empty() {
+                            current_line.push(' ');
+                        }
+                        current_line.push_str(&format_token(&token));
+                    }
+                }
+            }
+            
+            if !current_line.is_empty() {
+                lines.push(format!("{}{}", "    ".repeat(indent), current_line.trim()));
+            }
+        }
+    }
+    
+    lines
+}
+
+fn format_expression(expr: &SqlExpression) -> String {
+    match expr {
+        SqlExpression::Column(name) => name.clone(),
+        SqlExpression::StringLiteral(s) => format!("'{}'", s),
+        SqlExpression::NumberLiteral(n) => n.clone(),
+        SqlExpression::DateTimeConstructor { year, month, day } => {
+            format!("DateTime({}, {}, {})", year, month, day)
+        }
+        SqlExpression::MethodCall { object, method, args } => {
+            let args_str = args.iter()
+                .map(|arg| format_expression(arg))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}.{}({})", object, method, args_str)
+        }
+        SqlExpression::BinaryOp { left, op, right } => {
+            format!("{} {} {}", format_expression(left), op, format_expression(right))
+        }
+        SqlExpression::InList { expr, values } => {
+            let values_str = values.iter()
+                .map(|v| format_expression(v))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{} IN ({})", format_expression(expr), values_str)
+        }
+    }
+}
+
+fn format_token(token: &Token) -> String {
+    match token {
+        Token::Identifier(s) => s.clone(),
+        Token::StringLiteral(s) => format!("'{}'", s),
+        Token::NumberLiteral(n) => n.clone(),
+        Token::DateTime => "DateTime".to_string(),
+        Token::LeftParen => "(".to_string(),
+        Token::RightParen => ")".to_string(),
+        Token::Comma => ",".to_string(),
+        Token::Dot => ".".to_string(),
+        Token::Equals => "=".to_string(),
+        Token::NotEquals => "!=".to_string(),
+        Token::LessThan => "<".to_string(),
+        Token::GreaterThan => ">".to_string(),
+        Token::LessThanEquals => "<=".to_string(),
+        Token::GreaterThanEquals => ">=".to_string(),
+        Token::In => "IN".to_string(),
+        _ => format!("{:?}", token).to_uppercase(),
+    }
+}
+
 fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) -> (CursorContext, Option<String>) {
     // First check for method call context (e.g., "columnName." or "columnName.Con")
     let trimmed = query.trim();
