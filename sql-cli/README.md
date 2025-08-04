@@ -100,12 +100,15 @@ WHERE createdDate > DateTime(2024,06,01)
 | `Ctrl+S` | Export to CSV |
 | `Esc` | Clear filter/search |
 
-## 💾 Caching Architecture (Planned)
+## 💾 Caching for Large Datasets
 
-### Query Modes
-1. **Live Mode** (default) - All queries go to server
-2. **Cached Mode** - Work entirely offline with cached data
-3. **Hybrid Mode** - Check cache first, then server
+### Cache Commands (Enhanced TUI Mode)
+| Command | Description |
+|---------|-------------|
+| `:cache save` | Save current query results to cache |
+| `:cache load <id>` | Load cached query by ID and enable cache mode |
+| `:cache list` | List all cached queries (also accessible via F7) |
+| `:cache clear` | Disable cache mode and return to live queries |
 
 ### Workflow Example
 ```bash
@@ -113,17 +116,27 @@ WHERE createdDate > DateTime(2024,06,01)
 sql> SELECT * FROM trade_deal WHERE tradeDate > DateTime(2024,01,01)
 # Returns: 10,000 rows in 1250ms
 
-# 2. Cache the results locally
-sql> \cache save 2024 trades
+# 2. Return to SQL input (press Escape if in view mode)
+# 3. Clear the input line (Ctrl+U) and save to cache
+sql> :cache save
+# Status shows: "Query cached with ID: 1 (10000 rows)"
 
-# 3. Switch to cached mode (no server needed)
-sql> \mode cached
-sql> \cache load 1
+# 4. Load cached data for offline work
+sql> :cache load 1
+# Status shows: "Loaded cache ID 1 with 10000 rows. Cache mode enabled."
 
-# 4. Run unlimited local queries (instant!)
+# 5. Run unlimited local queries (instant!)
 sql> SELECT * FROM trade_deal WHERE counterparty.Contains("Bank")
 # Returns: 2,341 rows in 0ms [CACHED]
+
+# 6. Press F7 to manage cached queries visually
 ```
+
+### How It Works
+- When in cache mode, queries run locally against cached data using the CSV query engine
+- Much faster than hitting the server for repeated analysis
+- Perfect for exploring large datasets without repeated API calls
+- Cache persists between sessions
 
 ## 🏗️ Architecture
 
