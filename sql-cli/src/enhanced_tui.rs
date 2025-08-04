@@ -985,6 +985,24 @@ impl EnhancedTuiApp {
         self.table_state = TableState::default();
         self.scroll_offset = (0, 0);
         self.current_column = 0;
+        
+        // Clear filter state to prevent old filtered data from persisting
+        self.filter_state = FilterState {
+            pattern: String::new(),
+            regex: None,
+            active: false,
+        };
+        
+        // Clear search state
+        self.search_state = SearchState {
+            pattern: String::new(),
+            current_match: None,
+            matches: Vec::new(),
+            match_index: 0,
+        };
+        
+        // Clear filtered data
+        self.filtered_data = None;
     }
 
     fn export_to_csv(&mut self) {
