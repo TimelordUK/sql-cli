@@ -27,7 +27,7 @@ impl CursorAwareParser {
         // If we didn't get a partial word from recursive parser, try our own extraction
         let partial_word = partial_word.or_else(|| self.extract_word_at_cursor(query, cursor_pos));
         
-        let (suggestions, context_str) = match cursor_context {
+        let (suggestions, context_str) = match &cursor_context {
             CursorContext::SelectClause => {
                 let mut cols = self.schema.get_columns("trade_deal");
                 cols.push("*".to_string());
@@ -58,7 +58,7 @@ impl CursorAwareParser {
                     ]);
                 }
                 
-                let ctx = match cursor_context {
+                let ctx = match &cursor_context {
                     CursorContext::AfterLogicalOp(LogicalOp::And) => "AfterAND",
                     CursorContext::AfterLogicalOp(LogicalOp::Or) => "AfterOR",
                     _ => "WhereClause",
@@ -66,25 +66,13 @@ impl CursorAwareParser {
                 (suggestions, ctx.to_string())
             }
             CursorContext::AfterColumn(col_name) => {
-                // Check if this is a dot for method call
-                let query_before_cursor = &query[..cursor_pos.min(query.len())];
-                if query_before_cursor.trim().ends_with('.') {
-                    // Method call context
-                    let property_type = self.get_property_type(&col_name).unwrap_or("string".to_string());
-                    let suggestions = self.get_string_method_suggestions(&property_type, &partial_word);
-                    (suggestions, format!("MethodCall({})", col_name))
-                } else {
-                    // After column but no dot - suggest operators
-                    let suggestions = vec![
-                        "=".to_string(), "!=".to_string(), "<".to_string(), ">".to_string(),
-                        "<=".to_string(), ">=".to_string(), "IN".to_string(),
-                        "AND".to_string(), "OR".to_string(),
-                    ];
-                    (suggestions, "AfterColumn".to_string())
-                }
+                // We're after a column and possibly a dot (method call context)
+                let property_type = self.get_property_type(col_name).unwrap_or("string".to_string());
+                let suggestions = self.get_string_method_suggestions(&property_type, &partial_word);
+                (suggestions, "AfterColumn".to_string())
             }
             CursorContext::InMethodCall(obj, method) => {
-                let property_type = self.get_property_type(&obj).unwrap_or("string".to_string());
+                let property_type = self.get_property_type(obj).unwrap_or("string".to_string());
                 let suggestions = self.get_string_method_suggestions(&property_type, &partial_word);
                 (suggestions, format!("InMethodCall({}.{})", obj, method))
             }
@@ -107,12 +95,17 @@ impl CursorAwareParser {
             }
         };
         
-        // Filter by partial word if present
+        // Filter by partial word if present (but not for method suggestions as they're already filtered)
         let mut final_suggestions = suggestions;
+        let is_method_context = matches!(cursor_context, CursorContext::AfterColumn(_) | CursorContext::InMethodCall(_, _));
+        
         if let Some(ref partial) = partial_word {
-            final_suggestions.retain(|suggestion| {
-                suggestion.to_lowercase().starts_with(&partial.to_lowercase())
-            });
+            if !is_method_context {
+                // Only filter non-method suggestions
+                final_suggestions.retain(|suggestion| {
+                    suggestion.to_lowercase().starts_with(&partial.to_lowercase())
+                });
+            }
         }
         
         ParseResult {
@@ -638,5 +631,24 @@ mod tests {
         println!("Context after IN: {}", result.context);
         // IN clause support - should suggest opening parenthesis or values
         assert!(result.context.contains("InWhere") || result.context.contains("WhereClause") || result.context.contains("Unknown"));
+    }
+
+    #[test]
+    fn test_partial_method_name_completion() {
+        let parser = create_test_parser();
+        
+        // Partial method name after dot
+        let query = "SELECT * FROM trade_deal WHERE instrumentName.Con";
+        let result = parser.get_completions(query, query.len());
+        println!("Context for partial method: {}", result.context);
+        println!("Suggestions: {:?}", result.suggestions);
+        
+        // Should be in method call context with partial word "Con"
+        assert!(result.context.contains("MethodCall") || result.context.contains("AfterColumn"));
+        assert!(result.context.contains("(partial: Some(\"Con\"))"));
+        
+        // Should suggest methods starting with "Con"
+        assert!(result.suggestions.contains(&"Contains(\"\")".to_string()));
+        assert!(!result.suggestions.contains(&"StartsWith(\"\")".to_string())); // Doesn't start with "Con"
     }
 }

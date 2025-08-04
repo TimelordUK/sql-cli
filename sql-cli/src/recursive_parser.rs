@@ -616,13 +616,38 @@ pub fn tokenize_query(query: &str) -> Vec<String> {
 }
 
 fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) -> (CursorContext, Option<String>) {
-    // First check if query ends with a dot (method call context)
-    if query.trim().ends_with('.') {
-        let trimmed = query.trim();
-        let before_dot = &trimmed[..trimmed.len() - 1];
-        if let Some(col_name) = before_dot.split_whitespace().last() {
-            if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                return (CursorContext::AfterColumn(col_name.to_string()), None);
+    // First check for method call context (e.g., "columnName." or "columnName.Con")
+    let trimmed = query.trim();
+    
+    // First check if we're after AND/OR - this takes precedence
+    if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") ||
+       trimmed.to_uppercase().ends_with(" AND ") || trimmed.to_uppercase().ends_with(" OR ") {
+        // Don't check for method context if we're clearly after a logical operator
+    } else {
+        // Look for the last dot in the query
+        if let Some(dot_pos) = trimmed.rfind('.') {
+            // Check if we're after a column name and dot
+            let before_dot = &trimmed[..dot_pos];
+            let after_dot = &trimmed[dot_pos + 1..];
+            
+            // Check if the part after dot looks like an incomplete method call
+            // (not a complete method call like "Contains(...)")
+            if !after_dot.contains('(') {
+                if let Some(col_name) = before_dot.split_whitespace().last() {
+                    if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                        // We're in a method call context
+                        // Check if there's a partial method name after the dot
+                        let partial_method = if after_dot.is_empty() {
+                            None
+                        } else if after_dot.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                            Some(after_dot.to_string())
+                        } else {
+                            None
+                        };
+                        
+                        return (CursorContext::AfterColumn(col_name.to_string()), partial_method);
+                    }
+                }
             }
         }
     }
@@ -654,14 +679,38 @@ fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) ->
 fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<String>) {
     let upper = query.to_uppercase();
     
-    // Check for method call context first (e.g., "columnName.")
-    if query.trim().ends_with('.') {
-        // Find the identifier before the dot
-        let trimmed = query.trim();
-        let before_dot = &trimmed[..trimmed.len() - 1];
-        if let Some(col_name) = before_dot.split_whitespace().last() {
-            if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                return (CursorContext::AfterColumn(col_name.to_string()), None);
+    // Check for method call context first (e.g., "columnName." or "columnName.Con")
+    let trimmed = query.trim();
+    
+    // First check if we're after AND/OR - this takes precedence
+    if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") ||
+       trimmed.to_uppercase().ends_with(" AND ") || trimmed.to_uppercase().ends_with(" OR ") {
+        // Don't check for method context if we're clearly after a logical operator
+    } else {
+        // Look for the last dot in the query
+        if let Some(dot_pos) = trimmed.rfind('.') {
+            // Check if we're after a column name and dot
+            let before_dot = &trimmed[..dot_pos];
+            let after_dot = &trimmed[dot_pos + 1..];
+            
+            // Check if the part after dot looks like an incomplete method call
+            // (not a complete method call like "Contains(...)")
+            if !after_dot.contains('(') {
+                if let Some(col_name) = before_dot.split_whitespace().last() {
+                    if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                        // We're in a method call context
+                        // Check if there's a partial method name after the dot
+                        let partial_method = if after_dot.is_empty() {
+                            None
+                        } else if after_dot.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                            Some(after_dot.to_string())
+                        } else {
+                            None
+                        };
+                        
+                        return (CursorContext::AfterColumn(col_name.to_string()), partial_method);
+                    }
+                }
             }
         }
     }
