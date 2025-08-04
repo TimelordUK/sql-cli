@@ -86,6 +86,18 @@ impl CursorAwareParser {
     
     fn determine_context(&self, query_before_cursor: &str) -> ParseState {
         let query_upper = query_before_cursor.to_uppercase();
+        
+        // Check if we're at the end after a logical operator (AND/OR)
+        // This indicates we should be expecting a new column/condition
+        let trimmed = query_before_cursor.trim();
+        if trimmed.to_uppercase().ends_with(" AND") || 
+           trimmed.to_uppercase().ends_with(" OR") {
+            // After AND/OR, we're expecting a new column in WHERE context
+            if query_upper.contains("WHERE") {
+                return ParseState::InWhere;
+            }
+        }
+        
         let words: Vec<&str> = query_upper.split_whitespace().collect();
         
         if words.is_empty() {
@@ -110,11 +122,18 @@ impl CursorAwareParser {
                     last_keyword_idx = Some(i);
                     last_keyword = "WHERE";
                 }
-                "AND" | "OR" | "IN" => {
-                    // AND/OR/IN continue the current WHERE context
+                "AND" | "OR" => {
+                    // AND/OR continue the current WHERE context
                     if last_keyword == "WHERE" {
                         last_keyword_idx = Some(i);
                         last_keyword = "WHERE"; // Stay in WHERE context
+                    }
+                }
+                "IN" => {
+                    // IN continues WHERE context
+                    if last_keyword == "WHERE" {
+                        last_keyword_idx = Some(i);
+                        last_keyword = "WHERE";
                     }
                 }
                 "ORDER" => {
@@ -241,9 +260,23 @@ impl CursorAwareParser {
     fn detect_method_call_context(&self, query_before_cursor: &str, cursor_pos: usize) -> Option<(String, String)> {
         // Look for pattern: "propertyName." at the end of the query before cursor
         // This handles cases like "WHERE platformOrderId." or "SELECT COUNT(*) WHERE ticker."
+        // But NOT cases like "WHERE prop.Contains('x') AND " where we've moved past the method call
         
         // Find the last dot before cursor
         if let Some(dot_pos) = query_before_cursor.rfind('.') {
+            // Check if cursor is close to the dot - if there's too much text after the dot,
+            // we're probably not in method call context anymore
+            let text_after_dot = &query_before_cursor[dot_pos + 1..];
+            
+            // If there's significant text after the dot that looks like a completed method call,
+            // we're probably not in method call context
+            if text_after_dot.contains(')') && (text_after_dot.contains(" AND ") || 
+                                               text_after_dot.contains(" OR ") ||
+                                               text_after_dot.trim().ends_with(" AND") ||
+                                               text_after_dot.trim().ends_with(" OR")) {
+                return None; // We've completed the method call and moved on
+            }
+            
             // Extract the word immediately before the dot
             let before_dot = &query_before_cursor[..dot_pos];
             

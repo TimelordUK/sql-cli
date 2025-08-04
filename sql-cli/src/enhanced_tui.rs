@@ -974,13 +974,29 @@ impl EnhancedTuiApp {
             AppMode::History => "HISTORY",
         };
 
+        // Add parser debug info for technical users
+        let parser_debug = if self.mode == AppMode::Command {
+            let cursor_pos = self.input.cursor();
+            let query = self.input.value();
+            let parse_result = self.cursor_parser.get_completions(query, cursor_pos);
+            format!(" | Context: {} | Suggestions: {}", 
+                parse_result.context,
+                if parse_result.suggestions.is_empty() { 
+                    "none".to_string() 
+                } else { 
+                    parse_result.suggestions.len().to_string() 
+                })
+        } else {
+            String::new()
+        };
+
         // Limit status message length to reduce rendering overhead
-        let truncated_status = if self.status_message.len() > 60 {
-            format!("{}...", &self.status_message[..57])
+        let truncated_status = if self.status_message.len() > 40 {
+            format!("{}...", &self.status_message[..37])
         } else {
             self.status_message.clone()
         };
-        let status_text = format!("[{}] {} | F1:Help q:Quit", mode_indicator, truncated_status);
+        let status_text = format!("[{}] {}{} | F1:Help q:Quit", mode_indicator, truncated_status, parser_debug);
         let status = Paragraph::new(status_text)
             .block(Block::default().borders(Borders::ALL))
             .style(status_style);

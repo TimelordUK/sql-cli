@@ -14,7 +14,7 @@ mod table_display;
 mod tui_app;
 mod enhanced_tui;
 mod smart_parser;
-// mod treesitter_parser;
+mod treesitter_parser;
 mod cursor_aware_parser;
 mod history;
 mod sql_highlighter;

@@ -1,243 +1,235 @@
-use tree_sitter::{Language, Parser, Query, QueryCursor, Tree};
-use crate::parser::Schema;
-
-extern "C" {
-    fn tree_sitter_sql() -> Language;
-}
+use tree_sitter::{Language, Parser, Query, QueryCursor, Tree, Node};
+use tree_sitter_sql;
 
 pub struct TreeSitterSqlParser {
     parser: Parser,
-    schema: Schema,
+    language: Language,
+}
+
+impl Clone for TreeSitterSqlParser {
+    fn clone(&self) -> Self {
+        Self::new().expect("Failed to clone TreeSitterSqlParser")
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct CompletionResult {
-    pub suggestions: Vec<String>,
-    pub context: String,
+pub struct SqlContext {
+    pub node_type: String,
+    pub parent_type: Option<String>,
+    pub grandparent_type: Option<String>,
+    pub is_in_where_clause: bool,
+    pub is_after_logical_operator: bool,
+    pub is_in_method_call: bool,
+    pub current_column: Option<String>,
+    pub available_columns: Vec<String>,
 }
 
 impl TreeSitterSqlParser {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let language = tree_sitter_sql::language();
         let mut parser = Parser::new();
-        let language = unsafe { tree_sitter_sql() };
-        parser.set_language(&language)?;
+        parser.set_language(language)?;
         
         Ok(Self {
             parser,
-            schema: Schema::new(),
+            language,
         })
     }
     
-    pub fn get_completions(&mut self, query: &str, cursor_pos: usize) -> CompletionResult {
-        let tree = self.parser.parse(query, None).unwrap();
+    pub fn parse_sql(&mut self, sql: &str) -> Result<Tree, Box<dyn std::error::Error>> {
+        let tree = self.parser.parse(sql, None)
+            .ok_or("Failed to parse SQL")?;
+        Ok(tree)
+    }
+    
+    pub fn get_context_at_cursor(&mut self, sql: &str, cursor_pos: usize) -> Result<SqlContext, Box<dyn std::error::Error>> {
+        let tree = self.parse_sql(sql)?;
+        let root_node = tree.root_node();
         
-        // Find node at cursor position
-        let cursor_point = self.byte_to_point(query, cursor_pos);
-        let node_at_cursor = tree.root_node().descendant_for_point_range(cursor_point, cursor_point);
+        // Find the node at cursor position
+        let cursor_node = self.find_node_at_position(&root_node, cursor_pos);
         
-        if let Some(node) = node_at_cursor {
-            let context = self.determine_completion_context(&tree, node, query, cursor_pos);
-            let suggestions = self.get_suggestions_for_context(&context, query, cursor_pos);
+        // Analyze the context
+        let context = self.analyze_context(&cursor_node, sql);
+        
+        Ok(context)
+    }
+    
+    fn find_node_at_position<'a>(&self, node: &Node<'a>, position: usize) -> Node<'a> {
+        // Convert byte position to point (row, col)
+        let current = *node;
+        
+        // Walk down the tree to find the most specific node at the cursor position
+        for child in current.children(&mut current.walk()) {
+            if child.start_byte() <= position && position <= child.end_byte() {
+                return self.find_node_at_position(&child, position);
+            }
+        }
+        
+        current
+    }
+    
+    fn analyze_context(&self, node: &Node, sql: &str) -> SqlContext {
+        let node_type = node.kind().to_string();
+        let parent = node.parent();
+        let parent_type = parent.as_ref().map(|p| p.kind().to_string());
+        let grandparent_type = parent.as_ref()
+            .and_then(|p| p.parent())
+            .map(|gp| gp.kind().to_string());
+        
+        // Determine context based on node hierarchy
+        let is_in_where_clause = self.is_ancestor_of_type(node, "where_clause");
+        let is_after_logical_operator = self.is_after_logical_op(node, sql);
+        let is_in_method_call = node_type == "function_call" || 
+                               parent_type.as_ref().map_or(false, |t| t == "function_call");
+        
+        // Extract current column if we're in a column context
+        let current_column = self.extract_current_column(node, sql);
+        
+        // Get available columns (this would come from schema)
+        let available_columns = self.get_available_columns();
+        
+        SqlContext {
+            node_type,
+            parent_type,
+            grandparent_type,
+            is_in_where_clause,
+            is_after_logical_operator,
+            is_in_method_call,
+            current_column,
+            available_columns,
+        }
+    }
+    
+    fn is_ancestor_of_type(&self, node: &Node, ancestor_type: &str) -> bool {
+        let mut current = node.parent();
+        while let Some(parent) = current {
+            if parent.kind() == ancestor_type {
+                return true;
+            }
+            current = parent.parent();
+        }
+        false
+    }
+    
+    fn is_after_logical_op(&self, node: &Node, sql: &str) -> bool {
+        // Look for AND/OR in the preceding text
+        if let Some(parent) = node.parent() {
+            let start_byte = parent.start_byte();
+            let node_start = node.start_byte();
             
-            CompletionResult {
-                suggestions,
-                context: context.clone(),
-            }
-        } else {
-            CompletionResult {
-                suggestions: vec!["SELECT".to_string()],
-                context: "start".to_string(),
+            if start_byte < node_start {
+                let preceding_text = &sql[start_byte..node_start];
+                let upper_text = preceding_text.to_uppercase();
+                return upper_text.trim().ends_with(" AND") || 
+                       upper_text.trim().ends_with(" OR");
             }
         }
+        false
     }
     
-    fn byte_to_point(&self, text: &str, byte_pos: usize) -> tree_sitter::Point {
-        let mut row = 0;
-        let mut column = 0;
-        
-        for (i, ch) in text.char_indices() {
-            if i >= byte_pos {
-                break;
-            }
-            if ch == '\n' {
-                row += 1;
-                column = 0;
-            } else {
-                column += 1;
-            }
-        }
-        
-        tree_sitter::Point { row, column }
-    }
-    
-    fn determine_completion_context(&self, tree: &Tree, node: tree_sitter::Node, query: &str, cursor_pos: usize) -> String {
-        // Walk up the tree to find SQL context
-        let mut current = node;
-        
-        loop {
-            let kind = current.kind();
-            
-            match kind {
-                "select_statement" => {
-                    return self.analyze_select_statement(current, query, cursor_pos);
-                }
-                "column" | "column_list" => {
-                    return "column".to_string();
-                }
-                "from_clause" => {
-                    return "table".to_string();
-                }
-                "where_clause" => {
-                    return "where".to_string();
-                }
-                "order_by_clause" => {
-                    return "order_by".to_string();
-                }
-                _ => {}
-            }
-            
-            if let Some(parent) = current.parent() {
-                current = parent;
-            } else {
-                break;
-            }
-        }
-        
-        "unknown".to_string()
-    }
-    
-    fn analyze_select_statement(&self, node: tree_sitter::Node, query: &str, cursor_pos: usize) -> String {
-        // Use tree-sitter queries to find specific contexts
-        let query_str = r#"
-            (select_statement
-              (select_clause) @select
-              (from_clause)? @from
-              (where_clause)? @where
-              (order_by_clause)? @order)
-        "#;
-        
-        let language = unsafe { tree_sitter_sql() };
-        if let Ok(ts_query) = Query::new(&language, query_str) {
-            let mut cursor = QueryCursor::new();
-            let matches = cursor.matches(&ts_query, node, query.as_bytes());
-            
-            for m in matches {
-                for capture in m.captures {
-                    let start_byte = capture.node.start_byte();
-                    let end_byte = capture.node.end_byte();
-                    
-                    if cursor_pos >= start_byte && cursor_pos <= end_byte {
-                        match ts_query.capture_names()[capture.index as usize] {
-                            "select" => return "column_list".to_string(),
-                            "from" => return "table".to_string(),
-                            "where" => return "where_expression".to_string(),
-                            "order" => return "order_by".to_string(),
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        
-        "select_statement".to_string()
-    }
-    
-    fn get_suggestions_for_context(&self, context: &str, query: &str, cursor_pos: usize) -> Vec<String> {
-        let partial_word = self.extract_partial_word(query, cursor_pos);
-        
-        let suggestions = match context {
-            "column_list" | "column" => {
-                let mut cols = self.schema.get_columns("trade_deal");
-                cols.push("*".to_string());
-                cols.push("FROM".to_string());
-                cols
-            }
-            "table" => {
-                vec!["trade_deal".to_string(), "instrument".to_string()]
-            }
-            "where_expression" | "where" => {
-                let mut suggestions = self.schema.get_columns("trade_deal");
-                suggestions.extend(vec![
-                    "AND".to_string(),
-                    "OR".to_string(),
-                    "ORDER BY".to_string(),
-                ]);
-                suggestions
-            }
-            "order_by" => {
-                let mut suggestions = self.schema.get_columns("trade_deal");
-                suggestions.extend(vec!["ASC".to_string(), "DESC".to_string()]);
-                suggestions
-            }
-            "start" => {
-                vec!["SELECT".to_string()]
-            }
-            _ => {
-                vec!["SELECT".to_string()]
-            }
-        };
-        
-        // Filter by partial word
-        if let Some(partial) = partial_word {
-            suggestions
-                .into_iter()
-                .filter(|s| s.to_lowercase().starts_with(&partial.to_lowercase()))
-                .collect()
-        } else {
-            suggestions
-        }
-    }
-    
-    fn extract_partial_word(&self, query: &str, cursor_pos: usize) -> Option<String> {
-        if cursor_pos == 0 || cursor_pos > query.len() {
-            return None;
-        }
-        
-        let chars: Vec<char> = query.chars().collect();
-        
-        // Find start of current word
-        let mut start = cursor_pos;
-        while start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_') {
-            start -= 1;
-        }
-        
-        if start < cursor_pos {
-            let partial: String = chars[start..cursor_pos].iter().collect();
-            if !partial.is_empty() && partial.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                Some(partial)
-            } else {
-                None
-            }
+    fn extract_current_column(&self, node: &Node, sql: &str) -> Option<String> {
+        // Extract column name if we're in a column context
+        if node.kind() == "identifier" || node.kind() == "column_reference" {
+            let text = &sql[node.start_byte()..node.end_byte()];
+            Some(text.to_string())
         } else {
             None
         }
     }
     
-    pub fn validate_query(&mut self, query: &str) -> bool {
-        if let Some(tree) = self.parser.parse(query, None) {
-            !tree.root_node().has_error()
-        } else {
-            false
+    fn get_available_columns(&self) -> Vec<String> {
+        // This would integrate with your existing schema
+        vec![
+            "dealId".to_string(),
+            "platformOrderId".to_string(),
+            "allocationStatus".to_string(),
+            "counterparty".to_string(),
+            "price".to_string(),
+            "quantity".to_string(),
+            // ... etc
+        ]
+    }
+    
+    pub fn get_completion_suggestions(&mut self, sql: &str, cursor_pos: usize) -> Vec<String> {
+        match self.get_context_at_cursor(sql, cursor_pos) {
+            Ok(context) => self.suggestions_for_context(&context),
+            Err(_) => {
+                // Fallback to simple suggestions if parsing fails
+                vec!["SELECT".to_string(), "FROM".to_string(), "WHERE".to_string()]
+            }
         }
     }
     
-    pub fn get_syntax_errors(&mut self, query: &str) -> Vec<String> {
-        let mut errors = Vec::new();
+    fn suggestions_for_context(&self, context: &SqlContext) -> Vec<String> {
+        let mut suggestions = Vec::new();
         
-        if let Some(tree) = self.parser.parse(query, None) {
-            self.collect_errors(tree.root_node(), &mut errors);
+        match context.node_type.as_str() {
+            "identifier" | "column_reference" if context.is_in_where_clause => {
+                // We're typing a column name in WHERE clause
+                suggestions.extend(context.available_columns.clone());
+            }
+            "function_call" if context.is_in_method_call => {
+                // We're in a method call - suggest string methods
+                suggestions.extend(vec![
+                    "Contains(\"\")".to_string(),
+                    "StartsWith(\"\")".to_string(),
+                    "EndsWith(\"\")".to_string(),
+                ]);
+            }
+            _ if context.is_after_logical_operator => {
+                // After AND/OR - suggest columns
+                suggestions.extend(context.available_columns.clone());
+            }
+            _ if context.is_in_where_clause => {
+                // General WHERE clause suggestions
+                suggestions.extend(context.available_columns.clone());
+                suggestions.extend(vec![
+                    "AND".to_string(),
+                    "OR".to_string(),
+                    "ORDER BY".to_string(),
+                ]);
+            }
+            _ => {
+                // Default suggestions
+                suggestions.extend(vec![
+                    "SELECT".to_string(),
+                    "FROM".to_string(),
+                    "WHERE".to_string(),
+                ]);
+            }
         }
         
-        errors
+        suggestions
     }
     
-    fn collect_errors(&self, node: tree_sitter::Node, errors: &mut Vec<String>) {
-        if node.is_error() {
-            errors.push(format!("Syntax error at position {}", node.start_byte()));
-        }
+    pub fn debug_tree(&mut self, sql: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let tree = self.parse_sql(sql)?;
+        Ok(tree.root_node().to_sexp())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_basic_parsing() {
+        let mut parser = TreeSitterSqlParser::new().unwrap();
+        let sql = "SELECT * FROM trade_deal WHERE price > 100";
+        let tree = parser.parse_sql(sql).unwrap();
         
-        for child in node.children(&mut node.walk()) {
-            self.collect_errors(child, errors);
-        }
+        assert!(!tree.root_node().has_error());
+    }
+    
+    #[test]
+    fn test_context_detection() {
+        let mut parser = TreeSitterSqlParser::new().unwrap();
+        let sql = "SELECT * FROM trade_deal WHERE allocationStatus.Contains('All') AND ";
+        let cursor_pos = sql.len(); // At the end
+        
+        let context = parser.get_context_at_cursor(sql, cursor_pos).unwrap();
+        assert!(context.is_in_where_clause);
+        assert!(context.is_after_logical_operator);
     }
 }
