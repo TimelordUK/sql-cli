@@ -2,6 +2,7 @@ use crate::api_client::{ApiClient, QueryResponse};
 use crate::parser::SqlParser;
 use crate::cursor_aware_parser::CursorAwareParser;
 use crate::history::{CommandHistory, HistoryMatch};
+use crate::sql_highlighter::SqlHighlighter;
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -98,6 +99,7 @@ pub struct EnhancedTuiApp {
     column_widths: Vec<u16>,
     scroll_offset: (usize, usize), // (row, col)
     current_column: usize, // For column-based operations
+    sql_highlighter: SqlHighlighter,
 }
 
 impl EnhancedTuiApp {
@@ -144,6 +146,7 @@ impl EnhancedTuiApp {
             column_widths: Vec::new(),
             scroll_offset: (0, 0),
             current_column: 0,
+            sql_highlighter: SqlHighlighter::new(),
         }
     }
 
@@ -883,16 +886,27 @@ impl EnhancedTuiApp {
             _ => self.input.value(),
         };
 
-        let input_paragraph = Paragraph::new(input_text)
-            .block(input_block)
-            .style(match self.mode {
-                AppMode::Command => Style::default(),
-                AppMode::Results => Style::default().fg(Color::DarkGray),
-                AppMode::Search => Style::default().fg(Color::Yellow),
-                AppMode::Filter => Style::default().fg(Color::Cyan),
-                AppMode::Help => Style::default().fg(Color::DarkGray),
-                AppMode::History => Style::default().fg(Color::Magenta),
-            });
+        let input_paragraph = match self.mode {
+            AppMode::Command => {
+                // Use syntax highlighting for SQL command input
+                let highlighted_line = self.sql_highlighter.simple_sql_highlight(input_text);
+                Paragraph::new(Text::from(vec![highlighted_line]))
+                    .block(input_block)
+            },
+            _ => {
+                // Plain text for other modes
+                Paragraph::new(input_text)
+                    .block(input_block)
+                    .style(match self.mode {
+                        AppMode::Results => Style::default().fg(Color::DarkGray),
+                        AppMode::Search => Style::default().fg(Color::Yellow),
+                        AppMode::Filter => Style::default().fg(Color::Cyan),
+                        AppMode::Help => Style::default().fg(Color::DarkGray),
+                        AppMode::History => Style::default().fg(Color::Magenta),
+                        _ => Style::default(),
+                    })
+            }
+        };
 
         f.render_widget(input_paragraph, chunks[0]);
 

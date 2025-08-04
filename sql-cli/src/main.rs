@@ -17,6 +17,7 @@ mod smart_parser;
 // mod treesitter_parser;
 mod cursor_aware_parser;
 mod history;
+mod sql_highlighter;
 
 use completer::SqlCompleter;
 use parser::{SqlParser, ParseState};
