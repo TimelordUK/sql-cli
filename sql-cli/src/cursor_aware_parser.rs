@@ -110,8 +110,8 @@ impl CursorAwareParser {
                     last_keyword_idx = Some(i);
                     last_keyword = "WHERE";
                 }
-                "AND" | "OR" => {
-                    // AND/OR continue the current WHERE context
+                "AND" | "OR" | "IN" => {
+                    // AND/OR/IN continue the current WHERE context
                     if last_keyword == "WHERE" {
                         last_keyword_idx = Some(i);
                         last_keyword = "WHERE"; // Stay in WHERE context
@@ -213,6 +213,7 @@ impl CursorAwareParser {
                     suggestions.extend(vec![
                         "AND".to_string(),
                         "OR".to_string(),
+                        "IN".to_string(),
                         "ORDER BY".to_string(),
                     ]);
                 }
