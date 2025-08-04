@@ -1225,7 +1225,21 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Create history list
+        // Split the area to show selected command details
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(5),    // History list
+                Constraint::Length(3), // Selected command preview
+            ])
+            .split(area);
+
+        self.render_history_list(f, chunks[0]);
+        self.render_selected_command_preview(f, chunks[1]);
+    }
+
+    fn render_history_list(&self, f: &mut Frame, area: Rect) {
+        // Create more compact history list - just show essential info
         let history_items: Vec<Line> = self.history_state.matches
             .iter()
             .enumerate()
@@ -1233,37 +1247,36 @@ impl EnhancedTuiApp {
                 let entry = &history_match.entry;
                 let is_selected = i == self.history_state.selected_index;
                 
-                // Format: "> command (success/fail, Xms ago, used Yx)"
                 let success_indicator = if entry.success { "✓" } else { "✗" };
-                let duration_text = entry.duration_ms
-                    .map(|d| format!("{}ms", d))
-                    .unwrap_or_else(|| "?ms".to_string());
-                
                 let time_ago = {
                     let elapsed = chrono::Utc::now() - entry.timestamp;
                     if elapsed.num_days() > 0 {
-                        format!("{}d ago", elapsed.num_days())
+                        format!("{}d", elapsed.num_days())
                     } else if elapsed.num_hours() > 0 {
-                        format!("{}h ago", elapsed.num_hours())
+                        format!("{}h", elapsed.num_hours())
                     } else if elapsed.num_minutes() > 0 {
-                        format!("{}m ago", elapsed.num_minutes())
+                        format!("{}m", elapsed.num_minutes())
                     } else {
                         "now".to_string()
                     }
                 };
 
-                let command_text = if entry.command.len() > 60 {
-                    format!("{}...", &entry.command[..57])
+                // Use more space for the command, less for metadata
+                let terminal_width = area.width as usize;
+                let metadata_space = 15; // Reduced metadata: " ✓ 2x 1h"
+                let available_for_command = terminal_width.saturating_sub(metadata_space).max(50);
+                
+                let command_text = if entry.command.len() > available_for_command {
+                    format!("{}…", &entry.command[..available_for_command.saturating_sub(1)])
                 } else {
                     entry.command.clone()
                 };
 
                 let line_text = format!(
-                    "{} {} ({}, {}, used {}x) {}",
+                    "{} {} {} {}x {}",
                     if is_selected { "►" } else { " " },
                     command_text,
                     success_indicator,
-                    duration_text,
                     entry.execution_count,
                     time_ago
                 );
@@ -1276,12 +1289,9 @@ impl EnhancedTuiApp {
                     style = style.fg(Color::Red);
                 }
 
-                // Highlight matching characters
-                if !history_match.indices.is_empty() {
-                    // For simplicity, just highlight selected items differently
-                    if is_selected {
-                        style = style.fg(Color::Yellow);
-                    }
+                // Highlight matching characters for fuzzy search
+                if !history_match.indices.is_empty() && is_selected {
+                    style = style.fg(Color::Yellow);
                 }
 
                 Line::from(line_text).style(style)
@@ -1291,10 +1301,41 @@ impl EnhancedTuiApp {
         let history_paragraph = Paragraph::new(history_items)
             .block(Block::default()
                 .borders(Borders::ALL)
-                .title(format!("Command History - {} matches", self.history_state.matches.len())))
+                .title(format!("History ({} matches) - j/k to navigate, Enter to select", self.history_state.matches.len())))
             .wrap(ratatui::widgets::Wrap { trim: false });
 
         f.render_widget(history_paragraph, area);
+    }
+
+    fn render_selected_command_preview(&self, f: &mut Frame, area: Rect) {
+        if let Some(selected_match) = self.history_state.matches.get(self.history_state.selected_index) {
+            let entry = &selected_match.entry;
+            
+            // Show the full command with syntax highlighting
+            let full_command = &entry.command;
+            let highlighted_command = self.sql_highlighter.simple_sql_highlight(full_command);
+            
+            let preview_text = Text::from(vec![highlighted_command]);
+            
+            let duration_text = entry.duration_ms
+                .map(|d| format!("{}ms", d))
+                .unwrap_or_else(|| "?ms".to_string());
+            
+            let success_text = if entry.success { "✓ Success" } else { "✗ Failed" };
+            
+            let preview = Paragraph::new(preview_text)
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("Preview: {} | {} | Used {}x", success_text, duration_text, entry.execution_count)))
+                .wrap(ratatui::widgets::Wrap { trim: true });
+            
+            f.render_widget(preview, area);
+        } else {
+            let empty_preview = Paragraph::new("No command selected")
+                .block(Block::default().borders(Borders::ALL).title("Preview"))
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(empty_preview, area);
+        }
     }
 }
 
