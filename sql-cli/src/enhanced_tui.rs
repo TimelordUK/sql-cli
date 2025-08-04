@@ -113,7 +113,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    pub async fn run(mut self) -> Result<()> {
+    pub fn run(mut self) -> Result<()> {
         // Setup terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -121,7 +121,7 @@ impl EnhancedTuiApp {
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
-        let res = self.run_app(&mut terminal).await;
+        let res = self.run_app(&mut terminal);
 
         // Restore terminal
         disable_raw_mode()?;
@@ -139,14 +139,14 @@ impl EnhancedTuiApp {
         Ok(())
     }
 
-    async fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
+    fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         loop {
             terminal.draw(|f| self.ui(f))?;
 
             if let Event::Key(key) = event::read()? {
                 match self.mode {
                     AppMode::Command => {
-                        if self.handle_command_input(key).await? {
+                        if self.handle_command_input(key)? {
                             break;
                         }
                     },
@@ -176,7 +176,7 @@ impl EnhancedTuiApp {
         Ok(())
     }
 
-    async fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+    fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
@@ -187,7 +187,7 @@ impl EnhancedTuiApp {
             KeyCode::Enter => {
                 let query = self.input.value().trim().to_string();
                 if !query.is_empty() {
-                    self.execute_query(&query).await?;
+                    self.execute_query(&query)?;
                 }
             },
             KeyCode::Tab => {
@@ -326,7 +326,7 @@ impl EnhancedTuiApp {
         Ok(false)
     }
 
-    async fn execute_query(&mut self, query: &str) -> Result<()> {
+    fn execute_query(&mut self, query: &str) -> Result<()> {
         self.status_message = "Executing query...".to_string();
         
         match self.api_client.query_trades(query) {
@@ -872,7 +872,7 @@ impl EnhancedTuiApp {
     }
 }
 
-pub async fn run_enhanced_tui(api_url: &str) -> Result<()> {
+pub fn run_enhanced_tui(api_url: &str) -> Result<()> {
     let app = EnhancedTuiApp::new(api_url);
-    app.run().await
+    app.run()
 }

@@ -135,7 +135,7 @@ fn main() -> io::Result<()> {
             }
         } else {
             println!("Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)");
-            if let Err(e) = tokio::runtime::Runtime::new().unwrap().block_on(enhanced_tui::run_enhanced_tui("http://localhost:5073")) {
+            if let Err(e) = enhanced_tui::run_enhanced_tui("http://localhost:5193") {
                 eprintln!("Enhanced TUI Error: {}", e);
                 std::process::exit(1);
             }
