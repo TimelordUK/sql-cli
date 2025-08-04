@@ -673,6 +673,10 @@ pub fn tokenize_query(query: &str) -> Vec<String> {
 }
 
 pub fn format_sql_pretty(query: &str) -> Vec<String> {
+    format_sql_pretty_compact(query, 5) // Default to 5 columns per line
+}
+
+pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut parser = Parser::new(query);
     
@@ -681,9 +685,23 @@ pub fn format_sql_pretty(query: &str) -> Vec<String> {
             // SELECT clause
             if !stmt.columns.is_empty() {
                 lines.push("SELECT".to_string());
-                for (i, col) in stmt.columns.iter().enumerate() {
-                    let comma = if i < stmt.columns.len() - 1 { "," } else { "" };
-                    lines.push(format!("    {}{}", col, comma));
+                
+                // Group columns by cols_per_line
+                for chunk in stmt.columns.chunks(cols_per_line) {
+                    let mut line = "    ".to_string();
+                    for (i, col) in chunk.iter().enumerate() {
+                        if i > 0 {
+                            line.push_str(", ");
+                        }
+                        line.push_str(col);
+                    }
+                    // Add comma at end if not the last chunk
+                    let last_chunk_idx = (stmt.columns.len() - 1) / cols_per_line;
+                    let current_chunk_idx = stmt.columns.iter().position(|c| c == &chunk[0]).unwrap() / cols_per_line;
+                    if current_chunk_idx < last_chunk_idx {
+                        line.push(',');
+                    }
+                    lines.push(line);
                 }
             }
             

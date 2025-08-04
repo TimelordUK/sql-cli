@@ -1709,9 +1709,22 @@ impl EnhancedTuiApp {
         if let Some(selected_match) = self.history_state.matches.get(self.history_state.selected_index) {
             let entry = &selected_match.entry;
             
-            // Pretty format the SQL command
-            use crate::recursive_parser::format_sql_pretty;
-            let pretty_lines = format_sql_pretty(&entry.command);
+            // Pretty format the SQL command - adjust compactness based on available space
+            use crate::recursive_parser::format_sql_pretty_compact;
+            
+            // Calculate how many columns we can fit per line
+            let available_width = area.width.saturating_sub(6) as usize; // Account for indentation and borders
+            let avg_col_width = 15; // Assume average column name is ~15 chars
+            let cols_per_line = (available_width / avg_col_width).max(3).min(12); // Between 3-12 columns per line
+            
+            let mut pretty_lines = format_sql_pretty_compact(&entry.command, cols_per_line);
+            
+            // If too many lines for the area, use a more compact format
+            let max_lines = area.height.saturating_sub(2) as usize; // Account for borders
+            if pretty_lines.len() > max_lines && cols_per_line < 12 {
+                // Try with more columns per line
+                pretty_lines = format_sql_pretty_compact(&entry.command, 15);
+            }
             
             // Convert to Text with syntax highlighting
             let mut highlighted_lines = Vec::new();
