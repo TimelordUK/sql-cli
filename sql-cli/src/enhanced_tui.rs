@@ -117,6 +117,10 @@ fn escape_csv_field(field: &str) -> String {
     }
 }
 
+fn is_sql_delimiter(ch: char) -> bool {
+    matches!(ch, ',' | '(' | ')' | '=' | '<' | '>' | '.' | '"' | '\'' | ';')
+}
+
 impl EnhancedTuiApp {
     pub fn new(api_url: &str) -> Self {
         Self {
@@ -276,6 +280,22 @@ impl EnhancedTuiApp {
             KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Jump to end of line (like bash/zsh)
                 self.input.handle_event(&Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::empty())));
+            },
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Move backward one word
+                self.move_cursor_word_backward();
+            },
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Move forward one word
+                self.move_cursor_word_forward();
+            },
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Move backward one word (alt+b like in bash)
+                self.move_cursor_word_backward();
+            },
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Move forward one word (alt+f like in bash)
+                self.move_cursor_word_forward();
             },
             KeyCode::Down if self.results.is_some() => {
                 self.mode = AppMode::Results;
@@ -1040,6 +1060,79 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn move_cursor_word_backward(&mut self) {
+        let query = self.input.value();
+        let cursor_pos = self.input.cursor();
+        
+        if cursor_pos == 0 {
+            return;
+        }
+        
+        // Use our lexer to tokenize the query
+        use crate::recursive_parser::Lexer;
+        let mut lexer = Lexer::new(query);
+        let tokens = lexer.tokenize_all_with_positions();
+        
+        // Find the token boundary before the cursor
+        let mut target_pos = 0;
+        for (start, end, _) in tokens.iter().rev() {
+            if *end <= cursor_pos {
+                // If we're at the start of a token, go to the previous one
+                if *end == cursor_pos && start < &cursor_pos {
+                    target_pos = *start;
+                } else {
+                    // Otherwise go to the start of this token
+                    for (s, e, _) in tokens.iter().rev() {
+                        if *e <= cursor_pos && *s < cursor_pos {
+                            target_pos = *s;
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        
+        // Move cursor to new position
+        let moves = cursor_pos.saturating_sub(target_pos);
+        for _ in 0..moves {
+            self.input.handle_event(&Event::Key(KeyEvent::new(KeyCode::Left, KeyModifiers::empty())));
+        }
+    }
+
+    fn move_cursor_word_forward(&mut self) {
+        let query = self.input.value();
+        let cursor_pos = self.input.cursor();
+        let query_len = query.len();
+        
+        if cursor_pos >= query_len {
+            return;
+        }
+        
+        // Use our lexer to tokenize the query
+        use crate::recursive_parser::Lexer;
+        let mut lexer = Lexer::new(query);
+        let tokens = lexer.tokenize_all_with_positions();
+        
+        // Find the next token boundary after the cursor
+        let mut target_pos = query_len;
+        for (start, end, _) in &tokens {
+            if *start > cursor_pos {
+                target_pos = *start;
+                break;
+            } else if *end > cursor_pos {
+                target_pos = *end;
+                break;
+            }
+        }
+        
+        // Move cursor to new position
+        let moves = target_pos.saturating_sub(cursor_pos);
+        for _ in 0..moves {
+            self.input.handle_event(&Event::Key(KeyEvent::new(KeyCode::Right, KeyModifiers::empty())));
+        }
+    }
+
     fn ui(&mut self, f: &mut Frame) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -1391,6 +1484,8 @@ impl EnhancedTuiApp {
             Line::from("  Ctrl+R   - Search command history"),
             Line::from("  Ctrl+A   - Jump to beginning of line"),
             Line::from("  Ctrl+E   - Jump to end of line"),
+            Line::from("  Ctrl+←/Alt+B - Move backward one word"),
+            Line::from("  Ctrl+→/Alt+F - Move forward one word"),
             Line::from("  ↓        - Enter results mode"),
             Line::from("  F1/?     - Toggle help"),
             Line::from("  Ctrl+C/D - Exit"),

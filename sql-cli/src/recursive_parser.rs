@@ -240,6 +240,22 @@ impl Lexer {
         }
         tokens
     }
+    
+    pub fn tokenize_all_with_positions(&mut self) -> Vec<(usize, usize, Token)> {
+        let mut tokens = Vec::new();
+        loop {
+            self.skip_whitespace();
+            let start_pos = self.position;
+            let token = self.next_token();
+            let end_pos = self.position;
+            
+            if matches!(token, Token::Eof) {
+                break;
+            }
+            tokens.push((start_pos, end_pos, token));
+        }
+        tokens
+    }
 }
 
 // AST Nodes
