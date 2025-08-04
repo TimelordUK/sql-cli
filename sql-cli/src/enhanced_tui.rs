@@ -1060,6 +1060,44 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn get_cursor_token_position(&self) -> (usize, usize) {
+        let query = self.input.value();
+        let cursor_pos = self.input.cursor();
+        
+        if query.is_empty() {
+            return (0, 0);
+        }
+        
+        // Use our lexer to tokenize the query
+        use crate::recursive_parser::Lexer;
+        let mut lexer = Lexer::new(query);
+        let tokens = lexer.tokenize_all_with_positions();
+        
+        if tokens.is_empty() {
+            return (0, 0);
+        }
+        
+        // Find which token the cursor is in
+        let mut current_token = 0;
+        for (i, (start, end, _)) in tokens.iter().enumerate() {
+            if cursor_pos >= *start && cursor_pos <= *end {
+                current_token = i + 1;
+                break;
+            } else if cursor_pos < *start {
+                // Cursor is between tokens
+                current_token = i;
+                break;
+            }
+        }
+        
+        // If cursor is after all tokens
+        if current_token == 0 && cursor_pos > 0 {
+            current_token = tokens.len();
+        }
+        
+        (current_token, tokens.len())
+    }
+
     fn move_cursor_word_backward(&mut self) {
         let query = self.input.value();
         let cursor_pos = self.input.cursor();
@@ -1271,12 +1309,15 @@ impl EnhancedTuiApp {
             AppMode::Debug => "DEBUG",
         };
 
-        // Add parser debug info for technical users
+        // Add parser debug info and token position for technical users
         let parser_debug = if self.mode == AppMode::Command {
             let cursor_pos = self.input.cursor();
             let query = self.input.value();
             let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
-            format!(" | {}: {} | Suggestions: {} | Complexity: {}", 
+            let (token_pos, total_tokens) = self.get_cursor_token_position();
+            format!(" | Token: {}/{} | {}: {} | Suggestions: {} | Complexity: {}", 
+                token_pos,
+                total_tokens,
                 hybrid_result.parser_used,
                 hybrid_result.context,
                 if hybrid_result.suggestions.is_empty() { 
