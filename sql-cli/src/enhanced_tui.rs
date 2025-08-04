@@ -414,8 +414,12 @@ impl EnhancedTuiApp {
                 self.filter_state.pattern.clear();
             },
             // Sort functionality
-            KeyCode::Char('s') => {
+            KeyCode::Char('s') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.sort_by_column(self.current_column);
+            },
+            // Export to CSV
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.export_to_csv();
             },
             // Number keys for direct column sorting
             KeyCode::Char(c) if c.is_ascii_digit() => {
