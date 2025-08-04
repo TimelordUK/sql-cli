@@ -212,9 +212,29 @@ pub struct TableInfo {
 impl Schema {
     pub fn new() -> Self {
         let trade_deal_columns = vec![
-            "dealId", "platformOrderId", "tradeDate", "settlementDate", 
-            "instrumentId", "quantity", "price", "counterparty",
-            "trader", "book", "strategy", "status", "currency",
+            // Core identifiers
+            "dealId", "platformOrderId", "externalOrderId", "parentOrderId",
+            
+            // Instrument details
+            "instrumentId", "instrumentName", "instrumentType", "isin", "cusip",
+            "ticker", "exchange",
+            
+            // Trade details
+            "quantity", "price", "notional", "currency", "side", "productType",
+            "tradeDate", "settlementDate", "createdDate", "modifiedDate",
+            
+            // Counterparty info
+            "counterparty", "counterpartyId", "counterpartyType", "counterpartyCountry",
+            
+            // Trading details
+            "trader", "book", "portfolio", "strategy", "desk", "venue",
+            "clearingHouse", "prime",
+            
+            // Status fields
+            "status", "confirmationStatus", "settlementStatus", "allocationStatus",
+            
+            // Financial details
+            "commission", "accrual", "netAmount", "comments"
         ];
         
         Self {

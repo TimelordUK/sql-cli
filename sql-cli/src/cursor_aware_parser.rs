@@ -189,12 +189,27 @@ impl CursorAwareParser {
                 vec!["WHERE".to_string(), "ORDER BY".to_string()]
             }
             ParseState::InWhere => {
+                // Prioritize column names over SQL keywords in WHERE clauses
                 let mut suggestions = self.schema.get_columns("trade_deal");
-                suggestions.extend(vec![
-                    "AND".to_string(),
-                    "OR".to_string(),
-                    "ORDER BY".to_string(),
-                ]);
+                
+                // Only add SQL keywords if no partial word or if partial doesn't match any columns
+                let add_keywords = if let Some(partial) = partial_word {
+                    let partial_lower = partial.to_lowercase();
+                    let matching_columns = suggestions.iter()
+                        .any(|col| col.to_lowercase().starts_with(&partial_lower));
+                    !matching_columns // Only add keywords if no columns match
+                } else {
+                    true // Add keywords when no partial word
+                };
+                
+                if add_keywords {
+                    suggestions.extend(vec![
+                        "AND".to_string(),
+                        "OR".to_string(),
+                        "ORDER BY".to_string(),
+                    ]);
+                }
+                
                 suggestions
             }
             ParseState::InOrderBy => {
