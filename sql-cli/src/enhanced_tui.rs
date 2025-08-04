@@ -59,6 +59,14 @@ struct SearchState {
 }
 
 #[derive(Clone)]
+struct CompletionState {
+    suggestions: Vec<String>,
+    current_index: usize,
+    last_query: String,
+    last_cursor_pos: usize,
+}
+
+#[derive(Clone)]
 pub struct EnhancedTuiApp {
     api_client: ApiClient,
     input: Input,
@@ -74,6 +82,7 @@ pub struct EnhancedTuiApp {
     sort_state: SortState,
     filter_state: FilterState,
     search_state: SearchState,
+    completion_state: CompletionState,
     filtered_data: Option<Vec<Vec<String>>>,
     column_widths: Vec<u16>,
     scroll_offset: (usize, usize), // (row, col)
@@ -106,6 +115,12 @@ impl EnhancedTuiApp {
                 current_match: None,
                 matches: Vec::new(),
                 match_index: 0,
+            },
+            completion_state: CompletionState {
+                suggestions: Vec::new(),
+                current_index: 0,
+                last_query: String::new(),
+                last_cursor_pos: 0,
             },
             filtered_data: None,
             column_widths: Vec::new(),
@@ -191,7 +206,7 @@ impl EnhancedTuiApp {
                 }
             },
             KeyCode::Tab => {
-                self.handle_completion();
+                self.apply_completion();
             },
             KeyCode::Down if self.results.is_some() => {
                 self.mode = AppMode::Results;
@@ -199,6 +214,9 @@ impl EnhancedTuiApp {
             },
             _ => {
                 self.input.handle_event(&Event::Key(key));
+                // Clear completion state when typing other characters
+                self.completion_state.suggestions.clear();
+                self.completion_state.current_index = 0;
                 self.handle_completion();
             }
         }
@@ -351,6 +369,108 @@ impl EnhancedTuiApp {
         let parse_result = self.cursor_parser.get_completions(query, cursor_pos);
         if !parse_result.suggestions.is_empty() {
             self.status_message = format!("Suggestions: {}", parse_result.suggestions.join(", "));
+        }
+    }
+
+    fn apply_completion(&mut self) {
+        let cursor_pos = self.input.cursor();
+        let query = self.input.value();
+        
+        // Check if this is a continuation of the same completion session
+        let is_same_context = query == self.completion_state.last_query && 
+                             cursor_pos == self.completion_state.last_cursor_pos;
+        
+        if !is_same_context {
+            // New completion context - get fresh suggestions
+            let parse_result = self.cursor_parser.get_completions(query, cursor_pos);
+            if parse_result.suggestions.is_empty() {
+                self.status_message = "No completions available".to_string();
+                return;
+            }
+            
+            self.completion_state.suggestions = parse_result.suggestions;
+            self.completion_state.current_index = 0;
+        } else if !self.completion_state.suggestions.is_empty() {
+            // Cycle to next suggestion
+            self.completion_state.current_index = 
+                (self.completion_state.current_index + 1) % self.completion_state.suggestions.len();
+        } else {
+            self.status_message = "No completions available".to_string();
+            return;
+        }
+        
+        // Apply the current suggestion
+        let suggestion = &self.completion_state.suggestions[self.completion_state.current_index];
+        let partial_word = self.extract_partial_word_at_cursor(query, cursor_pos);
+        
+        if let Some(partial) = partial_word {
+            // Replace the partial word with the suggestion
+            let before_partial = &query[..cursor_pos - partial.len()];
+            let after_cursor = &query[cursor_pos..];
+            let new_query = format!("{}{}{}", before_partial, suggestion, after_cursor);
+            
+            // Update input and cursor position
+            let cursor_pos = before_partial.len() + suggestion.len();
+            self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos);
+            
+            // Update completion state for next tab press
+            self.completion_state.last_query = new_query;
+            self.completion_state.last_cursor_pos = cursor_pos;
+            
+            let suggestion_info = if self.completion_state.suggestions.len() > 1 {
+                format!("Completed: {} ({}/{} - Tab for next)", 
+                    suggestion, 
+                    self.completion_state.current_index + 1, 
+                    self.completion_state.suggestions.len())
+            } else {
+                format!("Completed: {}", suggestion)
+            };
+            self.status_message = suggestion_info;
+            
+        } else {
+            // Just insert the suggestion at cursor position
+            let before_cursor = &query[..cursor_pos];
+            let after_cursor = &query[cursor_pos..];
+            let new_query = format!("{}{}{}", before_cursor, suggestion, after_cursor);
+            
+            let cursor_pos_new = cursor_pos + suggestion.len();
+            self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos_new);
+            
+            // Update completion state
+            self.completion_state.last_query = new_query;
+            self.completion_state.last_cursor_pos = cursor_pos_new;
+            
+            self.status_message = format!("Inserted: {}", suggestion);
+        }
+    }
+
+    fn extract_partial_word_at_cursor(&self, query: &str, cursor_pos: usize) -> Option<String> {
+        if cursor_pos == 0 || cursor_pos > query.len() {
+            return None;
+        }
+
+        let chars: Vec<char> = query.chars().collect();
+        let mut start = cursor_pos;
+        let end = cursor_pos;
+
+        // Find start of word (go backward)
+        while start > 0 {
+            let prev_char = chars[start - 1];
+            if prev_char.is_alphanumeric() || prev_char == '_' {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+
+        // Convert back to byte positions
+        let start_byte = chars[..start].iter().map(|c| c.len_utf8()).sum();
+        let end_byte = chars[..end].iter().map(|c| c.len_utf8()).sum();
+
+        if start_byte < end_byte {
+            Some(query[start_byte..end_byte].to_string())
+        } else {
+            None
         }
     }
 
