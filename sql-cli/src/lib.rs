@@ -6,3 +6,4 @@ pub mod hybrid_parser;
 pub mod history;
 pub mod schema_config;
 pub mod cache;
+pub mod dynamic_schema;

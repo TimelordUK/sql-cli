@@ -6,10 +6,15 @@ The SQL CLI now supports efficient word-based cursor navigation, making it easy 
 
 ### Keyboard Shortcuts
 
-- **Ctrl+Left** or **Alt+B** - Move backward one word
-- **Ctrl+Right** or **Alt+F** - Move forward one word
+**Line Navigation:**
 - **Ctrl+A** - Jump to beginning of line
 - **Ctrl+E** - Jump to end of line
+
+**Word Navigation:**
+- **Ctrl+Left** or **Alt+B** - Move backward one word/token
+- **Ctrl+Right** or **Alt+F** - Move forward one word/token
+
+Note: These follow standard bash/zsh conventions where B = Backward, F = Forward
 
 ### Smart Word Boundaries
 
