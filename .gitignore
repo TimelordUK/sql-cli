@@ -1,0 +1,37 @@
+# Rust
+target/
+Cargo.lock
+
+# C#
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.swp
+*.pdb
+*.dll
+*.exe
+*.mdb
+*.userprefs
+.vs/
+.vscode/
+*.DotSettings.user
+*.ncrunchsolution
+*.ncrunchproject
+[Dd]ebug/
+[Rr]elease/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
