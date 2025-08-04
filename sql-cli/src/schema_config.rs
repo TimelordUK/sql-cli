@@ -1,3 +1,63 @@
+use std::fs;
+use std::path::Path;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchemaConfig {
+    pub tables: Vec<TableConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableConfig {
+    pub name: String,
+    pub columns: Vec<String>,
+}
+
+// Load schema from a JSON file if it exists, otherwise use defaults
+pub fn load_schema_config() -> SchemaConfig {
+    // Check for schema.json in current directory or config directory
+    let mut paths = vec![
+        "schema.json".to_string(),
+        ".sql-cli/schema.json".to_string(),
+    ];
+    
+    // Add config directory path if available
+    if let Some(config_dir) = dirs::config_dir() {
+        if let Some(path_str) = config_dir.join("sql-cli/schema.json").to_str() {
+            paths.push(path_str.to_string());
+        }
+    }
+    
+    for path in paths {
+        if Path::new(&path).exists() {
+            if let Ok(contents) = fs::read_to_string(&path) {
+                if let Ok(config) = serde_json::from_str::<SchemaConfig>(&contents) {
+                    eprintln!("Loaded schema from: {}", path);
+                    return config;
+                }
+            }
+        }
+    }
+    
+    // Return default schema
+    SchemaConfig {
+        tables: vec![
+            TableConfig {
+                name: "trade_deal".to_string(),
+                columns: get_full_trade_deal_columns(),
+            },
+            TableConfig {
+                name: "instrument".to_string(),
+                columns: vec![
+                    "instrumentId".to_string(),
+                    "name".to_string(),
+                    "type".to_string(),
+                ],
+            },
+        ],
+    }
+}
+
 // Example configuration for full schema with 190+ columns
 // This can be loaded from JSON/YAML or your REST API
 
@@ -8,27 +68,33 @@ pub fn get_full_trade_deal_columns() -> Vec<String> {
         
         // Dates
         "tradeDate", "settlementDate", "valueDate", "maturityDate",
-        "lastModifiedDate", "createdDate", "confirmationDate",
+        "lastModifiedDate", "createdDate", "confirmationDate", "executionDate",
         
         // Instrument details
         "instrumentId", "instrumentName", "instrumentType", "isin",
         "cusip", "sedol", "ticker", "exchange",
         
         // Quantities and prices
-        "quantity", "price", "notional", "settlementAmount",
-        "accruedInterest", "commission", "fees", "tax",
+        "quantity", "price", "notional", "settlementAmount", "grossAmount", "netAmount",
+        "accruedInterest", "accrual", "commission", "fees", "tax", "spread",
+        "currency", "baseCurrency", "quoteCurrency", "settlementCurrency",
         
         // Counterparty info
         "counterparty", "counterpartyId", "counterpartyType",
         "counterpartyCountry", "counterpartyLei",
         
         // Internal info
-        "trader", "traderId", "book", "bookId", "portfolio",
-        "strategy", "desk", "legalEntity", "branch",
+        "trader", "traderId", "book", "bookId", "portfolio", "portfolioId",
+        "strategy", "desk", "legalEntity", "branch", "region",
+        "side", "productType", "instrumentClass", "assetClass",
+        
+        // Trading venue and clearing
+        "venue", "executionVenue", "clearingHouse", "clearingBroker", "prime",
+        "custodian", "subCustodian",
         
         // Status and workflow
         "status", "confirmationStatus", "settlementStatus",
-        "allocationStatus", "clearingStatus",
+        "allocationStatus", "clearingStatus", "bookingStatus",
         
         // Risk metrics
         "pv01", "dv01", "delta", "gamma", "vega", "theta",
@@ -38,11 +104,27 @@ pub fn get_full_trade_deal_columns() -> Vec<String> {
         "regulatoryReporting", "mifidClassification", "bestExecution",
         "preTradeTransparency", "postTradeTransparency",
         
+        // Comments and metadata
+        "comments", "notes", "auditTrail", "version", "source",
+        "sourceSystem", "lastUpdatedBy", "createdBy",
+        
+        // Additional reference fields
+        "clientOrderId", "brokerOrderId", "exchangeOrderId",
+        "blockTradeId", "allocationId", "confirmationId",
+        
         // Add more columns as needed...
     ]
     .into_iter()
     .map(|s| s.to_string())
     .collect()
+}
+
+// Function to save the current schema to a file (useful for generating examples)
+pub fn save_schema_example(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let schema = load_schema_config();
+    let json = serde_json::to_string_pretty(&schema)?;
+    fs::write(path, json)?;
+    Ok(())
 }
 
 // Example of LINQ-style operators that could be supported

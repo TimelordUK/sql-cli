@@ -20,6 +20,7 @@ mod recursive_parser;
 mod hybrid_parser;
 mod history;
 mod sql_highlighter;
+mod schema_config;
 
 use completer::SqlCompleter;
 use parser::{SqlParser, ParseState};

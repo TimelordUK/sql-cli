@@ -1,0 +1,45 @@
+{
+  "tables": [
+    {
+      "name": "trade_deal",
+      "columns": [
+        "dealId",
+        "platformOrderId",
+        "externalOrderId",
+        "parentOrderId",
+        "tradeDate",
+        "settlementDate",
+        "valueDate",
+        "instrumentId",
+        "instrumentName",
+        "instrumentType",
+        "quantity",
+        "price",
+        "notional",
+        "accruedInterest",
+        "currency",
+        "counterparty",
+        "trader",
+        "book",
+        "portfolio",
+        "status",
+        "comments"
+      ]
+    },
+    {
+      "name": "instrument",
+      "columns": [
+        "instrumentId",
+        "name",
+        "type",
+        "isin",
+        "cusip",
+        "ticker",
+        "exchange",
+        "currency",
+        "issuer",
+        "maturityDate"
+      ]
+    }
+  ]
+}

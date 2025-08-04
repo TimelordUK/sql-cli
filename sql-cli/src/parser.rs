@@ -211,37 +211,14 @@ pub struct TableInfo {
 
 impl Schema {
     pub fn new() -> Self {
-        let trade_deal_columns = vec![
-            // Core identifiers
-            "dealId", "platformOrderId", "externalOrderId", "parentOrderId",
-            
-            // Instrument details
-            "instrumentId", "instrumentName", "instrumentType", "isin", "cusip",
-            "ticker", "exchange",
-            
-            // Trade details
-            "quantity", "price", "notional", "currency", "side", "productType",
-            "tradeDate", "settlementDate", "createdDate", "modifiedDate",
-            
-            // Counterparty info
-            "counterparty", "counterpartyId", "counterpartyType", "counterpartyCountry",
-            
-            // Trading details
-            "trader", "book", "portfolio", "strategy", "desk", "venue",
-            "clearingHouse", "prime",
-            
-            // Status fields
-            "status", "confirmationStatus", "settlementStatus", "allocationStatus",
-            
-            // Financial details
-            "commission", "accrual", "netAmount", "comments"
-        ];
+        // Use the complete column list from schema_config
+        let trade_deal_columns = crate::schema_config::get_full_trade_deal_columns();
         
         Self {
             tables: vec![
                 TableInfo {
                     name: "trade_deal".to_string(),
-                    columns: trade_deal_columns.iter().map(|&s| s.to_string()).collect(),
+                    columns: trade_deal_columns,
                 },
                 TableInfo {
                     name: "instrument".to_string(),
