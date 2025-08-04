@@ -19,9 +19,7 @@ pub struct HybridResult {
     pub suggestions: Vec<String>,
     pub context: String,
     pub parser_used: String,
-    pub tree_sitter_success: bool,
-    pub heuristic_context: String,
-    pub tree_sitter_context: Option<String>,
+    pub recursive_context: String,
     pub cursor_position: usize,
     pub query_complexity: String,
 }
@@ -56,9 +54,7 @@ impl HybridParser {
             suggestions: result.suggestions,
             context: result.context.clone(),
             parser_used: "RecursiveDescent".to_string(),
-            tree_sitter_success: false,
-            heuristic_context: result.context,
-            tree_sitter_context: Some(recursive_context.to_string()),
+            recursive_context: recursive_context.to_string(),
             cursor_position: cursor_pos,
             query_complexity: self.analyze_query_complexity(query),
         }
@@ -148,10 +144,10 @@ impl HybridParser {
         let ast_tree = self.debug_tree(query);
         
         // Extract partial word from context string
-        let partial_word_info = if result.heuristic_context.contains("(partial:") {
+        let partial_word_info = if result.context.contains("(partial:") {
             // Extract the partial word from the context string
-            if let Some(start) = result.heuristic_context.find("(partial: ") {
-                let substr = &result.heuristic_context[start + 10..];
+            if let Some(start) = result.context.find("(partial: ") {
+                let substr = &result.context[start + 10..];
                 if let Some(end) = substr.find(')') {
                     substr[..end].to_string()
                 } else {
@@ -176,8 +172,8 @@ Parser Type: Recursive Descent\n\
 \n\
 TOKENIZED OUTPUT:\n{}\n\
 \n\
-HEURISTIC CONTEXT: {}\n\
-TREE CONTEXT: {}\n\
+CONTEXT: {}\n\
+RECURSIVE PARSER CONTEXT: {}\n\
 \n\
 SUGGESTIONS ({}):\n{}\n\
 \n\
@@ -191,8 +187,8 @@ AST TREE:\n{}\n\
             result.query_complexity,
             result.parser_used,
             tokenized_output,
-            result.heuristic_context,
-            result.tree_sitter_context.unwrap_or("N/A".to_string()),
+            result.context,
+            result.recursive_context,
             result.suggestions.len(),
             if result.suggestions.is_empty() {
                 "  (no suggestions)".to_string()

@@ -1054,17 +1054,19 @@ impl EnhancedTuiApp {
         self.update_horizontal_scroll(chunks[0].width);
 
         // Command input area
+        let input_title = match self.mode {
+            AppMode::Command => "SQL Query".to_string(),
+            AppMode::Results => "SQL Query (Results Mode - Press ↑ to edit)".to_string(),
+            AppMode::Search => "Search Pattern".to_string(),
+            AppMode::Filter => "Filter Pattern".to_string(), 
+            AppMode::Help => "Help".to_string(),
+            AppMode::History => format!("History Search: '{}' (Esc to cancel)", self.history_state.search_query),
+            AppMode::Debug => "Parser Debug (F5)".to_string(),
+        };
+        
         let input_block = Block::default()
             .borders(Borders::ALL)
-            .title(match self.mode {
-                AppMode::Command => "SQL Query",
-                AppMode::Results => "SQL Query (Results Mode - Press ↑ to edit)",
-                AppMode::Search => "Search Pattern",
-                AppMode::Filter => "Filter Pattern", 
-                AppMode::Help => "Help",
-                AppMode::History => "History Search (Ctrl+R)",
-                AppMode::Debug => "Parser Debug (F5)",
-            });
+            .title(input_title);
 
         let input_text = match self.mode {
             AppMode::Search => &self.search_state.pattern,
