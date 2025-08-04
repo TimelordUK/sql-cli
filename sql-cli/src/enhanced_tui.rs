@@ -34,6 +34,7 @@ enum AppMode {
     Help,
     History,
     Debug,
+    PrettyQuery,
 }
 
 #[derive(Clone, PartialEq, Copy)]
@@ -227,6 +228,7 @@ impl EnhancedTuiApp {
                             AppMode::Help => self.handle_help_input(key)?,
                             AppMode::History => self.handle_history_input(key)?,
                             AppMode::Debug => self.handle_debug_input(key)?,
+                            AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
                         };
                         
                         if should_exit {
@@ -341,6 +343,19 @@ impl EnhancedTuiApp {
                     Err(e) => {
                         self.status_message = format!("Can't access clipboard: {}", e);
                     }
+                }
+            },
+            KeyCode::F(6) => {
+                // Pretty print query view
+                let query = self.input.value();
+                if !query.trim().is_empty() {
+                    self.debug_text = format!("Pretty SQL Query\n{}\n\n{}", "=".repeat(50), 
+                        crate::recursive_parser::format_sql_pretty_compact(query, 5).join("\n"));
+                    self.debug_scroll = 0;
+                    self.mode = AppMode::PrettyQuery;
+                    self.status_message = "Pretty query view (press Esc or q to return)".to_string();
+                } else {
+                    self.status_message = "No query to format".to_string();
                 }
             },
             _ => {
@@ -536,6 +551,31 @@ impl EnhancedTuiApp {
     }
 
     fn handle_debug_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
+                self.mode = AppMode::Command;
+            },
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.debug_scroll > 0 {
+                    self.debug_scroll = self.debug_scroll.saturating_sub(1);
+                }
+            },
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.debug_scroll = self.debug_scroll.saturating_add(1);
+            },
+            KeyCode::PageUp => {
+                self.debug_scroll = self.debug_scroll.saturating_sub(10);
+            },
+            KeyCode::PageDown => {
+                self.debug_scroll = self.debug_scroll.saturating_add(10);
+            },
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn handle_pretty_query_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
@@ -1223,6 +1263,7 @@ impl EnhancedTuiApp {
             AppMode::Help => "Help".to_string(),
             AppMode::History => format!("History Search: '{}' (Esc to cancel)", self.history_state.search_query),
             AppMode::Debug => "Parser Debug (F5)".to_string(),
+            AppMode::PrettyQuery => "Pretty Query View (F6)".to_string(),
         };
         
         let input_block = Block::default()
@@ -1255,6 +1296,7 @@ impl EnhancedTuiApp {
                         AppMode::Help => Style::default().fg(Color::DarkGray),
                         AppMode::History => Style::default().fg(Color::Magenta),
                         AppMode::Debug => Style::default().fg(Color::Yellow),
+            AppMode::PrettyQuery => Style::default().fg(Color::Green),
                         _ => Style::default(),
                     })
                     .scroll((0, self.get_horizontal_scroll_offset()))
@@ -1306,6 +1348,7 @@ impl EnhancedTuiApp {
             (_, true) => self.render_help(f, chunks[1]),
             (AppMode::History, false) => self.render_history(f, chunks[1]),
             (AppMode::Debug, false) => self.render_debug(f, chunks[1]),
+            (AppMode::PrettyQuery, false) => self.render_pretty_query(f, chunks[1]),
             (_, false) if self.results.is_some() => {
                 self.render_table(f, chunks[1], self.results.as_ref().unwrap());
             },
@@ -1327,6 +1370,7 @@ impl EnhancedTuiApp {
             AppMode::Help => Style::default().fg(Color::Magenta),
             AppMode::History => Style::default().fg(Color::Magenta),
             AppMode::Debug => Style::default().fg(Color::Yellow),
+            AppMode::PrettyQuery => Style::default().fg(Color::Green),
         };
 
         let mode_indicator = match self.mode {
@@ -1337,6 +1381,7 @@ impl EnhancedTuiApp {
             AppMode::Help => "HELP",
             AppMode::History => "HISTORY",
             AppMode::Debug => "DEBUG",
+            AppMode::PrettyQuery => "PRETTY",
         };
 
         // Add parser debug info and token position for technical users
@@ -1632,6 +1677,38 @@ impl EnhancedTuiApp {
             .wrap(Wrap { trim: false });
         
         f.render_widget(debug_paragraph, area);
+    }
+
+    fn render_pretty_query(&self, f: &mut Frame, area: Rect) {
+        let pretty_lines: Vec<Line> = self.debug_text
+            .lines()
+            .map(|line| Line::from(line.to_string()))
+            .collect();
+        
+        let total_lines = pretty_lines.len();
+        let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
+        
+        // Calculate visible range based on scroll
+        let start = self.debug_scroll as usize;
+        let end = (start + visible_height).min(total_lines);
+        
+        let visible_lines: Vec<Line> = if start < total_lines {
+            pretty_lines[start..end].to_vec()
+        } else {
+            vec![]
+        };
+        
+        let pretty_text = Text::from(visible_lines);
+        
+        let pretty_paragraph = Paragraph::new(pretty_text)
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .title("Pretty SQL Query (F6) - ↑↓ to scroll, Esc/q to close")
+                .border_style(Style::default().fg(Color::Green)))
+            .style(Style::default().fg(Color::White))
+            .wrap(Wrap { trim: false });
+        
+        f.render_widget(pretty_paragraph, area);
     }
 
     fn render_history(&self, f: &mut Frame, area: Rect) {

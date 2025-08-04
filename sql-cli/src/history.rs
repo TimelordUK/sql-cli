@@ -88,7 +88,7 @@ impl CommandHistory {
             return self.entries
                 .iter()
                 .rev()
-                .take(10)
+                .take(50)
                 .map(|entry| HistoryMatch {
                     entry: entry.clone(),
                     score: 100,
