@@ -5,7 +5,7 @@ use crate::history::{CommandHistory, HistoryMatch};
 use crate::sql_highlighter::SqlHighlighter;
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -20,6 +20,8 @@ use ratatui::{
 use regex::Regex;
 use serde_json::Value;
 use std::io;
+use std::io::Write;
+use std::fs::File;
 use std::cmp::Ordering;
 use tui_input::{backend::crossterm::EventHandler, Input};
 
@@ -103,6 +105,16 @@ pub struct EnhancedTuiApp {
     sql_highlighter: SqlHighlighter,
     debug_text: String,
     debug_scroll: u16,
+    input_scroll_offset: u16, // Horizontal scroll offset for input
+}
+
+fn escape_csv_field(field: &str) -> String {
+    if field.contains(',') || field.contains('"') || field.contains('\n') {
+        // Escape quotes by doubling them and wrap field in quotes
+        format!("\"{}\"", field.replace('"', "\"\""))
+    } else {
+        field.to_string()
+    }
 }
 
 impl EnhancedTuiApp {
@@ -152,6 +164,7 @@ impl EnhancedTuiApp {
             sql_highlighter: SqlHighlighter::new(),
             debug_text: String::new(),
             debug_scroll: 0,
+            input_scroll_offset: 0,
         }
     }
 
@@ -230,6 +243,8 @@ impl EnhancedTuiApp {
     }
 
     fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // Store old cursor position
+        let old_cursor = self.input.cursor();
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
@@ -254,6 +269,14 @@ impl EnhancedTuiApp {
                 self.history_state.search_query.clear();
                 self.update_history_matches();
             },
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Jump to beginning of line (like bash/zsh)
+                self.input.handle_event(&Event::Key(KeyEvent::new(KeyCode::Home, KeyModifiers::empty())));
+            },
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Jump to end of line (like bash/zsh)
+                self.input.handle_event(&Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::empty())));
+            },
             KeyCode::Down if self.results.is_some() => {
                 self.mode = AppMode::Results;
                 self.table_state.select(Some(0));
@@ -261,8 +284,22 @@ impl EnhancedTuiApp {
             KeyCode::F(5) => {
                 // Debug command - show detailed parser information
                 let cursor_pos = self.input.cursor();
+                let visual_cursor = self.input.visual_cursor();
                 let query = self.input.value();
-                let debug_info = self.hybrid_parser.get_detailed_debug_info(query, cursor_pos);
+                let mut debug_info = self.hybrid_parser.get_detailed_debug_info(query, cursor_pos);
+                
+                // Add input state information
+                let input_state = format!(
+                    "\n========== INPUT STATE ==========\n\
+                    Input Value Length: {}\n\
+                    Cursor Position: {}\n\
+                    Visual Cursor: {}\n\
+                    Input Mode: Command\n",
+                    query.len(),
+                    cursor_pos,
+                    visual_cursor
+                );
+                debug_info.push_str(&input_state);
                 
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();
@@ -294,6 +331,12 @@ impl EnhancedTuiApp {
                 self.handle_completion();
             }
         }
+        
+        // Update horizontal scroll if cursor moved
+        if self.input.cursor() != old_cursor {
+            self.update_horizontal_scroll(120); // Assume reasonable terminal width, will be adjusted in render
+        }
+        
         Ok(false)
     }
 
@@ -431,9 +474,13 @@ impl EnhancedTuiApp {
             KeyCode::Enter => {
                 if !self.history_state.matches.is_empty() && self.history_state.selected_index < self.history_state.matches.len() {
                     let selected_command = self.history_state.matches[self.history_state.selected_index].entry.command.clone();
-                    self.input = tui_input::Input::new(selected_command);
+                    let cursor_pos = selected_command.len();
+                    self.input = tui_input::Input::new(selected_command).with_cursor(cursor_pos);
                     self.mode = AppMode::Command;
                     self.status_message = "Command loaded from history".to_string();
+                    // Reset scroll to show end of command
+                    self.input_scroll_offset = 0;
+                    self.update_horizontal_scroll(120); // Will be properly updated on next render
                 }
             },
             KeyCode::Up | KeyCode::Char('k') => {
@@ -916,15 +963,95 @@ impl EnhancedTuiApp {
         self.current_column = 0;
     }
 
-    fn ui(&self, f: &mut Frame) {
+    fn export_to_csv(&mut self) {
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    // Generate filename with timestamp
+                    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                    let filename = format!("query_results_{}.csv", timestamp);
+                    
+                    match File::create(&filename) {
+                        Ok(mut file) => {
+                            // Write headers
+                            let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                            let header_line = headers.join(",");
+                            if let Err(e) = writeln!(file, "{}", header_line) {
+                                self.status_message = format!("Failed to write headers: {}", e);
+                                return;
+                            }
+                            
+                            // Write data rows
+                            let mut row_count = 0;
+                            for item in &results.data {
+                                if let Some(obj) = item.as_object() {
+                                    let row: Vec<String> = headers.iter().map(|&header| {
+                                        match obj.get(header) {
+                                            Some(Value::String(s)) => escape_csv_field(s),
+                                            Some(Value::Number(n)) => n.to_string(),
+                                            Some(Value::Bool(b)) => b.to_string(),
+                                            Some(Value::Null) => String::new(),
+                                            Some(other) => escape_csv_field(&other.to_string()),
+                                            None => String::new(),
+                                        }
+                                    }).collect();
+                                    
+                                    let row_line = row.join(",");
+                                    if let Err(e) = writeln!(file, "{}", row_line) {
+                                        self.status_message = format!("Failed to write row: {}", e);
+                                        return;
+                                    }
+                                    row_count += 1;
+                                }
+                            }
+                            
+                            self.status_message = format!("Exported {} rows to {}", row_count, filename);
+                        },
+                        Err(e) => {
+                            self.status_message = format!("Failed to create file: {}", e);
+                        }
+                    }
+                } else {
+                    self.status_message = "No data to export".to_string();
+                }
+            } else {
+                self.status_message = "No data to export".to_string();
+            }
+        } else {
+            self.status_message = "No results to export - run a query first".to_string();
+        }
+    }
+
+    fn get_horizontal_scroll_offset(&self) -> u16 {
+        self.input_scroll_offset
+    }
+
+    fn update_horizontal_scroll(&mut self, terminal_width: u16) {
+        let inner_width = terminal_width.saturating_sub(3) as usize; // Account for borders + 1 char padding
+        let cursor_pos = self.input.visual_cursor();
+        
+        // If cursor is before the scroll window, scroll left
+        if cursor_pos < self.input_scroll_offset as usize {
+            self.input_scroll_offset = cursor_pos as u16;
+        }
+        // If cursor is after the scroll window, scroll right
+        else if cursor_pos >= self.input_scroll_offset as usize + inner_width {
+            self.input_scroll_offset = (cursor_pos + 1).saturating_sub(inner_width) as u16;
+        }
+    }
+
+    fn ui(&mut self, f: &mut Frame) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(6), // Command input - increased for longer queries
+                Constraint::Length(3), // Command input - single line
                 Constraint::Min(0),    // Results
                 Constraint::Length(3), // Status bar
             ].as_ref())
             .split(f.area());
+
+        // Update horizontal scroll based on actual terminal width
+        self.update_horizontal_scroll(chunks[0].width);
 
         // Command input area
         let input_block = Block::default()
@@ -948,11 +1075,11 @@ impl EnhancedTuiApp {
 
         let input_paragraph = match self.mode {
             AppMode::Command => {
-                // Use syntax highlighting for SQL command input
+                // Use syntax highlighting for SQL command input with horizontal scrolling
                 let highlighted_line = self.sql_highlighter.simple_sql_highlight(input_text);
                 Paragraph::new(Text::from(vec![highlighted_line]))
                     .block(input_block)
-                    .wrap(Wrap { trim: false })
+                    .scroll((0, self.get_horizontal_scroll_offset()))
             },
             _ => {
                 // Plain text for other modes
@@ -967,7 +1094,7 @@ impl EnhancedTuiApp {
                         AppMode::Debug => Style::default().fg(Color::Yellow),
                         _ => Style::default(),
                     })
-                    .wrap(Wrap { trim: false })
+                    .scroll((0, self.get_horizontal_scroll_offset()))
             }
         };
 
@@ -976,16 +1103,19 @@ impl EnhancedTuiApp {
         // Set cursor position for input modes
         match self.mode {
             AppMode::Command => {
-                // Calculate cursor position accounting for wrapping
-                let width = chunks[0].width.saturating_sub(2) as usize; // Account for borders
+                // Calculate cursor position with horizontal scrolling
+                let inner_width = chunks[0].width.saturating_sub(2) as usize;
                 let cursor_pos = self.input.visual_cursor();
-                let row = cursor_pos / width;
-                let col = cursor_pos % width;
+                let scroll_offset = self.get_horizontal_scroll_offset() as usize;
                 
-                f.set_cursor_position((
-                    chunks[0].x + col as u16 + 1,
-                    chunks[0].y + row as u16 + 1
-                ));
+                // Calculate visible cursor position
+                if cursor_pos >= scroll_offset && cursor_pos < scroll_offset + inner_width {
+                    let visible_pos = cursor_pos - scroll_offset;
+                    f.set_cursor_position((
+                        chunks[0].x + visible_pos as u16 + 1,
+                        chunks[0].y + 1
+                    ));
+                }
             },
             AppMode::Search => {
                 f.set_cursor_position((
@@ -1257,6 +1387,8 @@ impl EnhancedTuiApp {
             Line::from("  Enter    - Execute query"),
             Line::from("  Tab      - Auto-complete"),
             Line::from("  Ctrl+R   - Search command history"),
+            Line::from("  Ctrl+A   - Jump to beginning of line"),
+            Line::from("  Ctrl+E   - Jump to end of line"),
             Line::from("  ↓        - Enter results mode"),
             Line::from("  F1/?     - Toggle help"),
             Line::from("  Ctrl+C/D - Exit"),
@@ -1276,6 +1408,7 @@ impl EnhancedTuiApp {
             Line::from("  F        - Filter rows"),
             Line::from("  s        - Sort by current column"),
             Line::from("  1-9      - Sort by column number (1=first)"),
+            Line::from("  Ctrl+S   - Export to CSV"),
             Line::from("  ↑/Esc    - Back to command mode"),
             Line::from("  q        - Quit"),
             Line::from(""),

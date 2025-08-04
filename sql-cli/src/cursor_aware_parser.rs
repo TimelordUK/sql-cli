@@ -71,6 +71,32 @@ impl CursorAwareParser {
                 let suggestions = self.get_string_method_suggestions(&property_type, &partial_word);
                 (suggestions, "AfterColumn".to_string())
             }
+            CursorContext::AfterComparisonOp(col_name, op) => {
+                // We're after a comparison operator - suggest based on column type
+                let property_type = self.get_property_type(&col_name).unwrap_or("string".to_string());
+                let suggestions = match property_type.as_str() {
+                    "datetime" => {
+                        // For datetime columns, suggest DateTime constructor
+                        let mut suggestions = vec!["DateTime(".to_string()];
+                        // Also suggest common date patterns
+                        suggestions.extend(vec![
+                            "DateTime.Today".to_string(),
+                            "DateTime.Now".to_string(),
+                        ]);
+                        suggestions
+                    }
+                    "string" => {
+                        // For strings, suggest string literals
+                        vec!["\"\"".to_string()]
+                    }
+                    "numeric" => {
+                        // For numbers, no specific suggestions
+                        vec![]
+                    }
+                    _ => vec![]
+                };
+                (suggestions, format!("AfterComparison({} {})", col_name, op))
+            }
             CursorContext::InMethodCall(obj, method) => {
                 let property_type = self.get_property_type(obj).unwrap_or("string".to_string());
                 let suggestions = self.get_string_method_suggestions(&property_type, &partial_word);
@@ -97,7 +123,11 @@ impl CursorAwareParser {
         
         // Filter by partial word if present (but not for method suggestions as they're already filtered)
         let mut final_suggestions = suggestions;
-        let is_method_context = matches!(cursor_context, CursorContext::AfterColumn(_) | CursorContext::InMethodCall(_, _));
+        let is_method_context = matches!(cursor_context, 
+            CursorContext::AfterColumn(_) | 
+            CursorContext::InMethodCall(_, _) |
+            CursorContext::AfterComparisonOp(_, _)
+        );
         
         if let Some(ref partial) = partial_word {
             if !is_method_context {
@@ -408,17 +438,20 @@ impl CursorAwareParser {
             "counterpartycountry", "trader", "portfolio", "strategy", "desk",
             "status", "confirmationstatus", "settlementstatus", "allocationstatus",
             "currency", "side", "producttype", "venue", "clearinghouse", "prime",
-            "comments"
+            "comments", "book", "source", "sourcesystem"
         ];
         
         // Numeric properties  
         let numeric_properties = [
-            "price", "quantity", "notional", "commission", "accrual", "netamount"
+            "price", "quantity", "notional", "commission", "accrual", "netamount",
+            "accruedinterest", "grossamount", "settlementamount", "fees", "tax"
         ];
         
         // DateTime properties
         let datetime_properties = [
-            "tradedate", "settlementdate", "createddate", "modifieddate"
+            "tradedate", "settlementdate", "createddate", "modifieddate",
+            "valuedate", "maturitydate", "confirmationdate", "executiondate",
+            "lastmodifieddate"
         ];
         
         if string_properties.contains(&property_lower.as_str()) {

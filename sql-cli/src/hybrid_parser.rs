@@ -46,6 +46,7 @@ impl HybridParser {
             CursorContext::AfterColumn(_) => "AfterColumn",
             CursorContext::AfterLogicalOp(LogicalOp::And) => "AfterAND",
             CursorContext::AfterLogicalOp(LogicalOp::Or) => "AfterOR",
+            CursorContext::AfterComparisonOp(_, _) => "AfterComparisonOp",
             CursorContext::InMethodCall(_, _) => "InMethodCall",
             CursorContext::InExpression => "InExpression",
             CursorContext::Unknown => "Unknown",
@@ -166,6 +167,7 @@ impl HybridParser {
         format!(
             "========== PARSER DEBUG ==========\n\
 Query: '{}'\n\
+Query Length: {}\n\
 Cursor: {} {}\n\
 Partial Word: {}\n\
 Complexity: {}\n\
@@ -182,6 +184,7 @@ SUGGESTIONS ({}):\n{}\n\
 AST TREE:\n{}\n\
 ==================================",
             query,
+            query.len(),
             cursor_pos,
             char_at_cursor,
             partial_word_info,

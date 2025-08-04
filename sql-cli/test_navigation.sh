@@ -1,0 +1,20 @@
+#!/bin/bash
+# Test script to demonstrate cursor navigation shortcuts
+
+echo "SQL CLI Cursor Navigation Test"
+echo "=============================="
+echo ""
+echo "New keyboard shortcuts for cursor navigation:"
+echo "  Ctrl+A - Jump to beginning of line (like bash/zsh)"
+echo "  Ctrl+E - Jump to end of line (like bash/zsh)"
+echo ""
+echo "These shortcuts work in Command Mode and make it easy to navigate"
+echo "long SQL queries without having to hold arrow keys."
+echo ""
+echo "Example workflow:"
+echo "1. Load a long query from history with Ctrl+R"
+echo "2. Press Ctrl+E to jump to the end to add more conditions"
+echo "3. Press Ctrl+A to jump to the beginning to modify SELECT columns"
+echo ""
+echo "The input now uses horizontal scrolling for long queries,"
+echo "so the cursor will always be visible within the terminal width."

@@ -12,6 +12,7 @@ pub enum Token {
     OrderBy,
     GroupBy,
     Having,
+    DateTime,  // DateTime constructor
     
     // Literals
     Identifier(String),
@@ -197,6 +198,7 @@ impl Lexer {
                         Token::GroupBy
                     }
                     "HAVING" => Token::Having,
+                    "DATETIME" => Token::DateTime,
                     _ => Token::Identifier(ident),
                 }
             }
@@ -246,6 +248,11 @@ pub enum SqlExpression {
     Column(String),
     StringLiteral(String),
     NumberLiteral(String),
+    DateTimeConstructor {
+        year: i32,
+        month: u32,
+        day: u32,
+    },
     MethodCall {
         object: String,
         method: String,
@@ -498,6 +505,39 @@ impl Parser {
     
     fn parse_primary(&mut self) -> Result<SqlExpression, String> {
         match &self.current_token {
+            Token::DateTime => {
+                self.advance(); // consume DateTime
+                self.consume(Token::LeftParen)?;
+                
+                // Parse year
+                let year = if let Token::NumberLiteral(n) = &self.current_token {
+                    n.parse::<i32>().map_err(|_| "Invalid year")?
+                } else {
+                    return Err("Expected year in DateTime constructor".to_string());
+                };
+                self.advance();
+                self.consume(Token::Comma)?;
+                
+                // Parse month
+                let month = if let Token::NumberLiteral(n) = &self.current_token {
+                    n.parse::<u32>().map_err(|_| "Invalid month")?
+                } else {
+                    return Err("Expected month in DateTime constructor".to_string());
+                };
+                self.advance();
+                self.consume(Token::Comma)?;
+                
+                // Parse day
+                let day = if let Token::NumberLiteral(n) = &self.current_token {
+                    n.parse::<u32>().map_err(|_| "Invalid day")?
+                } else {
+                    return Err("Expected day in DateTime constructor".to_string());
+                };
+                self.advance();
+                
+                self.consume(Token::RightParen)?;
+                Ok(SqlExpression::DateTimeConstructor { year, month, day })
+            }
             Token::Identifier(id) => {
                 let expr = SqlExpression::Column(id.clone());
                 self.advance();
@@ -582,6 +622,7 @@ pub enum CursorContext {
     WhereClause,
     AfterColumn(String),
     AfterLogicalOp(LogicalOp),
+    AfterComparisonOp(String, String), // column_name, operator
     InMethodCall(String, String), // object, method
     InExpression,
     Unknown,
@@ -619,6 +660,27 @@ fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) ->
     // First check for method call context (e.g., "columnName." or "columnName.Con")
     let trimmed = query.trim();
     
+    // Check if we're after a comparison operator (e.g., "createdDate > ")
+    let comparison_ops = [" > ", " < ", " >= ", " <= ", " = ", " != "];
+    for op in &comparison_ops {
+        if let Some(op_pos) = query.rfind(op) {
+            let before_op = &query[..op_pos];
+            let after_op = &query[op_pos + op.len()..];
+            
+            // Check if we have a column name before the operator
+            if let Some(col_name) = before_op.split_whitespace().last() {
+                if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    // Check if we're at or near the end of the query
+                    let after_op_trimmed = after_op.trim();
+                    if after_op_trimmed.is_empty() || (after_op_trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') && !after_op_trimmed.contains('(')) {
+                        let partial = if after_op_trimmed.is_empty() { None } else { Some(after_op_trimmed.to_string()) };
+                        return (CursorContext::AfterComparisonOp(col_name.to_string(), op.trim().to_string()), partial);
+                    }
+                }
+            }
+        }
+    }
+    
     // First check if we're after AND/OR - this takes precedence
     if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") ||
        trimmed.to_uppercase().ends_with(" AND ") || trimmed.to_uppercase().ends_with(" OR ") {
@@ -654,6 +716,33 @@ fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) ->
     
     // Check if we're in WHERE clause
     if let Some(where_clause) = &stmt.where_clause {
+        // Check if query ends with AND/OR (with or without trailing space/partial)
+        if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") {
+            let op = if trimmed.to_uppercase().ends_with(" AND") {
+                LogicalOp::And
+            } else {
+                LogicalOp::Or
+            };
+            return (CursorContext::AfterLogicalOp(op), None);
+        }
+        
+        // Check if we have AND/OR followed by a partial word
+        if let Some(and_pos) = query.to_uppercase().rfind(" AND ") {
+            let after_and = &query[and_pos + 5..];
+            let partial = extract_partial_at_end(after_and);
+            if partial.is_some() {
+                return (CursorContext::AfterLogicalOp(LogicalOp::And), partial);
+            }
+        }
+        
+        if let Some(or_pos) = query.to_uppercase().rfind(" OR ") {
+            let after_or = &query[or_pos + 4..];
+            let partial = extract_partial_at_end(after_or);
+            if partial.is_some() {
+                return (CursorContext::AfterLogicalOp(LogicalOp::Or), partial);
+            }
+        }
+        
         if let Some(last_condition) = where_clause.conditions.last() {
             if let Some(connector) = &last_condition.connector {
                 // We're after AND/OR
@@ -682,49 +771,82 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
     // Check for method call context first (e.g., "columnName." or "columnName.Con")
     let trimmed = query.trim();
     
-    // First check if we're after AND/OR - this takes precedence
-    if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") ||
-       trimmed.to_uppercase().ends_with(" AND ") || trimmed.to_uppercase().ends_with(" OR ") {
-        // Don't check for method context if we're clearly after a logical operator
-    } else {
-        // Look for the last dot in the query
-        if let Some(dot_pos) = trimmed.rfind('.') {
-            // Check if we're after a column name and dot
-            let before_dot = &trimmed[..dot_pos];
-            let after_dot = &trimmed[dot_pos + 1..];
+    // Check if we're after a comparison operator (e.g., "createdDate > ")
+    let comparison_ops = [" > ", " < ", " >= ", " <= ", " = ", " != "];
+    for op in &comparison_ops {
+        if let Some(op_pos) = query.rfind(op) {
+            let before_op = &query[..op_pos];
+            let after_op = &query[op_pos + op.len()..];
             
-            // Check if the part after dot looks like an incomplete method call
-            // (not a complete method call like "Contains(...)")
-            if !after_dot.contains('(') {
-                if let Some(col_name) = before_dot.split_whitespace().last() {
-                    if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                        // We're in a method call context
-                        // Check if there's a partial method name after the dot
-                        let partial_method = if after_dot.is_empty() {
-                            None
-                        } else if after_dot.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                            Some(after_dot.to_string())
-                        } else {
-                            None
-                        };
-                        
-                        return (CursorContext::AfterColumn(col_name.to_string()), partial_method);
+            // Check if we have a column name before the operator
+            if let Some(col_name) = before_op.split_whitespace().last() {
+                if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    // Check if we're at or near the end of the query (allowing for some whitespace)
+                    let after_op_trimmed = after_op.trim();
+                    if after_op_trimmed.is_empty() || (after_op_trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') && !after_op_trimmed.contains('(')) {
+                        let partial = if after_op_trimmed.is_empty() { None } else { Some(after_op_trimmed.to_string()) };
+                        return (CursorContext::AfterComparisonOp(col_name.to_string(), op.trim().to_string()), partial);
                     }
                 }
             }
         }
     }
     
-    // Simple heuristics for partial queries
+    // Check if we're after AND/OR - but make sure to extract partial word correctly
     if let Some(and_pos) = upper.rfind(" AND ") {
-        if and_pos + 5 >= cursor_pos {
-            return (CursorContext::AfterLogicalOp(LogicalOp::And), extract_partial_at_end(query));
+        // Check if cursor is after AND
+        if cursor_pos >= and_pos + 5 {
+            // Extract any partial word after AND
+            let after_and = &query[and_pos + 5..];
+            let partial = extract_partial_at_end(after_and);
+            return (CursorContext::AfterLogicalOp(LogicalOp::And), partial);
         }
     }
     
     if let Some(or_pos) = upper.rfind(" OR ") {
-        if or_pos + 4 >= cursor_pos {
-            return (CursorContext::AfterLogicalOp(LogicalOp::Or), extract_partial_at_end(query));
+        // Check if cursor is after OR
+        if cursor_pos >= or_pos + 4 {
+            // Extract any partial word after OR
+            let after_or = &query[or_pos + 4..];
+            let partial = extract_partial_at_end(after_or);
+            return (CursorContext::AfterLogicalOp(LogicalOp::Or), partial);
+        }
+    }
+    
+    // Handle case where AND/OR is at the very end
+    if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") {
+        let op = if trimmed.to_uppercase().ends_with(" AND") {
+            LogicalOp::And
+        } else {
+            LogicalOp::Or
+        };
+        return (CursorContext::AfterLogicalOp(op), None);
+    }
+    
+    // Look for the last dot in the query (method call context)
+    if let Some(dot_pos) = trimmed.rfind('.') {
+        // Check if we're after a column name and dot
+        let before_dot = &trimmed[..dot_pos];
+        let after_dot = &trimmed[dot_pos + 1..];
+        
+        // Check if the part after dot looks like an incomplete method call
+        // (not a complete method call like "Contains(...)")
+        if !after_dot.contains('(') {
+            if let Some(col_name) = before_dot.split_whitespace().last() {
+                if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    // We're in a method call context
+                    // Check if there's a partial method name after the dot
+                    let partial_method = if after_dot.is_empty() {
+                        None
+                    } else if after_dot.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                        Some(after_dot.to_string())
+                    } else {
+                        None
+                    };
+                    
+                    return (CursorContext::AfterColumn(col_name.to_string()), partial_method);
+                }
+            }
         }
     }
     
@@ -782,6 +904,23 @@ mod tests {
     }
     
     #[test]
+    fn test_tokenizer_datetime() {
+        let mut lexer = Lexer::new("WHERE createdDate > DateTime(2025, 10, 20)");
+        
+        assert!(matches!(lexer.next_token(), Token::Where));
+        assert!(matches!(lexer.next_token(), Token::Identifier(s) if s == "createdDate"));
+        assert!(matches!(lexer.next_token(), Token::GreaterThan));
+        assert!(matches!(lexer.next_token(), Token::DateTime));
+        assert!(matches!(lexer.next_token(), Token::LeftParen));
+        assert!(matches!(lexer.next_token(), Token::NumberLiteral(s) if s == "2025"));
+        assert!(matches!(lexer.next_token(), Token::Comma));
+        assert!(matches!(lexer.next_token(), Token::NumberLiteral(s) if s == "10"));
+        assert!(matches!(lexer.next_token(), Token::Comma));
+        assert!(matches!(lexer.next_token(), Token::NumberLiteral(s) if s == "20"));
+        assert!(matches!(lexer.next_token(), Token::RightParen));
+    }
+    
+    #[test]
     fn test_parse_simple_select() {
         let mut parser = Parser::new("SELECT * FROM trade_deal");
         let stmt = parser.parse().unwrap();
@@ -802,6 +941,25 @@ mod tests {
     }
     
     #[test]
+    fn test_parse_datetime_constructor() {
+        let mut parser = Parser::new("SELECT * FROM trade_deal WHERE createdDate > DateTime(2025, 10, 20)");
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        assert_eq!(where_clause.conditions.len(), 1);
+        
+        // Check the expression structure
+        if let SqlExpression::BinaryOp { left, op, right } = &where_clause.conditions[0].expr {
+            assert_eq!(op, ">");
+            assert!(matches!(left.as_ref(), SqlExpression::Column(col) if col == "createdDate"));
+            assert!(matches!(right.as_ref(), SqlExpression::DateTimeConstructor { year: 2025, month: 10, day: 20 }));
+        } else {
+            panic!("Expected BinaryOp with DateTime constructor");
+        }
+    }
+    
+    #[test]
     fn test_cursor_context_after_and() {
         let query = "SELECT * FROM trade_deal WHERE status = 'active' AND ";
         let (context, partial) = detect_cursor_context(query, query.len());
@@ -817,5 +975,23 @@ mod tests {
         
         assert!(matches!(context, CursorContext::AfterLogicalOp(LogicalOp::And)));
         assert_eq!(partial, Some("p".to_string()));
+    }
+    
+    #[test]
+    fn test_cursor_context_after_datetime_comparison() {
+        let query = "SELECT * FROM trade_deal WHERE createdDate > ";
+        let (context, partial) = detect_cursor_context(query, query.len());
+        
+        assert!(matches!(context, CursorContext::AfterComparisonOp(col, op) if col == "createdDate" && op == ">"));
+        assert_eq!(partial, None);
+    }
+    
+    #[test]
+    fn test_cursor_context_partial_datetime() {
+        let query = "SELECT * FROM trade_deal WHERE createdDate > Date";
+        let (context, partial) = detect_cursor_context(query, query.len());
+        
+        assert!(matches!(context, CursorContext::AfterComparisonOp(col, op) if col == "createdDate" && op == ">"));
+        assert_eq!(partial, Some("Date".to_string()));
     }
 }
