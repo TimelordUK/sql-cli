@@ -129,7 +129,7 @@ impl SchemaManager {
         let config = crate::schema_config::load_schema_config();
         let mut schemas = HashMap::new();
         
-        for (table_name, table_config) in config.tables {
+        for table_config in config.tables {
             let columns: Vec<ColumnInfo> = table_config.columns.iter().map(|name| {
                 ColumnInfo {
                     name: name.clone(),
@@ -149,8 +149,8 @@ impl SchemaManager {
                 "DateTime".to_string(),
             ]);
             
-            schemas.insert(table_name.clone(), TableSchema {
-                table_name,
+            schemas.insert(table_config.name.clone(), TableSchema {
+                table_name: table_config.name,
                 columns,
                 methods,
             });
