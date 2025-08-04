@@ -573,9 +573,17 @@ impl EnhancedTuiApp {
                     Some(duration.as_millis() as u64)
                 );
                 
+                // Add debug info about results
+                let row_count = response.data.len();
                 self.results = Some(response);
                 self.reset_table_state();
-                self.status_message = "Query executed successfully - Use ↓ or j/k to navigate results".to_string();
+                
+                if row_count == 0 {
+                    self.status_message = format!("Query executed successfully but returned 0 rows ({}ms)", duration.as_millis());
+                } else {
+                    self.status_message = format!("Query executed successfully - {} rows returned ({}ms) - Use ↓ or j/k to navigate", row_count, duration.as_millis());
+                }
+                
                 self.mode = AppMode::Results;
                 self.table_state.select(Some(0));
             },
