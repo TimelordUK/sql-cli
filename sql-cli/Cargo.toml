@@ -23,3 +23,4 @@ chrono = { version = "0.4", features = ["serde"] }
 syntect = "5.0"
 tree-sitter = "0.19"
 tree-sitter-sql = "0.0.2"
+arboard = "3.2"

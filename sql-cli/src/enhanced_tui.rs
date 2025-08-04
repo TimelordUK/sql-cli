@@ -1,6 +1,6 @@
 use crate::api_client::{ApiClient, QueryResponse};
 use crate::parser::SqlParser;
-use crate::cursor_aware_parser::CursorAwareParser;
+use crate::hybrid_parser::HybridParser;
 use crate::history::{CommandHistory, HistoryMatch};
 use crate::sql_highlighter::SqlHighlighter;
 use anyhow::Result;
@@ -14,7 +14,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Text},
-    widgets::{Block, Borders, Paragraph, Row, Table, TableState, Cell},
+    widgets::{Block, Borders, Paragraph, Row, Table, TableState, Cell, Wrap},
     Frame, Terminal,
 };
 use regex::Regex;
@@ -31,6 +31,7 @@ enum AppMode {
     Filter,
     Help,
     History,
+    Debug,
 }
 
 #[derive(Clone, PartialEq, Copy)]
@@ -86,7 +87,7 @@ pub struct EnhancedTuiApp {
     show_help: bool,
     status_message: String,
     sql_parser: SqlParser,
-    cursor_parser: CursorAwareParser,
+    hybrid_parser: HybridParser,
     
     // Enhanced features
     sort_state: SortState,
@@ -100,6 +101,8 @@ pub struct EnhancedTuiApp {
     scroll_offset: (usize, usize), // (row, col)
     current_column: usize, // For column-based operations
     sql_highlighter: SqlHighlighter,
+    debug_text: String,
+    debug_scroll: u16,
 }
 
 impl EnhancedTuiApp {
@@ -113,7 +116,7 @@ impl EnhancedTuiApp {
             show_help: false,
             status_message: "Ready - Type SQL query and press Enter (Enhanced mode with sorting/filtering)".to_string(),
             sql_parser: SqlParser::new(),
-            cursor_parser: CursorAwareParser::new(),
+            hybrid_parser: HybridParser::new(),
             
             sort_state: SortState {
                 column: None,
@@ -147,6 +150,8 @@ impl EnhancedTuiApp {
             scroll_offset: (0, 0),
             current_column: 0,
             sql_highlighter: SqlHighlighter::new(),
+            debug_text: String::new(),
+            debug_scroll: 0,
         }
     }
 
@@ -204,6 +209,7 @@ impl EnhancedTuiApp {
                             AppMode::Filter => self.handle_filter_input(key)?,
                             AppMode::Help => self.handle_help_input(key)?,
                             AppMode::History => self.handle_history_input(key)?,
+                            AppMode::Debug => self.handle_debug_input(key)?,
                         };
                         
                         if should_exit {
@@ -251,6 +257,34 @@ impl EnhancedTuiApp {
             KeyCode::Down if self.results.is_some() => {
                 self.mode = AppMode::Results;
                 self.table_state.select(Some(0));
+            },
+            KeyCode::F(5) => {
+                // Debug command - show detailed parser information
+                let cursor_pos = self.input.cursor();
+                let query = self.input.value();
+                let debug_info = self.hybrid_parser.get_detailed_debug_info(query, cursor_pos);
+                
+                // Store debug info and switch to debug mode
+                self.debug_text = debug_info.clone();
+                self.debug_scroll = 0;
+                self.mode = AppMode::Debug;
+                
+                // Try to copy to clipboard
+                match arboard::Clipboard::new() {
+                    Ok(mut clipboard) => {
+                        match clipboard.set_text(&debug_info) {
+                            Ok(_) => {
+                                self.status_message = "DEBUG INFO copied to clipboard!".to_string();
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Clipboard error: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Can't access clipboard: {}", e);
+                    }
+                }
             },
             _ => {
                 self.input.handle_event(&Event::Key(key));
@@ -430,6 +464,31 @@ impl EnhancedTuiApp {
         self.history_state.selected_index = 0;
     }
 
+    fn handle_debug_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
+                self.mode = AppMode::Command;
+            },
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.debug_scroll > 0 {
+                    self.debug_scroll = self.debug_scroll.saturating_sub(1);
+                }
+            },
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.debug_scroll = self.debug_scroll.saturating_add(1);
+            },
+            KeyCode::PageUp => {
+                self.debug_scroll = self.debug_scroll.saturating_sub(10);
+            },
+            KeyCode::PageDown => {
+                self.debug_scroll = self.debug_scroll.saturating_add(10);
+            },
+            _ => {}
+        }
+        Ok(false)
+    }
+
     fn execute_query(&mut self, query: &str) -> Result<()> {
         self.status_message = format!("Executing query: '{}'...", query);
         let start_time = std::time::Instant::now();
@@ -466,9 +525,9 @@ impl EnhancedTuiApp {
         let cursor_pos = self.input.cursor();
         let query = self.input.value();
         
-        let parse_result = self.cursor_parser.get_completions(query, cursor_pos);
-        if !parse_result.suggestions.is_empty() {
-            self.status_message = format!("Suggestions: {}", parse_result.suggestions.join(", "));
+        let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
+        if !hybrid_result.suggestions.is_empty() {
+            self.status_message = format!("Suggestions: {}", hybrid_result.suggestions.join(", "));
         }
     }
 
@@ -482,13 +541,13 @@ impl EnhancedTuiApp {
         
         if !is_same_context {
             // New completion context - get fresh suggestions
-            let parse_result = self.cursor_parser.get_completions(query, cursor_pos);
-            if parse_result.suggestions.is_empty() {
+            let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
+            if hybrid_result.suggestions.is_empty() {
                 self.status_message = "No completions available".to_string();
                 return;
             }
             
-            self.completion_state.suggestions = parse_result.suggestions;
+            self.completion_state.suggestions = hybrid_result.suggestions;
             self.completion_state.current_index = 0;
         } else if !self.completion_state.suggestions.is_empty() {
             // Cycle to next suggestion
@@ -861,7 +920,7 @@ impl EnhancedTuiApp {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // Command input
+                Constraint::Length(6), // Command input - increased for longer queries
                 Constraint::Min(0),    // Results
                 Constraint::Length(3), // Status bar
             ].as_ref())
@@ -877,6 +936,7 @@ impl EnhancedTuiApp {
                 AppMode::Filter => "Filter Pattern", 
                 AppMode::Help => "Help",
                 AppMode::History => "History Search (Ctrl+R)",
+                AppMode::Debug => "Parser Debug (F5)",
             });
 
         let input_text = match self.mode {
@@ -892,6 +952,7 @@ impl EnhancedTuiApp {
                 let highlighted_line = self.sql_highlighter.simple_sql_highlight(input_text);
                 Paragraph::new(Text::from(vec![highlighted_line]))
                     .block(input_block)
+                    .wrap(Wrap { trim: false })
             },
             _ => {
                 // Plain text for other modes
@@ -903,8 +964,10 @@ impl EnhancedTuiApp {
                         AppMode::Filter => Style::default().fg(Color::Cyan),
                         AppMode::Help => Style::default().fg(Color::DarkGray),
                         AppMode::History => Style::default().fg(Color::Magenta),
+                        AppMode::Debug => Style::default().fg(Color::Yellow),
                         _ => Style::default(),
                     })
+                    .wrap(Wrap { trim: false })
             }
         };
 
@@ -913,9 +976,15 @@ impl EnhancedTuiApp {
         // Set cursor position for input modes
         match self.mode {
             AppMode::Command => {
+                // Calculate cursor position accounting for wrapping
+                let width = chunks[0].width.saturating_sub(2) as usize; // Account for borders
+                let cursor_pos = self.input.visual_cursor();
+                let row = cursor_pos / width;
+                let col = cursor_pos % width;
+                
                 f.set_cursor_position((
-                    chunks[0].x + self.input.visual_cursor() as u16 + 1,
-                    chunks[0].y + 1
+                    chunks[0].x + col as u16 + 1,
+                    chunks[0].y + row as u16 + 1
                 ));
             },
             AppMode::Search => {
@@ -943,6 +1012,7 @@ impl EnhancedTuiApp {
         match (&self.mode, self.show_help) {
             (_, true) => self.render_help(f, chunks[1]),
             (AppMode::History, false) => self.render_history(f, chunks[1]),
+            (AppMode::Debug, false) => self.render_debug(f, chunks[1]),
             (_, false) if self.results.is_some() => {
                 self.render_table(f, chunks[1], self.results.as_ref().unwrap());
             },
@@ -963,6 +1033,7 @@ impl EnhancedTuiApp {
             AppMode::Filter => Style::default().fg(Color::Cyan),
             AppMode::Help => Style::default().fg(Color::Magenta),
             AppMode::History => Style::default().fg(Color::Magenta),
+            AppMode::Debug => Style::default().fg(Color::Yellow),
         };
 
         let mode_indicator = match self.mode {
@@ -972,20 +1043,23 @@ impl EnhancedTuiApp {
             AppMode::Filter => "FILTER",
             AppMode::Help => "HELP",
             AppMode::History => "HISTORY",
+            AppMode::Debug => "DEBUG",
         };
 
         // Add parser debug info for technical users
         let parser_debug = if self.mode == AppMode::Command {
             let cursor_pos = self.input.cursor();
             let query = self.input.value();
-            let parse_result = self.cursor_parser.get_completions(query, cursor_pos);
-            format!(" | Context: {} | Suggestions: {}", 
-                parse_result.context,
-                if parse_result.suggestions.is_empty() { 
+            let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
+            format!(" | {}: {} | Suggestions: {} | Complexity: {}", 
+                hybrid_result.parser_used,
+                hybrid_result.context,
+                if hybrid_result.suggestions.is_empty() { 
                     "none".to_string() 
                 } else { 
-                    parse_result.suggestions.len().to_string() 
-                })
+                    hybrid_result.suggestions.len().to_string() 
+                },
+                hybrid_result.query_complexity)
         } else {
             String::new()
         };
@@ -1224,6 +1298,39 @@ impl EnhancedTuiApp {
             .style(Style::default());
 
         f.render_widget(help_paragraph, area);
+    }
+
+    fn render_debug(&self, f: &mut Frame, area: Rect) {
+        let debug_lines: Vec<Line> = self.debug_text
+            .lines()
+            .map(|line| Line::from(line.to_string()))
+            .collect();
+        
+        let total_lines = debug_lines.len();
+        let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
+        
+        // Calculate visible range based on scroll
+        let start = self.debug_scroll as usize;
+        let end = (start + visible_height).min(total_lines);
+        
+        let visible_lines: Vec<Line> = if start < total_lines {
+            debug_lines[start..end].to_vec()
+        } else {
+            vec![]
+        };
+        
+        let debug_text = Text::from(visible_lines);
+        
+        let debug_paragraph = Paragraph::new(debug_text)
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Parser Debug Info - Lines {}-{} of {} (↑↓ to scroll, Enter/Esc to close)", 
+                    start + 1, end, total_lines))
+                .border_style(Style::default().fg(Color::Yellow)))
+            .style(Style::default().fg(Color::White))
+            .wrap(Wrap { trim: false });
+        
+        f.render_widget(debug_paragraph, area);
     }
 
     fn render_history(&self, f: &mut Frame, area: Rect) {

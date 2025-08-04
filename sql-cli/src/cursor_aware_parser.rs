@@ -1,4 +1,5 @@
 use crate::parser::{Schema, ParseState};
+use crate::recursive_parser::{detect_cursor_context, CursorContext, LogicalOp};
 
 #[derive(Debug, Clone)]
 pub struct CursorAwareParser {
@@ -20,28 +21,103 @@ impl CursorAwareParser {
     }
     
     pub fn get_completions(&self, query: &str, cursor_pos: usize) -> ParseResult {
-        // Extract the word being typed at cursor position
-        let partial_word = self.extract_word_at_cursor(query, cursor_pos);
+        // Use the recursive parser for better context detection
+        let (cursor_context, partial_word) = detect_cursor_context(query, cursor_pos);
         
-        // Parse the query up to the cursor position
-        let query_before_cursor = &query[..cursor_pos.min(query.len())];
+        // If we didn't get a partial word from recursive parser, try our own extraction
+        let partial_word = partial_word.or_else(|| self.extract_word_at_cursor(query, cursor_pos));
         
-        // Check for method call context first (e.g., "platformOrderId.")
-        if let Some((property_name, property_type)) = self.detect_method_call_context(query_before_cursor, cursor_pos) {
-            let suggestions = self.get_string_method_suggestions(&property_type, &partial_word);
-            return ParseResult {
-                suggestions,
-                context: format!("MethodCall({}: {})", property_name, property_type),
-                partial_word,
-            };
+        let (suggestions, context_str) = match cursor_context {
+            CursorContext::SelectClause => {
+                let mut cols = self.schema.get_columns("trade_deal");
+                cols.push("*".to_string());
+                (cols, "SelectClause".to_string())
+            }
+            CursorContext::FromClause => {
+                let tables = vec!["trade_deal".to_string(), "instrument".to_string()];
+                (tables, "FromClause".to_string())
+            }
+            CursorContext::WhereClause | CursorContext::AfterLogicalOp(_) => {
+                // We're in WHERE clause or after AND/OR - suggest columns
+                let mut suggestions = self.schema.get_columns("trade_deal");
+                
+                // Only add SQL keywords if no partial word or if partial doesn't match any columns
+                let add_keywords = if let Some(ref partial) = partial_word {
+                    let partial_lower = partial.to_lowercase();
+                    !suggestions.iter().any(|col| col.to_lowercase().starts_with(&partial_lower))
+                } else {
+                    true
+                };
+                
+                if add_keywords {
+                    suggestions.extend(vec![
+                        "AND".to_string(),
+                        "OR".to_string(),
+                        "IN".to_string(),
+                        "ORDER BY".to_string(),
+                    ]);
+                }
+                
+                let ctx = match cursor_context {
+                    CursorContext::AfterLogicalOp(LogicalOp::And) => "AfterAND",
+                    CursorContext::AfterLogicalOp(LogicalOp::Or) => "AfterOR",
+                    _ => "WhereClause",
+                };
+                (suggestions, ctx.to_string())
+            }
+            CursorContext::AfterColumn(col_name) => {
+                // Check if this is a dot for method call
+                let query_before_cursor = &query[..cursor_pos.min(query.len())];
+                if query_before_cursor.trim().ends_with('.') {
+                    // Method call context
+                    let property_type = self.get_property_type(&col_name).unwrap_or("string".to_string());
+                    let suggestions = self.get_string_method_suggestions(&property_type, &partial_word);
+                    (suggestions, format!("MethodCall({})", col_name))
+                } else {
+                    // After column but no dot - suggest operators
+                    let suggestions = vec![
+                        "=".to_string(), "!=".to_string(), "<".to_string(), ">".to_string(),
+                        "<=".to_string(), ">=".to_string(), "IN".to_string(),
+                        "AND".to_string(), "OR".to_string(),
+                    ];
+                    (suggestions, "AfterColumn".to_string())
+                }
+            }
+            CursorContext::InMethodCall(obj, method) => {
+                let property_type = self.get_property_type(&obj).unwrap_or("string".to_string());
+                let suggestions = self.get_string_method_suggestions(&property_type, &partial_word);
+                (suggestions, format!("InMethodCall({}.{})", obj, method))
+            }
+            CursorContext::InExpression => {
+                // Generic expression context - could be anywhere
+                let mut suggestions = self.schema.get_columns("trade_deal");
+                suggestions.extend(vec!["AND".to_string(), "OR".to_string()]);
+                (suggestions, "InExpression".to_string())
+            }
+            CursorContext::Unknown => {
+                // Fall back to original heuristic parser
+                let query_before_cursor = &query[..cursor_pos.min(query.len())];
+                let context = self.determine_context(query_before_cursor);
+                let suggestions = self.get_suggestions_for_context(&context, &partial_word);
+                return ParseResult {
+                    suggestions,
+                    context: format!("{:?} (partial: {:?})", context, partial_word),
+                    partial_word,
+                };
+            }
+        };
+        
+        // Filter by partial word if present
+        let mut final_suggestions = suggestions;
+        if let Some(ref partial) = partial_word {
+            final_suggestions.retain(|suggestion| {
+                suggestion.to_lowercase().starts_with(&partial.to_lowercase())
+            });
         }
         
-        let context = self.determine_context(query_before_cursor);
-        let suggestions = self.get_suggestions_for_context(&context, &partial_word);
-        
         ParseResult {
-            suggestions,
-            context: format!("{:?}", context),
+            suggestions: final_suggestions,
+            context: format!("{} (partial: {:?})", context_str, partial_word),
             partial_word,
         }
     }
@@ -67,9 +143,10 @@ impl CursorAwareParser {
             end += 1;
         }
         
-        if start < cursor_pos {
+        // Handle both cases: cursor in middle of word or at end of word
+        if start < end {
             // Extract partial word up to cursor
-            let partial: String = chars[start..cursor_pos].iter().collect();
+            let partial: String = chars[start..cursor_pos.min(end)].iter().collect();
             if !partial.is_empty() {
                 Some(partial)
             } else {
@@ -90,10 +167,23 @@ impl CursorAwareParser {
         // Check if we're at the end after a logical operator (AND/OR)
         // This indicates we should be expecting a new column/condition
         let trimmed = query_before_cursor.trim();
-        if trimmed.to_uppercase().ends_with(" AND") || 
-           trimmed.to_uppercase().ends_with(" OR") {
+        // Removed debug output to avoid corrupting TUI
+        
+        // Check various ways AND/OR might appear at the end
+        let upper_trimmed = trimmed.to_uppercase();
+        let ends_with_and_or = upper_trimmed.ends_with(" AND") || 
+                               upper_trimmed.ends_with(" OR") ||
+                               upper_trimmed.ends_with(" AND ") ||  // With trailing space
+                               upper_trimmed.ends_with(" OR ");     // With trailing space
+        
+        // Also check if the last word is AND/OR
+        let words_check: Vec<&str> = query_upper.split_whitespace().collect();
+        let last_word_is_and_or = words_check.last().map(|w| *w == "AND" || *w == "OR").unwrap_or(false);
+        
+        if ends_with_and_or || last_word_is_and_or {
             // After AND/OR, we're expecting a new column in WHERE context
             if query_upper.contains("WHERE") {
+                // Detected AND/OR at end, return InWhere for column suggestions
                 return ParseState::InWhere;
             }
         }
@@ -404,5 +494,149 @@ impl CursorAwareParser {
         }
         
         suggestions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_parser() -> CursorAwareParser {
+        CursorAwareParser::new()
+    }
+
+    #[test]
+    fn test_basic_select_completion() {
+        let parser = create_test_parser();
+        
+        // At the beginning
+        let result = parser.get_completions("", 0);
+        println!("Context for empty query: {}", result.context);
+        assert_eq!(result.suggestions, vec!["SELECT"]);
+        assert!(result.context.contains("Start") || result.context.contains("Unknown"));
+        
+        // After SELECT
+        let result = parser.get_completions("SELECT ", 7);
+        println!("Context for 'SELECT ': {}", result.context);
+        assert!(result.suggestions.contains(&"*".to_string()));
+        assert!(result.suggestions.contains(&"dealId".to_string()));
+        assert!(result.context.contains("AfterSelect") || result.context.contains("SelectClause"));
+    }
+
+    #[test]
+    fn test_where_clause_completion() {
+        let parser = create_test_parser();
+        
+        // After WHERE
+        let query = "SELECT * FROM trade_deal WHERE ";
+        let result = parser.get_completions(query, query.len());
+        println!("Context for WHERE clause: {}", result.context);
+        assert!(result.suggestions.contains(&"dealId".to_string()));
+        assert!(result.suggestions.contains(&"platformOrderId".to_string()));
+        assert!(result.context.contains("InWhere") || result.context.contains("WhereClause"));
+    }
+
+    #[test]
+    fn test_method_call_detection() {
+        let parser = create_test_parser();
+        
+        // After column name with dot
+        let query = "SELECT * FROM trade_deal WHERE platformOrderId.";
+        let result = parser.get_completions(query, query.len());
+        println!("Context for method call: {}", result.context);
+        println!("Suggestions: {:?}", result.suggestions);
+        assert!(result.suggestions.contains(&"Contains(\"\")".to_string()));
+        assert!(result.suggestions.contains(&"StartsWith(\"\")".to_string()));
+        assert!(result.context.contains("MethodCall") || result.context.contains("AfterColumn"));
+    }
+
+    #[test]
+    fn test_and_operator_context() {
+        let parser = create_test_parser();
+        
+        // After completed method call and AND
+        let query = "SELECT * FROM trade_deal WHERE allocationStatus.Contains(\"All\") AND ";
+        let result = parser.get_completions(query, query.len());
+        println!("Context after AND: {}", result.context);
+        assert!(result.suggestions.contains(&"dealId".to_string()));
+        assert!(result.suggestions.contains(&"platformOrderId".to_string()));
+        assert!(result.context.contains("InWhere") || result.context.contains("AfterAND") || result.context.contains("WhereClause"));
+        assert!(!result.context.contains("MethodCall"));
+    }
+
+    #[test]
+    fn test_and_operator_with_partial_word() {
+        let parser = create_test_parser();
+        
+        // After AND with partial column name
+        let query = "SELECT * FROM trade_deal WHERE allocationStatus.Contains(\"All\") AND p";
+        let result = parser.get_completions(query, query.len());
+        
+        // Should suggest columns starting with 'p'
+        assert!(result.suggestions.contains(&"platformOrderId".to_string()));
+        assert!(result.suggestions.contains(&"price".to_string()));
+        assert!(result.suggestions.contains(&"portfolio".to_string()));
+        
+        // Should NOT suggest columns that don't start with 'p'
+        assert!(!result.suggestions.contains(&"dealId".to_string()));
+        assert!(!result.suggestions.contains(&"quantity".to_string()));
+        
+        // Should be in WHERE context, not MethodCall
+        assert!(result.context.contains("InWhere") || result.context.contains("WhereClause") || result.context.contains("AfterAND"));
+        assert!(!result.context.contains("MethodCall"));
+        
+        // Should have detected partial word
+        assert!(result.context.contains("(partial: Some(\"p\"))"));
+    }
+
+    #[test]
+    fn test_or_operator_context() {
+        let parser = create_test_parser();
+        
+        // After OR
+        let query = "SELECT * FROM trade_deal WHERE price > 100 OR ";
+        let result = parser.get_completions(query, query.len());
+        println!("Context after OR: {}", result.context);
+        assert!(result.suggestions.contains(&"dealId".to_string()));
+        assert!(result.context.contains("InWhere") || result.context.contains("AfterOR") || result.context.contains("WhereClause"));
+    }
+
+    #[test]
+    fn test_partial_word_extraction() {
+        let parser = create_test_parser();
+        
+        // Test various partial word scenarios
+        assert_eq!(parser.extract_word_at_cursor("SELECT deal", 11), Some("deal".to_string()));
+        assert_eq!(parser.extract_word_at_cursor("WHERE p", 7), Some("p".to_string()));
+        assert_eq!(parser.extract_word_at_cursor("AND platf", 9), Some("platf".to_string()));
+        
+        // Edge cases
+        assert_eq!(parser.extract_word_at_cursor("", 0), None);
+        assert_eq!(parser.extract_word_at_cursor("SELECT ", 7), None);
+    }
+
+    #[test]
+    fn test_complex_query_with_multiple_conditions() {
+        let parser = create_test_parser();
+        
+        // Complex query with multiple ANDs
+        let query = "SELECT * FROM trade_deal WHERE platformOrderId.StartsWith(\"ABC\") AND price > 100 AND ";
+        let result = parser.get_completions(query, query.len());
+        println!("Context for complex query: {}", result.context);
+        assert!(result.suggestions.contains(&"dealId".to_string()));
+        assert!(result.context.contains("InWhere") || result.context.contains("AfterAND") || result.context.contains("WhereClause"));
+        assert!(!result.context.contains("MethodCall"));
+    }
+
+    #[test]
+    fn test_in_clause_support() {
+        let parser = create_test_parser();
+        
+        // After IN
+        let query = "SELECT * FROM trade_deal WHERE status IN ";
+        let result = parser.get_completions(query, query.len());
+        println!("Context after IN: {}", result.context);
+        // IN clause support - should suggest opening parenthesis or values
+        assert!(result.context.contains("InWhere") || result.context.contains("WhereClause") || result.context.contains("Unknown"));
     }
 }
