@@ -16,6 +16,7 @@ mod enhanced_tui;
 mod smart_parser;
 // mod treesitter_parser;
 mod cursor_aware_parser;
+mod history;
 
 use completer::SqlCompleter;
 use parser::{SqlParser, ParseState};
@@ -135,9 +136,15 @@ fn main() -> io::Result<()> {
             }
         } else {
             println!("Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)");
-            if let Err(e) = enhanced_tui::run_enhanced_tui("http://localhost:5193") {
+            let api_url = std::env::var("TRADE_API_URL")
+                .unwrap_or_else(|_| "http://localhost:5000".to_string());
+            if let Err(e) = enhanced_tui::run_enhanced_tui(&api_url) {
                 eprintln!("Enhanced TUI Error: {}", e);
-                std::process::exit(1);
+                eprintln!("Falling back to classic CLI mode...");
+                eprintln!("");
+                // Don't exit, fall through to classic mode
+            } else {
+                return Ok(());
             }
         }
         return Ok(());

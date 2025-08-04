@@ -1,6 +1,7 @@
 use crate::api_client::{ApiClient, QueryResponse};
 use crate::parser::SqlParser;
 use crate::cursor_aware_parser::CursorAwareParser;
+use crate::history::{CommandHistory, HistoryMatch};
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -28,6 +29,7 @@ enum AppMode {
     Search,
     Filter,
     Help,
+    History,
 }
 
 #[derive(Clone, PartialEq, Copy)]
@@ -67,6 +69,13 @@ struct CompletionState {
 }
 
 #[derive(Clone)]
+struct HistoryState {
+    search_query: String,
+    matches: Vec<HistoryMatch>,
+    selected_index: usize,
+}
+
+#[derive(Clone)]
 pub struct EnhancedTuiApp {
     api_client: ApiClient,
     input: Input,
@@ -83,9 +92,12 @@ pub struct EnhancedTuiApp {
     filter_state: FilterState,
     search_state: SearchState,
     completion_state: CompletionState,
+    history_state: HistoryState,
+    command_history: CommandHistory,
     filtered_data: Option<Vec<Vec<String>>>,
     column_widths: Vec<u16>,
     scroll_offset: (usize, usize), // (row, col)
+    current_column: usize, // For column-based operations
 }
 
 impl EnhancedTuiApp {
@@ -122,71 +134,88 @@ impl EnhancedTuiApp {
                 last_query: String::new(),
                 last_cursor_pos: 0,
             },
+            history_state: HistoryState {
+                search_query: String::new(),
+                matches: Vec::new(),
+                selected_index: 0,
+            },
+            command_history: CommandHistory::new().unwrap_or_default(),
             filtered_data: None,
             column_widths: Vec::new(),
             scroll_offset: (0, 0),
+            current_column: 0,
         }
     }
 
     pub fn run(mut self) -> Result<()> {
-        // Setup terminal
-        enable_raw_mode()?;
+        // Setup terminal with error handling
+        if let Err(e) = enable_raw_mode() {
+            return Err(anyhow::anyhow!("Failed to enable raw mode: {}. Try running with --classic flag.", e));
+        }
+        
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        if let Err(e) = execute!(stdout, EnterAlternateScreen, EnableMouseCapture) {
+            let _ = disable_raw_mode();
+            return Err(anyhow::anyhow!("Failed to setup terminal: {}. Try running with --classic flag.", e));
+        }
+        
         let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+        let mut terminal = match Terminal::new(backend) {
+            Ok(t) => t,
+            Err(e) => {
+                let _ = disable_raw_mode();
+                return Err(anyhow::anyhow!("Failed to create terminal: {}. Try running with --classic flag.", e));
+            }
+        };
 
         let res = self.run_app(&mut terminal);
 
-        // Restore terminal
-        disable_raw_mode()?;
-        execute!(
+        // Always restore terminal, even on error
+        let _ = disable_raw_mode();
+        let _ = execute!(
             terminal.backend_mut(),
             LeaveAlternateScreen,
             DisableMouseCapture
-        )?;
-        terminal.show_cursor()?;
+        );
+        let _ = terminal.show_cursor();
 
-        if let Err(err) = res {
-            self.status_message = format!("Error: {}", err);
+        match res {
+            Ok(_) => Ok(()),
+            Err(e) => Err(anyhow::anyhow!("TUI error: {}", e))
         }
-
-        Ok(())
     }
 
     fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
+        // Initial draw
+        terminal.draw(|f| self.ui(f))?;
+        
         loop {
-            terminal.draw(|f| self.ui(f))?;
-
-            if let Event::Key(key) = event::read()? {
-                match self.mode {
-                    AppMode::Command => {
-                        if self.handle_command_input(key)? {
+            // Use polling with a reasonable timeout to limit frame rate
+            if event::poll(std::time::Duration::from_millis(50))? { // ~20 FPS max, much more CPU friendly
+                match event::read()? {
+                    Event::Key(key) => {
+                        let should_exit = match self.mode {
+                            AppMode::Command => self.handle_command_input(key)?,
+                            AppMode::Results => self.handle_results_input(key)?,
+                            AppMode::Search => self.handle_search_input(key)?,
+                            AppMode::Filter => self.handle_filter_input(key)?,
+                            AppMode::Help => self.handle_help_input(key)?,
+                            AppMode::History => self.handle_history_input(key)?,
+                        };
+                        
+                        if should_exit {
                             break;
                         }
+                        
+                        // Only redraw after handling a key event
+                        terminal.draw(|f| self.ui(f))?;
                     },
-                    AppMode::Results => {
-                        if self.handle_results_input(key)? {
-                            break;
-                        }
-                    },
-                    AppMode::Search => {
-                        if self.handle_search_input(key)? {
-                            break;
-                        }
-                    },
-                    AppMode::Filter => {
-                        if self.handle_filter_input(key)? {
-                            break;
-                        }
-                    },
-                    AppMode::Help => {
-                        if self.handle_help_input(key)? {
-                            break;
-                        }
-                    },
+                    _ => {
+                        // Ignore other events (mouse, resize, etc.) to reduce CPU
+                    }
                 }
             }
+            // If no events, continue the loop without redrawing
         }
         Ok(())
     }
@@ -202,11 +231,19 @@ impl EnhancedTuiApp {
             KeyCode::Enter => {
                 let query = self.input.value().trim().to_string();
                 if !query.is_empty() {
+                    self.status_message = format!("Processing query: '{}'", query);
                     self.execute_query(&query)?;
+                } else {
+                    self.status_message = "Empty query - please enter a SQL command".to_string();
                 }
             },
             KeyCode::Tab => {
                 self.apply_completion();
+            },
+            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.mode = AppMode::History;
+                self.history_state.search_query.clear();
+                self.update_history_matches();
             },
             KeyCode::Down if self.results.is_some() => {
                 self.mode = AppMode::Results;
@@ -243,10 +280,10 @@ impl EnhancedTuiApp {
                 self.previous_row();
             },
             KeyCode::Char('h') | KeyCode::Left => {
-                self.scroll_left();
+                self.move_column_left();
             },
             KeyCode::Char('l') | KeyCode::Right => {
-                self.scroll_right();
+                self.move_column_right();
             },
             KeyCode::Char('g') => {
                 self.goto_first_row();
@@ -278,9 +315,13 @@ impl EnhancedTuiApp {
             },
             // Sort functionality
             KeyCode::Char('s') => {
-                if let Some(_selected) = self.table_state.selected() {
-                    // Sort by current column (approximate)
-                    self.sort_by_column(0);
+                self.sort_by_column(self.current_column);
+            },
+            // Number keys for direct column sorting
+            KeyCode::Char(c) if c.is_ascii_digit() => {
+                if let Some(digit) = c.to_digit(10) {
+                    let column_index = (digit as usize).saturating_sub(1);
+                    self.sort_by_column(column_index);
                 }
             },
             KeyCode::F(1) | KeyCode::Char('?') => {
@@ -344,11 +385,61 @@ impl EnhancedTuiApp {
         Ok(false)
     }
 
+    fn handle_history_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
+            KeyCode::Esc => {
+                self.mode = AppMode::Command;
+            },
+            KeyCode::Enter => {
+                if !self.history_state.matches.is_empty() && self.history_state.selected_index < self.history_state.matches.len() {
+                    let selected_command = self.history_state.matches[self.history_state.selected_index].entry.command.clone();
+                    self.input = tui_input::Input::new(selected_command);
+                    self.mode = AppMode::Command;
+                    self.status_message = "Command loaded from history".to_string();
+                }
+            },
+            KeyCode::Up | KeyCode::Char('k') => {
+                if !self.history_state.matches.is_empty() {
+                    self.history_state.selected_index = self.history_state.selected_index.saturating_sub(1);
+                }
+            },
+            KeyCode::Down | KeyCode::Char('j') => {
+                if !self.history_state.matches.is_empty() && self.history_state.selected_index + 1 < self.history_state.matches.len() {
+                    self.history_state.selected_index += 1;
+                }
+            },
+            KeyCode::Backspace => {
+                self.history_state.search_query.pop();
+                self.update_history_matches();
+            },
+            KeyCode::Char(c) => {
+                self.history_state.search_query.push(c);
+                self.update_history_matches();
+            },
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn update_history_matches(&mut self) {
+        self.history_state.matches = self.command_history.search(&self.history_state.search_query);
+        self.history_state.selected_index = 0;
+    }
+
     fn execute_query(&mut self, query: &str) -> Result<()> {
-        self.status_message = "Executing query...".to_string();
+        self.status_message = format!("Executing query: '{}'...", query);
+        let start_time = std::time::Instant::now();
         
         match self.api_client.query_trades(query) {
             Ok(response) => {
+                let duration = start_time.elapsed();
+                let _ = self.command_history.add_entry(
+                    query.to_string(), 
+                    true, 
+                    Some(duration.as_millis() as u64)
+                );
+                
                 self.results = Some(response);
                 self.reset_table_state();
                 self.status_message = "Query executed successfully - Use ↓ or j/k to navigate results".to_string();
@@ -356,6 +447,12 @@ impl EnhancedTuiApp {
                 self.table_state.select(Some(0));
             },
             Err(e) => {
+                let duration = start_time.elapsed();
+                let _ = self.command_history.add_entry(
+                    query.to_string(), 
+                    false, 
+                    Some(duration.as_millis() as u64)
+                );
                 self.status_message = format!("Error: {}", e);
             }
         }
@@ -493,12 +590,25 @@ impl EnhancedTuiApp {
         self.table_state.select(Some(i));
     }
 
-    fn scroll_left(&mut self) {
+    fn move_column_left(&mut self) {
+        self.current_column = self.current_column.saturating_sub(1);
         self.scroll_offset.1 = self.scroll_offset.1.saturating_sub(1);
+        self.status_message = format!("Column {} selected", self.current_column + 1);
     }
 
-    fn scroll_right(&mut self) {
-        self.scroll_offset.1 += 1;
+    fn move_column_right(&mut self) {
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let max_columns = obj.len();
+                    if self.current_column + 1 < max_columns {
+                        self.current_column += 1;
+                        self.scroll_offset.1 += 1;
+                        self.status_message = format!("Column {} selected", self.current_column + 1);
+                    }
+                }
+            }
+        }
     }
 
     fn goto_first_row(&mut self) {
@@ -741,6 +851,7 @@ impl EnhancedTuiApp {
     fn reset_table_state(&mut self) {
         self.table_state = TableState::default();
         self.scroll_offset = (0, 0);
+        self.current_column = 0;
     }
 
     fn ui(&self, f: &mut Frame) {
@@ -762,11 +873,13 @@ impl EnhancedTuiApp {
                 AppMode::Search => "Search Pattern",
                 AppMode::Filter => "Filter Pattern", 
                 AppMode::Help => "Help",
+                AppMode::History => "History Search (Ctrl+R)",
             });
 
         let input_text = match self.mode {
             AppMode::Search => &self.search_state.pattern,
             AppMode::Filter => &self.filter_state.pattern,
+            AppMode::History => &self.history_state.search_query,
             _ => self.input.value(),
         };
 
@@ -778,6 +891,7 @@ impl EnhancedTuiApp {
                 AppMode::Search => Style::default().fg(Color::Yellow),
                 AppMode::Filter => Style::default().fg(Color::Cyan),
                 AppMode::Help => Style::default().fg(Color::DarkGray),
+                AppMode::History => Style::default().fg(Color::Magenta),
             });
 
         f.render_widget(input_paragraph, chunks[0]);
@@ -802,19 +916,29 @@ impl EnhancedTuiApp {
                     chunks[0].y + 1
                 ));
             },
+            AppMode::History => {
+                f.set_cursor_position((
+                    chunks[0].x + self.history_state.search_query.len() as u16 + 1,
+                    chunks[0].y + 1
+                ));
+            },
             _ => {}
         }
 
-        // Results area
-        if self.show_help {
-            self.render_help(f, chunks[1]);
-        } else if let Some(results) = &self.results {
-            self.render_table(f, chunks[1], results);
-        } else {
-            let placeholder = Paragraph::new("Enter a SQL query above and press Enter to see results.\n\nSupported features:\n• Tab completion with cursor awareness\n• Dynamic LINQ expressions (Contains, IndexOf, etc.)\n• Column sorting (s key)\n• Search (/ key)\n• Filter (F key)\n• Vim-like navigation (j/k/h/l)")
-                .block(Block::default().borders(Borders::ALL).title("Results"))
-                .style(Style::default().fg(Color::DarkGray));
-            f.render_widget(placeholder, chunks[1]);
+        // Results area - render based on mode to reduce complexity
+        match (&self.mode, self.show_help) {
+            (_, true) => self.render_help(f, chunks[1]),
+            (AppMode::History, false) => self.render_history(f, chunks[1]),
+            (_, false) if self.results.is_some() => {
+                self.render_table(f, chunks[1], self.results.as_ref().unwrap());
+            },
+            _ => {
+                // Simple placeholder - reduced text to improve rendering speed
+                let placeholder = Paragraph::new("Enter SQL query and press Enter\n\nTip: Use Tab for completion, Ctrl+R for history")
+                    .block(Block::default().borders(Borders::ALL).title("Results"))
+                    .style(Style::default().fg(Color::DarkGray));
+                f.render_widget(placeholder, chunks[1]);
+            }
         }
 
         // Status bar
@@ -824,6 +948,7 @@ impl EnhancedTuiApp {
             AppMode::Search => Style::default().fg(Color::Yellow),
             AppMode::Filter => Style::default().fg(Color::Cyan),
             AppMode::Help => Style::default().fg(Color::Magenta),
+            AppMode::History => Style::default().fg(Color::Magenta),
         };
 
         let mode_indicator = match self.mode {
@@ -832,9 +957,16 @@ impl EnhancedTuiApp {
             AppMode::Search => "SEARCH",
             AppMode::Filter => "FILTER",
             AppMode::Help => "HELP",
+            AppMode::History => "HISTORY",
         };
 
-        let status_text = format!("[{}] {} | F1:Help q:Quit", mode_indicator, self.status_message);
+        // Limit status message length to reduce rendering overhead
+        let truncated_status = if self.status_message.len() > 60 {
+            format!("{}...", &self.status_message[..57])
+        } else {
+            self.status_message.clone()
+        };
+        let status_text = format!("[{}] {} | F1:Help q:Quit", mode_indicator, truncated_status);
         let status = Paragraph::new(status_text)
             .block(Block::default().borders(Borders::ALL))
             .style(status_style);
@@ -861,14 +993,36 @@ impl EnhancedTuiApp {
             vec![]
         };
 
-        // Prepare table data
-        let data_to_display = if let Some(filtered) = &self.filtered_data {
-            filtered.clone()
+        // Calculate visible columns for virtual scrolling
+        let terminal_width = area.width as usize;
+        let available_width = terminal_width.saturating_sub(4); // Account for borders and padding
+        let avg_col_width = 15; // Assume average column width
+        let max_visible_cols = (available_width / avg_col_width).max(1).min(headers.len());
+        
+        // Calculate column viewport based on current_column
+        let viewport_start = if self.current_column < max_visible_cols / 2 {
+            0
+        } else if self.current_column + max_visible_cols / 2 >= headers.len() {
+            headers.len().saturating_sub(max_visible_cols)
         } else {
-            // Convert JSON data to string matrix
+            self.current_column.saturating_sub(max_visible_cols / 2)
+        };
+        let viewport_end = (viewport_start + max_visible_cols).min(headers.len());
+        
+        // Only work with visible headers
+        let visible_headers: Vec<&str> = headers[viewport_start..viewport_end].iter().copied().collect();
+        
+        // Prepare table data (only visible columns)
+        let data_to_display = if let Some(filtered) = &self.filtered_data {
+            // Apply column viewport to filtered data
+            filtered.iter().map(|row| {
+                row[viewport_start..viewport_end].to_vec()
+            }).collect()
+        } else {
+            // Convert JSON data to string matrix (only visible columns)
             results.data.iter().map(|item| {
                 if let Some(obj) = item.as_object() {
-                    headers.iter().map(|&header| {
+                    visible_headers.iter().map(|&header| {
                         match obj.get(header) {
                             Some(Value::String(s)) => s.clone(),
                             Some(Value::Number(n)) => n.to_string(),
@@ -884,10 +1038,11 @@ impl EnhancedTuiApp {
             }).collect::<Vec<Vec<String>>>()
         };
 
-        // Create header row with sort indicators
-        let header_cells: Vec<Cell> = headers.iter().enumerate().map(|(i, &header)| {
+        // Create header row with sort indicators and column selection
+        let header_cells: Vec<Cell> = visible_headers.iter().enumerate().map(|(visible_i, &header)| {
+            let actual_col_index = viewport_start + visible_i;
             let sort_indicator = if let Some(col) = self.sort_state.column {
-                if col == i {
+                if col == actual_col_index {
                     match self.sort_state.order {
                         SortOrder::Ascending => " ↑",
                         SortOrder::Descending => " ↓",
@@ -900,18 +1055,33 @@ impl EnhancedTuiApp {
                 ""
             };
             
-            Cell::from(format!("{}{}", header, sort_indicator))
-                .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            let column_indicator = if actual_col_index == self.current_column { " [*]" } else { "" };
+            
+            let header_text = format!("{}{}{}", header, sort_indicator, column_indicator);
+            let mut style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+            
+            // Highlight the current column
+            if actual_col_index == self.current_column {
+                style = style.bg(Color::DarkGray);
+            }
+            
+            Cell::from(header_text).style(style)
         }).collect();
 
-        // Create data rows
+        // Create data rows (only visible columns)
         let rows: Vec<Row> = data_to_display.iter().enumerate().map(|(row_idx, row)| {
-            let cells: Vec<Cell> = row.iter().enumerate().map(|(col_idx, cell)| {
+            let cells: Vec<Cell> = row.iter().enumerate().map(|(visible_col_idx, cell)| {
+                let actual_col_idx = viewport_start + visible_col_idx;
                 let mut style = Style::default();
                 
-                // Highlight search matches
+                // Highlight current column
+                if actual_col_idx == self.current_column {
+                    style = style.bg(Color::DarkGray);
+                }
+                
+                // Highlight search matches (override column highlight)
                 if let Some((match_row, match_col)) = self.search_state.current_match {
-                    if row_idx == match_row && col_idx == match_col {
+                    if row_idx == match_row && actual_col_idx == match_col {
                         style = style.bg(Color::Yellow).fg(Color::Black);
                     }
                 }
@@ -931,8 +1101,8 @@ impl EnhancedTuiApp {
             Row::new(cells)
         }).collect();
 
-        // Calculate column constraints
-        let constraints: Vec<Constraint> = (0..headers.len())
+        // Calculate column constraints (only for visible columns)
+        let constraints: Vec<Constraint> = (0..visible_headers.len())
             .map(|_| Constraint::Min(10))
             .collect();
 
@@ -940,7 +1110,11 @@ impl EnhancedTuiApp {
             .header(Row::new(header_cells).height(1))
             .block(Block::default()
                 .borders(Borders::ALL)
-                .title(format!("Results ({} rows)", data_to_display.len())))
+                .title(format!("Results ({} rows) - Columns {}-{} of {} | Use h/l to scroll", 
+                    data_to_display.len(), 
+                    viewport_start + 1, 
+                    viewport_end, 
+                    headers.len())))
             .row_highlight_style(Style::default().bg(Color::DarkGray))
             .highlight_symbol("► ");
 
@@ -954,6 +1128,7 @@ impl EnhancedTuiApp {
             Line::from("Command Mode:"),
             Line::from("  Enter    - Execute query"),
             Line::from("  Tab      - Auto-complete"),
+            Line::from("  Ctrl+R   - Search command history"),
             Line::from("  ↓        - Enter results mode"),
             Line::from("  F1/?     - Toggle help"),
             Line::from("  Ctrl+C/D - Exit"),
@@ -961,8 +1136,8 @@ impl EnhancedTuiApp {
             Line::from("Results Navigation Mode:"),
             Line::from("  j/↓      - Next row"),
             Line::from("  k/↑      - Previous row"), 
-            Line::from("  h/←      - Scroll left"),
-            Line::from("  l/→      - Scroll right"),
+            Line::from("  h/←      - Move to previous column"),
+            Line::from("  l/→      - Move to next column"),
             Line::from("  g        - First row"),
             Line::from("  G        - Last row"),
             Line::from("  Ctrl+F   - Page down"),
@@ -971,9 +1146,15 @@ impl EnhancedTuiApp {
             Line::from("  n        - Next match"),
             Line::from("  N        - Previous match"),
             Line::from("  F        - Filter rows"),
-            Line::from("  s        - Sort column"),
+            Line::from("  s        - Sort by current column"),
+            Line::from("  1-9      - Sort by column number (1=first)"),
             Line::from("  ↑/Esc    - Back to command mode"),
             Line::from("  q        - Quit"),
+            Line::from(""),
+            Line::from("History Search Mode:"),
+            Line::from("  j/k/↓/↑  - Navigate history"),
+            Line::from("  Enter    - Select command"),
+            Line::from("  Esc      - Cancel"),
             Line::from(""),
             Line::from("Search Mode:"),
             Line::from("  Enter    - Execute search"),
@@ -989,6 +1170,93 @@ impl EnhancedTuiApp {
             .style(Style::default());
 
         f.render_widget(help_paragraph, area);
+    }
+
+    fn render_history(&self, f: &mut Frame, area: Rect) {
+        if self.history_state.matches.is_empty() {
+            let no_history = if self.history_state.search_query.is_empty() {
+                "No command history found.\nExecute some queries to build history."
+            } else {
+                "No matches found for your search.\nTry a different search term."
+            };
+            
+            let placeholder = Paragraph::new(no_history)
+                .block(Block::default().borders(Borders::ALL).title("Command History"))
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(placeholder, area);
+            return;
+        }
+
+        // Create history list
+        let history_items: Vec<Line> = self.history_state.matches
+            .iter()
+            .enumerate()
+            .map(|(i, history_match)| {
+                let entry = &history_match.entry;
+                let is_selected = i == self.history_state.selected_index;
+                
+                // Format: "> command (success/fail, Xms ago, used Yx)"
+                let success_indicator = if entry.success { "✓" } else { "✗" };
+                let duration_text = entry.duration_ms
+                    .map(|d| format!("{}ms", d))
+                    .unwrap_or_else(|| "?ms".to_string());
+                
+                let time_ago = {
+                    let elapsed = chrono::Utc::now() - entry.timestamp;
+                    if elapsed.num_days() > 0 {
+                        format!("{}d ago", elapsed.num_days())
+                    } else if elapsed.num_hours() > 0 {
+                        format!("{}h ago", elapsed.num_hours())
+                    } else if elapsed.num_minutes() > 0 {
+                        format!("{}m ago", elapsed.num_minutes())
+                    } else {
+                        "now".to_string()
+                    }
+                };
+
+                let command_text = if entry.command.len() > 60 {
+                    format!("{}...", &entry.command[..57])
+                } else {
+                    entry.command.clone()
+                };
+
+                let line_text = format!(
+                    "{} {} ({}, {}, used {}x) {}",
+                    if is_selected { "►" } else { " " },
+                    command_text,
+                    success_indicator,
+                    duration_text,
+                    entry.execution_count,
+                    time_ago
+                );
+
+                let mut style = Style::default();
+                if is_selected {
+                    style = style.bg(Color::DarkGray).add_modifier(Modifier::BOLD);
+                }
+                if !entry.success {
+                    style = style.fg(Color::Red);
+                }
+
+                // Highlight matching characters
+                if !history_match.indices.is_empty() {
+                    // For simplicity, just highlight selected items differently
+                    if is_selected {
+                        style = style.fg(Color::Yellow);
+                    }
+                }
+
+                Line::from(line_text).style(style)
+            })
+            .collect();
+
+        let history_paragraph = Paragraph::new(history_items)
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Command History - {} matches", self.history_state.matches.len())))
+            .wrap(ratatui::widgets::Wrap { trim: false });
+
+        f.render_widget(history_paragraph, area);
     }
 }
 
