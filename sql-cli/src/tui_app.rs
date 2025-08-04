@@ -427,7 +427,7 @@ pub fn run_tui_app() -> Result<()> {
     terminal.show_cursor()?;
     
     if let Err(err) = res {
-        println!("{:?}", err);
+        // Error handled in TUI status message instead of stdout
     }
     
     Ok(())

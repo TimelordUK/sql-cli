@@ -12,6 +12,7 @@ mod completer;
 mod api_client;
 mod table_display;
 mod tui_app;
+mod enhanced_tui;
 mod smart_parser;
 // mod treesitter_parser;
 mod cursor_aware_parser;
@@ -122,13 +123,22 @@ fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::err
 fn main() -> io::Result<()> {
     // Check if user wants TUI mode (default) or classic mode
     let args: Vec<String> = std::env::args().collect();
+    let use_classic_tui = args.contains(&"--simple".to_string());
     let use_tui = !args.contains(&"--classic".to_string());
     
     if use_tui {
-        println!("Starting TUI mode... (use --classic for old interface)");
-        if let Err(e) = tui_app::run_tui_app() {
-            eprintln!("TUI Error: {}", e);
-            std::process::exit(1);
+        if use_classic_tui {
+            println!("Starting simple TUI mode... (use --enhanced for csvlens-style features)");
+            if let Err(e) = tui_app::run_tui_app() {
+                eprintln!("TUI Error: {}", e);
+                std::process::exit(1);
+            }
+        } else {
+            println!("Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)");
+            if let Err(e) = tokio::runtime::Runtime::new().unwrap().block_on(enhanced_tui::run_enhanced_tui("http://localhost:5073")) {
+                eprintln!("Enhanced TUI Error: {}", e);
+                std::process::exit(1);
+            }
         }
         return Ok(());
     }

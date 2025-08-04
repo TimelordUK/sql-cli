@@ -80,7 +80,7 @@ impl ApiClient {
             json_request["orderBy"] = serde_json::Value::String(order_by.clone());
         }
         
-        println!("[DEBUG] Sending request: {}", serde_json::to_string_pretty(&json_request)?);
+        // Debug logging removed to prevent TUI corruption
         
         let response = self.client
             .post(format!("{}/api/trade/query", self.base_url))
