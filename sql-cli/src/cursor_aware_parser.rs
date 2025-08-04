@@ -110,6 +110,13 @@ impl CursorAwareParser {
                     last_keyword_idx = Some(i);
                     last_keyword = "WHERE";
                 }
+                "AND" | "OR" => {
+                    // AND/OR continue the current WHERE context
+                    if last_keyword == "WHERE" {
+                        last_keyword_idx = Some(i);
+                        last_keyword = "WHERE"; // Stay in WHERE context
+                    }
+                }
                 "ORDER" => {
                     // Check if followed by BY
                     if i + 1 < words.len() && words[i + 1] == "BY" {
