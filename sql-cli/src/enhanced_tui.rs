@@ -1068,8 +1068,32 @@ impl EnhancedTuiApp {
             Cell::from(header_text).style(style)
         }).collect();
 
-        // Create data rows (only visible columns)
-        let rows: Vec<Row> = data_to_display.iter().enumerate().map(|(row_idx, row)| {
+        // Calculate visible rows for virtual scrolling
+        let terminal_height = area.height as usize;
+        let available_height = terminal_height.saturating_sub(4); // Account for header, borders, etc.
+        let max_visible_rows = available_height.saturating_sub(1).max(10); // Reserve space for header
+        
+        let selected_row = self.table_state.selected().unwrap_or(0);
+        let total_rows = data_to_display.len();
+        
+        // Calculate row viewport based on selected row
+        let row_viewport_start = if total_rows <= max_visible_rows {
+            0 // Show all rows if they fit
+        } else if selected_row < max_visible_rows / 2 {
+            0 // Near the top
+        } else if selected_row + max_visible_rows / 2 >= total_rows {
+            total_rows.saturating_sub(max_visible_rows) // Near the bottom
+        } else {
+            selected_row.saturating_sub(max_visible_rows / 2) // Center the selection
+        };
+        let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
+        
+        // Only render visible rows
+        let visible_data = &data_to_display[row_viewport_start..row_viewport_end];
+        
+        // Create data rows (only visible rows and columns)
+        let rows: Vec<Row> = visible_data.iter().enumerate().map(|(visible_row_idx, row)| {
+            let actual_row_idx = row_viewport_start + visible_row_idx;
             let cells: Vec<Cell> = row.iter().enumerate().map(|(visible_col_idx, cell)| {
                 let actual_col_idx = viewport_start + visible_col_idx;
                 let mut style = Style::default();
@@ -1081,7 +1105,7 @@ impl EnhancedTuiApp {
                 
                 // Highlight search matches (override column highlight)
                 if let Some((match_row, match_col)) = self.search_state.current_match {
-                    if row_idx == match_row && actual_col_idx == match_col {
+                    if actual_row_idx == match_row && actual_col_idx == match_col {
                         style = style.bg(Color::Yellow).fg(Color::Black);
                     }
                 }
