@@ -145,6 +145,10 @@ impl CommandHistory {
     pub fn get_all(&self) -> &[HistoryEntry] {
         &self.entries
     }
+    
+    pub fn get_last_entry(&self) -> Option<&HistoryEntry> {
+        self.entries.last()
+    }
 
     pub fn clear(&mut self) -> Result<()> {
         self.entries.clear();

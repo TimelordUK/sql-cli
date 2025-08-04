@@ -1,4 +1,4 @@
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Style, Modifier};
 use ratatui::text::{Line, Span};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{ThemeSet, Style as SyntectStyle};
@@ -106,6 +106,11 @@ impl SqlHighlighter {
             "NULL", "NOT", "IS", "LIKE", "BETWEEN", "EXISTS", "DISTINCT", "AS", "ON",
         ];
         
+        let linq_methods = [
+            "Contains", "StartsWith", "EndsWith", "Length", "ToUpper", "ToLower", 
+            "Trim", "Substring", "IndexOf", "Replace"
+        ];
+        
         let operators = ["=", "!=", "<>", "<", ">", "<=", ">=", "+", "-", "*", "/"];
         let string_delimiters = ["'", "\""];
         
@@ -114,7 +119,11 @@ impl SqlHighlighter {
         let mut in_string = false;
         let mut string_delimiter = '\0';
         
-        for ch in text.chars() {
+        let chars: Vec<char> = text.chars().collect();
+        let mut i = 0;
+        
+        while i < chars.len() {
+            let ch = chars[i];
             if in_string {
                 current_word.push(ch);
                 if ch == string_delimiter {
@@ -123,27 +132,53 @@ impl SqlHighlighter {
                     current_word.clear();
                     in_string = false;
                 }
+                i += 1;
                 continue;
             }
             
             if string_delimiters.contains(&ch.to_string().as_str()) {
                 // Start of string
                 if !current_word.is_empty() {
-                    self.push_word_span(&mut spans, &current_word, &keywords, &operators);
+                    self.push_word_span(&mut spans, &current_word, &keywords, &operators, &linq_methods);
                     current_word.clear();
                 }
                 current_word.push(ch);
                 in_string = true;
                 string_delimiter = ch;
+                i += 1;
                 continue;
             }
             
             if ch.is_alphabetic() || ch == '_' || (ch.is_numeric() && !current_word.is_empty()) {
                 current_word.push(ch);
+            } else if ch == '.' && !current_word.is_empty() {
+                // Check if this is a method call pattern (identifier.method)
+                let mut j = i + 1;
+                let mut method_name = String::new();
+                
+                // Look ahead to see if a method name follows
+                while j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                    method_name.push(chars[j]);
+                    j += 1;
+                }
+                
+                if linq_methods.contains(&method_name.as_str()) {
+                    // This is a LINQ method call
+                    spans.push(Span::raw(current_word.clone())); // Column name in default color
+                    spans.push(Span::styled(".", Style::default().fg(Color::Magenta))); // Dot in magenta
+                    spans.push(Span::styled(method_name.clone(), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))); // Method in bold magenta
+                    current_word.clear();
+                    i = j - 1; // Skip the method name we just processed
+                } else {
+                    // Regular dot
+                    self.push_word_span(&mut spans, &current_word, &keywords, &operators, &linq_methods);
+                    current_word.clear();
+                    spans.push(Span::raw("."));
+                }
             } else {
                 // End of word
                 if !current_word.is_empty() {
-                    self.push_word_span(&mut spans, &current_word, &keywords, &operators);
+                    self.push_word_span(&mut spans, &current_word, &keywords, &operators, &linq_methods);
                     current_word.clear();
                 }
                 
@@ -156,6 +191,8 @@ impl SqlHighlighter {
                     spans.push(Span::raw(ch.to_string()));
                 }
             }
+            
+            i += 1;
         }
         
         // Handle remaining word
@@ -163,19 +200,22 @@ impl SqlHighlighter {
             if in_string {
                 spans.push(Span::styled(current_word, Style::default().fg(Color::Green)));
             } else {
-                self.push_word_span(&mut spans, &current_word, &keywords, &operators);
+                self.push_word_span(&mut spans, &current_word, &keywords, &operators, &linq_methods);
             }
         }
         
         Line::from(spans)
     }
     
-    fn push_word_span(&self, spans: &mut Vec<Span<'static>>, word: &str, keywords: &[&str], operators: &[&str]) {
+    fn push_word_span(&self, spans: &mut Vec<Span<'static>>, word: &str, keywords: &[&str], operators: &[&str], linq_methods: &[&str]) {
         let upper_word = word.to_uppercase();
         
         if keywords.contains(&upper_word.as_str()) {
             // SQL Keyword
             spans.push(Span::styled(word.to_string(), Style::default().fg(Color::Blue)));
+        } else if linq_methods.contains(&word) {
+            // LINQ Method - use bright magenta/purple
+            spans.push(Span::styled(word.to_string(), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)));
         } else if operators.contains(&word) {
             // Operator
             spans.push(Span::styled(word.to_string(), Style::default().fg(Color::Cyan)));

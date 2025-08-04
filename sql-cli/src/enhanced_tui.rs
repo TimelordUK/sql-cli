@@ -3,6 +3,8 @@ use crate::parser::SqlParser;
 use crate::hybrid_parser::HybridParser;
 use crate::history::{CommandHistory, HistoryMatch};
 use crate::sql_highlighter::SqlHighlighter;
+use sql_cli::cache::QueryCache;
+use sql_cli::csv_datasource::CsvApiClient;
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -35,6 +37,7 @@ enum AppMode {
     History,
     Debug,
     PrettyQuery,
+    CacheList,
 }
 
 #[derive(Clone, PartialEq, Copy)]
@@ -80,7 +83,6 @@ struct HistoryState {
     selected_index: usize,
 }
 
-#[derive(Clone)]
 pub struct EnhancedTuiApp {
     api_client: ApiClient,
     input: Input,
@@ -107,6 +109,16 @@ pub struct EnhancedTuiApp {
     debug_text: String,
     debug_scroll: u16,
     input_scroll_offset: u16, // Horizontal scroll offset for input
+    
+    // CSV mode
+    csv_client: Option<CsvApiClient>,
+    csv_mode: bool,
+    csv_table_name: String,
+    
+    // Cache
+    query_cache: Option<QueryCache>,
+    cache_mode: bool,
+    cached_data: Option<Vec<serde_json::Value>>,
 }
 
 fn escape_csv_field(field: &str) -> String {
@@ -170,7 +182,43 @@ impl EnhancedTuiApp {
             debug_text: String::new(),
             debug_scroll: 0,
             input_scroll_offset: 0,
+            csv_client: None,
+            csv_mode: false,
+            csv_table_name: String::new(),
+            query_cache: QueryCache::new().ok(),
+            cache_mode: false,
+            cached_data: None,
         }
+    }
+    
+    pub fn new_with_csv(csv_path: &str) -> Result<Self> {
+        let mut csv_client = CsvApiClient::new();
+        let table_name = std::path::Path::new(csv_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("data")
+            .to_string();
+        
+        csv_client.load_csv(csv_path, &table_name)?;
+        
+        // Get schema from CSV
+        let schema = csv_client.get_schema()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get CSV schema"))?;
+        
+        let mut app = Self::new(""); // Empty API URL for CSV mode
+        app.csv_client = Some(csv_client);
+        app.csv_mode = true;
+        app.csv_table_name = table_name.clone();
+        
+        // Update parser with CSV columns
+        if let Some(columns) = schema.get(&table_name) {
+            // Update the parser with CSV columns
+            app.hybrid_parser.update_single_table(table_name.clone(), columns.clone());
+            app.status_message = format!("CSV loaded: table '{}' with {} columns. Use: SELECT * FROM {}", 
+                table_name, columns.len(), table_name);
+        }
+        
+        Ok(app)
     }
 
     pub fn run(mut self) -> Result<()> {
@@ -229,6 +277,7 @@ impl EnhancedTuiApp {
                             AppMode::History => self.handle_history_input(key)?,
                             AppMode::Debug => self.handle_debug_input(key)?,
                             AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
+                            AppMode::CacheList => self.handle_cache_list_input(key)?,
                         };
                         
                         if should_exit {
@@ -258,11 +307,24 @@ impl EnhancedTuiApp {
                 self.show_help = !self.show_help;
                 self.mode = if self.show_help { AppMode::Help } else { AppMode::Command };
             },
+            KeyCode::F(7) => {
+                // F7 - Toggle cache mode or show cache list
+                if self.cache_mode {
+                    self.mode = AppMode::CacheList;
+                } else {
+                    self.mode = AppMode::CacheList;
+                }
+            },
             KeyCode::Enter => {
                 let query = self.input.value().trim().to_string();
                 if !query.is_empty() {
-                    self.status_message = format!("Processing query: '{}'", query);
-                    self.execute_query(&query)?;
+                    // Check for cache commands
+                    if query.starts_with(":cache ") {
+                        self.handle_cache_command(&query)?;
+                    } else {
+                        self.status_message = format!("Processing query: '{}'", query);
+                        self.execute_query(&query)?;
+                    }
                 } else {
                     self.status_message = "Empty query - please enter a SQL command".to_string();
                 }
@@ -322,6 +384,62 @@ impl EnhancedTuiApp {
                     visual_cursor
                 );
                 debug_info.push_str(&input_state);
+                
+                // Add dataset information
+                let dataset_info = if self.csv_mode {
+                    if let Some(ref csv_client) = self.csv_client {
+                        if let Some(schema) = csv_client.get_schema() {
+                            let (table_name, columns) = schema.iter().next()
+                                .map(|(t, c)| (t.as_str(), c.clone()))
+                                .unwrap_or(("unknown", vec![]));
+                            format!(
+                                "\n========== DATASET INFO ==========\n\
+                                Mode: CSV\n\
+                                Table Name: {}\n\
+                                Columns ({}): {}\n",
+                                table_name,
+                                columns.len(),
+                                columns.join(", ")
+                            )
+                        } else {
+                            "\n========== DATASET INFO ==========\nMode: CSV\nNo schema available\n".to_string()
+                        }
+                    } else {
+                        "\n========== DATASET INFO ==========\nMode: CSV\nNo CSV client initialized\n".to_string()
+                    }
+                } else {
+                    format!(
+                        "\n========== DATASET INFO ==========\n\
+                        Mode: API ({})\n\
+                        Table: trade_deal\n\
+                        Default Columns: {}\n",
+                        self.api_client.base_url,
+                        "id, platformOrderId, tradeDate, executionSide, quantity, price, counterparty, ..."
+                    )
+                };
+                debug_info.push_str(&dataset_info);
+                
+                // Add current data statistics
+                let data_stats = format!(
+                    "\n========== CURRENT DATA ==========\n\
+                    Total Rows Loaded: {}\n\
+                    Filtered Rows: {}\n\
+                    Current Column: {}\n\
+                    Sort State: {}\n",
+                    self.results.as_ref().map(|r| r.data.len()).unwrap_or(0),
+                    self.filtered_data.as_ref().map(|d| d.len()).unwrap_or(0),
+                    self.current_column,
+                    match &self.sort_state {
+                        SortState { column: Some(col), order } => 
+                            format!("Column {} - {}", col, match order {
+                                SortOrder::Ascending => "Ascending",
+                                SortOrder::Descending => "Descending",
+                                SortOrder::None => "None"
+                            }),
+                        _ => "None".to_string()
+                    }
+                );
+                debug_info.push_str(&data_stats);
                 
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();
@@ -604,7 +722,47 @@ impl EnhancedTuiApp {
         self.status_message = format!("Executing query: '{}'...", query);
         let start_time = std::time::Instant::now();
         
-        match self.api_client.query_trades(query) {
+        let result = if self.cache_mode {
+            // When in cache mode, use CSV client to query cached data
+            if let Some(ref cached_data) = self.cached_data {
+                let mut csv_client = CsvApiClient::new();
+                csv_client.load_from_json(cached_data.clone(), "cached_data")?;
+                
+                csv_client.query_csv(query)
+                    .map(|r| QueryResponse {
+                        data: r.data,
+                        count: r.count,
+                        query: crate::api_client::QueryInfo {
+                            select: r.query.select,
+                            where_clause: r.query.where_clause,
+                            order_by: r.query.order_by,
+                        }
+                    })
+            } else {
+                Err(anyhow::anyhow!("No cached data loaded"))
+            }
+        } else if self.csv_mode {
+            if let Some(ref csv_client) = self.csv_client {
+                // Convert CSV result to match the expected type
+                csv_client.query_csv(query)
+                    .map(|r| QueryResponse {
+                        data: r.data,
+                        count: r.count,
+                        query: crate::api_client::QueryInfo {
+                            select: r.query.select,
+                            where_clause: r.query.where_clause,
+                            order_by: r.query.order_by,
+                        }
+                    })
+            } else {
+                Err(anyhow::anyhow!("CSV client not initialized"))
+            }
+        } else {
+            self.api_client.query_trades(query)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        };
+        
+        match result {
             Ok(response) => {
                 let duration = start_time.elapsed();
                 let _ = self.command_history.add_entry(
@@ -1264,6 +1422,7 @@ impl EnhancedTuiApp {
             AppMode::History => format!("History Search: '{}' (Esc to cancel)", self.history_state.search_query),
             AppMode::Debug => "Parser Debug (F5)".to_string(),
             AppMode::PrettyQuery => "Pretty Query View (F6)".to_string(),
+            AppMode::CacheList => "Cache Management (F7)".to_string(),
         };
         
         let input_block = Block::default()
@@ -1297,6 +1456,7 @@ impl EnhancedTuiApp {
                         AppMode::History => Style::default().fg(Color::Magenta),
                         AppMode::Debug => Style::default().fg(Color::Yellow),
             AppMode::PrettyQuery => Style::default().fg(Color::Green),
+                        AppMode::CacheList => Style::default().fg(Color::Cyan),
                         _ => Style::default(),
                     })
                     .scroll((0, self.get_horizontal_scroll_offset()))
@@ -1349,6 +1509,7 @@ impl EnhancedTuiApp {
             (AppMode::History, false) => self.render_history(f, chunks[1]),
             (AppMode::Debug, false) => self.render_debug(f, chunks[1]),
             (AppMode::PrettyQuery, false) => self.render_pretty_query(f, chunks[1]),
+            (AppMode::CacheList, false) => self.render_cache_list(f, chunks[1]),
             (_, false) if self.results.is_some() => {
                 self.render_table(f, chunks[1], self.results.as_ref().unwrap());
             },
@@ -1371,6 +1532,7 @@ impl EnhancedTuiApp {
             AppMode::History => Style::default().fg(Color::Magenta),
             AppMode::Debug => Style::default().fg(Color::Yellow),
             AppMode::PrettyQuery => Style::default().fg(Color::Green),
+            AppMode::CacheList => Style::default().fg(Color::Cyan),
         };
 
         let mode_indicator = match self.mode {
@@ -1382,6 +1544,7 @@ impl EnhancedTuiApp {
             AppMode::History => "HISTORY",
             AppMode::Debug => "DEBUG",
             AppMode::PrettyQuery => "PRETTY",
+            AppMode::CacheList => "CACHE",
         };
 
         // Add parser debug info and token position for technical users
@@ -1411,7 +1574,14 @@ impl EnhancedTuiApp {
         } else {
             self.status_message.clone()
         };
-        let status_text = format!("[{}] {}{} | F1:Help q:Quit", mode_indicator, truncated_status, parser_debug);
+        let mode_info = if self.csv_mode {
+            format!(" | CSV: {}", self.csv_table_name)
+        } else if self.cache_mode {
+            " | CACHE MODE".to_string()
+        } else {
+            String::new()
+        };
+        let status_text = format!("[{}] {}{}{} | F1:Help F7:Cache q:Quit", mode_indicator, truncated_status, parser_debug, mode_info);
         let status = Paragraph::new(status_text)
             .block(Block::default().borders(Borders::ALL))
             .style(status_style);
@@ -1587,7 +1757,8 @@ impl EnhancedTuiApp {
             .row_highlight_style(Style::default().bg(Color::DarkGray))
             .highlight_symbol("► ");
 
-        f.render_stateful_widget(table, area, &mut self.table_state.clone());
+        let mut table_state = self.table_state.clone();
+        f.render_stateful_widget(table, area, &mut table_state);
     }
 
     fn render_help(&self, f: &mut Frame, area: Rect) {
@@ -1604,7 +1775,16 @@ impl EnhancedTuiApp {
             Line::from("  Ctrl+→/Alt+F - Move forward one word"),
             Line::from("  ↓        - Enter results mode"),
             Line::from("  F1/?     - Toggle help"),
+            Line::from("  F5       - Debug info"),
+            Line::from("  F6       - Pretty query view"),
+            Line::from("  F7       - Cache management"),
             Line::from("  Ctrl+C/D - Exit"),
+            Line::from(""),
+            Line::from("Cache Commands:"),
+            Line::from("  :cache save    - Save current results to cache"),
+            Line::from("  :cache load ID - Load cached query by ID"),
+            Line::from("  :cache list    - Show cached queries (F7)"),
+            Line::from("  :cache clear   - Disable cache mode"),
             Line::from(""),
             Line::from("Results Navigation Mode:"),
             Line::from("  j/↓      - Next row"),
@@ -1857,9 +2037,153 @@ impl EnhancedTuiApp {
             f.render_widget(empty_preview, area);
         }
     }
+    
+    fn handle_cache_command(&mut self, command: &str) -> Result<()> {
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        if parts.len() < 2 {
+            self.status_message = "Invalid cache command. Use :cache save <query> or :cache load <id>".to_string();
+            return Ok(());
+        }
+        
+        match parts[1] {
+            "save" => {
+                // Save last query results to cache
+                if let Some(ref results) = self.results {
+                    if let Some(ref mut cache) = self.query_cache {
+                        let query = if parts.len() > 2 {
+                            parts[2..].join(" ")
+                        } else if let Some(last_entry) = self.command_history.get_last_entry() {
+                            last_entry.command.clone()
+                        } else {
+                            self.status_message = "No query to cache".to_string();
+                            return Ok(());
+                        };
+                        
+                        match cache.save_query(&query, &results.data, None) {
+                            Ok(id) => {
+                                self.status_message = format!("Query cached with ID: {} ({} rows)", id, results.data.len());
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Failed to cache query: {}", e);
+                            }
+                        }
+                    }
+                } else {
+                    self.status_message = "No results to cache. Execute a query first.".to_string();
+                }
+            }
+            "load" => {
+                if parts.len() < 3 {
+                    self.status_message = "Usage: :cache load <id>".to_string();
+                    return Ok(());
+                }
+                
+                if let Ok(id) = parts[2].parse::<u64>() {
+                    if let Some(ref cache) = self.query_cache {
+                        match cache.load_query(id) {
+                            Ok((_query, data)) => {
+                                self.cached_data = Some(data.clone());
+                                self.cache_mode = true;
+                                self.status_message = format!("Loaded cache ID {} with {} rows. Cache mode enabled.", id, data.len());
+                                
+                                // Update parser with cached data schema if available
+                                if let Some(first_row) = data.first() {
+                                    if let Some(obj) = first_row.as_object() {
+                                        let columns: Vec<String> = obj.keys().map(|k| k.to_string()).collect();
+                                        self.hybrid_parser.update_single_table("cached_data".to_string(), columns);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Failed to load cache: {}", e);
+                            }
+                        }
+                    }
+                } else {
+                    self.status_message = "Invalid cache ID".to_string();
+                }
+            }
+            "list" => {
+                self.mode = AppMode::CacheList;
+            }
+            "clear" => {
+                self.cache_mode = false;
+                self.cached_data = None;
+                self.status_message = "Cache mode disabled".to_string();
+            }
+            _ => {
+                self.status_message = "Unknown cache command. Use save, load, list, or clear.".to_string();
+            }
+        }
+        
+        Ok(())
+    }
+    
+    fn handle_cache_list_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
+                self.mode = AppMode::Command;
+            },
+            _ => {}
+        }
+        Ok(false)
+    }
+    
+    fn render_cache_list(&self, f: &mut Frame, area: Rect) {
+        if let Some(ref cache) = self.query_cache {
+            let cached_queries = cache.list_cached_queries();
+            
+            if cached_queries.is_empty() {
+                let empty = Paragraph::new("No cached queries found.\n\nUse :cache save after running a query to cache results.")
+                    .block(Block::default().borders(Borders::ALL).title("Cached Queries (F7)"))
+                    .style(Style::default().fg(Color::DarkGray));
+                f.render_widget(empty, area);
+                return;
+            }
+            
+            // Create table of cached queries
+            let header_cells = vec!["ID", "Query", "Rows", "Cached At"]
+                .into_iter()
+                .map(|h| Cell::from(h).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+                .collect::<Vec<Cell>>();
+            
+            let rows: Vec<Row> = cached_queries.iter().map(|query| {
+                let cells = vec![
+                    Cell::from(query.id.to_string()),
+                    Cell::from(if query.query_text.len() > 50 {
+                        format!("{}...", &query.query_text[..47])
+                    } else {
+                        query.query_text.clone()
+                    }),
+                    Cell::from(query.row_count.to_string()),
+                    Cell::from(query.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()),
+                ];
+                Row::new(cells)
+            }).collect();
+            
+            let table = Table::new(rows, vec![Constraint::Length(6), Constraint::Percentage(50), Constraint::Length(8), Constraint::Length(20)])
+                .header(Row::new(header_cells))
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .title("Cached Queries (F7) - Use :cache load <id> to load"))
+                .row_highlight_style(Style::default().bg(Color::DarkGray));
+            
+            f.render_widget(table, area);
+        } else {
+            let error = Paragraph::new("Cache not available")
+                .block(Block::default().borders(Borders::ALL).title("Cache Error"))
+                .style(Style::default().fg(Color::Red));
+            f.render_widget(error, area);
+        }
+    }
 }
 
-pub fn run_enhanced_tui(api_url: &str) -> Result<()> {
-    let app = EnhancedTuiApp::new(api_url);
+pub fn run_enhanced_tui(api_url: &str, csv_file: Option<&str>) -> Result<()> {
+    let app = if let Some(csv_path) = csv_file {
+        EnhancedTuiApp::new_with_csv(csv_path)?
+    } else {
+        EnhancedTuiApp::new(api_url)
+    };
     app.run()
 }

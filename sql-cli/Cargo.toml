@@ -11,6 +11,22 @@ path = "src/lib.rs"
 name = "sql-cli"
 path = "src/main.rs"
 
+[[bin]]
+name = "test-csv"
+path = "test_csv.rs"
+
+[[bin]]
+name = "test-csv-queries"
+path = "test_csv_queries.rs"
+
+[[bin]]
+name = "test-linq-methods"
+path = "test_linq_methods.rs"
+
+[[bin]]
+name = "test-cache"
+path = "test_cache.rs"
+
 [dependencies]
 reedline = "0.30"
 crossterm = { version = "0.28", features = ["use-dev-tty"] }

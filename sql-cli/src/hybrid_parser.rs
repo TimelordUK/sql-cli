@@ -30,6 +30,10 @@ impl HybridParser {
             parser: CursorAwareParser::new(),
         }
     }
+    
+    pub fn update_single_table(&mut self, table_name: String, columns: Vec<String>) {
+        self.parser.update_single_table(table_name, columns);
+    }
 
     pub fn get_completions(&self, query: &str, cursor_pos: usize) -> HybridResult {
         // Use the improved parser with recursive descent for context detection

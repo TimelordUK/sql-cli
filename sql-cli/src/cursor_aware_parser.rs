@@ -20,6 +20,14 @@ impl CursorAwareParser {
         }
     }
     
+    pub fn set_schema(&mut self, schema: Schema) {
+        self.schema = schema;
+    }
+    
+    pub fn update_single_table(&mut self, table_name: String, columns: Vec<String>) {
+        self.schema.set_single_table(table_name, columns);
+    }
+    
     pub fn get_completions(&self, query: &str, cursor_pos: usize) -> ParseResult {
         // Use the recursive parser for better context detection
         let (cursor_context, partial_word) = detect_cursor_context(query, cursor_pos);
@@ -27,19 +35,21 @@ impl CursorAwareParser {
         // If we didn't get a partial word from recursive parser, try our own extraction
         let partial_word = partial_word.or_else(|| self.extract_word_at_cursor(query, cursor_pos));
         
+        let default_table = self.schema.get_first_table_name().unwrap_or("trade_deal");
+        
         let (suggestions, context_str) = match &cursor_context {
             CursorContext::SelectClause => {
-                let mut cols = self.schema.get_columns("trade_deal");
+                let mut cols = self.schema.get_columns(default_table);
                 cols.push("*".to_string());
                 (cols, "SelectClause".to_string())
             }
             CursorContext::FromClause => {
-                let tables = vec!["trade_deal".to_string(), "instrument".to_string()];
+                let tables = self.schema.get_table_names();
                 (tables, "FromClause".to_string())
             }
             CursorContext::WhereClause | CursorContext::AfterLogicalOp(_) => {
                 // We're in WHERE clause or after AND/OR - suggest columns
-                let mut suggestions = self.schema.get_columns("trade_deal");
+                let mut suggestions = self.schema.get_columns(default_table);
                 
                 // Only add SQL keywords if no partial word or if partial doesn't match any columns
                 let add_keywords = if let Some(ref partial) = partial_word {
@@ -104,7 +114,7 @@ impl CursorAwareParser {
             }
             CursorContext::InExpression => {
                 // Generic expression context - could be anywhere
-                let mut suggestions = self.schema.get_columns("trade_deal");
+                let mut suggestions = self.schema.get_columns(default_table);
                 suggestions.extend(vec!["AND".to_string(), "OR".to_string()]);
                 (suggestions, "InExpression".to_string())
             }
@@ -309,27 +319,29 @@ impl CursorAwareParser {
     }
     
     fn get_suggestions_for_context(&self, context: &ParseState, partial_word: &Option<String>) -> Vec<String> {
+        let default_table = self.schema.get_first_table_name().unwrap_or("trade_deal");
+        
         let mut suggestions = match context {
             ParseState::Start => vec!["SELECT".to_string()],
             ParseState::AfterSelect => {
-                let mut cols = self.schema.get_columns("trade_deal");
+                let mut cols = self.schema.get_columns(default_table);
                 cols.push("*".to_string());
                 cols
             }
             ParseState::InColumnList => {
-                let mut cols = self.schema.get_columns("trade_deal");
+                let mut cols = self.schema.get_columns(default_table);
                 cols.push("FROM".to_string());
                 cols
             }
             ParseState::AfterFrom => {
-                vec!["trade_deal".to_string(), "instrument".to_string()]
+                self.schema.get_table_names()
             }
             ParseState::AfterTable => {
                 vec!["WHERE".to_string(), "ORDER BY".to_string()]
             }
             ParseState::InWhere => {
                 // Prioritize column names over SQL keywords in WHERE clauses
-                let mut suggestions = self.schema.get_columns("trade_deal");
+                let mut suggestions = self.schema.get_columns(default_table);
                 
                 // Only add SQL keywords if no partial word or if partial doesn't match any columns
                 let add_keywords = if let Some(partial) = partial_word {
@@ -353,7 +365,7 @@ impl CursorAwareParser {
                 suggestions
             }
             ParseState::InOrderBy => {
-                let mut suggestions = self.schema.get_columns("trade_deal");
+                let mut suggestions = self.schema.get_columns(default_table);
                 suggestions.extend(vec!["ASC".to_string(), "DESC".to_string()]);
                 suggestions
             }

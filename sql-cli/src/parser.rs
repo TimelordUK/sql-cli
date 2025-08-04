@@ -235,4 +235,23 @@ impl Schema {
             .map(|t| t.columns.clone())
             .unwrap_or_default()
     }
+    
+    pub fn set_tables(&mut self, tables: Vec<TableInfo>) {
+        self.tables = tables;
+    }
+    
+    pub fn set_single_table(&mut self, table_name: String, columns: Vec<String>) {
+        self.tables = vec![TableInfo {
+            name: table_name,
+            columns,
+        }];
+    }
+    
+    pub fn get_first_table_name(&self) -> Option<&str> {
+        self.tables.first().map(|t| t.name.as_str())
+    }
+    
+    pub fn get_table_names(&self) -> Vec<String> {
+        self.tables.iter().map(|t| t.name.clone()).collect()
+    }
 }

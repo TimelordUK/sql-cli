@@ -130,6 +130,12 @@ fn main() -> io::Result<()> {
     let use_classic_tui = args.contains(&"--simple".to_string());
     let use_tui = !args.contains(&"--classic".to_string());
     
+    // Check for CSV file argument
+    let csv_file = args.iter()
+        .position(|arg| arg == "--csv")
+        .and_then(|pos| args.get(pos + 1))
+        .map(|s| s.to_string());
+    
     if use_tui {
         if use_classic_tui {
             println!("Starting simple TUI mode... (use --enhanced for csvlens-style features)");
@@ -138,10 +144,14 @@ fn main() -> io::Result<()> {
                 std::process::exit(1);
             }
         } else {
-            println!("Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)");
+            if let Some(csv_path) = &csv_file {
+                println!("Starting enhanced TUI in CSV mode with file: {}", csv_path);
+            } else {
+                println!("Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)");
+            }
             let api_url = std::env::var("TRADE_API_URL")
                 .unwrap_or_else(|_| "http://localhost:5000".to_string());
-            if let Err(e) = enhanced_tui::run_enhanced_tui(&api_url) {
+            if let Err(e) = enhanced_tui::run_enhanced_tui(&api_url, csv_file.as_deref()) {
                 eprintln!("Enhanced TUI Error: {}", e);
                 eprintln!("Falling back to classic CLI mode...");
                 eprintln!("");

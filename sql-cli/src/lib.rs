@@ -7,3 +7,4 @@ pub mod history;
 pub mod schema_config;
 pub mod cache;
 pub mod dynamic_schema;
+pub mod csv_datasource;
