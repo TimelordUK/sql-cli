@@ -8,6 +8,8 @@ pub mod schema_config;
 pub mod cache;
 pub mod dynamic_schema;
 pub mod csv_datasource;
+pub mod where_ast;
+pub mod where_parser;
 
 #[cfg(test)]
 mod test_cache_query;

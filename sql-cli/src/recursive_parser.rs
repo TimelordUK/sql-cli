@@ -10,6 +10,11 @@ pub enum Token {
     And,
     Or,
     In,
+    Not,
+    Between,
+    Like,
+    Is,
+    Null,
     OrderBy,
     GroupBy,
     Having,
@@ -26,12 +31,12 @@ pub enum Token {
     Comma,
     LeftParen,
     RightParen,
-    Equals,
-    NotEquals,
+    Equal,
+    NotEqual,
     LessThan,
     GreaterThan,
-    LessThanEquals,
-    GreaterThanEquals,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
     
     // Special
     Eof,
@@ -143,16 +148,16 @@ impl Lexer {
             }
             Some('=') => {
                 self.advance();
-                Token::Equals
+                Token::Equal
             }
             Some('<') => {
                 self.advance();
                 if self.current_char == Some('=') {
                     self.advance();
-                    Token::LessThanEquals
+                    Token::LessThanOrEqual
                 } else if self.current_char == Some('>') {
                     self.advance();
-                    Token::NotEquals
+                    Token::NotEqual
                 } else {
                     Token::LessThan
                 }
@@ -161,7 +166,7 @@ impl Lexer {
                 self.advance();
                 if self.current_char == Some('=') {
                     self.advance();
-                    Token::GreaterThanEquals
+                    Token::GreaterThanOrEqual
                 } else {
                     Token::GreaterThan
                 }
@@ -169,7 +174,7 @@ impl Lexer {
             Some('!') if self.peek(1) == Some('=') => {
                 self.advance();
                 self.advance();
-                Token::NotEquals
+                Token::NotEqual
             }
             Some('"') | Some('\'') => {
                 let string_val = self.read_string();
@@ -188,6 +193,11 @@ impl Lexer {
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IN" => Token::In,
+                    "NOT" => Token::Not,
+                    "BETWEEN" => Token::Between,
+                    "LIKE" => Token::Like,
+                    "IS" => Token::Is,
+                    "NULL" => Token::Null,
                     "ORDER" if self.peek_keyword("BY") => {
                         self.skip_whitespace();
                         self.read_identifier(); // consume "BY"
@@ -669,12 +679,12 @@ impl Parser {
     
     fn get_binary_op(&self) -> Option<String> {
         match &self.current_token {
-            Token::Equals => Some("=".to_string()),
-            Token::NotEquals => Some("!=".to_string()),
+            Token::Equal => Some("=".to_string()),
+            Token::NotEqual => Some("!=".to_string()),
             Token::LessThan => Some("<".to_string()),
             Token::GreaterThan => Some(">".to_string()),
-            Token::LessThanEquals => Some("<=".to_string()),
-            Token::GreaterThanEquals => Some(">=".to_string()),
+            Token::LessThanOrEqual => Some("<=".to_string()),
+            Token::GreaterThanOrEqual => Some(">=".to_string()),
             _ => None,
         }
     }
@@ -950,12 +960,12 @@ fn format_token(token: &Token) -> String {
         Token::RightParen => ")".to_string(),
         Token::Comma => ",".to_string(),
         Token::Dot => ".".to_string(),
-        Token::Equals => "=".to_string(),
-        Token::NotEquals => "!=".to_string(),
+        Token::Equal => "=".to_string(),
+        Token::NotEqual => "!=".to_string(),
         Token::LessThan => "<".to_string(),
         Token::GreaterThan => ">".to_string(),
-        Token::LessThanEquals => "<=".to_string(),
-        Token::GreaterThanEquals => ">=".to_string(),
+        Token::LessThanOrEqual => "<=".to_string(),
+        Token::GreaterThanOrEqual => ">=".to_string(),
         Token::In => "IN".to_string(),
         _ => format!("{:?}", token).to_uppercase(),
     }

@@ -1,0 +1,269 @@
+use serde_json::Value;
+use anyhow::Result;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum WhereExpr {
+    // Logical operators
+    And(Box<WhereExpr>, Box<WhereExpr>),
+    Or(Box<WhereExpr>, Box<WhereExpr>),
+    Not(Box<WhereExpr>),
+    
+    // Comparison operators
+    Equal(String, WhereValue),
+    NotEqual(String, WhereValue),
+    GreaterThan(String, WhereValue),
+    GreaterThanOrEqual(String, WhereValue),
+    LessThan(String, WhereValue),
+    LessThanOrEqual(String, WhereValue),
+    
+    // Special operators
+    Between(String, WhereValue, WhereValue),
+    In(String, Vec<WhereValue>),
+    NotIn(String, Vec<WhereValue>),
+    Like(String, String),
+    IsNull(String),
+    IsNotNull(String),
+    
+    // String methods
+    Contains(String, String),
+    StartsWith(String, String),
+    EndsWith(String, String),
+    
+    // Numeric methods
+    Length(String, ComparisonOp, i64),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ComparisonOp {
+    Equal,
+    NotEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum WhereValue {
+    String(String),
+    Number(f64),
+    Null,
+}
+
+impl WhereValue {
+    pub fn from_json(value: &Value) -> Self {
+        match value {
+            Value::String(s) => WhereValue::String(s.clone()),
+            Value::Number(n) => WhereValue::Number(n.as_f64().unwrap_or(0.0)),
+            Value::Null => WhereValue::Null,
+            _ => WhereValue::Null,
+        }
+    }
+}
+
+pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
+    match expr {
+        WhereExpr::And(left, right) => {
+            Ok(evaluate_where_expr(left, row)? && evaluate_where_expr(right, row)?)
+        }
+        WhereExpr::Or(left, right) => {
+            Ok(evaluate_where_expr(left, row)? || evaluate_where_expr(right, row)?)
+        }
+        WhereExpr::Not(inner) => {
+            Ok(!evaluate_where_expr(inner, row)?)
+        }
+        
+        WhereExpr::Equal(column, value) => {
+            if let Some(field_value) = row.get(column) {
+                match (WhereValue::from_json(field_value), value) {
+                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 == *s2),
+                    (WhereValue::Number(n1), WhereValue::Number(n2)) => Ok((n1 - n2).abs() < f64::EPSILON),
+                    (WhereValue::Null, WhereValue::Null) => Ok(true),
+                    _ => Ok(false),
+                }
+            } else {
+                Ok(matches!(value, WhereValue::Null))
+            }
+        }
+        
+        WhereExpr::NotEqual(column, value) => {
+            Ok(!evaluate_where_expr(&WhereExpr::Equal(column.clone(), value.clone()), row)?)
+        }
+        
+        WhereExpr::GreaterThan(column, value) => {
+            if let Some(field_value) = row.get(column) {
+                match (WhereValue::from_json(field_value), value) {
+                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 > *s2),
+                    (WhereValue::Number(n1), WhereValue::Number(n2)) => Ok(n1 > *n2),
+                    _ => Ok(false),
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::GreaterThanOrEqual(column, value) => {
+            if let Some(field_value) = row.get(column) {
+                match (WhereValue::from_json(field_value), value) {
+                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 >= *s2),
+                    (WhereValue::Number(n1), WhereValue::Number(n2)) => Ok(n1 >= *n2),
+                    _ => Ok(false),
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::LessThan(column, value) => {
+            if let Some(field_value) = row.get(column) {
+                match (WhereValue::from_json(field_value), value) {
+                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 < *s2),
+                    (WhereValue::Number(n1), WhereValue::Number(n2)) => Ok(n1 < *n2),
+                    _ => Ok(false),
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::LessThanOrEqual(column, value) => {
+            if let Some(field_value) = row.get(column) {
+                match (WhereValue::from_json(field_value), value) {
+                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 <= *s2),
+                    (WhereValue::Number(n1), WhereValue::Number(n2)) => Ok(n1 <= *n2),
+                    _ => Ok(false),
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::Between(column, lower, upper) => {
+            if let Some(field_value) = row.get(column) {
+                let val = WhereValue::from_json(field_value);
+                match (&val, lower, upper) {
+                    (WhereValue::String(s), WhereValue::String(l), WhereValue::String(u)) => {
+                        Ok(s >= l && s <= u)
+                    }
+                    (WhereValue::Number(n), WhereValue::Number(l), WhereValue::Number(u)) => {
+                        Ok(*n >= *l && *n <= *u)
+                    }
+                    _ => Ok(false),
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::In(column, values) => {
+            if let Some(field_value) = row.get(column) {
+                let val = WhereValue::from_json(field_value);
+                Ok(values.contains(&val))
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::NotIn(column, values) => {
+            if let Some(field_value) = row.get(column) {
+                let val = WhereValue::from_json(field_value);
+                Ok(!values.contains(&val))
+            } else {
+                Ok(true) // NULL is not in any list
+            }
+        }
+        
+        WhereExpr::Like(column, pattern) => {
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    // Simple LIKE implementation: % = any chars, _ = single char
+                    let regex_pattern = pattern
+                        .replace("%", ".*")
+                        .replace("_", ".");
+                    
+                    if let Ok(regex) = regex::Regex::new(&format!("^{}$", regex_pattern)) {
+                        Ok(regex.is_match(s))
+                    } else {
+                        Ok(false)
+                    }
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::IsNull(column) => {
+            if let Some(field_value) = row.get(column) {
+                Ok(field_value.is_null())
+            } else {
+                Ok(true) // Missing field is considered NULL
+            }
+        }
+        
+        WhereExpr::IsNotNull(column) => {
+            if let Some(field_value) = row.get(column) {
+                Ok(!field_value.is_null())
+            } else {
+                Ok(false) // Missing field is considered NULL
+            }
+        }
+        
+        WhereExpr::Contains(column, search) => {
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    Ok(s.contains(search))
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::StartsWith(column, prefix) => {
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    Ok(s.starts_with(prefix))
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::EndsWith(column, suffix) => {
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    Ok(s.ends_with(suffix))
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::Length(column, op, value) => {
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    let len = s.len() as i64;
+                    Ok(match op {
+                        ComparisonOp::Equal => len == *value,
+                        ComparisonOp::NotEqual => len != *value,
+                        ComparisonOp::GreaterThan => len > *value,
+                        ComparisonOp::GreaterThanOrEqual => len >= *value,
+                        ComparisonOp::LessThan => len < *value,
+                        ComparisonOp::LessThanOrEqual => len <= *value,
+                    })
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+    }
+}

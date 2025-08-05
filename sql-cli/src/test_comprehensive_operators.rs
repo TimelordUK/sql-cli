@@ -211,9 +211,11 @@ mod tests {
         assert_eq!(result.data.len(), 1, "Should return Monitor only");
         
         // Complex query 2: Items with discount or low quantity
+        // Laptop: qty=5 (matches), Mouse: discount=10 (matches), Desk: discount=15 (matches),
+        // Chair: qty=0 (matches), Monitor: discount=20 (matches) = 5 items total
         let query = "SELECT * FROM inventory WHERE discount IS NOT NULL OR quantity <= 5";
         let result = csv_client.query_csv(query).unwrap();
-        assert_eq!(result.data.len(), 4, "Should return 4 items");
+        assert_eq!(result.data.len(), 5, "Should return 5 items");
         
         // Complex query 3: Pattern matching with other conditions
         let query = "SELECT * FROM inventory WHERE product LIKE \"M%\" AND category = \"Electronics\" AND price < 500";
