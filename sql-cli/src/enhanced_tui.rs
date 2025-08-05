@@ -26,6 +26,7 @@ use std::io::Write;
 use std::fs::File;
 use std::cmp::Ordering;
 use tui_input::{backend::crossterm::EventHandler, Input};
+use tui_textarea::{TextArea, CursorMove};
 
 #[derive(Clone, PartialEq)]
 enum AppMode {
@@ -38,6 +39,12 @@ enum AppMode {
     Debug,
     PrettyQuery,
     CacheList,
+}
+
+#[derive(Clone, PartialEq)]
+enum EditMode {
+    SingleLine,
+    MultiLine,
 }
 
 #[derive(Clone, PartialEq, Copy)]
@@ -86,6 +93,8 @@ struct HistoryState {
 pub struct EnhancedTuiApp {
     api_client: ApiClient,
     input: Input,
+    textarea: TextArea<'static>,
+    edit_mode: EditMode,
     mode: AppMode,
     results: Option<QueryResponse>,
     table_state: TableState,
@@ -119,6 +128,11 @@ pub struct EnhancedTuiApp {
     query_cache: Option<QueryCache>,
     cache_mode: bool,
     cached_data: Option<Vec<serde_json::Value>>,
+    
+    // Undo/redo and kill ring
+    undo_stack: Vec<(String, usize)>, // (text, cursor_pos)
+    redo_stack: Vec<(String, usize)>,
+    kill_ring: String,
 }
 
 fn escape_csv_field(field: &str) -> String {
@@ -136,14 +150,19 @@ fn is_sql_delimiter(ch: char) -> bool {
 
 impl EnhancedTuiApp {
     pub fn new(api_url: &str) -> Self {
+        let mut textarea = TextArea::default();
+        textarea.set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
+        
         Self {
             api_client: ApiClient::new(api_url),
             input: Input::default(),
+            textarea,
+            edit_mode: EditMode::SingleLine,
             mode: AppMode::Command,
             results: None,
             table_state: TableState::default(),
             show_help: false,
-            status_message: "Ready - Type SQL query and press Enter (Enhanced mode with sorting/filtering)".to_string(),
+            status_message: "Ready - Type SQL query and press Enter (F3 to toggle multi-line mode)".to_string(),
             sql_parser: SqlParser::new(),
             hybrid_parser: HybridParser::new(),
             
@@ -188,6 +207,9 @@ impl EnhancedTuiApp {
             query_cache: QueryCache::new().ok(),
             cache_mode: false,
             cached_data: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            kill_ring: String::new(),
         }
     }
     
@@ -307,6 +329,41 @@ impl EnhancedTuiApp {
                 self.show_help = !self.show_help;
                 self.mode = if self.show_help { AppMode::Help } else { AppMode::Command };
             },
+            KeyCode::F(3) => {
+                // Toggle between single-line and multi-line mode
+                match self.edit_mode {
+                    EditMode::SingleLine => {
+                        self.edit_mode = EditMode::MultiLine;
+                        let current_text = self.input.value().to_string();
+                        
+                        // Pretty format the query for multi-line editing
+                        let formatted_lines = if !current_text.trim().is_empty() {
+                            crate::recursive_parser::format_sql_pretty_compact(&current_text, 5) // 5 columns per line for compact multi-line
+                        } else {
+                            vec![current_text]
+                        };
+                        
+                        self.textarea = TextArea::from(formatted_lines);
+                        self.textarea.set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
+                        // Move cursor to the beginning
+                        self.textarea.move_cursor(CursorMove::Top);
+                        self.textarea.move_cursor(CursorMove::Head);
+                        self.status_message = "Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string();
+                    },
+                    EditMode::MultiLine => {
+                        self.edit_mode = EditMode::SingleLine;
+                        // Join lines with single space to create compact query
+                        let text = self.textarea.lines()
+                            .iter()
+                            .map(|line| line.trim())
+                            .filter(|line| !line.is_empty())
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        self.input = tui_input::Input::new(text);
+                        self.status_message = "Single-line mode enabled (F3 to toggle multi-line)".to_string();
+                    }
+                }
+            },
             KeyCode::F(7) => {
                 // F7 - Toggle cache mode or show cache list
                 if self.cache_mode {
@@ -316,7 +373,20 @@ impl EnhancedTuiApp {
                 }
             },
             KeyCode::Enter => {
-                let query = self.input.value().trim().to_string();
+                let query = match self.edit_mode {
+                    EditMode::SingleLine => self.input.value().trim().to_string(),
+                    EditMode::MultiLine => {
+                        if key.modifiers.contains(KeyModifiers::CONTROL) {
+                            // Ctrl+Enter executes the query in multi-line mode
+                            self.textarea.lines().join("\n").trim().to_string()
+                        } else {
+                            // Regular Enter adds a new line
+                            self.textarea.input(key);
+                            return Ok(false);
+                        }
+                    }
+                };
+                
                 if !query.is_empty() {
                     // Check for cache commands
                     if query.starts_with(":cache ") {
@@ -330,7 +400,14 @@ impl EnhancedTuiApp {
                 }
             },
             KeyCode::Tab => {
-                self.apply_completion();
+                // Tab completion works in both modes
+                match self.edit_mode {
+                    EditMode::SingleLine => self.apply_completion(),
+                    EditMode::MultiLine => {
+                        // In vim normal mode, Tab should also trigger completion
+                        self.apply_completion_multiline();
+                    }
+                }
             },
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.mode = AppMode::History;
@@ -344,6 +421,38 @@ impl EnhancedTuiApp {
             KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Jump to end of line (like bash/zsh)
                 self.input.handle_event(&Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::empty())));
+            },
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Delete word backward (like bash/zsh)
+                self.delete_word_backward();
+            },
+            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Delete word forward (like bash/zsh)
+                self.delete_word_forward();
+            },
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Kill line - delete from cursor to end of line
+                self.kill_line();
+            },
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Kill line backward - delete from cursor to beginning of line
+                self.kill_line_backward();
+            },
+            KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Undo
+                self.undo();
+            },
+            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Yank - paste from kill ring
+                self.yank();
+            },
+            KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Jump to previous SQL token
+                self.jump_to_prev_token();
+            },
+            KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Jump to next SQL token
+                self.jump_to_next_token();
             },
             KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Move backward one word
@@ -361,7 +470,7 @@ impl EnhancedTuiApp {
                 // Move forward one word (alt+f like in bash)
                 self.move_cursor_word_forward();
             },
-            KeyCode::Down if self.results.is_some() => {
+            KeyCode::Down if self.results.is_some() && self.edit_mode == EditMode::SingleLine => {
                 self.mode = AppMode::Results;
                 self.table_state.select(Some(0));
             },
@@ -477,11 +586,23 @@ impl EnhancedTuiApp {
                 }
             },
             _ => {
-                self.input.handle_event(&Event::Key(key));
-                // Clear completion state when typing other characters
-                self.completion_state.suggestions.clear();
-                self.completion_state.current_index = 0;
-                self.handle_completion();
+                match self.edit_mode {
+                    EditMode::SingleLine => {
+                        self.input.handle_event(&Event::Key(key));
+                        // Clear completion state when typing other characters
+                        self.completion_state.suggestions.clear();
+                        self.completion_state.current_index = 0;
+                        self.handle_completion();
+                    },
+                    EditMode::MultiLine => {
+                        // Pass all keys to textarea
+                        self.textarea.input(key);
+                        // Clear completion state when typing other characters
+                        self.completion_state.suggestions.clear();
+                        self.completion_state.current_index = 0;
+                        self.handle_completion_multiline();
+                    }
+                }
             }
         }
         
@@ -880,6 +1001,118 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn apply_completion_multiline(&mut self) {
+        let (cursor_row, cursor_col) = self.textarea.cursor();
+        let lines = self.textarea.lines();
+        let query = lines.join("\n");
+        
+        // Calculate cursor position in the full query string
+        let mut cursor_pos = 0;
+        for (i, line) in lines.iter().enumerate() {
+            if i < cursor_row {
+                cursor_pos += line.len() + 1; // +1 for newline
+            } else if i == cursor_row {
+                cursor_pos += cursor_col;
+                break;
+            }
+        }
+        
+        // Check if this is a continuation of the same completion session
+        let is_same_context = query == self.completion_state.last_query && 
+                             cursor_pos == self.completion_state.last_cursor_pos;
+        
+        if !is_same_context {
+            // New completion context - get fresh suggestions
+            let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
+            if hybrid_result.suggestions.is_empty() {
+                self.status_message = "No completions available".to_string();
+                return;
+            }
+            
+            self.completion_state.suggestions = hybrid_result.suggestions;
+            self.completion_state.current_index = 0;
+        } else if !self.completion_state.suggestions.is_empty() {
+            // Cycle to next suggestion
+            self.completion_state.current_index = 
+                (self.completion_state.current_index + 1) % self.completion_state.suggestions.len();
+        } else {
+            self.status_message = "No completions available".to_string();
+            return;
+        }
+        
+        // Apply the current suggestion
+        let suggestion = &self.completion_state.suggestions[self.completion_state.current_index];
+        let partial_word = self.extract_partial_word_at_cursor(&query, cursor_pos);
+        
+        if let Some(partial) = partial_word {
+            // Replace the partial word with the suggestion
+            let current_line = lines[cursor_row].clone();
+            let line_before = &current_line[..cursor_col.saturating_sub(partial.len())];
+            let line_after = &current_line[cursor_col..];
+            let new_line = format!("{}{}{}", line_before, suggestion, line_after);
+            
+            // Update the line in textarea
+            self.textarea.delete_line_by_head();
+            self.textarea.insert_str(&new_line);
+            
+            // Move cursor to after the completion
+            let new_col = line_before.len() + suggestion.len();
+            for _ in 0..new_col {
+                self.textarea.move_cursor(CursorMove::Forward);
+            }
+            
+            // Update completion state
+            let new_query = self.textarea.lines().join("\n");
+            self.completion_state.last_query = new_query;
+            self.completion_state.last_cursor_pos = cursor_pos - partial.len() + suggestion.len();
+            
+            let suggestion_info = if self.completion_state.suggestions.len() > 1 {
+                format!("Completed: {} ({}/{} - Tab for next)", 
+                    suggestion, 
+                    self.completion_state.current_index + 1, 
+                    self.completion_state.suggestions.len())
+            } else {
+                format!("Completed: {}", suggestion)
+            };
+            self.status_message = suggestion_info;
+        } else {
+            // Just insert the suggestion at cursor position
+            self.textarea.insert_str(suggestion);
+            
+            // Update completion state
+            let new_query = self.textarea.lines().join("\n");
+            self.completion_state.last_query = new_query;
+            self.completion_state.last_cursor_pos = cursor_pos + suggestion.len();
+            
+            self.status_message = format!("Inserted: {}", suggestion);
+        }
+    }
+    
+    fn handle_completion_multiline(&mut self) {
+        // Similar to handle_completion but for multiline mode
+        let (cursor_row, cursor_col) = self.textarea.cursor();
+        let lines = self.textarea.lines();
+        let query = lines.join("\n");
+        
+        // Calculate cursor position in the full query string
+        let mut cursor_pos = 0;
+        for (i, line) in lines.iter().enumerate() {
+            if i < cursor_row {
+                cursor_pos += line.len() + 1; // +1 for newline
+            } else if i == cursor_row {
+                cursor_pos += cursor_col;
+                break;
+            }
+        }
+        
+        // Update completions based on cursor position
+        let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
+        self.completion_state.suggestions = hybrid_result.suggestions;
+        self.completion_state.current_index = 0;
+        self.completion_state.last_query = query;
+        self.completion_state.last_cursor_pos = cursor_pos;
+    }
+    
     fn extract_partial_word_at_cursor(&self, query: &str, cursor_pos: usize) -> Option<String> {
         if cursor_pos == 0 || cursor_pos > query.len() {
             return None;
@@ -1325,6 +1558,58 @@ impl EnhancedTuiApp {
         
         (current_token, tokens.len())
     }
+    
+    fn get_token_at_cursor(&self) -> Option<String> {
+        let query = self.input.value();
+        let cursor_pos = self.input.cursor();
+        
+        if query.is_empty() {
+            return None;
+        }
+        
+        // Use our lexer to tokenize the query
+        use crate::recursive_parser::Lexer;
+        let mut lexer = Lexer::new(query);
+        let tokens = lexer.tokenize_all_with_positions();
+        
+        // Find the token at cursor position
+        for (start, end, token) in &tokens {
+            if cursor_pos >= *start && cursor_pos <= *end {
+                // Format token nicely
+                use crate::recursive_parser::Token;
+                let token_str = match token {
+                    Token::Select => "SELECT",
+                    Token::From => "FROM", 
+                    Token::Where => "WHERE",
+                    Token::GroupBy => "GROUP BY",
+                    Token::OrderBy => "ORDER BY",
+                    Token::Having => "HAVING",
+                    Token::And => "AND",
+                    Token::Or => "OR",
+                    Token::In => "IN",
+                    Token::DateTime => "DateTime",
+                    Token::Identifier(s) => s,
+                    Token::StringLiteral(s) => s,
+                    Token::NumberLiteral(s) => s,
+                    Token::Star => "*",
+                    Token::Comma => ",",
+                    Token::Dot => ".",
+                    Token::LeftParen => "(",
+                    Token::RightParen => ")",
+                    Token::Equals => "=",
+                    Token::GreaterThan => ">",
+                    Token::LessThan => "<",
+                    Token::GreaterThanEquals => ">=",
+                    Token::LessThanEquals => "<=",
+                    Token::NotEquals => "!=",
+                    Token::Eof => "EOF",
+                };
+                return Some(token_str.to_string());
+            }
+        }
+        
+        None
+    }
 
     fn move_cursor_word_backward(&mut self) {
         let query = self.input.value();
@@ -1366,6 +1651,52 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn delete_word_backward(&mut self) {
+        let query = self.input.value();
+        let cursor_pos = self.input.cursor();
+        
+        if cursor_pos == 0 {
+            return;
+        }
+        
+        // Save to undo stack before modifying
+        self.undo_stack.push((query.to_string(), cursor_pos));
+        if self.undo_stack.len() > 100 {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+        
+        // Find the start of the previous word
+        let chars: Vec<char> = query.chars().collect();
+        let mut word_start = cursor_pos;
+        
+        // Skip any whitespace before cursor
+        while word_start > 0 && chars[word_start - 1].is_whitespace() {
+            word_start -= 1;
+        }
+        
+        // Find the beginning of the word
+        while word_start > 0 && !chars[word_start - 1].is_whitespace() && !is_sql_delimiter(chars[word_start - 1]) {
+            word_start -= 1;
+        }
+        
+        // If we only moved through whitespace, try to delete at least one word
+        if word_start == cursor_pos && word_start > 0 {
+            word_start -= 1;
+            while word_start > 0 && !chars[word_start - 1].is_whitespace() && !is_sql_delimiter(chars[word_start - 1]) {
+                word_start -= 1;
+            }
+        }
+        
+        // Delete from word_start to cursor_pos
+        if word_start < cursor_pos {
+            let before = &query[..word_start];
+            let after = &query[cursor_pos..];
+            let new_query = format!("{}{}", before, after);
+            self.input = tui_input::Input::new(new_query).with_cursor(word_start);
+        }
+    }
+    
     fn move_cursor_word_forward(&mut self) {
         let query = self.input.value();
         let cursor_pos = self.input.cursor();
@@ -1398,14 +1729,465 @@ impl EnhancedTuiApp {
             self.input.handle_event(&Event::Key(KeyEvent::new(KeyCode::Right, KeyModifiers::empty())));
         }
     }
+    
+    fn delete_word_forward(&mut self) {
+        let query = self.input.value();
+        let cursor_pos = self.input.cursor();
+        let query_len = query.len();
+        
+        if cursor_pos >= query_len {
+            return;
+        }
+        
+        // Save to undo stack before modifying
+        self.undo_stack.push((query.to_string(), cursor_pos));
+        if self.undo_stack.len() > 100 {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+        
+        // Find the end of the current/next word
+        let chars: Vec<char> = query.chars().collect();
+        let mut word_end = cursor_pos;
+        
+        // Skip any non-word characters first
+        while word_end < chars.len() && !chars[word_end].is_alphanumeric() && chars[word_end] != '_' {
+            word_end += 1;
+        }
+        
+        // Then skip word characters
+        while word_end < chars.len() && (chars[word_end].is_alphanumeric() || chars[word_end] == '_') {
+            word_end += 1;
+        }
+        
+        // Delete from cursor to word end
+        if word_end > cursor_pos {
+            let before = query.chars().take(cursor_pos).collect::<String>();
+            let after = query.chars().skip(word_end).collect::<String>();
+            let new_query = format!("{}{}", before, after);
+            self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
+        }
+    }
+    
+    fn kill_line(&mut self) {
+        let query = self.input.value();
+        let cursor_pos = self.input.cursor();
+        
+        if cursor_pos < query.len() {
+            // Save to undo stack before modifying
+            self.undo_stack.push((query.to_string(), cursor_pos));
+            if self.undo_stack.len() > 100 {
+                self.undo_stack.remove(0);
+            }
+            self.redo_stack.clear();
+            
+            // Save to kill ring before deleting
+            self.kill_ring = query.chars().skip(cursor_pos).collect::<String>();
+            let new_query = query.chars().take(cursor_pos).collect::<String>();
+            self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
+        }
+    }
+    
+    fn kill_line_backward(&mut self) {
+        let query = self.input.value();
+        let cursor_pos = self.input.cursor();
+        
+        if cursor_pos > 0 {
+            // Save to undo stack before modifying
+            self.undo_stack.push((query.to_string(), cursor_pos));
+            if self.undo_stack.len() > 100 {
+                self.undo_stack.remove(0);
+            }
+            self.redo_stack.clear();
+            
+            // Save to kill ring before deleting
+            self.kill_ring = query.chars().take(cursor_pos).collect::<String>();
+            let new_query = query.chars().skip(cursor_pos).collect::<String>();
+            self.input = tui_input::Input::new(new_query).with_cursor(0);
+        }
+    }
+    
+    fn undo(&mut self) {
+        // Simple undo - restore from undo stack
+        if let Some(prev_state) = self.undo_stack.pop() {
+            let current_state = (self.input.value().to_string(), self.input.cursor());
+            self.redo_stack.push(current_state);
+            self.input = tui_input::Input::new(prev_state.0).with_cursor(prev_state.1);
+        }
+    }
+    
+    fn yank(&mut self) {
+        if !self.kill_ring.is_empty() {
+            let query = self.input.value();
+            let cursor_pos = self.input.cursor();
+            
+            // Save to undo stack before modifying
+            self.undo_stack.push((query.to_string(), cursor_pos));
+            if self.undo_stack.len() > 100 {
+                self.undo_stack.remove(0);
+            }
+            self.redo_stack.clear();
+            
+            // Insert kill ring content at cursor
+            let before = query.chars().take(cursor_pos).collect::<String>();
+            let after = query.chars().skip(cursor_pos).collect::<String>();
+            let new_query = format!("{}{}{}", before, self.kill_ring, after);
+            let new_cursor = cursor_pos + self.kill_ring.len();
+            self.input = tui_input::Input::new(new_query).with_cursor(new_cursor);
+        }
+    }
+    
+    fn jump_to_prev_token(&mut self) {
+        let query = self.input.value();
+        let cursor_pos = self.input.cursor();
+        
+        if cursor_pos == 0 {
+            return;
+        }
+        
+        use crate::recursive_parser::Lexer;
+        let mut lexer = Lexer::new(query);
+        let tokens = lexer.tokenize_all_with_positions();
+        
+        // Find current token position
+        let mut in_token = false;
+        let mut current_token_start = 0;
+        for (start, end, _) in &tokens {
+            if cursor_pos > *start && cursor_pos <= *end {
+                in_token = true;
+                current_token_start = *start;
+                break;
+            }
+        }
+        
+        // Find the previous token start
+        let mut target_pos = 0;
+        
+        if in_token && cursor_pos > current_token_start {
+            // If we're in the middle of a token, go to its start
+            target_pos = current_token_start;
+        } else {
+            // Otherwise, find the previous token
+            for (start, _, _) in tokens.iter().rev() {
+                if *start < cursor_pos {
+                    target_pos = *start;
+                    break;
+                }
+            }
+        }
+        
+        // Move cursor
+        if target_pos < cursor_pos {
+            let moves = cursor_pos - target_pos;
+            for _ in 0..moves {
+                self.input.handle_event(&Event::Key(KeyEvent::new(KeyCode::Left, KeyModifiers::empty())));
+            }
+        }
+    }
+    
+    fn jump_to_next_token(&mut self) {
+        let query = self.input.value();
+        let cursor_pos = self.input.cursor();
+        let query_len = query.len();
+        
+        if cursor_pos >= query_len {
+            return;
+        }
+        
+        use crate::recursive_parser::Lexer;
+        let mut lexer = Lexer::new(query);
+        let tokens = lexer.tokenize_all_with_positions();
+        
+        // Find the next token start after cursor
+        let mut target_pos = query_len;
+        let mut in_current_token = false;
+        
+        for (start, end, _) in &tokens {
+            if cursor_pos >= *start && cursor_pos < *end {
+                in_current_token = true;
+            } else if in_current_token && *start >= *end {
+                // Move to the start of the next token after the current one
+                target_pos = *start;
+                break;
+            } else if *start > cursor_pos {
+                target_pos = *start;
+                break;
+            }
+        }
+        
+        // Move cursor
+        let moves = target_pos.saturating_sub(cursor_pos);
+        for _ in 0..moves {
+            self.input.handle_event(&Event::Key(KeyEvent::new(KeyCode::Right, KeyModifiers::empty())));
+        }
+    }
 
+    /*
+    fn handle_vim_mode(&mut self, key: KeyEvent) -> bool {
+        // Returns true if the key was handled by vim mode
+        match self.vim_state.mode {
+            VimMode::Normal => {
+                match key.code {
+                    // Mode switching
+                    KeyCode::Char('i') => {
+                        self.vim_state.mode = VimMode::Insert;
+                        self.update_vim_status();
+                        true
+                    }
+                    KeyCode::Char('I') => {
+                        self.vim_state.mode = VimMode::Insert;
+                        self.textarea.move_cursor(CursorMove::Head);
+                        self.update_vim_status();
+                        true
+                    }
+                    KeyCode::Char('a') => {
+                        self.vim_state.mode = VimMode::Insert;
+                        self.textarea.move_cursor(CursorMove::Forward);
+                        self.update_vim_status();
+                        true
+                    }
+                    KeyCode::Char('A') => {
+                        self.vim_state.mode = VimMode::Insert;
+                        self.textarea.move_cursor(CursorMove::End);
+                        self.update_vim_status();
+                        true
+                    }
+                    KeyCode::Char('o') => {
+                        self.vim_state.mode = VimMode::Insert;
+                        self.textarea.move_cursor(CursorMove::End);
+                        self.textarea.insert_newline();
+                        self.update_vim_status();
+                        true
+                    }
+                    KeyCode::Char('O') => {
+                        self.vim_state.mode = VimMode::Insert;
+                        self.textarea.move_cursor(CursorMove::Head);
+                        self.textarea.insert_newline();
+                        self.textarea.move_cursor(CursorMove::Up);
+                        self.update_vim_status();
+                        true
+                    }
+                    KeyCode::Char('v') => {
+                        self.vim_state.mode = VimMode::Visual;
+                        let cursor = self.textarea.cursor();
+                        self.vim_state.visual_start = Some(cursor);
+                        self.update_vim_status();
+                        true
+                    }
+                    
+                    // Movement
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        self.textarea.move_cursor(CursorMove::Back);
+                        true
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        self.textarea.move_cursor(CursorMove::Down);
+                        true
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.textarea.move_cursor(CursorMove::Up);
+                        true
+                    }
+                    KeyCode::Char('l') | KeyCode::Right => {
+                        self.textarea.move_cursor(CursorMove::Forward);
+                        true
+                    }
+                    KeyCode::Char('0') => {
+                        self.textarea.move_cursor(CursorMove::Head);
+                        true
+                    }
+                    KeyCode::Char('$') => {
+                        self.textarea.move_cursor(CursorMove::End);
+                        true
+                    }
+                    KeyCode::Char('w') => {
+                        self.textarea.move_cursor(CursorMove::WordForward);
+                        true
+                    }
+                    KeyCode::Char('b') => {
+                        self.textarea.move_cursor(CursorMove::WordBack);
+                        true
+                    }
+                    KeyCode::Char('e') => {
+                        // Move to end of word
+                        self.textarea.move_cursor(CursorMove::WordForward);
+                        self.textarea.move_cursor(CursorMove::Back);
+                        true
+                    }
+                    KeyCode::Char('g') => {
+                        // gg - go to first line (need to handle double-g)
+                        self.textarea.move_cursor(CursorMove::Top);
+                        true
+                    }
+                    KeyCode::Char('G') => {
+                        self.textarea.move_cursor(CursorMove::Bottom);
+                        true
+                    }
+                    
+                    // Editing
+                    KeyCode::Char('x') => {
+                        self.textarea.delete_char();
+                        true
+                    }
+                    KeyCode::Char('d') => {
+                        if key.modifiers.contains(KeyModifiers::CONTROL) {
+                            // Ctrl-d - half page down
+                            for _ in 0..10 {
+                                self.textarea.move_cursor(CursorMove::Down);
+                            }
+                        } else {
+                            // dd - delete line
+                            self.textarea.move_cursor(CursorMove::Head);
+                            self.textarea.delete_line_by_end();
+                            self.textarea.delete_newline();
+                        }
+                        true
+                    }
+                    KeyCode::Char('y') => {
+                        // yy - yank line
+                        let current_line = self.textarea.lines()[self.textarea.cursor().0].clone();
+                        self.vim_state.yank_buffer = current_line;
+                        self.status_message = "Line yanked".to_string();
+                        true
+                    }
+                    KeyCode::Char('p') => {
+                        // Paste after cursor
+                        if !self.vim_state.yank_buffer.is_empty() {
+                            self.textarea.move_cursor(CursorMove::End);
+                            self.textarea.insert_newline();
+                            self.textarea.insert_str(&self.vim_state.yank_buffer);
+                        }
+                        true
+                    }
+                    KeyCode::Char('P') => {
+                        // Paste before cursor
+                        if !self.vim_state.yank_buffer.is_empty() {
+                            self.textarea.move_cursor(CursorMove::Head);
+                            self.textarea.insert_str(&self.vim_state.yank_buffer);
+                            self.textarea.insert_newline();
+                            self.textarea.move_cursor(CursorMove::Up);
+                        }
+                        true
+                    }
+                    KeyCode::Char('u') => {
+                        self.textarea.undo();
+                        true
+                    }
+                    KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.textarea.redo();
+                        true
+                    }
+                    
+                    _ => false
+                }
+            }
+            VimMode::Insert => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.vim_state.mode = VimMode::Normal;
+                        self.update_vim_status();
+                        true
+                    }
+                    _ => false // Let textarea handle the input
+                }
+            }
+            VimMode::Visual => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.vim_state.mode = VimMode::Normal;
+                        self.vim_state.visual_start = None;
+                        self.update_vim_status();
+                        true
+                    }
+                    KeyCode::Char('y') => {
+                        // Yank selected text
+                        if let Some(start) = self.vim_state.visual_start {
+                            let end = self.textarea.cursor();
+                            // Simple line-based yanking for now
+                            let lines = self.textarea.lines();
+                            let start_row = start.0.min(end.0);
+                            let end_row = start.0.max(end.0);
+                            let yanked: Vec<String> = lines[start_row..=end_row]
+                                .iter()
+                                .map(|s| s.to_string())
+                                .collect();
+                            self.vim_state.yank_buffer = yanked.join("\n");
+                            self.status_message = format!("{} lines yanked", yanked.len());
+                        }
+                        self.vim_state.mode = VimMode::Normal;
+                        self.vim_state.visual_start = None;
+                        self.update_vim_status();
+                        true
+                    }
+                    // Movement in visual mode
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        self.textarea.move_cursor(CursorMove::Back);
+                        true
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        self.textarea.move_cursor(CursorMove::Down);
+                        true
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.textarea.move_cursor(CursorMove::Up);
+                        true
+                    }
+                    KeyCode::Char('l') | KeyCode::Right => {
+                        self.textarea.move_cursor(CursorMove::Forward);
+                        true
+                    }
+                    _ => false
+                }
+            }
+        }
+    }
+    
+    */
+    
+    /*
+    fn update_vim_status(&mut self) {
+        let mode_str = match self.vim_state.mode {
+            VimMode::Normal => "NORMAL",
+            VimMode::Insert => "INSERT",
+            VimMode::Visual => "VISUAL",
+        };
+        
+        // Update cursor style based on mode
+        match self.vim_state.mode {
+            VimMode::Normal => {
+                self.textarea.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+            },
+            VimMode::Insert => {
+                self.textarea.set_cursor_style(Style::default().add_modifier(Modifier::UNDERLINED));
+            },
+            VimMode::Visual => {
+                self.textarea.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED).fg(Color::Yellow));
+            },
+        }
+        
+        // Get cursor position
+        let (row, col) = self.textarea.cursor();
+        self.status_message = format!("-- {} -- L{}:C{} (F3 single-line)", mode_str, row + 1, col + 1);
+    }
+    */
+    
     fn ui(&mut self, f: &mut Frame) {
+        // Dynamically adjust layout based on edit mode
+        let input_height = match self.edit_mode {
+            EditMode::SingleLine => 3,
+            EditMode::MultiLine => {
+                // Use 1/3 of terminal height or 10 lines, whichever is larger (max 20)
+                let dynamic_height = f.area().height / 3;
+                std::cmp::min(20, std::cmp::max(10, dynamic_height))
+            }
+        };
+        
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // Command input - single line
-                Constraint::Min(0),    // Results
-                Constraint::Length(3), // Status bar
+                Constraint::Length(input_height), // Command input area
+                Constraint::Min(0),              // Results
+                Constraint::Length(3),           // Status bar
             ].as_ref())
             .split(f.area());
 
@@ -1438,11 +2220,21 @@ impl EnhancedTuiApp {
 
         let input_paragraph = match self.mode {
             AppMode::Command => {
-                // Use syntax highlighting for SQL command input with horizontal scrolling
-                let highlighted_line = self.sql_highlighter.simple_sql_highlight(input_text);
-                Paragraph::new(Text::from(vec![highlighted_line]))
-                    .block(input_block)
-                    .scroll((0, self.get_horizontal_scroll_offset()))
+                match self.edit_mode {
+                    EditMode::SingleLine => {
+                        // Use syntax highlighting for SQL command input with horizontal scrolling
+                        let highlighted_line = self.sql_highlighter.simple_sql_highlight(input_text);
+                        Paragraph::new(Text::from(vec![highlighted_line]))
+                            .block(input_block)
+                            .scroll((0, self.get_horizontal_scroll_offset()))
+                    },
+                    EditMode::MultiLine => {
+                        // For multiline mode, we'll render the textarea widget instead
+                        // This is a placeholder - actual textarea rendering happens below
+                        Paragraph::new("")
+                            .block(input_block)
+                    }
+                }
             },
             _ => {
                 // Plain text for other modes
@@ -1463,23 +2255,42 @@ impl EnhancedTuiApp {
             }
         };
 
-        f.render_widget(input_paragraph, chunks[0]);
+        // Determine the actual results area based on edit mode
+        let results_area = if self.mode == AppMode::Command && self.edit_mode == EditMode::MultiLine {
+            // In multi-line mode, render textarea in the input area
+            f.render_widget(&self.textarea, chunks[0]);
+            
+            // Use the full results area - no preview in multi-line mode anymore
+            chunks[1]
+        } else {
+            // Single-line mode - render the input
+            f.render_widget(input_paragraph, chunks[0]);
+            // Use the full results area
+            chunks[1]
+        };
 
         // Set cursor position for input modes
         match self.mode {
             AppMode::Command => {
-                // Calculate cursor position with horizontal scrolling
-                let inner_width = chunks[0].width.saturating_sub(2) as usize;
-                let cursor_pos = self.input.visual_cursor();
-                let scroll_offset = self.get_horizontal_scroll_offset() as usize;
-                
-                // Calculate visible cursor position
-                if cursor_pos >= scroll_offset && cursor_pos < scroll_offset + inner_width {
-                    let visible_pos = cursor_pos - scroll_offset;
-                    f.set_cursor_position((
-                        chunks[0].x + visible_pos as u16 + 1,
-                        chunks[0].y + 1
-                    ));
+                match self.edit_mode {
+                    EditMode::SingleLine => {
+                        // Calculate cursor position with horizontal scrolling
+                        let inner_width = chunks[0].width.saturating_sub(2) as usize;
+                        let cursor_pos = self.input.visual_cursor();
+                        let scroll_offset = self.get_horizontal_scroll_offset() as usize;
+                        
+                        // Calculate visible cursor position
+                        if cursor_pos >= scroll_offset && cursor_pos < scroll_offset + inner_width {
+                            let visible_pos = cursor_pos - scroll_offset;
+                            f.set_cursor_position((
+                                chunks[0].x + visible_pos as u16 + 1,
+                                chunks[0].y + 1
+                            ));
+                        }
+                    },
+                    EditMode::MultiLine => {
+                        // Cursor is handled by the textarea widget
+                    }
                 }
             },
             AppMode::Search => {
@@ -1505,20 +2316,20 @@ impl EnhancedTuiApp {
 
         // Results area - render based on mode to reduce complexity
         match (&self.mode, self.show_help) {
-            (_, true) => self.render_help(f, chunks[1]),
-            (AppMode::History, false) => self.render_history(f, chunks[1]),
-            (AppMode::Debug, false) => self.render_debug(f, chunks[1]),
-            (AppMode::PrettyQuery, false) => self.render_pretty_query(f, chunks[1]),
-            (AppMode::CacheList, false) => self.render_cache_list(f, chunks[1]),
+            (_, true) => self.render_help(f, results_area),
+            (AppMode::History, false) => self.render_history(f, results_area),
+            (AppMode::Debug, false) => self.render_debug(f, results_area),
+            (AppMode::PrettyQuery, false) => self.render_pretty_query(f, results_area),
+            (AppMode::CacheList, false) => self.render_cache_list(f, results_area),
             (_, false) if self.results.is_some() => {
-                self.render_table(f, chunks[1], self.results.as_ref().unwrap());
+                self.render_table(f, results_area, self.results.as_ref().unwrap());
             },
             _ => {
                 // Simple placeholder - reduced text to improve rendering speed
                 let placeholder = Paragraph::new("Enter SQL query and press Enter\n\nTip: Use Tab for completion, Ctrl+R for history")
                     .block(Block::default().borders(Borders::ALL).title("Results"))
                     .style(Style::default().fg(Color::DarkGray));
-                f.render_widget(placeholder, chunks[1]);
+                f.render_widget(placeholder, results_area);
             }
         }
 
@@ -1547,23 +2358,35 @@ impl EnhancedTuiApp {
             AppMode::CacheList => "CACHE",
         };
 
-        // Add parser debug info and token position for technical users
-        let parser_debug = if self.mode == AppMode::Command {
-            let cursor_pos = self.input.cursor();
-            let query = self.input.value();
-            let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
+        // Add useful status info
+        let status_info = if self.mode == AppMode::Command {
             let (token_pos, total_tokens) = self.get_cursor_token_position();
-            format!(" | Token: {}/{} | {}: {} | Suggestions: {} | Complexity: {}", 
-                token_pos,
-                total_tokens,
-                hybrid_result.parser_used,
-                hybrid_result.context,
-                if hybrid_result.suggestions.is_empty() { 
-                    "none".to_string() 
-                } else { 
-                    hybrid_result.suggestions.len().to_string() 
-                },
-                hybrid_result.query_complexity)
+            
+            // Get current token at cursor
+            let current_token = self.get_token_at_cursor();
+            let token_display = if let Some(token) = current_token {
+                format!(" [{}]", token)
+            } else {
+                String::new()
+            };
+            
+            format!(" | Token {}/{}{}", token_pos, total_tokens, token_display)
+        } else if self.mode == AppMode::Results {
+            let row_info = if let Some(data) = self.get_current_data() {
+                let total_rows = data.len();
+                let selected = self.table_state.selected().unwrap_or(0) + 1;
+                format!(" | Row {}/{}", selected, total_rows)
+            } else {
+                String::new()
+            };
+            
+            let filter_info = if self.filter_state.active {
+                format!(" | FILTERED [{}]", self.filter_state.pattern)
+            } else {
+                String::new()
+            };
+            
+            format!("{}{}", row_info, filter_info)
         } else {
             String::new()
         };
@@ -1581,7 +2404,7 @@ impl EnhancedTuiApp {
         } else {
             String::new()
         };
-        let status_text = format!("[{}] {}{}{} | F1:Help F7:Cache q:Quit", mode_indicator, truncated_status, parser_debug, mode_info);
+        let status_text = format!("[{}] {}{}{} | F1:Help F7:Cache q:Quit", mode_indicator, truncated_status, status_info, mode_info);
         let status = Paragraph::new(status_text)
             .block(Block::default().borders(Borders::ALL))
             .style(status_style);
@@ -1769,15 +2592,30 @@ impl EnhancedTuiApp {
             Line::from("  Enter    - Execute query"),
             Line::from("  Tab      - Auto-complete"),
             Line::from("  Ctrl+R   - Search command history"),
+            Line::from("  "),
+            Line::from("Navigation:"),
             Line::from("  Ctrl+A   - Jump to beginning of line"),
             Line::from("  Ctrl+E   - Jump to end of line"),
             Line::from("  Ctrl+←/Alt+B - Move backward one word"),
             Line::from("  Ctrl+→/Alt+F - Move forward one word"),
-            Line::from("  ↓        - Enter results mode"),
+            Line::from("  Alt+[    - Jump to previous SQL token"),
+            Line::from("  Alt+]    - Jump to next SQL token"),
+            Line::from("  "),
+            Line::from("Editing:"),
+            Line::from("  Ctrl+W   - Delete word backward"),
+            Line::from("  Alt+D    - Delete word forward"),
+            Line::from("  Ctrl+K   - Kill line (delete to end)"),
+            Line::from("  Ctrl+U   - Kill line backward"),
+            Line::from("  Ctrl+Y   - Yank (paste from kill ring)"),
+            Line::from("  Ctrl+Z   - Undo"),
+            Line::from("  "),
+            Line::from("Other:"),
             Line::from("  F1/?     - Toggle help"),
+            Line::from("  F3       - Toggle multi-line mode"),
             Line::from("  F5       - Debug info"),
             Line::from("  F6       - Pretty query view"),
             Line::from("  F7       - Cache management"),
+            Line::from("  ↓        - Enter results mode"),
             Line::from("  Ctrl+C/D - Exit"),
             Line::from(""),
             Line::from("Cache Commands:"),

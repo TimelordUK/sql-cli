@@ -47,3 +47,4 @@ chrono = { version = "0.4", features = ["serde"] }
 syntect = "5.0"
 arboard = "3.2"
 sha2 = "0.10"
+tui-textarea = "0.7"

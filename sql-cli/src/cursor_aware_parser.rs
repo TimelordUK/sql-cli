@@ -41,6 +41,13 @@ impl CursorAwareParser {
             CursorContext::SelectClause => {
                 let mut cols = self.schema.get_columns(default_table);
                 cols.push("*".to_string());
+                
+                // Filter out already selected columns
+                let selected_columns = self.extract_selected_columns(query, cursor_pos);
+                cols = cols.into_iter()
+                    .filter(|col| !selected_columns.contains(&col.to_lowercase()))
+                    .collect();
+                
                 (cols, "SelectClause".to_string())
             }
             CursorContext::FromClause => {
@@ -382,6 +389,39 @@ impl CursorAwareParser {
         suggestions
     }
 
+    fn extract_selected_columns(&self, query: &str, cursor_pos: usize) -> Vec<String> {
+        // Extract columns that have already been selected in the current SELECT clause
+        let mut selected_columns = Vec::new();
+        
+        // Find the SELECT keyword position
+        let query_upper = query.to_uppercase();
+        if let Some(select_pos) = query_upper.find("SELECT") {
+            // Find the FROM keyword or cursor position, whichever comes first
+            let end_pos = query_upper.find("FROM").unwrap_or(cursor_pos).min(cursor_pos);
+            
+            // Extract the SELECT clause
+            if select_pos + 6 < end_pos {
+                let select_clause = &query[(select_pos + 6)..end_pos];
+                
+                // Split by commas and extract column names
+                for part in select_clause.split(',') {
+                    let trimmed = part.trim();
+                    if !trimmed.is_empty() {
+                        // Extract just the column name (handle cases like "column AS alias")
+                        if let Some(space_pos) = trimmed.find(char::is_whitespace) {
+                            let col_name = &trimmed[..space_pos];
+                            selected_columns.push(col_name.to_lowercase());
+                        } else {
+                            selected_columns.push(trimmed.to_lowercase());
+                        }
+                    }
+                }
+            }
+        }
+        
+        selected_columns
+    }
+    
     fn detect_method_call_context(&self, query_before_cursor: &str, cursor_pos: usize) -> Option<(String, String)> {
         // Look for pattern: "propertyName." at the end of the query before cursor
         // This handles cases like "WHERE platformOrderId." or "SELECT COUNT(*) WHERE ticker."

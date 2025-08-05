@@ -680,6 +680,9 @@ pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<Strin
     let mut lines = Vec::new();
     let mut parser = Parser::new(query);
     
+    // Ensure cols_per_line is at least 1 to avoid panic
+    let cols_per_line = cols_per_line.max(1);
+    
     match parser.parse() {
         Ok(stmt) => {
             // SELECT clause
