@@ -519,6 +519,37 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<SqlExpression, String> {
+        let mut left = self.parse_comparison()?;
+
+        // Handle binary operators at expression level (should be handled in parse_comparison now)
+        // Keep this for backward compatibility but it shouldn't be reached
+        if let Some(op) = self.get_binary_op() {
+            self.advance();
+            let right = self.parse_expression()?;
+            left = SqlExpression::BinaryOp {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
+        }
+
+        // Handle IN operator
+        if matches!(self.current_token, Token::In) {
+            self.advance();
+            self.consume(Token::LeftParen)?;
+            let values = self.parse_expression_list()?;
+            self.consume(Token::RightParen)?;
+
+            left = SqlExpression::InList {
+                expr: Box::new(left),
+                values,
+            };
+        }
+
+        Ok(left)
+    }
+    
+    fn parse_comparison(&mut self) -> Result<SqlExpression, String> {
         let mut left = self.parse_primary()?;
 
         // Handle method calls
@@ -544,10 +575,10 @@ impl Parser {
             }
         }
 
-        // Handle binary operators
+        // Handle comparison operators
         if let Some(op) = self.get_binary_op() {
             self.advance();
-            let right = self.parse_expression()?;
+            let right = self.parse_comparison()?;
             left = SqlExpression::BinaryOp {
                 left: Box::new(left),
                 op,
@@ -555,19 +586,42 @@ impl Parser {
             };
         }
 
-        // Handle IN operator
-        if matches!(self.current_token, Token::In) {
-            self.advance();
-            self.consume(Token::LeftParen)?;
-            let values = self.parse_expression_list()?;
-            self.consume(Token::RightParen)?;
+        Ok(left)
+    }
 
-            left = SqlExpression::InList {
-                expr: Box::new(left),
-                values,
+    fn parse_logical_or(&mut self) -> Result<SqlExpression, String> {
+        let mut left = self.parse_logical_and()?;
+        
+        while matches!(self.current_token, Token::Or) {
+            self.advance();
+            let right = self.parse_logical_and()?;
+            // For now, we'll just return the left side to make it compile
+            // In a real implementation, we'd need a LogicalOp variant in SqlExpression
+            // but for the AST visualization, the WHERE clause handles this properly
+            left = SqlExpression::BinaryOp {
+                left: Box::new(left),
+                op: "OR".to_string(),
+                right: Box::new(right),
             };
         }
-
+        
+        Ok(left)
+    }
+    
+    fn parse_logical_and(&mut self) -> Result<SqlExpression, String> {
+        let mut left = self.parse_expression()?;
+        
+        while matches!(self.current_token, Token::And) {
+            self.advance();
+            let right = self.parse_expression()?;
+            // Similar to OR, we use BinaryOp to represent AND
+            left = SqlExpression::BinaryOp {
+                left: Box::new(left),
+                op: "AND".to_string(),
+                right: Box::new(right),
+            };
+        }
+        
         Ok(left)
     }
 
@@ -688,7 +742,11 @@ impl Parser {
             }
             Token::LeftParen => {
                 self.advance();
-                let expr = self.parse_expression()?;
+                
+                // Parse a parenthesized expression which might contain logical operators
+                // We need to handle cases like (a OR b) as a single expression
+                let expr = self.parse_logical_or()?;
+                
                 self.consume(Token::RightParen)?;
                 Ok(expr)
             }
@@ -804,6 +862,136 @@ pub fn tokenize_query(query: &str) -> Vec<String> {
 
 pub fn format_sql_pretty(query: &str) -> Vec<String> {
     format_sql_pretty_compact(query, 5) // Default to 5 columns per line
+}
+
+// Pretty print AST for debug visualization
+pub fn format_ast_tree(query: &str) -> String {
+    let mut parser = Parser::new(query);
+    match parser.parse() {
+        Ok(stmt) => format_select_statement(&stmt, 0),
+        Err(e) => format!("Parse error: {}", e),
+    }
+}
+
+fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
+    let mut result = String::new();
+    let indent_str = "  ".repeat(indent);
+    
+    result.push_str(&format!("{}SelectStatement {{\n", indent_str));
+    
+    // Format columns
+    result.push_str(&format!("{}  columns: [", indent_str));
+    if !stmt.columns.is_empty() {
+        result.push('\n');
+        for col in &stmt.columns {
+            result.push_str(&format!("{}    \"{}\",\n", indent_str, col));
+        }
+        result.push_str(&format!("{}  ],\n", indent_str));
+    } else {
+        result.push_str("],\n");
+    }
+    
+    // Format from table
+    if let Some(table) = &stmt.from_table {
+        result.push_str(&format!("{}  from_table: \"{}\",\n", indent_str, table));
+    }
+    
+    // Format where clause
+    if let Some(where_clause) = &stmt.where_clause {
+        result.push_str(&format!("{}  where_clause: {{\n", indent_str));
+        result.push_str(&format_where_clause(where_clause, indent + 2));
+        result.push_str(&format!("{}  }},\n", indent_str));
+    }
+    
+    // Format order by
+    if let Some(order_by) = &stmt.order_by {
+        result.push_str(&format!("{}  order_by: [", indent_str));
+        if !order_by.is_empty() {
+            result.push('\n');
+            for col in order_by {
+                result.push_str(&format!("{}    \"{}\",\n", indent_str, col));
+            }
+            result.push_str(&format!("{}  ],\n", indent_str));
+        } else {
+            result.push_str("],\n");
+        }
+    }
+    
+    // Format group by
+    if let Some(group_by) = &stmt.group_by {
+        result.push_str(&format!("{}  group_by: [", indent_str));
+        if !group_by.is_empty() {
+            result.push('\n');
+            for col in group_by {
+                result.push_str(&format!("{}    \"{}\",\n", indent_str, col));
+            }
+            result.push_str(&format!("{}  ],\n", indent_str));
+        } else {
+            result.push_str("],\n");
+        }
+    }
+    
+    result.push_str(&format!("{}}}", indent_str));
+    result
+}
+
+fn format_where_clause(clause: &WhereClause, indent: usize) -> String {
+    let mut result = String::new();
+    let indent_str = "  ".repeat(indent);
+    
+    result.push_str(&format!("{}conditions: [\n", indent_str));
+    
+    for condition in &clause.conditions {
+        result.push_str(&format!("{}  {{\n", indent_str));
+        result.push_str(&format!("{}    expr: {},\n", indent_str, format_expression_ast(&condition.expr)));
+        
+        if let Some(connector) = &condition.connector {
+            let connector_str = match connector {
+                LogicalOp::And => "AND",
+                LogicalOp::Or => "OR",
+            };
+            result.push_str(&format!("{}    connector: {},\n", indent_str, connector_str));
+        }
+        
+        result.push_str(&format!("{}  }},\n", indent_str));
+    }
+    
+    result.push_str(&format!("{}]\n", indent_str));
+    result
+}
+
+fn format_expression_ast(expr: &SqlExpression) -> String {
+    match expr {
+        SqlExpression::Column(name) => format!("Column(\"{}\")", name),
+        SqlExpression::StringLiteral(value) => format!("StringLiteral(\"{}\")", value),
+        SqlExpression::NumberLiteral(value) => format!("NumberLiteral({})", value),
+        SqlExpression::DateTimeConstructor { year, month, day, hour, minute, second } => {
+            format!("DateTime({}-{:02}-{:02} {:02}:{:02}:{:02})", 
+                   year, month, day, 
+                   hour.unwrap_or(0), minute.unwrap_or(0), second.unwrap_or(0))
+        },
+        SqlExpression::DateTimeToday { hour, minute, second } => {
+            format!("DateTimeToday({:02}:{:02}:{:02})", 
+                   hour.unwrap_or(0), minute.unwrap_or(0), second.unwrap_or(0))
+        },
+        SqlExpression::MethodCall { object, method, args } => {
+            let args_str = args.iter()
+                .map(|a| format_expression_ast(a))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("MethodCall({}.{}({}))", object, method, args_str)
+        },
+        SqlExpression::BinaryOp { left, op, right } => {
+            format!("BinaryOp({} {} {})", format_expression_ast(left), op, format_expression_ast(right))
+        },
+        SqlExpression::InList { expr, values } => {
+            let list_str = values.iter()
+                .map(|e| format_expression_ast(e))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("InList({} IN [{}])", format_expression_ast(expr), list_str)
+        },
+    }
 }
 
 // Convert DateTime expressions to ISO 8601 format strings for comparison
