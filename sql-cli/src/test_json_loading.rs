@@ -191,4 +191,50 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Record 1 is not an object"));
     }
+    
+    #[test]
+    fn test_case_insensitive_queries() {
+        let test_data = json!([
+            {
+                "id": 1,
+                "executionSide": "BUY",
+                "status": "Completed",
+                "counterparty": "Bank of America"
+            },
+            {
+                "id": 2,
+                "executionSide": "SELL", 
+                "status": "PENDING",
+                "counterparty": "JP Morgan"
+            },
+            {
+                "id": 3,
+                "executionSide": "buy",
+                "status": "completed",
+                "counterparty": "HSBC Bank"
+            }
+        ]);
+        
+        let mut temp_file = NamedTempFile::new().unwrap();
+        write!(temp_file, "{}", test_data.to_string()).unwrap();
+        
+        let mut client = CsvApiClient::new();
+        client.load_json(temp_file.path(), "trades").unwrap();
+        
+        // Test ToLower() for case-insensitive matching
+        let result = client.query_csv("SELECT * FROM trades WHERE executionSide.ToLower() = \"buy\"").unwrap();
+        assert_eq!(result.data.len(), 2); // Should match "BUY" and "buy"
+        
+        // Test ToUpper() for case-insensitive matching  
+        let result = client.query_csv("SELECT * FROM trades WHERE status.ToUpper() = \"COMPLETED\"").unwrap();
+        assert_eq!(result.data.len(), 2); // Should match "Completed" and "completed"
+        
+        // Test with != operator
+        let result = client.query_csv("SELECT * FROM trades WHERE executionSide.ToLower() != \"sell\"").unwrap();
+        assert_eq!(result.data.len(), 2); // Should return all non-sell records
+        
+        // Test complex query combining ToLower with other conditions
+        let result = client.query_csv("SELECT * FROM trades WHERE executionSide.ToLower() = \"buy\" AND counterparty.Contains(\"Bank\")").unwrap();
+        assert_eq!(result.data.len(), 2); // BUY+Bank of America, buy+HSBC Bank
+    }
 }

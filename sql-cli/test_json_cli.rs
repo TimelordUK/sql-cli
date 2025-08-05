@@ -35,5 +35,15 @@ fn main() -> Result<()> {
     let result2 = client.query_csv("SELECT * FROM sample_trades WHERE counterparty.Contains(\"Bank\")")?;
     println!("Results: {} rows", result2.data.len());
     
+    // Test case-insensitive queries
+    println!("\n\nTesting case-insensitive queries:");
+    println!("Query: SELECT * FROM sample_trades WHERE executionSide.ToLower() = \"buy\"");
+    let result3 = client.query_csv("SELECT * FROM sample_trades WHERE executionSide.ToLower() = \"buy\"")?;
+    println!("Results: {} rows (should match 'BUY' entries)", result3.data.len());
+    
+    println!("\nQuery: SELECT * FROM sample_trades WHERE status.ToUpper() = \"COMPLETED\"");
+    let result4 = client.query_csv("SELECT * FROM sample_trades WHERE status.ToUpper() = \"COMPLETED\"")?;
+    println!("Results: {} rows (should match 'Completed' entries)", result4.data.len());
+    
     Ok(())
 }

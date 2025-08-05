@@ -205,6 +205,24 @@ impl WhereParser {
                     let value = self.parse_number_value()?;
                     Ok(WhereExpr::Length(column, op, value as i64))
                 }
+                "ToLower" => {
+                    self.expect_token(Token::LeftParen)?;
+                    self.expect_token(Token::RightParen)?;
+                    
+                    // Parse comparison operator
+                    let op = self.parse_comparison_op()?;
+                    let value = self.parse_string_value()?;
+                    Ok(WhereExpr::ToLower(column, op, value))
+                }
+                "ToUpper" => {
+                    self.expect_token(Token::LeftParen)?;
+                    self.expect_token(Token::RightParen)?;
+                    
+                    // Parse comparison operator
+                    let op = self.parse_comparison_op()?;
+                    let value = self.parse_string_value()?;
+                    Ok(WhereExpr::ToUpper(column, op, value))
+                }
                 _ => Err(anyhow!("Unknown method: {}", method)),
             }
         } else {
@@ -487,6 +505,31 @@ mod tests {
                 }
             }
             _ => panic!("Wrong top-level expression"),
+        }
+    }
+    
+    #[test]
+    fn test_case_conversion_methods() {
+        // Test ToLower
+        let expr = WhereParser::parse("executionSide.ToLower() = \"buy\"").unwrap();
+        match expr {
+            WhereExpr::ToLower(col, op, val) => {
+                assert_eq!(col, "executionSide");
+                assert_eq!(op, ComparisonOp::Equal);
+                assert_eq!(val, "buy");
+            }
+            _ => panic!("Wrong expression type for ToLower"),
+        }
+        
+        // Test ToUpper  
+        let expr = WhereParser::parse("status.ToUpper() != \"PENDING\"").unwrap();
+        match expr {
+            WhereExpr::ToUpper(col, op, val) => {
+                assert_eq!(col, "status");
+                assert_eq!(op, ComparisonOp::NotEqual);
+                assert_eq!(val, "PENDING");
+            }
+            _ => panic!("Wrong expression type for ToUpper"),
         }
     }
 }

@@ -81,6 +81,11 @@ SELECT * FROM trade_deal
 WHERE counterparty.Contains("Bank") 
   AND counterpartyCountry = "US"
 
+-- Case-insensitive matching
+SELECT * FROM trade_deal
+WHERE executionSide.ToLower() = "buy"
+  OR status.ToUpper() = "COMPLETED"
+
 -- Find orders with specific prefix
 SELECT * FROM trade_deal 
 WHERE platformOrderId.StartsWith("ORD2024")
@@ -299,7 +304,7 @@ All standard SQL operators plus LINQ-style methods:
 - **Comparisons**: =, !=, <, >, <=, >=
 - **Logical**: AND, OR, NOT
 - **Special**: BETWEEN, IN, NOT IN, LIKE, IS NULL, IS NOT NULL
-- **LINQ Methods**: .Contains(), .StartsWith(), .EndsWith(), .Length()
+- **LINQ Methods**: .Contains(), .StartsWith(), .EndsWith(), .Length(), .ToLower(), .ToUpper()
 - **DateTime**: DateTime(year, month, day, hour, minute, second)
 
 ### JSON and CSV Compatibility

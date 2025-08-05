@@ -28,6 +28,8 @@ pub enum WhereExpr {
     Contains(String, String),
     StartsWith(String, String),
     EndsWith(String, String),
+    ToLower(String, ComparisonOp, String),  // column.ToLower() == "value"
+    ToUpper(String, ComparisonOp, String),  // column.ToUpper() == "VALUE"
     
     // Numeric methods
     Length(String, ComparisonOp, i64),
@@ -128,6 +130,12 @@ pub fn format_where_ast(expr: &WhereExpr, indent: usize) -> String {
         }
         WhereExpr::EndsWith(col, suffix) => {
             format!("{}ENDS_WITH({}, \"{}\")", indent_str, col, suffix)
+        }
+        WhereExpr::ToLower(col, op, value) => {
+            format!("{}TO_LOWER({}, {:?}, \"{}\")", indent_str, col, op, value)
+        }
+        WhereExpr::ToUpper(col, op, value) => {
+            format!("{}TO_UPPER({}, {:?}, \"{}\")", indent_str, col, op, value)
         }
         WhereExpr::Length(col, op, value) => {
             format!("{}LENGTH({}, {:?}, {})", indent_str, col, op, value)
@@ -312,6 +320,46 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
             if let Some(field_value) = row.get(column) {
                 if let Some(s) = field_value.as_str() {
                     Ok(s.ends_with(suffix))
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::ToLower(column, op, value) => {
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    let lower_s = s.to_lowercase();
+                    Ok(match op {
+                        ComparisonOp::Equal => lower_s == *value,
+                        ComparisonOp::NotEqual => lower_s != *value,
+                        ComparisonOp::GreaterThan => lower_s > *value,
+                        ComparisonOp::GreaterThanOrEqual => lower_s >= *value,
+                        ComparisonOp::LessThan => lower_s < *value,
+                        ComparisonOp::LessThanOrEqual => lower_s <= *value,
+                    })
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+        
+        WhereExpr::ToUpper(column, op, value) => {
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    let upper_s = s.to_uppercase();
+                    Ok(match op {
+                        ComparisonOp::Equal => upper_s == *value,
+                        ComparisonOp::NotEqual => upper_s != *value,  
+                        ComparisonOp::GreaterThan => upper_s > *value,
+                        ComparisonOp::GreaterThanOrEqual => upper_s >= *value,
+                        ComparisonOp::LessThan => upper_s < *value,
+                        ComparisonOp::LessThanOrEqual => upper_s <= *value,
+                    })
                 } else {
                     Ok(false)
                 }
