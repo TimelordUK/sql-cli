@@ -3,13 +3,13 @@ use std::fs::File;
 use std::io::BufReader;
 use csv;
 use serde_json::{json, Value};
-use std::error::Error;
 use anyhow::Result;
 use std::collections::HashMap;
 use crate::api_client::{QueryResponse, QueryInfo};
-use chrono::{Local, NaiveDateTime, Datelike};
 use crate::where_parser::WhereParser;
-use crate::where_ast::{WhereExpr, evaluate_where_expr};
+use crate::where_ast::evaluate_where_expr;
+use crate::recursive_parser::Parser;
+use std::cmp::Ordering;
 
 #[derive(Clone, Debug)]
 pub struct CsvDataSource {
@@ -96,36 +96,71 @@ impl CsvDataSource {
     }
     
     pub fn query(&self, sql: &str) -> Result<Vec<Value>> {
-        // Simple SQL parsing for basic queries
-        let sql_lower = sql.to_lowercase();
-        
-        // For now, support simple SELECT * or SELECT cols queries
-        if sql_lower.contains("select") {
-            let mut results = self.data.clone();
-            
-            // Handle WHERE clause
-            if let Some(where_pos) = sql_lower.find(" where ") {
-                let where_clause = &sql[where_pos + 7..];  // Skip " where "
-                results = self.filter_results(results, where_clause)?;
-            }
-            
-            // Handle specific column selection
-            if !sql_lower.contains("select *") {
-                let select_start = sql_lower.find("select").unwrap() + 6;
-                let from_pos = sql_lower.find("from").unwrap_or(sql.len());
-                let columns_str = sql[select_start..from_pos].trim();
+        // Parse SQL using the recursive parser to extract ORDER BY
+        let mut parser = Parser::new(sql);
+        match parser.parse() {
+            Ok(stmt) => {
+                let mut results = self.data.clone();
                 
-                if !columns_str.is_empty() && columns_str != "*" {
-                    let columns: Vec<&str> = columns_str.split(',')
-                        .map(|s| s.trim().trim_matches('"').trim_matches('\''))
-                        .collect();
+                // Handle WHERE clause using the existing WhereParser
+                let sql_lower = sql.to_lowercase();
+                if let Some(where_pos) = sql_lower.find(" where ") {
+                    // Extract WHERE clause, but stop at ORDER BY if present
+                    let where_start = where_pos + 7;
+                    let where_end = if let Some(order_pos) = sql_lower.find(" order by ") {
+                        order_pos.min(sql.len())
+                    } else {
+                        sql.len()
+                    };
+                    let where_clause = sql[where_start..where_end].trim();
+                    results = self.filter_results(results, where_clause)?;
+                }
+                
+                // Handle specific column selection
+                if !stmt.columns.contains(&"*".to_string()) {
+                    let columns: Vec<&str> = stmt.columns.iter().map(|s| s.as_str()).collect();
                     results = self.select_columns(results, &columns)?;
                 }
+                
+                // Handle ORDER BY clause
+                if let Some(order_by_columns) = &stmt.order_by {
+                    results = self.sort_results(results, order_by_columns)?;
+                }
+                
+                Ok(results)
             }
-            
-            Ok(results)
-        } else {
-            Err(anyhow::anyhow!("Only SELECT queries are supported for CSV files"))
+            Err(_) => {
+                // Fallback to simple parsing for backward compatibility
+                let sql_lower = sql.to_lowercase();
+                
+                if sql_lower.contains("select") {
+                    let mut results = self.data.clone();
+                    
+                    // Handle WHERE clause
+                    if let Some(where_pos) = sql_lower.find(" where ") {
+                        let where_clause = &sql[where_pos + 7..];  // Skip " where "
+                        results = self.filter_results(results, where_clause)?;
+                    }
+                    
+                    // Handle specific column selection
+                    if !sql_lower.contains("select *") {
+                        let select_start = sql_lower.find("select").unwrap() + 6;
+                        let from_pos = sql_lower.find("from").unwrap_or(sql.len());
+                        let columns_str = sql[select_start..from_pos].trim();
+                        
+                        if !columns_str.is_empty() && columns_str != "*" {
+                            let columns: Vec<&str> = columns_str.split(',')
+                                .map(|s| s.trim().trim_matches('"').trim_matches('\''))
+                                .collect();
+                            results = self.select_columns(results, &columns)?;
+                        }
+                    }
+                    
+                    Ok(results)
+                } else {
+                    Err(anyhow::anyhow!("Only SELECT queries are supported for CSV files"))
+                }
+            }
         }
     }
     
@@ -161,6 +196,89 @@ impl CsvDataSource {
         }
         
         Ok(results)
+    }
+    
+    fn sort_results(&self, mut data: Vec<Value>, order_by_columns: &[String]) -> Result<Vec<Value>> {
+        if order_by_columns.is_empty() {
+            return Ok(data);
+        }
+        
+        // Sort by multiple columns with proper type-aware comparison
+        data.sort_by(|a, b| {
+            for column_name in order_by_columns {
+                let val_a = a.get(column_name);
+                let val_b = b.get(column_name);
+                
+                let cmp = match (val_a, val_b) {
+                    (Some(Value::Number(a)), Some(Value::Number(b))) => {
+                        // Numeric comparison - handles integers and floats properly
+                        let a_f64 = a.as_f64().unwrap_or(0.0);
+                        let b_f64 = b.as_f64().unwrap_or(0.0);
+                        a_f64.partial_cmp(&b_f64).unwrap_or(Ordering::Equal)
+                    },
+                    (Some(Value::String(a)), Some(Value::String(b))) => {
+                        // String comparison
+                        a.cmp(b)
+                    },
+                    (Some(Value::Bool(a)), Some(Value::Bool(b))) => {
+                        // Boolean comparison (false < true)
+                        a.cmp(b)
+                    },
+                    (Some(Value::Null), Some(Value::Null)) => {
+                        Ordering::Equal
+                    },
+                    (Some(Value::Null), Some(_)) => {
+                        // NULL comes first
+                        Ordering::Less 
+                    },
+                    (Some(_), Some(Value::Null)) => {
+                        // NULL comes first
+                        Ordering::Greater
+                    },
+                    (None, None) => {
+                        Ordering::Equal
+                    },
+                    (None, Some(_)) => {
+                        // Missing values come first
+                        Ordering::Less
+                    },
+                    (Some(_), None) => {
+                        // Missing values come first
+                        Ordering::Greater
+                    },
+                    // Mixed type comparisons - convert to strings
+                    (Some(a), Some(b)) => {
+                        let a_str = match a {
+                            Value::String(s) => s.clone(),
+                            Value::Number(n) => n.to_string(),
+                            Value::Bool(b) => b.to_string(),
+                            Value::Null => "".to_string(),
+                            _ => a.to_string(),
+                        };
+                        let b_str = match b {
+                            Value::String(s) => s.clone(),
+                            Value::Number(n) => n.to_string(),
+                            Value::Bool(b) => b.to_string(),
+                            Value::Null => "".to_string(),
+                            _ => b.to_string(),
+                        };
+                        a_str.cmp(&b_str)
+                    }
+                };
+                
+                // If this column comparison is not equal, return the result
+                if cmp != Ordering::Equal {
+                    return cmp;
+                }
+                
+                // Otherwise, continue to the next column for tie-breaking
+            }
+            
+            // All columns are equal
+            Ordering::Equal
+        });
+        
+        Ok(data)
     }
     
     pub fn get_headers(&self) -> &[String] {

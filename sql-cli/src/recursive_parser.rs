@@ -700,6 +700,7 @@ pub enum CursorContext {
     SelectClause,
     FromClause,
     WhereClause,
+    OrderByClause,
     AfterColumn(String),
     AfterLogicalOp(LogicalOp),
     AfterComparisonOp(String, String), // column_name, operator
@@ -1068,8 +1069,17 @@ fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) ->
         return (CursorContext::WhereClause, extract_partial_at_end(query));
     }
     
+    // Check if we're after ORDER BY
+    if query.to_uppercase().ends_with(" ORDER BY ") || query.to_uppercase().ends_with(" ORDER BY") {
+        return (CursorContext::OrderByClause, None);
+    }
+    
     // Check other contexts based on what's in the statement
-    if stmt.from_table.is_some() && stmt.where_clause.is_none() {
+    if stmt.order_by.is_some() {
+        return (CursorContext::OrderByClause, extract_partial_at_end(query));
+    }
+    
+    if stmt.from_table.is_some() && stmt.where_clause.is_none() && stmt.order_by.is_none() {
         return (CursorContext::FromClause, extract_partial_at_end(query));
     }
     
@@ -1165,11 +1175,16 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
         }
     }
     
+    // Check if we're after ORDER BY
+    if upper.ends_with(" ORDER BY ") || upper.ends_with(" ORDER BY") || upper.contains("ORDER BY ") {
+        return (CursorContext::OrderByClause, extract_partial_at_end(query));
+    }
+    
     if upper.contains("WHERE") && !upper.contains("ORDER") && !upper.contains("GROUP") {
         return (CursorContext::WhereClause, extract_partial_at_end(query));
     }
     
-    if upper.contains("FROM") && !upper.contains("WHERE") {
+    if upper.contains("FROM") && !upper.contains("WHERE") && !upper.contains("ORDER") {
         return (CursorContext::FromClause, extract_partial_at_end(query));
     }
     

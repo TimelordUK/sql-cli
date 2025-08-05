@@ -935,6 +935,7 @@ impl EnhancedTuiApp {
                 // Add debug info about results
                 let row_count = response.data.len();
                 self.results = Some(response);
+                self.calculate_optimal_column_widths();
                 self.reset_table_state();
                 
                 if row_count == 0 {
@@ -1616,6 +1617,44 @@ impl EnhancedTuiApp {
         
         // Clear filtered data
         self.filtered_data = None;
+    }
+
+    fn calculate_optimal_column_widths(&mut self) {
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                    let mut widths = Vec::new();
+                    
+                    for header in &headers {
+                        // Start with header width
+                        let mut max_width = header.len();
+                        
+                        // Check all data rows for this column
+                        for row in &results.data {
+                            if let Some(obj) = row.as_object() {
+                                if let Some(value) = obj.get(*header) {
+                                    let display_len = match value {
+                                        serde_json::Value::String(s) => s.len(),
+                                        serde_json::Value::Number(n) => n.to_string().len(),
+                                        serde_json::Value::Bool(b) => b.to_string().len(),
+                                        serde_json::Value::Null => 4, // "null".len()
+                                        _ => value.to_string().len(),
+                                    };
+                                    max_width = max_width.max(display_len);
+                                }
+                            }
+                        }
+                        
+                        // Add some padding and set reasonable limits
+                        let optimal_width = (max_width + 2).max(4).min(50); // 4-50 char range with 2 char padding
+                        widths.push(optimal_width as u16);
+                    }
+                    
+                    self.column_widths = widths;
+                }
+            }
+        }
     }
 
     fn export_to_csv(&mut self) {
@@ -2610,11 +2649,30 @@ impl EnhancedTuiApp {
             vec![]
         };
 
-        // Calculate visible columns for virtual scrolling
+        // Calculate visible columns for virtual scrolling based on actual widths
         let terminal_width = area.width as usize;
         let available_width = terminal_width.saturating_sub(4); // Account for borders and padding
-        let avg_col_width = 15; // Assume average column width
-        let max_visible_cols = (available_width / avg_col_width).max(1).min(headers.len());
+        
+        // Calculate how many columns can fit using actual column widths
+        let max_visible_cols = if !self.column_widths.is_empty() {
+            let mut width_used = 0;
+            let mut cols_that_fit = 0;
+            
+            for (i, &col_width) in self.column_widths.iter().enumerate() {
+                if i >= headers.len() { break; }
+                if width_used + col_width as usize <= available_width {
+                    width_used += col_width as usize;
+                    cols_that_fit += 1;
+                } else {
+                    break;
+                }
+            }
+            cols_that_fit.max(1).min(headers.len())
+        } else {
+            // Fallback to old method if no calculated widths
+            let avg_col_width = 15;
+            (available_width / avg_col_width).max(1).min(headers.len())
+        };
         
         // Calculate column viewport based on current_column
         let viewport_start = if self.current_column < max_visible_cols / 2 {
@@ -2742,10 +2800,24 @@ impl EnhancedTuiApp {
             Row::new(cells)
         }).collect();
 
-        // Calculate column constraints (only for visible columns)
-        let constraints: Vec<Constraint> = (0..visible_headers.len())
-            .map(|_| Constraint::Min(10))
-            .collect();
+        // Calculate column constraints using optimal widths (only for visible columns)
+        let constraints: Vec<Constraint> = if !self.column_widths.is_empty() {
+            // Use calculated optimal widths for visible columns 
+            (viewport_start..viewport_end)
+                .map(|col_idx| {
+                    if col_idx < self.column_widths.len() {
+                        Constraint::Length(self.column_widths[col_idx])
+                    } else {
+                        Constraint::Min(10) // Fallback
+                    }
+                })
+                .collect()
+        } else {
+            // Fallback to minimum width if no calculated widths available
+            (0..visible_headers.len())
+                .map(|_| Constraint::Min(10))
+                .collect()
+        };
 
         let table = Table::new(rows, constraints)
             .header(Row::new(header_cells).height(1))

@@ -45,6 +45,7 @@ impl HybridParser {
             CursorContext::SelectClause => "SelectClause",
             CursorContext::FromClause => "FromClause",
             CursorContext::WhereClause => "WhereClause",
+            CursorContext::OrderByClause => "OrderByClause",
             CursorContext::AfterColumn(_) => "AfterColumn",
             CursorContext::AfterLogicalOp(LogicalOp::And) => "AfterAND",
             CursorContext::AfterLogicalOp(LogicalOp::Or) => "AfterOR",

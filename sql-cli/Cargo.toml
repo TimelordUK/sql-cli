@@ -31,6 +31,18 @@ path = "test_cache.rs"
 name = "test-json-cli"
 path = "test_json_cli.rs"
 
+[[bin]]
+name = "test-order-by"
+path = "test_order_by.rs"
+
+[[bin]]
+name = "test-order-by-csv"
+path = "test_order_by_csv.rs"
+
+[[bin]]
+name = "test-order-by-completion"
+path = "test_order_by_completion.rs"
+
 [dependencies]
 reedline = "0.30"
 crossterm = { version = "0.28", features = ["use-dev-tty"] }

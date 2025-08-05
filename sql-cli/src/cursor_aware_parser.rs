@@ -125,11 +125,30 @@ impl CursorAwareParser {
                 suggestions.extend(vec!["AND".to_string(), "OR".to_string()]);
                 (suggestions, "InExpression".to_string())
             }
+            CursorContext::OrderByClause => {
+                // We're in ORDER BY clause - suggest selected columns if explicit, otherwise all columns
+                let mut suggestions = Vec::new();
+                
+                // Extract selected columns from the query
+                let selected_columns = self.extract_selected_columns(query, query.len());
+                
+                // If we have explicitly selected columns (not SELECT *), use those
+                if !selected_columns.is_empty() && !selected_columns.contains(&"*".to_string()) {
+                    suggestions.extend(selected_columns);
+                } else {
+                    // Fallback to all columns if SELECT * or no columns detected
+                    suggestions.extend(self.schema.get_columns(default_table));
+                }
+                
+                // Always add ASC/DESC options
+                suggestions.extend(vec!["ASC".to_string(), "DESC".to_string()]);
+                (suggestions, "OrderByClause".to_string())
+            }
             CursorContext::Unknown => {
                 // Fall back to original heuristic parser
                 let query_before_cursor = &query[..cursor_pos.min(query.len())];
                 let context = self.determine_context(query_before_cursor);
-                let suggestions = self.get_suggestions_for_context(&context, &partial_word);
+                let suggestions = self.get_suggestions_for_context(&context, &partial_word, query);
                 return ParseResult {
                     suggestions,
                     context: format!("{:?} (partial: {:?})", context, partial_word),
@@ -325,7 +344,7 @@ impl CursorAwareParser {
         }
     }
     
-    fn get_suggestions_for_context(&self, context: &ParseState, partial_word: &Option<String>) -> Vec<String> {
+    fn get_suggestions_for_context(&self, context: &ParseState, partial_word: &Option<String>, query: &str) -> Vec<String> {
         let default_table = self.schema.get_first_table_name().unwrap_or("trade_deal");
         
         let mut suggestions = match context {
@@ -372,7 +391,20 @@ impl CursorAwareParser {
                 suggestions
             }
             ParseState::InOrderBy => {
-                let mut suggestions = self.schema.get_columns(default_table);
+                let mut suggestions = Vec::new();
+                
+                // Extract selected columns from the query
+                let selected_columns = self.extract_selected_columns(query, query.len());
+                
+                // If we have explicitly selected columns (not SELECT *), use those
+                if !selected_columns.is_empty() && !selected_columns.contains(&"*".to_string()) {
+                    suggestions.extend(selected_columns);
+                } else {
+                    // Fallback to all columns if SELECT * or no columns detected
+                    suggestions.extend(self.schema.get_columns(default_table));
+                }
+                
+                // Always add ASC/DESC options
                 suggestions.extend(vec!["ASC".to_string(), "DESC".to_string()]);
                 suggestions
             }

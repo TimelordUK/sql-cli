@@ -109,11 +109,13 @@ impl SqlParser {
 
     pub fn get_completion_context(&mut self, partial_input: &str) -> CompletionContext {
         let _ = self.parse_partial(partial_input);
+        let selected_columns = self.extract_selected_columns(partial_input);
         
         CompletionContext {
             state: self.current_state.clone(),
             last_token: self.tokens.last().cloned(),
             partial_word: self.extract_partial_word(partial_input),
+            selected_columns,
         }
     }
     
@@ -125,6 +127,50 @@ impl SqlParser {
             trimmed.split_whitespace().last().map(|s| s.to_string())
         }
     }
+    
+    fn extract_selected_columns(&self, input: &str) -> Vec<String> {
+        let input_lower = input.to_lowercase();
+        
+        // Find SELECT and FROM positions
+        if let Some(select_pos) = input_lower.find("select") {
+            let after_select = &input[select_pos + 6..]; // Skip "select"
+            
+            // Find where the SELECT clause ends (FROM, WHERE, ORDER BY, or end of string)
+            let end_markers = ["from", "where", "order by"];
+            let mut select_end = after_select.len();
+            
+            for marker in &end_markers {
+                if let Some(pos) = after_select.to_lowercase().find(marker) {
+                    select_end = select_end.min(pos);
+                }
+            }
+            
+            let select_clause = after_select[..select_end].trim();
+            
+            // Check for SELECT *
+            if select_clause.trim() == "*" {
+                return vec!["*".to_string()];
+            }
+            
+            // Parse column list (split by commas, clean up whitespace)
+            if !select_clause.is_empty() {
+                return select_clause
+                    .split(',')
+                    .map(|col| {
+                        col.trim()
+                           .trim_matches('"')
+                           .trim_matches('\'')
+                           .trim()
+                           .to_string()
+                    })
+                    .filter(|col| !col.is_empty())
+                    .collect();
+            }
+        }
+        
+        // Fallback: no columns found
+        Vec::new()
+    }
 }
 
 #[derive(Debug)]
@@ -132,6 +178,7 @@ pub struct CompletionContext {
     pub state: ParseState,
     pub last_token: Option<SqlToken>,
     pub partial_word: Option<String>,
+    pub selected_columns: Vec<String>,
 }
 
 impl CompletionContext {
@@ -175,10 +222,19 @@ impl CompletionContext {
                 self.filter_suggestions(suggestions)
             }
             ParseState::InOrderBy => {
-                let mut suggestions: Vec<String> = schema.get_columns("trade_deal")
-                    .iter()
-                    .map(|c| c.to_string())
-                    .collect();
+                let mut suggestions = Vec::new();
+                
+                // If we have explicitly selected columns, use those
+                if !self.selected_columns.is_empty() && !self.selected_columns.contains(&"*".to_string()) {
+                    suggestions.extend(self.selected_columns.clone());
+                } else {
+                    // Fallback to all columns if SELECT * or no columns detected
+                    suggestions.extend(schema.get_columns("trade_deal")
+                        .iter()
+                        .map(|c| c.to_string()));
+                }
+                
+                // Always add ASC/DESC options
                 suggestions.extend(vec!["ASC".to_string(), "DESC".to_string()]);
                 self.filter_suggestions(suggestions)
             }

@@ -2,7 +2,7 @@ use sql_cli::csv_datasource::CsvApiClient;
 use anyhow::Result;
 
 fn main() -> Result<()> {
-    println!("Testing JSON file loading...");
+    println!("Testing JSON file loading and sorting...");
     
     let mut client = CsvApiClient::new();
     client.load_json("sample_trades.json", "sample_trades")?;
@@ -13,6 +13,27 @@ fn main() -> Result<()> {
         for (table, columns) in schema {
             println!("Table: {}", table);
             println!("Columns: {}", columns.join(", "));
+        }
+    }
+    
+    // Test original data order and types
+    println!("\nOriginal data order and types:");
+    let result = client.query_csv("SELECT * FROM sample_trades")?;
+    
+    for (i, row) in result.data.iter().enumerate() {
+        if let Some(obj) = row.as_object() {
+            let quantity = obj.get("quantity").unwrap_or(&serde_json::Value::Null);
+            let id = obj.get("id").unwrap_or(&serde_json::Value::Null);
+            println!("Row {}: id={}, quantity={} (type: {})", 
+                i + 1, 
+                id,
+                quantity,
+                match quantity {
+                    serde_json::Value::Number(_) => "Number",
+                    serde_json::Value::String(_) => "String", 
+                    _ => "Other"
+                }
+            );
         }
     }
     

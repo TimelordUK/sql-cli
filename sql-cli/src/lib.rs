@@ -21,3 +21,5 @@ mod test_json_loading;
 mod test_sort_verification;
 #[cfg(test)]
 mod test_filter_fix;
+#[cfg(test)]
+mod test_column_sizing;
