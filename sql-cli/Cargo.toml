@@ -43,6 +43,14 @@ path = "test_order_by_csv.rs"
 name = "test-order-by-completion"
 path = "test_order_by_completion.rs"
 
+[[bin]]
+name = "test-csv-issues"
+path = "test_csv_issues.rs"
+
+[[bin]]
+name = "test-large-dataset-perf"
+path = "test_large_dataset_perf.rs"
+
 [dependencies]
 reedline = "0.30"
 crossterm = { version = "0.28", features = ["use-dev-tty"] }

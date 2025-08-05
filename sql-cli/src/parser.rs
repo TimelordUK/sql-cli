@@ -1,4 +1,6 @@
 
+use crate::csv_fixes::quote_if_needed;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SqlToken {
     Select,
@@ -288,7 +290,9 @@ impl Schema {
         self.tables
             .iter()
             .find(|t| t.name.eq_ignore_ascii_case(table_name))
-            .map(|t| t.columns.clone())
+            .map(|t| t.columns.iter()
+                .map(|col| quote_if_needed(col))
+                .collect())
             .unwrap_or_default()
     }
     

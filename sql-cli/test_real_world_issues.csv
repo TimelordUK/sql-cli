@@ -1,0 +1,6 @@
+Customer ID,First Name,Last Name,Company Name,City,Country,Phone 1,Email,Subscription Date,Website
+1,John,Smith,Acme Corp,New York,USA,555-1234,john@acme.com,2023-01-15,www.acme.com
+2,Jane,Doe,Tech Solutions,San Francisco,USA,555-5678,jane@tech.com,2023-02-20,www.techsolutions.com
+3,Bob,Johnson,Global Industries,London,UK,+44-20-1234,bob@global.com,2023-03-10,www.global.com
+4,Alice,Williams,Smart Systems,Tokyo,Japan,+81-3-5678,alice@smart.com,2023-04-05,www.smartsys.jp
+5,Charlie,Brown,Data Corp,Berlin,Germany,+49-30-9876,charlie@data.com,2023-05-12,www.datacorp.de

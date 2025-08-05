@@ -1,5 +1,6 @@
 use crate::parser::{Schema, ParseState};
 use crate::recursive_parser::{detect_cursor_context, CursorContext, LogicalOp};
+use crate::csv_fixes::quote_if_needed;
 
 #[derive(Debug, Clone)]
 pub struct CursorAwareParser {

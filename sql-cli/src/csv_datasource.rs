@@ -10,12 +10,14 @@ use crate::where_parser::WhereParser;
 use crate::where_ast::evaluate_where_expr;
 use crate::recursive_parser::Parser;
 use std::cmp::Ordering;
+use crate::csv_fixes::{find_column_case_insensitive, build_column_lookup, parse_column_name};
 
 #[derive(Clone, Debug)]
 pub struct CsvDataSource {
     data: Vec<Value>,
     headers: Vec<String>,
     table_name: String,
+    column_lookup: HashMap<String, String>,
 }
 
 impl CsvDataSource {
@@ -52,10 +54,13 @@ impl CsvDataSource {
             data.push(Value::Object(row));
         }
         
+        let column_lookup = build_column_lookup(&headers);
+        
         Ok(CsvDataSource {
             data,
             headers,
             table_name: table_name.to_string(),
+            column_lookup,
         })
     }
     
@@ -88,10 +93,13 @@ impl CsvDataSource {
             }
         }
         
+        let column_lookup = build_column_lookup(&headers);
+        
         Ok(CsvDataSource {
             data: json_data,
             headers,
             table_name: table_name.to_string(),
+            column_lookup,
         })
     }
     
@@ -186,8 +194,10 @@ impl CsvDataSource {
                 let mut new_row = serde_json::Map::new();
                 
                 for &col in columns {
-                    if let Some(value) = obj.get(col) {
-                        new_row.insert(col.to_string(), value.clone());
+                    let col_parsed = parse_column_name(col);
+                    
+                    if let Some((actual_key, value)) = find_column_case_insensitive(obj, col_parsed, &self.column_lookup) {
+                        new_row.insert(actual_key.clone(), value.clone());
                     }
                 }
                 
@@ -206,8 +216,21 @@ impl CsvDataSource {
         // Sort by multiple columns with proper type-aware comparison
         data.sort_by(|a, b| {
             for column_name in order_by_columns {
-                let val_a = a.get(column_name);
-                let val_b = b.get(column_name);
+                let col_parsed = parse_column_name(column_name);
+                
+                let val_a = if let Some(obj_a) = a.as_object() {
+                    find_column_case_insensitive(obj_a, col_parsed, &self.column_lookup)
+                        .map(|(_, v)| v)
+                } else {
+                    None
+                };
+                
+                let val_b = if let Some(obj_b) = b.as_object() {
+                    find_column_case_insensitive(obj_b, col_parsed, &self.column_lookup)
+                        .map(|(_, v)| v)
+                } else {
+                    None
+                };
                 
                 let cmp = match (val_a, val_b) {
                     (Some(Value::Number(a)), Some(Value::Number(b))) => {
@@ -344,7 +367,7 @@ impl CsvApiClient {
     
     pub fn load_from_json(&mut self, data: Vec<Value>, table_name: &str) -> Result<()> {
         // Extract headers from the first row
-        let headers = if let Some(first_row) = data.first() {
+        let headers: Vec<String> = if let Some(first_row) = data.first() {
             if let Some(obj) = first_row.as_object() {
                 obj.keys().map(|k| k.to_string()).collect()
             } else {
@@ -354,10 +377,13 @@ impl CsvApiClient {
             return Err(anyhow::anyhow!("Empty data set"));
         };
         
+        let column_lookup = build_column_lookup(&headers);
+        
         self.datasource = Some(CsvDataSource {
             data: data.clone(),
             headers,
             table_name: table_name.to_string(),
+            column_lookup,
         });
         
         Ok(())

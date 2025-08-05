@@ -10,6 +10,7 @@ pub mod dynamic_schema;
 pub mod csv_datasource;
 pub mod where_ast;
 pub mod where_parser;
+pub mod csv_fixes;
 
 #[cfg(test)]
 mod test_cache_query;
