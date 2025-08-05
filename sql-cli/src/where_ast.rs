@@ -61,6 +61,80 @@ impl WhereValue {
     }
 }
 
+pub fn format_where_ast(expr: &WhereExpr, indent: usize) -> String {
+    let indent_str = "  ".repeat(indent);
+    match expr {
+        WhereExpr::And(left, right) => {
+            format!("{}AND\n{}\n{}", 
+                indent_str,
+                format_where_ast(left, indent + 1),
+                format_where_ast(right, indent + 1)
+            )
+        }
+        WhereExpr::Or(left, right) => {
+            format!("{}OR\n{}\n{}", 
+                indent_str,
+                format_where_ast(left, indent + 1),
+                format_where_ast(right, indent + 1)
+            )
+        }
+        WhereExpr::Not(inner) => {
+            format!("{}NOT\n{}", 
+                indent_str,
+                format_where_ast(inner, indent + 1)
+            )
+        }
+        WhereExpr::Equal(col, val) => {
+            format!("{}EQUAL({}, {:?})", indent_str, col, val)
+        }
+        WhereExpr::NotEqual(col, val) => {
+            format!("{}NOT_EQUAL({}, {:?})", indent_str, col, val)
+        }
+        WhereExpr::GreaterThan(col, val) => {
+            format!("{}GREATER_THAN({}, {:?})", indent_str, col, val)
+        }
+        WhereExpr::GreaterThanOrEqual(col, val) => {
+            format!("{}GREATER_THAN_OR_EQUAL({}, {:?})", indent_str, col, val)
+        }
+        WhereExpr::LessThan(col, val) => {
+            format!("{}LESS_THAN({}, {:?})", indent_str, col, val)
+        }
+        WhereExpr::LessThanOrEqual(col, val) => {
+            format!("{}LESS_THAN_OR_EQUAL({}, {:?})", indent_str, col, val)
+        }
+        WhereExpr::Between(col, lower, upper) => {
+            format!("{}BETWEEN({}, {:?}, {:?})", indent_str, col, lower, upper)
+        }
+        WhereExpr::In(col, values) => {
+            format!("{}IN({}, {:?})", indent_str, col, values)
+        }
+        WhereExpr::NotIn(col, values) => {
+            format!("{}NOT_IN({}, {:?})", indent_str, col, values)
+        }
+        WhereExpr::Like(col, pattern) => {
+            format!("{}LIKE({}, \"{}\")", indent_str, col, pattern)
+        }
+        WhereExpr::IsNull(col) => {
+            format!("{}IS_NULL({})", indent_str, col)
+        }
+        WhereExpr::IsNotNull(col) => {
+            format!("{}IS_NOT_NULL({})", indent_str, col)
+        }
+        WhereExpr::Contains(col, search) => {
+            format!("{}CONTAINS({}, \"{}\")", indent_str, col, search)
+        }
+        WhereExpr::StartsWith(col, prefix) => {
+            format!("{}STARTS_WITH({}, \"{}\")", indent_str, col, prefix)
+        }
+        WhereExpr::EndsWith(col, suffix) => {
+            format!("{}ENDS_WITH({}, \"{}\")", indent_str, col, suffix)
+        }
+        WhereExpr::Length(col, op, value) => {
+            format!("{}LENGTH({}, {:?}, {})", indent_str, col, op, value)
+        }
+    }
+}
+
 pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
     match expr {
         WhereExpr::And(left, right) => {

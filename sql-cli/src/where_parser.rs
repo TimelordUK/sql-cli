@@ -413,4 +413,80 @@ mod tests {
             _ => panic!("Wrong expression type"),
         }
     }
+    
+    #[test]
+    fn test_parentheses_precedence() {
+        // Test that parentheses override default precedence
+        // Default: a = 1 OR b = 2 AND c = 3 -> a = 1 OR (b = 2 AND c = 3)
+        let expr1 = WhereParser::parse("a = 1 OR b = 2 AND c = 3").unwrap();
+        match expr1 {
+            WhereExpr::Or(left, right) => {
+                // Left should be a = 1
+                match left.as_ref() {
+                    WhereExpr::Equal(col, val) => {
+                        assert_eq!(col, "a");
+                        assert_eq!(val, &WhereValue::Number(1.0));
+                    }
+                    _ => panic!("Wrong left expression"),
+                }
+                // Right should be (b = 2 AND c = 3)
+                match right.as_ref() {
+                    WhereExpr::And(l, r) => {
+                        match l.as_ref() {
+                            WhereExpr::Equal(col, val) => {
+                                assert_eq!(col, "b");
+                                assert_eq!(val, &WhereValue::Number(2.0));
+                            }
+                            _ => panic!("Wrong AND left"),
+                        }
+                        match r.as_ref() {
+                            WhereExpr::Equal(col, val) => {
+                                assert_eq!(col, "c");
+                                assert_eq!(val, &WhereValue::Number(3.0));
+                            }
+                            _ => panic!("Wrong AND right"),
+                        }
+                    }
+                    _ => panic!("Wrong right expression"),
+                }
+            }
+            _ => panic!("Wrong top-level expression"),
+        }
+        
+        // With parentheses: (a = 1 OR b = 2) AND c = 3
+        let expr2 = WhereParser::parse("(a = 1 OR b = 2) AND c = 3").unwrap();
+        match expr2 {
+            WhereExpr::And(left, right) => {
+                // Left should be (a = 1 OR b = 2)
+                match left.as_ref() {
+                    WhereExpr::Or(l, r) => {
+                        match l.as_ref() {
+                            WhereExpr::Equal(col, val) => {
+                                assert_eq!(col, "a");
+                                assert_eq!(val, &WhereValue::Number(1.0));
+                            }
+                            _ => panic!("Wrong OR left"),
+                        }
+                        match r.as_ref() {
+                            WhereExpr::Equal(col, val) => {
+                                assert_eq!(col, "b");
+                                assert_eq!(val, &WhereValue::Number(2.0));
+                            }
+                            _ => panic!("Wrong OR right"),
+                        }
+                    }
+                    _ => panic!("Wrong left expression"),
+                }
+                // Right should be c = 3
+                match right.as_ref() {
+                    WhereExpr::Equal(col, val) => {
+                        assert_eq!(col, "c");
+                        assert_eq!(val, &WhereValue::Number(3.0));
+                    }
+                    _ => panic!("Wrong right expression"),
+                }
+            }
+            _ => panic!("Wrong top-level expression"),
+        }
+    }
 }

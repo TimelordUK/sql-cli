@@ -5,6 +5,8 @@ use crate::history::{CommandHistory, HistoryMatch};
 use crate::sql_highlighter::SqlHighlighter;
 use sql_cli::cache::QueryCache;
 use sql_cli::csv_datasource::CsvApiClient;
+use sql_cli::where_parser::WhereParser;
+use sql_cli::where_ast::format_where_ast;
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -550,6 +552,15 @@ impl EnhancedTuiApp {
                 );
                 debug_info.push_str(&data_stats);
                 
+                // Add WHERE clause AST if query contains WHERE
+                if query.to_lowercase().contains(" where ") {
+                    let where_ast_info = match self.parse_where_clause_ast(query) {
+                        Ok(ast_str) => ast_str,
+                        Err(e) => format!("\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {}\n", e)
+                    };
+                    debug_info.push_str(&where_ast_info);
+                }
+                
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();
                 self.debug_scroll = 0;
@@ -917,6 +928,35 @@ impl EnhancedTuiApp {
             }
         }
         Ok(())
+    }
+    
+    fn parse_where_clause_ast(&self, query: &str) -> Result<String> {
+        let query_lower = query.to_lowercase();
+        if let Some(where_pos) = query_lower.find(" where ") {
+            let where_clause = &query[where_pos + 7..]; // Skip " where "
+            
+            match WhereParser::parse(where_clause) {
+                Ok(ast) => {
+                    let tree = format_where_ast(&ast, 0);
+                    Ok(format!(
+                        "\n========== WHERE CLAUSE AST ==========\n\
+                        Query: {}\n\
+                        WHERE clause: {}\n\n\
+                        AST Tree:\n{}\n\n\
+                        Note: Parentheses in the query control operator precedence.\n\
+                        The parser respects: OR < AND < NOT < comparisons\n\
+                        Example: 'a = 1 OR b = 2 AND c = 3' parses as 'a = 1 OR (b = 2 AND c = 3)'\n\
+                        Use parentheses to override: '(a = 1 OR b = 2) AND c = 3'\n",
+                        query,
+                        where_clause,
+                        tree
+                    ))
+                }
+                Err(e) => Err(anyhow::anyhow!("Failed to parse WHERE clause: {}", e))
+            }
+        } else {
+            Ok("\n========== WHERE CLAUSE AST ==========\nNo WHERE clause found in query\n".to_string())
+        }
     }
 
     fn handle_completion(&mut self) {
