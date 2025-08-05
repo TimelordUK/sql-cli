@@ -1,31 +1,30 @@
 use crossterm::style::Stylize;
 use reedline::{
-    default_emacs_keybindings, ColumnarMenu, Emacs, FileBackedHistory, KeyCode,
-    KeyModifiers, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch,
-    PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, Signal, ValidationResult,
-    Validator,
+    default_emacs_keybindings, ColumnarMenu, Emacs, FileBackedHistory, KeyCode, KeyModifiers,
+    MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline,
+    ReedlineEvent, ReedlineMenu, Signal, ValidationResult, Validator,
 };
 use std::{borrow::Cow, io};
 
-mod parser;
-mod completer;
 mod api_client;
+mod completer;
+mod csv_fixes;
+mod cursor_aware_parser;
+mod enhanced_tui;
+mod history;
+mod hybrid_parser;
+mod parser;
+mod recursive_parser;
+mod schema_config;
+mod smart_parser;
+mod sql_highlighter;
 mod table_display;
 mod tui_app;
-mod enhanced_tui;
-mod smart_parser;
-mod cursor_aware_parser;
-mod recursive_parser;
-mod hybrid_parser;
-mod history;
-mod csv_fixes;
-mod sql_highlighter;
-mod schema_config;
 mod virtual_table;
 
-use completer::SqlCompleter;
-use parser::{SqlParser, ParseState};
 use api_client::ApiClient;
+use completer::SqlCompleter;
+use parser::{ParseState, SqlParser};
 use table_display::{display_results, export_to_csv};
 
 struct SqlValidator;
@@ -35,17 +34,15 @@ impl Validator for SqlValidator {
         if line.trim().is_empty() {
             return ValidationResult::Complete;
         }
-        
+
         let mut parser = SqlParser::new();
         match parser.parse_partial(line) {
-            Ok(state) => {
-                match state {
-                    ParseState::Start => ValidationResult::Incomplete,
-                    ParseState::AfterSelect => ValidationResult::Incomplete,
-                    ParseState::AfterFrom => ValidationResult::Incomplete,
-                    _ => ValidationResult::Complete,
-                }
-            }
+            Ok(state) => match state {
+                ParseState::Start => ValidationResult::Incomplete,
+                ParseState::AfterSelect => ValidationResult::Incomplete,
+                ParseState::AfterFrom => ValidationResult::Incomplete,
+                _ => ValidationResult::Complete,
+            },
             Err(_) => ValidationResult::Complete,
         }
     }
@@ -85,7 +82,10 @@ impl Prompt for SqlPrompt {
             PromptHistorySearchStatus::Passing => "",
             PromptHistorySearchStatus::Failing => "failing ",
         };
-        Cow::Owned(format!("({}reverse search: {})", prefix, history_search.term))
+        Cow::Owned(format!(
+            "({}reverse search: {})",
+            prefix, history_search.term
+        ))
     }
 }
 
@@ -101,7 +101,10 @@ fn print_help() {
     println!("  {} - Exit", "Ctrl+D".green());
     println!("  {}  - Show this help", "\\help".green());
     println!("  {} - Clear screen", "\\clear".green());
-    println!("  {} - Export last results to CSV", "\\export <filename>".green());
+    println!(
+        "  {} - Export last results to CSV",
+        "\\export <filename>".green()
+    );
     println!();
     println!("{}", "Supported syntax:".yellow());
     println!("  SELECT column1, column2 FROM trade_deal");
@@ -113,7 +116,7 @@ fn print_help() {
 
 fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", format!("Executing: {}", query).cyan());
-    
+
     match client.query_trades(query) {
         Ok(response) => {
             display_results(&response.data, &response.query.select);
@@ -131,14 +134,15 @@ fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let use_classic_tui = args.contains(&"--simple".to_string());
     let use_tui = !args.contains(&"--classic".to_string());
-    
+
     // Check for data file argument (CSV or JSON)
     // First check for --csv flag (legacy)
-    let csv_file_flag = args.iter()
+    let csv_file_flag = args
+        .iter()
         .position(|arg| arg == "--csv")
         .and_then(|pos| args.get(pos + 1))
         .map(|s| s.to_string());
-    
+
     // If no --csv flag, check if last argument is a file
     let data_file = csv_file_flag.or_else(|| {
         args.last()
@@ -146,7 +150,7 @@ fn main() -> io::Result<()> {
             .filter(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
             .map(|s| s.to_string())
     });
-    
+
     if use_tui {
         if use_classic_tui {
             println!("Starting simple TUI mode... (use --enhanced for csvlens-style features)");
@@ -156,10 +160,19 @@ fn main() -> io::Result<()> {
             }
         } else {
             if let Some(file_path) = &data_file {
-                let file_type = if file_path.ends_with(".json") { "JSON" } else { "CSV" };
-                println!("Starting enhanced TUI in {} mode with file: {}", file_type, file_path);
+                let file_type = if file_path.ends_with(".json") {
+                    "JSON"
+                } else {
+                    "CSV"
+                };
+                println!(
+                    "Starting enhanced TUI in {} mode with file: {}",
+                    file_type, file_path
+                );
             } else {
-                println!("Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)");
+                println!(
+                    "Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)"
+                );
             }
             let api_url = std::env::var("TRADE_API_URL")
                 .unwrap_or_else(|_| "http://localhost:5000".to_string());
@@ -174,20 +187,18 @@ fn main() -> io::Result<()> {
         }
         return Ok(());
     }
-    
+
     // Classic mode (original interface)
     print_help();
-    
-    let history_file = dirs::home_dir()
-        .unwrap()
-        .join(".sql_cli_history");
+
+    let history_file = dirs::home_dir().unwrap().join(".sql_cli_history");
     let history = Box::new(
         FileBackedHistory::with_file(50, history_file.to_path_buf())
             .expect("Error configuring history"),
     );
-    
+
     let completer = Box::new(SqlCompleter::new());
-    
+
     let completion_menu = Box::new(
         ColumnarMenu::default()
             .with_name("sql_completion")
@@ -195,34 +206,34 @@ fn main() -> io::Result<()> {
             .with_column_width(None)
             .with_column_padding(2),
     );
-    
+
     let mut keybindings = default_emacs_keybindings();
     keybindings.add_binding(
         KeyModifiers::NONE,
         KeyCode::Tab,
         ReedlineEvent::Menu("sql_completion".to_string()),
     );
-    
+
     let edit_mode = Box::new(Emacs::new(keybindings));
-    
+
     let mut line_editor = Reedline::create()
         .with_completer(completer)
         .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
         .with_validator(Box::new(SqlValidator))
         .with_history(history)
         .with_edit_mode(edit_mode);
-    
+
     let prompt = SqlPrompt;
-    
+
     // Initialize API client
-    let api_url = std::env::var("TRADE_API_URL")
-        .unwrap_or_else(|_| "http://localhost:5000".to_string());
+    let api_url =
+        std::env::var("TRADE_API_URL").unwrap_or_else(|_| "http://localhost:5000".to_string());
     let api_client = ApiClient::new(&api_url);
-    
+
     println!("{}", format!("Connected to API: {}", api_url).cyan());
-    
+
     let mut last_results: Option<Vec<serde_json::Value>> = None;
-    
+
     loop {
         let sig = line_editor.read_line(&prompt)?;
         match sig {
@@ -231,27 +242,27 @@ fn main() -> io::Result<()> {
                 if trimmed.is_empty() {
                     continue;
                 }
-                
+
                 if trimmed == "\\help" {
                     print_help();
                     continue;
                 }
-                
+
                 if trimmed == "\\clear" {
                     print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
                     continue;
                 }
-                
+
                 if trimmed.starts_with("\\export") {
                     let parts: Vec<&str> = trimmed.split_whitespace().collect();
                     if parts.len() < 2 {
                         eprintln!("{}", "Usage: \\export <filename>".red());
                         continue;
                     }
-                    
+
                     if let Some(ref results) = last_results {
                         match export_to_csv(results, &vec!["*".to_string()], parts[1]) {
-                            Ok(_) => {},
+                            Ok(_) => {}
                             Err(e) => eprintln!("{}", format!("Export error: {}", e).red()),
                         }
                     } else {
@@ -259,7 +270,7 @@ fn main() -> io::Result<()> {
                     }
                     continue;
                 }
-                
+
                 match api_client.query_trades(&buffer) {
                     Ok(response) => {
                         display_results(&response.data, &response.query.select);
@@ -274,6 +285,6 @@ fn main() -> io::Result<()> {
             }
         }
     }
-    
+
     Ok(())
 }

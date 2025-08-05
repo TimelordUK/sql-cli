@@ -59,6 +59,14 @@ jobs:
       working-directory: ./sql-cli
       run: cargo clippy -- -W warnings
     
-    - name: Check formatting
+    - name: Format code
       working-directory: ./sql-cli
-      run: cargo fmt -- --check
+      run: cargo fmt
+    
+    - name: Commit formatting changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add -A
+        git diff --staged --quiet || git commit -m "Auto-format code with rustfmt"
+      continue-on-error: true

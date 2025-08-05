@@ -1,6 +1,6 @@
 use crate::api_client::{ApiClient, QueryResponse};
-use crate::parser::SqlParser;
 use crate::cursor_aware_parser::CursorAwareParser;
+use crate::parser::SqlParser;
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -51,11 +51,11 @@ impl TuiApp {
             cursor_parser: CursorAwareParser::new(),
         }
     }
-    
+
     pub fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         // Initial draw
         terminal.draw(|f| self.ui(f))?;
-        
+
         loop {
             // Only redraw when we get an event
             if let Event::Key(key) = event::read()? {
@@ -111,7 +111,7 @@ impl TuiApp {
                         }
                     }
                 }
-                
+
                 // Redraw after handling the event
                 if needs_redraw {
                     terminal.draw(|f| self.ui(f))?;
@@ -120,61 +120,71 @@ impl TuiApp {
         }
         Ok(())
     }
-    
+
     fn execute_query(&mut self) {
         let query = self.input.value().trim();
         self.status_message = format!("Executing: {}", query);
-        
+
         match self.api_client.query_trades(query) {
             Ok(response) => {
                 self.results = Some(response);
                 self.mode = AppMode::Results;
                 self.virtual_table_state.select(0);
-                self.status_message = format!("Query executed successfully - {} rows", 
-                    self.results.as_ref().unwrap().data.len());
+                self.status_message = format!(
+                    "Query executed successfully - {} rows",
+                    self.results.as_ref().unwrap().data.len()
+                );
             }
             Err(e) => {
                 self.status_message = format!("Error: {}", e);
             }
         }
     }
-    
+
     fn handle_tab_completion(&mut self) {
         // Basic completion - could be enhanced with proper parsing
         let input_text = self.input.value().to_string();
         let suggestions = self.get_completions(&input_text);
-        
+
         if !suggestions.is_empty() {
             // For now, just complete the first suggestion
             // In a full implementation, you'd show a popup with options
             let suggestion = &suggestions[0];
             let words: Vec<&str> = input_text.split_whitespace().collect();
             if let Some(last_word) = words.last() {
-                if suggestion.to_lowercase().starts_with(&last_word.to_lowercase()) {
-                    let new_input = format!("{}{} ", input_text.trim_end_matches(last_word), suggestion);
+                if suggestion
+                    .to_lowercase()
+                    .starts_with(&last_word.to_lowercase())
+                {
+                    let new_input =
+                        format!("{}{} ", input_text.trim_end_matches(last_word), suggestion);
                     self.input = Input::from(new_input);
                     // Move cursor to end
                     while self.input.cursor() < self.input.value().len() {
-                        self.input.handle_event(&Event::Key(crossterm::event::KeyEvent::new(
-                            KeyCode::Right, KeyModifiers::NONE
-                        )));
+                        self.input
+                            .handle_event(&Event::Key(crossterm::event::KeyEvent::new(
+                                KeyCode::Right,
+                                KeyModifiers::NONE,
+                            )));
                     }
                 }
             }
         }
     }
-    
+
     fn get_completions(&mut self, input: &str) -> Vec<String> {
         let cursor_pos = self.input.cursor(); // Get actual cursor position
         let result = self.cursor_parser.get_completions(input, cursor_pos);
         result.suggestions
     }
-    
+
     fn handle_navigation(&mut self, key: KeyCode) {
         if let Some(results) = &self.results {
             let num_rows = results.data.len();
-            if num_rows == 0 { return; }
-            
+            if num_rows == 0 {
+                return;
+            }
+
             match key {
                 KeyCode::Up => {
                     self.virtual_table_state.scroll_up(1);
@@ -198,7 +208,7 @@ impl TuiApp {
             }
         }
     }
-    
+
     fn ui(&self, f: &mut Frame) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -208,23 +218,21 @@ impl TuiApp {
                 Constraint::Length(1), // Status bar
             ])
             .split(f.area());
-        
+
         // Command input area
-        let input_block = Block::default()
-            .borders(Borders::ALL)
-            .title("SQL Command");
-        
+        let input_block = Block::default().borders(Borders::ALL).title("SQL Command");
+
         let input_style = if self.mode == AppMode::Command {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::Gray)
         };
-        
+
         let input_paragraph = Paragraph::new(self.input.value())
             .block(input_block)
             .style(input_style);
         f.render_widget(input_paragraph, chunks[0]);
-        
+
         // Set cursor position when in command mode
         if self.mode == AppMode::Command {
             f.set_cursor_position((
@@ -232,7 +240,7 @@ impl TuiApp {
                 chunks[0].y + 1,
             ));
         }
-        
+
         // Results area
         if let Some(results) = &self.results {
             self.render_results(f, chunks[1], results);
@@ -254,13 +262,13 @@ impl TuiApp {
             } else {
                 vec![Line::from("No results to display")]
             };
-            
+
             let help_paragraph = Paragraph::new(help_text)
                 .block(Block::default().borders(Borders::ALL).title("Help"))
                 .wrap(ratatui::widgets::Wrap { trim: true });
             f.render_widget(help_paragraph, chunks[1]);
         }
-        
+
         // Status bar
         let status_line = Line::from(vec![
             Span::styled(&self.status_message, Style::default().fg(Color::White)),
@@ -270,32 +278,33 @@ impl TuiApp {
                     AppMode::Command => "CMD",
                     AppMode::Results => "VIEW",
                 },
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" | F1=Help | Esc=Back/Exit"),
         ]);
-        
-        let status = Paragraph::new(status_line)
-            .style(Style::default().bg(Color::DarkGray));
+
+        let status = Paragraph::new(status_line).style(Style::default().bg(Color::DarkGray));
         f.render_widget(status, chunks[2]);
-        
+
         // Help popup if active
         if self.show_help {
             self.render_help_popup(f);
         }
     }
-    
+
     fn render_results(&self, f: &mut Frame, area: Rect, results: &QueryResponse) {
         let data = &results.data;
         let select_fields = &results.query.select;
-        
+
         if data.is_empty() {
             let no_data = Paragraph::new("No data returned")
                 .block(Block::default().borders(Borders::ALL).title("Results"));
             f.render_widget(no_data, area);
             return;
         }
-        
+
         // Get headers from first record or from select fields
         let headers: Vec<String> = if select_fields.contains(&"*".to_string()) {
             if let Some(first) = data.first() {
@@ -310,7 +319,7 @@ impl TuiApp {
         } else {
             select_fields.clone()
         };
-        
+
         // Calculate column widths
         let num_cols = headers.len();
         let col_width = if num_cols > 0 {
@@ -318,11 +327,11 @@ impl TuiApp {
         } else {
             10
         };
-        
+
         let widths: Vec<Constraint> = (0..num_cols)
             .map(|_| Constraint::Length(col_width))
             .collect();
-        
+
         // Use VirtualTable for efficient rendering
         let header_refs: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
         let current_row = self.virtual_table_state.selected + 1; // 1-based for display
@@ -332,18 +341,23 @@ impl TuiApp {
                 current_row,
                 data.len()
             )));
-        
+
         // Clone is needed here due to Rust's borrowing rules with closures
         // This is a small struct so the performance impact should be minimal
         f.render_stateful_widget(virtual_table, area, &mut self.virtual_table_state.clone());
     }
-    
+
     fn render_help_popup(&self, f: &mut Frame) {
         let area = centered_rect(80, 60, f.area());
         f.render_widget(Clear, area);
-        
+
         let help_text = vec![
-            Line::from(vec![Span::styled("SQL CLI Help", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled(
+                "SQL CLI Help",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from(""),
             Line::from("Command Mode:"),
             Line::from("  Enter     - Execute query"),
@@ -365,11 +379,11 @@ impl TuiApp {
             Line::from("  SELECT * FROM trade_deal WHERE counterparty.Contains('Goldman')"),
             Line::from("  SELECT * FROM trade_deal ORDER BY price DESC"),
         ];
-        
+
         let help_popup = Paragraph::new(help_text)
             .block(Block::default().borders(Borders::ALL).title("Help"))
             .wrap(ratatui::widgets::Wrap { trim: true });
-        
+
         f.render_widget(help_popup, area);
     }
 }
@@ -384,7 +398,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_y) / 2),
         ])
         .split(r);
-    
+
     Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -402,15 +416,15 @@ pub fn run_tui_app() -> Result<()> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    
+
     // Get API URL from environment or use default
-    let api_url = std::env::var("TRADE_API_URL")
-        .unwrap_or_else(|_| "http://localhost:5000".to_string());
-    
+    let api_url =
+        std::env::var("TRADE_API_URL").unwrap_or_else(|_| "http://localhost:5000".to_string());
+
     // Create and run app
     let mut app = TuiApp::new(&api_url);
     let res = app.run(&mut terminal);
-    
+
     // Restore terminal
     disable_raw_mode()?;
     execute!(
@@ -419,10 +433,10 @@ pub fn run_tui_app() -> Result<()> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
-    
+
     if let Err(err) = res {
         // Error handled in TUI status message instead of stdout
     }
-    
+
     Ok(())
 }

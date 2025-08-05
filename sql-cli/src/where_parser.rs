@@ -1,7 +1,7 @@
-use crate::recursive_parser::{Token, Lexer};
-use crate::where_ast::{WhereExpr, WhereValue, ComparisonOp};
-use anyhow::{Result, anyhow};
-use chrono::{Local, Datelike};
+use crate::recursive_parser::{Lexer, Token};
+use crate::where_ast::{ComparisonOp, WhereExpr, WhereValue};
+use anyhow::{anyhow, Result};
+use chrono::{Datelike, Local};
 
 pub struct WhereParser {
     tokens: Vec<Token>,
@@ -12,7 +12,7 @@ impl WhereParser {
     pub fn parse(where_clause: &str) -> Result<WhereExpr> {
         let mut lexer = Lexer::new(where_clause);
         let mut tokens = Vec::new();
-        
+
         loop {
             let token = lexer.next_token();
             if matches!(token, Token::Eof) {
@@ -20,25 +20,25 @@ impl WhereParser {
             }
             tokens.push(token);
         }
-        
+
         let mut parser = WhereParser { tokens, current: 0 };
         parser.parse_or_expr()
     }
-    
+
     fn current_token(&self) -> Option<&Token> {
         self.tokens.get(self.current)
     }
-    
+
     fn peek_token(&self) -> Option<&Token> {
         self.tokens.get(self.current + 1)
     }
-    
+
     fn advance(&mut self) -> Option<&Token> {
         let token = self.tokens.get(self.current);
         self.current += 1;
         token
     }
-    
+
     fn expect_identifier(&mut self) -> Result<String> {
         match self.advance() {
             Some(Token::Identifier(name)) => Ok(name.clone()),
@@ -46,7 +46,7 @@ impl WhereParser {
             _ => Err(anyhow!("Expected identifier")),
         }
     }
-    
+
     fn parse_value(&mut self) -> Result<WhereValue> {
         match self.current_token() {
             Some(Token::StringLiteral(_)) => {
@@ -78,13 +78,17 @@ impl WhereParser {
             Some(Token::DateTime) => {
                 self.advance(); // consume DateTime
                 self.expect_token(Token::LeftParen)?;
-                
+
                 // Check if empty (today at midnight)
                 if matches!(self.current_token(), Some(Token::RightParen)) {
                     self.advance(); // consume )
                     let today = Local::now();
-                    let date_str = format!("{:04}-{:02}-{:02} 00:00:00", 
-                        today.year(), today.month(), today.day());
+                    let date_str = format!(
+                        "{:04}-{:02}-{:02} 00:00:00",
+                        today.year(),
+                        today.month(),
+                        today.day()
+                    );
                     Ok(WhereValue::String(date_str))
                 } else {
                     // Parse year, month, day, etc.
@@ -93,64 +97,66 @@ impl WhereParser {
                     let month = self.parse_number_value()? as u32;
                     self.expect_token(Token::Comma)?;
                     let day = self.parse_number_value()? as u32;
-                    
+
                     let mut hour = 0u32;
                     let mut minute = 0u32;
                     let mut second = 0u32;
-                    
+
                     // Optional time components
                     if matches!(self.current_token(), Some(Token::Comma)) {
                         self.advance(); // consume comma
                         hour = self.parse_number_value()? as u32;
-                        
+
                         if matches!(self.current_token(), Some(Token::Comma)) {
                             self.advance(); // consume comma
                             minute = self.parse_number_value()? as u32;
-                            
+
                             if matches!(self.current_token(), Some(Token::Comma)) {
                                 self.advance(); // consume comma
                                 second = self.parse_number_value()? as u32;
                             }
                         }
                     }
-                    
+
                     self.expect_token(Token::RightParen)?;
-                    
-                    let date_str = format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", 
-                        year, month, day, hour, minute, second);
+
+                    let date_str = format!(
+                        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                        year, month, day, hour, minute, second
+                    );
                     Ok(WhereValue::String(date_str))
                 }
             }
             _ => Err(anyhow!("Expected value")),
         }
     }
-    
+
     // Parse OR expressions (lowest precedence)
     fn parse_or_expr(&mut self) -> Result<WhereExpr> {
         let mut left = self.parse_and_expr()?;
-        
+
         while let Some(Token::Or) = self.current_token() {
             self.advance(); // consume OR
             let right = self.parse_and_expr()?;
             left = WhereExpr::Or(Box::new(left), Box::new(right));
         }
-        
+
         Ok(left)
     }
-    
+
     // Parse AND expressions
     fn parse_and_expr(&mut self) -> Result<WhereExpr> {
         let mut left = self.parse_not_expr()?;
-        
+
         while let Some(Token::And) = self.current_token() {
             self.advance(); // consume AND
             let right = self.parse_not_expr()?;
             left = WhereExpr::And(Box::new(left), Box::new(right));
         }
-        
+
         Ok(left)
     }
-    
+
     // Parse NOT expressions
     fn parse_not_expr(&mut self) -> Result<WhereExpr> {
         if let Some(Token::Not) = self.current_token() {
@@ -161,7 +167,7 @@ impl WhereParser {
             self.parse_comparison_expr()
         }
     }
-    
+
     // Parse comparison expressions
     fn parse_comparison_expr(&mut self) -> Result<WhereExpr> {
         // Check for parentheses
@@ -176,16 +182,16 @@ impl WhereParser {
             self.parse_primary_expr()
         }
     }
-    
+
     // Parse primary expressions (columns, methods, comparisons)
     fn parse_primary_expr(&mut self) -> Result<WhereExpr> {
         let column = self.expect_identifier()?;
-        
+
         // Check for method calls
         if let Some(Token::Dot) = self.current_token() {
             self.advance(); // consume .
             let method = self.expect_identifier()?;
-            
+
             match method.as_str() {
                 "Contains" => {
                     self.expect_token(Token::LeftParen)?;
@@ -208,7 +214,7 @@ impl WhereParser {
                 "Length" => {
                     self.expect_token(Token::LeftParen)?;
                     self.expect_token(Token::RightParen)?;
-                    
+
                     // Parse comparison operator
                     let op = self.parse_comparison_op()?;
                     let value = self.parse_number_value()?;
@@ -217,7 +223,7 @@ impl WhereParser {
                 "ToLower" => {
                     self.expect_token(Token::LeftParen)?;
                     self.expect_token(Token::RightParen)?;
-                    
+
                     // Parse comparison operator
                     let op = self.parse_comparison_op()?;
                     let value = self.parse_string_value()?;
@@ -226,7 +232,7 @@ impl WhereParser {
                 "ToUpper" => {
                     self.expect_token(Token::LeftParen)?;
                     self.expect_token(Token::RightParen)?;
-                    
+
                     // Parse comparison operator
                     let op = self.parse_comparison_op()?;
                     let value = self.parse_string_value()?;
@@ -313,7 +319,7 @@ impl WhereParser {
             }
         }
     }
-    
+
     fn parse_comparison_op(&mut self) -> Result<ComparisonOp> {
         match self.advance() {
             Some(Token::Equal) => Ok(ComparisonOp::Equal),
@@ -325,7 +331,7 @@ impl WhereParser {
             _ => Err(anyhow!("Expected comparison operator")),
         }
     }
-    
+
     fn parse_string_value(&mut self) -> Result<String> {
         match self.advance() {
             Some(Token::StringLiteral(s)) => Ok(s.clone()),
@@ -333,7 +339,7 @@ impl WhereParser {
             _ => Err(anyhow!("Expected string literal")),
         }
     }
-    
+
     fn parse_number_value(&mut self) -> Result<f64> {
         match self.advance() {
             Some(Token::NumberLiteral(n)) => {
@@ -342,21 +348,23 @@ impl WhereParser {
             _ => Err(anyhow!("Expected number literal")),
         }
     }
-    
+
     fn parse_value_list(&mut self) -> Result<Vec<WhereValue>> {
         let mut values = vec![self.parse_value()?];
-        
+
         while let Some(Token::Comma) = self.current_token() {
             self.advance(); // consume comma
             values.push(self.parse_value()?);
         }
-        
+
         Ok(values)
     }
-    
+
     fn expect_token(&mut self, expected: Token) -> Result<()> {
         match self.advance() {
-            Some(token) if std::mem::discriminant(token) == std::mem::discriminant(&expected) => Ok(()),
+            Some(token) if std::mem::discriminant(token) == std::mem::discriminant(&expected) => {
+                Ok(())
+            }
             Some(token) => Err(anyhow!("Expected {:?}, got {:?}", expected, token)),
             None => Err(anyhow!("Unexpected end of input")),
         }
@@ -366,7 +374,7 @@ impl WhereParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_simple_comparison() {
         let expr = WhereParser::parse("price > 100").unwrap();
@@ -378,7 +386,7 @@ mod tests {
             _ => panic!("Wrong expression type"),
         }
     }
-    
+
     #[test]
     fn test_and_expression() {
         let expr = WhereParser::parse("price > 100 AND category = \"Electronics\"").unwrap();
@@ -402,10 +410,13 @@ mod tests {
             _ => panic!("Wrong expression type"),
         }
     }
-    
+
     #[test]
     fn test_between_with_and() {
-        let expr = WhereParser::parse("category = \"Electronics\" AND price BETWEEN 100 AND 500 AND quantity > 0").unwrap();
+        let expr = WhereParser::parse(
+            "category = \"Electronics\" AND price BETWEEN 100 AND 500 AND quantity > 0",
+        )
+        .unwrap();
         // This should parse as: (category = "Electronics") AND (price BETWEEN 100 AND 500) AND (quantity > 0)
         match expr {
             WhereExpr::And(left, right) => {
@@ -441,7 +452,7 @@ mod tests {
             _ => panic!("Wrong expression type"),
         }
     }
-    
+
     #[test]
     fn test_parentheses_precedence() {
         // Test that parentheses override default precedence
@@ -480,7 +491,7 @@ mod tests {
             }
             _ => panic!("Wrong top-level expression"),
         }
-        
+
         // With parentheses: (a = 1 OR b = 2) AND c = 3
         let expr2 = WhereParser::parse("(a = 1 OR b = 2) AND c = 3").unwrap();
         match expr2 {
@@ -517,7 +528,7 @@ mod tests {
             _ => panic!("Wrong top-level expression"),
         }
     }
-    
+
     #[test]
     fn test_case_conversion_methods() {
         // Test ToLower
@@ -530,8 +541,8 @@ mod tests {
             }
             _ => panic!("Wrong expression type for ToLower"),
         }
-        
-        // Test ToUpper  
+
+        // Test ToUpper
         let expr = WhereParser::parse("status.ToUpper() != \"PENDING\"").unwrap();
         match expr {
             WhereExpr::ToUpper(col, op, val) => {

@@ -1,5 +1,5 @@
-use serde_json::Value;
 use anyhow::Result;
+use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WhereExpr {
@@ -7,7 +7,7 @@ pub enum WhereExpr {
     And(Box<WhereExpr>, Box<WhereExpr>),
     Or(Box<WhereExpr>, Box<WhereExpr>),
     Not(Box<WhereExpr>),
-    
+
     // Comparison operators
     Equal(String, WhereValue),
     NotEqual(String, WhereValue),
@@ -15,7 +15,7 @@ pub enum WhereExpr {
     GreaterThanOrEqual(String, WhereValue),
     LessThan(String, WhereValue),
     LessThanOrEqual(String, WhereValue),
-    
+
     // Special operators
     Between(String, WhereValue, WhereValue),
     In(String, Vec<WhereValue>),
@@ -23,14 +23,14 @@ pub enum WhereExpr {
     Like(String, String),
     IsNull(String),
     IsNotNull(String),
-    
+
     // String methods
     Contains(String, String),
     StartsWith(String, String),
     EndsWith(String, String),
-    ToLower(String, ComparisonOp, String),  // column.ToLower() == "value"
-    ToUpper(String, ComparisonOp, String),  // column.ToUpper() == "VALUE"
-    
+    ToLower(String, ComparisonOp, String), // column.ToLower() == "value"
+    ToUpper(String, ComparisonOp, String), // column.ToUpper() == "VALUE"
+
     // Numeric methods
     Length(String, ComparisonOp, i64),
 }
@@ -67,24 +67,23 @@ pub fn format_where_ast(expr: &WhereExpr, indent: usize) -> String {
     let indent_str = "  ".repeat(indent);
     match expr {
         WhereExpr::And(left, right) => {
-            format!("{}AND\n{}\n{}", 
+            format!(
+                "{}AND\n{}\n{}",
                 indent_str,
                 format_where_ast(left, indent + 1),
                 format_where_ast(right, indent + 1)
             )
         }
         WhereExpr::Or(left, right) => {
-            format!("{}OR\n{}\n{}", 
+            format!(
+                "{}OR\n{}\n{}",
                 indent_str,
                 format_where_ast(left, indent + 1),
                 format_where_ast(right, indent + 1)
             )
         }
         WhereExpr::Not(inner) => {
-            format!("{}NOT\n{}", 
-                indent_str,
-                format_where_ast(inner, indent + 1)
-            )
+            format!("{}NOT\n{}", indent_str, format_where_ast(inner, indent + 1))
         }
         WhereExpr::Equal(col, val) => {
             format!("{}EQUAL({}, {:?})", indent_str, col, val)
@@ -151,15 +150,15 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
         WhereExpr::Or(left, right) => {
             Ok(evaluate_where_expr(left, row)? || evaluate_where_expr(right, row)?)
         }
-        WhereExpr::Not(inner) => {
-            Ok(!evaluate_where_expr(inner, row)?)
-        }
-        
+        WhereExpr::Not(inner) => Ok(!evaluate_where_expr(inner, row)?),
+
         WhereExpr::Equal(column, value) => {
             if let Some(field_value) = row.get(column) {
                 match (WhereValue::from_json(field_value), value) {
                     (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 == *s2),
-                    (WhereValue::Number(n1), WhereValue::Number(n2)) => Ok((n1 - n2).abs() < f64::EPSILON),
+                    (WhereValue::Number(n1), WhereValue::Number(n2)) => {
+                        Ok((n1 - n2).abs() < f64::EPSILON)
+                    }
                     (WhereValue::Null, WhereValue::Null) => Ok(true),
                     _ => Ok(false),
                 }
@@ -167,11 +166,12 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(matches!(value, WhereValue::Null))
             }
         }
-        
-        WhereExpr::NotEqual(column, value) => {
-            Ok(!evaluate_where_expr(&WhereExpr::Equal(column.clone(), value.clone()), row)?)
-        }
-        
+
+        WhereExpr::NotEqual(column, value) => Ok(!evaluate_where_expr(
+            &WhereExpr::Equal(column.clone(), value.clone()),
+            row,
+        )?),
+
         WhereExpr::GreaterThan(column, value) => {
             if let Some(field_value) = row.get(column) {
                 match (WhereValue::from_json(field_value), value) {
@@ -183,7 +183,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::GreaterThanOrEqual(column, value) => {
             if let Some(field_value) = row.get(column) {
                 match (WhereValue::from_json(field_value), value) {
@@ -195,7 +195,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::LessThan(column, value) => {
             if let Some(field_value) = row.get(column) {
                 match (WhereValue::from_json(field_value), value) {
@@ -207,7 +207,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::LessThanOrEqual(column, value) => {
             if let Some(field_value) = row.get(column) {
                 match (WhereValue::from_json(field_value), value) {
@@ -219,7 +219,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::Between(column, lower, upper) => {
             if let Some(field_value) = row.get(column) {
                 let val = WhereValue::from_json(field_value);
@@ -236,7 +236,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::In(column, values) => {
             if let Some(field_value) = row.get(column) {
                 let val = WhereValue::from_json(field_value);
@@ -245,7 +245,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::NotIn(column, values) => {
             if let Some(field_value) = row.get(column) {
                 let val = WhereValue::from_json(field_value);
@@ -254,15 +254,13 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(true) // NULL is not in any list
             }
         }
-        
+
         WhereExpr::Like(column, pattern) => {
             if let Some(field_value) = row.get(column) {
                 if let Some(s) = field_value.as_str() {
                     // Simple LIKE implementation: % = any chars, _ = single char
-                    let regex_pattern = pattern
-                        .replace("%", ".*")
-                        .replace("_", ".");
-                    
+                    let regex_pattern = pattern.replace("%", ".*").replace("_", ".");
+
                     if let Ok(regex) = regex::Regex::new(&format!("^{}$", regex_pattern)) {
                         Ok(regex.is_match(s))
                     } else {
@@ -275,7 +273,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::IsNull(column) => {
             if let Some(field_value) = row.get(column) {
                 Ok(field_value.is_null())
@@ -283,7 +281,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(true) // Missing field is considered NULL
             }
         }
-        
+
         WhereExpr::IsNotNull(column) => {
             if let Some(field_value) = row.get(column) {
                 Ok(!field_value.is_null())
@@ -291,7 +289,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false) // Missing field is considered NULL
             }
         }
-        
+
         WhereExpr::Contains(column, search) => {
             if let Some(field_value) = row.get(column) {
                 if let Some(s) = field_value.as_str() {
@@ -303,7 +301,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::StartsWith(column, prefix) => {
             if let Some(field_value) = row.get(column) {
                 if let Some(s) = field_value.as_str() {
@@ -315,7 +313,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::EndsWith(column, suffix) => {
             if let Some(field_value) = row.get(column) {
                 if let Some(s) = field_value.as_str() {
@@ -327,7 +325,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::ToLower(column, op, value) => {
             if let Some(field_value) = row.get(column) {
                 if let Some(s) = field_value.as_str() {
@@ -347,14 +345,14 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::ToUpper(column, op, value) => {
             if let Some(field_value) = row.get(column) {
                 if let Some(s) = field_value.as_str() {
                     let upper_s = s.to_uppercase();
                     Ok(match op {
                         ComparisonOp::Equal => upper_s == *value,
-                        ComparisonOp::NotEqual => upper_s != *value,  
+                        ComparisonOp::NotEqual => upper_s != *value,
                         ComparisonOp::GreaterThan => upper_s > *value,
                         ComparisonOp::GreaterThanOrEqual => upper_s >= *value,
                         ComparisonOp::LessThan => upper_s < *value,
@@ -367,7 +365,7 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
-        
+
         WhereExpr::Length(column, op, value) => {
             if let Some(field_value) = row.get(column) {
                 if let Some(s) = field_value.as_str() {

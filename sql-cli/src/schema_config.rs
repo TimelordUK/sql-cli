@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaConfig {
@@ -20,14 +20,14 @@ pub fn load_schema_config() -> SchemaConfig {
         "schema.json".to_string(),
         ".sql-cli/schema.json".to_string(),
     ];
-    
+
     // Add config directory path if available
     if let Some(config_dir) = dirs::config_dir() {
         if let Some(path_str) = config_dir.join("sql-cli/schema.json").to_str() {
             paths.push(path_str.to_string());
         }
     }
-    
+
     for path in paths {
         if Path::new(&path).exists() {
             if let Ok(contents) = fs::read_to_string(&path) {
@@ -38,7 +38,7 @@ pub fn load_schema_config() -> SchemaConfig {
             }
         }
     }
-    
+
     // Return default schema
     SchemaConfig {
         tables: vec![
@@ -64,54 +64,115 @@ pub fn load_schema_config() -> SchemaConfig {
 pub fn get_full_trade_deal_columns() -> Vec<String> {
     vec![
         // Trade identifiers
-        "dealId", "platformOrderId", "externalOrderId", "parentOrderId",
-        
+        "dealId",
+        "platformOrderId",
+        "externalOrderId",
+        "parentOrderId",
         // Dates
-        "tradeDate", "settlementDate", "valueDate", "maturityDate",
-        "lastModifiedDate", "createdDate", "confirmationDate", "executionDate",
-        
+        "tradeDate",
+        "settlementDate",
+        "valueDate",
+        "maturityDate",
+        "lastModifiedDate",
+        "createdDate",
+        "confirmationDate",
+        "executionDate",
         // Instrument details
-        "instrumentId", "instrumentName", "instrumentType", "isin",
-        "cusip", "sedol", "ticker", "exchange",
-        
+        "instrumentId",
+        "instrumentName",
+        "instrumentType",
+        "isin",
+        "cusip",
+        "sedol",
+        "ticker",
+        "exchange",
         // Quantities and prices
-        "quantity", "price", "notional", "settlementAmount", "grossAmount", "netAmount",
-        "accruedInterest", "accrual", "commission", "fees", "tax", "spread",
-        "currency", "baseCurrency", "quoteCurrency", "settlementCurrency",
-        
+        "quantity",
+        "price",
+        "notional",
+        "settlementAmount",
+        "grossAmount",
+        "netAmount",
+        "accruedInterest",
+        "accrual",
+        "commission",
+        "fees",
+        "tax",
+        "spread",
+        "currency",
+        "baseCurrency",
+        "quoteCurrency",
+        "settlementCurrency",
         // Counterparty info
-        "counterparty", "counterpartyId", "counterpartyType",
-        "counterpartyCountry", "counterpartyLei",
-        
+        "counterparty",
+        "counterpartyId",
+        "counterpartyType",
+        "counterpartyCountry",
+        "counterpartyLei",
         // Internal info
-        "trader", "traderId", "book", "bookId", "portfolio", "portfolioId",
-        "strategy", "desk", "legalEntity", "branch", "region",
-        "side", "productType", "instrumentClass", "assetClass",
-        
+        "trader",
+        "traderId",
+        "book",
+        "bookId",
+        "portfolio",
+        "portfolioId",
+        "strategy",
+        "desk",
+        "legalEntity",
+        "branch",
+        "region",
+        "side",
+        "productType",
+        "instrumentClass",
+        "assetClass",
         // Trading venue and clearing
-        "venue", "executionVenue", "clearingHouse", "clearingBroker", "prime",
-        "custodian", "subCustodian",
-        
+        "venue",
+        "executionVenue",
+        "clearingHouse",
+        "clearingBroker",
+        "prime",
+        "custodian",
+        "subCustodian",
         // Status and workflow
-        "status", "confirmationStatus", "settlementStatus",
-        "allocationStatus", "clearingStatus", "bookingStatus",
-        
+        "status",
+        "confirmationStatus",
+        "settlementStatus",
+        "allocationStatus",
+        "clearingStatus",
+        "bookingStatus",
         // Risk metrics
-        "pv01", "dv01", "delta", "gamma", "vega", "theta",
-        "duration", "convexity", "yield", "spread",
-        
+        "pv01",
+        "dv01",
+        "delta",
+        "gamma",
+        "vega",
+        "theta",
+        "duration",
+        "convexity",
+        "yield",
+        "spread",
         // Compliance
-        "regulatoryReporting", "mifidClassification", "bestExecution",
-        "preTradeTransparency", "postTradeTransparency",
-        
+        "regulatoryReporting",
+        "mifidClassification",
+        "bestExecution",
+        "preTradeTransparency",
+        "postTradeTransparency",
         // Comments and metadata
-        "comments", "notes", "auditTrail", "version", "source",
-        "sourceSystem", "lastUpdatedBy", "createdBy",
-        
+        "comments",
+        "notes",
+        "auditTrail",
+        "version",
+        "source",
+        "sourceSystem",
+        "lastUpdatedBy",
+        "createdBy",
         // Additional reference fields
-        "clientOrderId", "brokerOrderId", "exchangeOrderId",
-        "blockTradeId", "allocationId", "confirmationId",
-        
+        "clientOrderId",
+        "brokerOrderId",
+        "exchangeOrderId",
+        "blockTradeId",
+        "allocationId",
+        "confirmationId",
         // Add more columns as needed...
     ]
     .into_iter()
@@ -129,21 +190,21 @@ pub fn save_schema_example(path: &str) -> Result<(), Box<dyn std::error::Error>>
 
 // Example of LINQ-style operators that could be supported
 pub enum LinqOperator {
-    Contains(String),           // field.Contains('value')
-    StartsWith(String),         // field.StartsWith('value')
-    EndsWith(String),           // field.EndsWith('value')
-    GreaterThan(String),        // field > value
-    LessThan(String),           // field < value
-    Between(String, String),    // field >= value1 && field <= value2
-    In(Vec<String>),           // field in (value1, value2, ...)
-    IsNull,                    // field == null
-    IsNotNull,                 // field != null
+    Contains(String),        // field.Contains('value')
+    StartsWith(String),      // field.StartsWith('value')
+    EndsWith(String),        // field.EndsWith('value')
+    GreaterThan(String),     // field > value
+    LessThan(String),        // field < value
+    Between(String, String), // field >= value1 && field <= value2
+    In(Vec<String>),         // field in (value1, value2, ...)
+    IsNull,                  // field == null
+    IsNotNull,               // field != null
 }
 
 // Date constructor support
 pub enum DateConstructor {
-    Today,                     // DateTime.Today
-    Now,                       // DateTime.Now
-    Date(i32, u32, u32),      // DateTime(2024, 1, 15)
-    DateOffset(i32),          // DateTime.Today.AddDays(-7)
+    Today,               // DateTime.Today
+    Now,                 // DateTime.Now
+    Date(i32, u32, u32), // DateTime(2024, 1, 15)
+    DateOffset(i32),     // DateTime.Today.AddDays(-7)
 }

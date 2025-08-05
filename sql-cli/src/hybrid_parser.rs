@@ -1,5 +1,5 @@
 use crate::cursor_aware_parser::CursorAwareParser;
-use crate::recursive_parser::{detect_cursor_context, CursorContext, LogicalOp, tokenize_query};
+use crate::recursive_parser::{detect_cursor_context, tokenize_query, CursorContext, LogicalOp};
 
 #[derive(Clone)]
 pub struct HybridParser {
@@ -30,7 +30,7 @@ impl HybridParser {
             parser: CursorAwareParser::new(),
         }
     }
-    
+
     pub fn update_single_table(&mut self, table_name: String, columns: Vec<String>) {
         self.parser.update_single_table(table_name, columns);
     }
@@ -38,7 +38,7 @@ impl HybridParser {
     pub fn get_completions(&self, query: &str, cursor_pos: usize) -> HybridResult {
         // Use the improved parser with recursive descent for context detection
         let result = self.parser.get_completions(query, cursor_pos);
-        
+
         // Get recursive parser context for debugging
         let (cursor_context, _) = detect_cursor_context(query, cursor_pos);
         let recursive_context = match cursor_context {
@@ -65,13 +65,12 @@ impl HybridParser {
         }
     }
 
-
     fn analyze_query_complexity(&self, query: &str) -> String {
         let mut complexity_factors = Vec::new();
-        
+
         // Count logical operators
-        let logical_ops = query.to_uppercase().matches(" AND ").count() + 
-                         query.to_uppercase().matches(" OR ").count();
+        let logical_ops = query.to_uppercase().matches(" AND ").count()
+            + query.to_uppercase().matches(" OR ").count();
         if logical_ops > 0 {
             complexity_factors.push(format!("{}x logical", logical_ops));
         }
@@ -89,8 +88,9 @@ impl HybridParser {
         }
 
         // Count subqueries (simplified)
-        if query.to_uppercase().contains("SELECT") && 
-           query.to_uppercase().matches("SELECT").count() > 1 {
+        if query.to_uppercase().contains("SELECT")
+            && query.to_uppercase().matches("SELECT").count() > 1
+        {
             complexity_factors.push("subquery".to_string());
         }
 
@@ -104,7 +104,7 @@ impl HybridParser {
     fn max_paren_depth(&self, query: &str) -> usize {
         let mut max_depth = 0;
         let mut current_depth: usize = 0;
-        
+
         for ch in query.chars() {
             match ch {
                 '(' => {
@@ -117,7 +117,7 @@ impl HybridParser {
                 _ => {}
             }
         }
-        
+
         max_depth
     }
 
@@ -128,26 +128,28 @@ impl HybridParser {
 
     pub fn get_detailed_debug_info(&self, query: &str, cursor_pos: usize) -> String {
         let result = self.get_completions(query, cursor_pos);
-        
+
         let char_at_cursor = if cursor_pos < query.len() {
             format!("'{}'", query.chars().nth(cursor_pos).unwrap_or(' '))
         } else {
             "EOF".to_string()
         };
-        
+
         // Get tokenized output
         let tokens = tokenize_query(query);
         let tokenized_output = if tokens.is_empty() {
             "  (no tokens)".to_string()
         } else {
-            tokens.iter().enumerate()
+            tokens
+                .iter()
+                .enumerate()
                 .map(|(i, t)| format!("  [{}] {}", i, t))
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        
+
         let ast_tree = self.debug_tree(query);
-        
+
         // Extract partial word from context string
         let partial_word_info = if result.context.contains("(partial:") {
             // Extract the partial word from the context string
@@ -164,7 +166,7 @@ impl HybridParser {
         } else {
             "None".to_string()
         };
-        
+
         format!(
             "========== PARSER DEBUG ==========\n\
 Query: '{}'\n\
@@ -198,7 +200,10 @@ AST TREE:\n{}\n\
             if result.suggestions.is_empty() {
                 "  (no suggestions)".to_string()
             } else {
-                result.suggestions.iter().enumerate()
+                result
+                    .suggestions
+                    .iter()
+                    .enumerate()
                     .map(|(i, s)| format!("  {}: {}", i + 1, s))
                     .collect::<Vec<_>>()
                     .join("\n")

@@ -47,7 +47,12 @@ impl CommandHistory {
         Ok(history)
     }
 
-    pub fn add_entry(&mut self, command: String, success: bool, duration_ms: Option<u64>) -> Result<()> {
+    pub fn add_entry(
+        &mut self,
+        command: String,
+        success: bool,
+        duration_ms: Option<u64>,
+    ) -> Result<()> {
         // Don't add empty commands or duplicates of the last command
         if command.trim().is_empty() {
             return Ok(());
@@ -85,7 +90,8 @@ impl CommandHistory {
     pub fn search(&self, query: &str) -> Vec<HistoryMatch> {
         if query.is_empty() {
             // Return recent entries when no query
-            return self.entries
+            return self
+                .entries
                 .iter()
                 .rev()
                 .take(50)
@@ -97,7 +103,8 @@ impl CommandHistory {
                 .collect();
         }
 
-        let mut matches: Vec<HistoryMatch> = self.entries
+        let mut matches: Vec<HistoryMatch> = self
+            .entries
             .iter()
             .filter_map(|entry| {
                 if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, query) {
@@ -135,17 +142,13 @@ impl CommandHistory {
     }
 
     pub fn get_recent(&self, limit: usize) -> Vec<&HistoryEntry> {
-        self.entries
-            .iter()
-            .rev()
-            .take(limit)
-            .collect()
+        self.entries.iter().rev().take(limit).collect()
     }
 
     pub fn get_all(&self) -> &[HistoryEntry] {
         &self.entries
     }
-    
+
     pub fn get_last_entry(&self) -> Option<&HistoryEntry> {
         self.entries.last()
     }
@@ -168,11 +171,14 @@ impl CommandHistory {
         }
 
         let entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
-        
+
         // Rebuild command counts
         self.command_counts.clear();
         for entry in &entries {
-            *self.command_counts.entry(entry.command.clone()).or_insert(0) += 1;
+            *self
+                .command_counts
+                .entry(entry.command.clone())
+                .or_insert(0) += 1;
         }
 
         self.entries = entries;
@@ -191,7 +197,8 @@ impl CommandHistory {
         let successful_commands = self.entries.iter().filter(|e| e.success).count();
         let failed_commands = total_commands - successful_commands;
 
-        let most_used = self.command_counts
+        let most_used = self
+            .command_counts
             .iter()
             .max_by_key(|(_, &count)| count)
             .map(|(cmd, &count)| (cmd.clone(), count));

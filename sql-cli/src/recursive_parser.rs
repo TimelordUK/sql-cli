@@ -1,4 +1,4 @@
-use chrono::{Local, NaiveDateTime, Datelike};
+use chrono::{Datelike, Local, NaiveDateTime};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -17,15 +17,15 @@ pub enum Token {
     OrderBy,
     GroupBy,
     Having,
-    DateTime,  // DateTime constructor
-    
+    DateTime, // DateTime constructor
+
     // Literals
     Identifier(String),
     QuotedIdentifier(String), // For "Customer Id" style identifiers
     StringLiteral(String),
     NumberLiteral(String),
     Star,
-    
+
     // Operators
     Dot,
     Comma,
@@ -37,7 +37,7 @@ pub enum Token {
     GreaterThan,
     LessThanOrEqual,
     GreaterThanOrEqual,
-    
+
     // Special
     Eof,
 }
@@ -59,16 +59,16 @@ impl Lexer {
             current_char: current,
         }
     }
-    
+
     fn advance(&mut self) {
         self.position += 1;
         self.current_char = self.input.get(self.position).copied();
     }
-    
+
     fn peek(&self, offset: usize) -> Option<char> {
         self.input.get(self.position + offset).copied()
     }
-    
+
     fn skip_whitespace(&mut self) {
         while let Some(ch) = self.current_char {
             if ch.is_whitespace() {
@@ -78,7 +78,7 @@ impl Lexer {
             }
         }
     }
-    
+
     fn read_identifier(&mut self) -> String {
         let mut result = String::new();
         while let Some(ch) = self.current_char {
@@ -91,12 +91,12 @@ impl Lexer {
         }
         result
     }
-    
+
     fn read_string(&mut self) -> String {
         let mut result = String::new();
         let quote_char = self.current_char.unwrap(); // ' or "
         self.advance(); // skip opening quote
-        
+
         while let Some(ch) = self.current_char {
             if ch == quote_char {
                 self.advance(); // skip closing quote
@@ -107,7 +107,7 @@ impl Lexer {
         }
         result
     }
-    
+
     fn read_number(&mut self) -> String {
         let mut result = String::new();
         while let Some(ch) = self.current_char {
@@ -120,10 +120,10 @@ impl Lexer {
         }
         result
     }
-    
+
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
-        
+
         match self.current_char {
             None => Token::Eof,
             Some('*') => {
@@ -225,26 +225,26 @@ impl Lexer {
             }
         }
     }
-    
+
     fn peek_keyword(&mut self, keyword: &str) -> bool {
         let saved_pos = self.position;
         let saved_char = self.current_char;
-        
+
         self.skip_whitespace();
         let next_word = self.read_identifier();
         let matches = next_word.to_uppercase() == keyword;
-        
+
         // Restore position
         self.position = saved_pos;
         self.current_char = saved_char;
-        
+
         matches
     }
-    
+
     pub fn get_position(&self) -> usize {
         self.position
     }
-    
+
     pub fn tokenize_all(&mut self) -> Vec<Token> {
         let mut tokens = Vec::new();
         loop {
@@ -257,7 +257,7 @@ impl Lexer {
         }
         tokens
     }
-    
+
     pub fn tokenize_all_with_positions(&mut self) -> Vec<(usize, usize, Token)> {
         let mut tokens = Vec::new();
         loop {
@@ -265,7 +265,7 @@ impl Lexer {
             let start_pos = self.position;
             let token = self.next_token();
             let end_pos = self.position;
-            
+
             if matches!(token, Token::Eof) {
                 break;
             }
@@ -350,29 +350,32 @@ impl Parser {
             current_token,
         }
     }
-    
+
     fn consume(&mut self, expected: Token) -> Result<(), String> {
         if std::mem::discriminant(&self.current_token) == std::mem::discriminant(&expected) {
             self.current_token = self.lexer.next_token();
             Ok(())
         } else {
-            Err(format!("Expected {:?}, found {:?}", expected, self.current_token))
+            Err(format!(
+                "Expected {:?}, found {:?}",
+                expected, self.current_token
+            ))
         }
     }
-    
+
     fn advance(&mut self) {
         self.current_token = self.lexer.next_token();
     }
-    
+
     pub fn parse(&mut self) -> Result<SelectStatement, String> {
         self.parse_select_statement()
     }
-    
+
     fn parse_select_statement(&mut self) -> Result<SelectStatement, String> {
         self.consume(Token::Select)?;
-        
+
         let columns = self.parse_select_list()?;
-        
+
         let from_table = if matches!(self.current_token, Token::From) {
             self.advance();
             match &self.current_token {
@@ -392,28 +395,28 @@ impl Parser {
         } else {
             None
         };
-        
+
         let where_clause = if matches!(self.current_token, Token::Where) {
             self.advance();
             Some(self.parse_where_clause()?)
         } else {
             None
         };
-        
+
         let order_by = if matches!(self.current_token, Token::OrderBy) {
             self.advance();
             Some(self.parse_identifier_list()?)
         } else {
             None
         };
-        
+
         let group_by = if matches!(self.current_token, Token::GroupBy) {
             self.advance();
             Some(self.parse_identifier_list()?)
         } else {
             None
         };
-        
+
         Ok(SelectStatement {
             columns,
             from_table,
@@ -422,10 +425,10 @@ impl Parser {
             group_by,
         })
     }
-    
+
     fn parse_select_list(&mut self) -> Result<Vec<String>, String> {
         let mut columns = Vec::new();
-        
+
         if matches!(self.current_token, Token::Star) {
             columns.push("*".to_string());
             self.advance();
@@ -443,7 +446,7 @@ impl Parser {
                     }
                     _ => return Err("Expected column name".to_string()),
                 }
-                
+
                 if matches!(self.current_token, Token::Comma) {
                     self.advance();
                 } else {
@@ -451,13 +454,13 @@ impl Parser {
                 }
             }
         }
-        
+
         Ok(columns)
     }
-    
+
     fn parse_identifier_list(&mut self) -> Result<Vec<String>, String> {
         let mut identifiers = Vec::new();
-        
+
         loop {
             match &self.current_token {
                 Token::Identifier(id) => {
@@ -465,29 +468,29 @@ impl Parser {
                     self.advance();
                 }
                 Token::QuotedIdentifier(id) => {
-                    // Handle quoted identifiers like "Customer Id" 
+                    // Handle quoted identifiers like "Customer Id"
                     identifiers.push(id.clone());
                     self.advance();
                 }
                 _ => return Err("Expected identifier".to_string()),
             }
-            
+
             if matches!(self.current_token, Token::Comma) {
                 self.advance();
             } else {
                 break;
             }
         }
-        
+
         Ok(identifiers)
     }
-    
+
     fn parse_where_clause(&mut self) -> Result<WhereClause, String> {
         let mut conditions = Vec::new();
-        
+
         loop {
             let expr = self.parse_expression()?;
-            
+
             let connector = match &self.current_token {
                 Token::And => {
                     self.advance();
@@ -499,32 +502,35 @@ impl Parser {
                 }
                 _ => None,
             };
-            
-            conditions.push(Condition { expr, connector: connector.clone() });
-            
+
+            conditions.push(Condition {
+                expr,
+                connector: connector.clone(),
+            });
+
             if connector.is_none() {
                 break;
             }
         }
-        
+
         Ok(WhereClause { conditions })
     }
-    
+
     fn parse_expression(&mut self) -> Result<SqlExpression, String> {
         let mut left = self.parse_primary()?;
-        
+
         // Handle method calls
         if matches!(self.current_token, Token::Dot) {
             self.advance();
             if let Token::Identifier(method) = &self.current_token {
                 let method_name = method.clone();
                 self.advance();
-                
+
                 if matches!(self.current_token, Token::LeftParen) {
                     self.advance();
                     let args = self.parse_method_args()?;
                     self.consume(Token::RightParen)?;
-                    
+
                     if let SqlExpression::Column(obj) = left {
                         left = SqlExpression::MethodCall {
                             object: obj,
@@ -535,7 +541,7 @@ impl Parser {
                 }
             }
         }
-        
+
         // Handle binary operators
         if let Some(op) = self.get_binary_op() {
             self.advance();
@@ -546,39 +552,39 @@ impl Parser {
                 right: Box::new(right),
             };
         }
-        
+
         // Handle IN operator
         if matches!(self.current_token, Token::In) {
             self.advance();
             self.consume(Token::LeftParen)?;
             let values = self.parse_expression_list()?;
             self.consume(Token::RightParen)?;
-            
+
             left = SqlExpression::InList {
                 expr: Box::new(left),
                 values,
             };
         }
-        
+
         Ok(left)
     }
-    
+
     fn parse_primary(&mut self) -> Result<SqlExpression, String> {
         match &self.current_token {
             Token::DateTime => {
                 self.advance(); // consume DateTime
                 self.consume(Token::LeftParen)?;
-                
+
                 // Check if empty parentheses for DateTime() - today's date
                 if matches!(&self.current_token, Token::RightParen) {
                     self.advance(); // consume )
-                    return Ok(SqlExpression::DateTimeToday { 
-                        hour: None, 
-                        minute: None, 
-                        second: None 
+                    return Ok(SqlExpression::DateTimeToday {
+                        hour: None,
+                        minute: None,
+                        second: None,
                     });
                 }
-                
+
                 // Parse year
                 let year = if let Token::NumberLiteral(n) = &self.current_token {
                     n.parse::<i32>().map_err(|_| "Invalid year")?
@@ -587,7 +593,7 @@ impl Parser {
                 };
                 self.advance();
                 self.consume(Token::Comma)?;
-                
+
                 // Parse month
                 let month = if let Token::NumberLiteral(n) = &self.current_token {
                     n.parse::<u32>().map_err(|_| "Invalid month")?
@@ -596,7 +602,7 @@ impl Parser {
                 };
                 self.advance();
                 self.consume(Token::Comma)?;
-                
+
                 // Parse day
                 let day = if let Token::NumberLiteral(n) = &self.current_token {
                     n.parse::<u32>().map_err(|_| "Invalid day")?
@@ -604,34 +610,35 @@ impl Parser {
                     return Err("Expected day in DateTime constructor".to_string());
                 };
                 self.advance();
-                
+
                 // Check for optional time components
                 let mut hour = None;
                 let mut minute = None;
                 let mut second = None;
-                
+
                 if matches!(&self.current_token, Token::Comma) {
                     self.advance(); // consume comma
-                    
+
                     // Parse hour
                     if let Token::NumberLiteral(n) = &self.current_token {
                         hour = Some(n.parse::<u32>().map_err(|_| "Invalid hour")?);
                         self.advance();
-                        
+
                         // Check for minute
                         if matches!(&self.current_token, Token::Comma) {
                             self.advance(); // consume comma
-                            
+
                             if let Token::NumberLiteral(n) = &self.current_token {
                                 minute = Some(n.parse::<u32>().map_err(|_| "Invalid minute")?);
                                 self.advance();
-                                
+
                                 // Check for second
                                 if matches!(&self.current_token, Token::Comma) {
                                     self.advance(); // consume comma
-                                    
+
                                     if let Token::NumberLiteral(n) = &self.current_token {
-                                        second = Some(n.parse::<u32>().map_err(|_| "Invalid second")?);
+                                        second =
+                                            Some(n.parse::<u32>().map_err(|_| "Invalid second")?);
                                         self.advance();
                                     }
                                 }
@@ -639,9 +646,16 @@ impl Parser {
                         }
                     }
                 }
-                
+
                 self.consume(Token::RightParen)?;
-                Ok(SqlExpression::DateTimeConstructor { year, month, day, hour, minute, second })
+                Ok(SqlExpression::DateTimeConstructor {
+                    year,
+                    month,
+                    day,
+                    hour,
+                    minute,
+                    second,
+                })
             }
             Token::Identifier(id) => {
                 let expr = SqlExpression::Column(id.clone());
@@ -673,14 +687,14 @@ impl Parser {
             _ => Err(format!("Unexpected token: {:?}", self.current_token)),
         }
     }
-    
+
     fn parse_method_args(&mut self) -> Result<Vec<SqlExpression>, String> {
         let mut args = Vec::new();
-        
+
         if !matches!(self.current_token, Token::RightParen) {
             loop {
                 args.push(self.parse_expression()?);
-                
+
                 if matches!(self.current_token, Token::Comma) {
                     self.advance();
                 } else {
@@ -688,26 +702,26 @@ impl Parser {
                 }
             }
         }
-        
+
         Ok(args)
     }
-    
+
     fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String> {
         let mut expressions = Vec::new();
-        
+
         loop {
             expressions.push(self.parse_expression()?);
-            
+
             if matches!(self.current_token, Token::Comma) {
                 self.advance();
             } else {
                 break;
             }
         }
-        
+
         Ok(expressions)
     }
-    
+
     fn get_binary_op(&self) -> Option<String> {
         match &self.current_token {
             Token::Equal => Some("=".to_string()),
@@ -719,7 +733,7 @@ impl Parser {
             _ => None,
         }
     }
-    
+
     pub fn get_position(&self) -> usize {
         self.lexer.get_position()
     }
@@ -735,7 +749,7 @@ pub enum CursorContext {
     AfterColumn(String),
     AfterLogicalOp(LogicalOp),
     AfterComparisonOp(String, String), // column_name, operator
-    InMethodCall(String, String), // object, method
+    InMethodCall(String, String),      // object, method
     InExpression,
     Unknown,
 }
@@ -743,20 +757,26 @@ pub enum CursorContext {
 pub fn detect_cursor_context(query: &str, cursor_pos: usize) -> (CursorContext, Option<String>) {
     let truncated = &query[..cursor_pos];
     let mut parser = Parser::new(truncated);
-    
+
     // Try to parse as much as possible
     match parser.parse() {
         Ok(stmt) => {
             let (ctx, partial) = analyze_statement(&stmt, truncated, cursor_pos);
             #[cfg(test)]
-            println!("analyze_statement returned: {:?}, {:?} for query: '{}'", ctx, partial, truncated);
+            println!(
+                "analyze_statement returned: {:?}, {:?} for query: '{}'",
+                ctx, partial, truncated
+            );
             (ctx, partial)
-        },
+        }
         Err(_) => {
             // Partial parse - analyze what we have
             let (ctx, partial) = analyze_partial(truncated, cursor_pos);
             #[cfg(test)]
-            println!("analyze_partial returned: {:?}, {:?} for query: '{}'", ctx, partial, truncated);
+            println!(
+                "analyze_partial returned: {:?}, {:?} for query: '{}'",
+                ctx, partial, truncated
+            );
             (ctx, partial)
         }
     }
@@ -775,55 +795,76 @@ pub fn format_sql_pretty(query: &str) -> Vec<String> {
 // Convert DateTime expressions to ISO 8601 format strings for comparison
 pub fn datetime_to_iso_string(expr: &SqlExpression) -> Option<String> {
     match expr {
-        SqlExpression::DateTimeConstructor { year, month, day, hour, minute, second } => {
+        SqlExpression::DateTimeConstructor {
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+        } => {
             let h = hour.unwrap_or(0);
             let m = minute.unwrap_or(0);
             let s = second.unwrap_or(0);
-            
+
             // Create a NaiveDateTime
             if let Ok(dt) = NaiveDateTime::parse_from_str(
-                &format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, h, m, s),
-                "%Y-%m-%d %H:%M:%S"
+                &format!(
+                    "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                    year, month, day, h, m, s
+                ),
+                "%Y-%m-%d %H:%M:%S",
             ) {
                 Some(dt.format("%Y-%m-%d %H:%M:%S").to_string())
             } else {
                 None
             }
         }
-        SqlExpression::DateTimeToday { hour, minute, second } => {
+        SqlExpression::DateTimeToday {
+            hour,
+            minute,
+            second,
+        } => {
             let now = Local::now();
             let h = hour.unwrap_or(0);
             let m = minute.unwrap_or(0);
             let s = second.unwrap_or(0);
-            
+
             // Create today's date at specified time (or midnight)
             if let Ok(dt) = NaiveDateTime::parse_from_str(
-                &format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", 
-                    now.year(), now.month(), now.day(), h, m, s),
-                "%Y-%m-%d %H:%M:%S"
+                &format!(
+                    "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                    now.year(),
+                    now.month(),
+                    now.day(),
+                    h,
+                    m,
+                    s
+                ),
+                "%Y-%m-%d %H:%M:%S",
             ) {
                 Some(dt.format("%Y-%m-%d %H:%M:%S").to_string())
             } else {
                 None
             }
         }
-        _ => None
+        _ => None,
     }
 }
 
 pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut parser = Parser::new(query);
-    
+
     // Ensure cols_per_line is at least 1 to avoid panic
     let cols_per_line = cols_per_line.max(1);
-    
+
     match parser.parse() {
         Ok(stmt) => {
             // SELECT clause
             if !stmt.columns.is_empty() {
                 lines.push("SELECT".to_string());
-                
+
                 // Group columns by cols_per_line
                 for chunk in stmt.columns.chunks(cols_per_line) {
                     let mut line = "    ".to_string();
@@ -835,19 +876,20 @@ pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<Strin
                     }
                     // Add comma at end if not the last chunk
                     let last_chunk_idx = (stmt.columns.len() - 1) / cols_per_line;
-                    let current_chunk_idx = stmt.columns.iter().position(|c| c == &chunk[0]).unwrap() / cols_per_line;
+                    let current_chunk_idx =
+                        stmt.columns.iter().position(|c| c == &chunk[0]).unwrap() / cols_per_line;
                     if current_chunk_idx < last_chunk_idx {
                         line.push(',');
                     }
                     lines.push(line);
                 }
             }
-            
+
             // FROM clause
             if let Some(table) = &stmt.from_table {
                 lines.push(format!("FROM {}", table));
             }
-            
+
             // WHERE clause
             if let Some(where_clause) = &stmt.where_clause {
                 lines.push("WHERE".to_string());
@@ -866,13 +908,13 @@ pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<Strin
                     lines.push(format!("    {}", format_expression(&condition.expr)));
                 }
             }
-            
+
             // ORDER BY clause
             if let Some(order_by) = &stmt.order_by {
                 let order_str = order_by.join(", ");
                 lines.push(format!("ORDER BY {}", order_str));
             }
-            
+
             // GROUP BY clause
             if let Some(group_by) = &stmt.group_by {
                 let group_str = group_by.join(", ");
@@ -885,10 +927,14 @@ pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<Strin
             let tokens = lexer.tokenize_all();
             let mut current_line = String::new();
             let mut indent = 0;
-            
+
             for token in tokens {
                 match &token {
-                    Token::Select | Token::From | Token::Where | Token::OrderBy | Token::GroupBy => {
+                    Token::Select
+                    | Token::From
+                    | Token::Where
+                    | Token::OrderBy
+                    | Token::GroupBy => {
                         if !current_line.is_empty() {
                             lines.push(current_line.trim().to_string());
                             current_line.clear();
@@ -919,13 +965,13 @@ pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<Strin
                     }
                 }
             }
-            
+
             if !current_line.is_empty() {
                 lines.push(format!("{}{}", "    ".repeat(indent), current_line.trim()));
             }
         }
     }
-    
+
     lines
 }
 
@@ -934,7 +980,14 @@ fn format_expression(expr: &SqlExpression) -> String {
         SqlExpression::Column(name) => name.clone(),
         SqlExpression::StringLiteral(s) => format!("'{}'", s),
         SqlExpression::NumberLiteral(n) => n.clone(),
-        SqlExpression::DateTimeConstructor { year, month, day, hour, minute, second } => {
+        SqlExpression::DateTimeConstructor {
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+        } => {
             let mut result = format!("DateTime({}, {}, {}", year, month, day);
             if let Some(h) = hour {
                 result.push_str(&format!(", {}", h));
@@ -948,7 +1001,11 @@ fn format_expression(expr: &SqlExpression) -> String {
             result.push(')');
             result
         }
-        SqlExpression::DateTimeToday { hour, minute, second } => {
+        SqlExpression::DateTimeToday {
+            hour,
+            minute,
+            second,
+        } => {
             let mut result = "DateTime()".to_string();
             if let Some(h) = hour {
                 result = format!("DateTime(TODAY, {}", h);
@@ -962,18 +1019,29 @@ fn format_expression(expr: &SqlExpression) -> String {
             }
             result
         }
-        SqlExpression::MethodCall { object, method, args } => {
-            let args_str = args.iter()
+        SqlExpression::MethodCall {
+            object,
+            method,
+            args,
+        } => {
+            let args_str = args
+                .iter()
                 .map(|arg| format_expression(arg))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{}.{}({})", object, method, args_str)
         }
         SqlExpression::BinaryOp { left, op, right } => {
-            format!("{} {} {}", format_expression(left), op, format_expression(right))
+            format!(
+                "{} {} {}",
+                format_expression(left),
+                op,
+                format_expression(right)
+            )
         }
         SqlExpression::InList { expr, values } => {
-            let values_str = values.iter()
+            let values_str = values
+                .iter()
                 .map(|v| format_expression(v))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -1004,34 +1072,56 @@ fn format_token(token: &Token) -> String {
     }
 }
 
-fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) -> (CursorContext, Option<String>) {
+fn analyze_statement(
+    stmt: &SelectStatement,
+    query: &str,
+    _cursor_pos: usize,
+) -> (CursorContext, Option<String>) {
     // First check for method call context (e.g., "columnName." or "columnName.Con")
     let trimmed = query.trim();
-    
+
     // Check if we're after a comparison operator (e.g., "createdDate > ")
     let comparison_ops = [" > ", " < ", " >= ", " <= ", " = ", " != "];
     for op in &comparison_ops {
         if let Some(op_pos) = query.rfind(op) {
             let before_op = &query[..op_pos];
             let after_op = &query[op_pos + op.len()..];
-            
+
             // Check if we have a column name before the operator
             if let Some(col_name) = before_op.split_whitespace().last() {
                 if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                     // Check if we're at or near the end of the query
                     let after_op_trimmed = after_op.trim();
-                    if after_op_trimmed.is_empty() || (after_op_trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') && !after_op_trimmed.contains('(')) {
-                        let partial = if after_op_trimmed.is_empty() { None } else { Some(after_op_trimmed.to_string()) };
-                        return (CursorContext::AfterComparisonOp(col_name.to_string(), op.trim().to_string()), partial);
+                    if after_op_trimmed.is_empty()
+                        || (after_op_trimmed
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || c == '_')
+                            && !after_op_trimmed.contains('('))
+                    {
+                        let partial = if after_op_trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(after_op_trimmed.to_string())
+                        };
+                        return (
+                            CursorContext::AfterComparisonOp(
+                                col_name.to_string(),
+                                op.trim().to_string(),
+                            ),
+                            partial,
+                        );
                     }
                 }
             }
         }
     }
-    
+
     // First check if we're after AND/OR - this takes precedence
-    if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") ||
-       trimmed.to_uppercase().ends_with(" AND ") || trimmed.to_uppercase().ends_with(" OR ") {
+    if trimmed.to_uppercase().ends_with(" AND")
+        || trimmed.to_uppercase().ends_with(" OR")
+        || trimmed.to_uppercase().ends_with(" AND ")
+        || trimmed.to_uppercase().ends_with(" OR ")
+    {
         // Don't check for method context if we're clearly after a logical operator
     } else {
         // Look for the last dot in the query
@@ -1039,7 +1129,7 @@ fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) ->
             // Check if we're after a column name and dot
             let before_dot = &trimmed[..dot_pos];
             let after_dot = &trimmed[dot_pos + 1..];
-            
+
             // Check if the part after dot looks like an incomplete method call
             // (not a complete method call like "Contains(...)")
             if !after_dot.contains('(') {
@@ -1054,14 +1144,17 @@ fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) ->
                         } else {
                             None
                         };
-                        
-                        return (CursorContext::AfterColumn(col_name.to_string()), partial_method);
+
+                        return (
+                            CursorContext::AfterColumn(col_name.to_string()),
+                            partial_method,
+                        );
                     }
                 }
             }
         }
     }
-    
+
     // Check if we're in WHERE clause
     if let Some(where_clause) = &stmt.where_clause {
         // Check if query ends with AND/OR (with or without trailing space/partial)
@@ -1073,7 +1166,7 @@ fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) ->
             };
             return (CursorContext::AfterLogicalOp(op), None);
         }
-        
+
         // Check if we have AND/OR followed by a partial word
         if let Some(and_pos) = query.to_uppercase().rfind(" AND ") {
             let after_and = &query[and_pos + 5..];
@@ -1082,7 +1175,7 @@ fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) ->
                 return (CursorContext::AfterLogicalOp(LogicalOp::And), partial);
             }
         }
-        
+
         if let Some(or_pos) = query.to_uppercase().rfind(" OR ") {
             let after_or = &query[or_pos + 4..];
             let partial = extract_partial_at_end(after_or);
@@ -1090,65 +1183,83 @@ fn analyze_statement(stmt: &SelectStatement, query: &str, _cursor_pos: usize) ->
                 return (CursorContext::AfterLogicalOp(LogicalOp::Or), partial);
             }
         }
-        
+
         if let Some(last_condition) = where_clause.conditions.last() {
             if let Some(connector) = &last_condition.connector {
                 // We're after AND/OR
-                return (CursorContext::AfterLogicalOp(connector.clone()), extract_partial_at_end(query));
+                return (
+                    CursorContext::AfterLogicalOp(connector.clone()),
+                    extract_partial_at_end(query),
+                );
             }
         }
         // We're in WHERE clause but not after AND/OR
         return (CursorContext::WhereClause, extract_partial_at_end(query));
     }
-    
+
     // Check if we're after ORDER BY
     if query.to_uppercase().ends_with(" ORDER BY ") || query.to_uppercase().ends_with(" ORDER BY") {
         return (CursorContext::OrderByClause, None);
     }
-    
+
     // Check other contexts based on what's in the statement
     if stmt.order_by.is_some() {
         return (CursorContext::OrderByClause, extract_partial_at_end(query));
     }
-    
+
     if stmt.from_table.is_some() && stmt.where_clause.is_none() && stmt.order_by.is_none() {
         return (CursorContext::FromClause, extract_partial_at_end(query));
     }
-    
+
     if stmt.columns.len() > 0 && stmt.from_table.is_none() {
         return (CursorContext::SelectClause, extract_partial_at_end(query));
     }
-    
+
     (CursorContext::Unknown, None)
 }
 
 fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<String>) {
     let upper = query.to_uppercase();
-    
+
     // Check for method call context first (e.g., "columnName." or "columnName.Con")
     let trimmed = query.trim();
-    
+
     // Check if we're after a comparison operator (e.g., "createdDate > ")
     let comparison_ops = [" > ", " < ", " >= ", " <= ", " = ", " != "];
     for op in &comparison_ops {
         if let Some(op_pos) = query.rfind(op) {
             let before_op = &query[..op_pos];
             let after_op = &query[op_pos + op.len()..];
-            
+
             // Check if we have a column name before the operator
             if let Some(col_name) = before_op.split_whitespace().last() {
                 if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                     // Check if we're at or near the end of the query (allowing for some whitespace)
                     let after_op_trimmed = after_op.trim();
-                    if after_op_trimmed.is_empty() || (after_op_trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') && !after_op_trimmed.contains('(')) {
-                        let partial = if after_op_trimmed.is_empty() { None } else { Some(after_op_trimmed.to_string()) };
-                        return (CursorContext::AfterComparisonOp(col_name.to_string(), op.trim().to_string()), partial);
+                    if after_op_trimmed.is_empty()
+                        || (after_op_trimmed
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || c == '_')
+                            && !after_op_trimmed.contains('('))
+                    {
+                        let partial = if after_op_trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(after_op_trimmed.to_string())
+                        };
+                        return (
+                            CursorContext::AfterComparisonOp(
+                                col_name.to_string(),
+                                op.trim().to_string(),
+                            ),
+                            partial,
+                        );
                     }
                 }
             }
         }
     }
-    
+
     // Check if we're after AND/OR - but make sure to extract partial word correctly
     if let Some(and_pos) = upper.rfind(" AND ") {
         // Check if cursor is after AND
@@ -1159,7 +1270,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
             return (CursorContext::AfterLogicalOp(LogicalOp::And), partial);
         }
     }
-    
+
     if let Some(or_pos) = upper.rfind(" OR ") {
         // Check if cursor is after OR
         if cursor_pos >= or_pos + 4 {
@@ -1169,7 +1280,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
             return (CursorContext::AfterLogicalOp(LogicalOp::Or), partial);
         }
     }
-    
+
     // Handle case where AND/OR is at the very end
     if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") {
         let op = if trimmed.to_uppercase().ends_with(" AND") {
@@ -1179,13 +1290,13 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
         };
         return (CursorContext::AfterLogicalOp(op), None);
     }
-    
+
     // Look for the last dot in the query (method call context)
     if let Some(dot_pos) = trimmed.rfind('.') {
         // Check if we're after a column name and dot
         let before_dot = &trimmed[..dot_pos];
         let after_dot = &trimmed[dot_pos + 1..];
-        
+
         // Check if the part after dot looks like an incomplete method call
         // (not a complete method call like "Contains(...)")
         if !after_dot.contains('(') {
@@ -1200,40 +1311,43 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
                     } else {
                         None
                     };
-                    
-                    return (CursorContext::AfterColumn(col_name.to_string()), partial_method);
+
+                    return (
+                        CursorContext::AfterColumn(col_name.to_string()),
+                        partial_method,
+                    );
                 }
             }
         }
     }
-    
+
     // Check if we're after ORDER BY
-    if upper.ends_with(" ORDER BY ") || upper.ends_with(" ORDER BY") || upper.contains("ORDER BY ") {
+    if upper.ends_with(" ORDER BY ") || upper.ends_with(" ORDER BY") || upper.contains("ORDER BY ")
+    {
         return (CursorContext::OrderByClause, extract_partial_at_end(query));
     }
-    
+
     if upper.contains("WHERE") && !upper.contains("ORDER") && !upper.contains("GROUP") {
         return (CursorContext::WhereClause, extract_partial_at_end(query));
     }
-    
+
     if upper.contains("FROM") && !upper.contains("WHERE") && !upper.contains("ORDER") {
         return (CursorContext::FromClause, extract_partial_at_end(query));
     }
-    
+
     if upper.contains("SELECT") && !upper.contains("FROM") {
         return (CursorContext::SelectClause, extract_partial_at_end(query));
     }
-    
+
     (CursorContext::Unknown, None)
 }
 
 fn extract_partial_at_end(query: &str) -> Option<String> {
     let trimmed = query.trim();
     let last_word = trimmed.split_whitespace().last()?;
-    
+
     // Check if it's a partial identifier (not a keyword or operator)
-    if last_word.chars().all(|c| c.is_alphanumeric() || c == '_') &&
-       !is_sql_keyword(last_word) {
+    if last_word.chars().all(|c| c.is_alphanumeric() || c == '_') && !is_sql_keyword(last_word) {
         Some(last_word.to_string())
     } else {
         None
@@ -1241,20 +1355,31 @@ fn extract_partial_at_end(query: &str) -> Option<String> {
 }
 
 fn is_sql_keyword(word: &str) -> bool {
-    matches!(word.to_uppercase().as_str(),
-        "SELECT" | "FROM" | "WHERE" | "AND" | "OR" | "IN" | 
-        "ORDER" | "BY" | "GROUP" | "HAVING" | "ASC" | "DESC"
+    matches!(
+        word.to_uppercase().as_str(),
+        "SELECT"
+            | "FROM"
+            | "WHERE"
+            | "AND"
+            | "OR"
+            | "IN"
+            | "ORDER"
+            | "BY"
+            | "GROUP"
+            | "HAVING"
+            | "ASC"
+            | "DESC"
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_tokenizer() {
         let mut lexer = Lexer::new("SELECT * FROM trade_deal WHERE price > 100");
-        
+
         assert!(matches!(lexer.next_token(), Token::Select));
         assert!(matches!(lexer.next_token(), Token::Star));
         assert!(matches!(lexer.next_token(), Token::From));
@@ -1264,11 +1389,11 @@ mod tests {
         assert!(matches!(lexer.next_token(), Token::GreaterThan));
         assert!(matches!(lexer.next_token(), Token::NumberLiteral(s) if s == "100"));
     }
-    
+
     #[test]
     fn test_tokenizer_datetime() {
         let mut lexer = Lexer::new("WHERE createdDate > DateTime(2025, 10, 20)");
-        
+
         assert!(matches!(lexer.next_token(), Token::Where));
         assert!(matches!(lexer.next_token(), Token::Identifier(s) if s == "createdDate"));
         assert!(matches!(lexer.next_token(), Token::GreaterThan));
@@ -1281,79 +1406,100 @@ mod tests {
         assert!(matches!(lexer.next_token(), Token::NumberLiteral(s) if s == "20"));
         assert!(matches!(lexer.next_token(), Token::RightParen));
     }
-    
+
     #[test]
     fn test_parse_simple_select() {
         let mut parser = Parser::new("SELECT * FROM trade_deal");
         let stmt = parser.parse().unwrap();
-        
+
         assert_eq!(stmt.columns, vec!["*"]);
         assert_eq!(stmt.from_table, Some("trade_deal".to_string()));
         assert!(stmt.where_clause.is_none());
     }
-    
+
     #[test]
     fn test_parse_where_with_method() {
         let mut parser = Parser::new("SELECT * FROM trade_deal WHERE name.Contains(\"test\")");
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
         assert_eq!(where_clause.conditions.len(), 1);
     }
-    
+
     #[test]
     fn test_parse_datetime_constructor() {
-        let mut parser = Parser::new("SELECT * FROM trade_deal WHERE createdDate > DateTime(2025, 10, 20)");
+        let mut parser =
+            Parser::new("SELECT * FROM trade_deal WHERE createdDate > DateTime(2025, 10, 20)");
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
         assert_eq!(where_clause.conditions.len(), 1);
-        
+
         // Check the expression structure
         if let SqlExpression::BinaryOp { left, op, right } = &where_clause.conditions[0].expr {
             assert_eq!(op, ">");
             assert!(matches!(left.as_ref(), SqlExpression::Column(col) if col == "createdDate"));
-            assert!(matches!(right.as_ref(), SqlExpression::DateTimeConstructor { year: 2025, month: 10, day: 20, hour: None, minute: None, second: None }));
+            assert!(matches!(
+                right.as_ref(),
+                SqlExpression::DateTimeConstructor {
+                    year: 2025,
+                    month: 10,
+                    day: 20,
+                    hour: None,
+                    minute: None,
+                    second: None
+                }
+            ));
         } else {
             panic!("Expected BinaryOp with DateTime constructor");
         }
     }
-    
+
     #[test]
     fn test_cursor_context_after_and() {
         let query = "SELECT * FROM trade_deal WHERE status = 'active' AND ";
         let (context, partial) = detect_cursor_context(query, query.len());
-        
-        assert!(matches!(context, CursorContext::AfterLogicalOp(LogicalOp::And)));
+
+        assert!(matches!(
+            context,
+            CursorContext::AfterLogicalOp(LogicalOp::And)
+        ));
         assert_eq!(partial, None);
     }
-    
+
     #[test]
     fn test_cursor_context_with_partial() {
         let query = "SELECT * FROM trade_deal WHERE status = 'active' AND p";
         let (context, partial) = detect_cursor_context(query, query.len());
-        
-        assert!(matches!(context, CursorContext::AfterLogicalOp(LogicalOp::And)));
+
+        assert!(matches!(
+            context,
+            CursorContext::AfterLogicalOp(LogicalOp::And)
+        ));
         assert_eq!(partial, Some("p".to_string()));
     }
-    
+
     #[test]
     fn test_cursor_context_after_datetime_comparison() {
         let query = "SELECT * FROM trade_deal WHERE createdDate > ";
         let (context, partial) = detect_cursor_context(query, query.len());
-        
-        assert!(matches!(context, CursorContext::AfterComparisonOp(col, op) if col == "createdDate" && op == ">"));
+
+        assert!(
+            matches!(context, CursorContext::AfterComparisonOp(col, op) if col == "createdDate" && op == ">")
+        );
         assert_eq!(partial, None);
     }
-    
+
     #[test]
     fn test_cursor_context_partial_datetime() {
         let query = "SELECT * FROM trade_deal WHERE createdDate > Date";
         let (context, partial) = detect_cursor_context(query, query.len());
-        
-        assert!(matches!(context, CursorContext::AfterComparisonOp(col, op) if col == "createdDate" && op == ">"));
+
+        assert!(
+            matches!(context, CursorContext::AfterComparisonOp(col, op) if col == "createdDate" && op == ">")
+        );
         assert_eq!(partial, Some("Date".to_string()));
     }
 }

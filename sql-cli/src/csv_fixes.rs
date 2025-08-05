@@ -4,15 +4,15 @@ use std::collections::HashMap;
 
 /// Check if a column name needs quoting (contains spaces or special characters)
 pub fn needs_quoting(column_name: &str) -> bool {
-    column_name.contains(' ') || 
-    column_name.contains('-') || 
-    column_name.contains('.') ||
-    column_name.contains('(') ||
-    column_name.contains(')') ||
-    column_name.contains('[') ||
-    column_name.contains(']') ||
-    column_name.contains('"') ||
-    column_name.contains('\'')
+    column_name.contains(' ')
+        || column_name.contains('-')
+        || column_name.contains('.')
+        || column_name.contains('(')
+        || column_name.contains(')')
+        || column_name.contains('[')
+        || column_name.contains(']')
+        || column_name.contains('"')
+        || column_name.contains('\'')
 }
 
 /// Quote a column name if necessary
@@ -38,13 +38,13 @@ pub fn build_column_lookup(headers: &[String]) -> HashMap<String, String> {
 pub fn find_column_case_insensitive<'a>(
     obj: &'a serde_json::Map<String, serde_json::Value>,
     column_name: &str,
-    lookup: &HashMap<String, String>
+    lookup: &HashMap<String, String>,
 ) -> Option<(&'a String, &'a serde_json::Value)> {
     // First try exact match
     if let Some(value) = obj.get_key_value(column_name) {
         return Some(value);
     }
-    
+
     // Then try case-insensitive match using lookup
     if let Some(actual_name) = lookup.get(&column_name.to_lowercase()) {
         obj.get_key_value(actual_name)
@@ -68,7 +68,7 @@ pub fn parse_column_name(column: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_needs_quoting() {
         assert!(!needs_quoting("City"));
@@ -77,7 +77,7 @@ mod tests {
         assert!(needs_quoting("Customer-ID"));
         assert!(needs_quoting("Price ($)"));
     }
-    
+
     #[test]
     fn test_quote_if_needed() {
         assert_eq!(quote_if_needed("City"), "City");

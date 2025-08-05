@@ -1,7 +1,7 @@
 use reedline::{Completer, Span, Suggestion};
 use std::sync::{Arc, Mutex};
 
-use crate::parser::{SqlParser, Schema, ParseState};
+use crate::parser::{ParseState, Schema, SqlParser};
 
 pub struct SqlCompleter {
     parser: Arc<Mutex<SqlParser>>,
@@ -20,28 +20,30 @@ impl SqlCompleter {
 impl Completer for SqlCompleter {
     fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
         let input = &line[..pos];
-        
+
         let mut parser = self.parser.lock().unwrap();
         let context = parser.get_completion_context(input);
         let suggestions = context.get_suggestions(&self.schema);
-        
+
         let start_pos = if let Some(partial) = &context.partial_word {
             pos.saturating_sub(partial.len())
         } else {
             pos
         };
-        
+
         suggestions
             .into_iter()
             .map(|value| {
                 let description = match context.state {
-                    ParseState::AfterSelect | ParseState::InColumnList => Some("column".to_string()),
+                    ParseState::AfterSelect | ParseState::InColumnList => {
+                        Some("column".to_string())
+                    }
                     ParseState::AfterFrom => Some("table".to_string()),
                     ParseState::InWhere => Some("condition".to_string()),
                     ParseState::InOrderBy => Some("order".to_string()),
                     _ => None,
                 };
-                
+
                 Suggestion {
                     value: value.clone(),
                     description,
@@ -56,7 +58,14 @@ impl Completer for SqlCompleter {
                         _ => {
                             matches!(
                                 value.as_str(),
-                                "SELECT" | "FROM" | "WHERE" | "ORDER BY" | "AND" | "OR" | "ASC" | "DESC"
+                                "SELECT"
+                                    | "FROM"
+                                    | "WHERE"
+                                    | "ORDER BY"
+                                    | "AND"
+                                    | "OR"
+                                    | "ASC"
+                                    | "DESC"
                             )
                         }
                     },
