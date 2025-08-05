@@ -40,19 +40,37 @@ impl CursorAwareParser {
 
         let (suggestions, context_str) = match &cursor_context {
             CursorContext::SelectClause => {
-                let mut cols = self
-                    .schema
-                    .get_columns(default_table)
-                    .into_iter()
-                    .map(|col| quote_if_needed(&col))
-                    .collect::<Vec<_>>();
+                // get_columns already applies quote_if_needed, so don't double-quote
+                let mut cols = self.schema.get_columns(default_table);
                 cols.push("*".to_string());
 
                 // Filter out already selected columns
-                let selected_columns = self.extract_selected_columns(query, cursor_pos);
+                // But don't include the partial word at cursor as "selected"
+                let extract_pos = if let Some(ref partial) = partial_word {
+                    cursor_pos.saturating_sub(partial.len())
+                } else {
+                    cursor_pos
+                };
+                let selected_columns = self.extract_selected_columns(query, extract_pos);
                 cols = cols
                     .into_iter()
-                    .filter(|col| !selected_columns.contains(&col.to_lowercase()))
+                    .filter(|col| {
+                        // Check if this column is already selected (case-insensitive)
+                        !selected_columns.iter().any(|selected| {
+                            // Strip quotes from both for comparison if needed
+                            let col_clean = if col.starts_with('"') && col.ends_with('"') && col.len() > 2 {
+                                &col[1..col.len() - 1]
+                            } else {
+                                col
+                            };
+                            let selected_clean = if selected.starts_with('"') && selected.ends_with('"') && selected.len() > 2 {
+                                &selected[1..selected.len() - 1]
+                            } else {
+                                selected
+                            };
+                            col_clean.eq_ignore_ascii_case(selected_clean)
+                        })
+                    })
                     .collect();
 
                 (cols, "SelectClause".to_string())
@@ -150,6 +168,7 @@ impl CursorAwareParser {
                     suggestions.extend(selected_columns);
                 } else {
                     // Fallback to all columns if SELECT * or no columns detected
+                    // get_columns already applies quote_if_needed
                     suggestions.extend(self.schema.get_columns(default_table));
                 }
 
@@ -201,15 +220,19 @@ impl CursorAwareParser {
                                 .starts_with(&partial_without_quote.to_lowercase())
                         }
                     } else {
-                        // Normal non-quoted partial
+                        // Normal non-quoted partial (e.g., "customer")
                         // Handle quoted column names - check if the suggestion starts with a quote
-                        let suggestion_to_check =
-                            if suggestion.starts_with('"') && suggestion.len() > 1 {
-                                // Remove the opening quote for comparison
-                                &suggestion[1..]
-                            } else {
-                                suggestion
-                            };
+                        let suggestion_to_check = if suggestion.starts_with('"') && suggestion.ends_with('"') && suggestion.len() > 2 {
+                            // Remove both quotes for comparison (e.g., "Customer Id" -> "Customer Id")
+                            &suggestion[1..suggestion.len() - 1]
+                        } else if suggestion.starts_with('"') && suggestion.len() > 1 {
+                            // Malformed quoted identifier - just strip opening quote
+                            &suggestion[1..]
+                        } else {
+                            suggestion
+                        };
+                        
+                        // Now compare the cleaned suggestion with the partial
                         suggestion_to_check
                             .to_lowercase()
                             .starts_with(&partial.to_lowercase())
@@ -499,12 +522,14 @@ impl CursorAwareParser {
                     let trimmed = part.trim();
                     if !trimmed.is_empty() {
                         // Extract just the column name (handle cases like "column AS alias")
-                        if let Some(space_pos) = trimmed.find(char::is_whitespace) {
-                            let col_name = &trimmed[..space_pos];
-                            selected_columns.push(col_name.to_lowercase());
+                        let col_name = if let Some(space_pos) = trimmed.find(char::is_whitespace) {
+                            &trimmed[..space_pos]
                         } else {
-                            selected_columns.push(trimmed.to_lowercase());
-                        }
+                            trimmed
+                        };
+                        
+                        // Preserve the original case of the column name
+                        selected_columns.push(col_name.to_string());
                     }
                 }
             }
@@ -654,6 +679,11 @@ impl CursorAwareParser {
             // Default to string for unknown properties
             Some("string".to_string())
         }
+    }
+
+    #[cfg(test)]
+    pub fn test_extract_selected_columns(&self, query: &str, cursor_pos: usize) -> Vec<String> {
+        self.extract_selected_columns(query, cursor_pos)
     }
 
     fn get_string_method_suggestions(
@@ -906,5 +936,83 @@ mod tests {
         // Should suggest methods starting with "Con"
         assert!(result.suggestions.contains(&"Contains(\"\")".to_string()));
         assert!(!result.suggestions.contains(&"StartsWith(\"\")".to_string())); // Doesn't start with "Con"
+    }
+
+    #[test]
+    fn test_partial_matching_quoted_identifier() {
+        let parser = CursorAwareParser::new();
+        // Set up schema with "Customer Id" column
+        let mut parser = parser;
+        parser.update_single_table(
+            "customers".to_string(),
+            vec![
+                "Index".to_string(),
+                "Customer Id".to_string(),  // Store without quotes
+                "First Name".to_string(),   // Store without quotes
+                "Company".to_string(),
+            ],
+        );
+
+        // Test that "customer" partial matches "Customer Id"
+        let query = "SELECT customer";
+        let result = parser.get_completions(query, query.len());
+        
+        // Should suggest "Customer Id" (quoted)
+        assert!(result.suggestions.iter().any(|s| s == "\"Customer Id\""),
+            "Should suggest quoted Customer Id for partial \"customer\". Got: {:?}", result.suggestions);
+    }
+
+    #[test]
+    fn test_case_preservation_in_order_by() {
+        let parser = CursorAwareParser::new();
+        let mut parser = parser;
+        parser.update_single_table(
+            "customers".to_string(),
+            vec!["Company".to_string(), "Country".to_string()],
+        );
+
+        // Test that ORDER BY preserves case from SELECT
+        let query = "SELECT Company, Country FROM customers ORDER BY Com";
+        let result = parser.get_completions(query, query.len());
+        
+        // Should suggest "Company" with proper case
+        assert!(result.suggestions.iter().any(|s| s == "Company"),
+            "Should preserve case in ORDER BY suggestions. Got: {:?}", result.suggestions);
+    }
+
+    #[test]
+    fn test_extract_selected_columns_preserves_case() {
+        let parser = CursorAwareParser::new();
+        
+        let query = "SELECT Company, Country FROM customers";
+        let columns = parser.test_extract_selected_columns(query, query.len());
+        
+        assert_eq!(columns, vec!["Company", "Country"]);
+        assert_ne!(columns, vec!["company", "country"], "Should preserve original case");
+    }
+
+    #[test]
+    fn test_filtering_already_selected_columns() {
+        let parser = CursorAwareParser::new();
+        let mut parser = parser;
+        parser.update_single_table(
+            "customers".to_string(),
+            vec![
+                "Company".to_string(),
+                "Country".to_string(),
+                "Customer Id".to_string(),
+            ],
+        );
+
+        // Already selected Company, should not suggest it again
+        let query = "SELECT Company, ";
+        let result = parser.get_completions(query, query.len());
+        
+        assert!(!result.suggestions.iter().any(|s| s == "Company"),
+            "Should not suggest already selected Company");
+        assert!(result.suggestions.iter().any(|s| s == "Country"),
+            "Should suggest Country");
+        assert!(result.suggestions.iter().any(|s| s == "\"Customer Id\""),
+            "Should suggest Customer Id");
     }
 }
