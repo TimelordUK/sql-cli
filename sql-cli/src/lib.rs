@@ -11,6 +11,7 @@ pub mod csv_datasource;
 pub mod where_ast;
 pub mod where_parser;
 pub mod csv_fixes;
+pub mod virtual_table;
 
 #[cfg(test)]
 mod test_cache_query;

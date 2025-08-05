@@ -12,10 +12,9 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Row, Table, TableState},
+    widgets::{Block, Borders, Clear, Paragraph},
     Frame, Terminal,
 };
-use serde_json::Value;
 use std::io;
 use tui_input::{backend::crossterm::EventHandler, Input};
 
@@ -31,7 +30,7 @@ pub struct TuiApp {
     input: Input,
     mode: AppMode,
     results: Option<QueryResponse>,
-    table_state: TableState,
+    virtual_table_state: crate::virtual_table::VirtualTableState,
     show_help: bool,
     status_message: String,
     sql_parser: SqlParser,
@@ -45,7 +44,7 @@ impl TuiApp {
             input: Input::default(),
             mode: AppMode::Command,
             results: None,
-            table_state: TableState::default(),
+            virtual_table_state: crate::virtual_table::VirtualTableState::new(),
             show_help: false,
             status_message: "Ready - Type SQL query and press Enter (Enhanced parser)".to_string(),
             sql_parser: SqlParser::new(),
@@ -96,6 +95,13 @@ impl TuiApp {
                             self.handle_navigation(key.code);
                         }
                     }
+                    KeyCode::Char('g') | KeyCode::Char('G') => {
+                        if self.mode == AppMode::Results {
+                            self.handle_navigation(key.code);
+                        } else {
+                            self.input.handle_event(&Event::Key(key));
+                        }
+                    }
                     _ => {
                         if self.mode == AppMode::Command {
                             self.input.handle_event(&Event::Key(key));
@@ -115,7 +121,7 @@ impl TuiApp {
             Ok(response) => {
                 self.results = Some(response);
                 self.mode = AppMode::Results;
-                self.table_state.select(Some(0));
+                self.virtual_table_state.select(0);
                 self.status_message = format!("Query executed successfully - {} rows", 
                     self.results.as_ref().unwrap().data.len());
             }
@@ -161,24 +167,27 @@ impl TuiApp {
             let num_rows = results.data.len();
             if num_rows == 0 { return; }
             
-            let current = self.table_state.selected().unwrap_or(0);
-            let new_selection = match key {
+            match key {
                 KeyCode::Up => {
-                    if current > 0 { current - 1 } else { num_rows - 1 }
+                    self.virtual_table_state.scroll_up(1);
                 }
                 KeyCode::Down => {
-                    if current < num_rows - 1 { current + 1 } else { 0 }
+                    self.virtual_table_state.scroll_down(1, num_rows);
                 }
                 KeyCode::PageUp => {
-                    if current > 10 { current - 10 } else { 0 }
+                    self.virtual_table_state.page_up();
                 }
                 KeyCode::PageDown => {
-                    let new = current + 10;
-                    if new < num_rows { new } else { num_rows - 1 }
+                    self.virtual_table_state.page_down(num_rows);
                 }
-                _ => current,
-            };
-            self.table_state.select(Some(new_selection));
+                KeyCode::Char('g') => {
+                    self.virtual_table_state.goto_top();
+                }
+                KeyCode::Char('G') => {
+                    self.virtual_table_state.goto_bottom(num_rows);
+                }
+                _ => {}
+            }
         }
     }
     
@@ -294,32 +303,6 @@ impl TuiApp {
             select_fields.clone()
         };
         
-        // Create table header
-        let header_cells: Vec<ratatui::widgets::Cell> = headers
-            .iter()
-            .map(|h| ratatui::widgets::Cell::from(h.as_str()).style(Style::default().fg(Color::Yellow)))
-            .collect();
-        let header = Row::new(header_cells).height(1).bottom_margin(1);
-        
-        // Create table rows
-        let rows: Vec<Row> = data.iter().map(|record| {
-            let cells: Vec<ratatui::widgets::Cell> = headers.iter().map(|field| {
-                if let Some(obj) = record.as_object() {
-                    match obj.get(field) {
-                        Some(Value::String(s)) => ratatui::widgets::Cell::from(s.as_str()),
-                        Some(Value::Number(n)) => ratatui::widgets::Cell::from(n.to_string()),
-                        Some(Value::Bool(b)) => ratatui::widgets::Cell::from(b.to_string()),
-                        Some(Value::Null) => ratatui::widgets::Cell::from("NULL").style(Style::default().fg(Color::Gray)),
-                        Some(v) => ratatui::widgets::Cell::from(v.to_string()),
-                        None => ratatui::widgets::Cell::from(""),
-                    }
-                } else {
-                    ratatui::widgets::Cell::from("")
-                }
-            }).collect();
-            Row::new(cells).height(1)
-        }).collect();
-        
         // Calculate column widths
         let num_cols = headers.len();
         let col_width = if num_cols > 0 {
@@ -332,16 +315,15 @@ impl TuiApp {
             .map(|_| Constraint::Length(col_width))
             .collect();
         
-        let table = Table::new(rows, widths)
-            .header(header)
+        // Use VirtualTable for efficient rendering
+        let header_refs: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
+        let virtual_table = crate::virtual_table::VirtualTable::new(header_refs, data, widths)
             .block(Block::default().borders(Borders::ALL).title(format!(
-                "Results ({} rows) - Use ↑↓ to navigate, Esc to return to command",
+                "Results ({} rows) - Use ↑↓ to navigate, Esc to return to command, G/g for top/bottom",
                 data.len()
-            )))
-            .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
-            .highlight_symbol(">> ");
+            )));
         
-        f.render_stateful_widget(table, area, &mut self.table_state.clone());
+        f.render_stateful_widget(virtual_table, area, &mut self.virtual_table_state.clone());
     }
     
     fn render_help_popup(&self, f: &mut Frame) {

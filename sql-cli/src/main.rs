@@ -21,6 +21,7 @@ mod history;
 mod csv_fixes;
 mod sql_highlighter;
 mod schema_config;
+mod virtual_table;
 
 use completer::SqlCompleter;
 use parser::{SqlParser, ParseState};
