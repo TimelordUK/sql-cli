@@ -43,7 +43,7 @@ fn test_datetime_parsing() {
     if let SqlExpression::BinaryOp { left, op, right } = &where_clause.conditions[0].expr {
         assert_eq!(op, ">");
         assert!(matches!(left.as_ref(), SqlExpression::Column(col) if col == "createdDate"));
-        assert!(matches!(right.as_ref(), SqlExpression::DateTimeConstructor { year: 2025, month: 10, day: 20 }));
+        assert!(matches!(right.as_ref(), SqlExpression::DateTimeConstructor { year: 2025, month: 10, day: 20, .. }));
     } else {
         panic!("Expected BinaryOp with DateTime constructor");
     }

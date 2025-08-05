@@ -6,6 +6,7 @@ use std::error::Error;
 use anyhow::Result;
 use std::collections::HashMap;
 use crate::api_client::{QueryResponse, QueryInfo};
+use chrono::{Local, NaiveDateTime, Datelike};
 
 #[derive(Clone)]
 pub struct CsvDataSource {
@@ -64,8 +65,8 @@ impl CsvDataSource {
             let mut results = self.data.clone();
             
             // Handle WHERE clause
-            if let Some(where_pos) = sql_lower.find("where") {
-                let where_clause = &sql[where_pos + 5..];
+            if let Some(where_pos) = sql_lower.find(" where ") {
+                let where_clause = &sql[where_pos + 7..];  // Skip " where "
                 results = self.filter_results(results, where_clause)?;
             }
             
@@ -101,13 +102,49 @@ impl CsvDataSource {
         Ok(filtered)
     }
     
+    fn process_datetime_in_clause(&self, clause: &str) -> String {
+        let mut processed = clause.to_string();
+        
+        // Process DateTime() - today at midnight
+        if processed.contains("DateTime()") {
+            let today = Local::now();
+            let today_str = format!("{:04}-{:02}-{:02} 00:00:00", 
+                today.year(), today.month(), today.day());
+            processed = processed.replace("DateTime()", &format!("\"{}\"", today_str));
+        }
+        
+        // Process DateTime(year, month, day, ...) with regex
+        let datetime_pattern = regex::Regex::new(r"DateTime\((\d+),\s*(\d+),\s*(\d+)(?:,\s*(\d+))?(?:,\s*(\d+))?(?:,\s*(\d+))?\)").unwrap();
+        
+        processed = datetime_pattern.replace_all(&processed, |caps: &regex::Captures| {
+            let year: i32 = caps[1].parse().unwrap();
+            let month: u32 = caps[2].parse().unwrap();
+            let day: u32 = caps[3].parse().unwrap();
+            let hour: u32 = caps.get(4).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+            let minute: u32 = caps.get(5).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+            let second: u32 = caps.get(6).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+            
+            format!("\"{:04}-{:02}-{:02} {:02}:{:02}:{:02}\"", 
+                year, month, day, hour, minute, second)
+        }).to_string();
+        
+        processed
+    }
+    
     fn evaluate_where_clause(&self, row: &Value, clause: &str) -> Result<bool> {
         // Simple WHERE clause evaluation
         // Support basic patterns like: column = "value", column > number, column.Contains("text")
         
+        // First process any DateTime constructs
+        let processed_clause = self.process_datetime_in_clause(clause);
+        
         // Handle AND conditions
-        if clause.contains(" AND ") {
-            let parts: Vec<&str> = clause.split(" AND ").collect();
+        if processed_clause.contains(" AND ") || processed_clause.contains(" and ") {
+            let parts: Vec<&str> = if processed_clause.contains(" AND ") {
+                processed_clause.split(" AND ").collect()
+            } else {
+                processed_clause.split(" and ").collect()
+            };
             for part in parts {
                 if !self.evaluate_where_clause(row, part.trim())? {
                     return Ok(false);
@@ -117,8 +154,12 @@ impl CsvDataSource {
         }
         
         // Handle OR conditions
-        if clause.contains(" OR ") {
-            let parts: Vec<&str> = clause.split(" OR ").collect();
+        if processed_clause.contains(" OR ") || processed_clause.contains(" or ") {
+            let parts: Vec<&str> = if processed_clause.contains(" OR ") {
+                processed_clause.split(" OR ").collect()
+            } else {
+                processed_clause.split(" or ").collect()
+            };
             for part in parts {
                 if self.evaluate_where_clause(row, part.trim())? {
                     return Ok(true);
@@ -128,7 +169,7 @@ impl CsvDataSource {
         }
         
         // Handle .Length() method - e.g., column.Length() > 5
-        if clause.contains(".Length()") {
+        if processed_clause.contains(".Length()") {
             // Split by comparison operators to handle cases like column.Length() > 5
             let comparison_ops = vec![" > ", " < ", " >= ", " <= ", " = ", " == "];
             for op in comparison_ops {
@@ -190,9 +231,9 @@ impl CsvDataSource {
             }
         }
         
-        if clause.contains(".Contains(") {
+        if processed_clause.contains(".Contains(") {
             // Handle .Contains() method
-            let parts: Vec<&str> = clause.split(".Contains(").collect();
+            let parts: Vec<&str> = processed_clause.split(".Contains(").collect();
             if parts.len() == 2 {
                 let column = parts[0].trim().trim_matches('"').trim_matches('\'');
                 let value_part = parts[1].trim_end_matches(')');
@@ -221,20 +262,56 @@ impl CsvDataSource {
                     }
                 }
             }
-        } else if clause.contains('>') {
+        } else if processed_clause.contains('>') {
             // Handle greater than
-            let parts: Vec<&str> = clause.split('>').collect();
+            let parts: Vec<&str> = processed_clause.split('>').collect();
             if parts.len() == 2 {
                 let column = parts[0].trim().trim_matches('"').trim_matches('\'');
                 let value = parts[1].trim();
                 
                 if let Some(field_value) = row.get(column) {
+                    // Try numeric comparison first
                     if let Some(n) = field_value.as_f64() {
                         if let Ok(search_num) = value.parse::<f64>() {
                             return Ok(n > search_num);
                         }
                     }
+                    // Try string/date comparison
+                    else if let Some(s) = field_value.as_str() {
+                        let compare_value = value.trim_matches('"').trim_matches('\'');
+                        // For date strings, lexicographic comparison works if in ISO format
+                        return Ok(s > compare_value);
+                    }
                 }
+            }
+        }
+        
+        // Handle IN clause - e.g., column IN ("value1", "value2")
+        if processed_clause.contains(" IN (") || processed_clause.contains(" in (") {
+            let in_pos = if processed_clause.contains(" IN (") {
+                processed_clause.find(" IN (").unwrap()
+            } else {
+                processed_clause.find(" in (").unwrap()
+            };
+            
+            let column = processed_clause[..in_pos].trim().trim_matches('"').trim_matches('\'');
+            let values_part = &processed_clause[in_pos + 5..]; // Skip " IN ("
+            
+            if let Some(end_pos) = values_part.find(')') {
+                let values_str = &values_part[..end_pos];
+                let values: Vec<&str> = values_str.split(',')
+                    .map(|v| v.trim().trim_matches('"').trim_matches('\''))
+                    .collect();
+                
+                if let Some(field_value) = row.get(column) {
+                    if let Some(s) = field_value.as_str() {
+                        return Ok(values.contains(&s));
+                    } else if let Some(n) = field_value.as_f64() {
+                        let n_str = n.to_string();
+                        return Ok(values.iter().any(|v| v == &n_str));
+                    }
+                }
+                return Ok(false);
             }
         }
         
