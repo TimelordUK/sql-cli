@@ -1035,10 +1035,24 @@ impl EnhancedTuiApp {
             // Replace the partial word with the suggestion
             let before_partial = &query[..cursor_pos - partial.len()];
             let after_cursor = &query[cursor_pos..];
-            let new_query = format!("{}{}{}", before_partial, suggestion, after_cursor);
+            
+            // Handle quoted identifiers - if both partial and suggestion start with quotes,
+            // we need to avoid double quotes
+            let suggestion_to_use = if partial.starts_with('"') && suggestion.starts_with('"') {
+                // The partial already includes the opening quote, so use suggestion without its quote
+                if suggestion.len() > 1 {
+                    &suggestion[1..]
+                } else {
+                    suggestion
+                }
+            } else {
+                suggestion
+            };
+            
+            let new_query = format!("{}{}{}", before_partial, suggestion_to_use, after_cursor);
             
             // Update input and cursor position
-            let cursor_pos = before_partial.len() + suggestion.len();
+            let cursor_pos = before_partial.len() + suggestion_to_use.len();
             self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos);
             
             // Update completion state for next tab press
@@ -1120,14 +1134,28 @@ impl EnhancedTuiApp {
             let current_line = lines[cursor_row].clone();
             let line_before = &current_line[..cursor_col.saturating_sub(partial.len())];
             let line_after = &current_line[cursor_col..];
-            let new_line = format!("{}{}{}", line_before, suggestion, line_after);
+            
+            // Handle quoted identifiers - if both partial and suggestion start with quotes,
+            // we need to avoid double quotes
+            let suggestion_to_use = if partial.starts_with('"') && suggestion.starts_with('"') {
+                // The partial already includes the opening quote, so use suggestion without its quote
+                if suggestion.len() > 1 {
+                    &suggestion[1..]
+                } else {
+                    suggestion
+                }
+            } else {
+                suggestion
+            };
+            
+            let new_line = format!("{}{}{}", line_before, suggestion_to_use, line_after);
             
             // Update the line in textarea
             self.textarea.delete_line_by_head();
             self.textarea.insert_str(&new_line);
             
             // Move cursor to after the completion
-            let new_col = line_before.len() + suggestion.len();
+            let new_col = line_before.len() + suggestion_to_use.len();
             for _ in 0..new_col {
                 self.textarea.move_cursor(CursorMove::Forward);
             }
@@ -1135,7 +1163,7 @@ impl EnhancedTuiApp {
             // Update completion state
             let new_query = self.textarea.lines().join("\n");
             self.completion_state.last_query = new_query;
-            self.completion_state.last_cursor_pos = cursor_pos - partial.len() + suggestion.len();
+            self.completion_state.last_cursor_pos = cursor_pos - partial.len() + suggestion_to_use.len();
             
             let suggestion_info = if self.completion_state.suggestions.len() > 1 {
                 format!("Completed: {} ({}/{} - Tab for next)", 
@@ -1193,14 +1221,30 @@ impl EnhancedTuiApp {
         let mut start = cursor_pos;
         let end = cursor_pos;
 
+        // Check if we might be in a quoted identifier
+        let mut in_quote = false;
+        
         // Find start of word (go backward)
         while start > 0 {
             let prev_char = chars[start - 1];
-            if prev_char.is_alphanumeric() || prev_char == '_' {
+            if prev_char == '"' {
+                // Found a quote, include it and stop
+                start -= 1;
+                in_quote = true;
+                break;
+            } else if prev_char.is_alphanumeric() || prev_char == '_' || (prev_char == ' ' && in_quote) {
                 start -= 1;
             } else {
                 break;
             }
+        }
+
+        // If we found a quote but are in a quoted identifier, 
+        // we need to continue backwards to include the identifier content
+        if in_quote && start > 0 {
+            // We've already moved past the quote, now get the content before it
+            // Actually, we want to include everything from the quote forward
+            // The logic above is correct - we stop at the quote
         }
 
         // Convert back to byte positions
@@ -1872,6 +1916,7 @@ impl EnhancedTuiApp {
                     Token::In => "IN",
                     Token::DateTime => "DateTime",
                     Token::Identifier(s) => s,
+                    Token::QuotedIdentifier(s) => s,
                     Token::StringLiteral(s) => s,
                     Token::NumberLiteral(s) => s,
                     Token::Star => "*",
@@ -2757,15 +2802,29 @@ impl EnhancedTuiApp {
         // Only work with visible headers
         let visible_headers: Vec<&str> = headers[viewport_start..viewport_end].iter().copied().collect();
         
-        // Prepare table data (only visible columns)
+        // Calculate viewport dimensions FIRST before processing any data
+        let terminal_height = area.height as usize;
+        let max_visible_rows = terminal_height.saturating_sub(3).max(10);
+        
+        let total_rows = if let Some(filtered) = &self.filtered_data {
+            filtered.len()
+        } else {
+            results.data.len()
+        };
+        
+        // Calculate row viewport
+        let row_viewport_start = self.scroll_offset.0.min(total_rows.saturating_sub(1));
+        let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
+        
+        // Prepare table data (only visible rows AND columns)
         let data_to_display = if let Some(filtered) = &self.filtered_data {
-            // Apply column viewport to filtered data
-            filtered.iter().map(|row| {
+            // Apply both row and column viewport to filtered data
+            filtered[row_viewport_start..row_viewport_end].iter().map(|row| {
                 row[viewport_start..viewport_end].to_vec()
             }).collect()
         } else {
-            // Convert JSON data to string matrix (only visible columns)
-            results.data.iter().map(|item| {
+            // Convert JSON data to string matrix (only visible rows AND columns)
+            results.data[row_viewport_start..row_viewport_end].iter().map(|item| {
                 if let Some(obj) = item.as_object() {
                     visible_headers.iter().map(|&header| {
                         match obj.get(header) {
@@ -2813,31 +2872,10 @@ impl EnhancedTuiApp {
             Cell::from(header_text).style(style)
         }).collect();
 
-        // Calculate visible rows for virtual scrolling
-        let terminal_height = area.height as usize;
-        // The table widget needs:
-        // - 1 row for top border
-        // - 1 row for header
-        // - 1 row for bottom border
-        // So we subtract 3 total
-        let max_visible_rows = terminal_height.saturating_sub(3).max(10);
-        
         let selected_row = self.table_state.selected().unwrap_or(0);
-        let total_rows = data_to_display.len();
         
-        // Store the actual visible rows for navigation
-        // We can't modify self here, but we can use a better calculation in navigation
-        
-        // Calculate row viewport based on selected row  
-        // Use the scroll_offset.0 to track the viewport start
-        let row_viewport_start = self.scroll_offset.0;
-        let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
-        
-        // Only render visible rows
-        let visible_data = &data_to_display[row_viewport_start..row_viewport_end];
-        
-        // Create data rows (only visible rows and columns)
-        let rows: Vec<Row> = visible_data.iter().enumerate().map(|(visible_row_idx, row)| {
+        // Create data rows (already filtered to visible rows and columns)
+        let rows: Vec<Row> = data_to_display.iter().enumerate().map(|(visible_row_idx, row)| {
             let actual_row_idx = row_viewport_start + visible_row_idx;
             let cells: Vec<Cell> = row.iter().enumerate().map(|(visible_col_idx, cell)| {
                 let actual_col_idx = viewport_start + visible_col_idx;
@@ -2894,7 +2932,7 @@ impl EnhancedTuiApp {
             .block(Block::default()
                 .borders(Borders::ALL)
                 .title(format!("Results ({} rows) - Columns {}-{} of {} | Viewport rows {}-{} (selected: {}) | Use h/l to scroll", 
-                    data_to_display.len(), 
+                    total_rows, 
                     viewport_start + 1, 
                     viewport_end, 
                     headers.len(),

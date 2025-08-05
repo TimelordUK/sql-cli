@@ -21,6 +21,7 @@ pub enum Token {
     
     // Literals
     Identifier(String),
+    QuotedIdentifier(String), // For "Customer Id" style identifiers
     StringLiteral(String),
     NumberLiteral(String),
     Star,
@@ -175,7 +176,13 @@ impl Lexer {
                 self.advance();
                 Token::NotEqual
             }
-            Some('"') | Some('\'') => {
+            Some('"') => {
+                // Double quotes = identifier
+                let ident_val = self.read_string();
+                Token::QuotedIdentifier(ident_val)
+            }
+            Some('\'') => {
+                // Single quotes = string literal
                 let string_val = self.read_string();
                 Token::StringLiteral(string_val)
             }
@@ -374,7 +381,7 @@ impl Parser {
                     self.advance();
                     Some(table_name)
                 }
-                Token::StringLiteral(table) => {
+                Token::QuotedIdentifier(table) => {
                     // Handle quoted table names
                     let table_name = table.clone();
                     self.advance();
@@ -429,7 +436,7 @@ impl Parser {
                         columns.push(col.clone());
                         self.advance();
                     }
-                    Token::StringLiteral(col) => {
+                    Token::QuotedIdentifier(col) => {
                         // Handle quoted column names like "Customer Id"
                         columns.push(col.clone());
                         self.advance();
@@ -457,7 +464,7 @@ impl Parser {
                     identifiers.push(id.clone());
                     self.advance();
                 }
-                Token::StringLiteral(id) => {
+                Token::QuotedIdentifier(id) => {
                     // Handle quoted identifiers like "Customer Id" 
                     identifiers.push(id.clone());
                     self.advance();
@@ -637,6 +644,12 @@ impl Parser {
                 Ok(SqlExpression::DateTimeConstructor { year, month, day, hour, minute, second })
             }
             Token::Identifier(id) => {
+                let expr = SqlExpression::Column(id.clone());
+                self.advance();
+                Ok(expr)
+            }
+            Token::QuotedIdentifier(id) => {
+                // Handle quoted identifiers as columns
                 let expr = SqlExpression::Column(id.clone());
                 self.advance();
                 Ok(expr)
@@ -972,6 +985,7 @@ fn format_expression(expr: &SqlExpression) -> String {
 fn format_token(token: &Token) -> String {
     match token {
         Token::Identifier(s) => s.clone(),
+        Token::QuotedIdentifier(s) => format!("\"{}\"", s),
         Token::StringLiteral(s) => format!("'{}'", s),
         Token::NumberLiteral(n) => n.clone(),
         Token::DateTime => "DateTime".to_string(),

@@ -1,6 +1,6 @@
 use crate::parser::{Schema, ParseState};
 use crate::recursive_parser::{detect_cursor_context, CursorContext, LogicalOp};
-// Note: quote_if_needed is imported but not used in this file yet
+use crate::csv_fixes::quote_if_needed;
 
 #[derive(Debug, Clone)]
 pub struct CursorAwareParser {
@@ -40,7 +40,10 @@ impl CursorAwareParser {
         
         let (suggestions, context_str) = match &cursor_context {
             CursorContext::SelectClause => {
-                let mut cols = self.schema.get_columns(default_table);
+                let mut cols = self.schema.get_columns(default_table)
+                    .into_iter()
+                    .map(|col| quote_if_needed(&col))
+                    .collect::<Vec<_>>();
                 cols.push("*".to_string());
                 
                 // Filter out already selected columns
@@ -170,14 +173,30 @@ impl CursorAwareParser {
             if !is_method_context {
                 // Only filter non-method suggestions
                 final_suggestions.retain(|suggestion| {
-                    // Handle quoted column names - check if the suggestion starts with a quote
-                    let suggestion_to_check = if suggestion.starts_with('"') && suggestion.len() > 1 {
-                        // Remove the opening quote for comparison
-                        &suggestion[1..]
+                    // Check if we're dealing with a partial quoted identifier
+                    if partial.starts_with('"') {
+                        // User is typing a quoted identifier like "customer
+                        let partial_without_quote = &partial[1..]; // Remove the opening quote
+                        
+                        // Check if suggestion is a quoted identifier that matches
+                        if suggestion.starts_with('"') && suggestion.len() > 1 {
+                            let suggestion_without_quote = &suggestion[1..];
+                            suggestion_without_quote.to_lowercase().starts_with(&partial_without_quote.to_lowercase())
+                        } else {
+                            // Also check non-quoted suggestions that might need quotes
+                            suggestion.to_lowercase().starts_with(&partial_without_quote.to_lowercase())
+                        }
                     } else {
-                        suggestion
-                    };
-                    suggestion_to_check.to_lowercase().starts_with(&partial.to_lowercase())
+                        // Normal non-quoted partial
+                        // Handle quoted column names - check if the suggestion starts with a quote
+                        let suggestion_to_check = if suggestion.starts_with('"') && suggestion.len() > 1 {
+                            // Remove the opening quote for comparison
+                            &suggestion[1..]
+                        } else {
+                            suggestion
+                        };
+                        suggestion_to_check.to_lowercase().starts_with(&partial.to_lowercase())
+                    }
                 });
             }
         }

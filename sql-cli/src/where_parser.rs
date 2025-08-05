@@ -42,6 +42,7 @@ impl WhereParser {
     fn expect_identifier(&mut self) -> Result<String> {
         match self.advance() {
             Some(Token::Identifier(name)) => Ok(name.clone()),
+            Some(Token::QuotedIdentifier(name)) => Ok(name.clone()), // Handle quoted column names
             _ => Err(anyhow!("Expected identifier")),
         }
     }
@@ -50,6 +51,14 @@ impl WhereParser {
         match self.current_token() {
             Some(Token::StringLiteral(_)) => {
                 if let Some(Token::StringLiteral(s)) = self.advance() {
+                    Ok(WhereValue::String(s.clone()))
+                } else {
+                    unreachable!()
+                }
+            }
+            Some(Token::QuotedIdentifier(_)) => {
+                // Handle double-quoted strings as string literals in value context
+                if let Some(Token::QuotedIdentifier(s)) = self.advance() {
                     Ok(WhereValue::String(s.clone()))
                 } else {
                     unreachable!()
@@ -320,6 +329,7 @@ impl WhereParser {
     fn parse_string_value(&mut self) -> Result<String> {
         match self.advance() {
             Some(Token::StringLiteral(s)) => Ok(s.clone()),
+            Some(Token::QuotedIdentifier(s)) => Ok(s.clone()), // Handle double-quoted strings
             _ => Err(anyhow!("Expected string literal")),
         }
     }
