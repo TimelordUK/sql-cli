@@ -1015,4 +1015,31 @@ mod tests {
         assert!(result.suggestions.iter().any(|s| s == "\"Customer Id\""),
             "Should suggest Customer Id");
     }
+
+    #[test]
+    fn test_order_by_completion_with_quoted_columns() {
+        let parser = CursorAwareParser::new();
+        let mut parser = parser;
+        parser.update_single_table(
+            "customers".to_string(),
+            vec![
+                "City".to_string(),
+                "Company".to_string(),
+                "Country".to_string(),
+                "Customer Id".to_string(),
+            ],
+        );
+
+        // Test ORDER BY completion after query with quoted columns
+        let query = r#"SELECT City,Company,Country,"Customer Id" FROM customers ORDER BY coun"#;
+        let result = parser.get_completions(query, query.len());
+        
+        // Should get the partial word right
+        assert_eq!(result.partial_word, Some("coun".to_string()),
+            "Should extract 'coun' as partial, not something weird");
+        
+        // Should suggest Country
+        assert!(result.suggestions.iter().any(|s| s == "Country"),
+            "Should suggest Country for partial 'coun'. Got: {:?}", result.suggestions);
+    }
 }

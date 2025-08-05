@@ -1359,19 +1359,11 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
 fn extract_partial_at_end(query: &str) -> Option<String> {
     let trimmed = query.trim();
     
-    // Check if we're in the middle of a quoted identifier
-    if let Some(quote_pos) = trimmed.rfind('"') {
-        // Check if there's a closing quote after this position
-        let after_quote = &trimmed[quote_pos + 1..];
-        if !after_quote.contains('"') {
-            // We're in an unclosed quoted identifier
-            // Return everything after the opening quote as the partial
-            if !after_quote.is_empty() {
-                return Some(format!("\"{}", after_quote));
-            } else {
-                // Just the opening quote
-                return Some("\"".to_string());
-            }
+    // First check if the last word itself starts with a quote (unclosed quoted identifier being typed)
+    if let Some(last_word) = trimmed.split_whitespace().last() {
+        if last_word.starts_with('"') && !last_word.ends_with('"') {
+            // This is an unclosed quoted identifier like "Cust
+            return Some(last_word.to_string());
         }
     }
     
@@ -1666,5 +1658,29 @@ mod tests {
         } else {
             panic!("Expected MethodCall");
         }
+    }
+
+    #[test]
+    fn test_extract_partial_with_quoted_columns_in_query() {
+        // Test that extract_partial_at_end doesn't get confused by quoted columns earlier in query
+        let query = r#"SELECT City,Company,Country,"Customer Id" FROM customers ORDER BY coun"#;
+        let (context, partial) = detect_cursor_context(query, query.len());
+        
+        assert!(matches!(context, CursorContext::OrderByClause));
+        assert_eq!(partial, Some("coun".to_string()), 
+            "Should extract 'coun' as partial, not everything after the quoted column");
+    }
+
+    #[test]
+    fn test_extract_partial_quoted_identifier_being_typed() {
+        // Test extracting a partial quoted identifier that's being typed
+        let query = r#"SELECT "Cust"#;
+        let partial = extract_partial_at_end(query);
+        assert_eq!(partial, Some("\"Cust".to_string()));
+        
+        // But completed quoted identifiers shouldn't be extracted
+        let query2 = r#"SELECT "Customer Id" FROM"#;
+        let partial2 = extract_partial_at_end(query2);
+        assert_eq!(partial2, None); // FROM is a keyword, so no partial
     }
 }
