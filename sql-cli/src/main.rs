@@ -130,11 +130,20 @@ fn main() -> io::Result<()> {
     let use_classic_tui = args.contains(&"--simple".to_string());
     let use_tui = !args.contains(&"--classic".to_string());
     
-    // Check for CSV file argument
-    let csv_file = args.iter()
+    // Check for data file argument (CSV or JSON)
+    // First check for --csv flag (legacy)
+    let csv_file_flag = args.iter()
         .position(|arg| arg == "--csv")
         .and_then(|pos| args.get(pos + 1))
         .map(|s| s.to_string());
+    
+    // If no --csv flag, check if last argument is a file
+    let data_file = csv_file_flag.or_else(|| {
+        args.last()
+            .filter(|arg| !arg.starts_with("--"))
+            .filter(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+            .map(|s| s.to_string())
+    });
     
     if use_tui {
         if use_classic_tui {
@@ -144,14 +153,15 @@ fn main() -> io::Result<()> {
                 std::process::exit(1);
             }
         } else {
-            if let Some(csv_path) = &csv_file {
-                println!("Starting enhanced TUI in CSV mode with file: {}", csv_path);
+            if let Some(file_path) = &data_file {
+                let file_type = if file_path.ends_with(".json") { "JSON" } else { "CSV" };
+                println!("Starting enhanced TUI in {} mode with file: {}", file_type, file_path);
             } else {
                 println!("Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)");
             }
             let api_url = std::env::var("TRADE_API_URL")
                 .unwrap_or_else(|_| "http://localhost:5000".to_string());
-            if let Err(e) = enhanced_tui::run_enhanced_tui(&api_url, csv_file.as_deref()) {
+            if let Err(e) = enhanced_tui::run_enhanced_tui(&api_url, data_file.as_deref()) {
                 eprintln!("Enhanced TUI Error: {}", e);
                 eprintln!("Falling back to classic CLI mode...");
                 eprintln!("");

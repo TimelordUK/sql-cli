@@ -27,6 +27,10 @@ path = "test_linq_methods.rs"
 name = "test-cache"
 path = "test_cache.rs"
 
+[[bin]]
+name = "test-json-cli"
+path = "test_json_cli.rs"
+
 [dependencies]
 reedline = "0.30"
 crossterm = { version = "0.28", features = ["use-dev-tty"] }
