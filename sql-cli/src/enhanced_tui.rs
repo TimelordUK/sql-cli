@@ -135,6 +135,9 @@ pub struct EnhancedTuiApp {
     undo_stack: Vec<(String, usize)>, // (text, cursor_pos)
     redo_stack: Vec<(String, usize)>,
     kill_ring: String,
+    
+    // Viewport tracking
+    last_visible_rows: usize, // Track the last calculated viewport height
 }
 
 fn escape_csv_field(field: &str) -> String {
@@ -212,6 +215,7 @@ impl EnhancedTuiApp {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             kill_ring: String::new(),
+            last_visible_rows: 30, // Default estimate
         }
     }
     
@@ -317,11 +321,10 @@ impl EnhancedTuiApp {
         terminal.draw(|f| self.ui(f))?;
         
         loop {
-            // Use polling with a reasonable timeout to limit frame rate
-            if event::poll(std::time::Duration::from_millis(50))? { // ~20 FPS max, much more CPU friendly
-                match event::read()? {
-                    Event::Key(key) => {
-                        let should_exit = match self.mode {
+            // Use blocking read for better performance - only process when there's an actual event
+            match event::read()? {
+                Event::Key(key) => {
+                    let should_exit = match self.mode {
                             AppMode::Command => self.handle_command_input(key)?,
                             AppMode::Results => self.handle_results_input(key)?,
                             AppMode::Search => self.handle_search_input(key)?,
@@ -331,21 +334,19 @@ impl EnhancedTuiApp {
                             AppMode::Debug => self.handle_debug_input(key)?,
                             AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
                             AppMode::CacheList => self.handle_cache_list_input(key)?,
-                        };
-                        
-                        if should_exit {
-                            break;
-                        }
-                        
-                        // Only redraw after handling a key event
-                        terminal.draw(|f| self.ui(f))?;
-                    },
-                    _ => {
-                        // Ignore other events (mouse, resize, etc.) to reduce CPU
+                    };
+                    
+                    if should_exit {
+                        break;
                     }
+                    
+                    // Only redraw after handling a key event
+                    terminal.draw(|f| self.ui(f))?;
+                },
+                _ => {
+                    // Ignore other events (mouse, resize, etc.) to reduce CPU
                 }
             }
-            // If no events, continue the loop without redrawing
         }
         Ok(())
     }
@@ -1213,23 +1214,57 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Helper to get estimated visible rows based on terminal size
+    fn get_visible_rows(&self) -> usize {
+        // Try to get terminal size, or use stored default
+        if let Ok((_, height)) = crossterm::terminal::size() {
+            let terminal_height = height as usize;
+            let available_height = terminal_height.saturating_sub(4); // Account for header, borders, etc.
+            let max_visible_rows = available_height.saturating_sub(1).max(10); // Reserve space for header
+            max_visible_rows
+        } else {
+            self.last_visible_rows // Fallback to stored value
+        }
+    }
+    
     // Navigation functions
     fn next_row(&mut self) {
         if let Some(data) = self.get_current_data() {
-            let i = match self.table_state.selected() {
-                Some(i) => (i + 1).min(data.len().saturating_sub(1)),
-                None => 0,
-            };
-            self.table_state.select(Some(i));
+            let total_rows = data.len();
+            if total_rows == 0 { return; }
+            
+            // Update viewport size before navigation
+            self.update_viewport_size();
+            
+            let current = self.table_state.selected().unwrap_or(0);
+            if current >= total_rows - 1 { return; } // Already at bottom
+            
+            let new_position = current + 1;
+            self.table_state.select(Some(new_position));
+            
+            // Update viewport if needed
+            let visible_rows = self.last_visible_rows;
+            
+            // Check if cursor would be below the last visible row
+            if new_position > self.scroll_offset.0 + visible_rows - 1 {
+                // Cursor moved below viewport - scroll down by one
+                self.scroll_offset.0 += 1;
+            }
         }
     }
 
     fn previous_row(&mut self) {
-        let i = match self.table_state.selected() {
-            Some(i) => i.saturating_sub(1),
-            None => 0,
-        };
-        self.table_state.select(Some(i));
+        let current = self.table_state.selected().unwrap_or(0);
+        if current == 0 { return; } // Already at top
+        
+        let new_position = current - 1;
+        self.table_state.select(Some(new_position));
+        
+        // Update viewport if needed
+        if new_position < self.scroll_offset.0 {
+            // Cursor moved above viewport - scroll up
+            self.scroll_offset.0 = new_position;
+        }
     }
 
     fn move_column_left(&mut self) {
@@ -1255,32 +1290,67 @@ impl EnhancedTuiApp {
 
     fn goto_first_row(&mut self) {
         self.table_state.select(Some(0));
+        self.scroll_offset.0 = 0; // Reset viewport to top
     }
 
+    fn update_viewport_size(&mut self) {
+        // Update the stored viewport size based on current terminal size
+        if let Ok((_, height)) = crossterm::terminal::size() {
+            let terminal_height = height as usize;
+            // Match the actual layout calculation:
+            // - Input area: 3 rows (from input_height)
+            // - Status bar: 3 rows
+            // - Results area gets the rest
+            let input_height = 3;
+            let status_height = 3;
+            let results_area_height = terminal_height.saturating_sub(input_height + status_height);
+            
+            // Now match EXACTLY what the render function does:
+            // - 1 row for top border
+            // - 1 row for header
+            // - 1 row for bottom border
+            self.last_visible_rows = results_area_height.saturating_sub(3).max(10);
+        }
+    }
+    
     fn goto_last_row(&mut self) {
         if let Some(data) = self.get_current_data() {
             if !data.is_empty() {
-                self.table_state.select(Some(data.len() - 1));
+                let last_row = data.len() - 1;
+                self.table_state.select(Some(last_row));
+                // Position viewport to show the last row at the bottom
+                let visible_rows = self.last_visible_rows;
+                self.scroll_offset.0 = last_row.saturating_sub(visible_rows - 1);
             }
         }
     }
 
     fn page_down(&mut self) {
         if let Some(data) = self.get_current_data() {
-            let i = match self.table_state.selected() {
-                Some(i) => (i + 10).min(data.len().saturating_sub(1)),
-                None => 0,
-            };
-            self.table_state.select(Some(i));
+            let total_rows = data.len();
+            if total_rows == 0 { return; }
+            
+            let visible_rows = self.last_visible_rows;
+            let current = self.table_state.selected().unwrap_or(0);
+            let new_position = (current + visible_rows).min(total_rows - 1);
+            
+            self.table_state.select(Some(new_position));
+            
+            // Scroll viewport down by a page
+            self.scroll_offset.0 = (self.scroll_offset.0 + visible_rows)
+                .min(total_rows.saturating_sub(visible_rows));
         }
     }
 
     fn page_up(&mut self) {
-        let i = match self.table_state.selected() {
-            Some(i) => i.saturating_sub(10),
-            None => 0,
-        };
-        self.table_state.select(Some(i));
+        let visible_rows = self.last_visible_rows;
+        let current = self.table_state.selected().unwrap_or(0);
+        let new_position = current.saturating_sub(visible_rows);
+        
+        self.table_state.select(Some(new_position));
+        
+        // Scroll viewport up by a page
+        self.scroll_offset.0 = self.scroll_offset.0.saturating_sub(visible_rows);
     }
 
     // Search and filter functions
@@ -2745,22 +2815,22 @@ impl EnhancedTuiApp {
 
         // Calculate visible rows for virtual scrolling
         let terminal_height = area.height as usize;
-        let available_height = terminal_height.saturating_sub(4); // Account for header, borders, etc.
-        let max_visible_rows = available_height.saturating_sub(1).max(10); // Reserve space for header
+        // The table widget needs:
+        // - 1 row for top border
+        // - 1 row for header
+        // - 1 row for bottom border
+        // So we subtract 3 total
+        let max_visible_rows = terminal_height.saturating_sub(3).max(10);
         
         let selected_row = self.table_state.selected().unwrap_or(0);
         let total_rows = data_to_display.len();
         
-        // Calculate row viewport based on selected row
-        let row_viewport_start = if total_rows <= max_visible_rows {
-            0 // Show all rows if they fit
-        } else if selected_row < max_visible_rows / 2 {
-            0 // Near the top
-        } else if selected_row + max_visible_rows / 2 >= total_rows {
-            total_rows.saturating_sub(max_visible_rows) // Near the bottom
-        } else {
-            selected_row.saturating_sub(max_visible_rows / 2) // Center the selection
-        };
+        // Store the actual visible rows for navigation
+        // We can't modify self here, but we can use a better calculation in navigation
+        
+        // Calculate row viewport based on selected row  
+        // Use the scroll_offset.0 to track the viewport start
+        let row_viewport_start = self.scroll_offset.0;
         let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
         
         // Only render visible rows
@@ -2823,15 +2893,23 @@ impl EnhancedTuiApp {
             .header(Row::new(header_cells).height(1))
             .block(Block::default()
                 .borders(Borders::ALL)
-                .title(format!("Results ({} rows) - Columns {}-{} of {} | Use h/l to scroll", 
+                .title(format!("Results ({} rows) - Columns {}-{} of {} | Viewport rows {}-{} (selected: {}) | Use h/l to scroll", 
                     data_to_display.len(), 
                     viewport_start + 1, 
                     viewport_end, 
-                    headers.len())))
+                    headers.len(),
+                    row_viewport_start + 1,
+                    row_viewport_end,
+                    selected_row + 1)))
             .row_highlight_style(Style::default().bg(Color::DarkGray))
             .highlight_symbol("► ");
 
         let mut table_state = self.table_state.clone();
+        // Adjust table state to use relative position within the viewport
+        if let Some(selected) = table_state.selected() {
+            let relative_position = selected.saturating_sub(row_viewport_start);
+            table_state.select(Some(relative_position));
+        }
         f.render_stateful_widget(table, area, &mut table_state);
     }
 
