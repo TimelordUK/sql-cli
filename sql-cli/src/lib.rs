@@ -11,3 +11,5 @@ pub mod csv_datasource;
 
 #[cfg(test)]
 mod test_cache_query;
+#[cfg(test)]
+mod test_comprehensive_operators;

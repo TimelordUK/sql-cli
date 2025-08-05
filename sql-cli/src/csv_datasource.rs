@@ -138,6 +138,46 @@ impl CsvDataSource {
         // First process any DateTime constructs
         let processed_clause = self.process_datetime_in_clause(clause);
         
+        // Handle BETWEEN clause first (before AND/OR processing)
+        if processed_clause.contains(" BETWEEN ") || processed_clause.contains(" between ") {
+            // Check if this is really a BETWEEN clause and not part of AND/OR processing
+            let lower_clause = processed_clause.to_lowercase();
+            if let Some(between_pos) = lower_clause.find(" between ") {
+                // Find the corresponding AND that goes with BETWEEN
+                let after_between = &lower_clause[between_pos + 9..];
+                if let Some(and_pos) = after_between.find(" and ") {
+                    // Check if this is a simple BETWEEN clause (no other ANDs/ORs)
+                    let full_and_pos = between_pos + 9 + and_pos;
+                    let has_other_and_before = lower_clause[..between_pos].contains(" and ");
+                    let has_other_and_after = lower_clause[full_and_pos + 5..].contains(" and ");
+                    let has_or = lower_clause.contains(" or ");
+                    
+                    if !has_other_and_before && !has_other_and_after && !has_or {
+                        // This is a simple BETWEEN clause
+                        let column = processed_clause[..between_pos].trim().trim_matches('"').trim_matches('\'');
+                        let range_part = &processed_clause[between_pos + 9..]; // Skip " BETWEEN "
+                        
+                        let lower_str = range_part[..and_pos].trim();
+                        let upper_str = range_part[and_pos + 5..].trim();
+                        
+                        if let Some(field_value) = row.get(column) {
+                            if let Some(n) = field_value.as_f64() {
+                                if let (Ok(lower), Ok(upper)) = (lower_str.parse::<f64>(), upper_str.parse::<f64>()) {
+                                    return Ok(n >= lower && n <= upper);
+                                }
+                            }
+                            else if let Some(s) = field_value.as_str() {
+                                let lower_val = lower_str.trim_matches('"').trim_matches('\'');
+                                let upper_val = upper_str.trim_matches('"').trim_matches('\'');
+                                return Ok(s >= lower_val && s <= upper_val);
+                            }
+                        }
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+        
         // Handle AND conditions
         if processed_clause.contains(" AND ") || processed_clause.contains(" and ") {
             let parts: Vec<&str> = if processed_clause.contains(" AND ") {
@@ -245,9 +285,114 @@ impl CsvDataSource {
                     }
                 }
             }
-        } else if clause.contains('=') {
-            // Handle equality
-            let parts: Vec<&str> = clause.split('=').collect();
+        }
+        
+        // Handle != (not equal)
+        else if processed_clause.contains("!=") {
+            let parts: Vec<&str> = processed_clause.split("!=").collect();
+            if parts.len() == 2 {
+                let column = parts[0].trim().trim_matches('"').trim_matches('\'');
+                let value = parts[1].trim().trim_matches('"').trim_matches('\'');
+                
+                if let Some(field_value) = row.get(column) {
+                    if let Some(s) = field_value.as_str() {
+                        return Ok(s != value);
+                    } else if let Some(n) = field_value.as_f64() {
+                        if let Ok(search_num) = value.parse::<f64>() {
+                            return Ok(n != search_num);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Handle >= (greater than or equal)
+        else if processed_clause.contains(">=") {
+            let parts: Vec<&str> = processed_clause.split(">=").collect();
+            if parts.len() == 2 {
+                let column = parts[0].trim().trim_matches('"').trim_matches('\'');
+                let value = parts[1].trim();
+                
+                if let Some(field_value) = row.get(column) {
+                    if let Some(n) = field_value.as_f64() {
+                        if let Ok(search_num) = value.parse::<f64>() {
+                            return Ok(n >= search_num);
+                        }
+                    }
+                    else if let Some(s) = field_value.as_str() {
+                        let compare_value = value.trim_matches('"').trim_matches('\'');
+                        return Ok(s >= compare_value);
+                    }
+                }
+            }
+        }
+        
+        // Handle <= (less than or equal)
+        else if processed_clause.contains("<=") {
+            let parts: Vec<&str> = processed_clause.split("<=").collect();
+            if parts.len() == 2 {
+                let column = parts[0].trim().trim_matches('"').trim_matches('\'');
+                let value = parts[1].trim();
+                
+                if let Some(field_value) = row.get(column) {
+                    if let Some(n) = field_value.as_f64() {
+                        if let Ok(search_num) = value.parse::<f64>() {
+                            return Ok(n <= search_num);
+                        }
+                    }
+                    else if let Some(s) = field_value.as_str() {
+                        let compare_value = value.trim_matches('"').trim_matches('\'');
+                        return Ok(s <= compare_value);
+                    }
+                }
+            }
+        }
+        
+        // Handle < (less than)
+        else if processed_clause.contains('<') {
+            let parts: Vec<&str> = processed_clause.split('<').collect();
+            if parts.len() == 2 {
+                let column = parts[0].trim().trim_matches('"').trim_matches('\'');
+                let value = parts[1].trim();
+                
+                if let Some(field_value) = row.get(column) {
+                    if let Some(n) = field_value.as_f64() {
+                        if let Ok(search_num) = value.parse::<f64>() {
+                            return Ok(n < search_num);
+                        }
+                    }
+                    else if let Some(s) = field_value.as_str() {
+                        let compare_value = value.trim_matches('"').trim_matches('\'');
+                        return Ok(s < compare_value);
+                    }
+                }
+            }
+        }
+        
+        // Handle > (greater than)
+        else if processed_clause.contains('>') {
+            let parts: Vec<&str> = processed_clause.split('>').collect();
+            if parts.len() == 2 {
+                let column = parts[0].trim().trim_matches('"').trim_matches('\'');
+                let value = parts[1].trim();
+                
+                if let Some(field_value) = row.get(column) {
+                    if let Some(n) = field_value.as_f64() {
+                        if let Ok(search_num) = value.parse::<f64>() {
+                            return Ok(n > search_num);
+                        }
+                    }
+                    else if let Some(s) = field_value.as_str() {
+                        let compare_value = value.trim_matches('"').trim_matches('\'');
+                        return Ok(s > compare_value);
+                    }
+                }
+            }
+        }
+        
+        // Handle = (equality) - must be after >= and <=
+        else if processed_clause.contains('=') {
+            let parts: Vec<&str> = processed_clause.split('=').collect();
             if parts.len() == 2 {
                 let column = parts[0].trim().trim_matches('"').trim_matches('\'');
                 let value = parts[1].trim().trim_matches('"').trim_matches('\'');
@@ -262,32 +407,39 @@ impl CsvDataSource {
                     }
                 }
             }
-        } else if processed_clause.contains('>') {
-            // Handle greater than
-            let parts: Vec<&str> = processed_clause.split('>').collect();
-            if parts.len() == 2 {
-                let column = parts[0].trim().trim_matches('"').trim_matches('\'');
-                let value = parts[1].trim();
+        }
+        
+        // Handle NOT IN clause
+        if processed_clause.contains(" NOT IN (") || processed_clause.contains(" not in (") {
+            let not_in_pos = if processed_clause.contains(" NOT IN (") {
+                processed_clause.find(" NOT IN (").unwrap()
+            } else {
+                processed_clause.find(" not in (").unwrap()
+            };
+            
+            let column = processed_clause[..not_in_pos].trim().trim_matches('"').trim_matches('\'');
+            let values_part = &processed_clause[not_in_pos + 9..]; // Skip " NOT IN ("
+            
+            if let Some(end_pos) = values_part.find(')') {
+                let values_str = &values_part[..end_pos];
+                let values: Vec<&str> = values_str.split(',')
+                    .map(|v| v.trim().trim_matches('"').trim_matches('\''))
+                    .collect();
                 
                 if let Some(field_value) = row.get(column) {
-                    // Try numeric comparison first
-                    if let Some(n) = field_value.as_f64() {
-                        if let Ok(search_num) = value.parse::<f64>() {
-                            return Ok(n > search_num);
-                        }
-                    }
-                    // Try string/date comparison
-                    else if let Some(s) = field_value.as_str() {
-                        let compare_value = value.trim_matches('"').trim_matches('\'');
-                        // For date strings, lexicographic comparison works if in ISO format
-                        return Ok(s > compare_value);
+                    if let Some(s) = field_value.as_str() {
+                        return Ok(!values.contains(&s));
+                    } else if let Some(n) = field_value.as_f64() {
+                        let n_str = n.to_string();
+                        return Ok(!values.iter().any(|v| v == &n_str));
                     }
                 }
+                return Ok(true); // NULL values are not in the list
             }
         }
         
         // Handle IN clause - e.g., column IN ("value1", "value2")
-        if processed_clause.contains(" IN (") || processed_clause.contains(" in (") {
+        else if processed_clause.contains(" IN (") || processed_clause.contains(" in (") {
             let in_pos = if processed_clause.contains(" IN (") {
                 processed_clause.find(" IN (").unwrap()
             } else {
@@ -312,6 +464,96 @@ impl CsvDataSource {
                     }
                 }
                 return Ok(false);
+            }
+        }
+        
+        // Handle BETWEEN clause - e.g., column BETWEEN 10 AND 20
+        // Must check before we process AND/OR operators
+        if processed_clause.contains(" BETWEEN ") || processed_clause.contains(" between ") {
+            // Check if this is really a BETWEEN clause and not part of AND/OR processing
+            let lower_clause = processed_clause.to_lowercase();
+            if let Some(between_pos) = lower_clause.find(" between ") {
+                // Find the corresponding AND that goes with BETWEEN
+                let after_between = &lower_clause[between_pos + 9..];
+                if let Some(and_pos) = after_between.find(" and ") {
+                    // This is a BETWEEN clause
+                    let column = processed_clause[..between_pos].trim().trim_matches('"').trim_matches('\'');
+                    let range_part = &processed_clause[between_pos + 9..]; // Skip " BETWEEN "
+                    
+                    let lower_str = range_part[..and_pos].trim();
+                    let upper_str = range_part[and_pos + 5..].trim();
+                    
+                    if let Some(field_value) = row.get(column) {
+                        if let Some(n) = field_value.as_f64() {
+                            if let (Ok(lower), Ok(upper)) = (lower_str.parse::<f64>(), upper_str.parse::<f64>()) {
+                                return Ok(n >= lower && n <= upper);
+                            }
+                        }
+                        else if let Some(s) = field_value.as_str() {
+                            let lower_val = lower_str.trim_matches('"').trim_matches('\'');
+                            let upper_val = upper_str.trim_matches('"').trim_matches('\'');
+                            return Ok(s >= lower_val && s <= upper_val);
+                        }
+                    }
+                    return Ok(false);
+                }
+            }
+        }
+        
+        // Handle IS NULL
+        if processed_clause.contains(" IS NULL") || processed_clause.contains(" is null") {
+            let null_pos = if processed_clause.contains(" IS NULL") {
+                processed_clause.find(" IS NULL").unwrap()
+            } else {
+                processed_clause.find(" is null").unwrap()
+            };
+            
+            let column = processed_clause[..null_pos].trim().trim_matches('"').trim_matches('\'');
+            
+            if let Some(field_value) = row.get(column) {
+                return Ok(field_value.is_null());
+            }
+            return Ok(true); // Missing field is considered NULL
+        }
+        
+        // Handle IS NOT NULL
+        if processed_clause.contains(" IS NOT NULL") || processed_clause.contains(" is not null") {
+            let not_null_pos = if processed_clause.contains(" IS NOT NULL") {
+                processed_clause.find(" IS NOT NULL").unwrap()
+            } else {
+                processed_clause.find(" is not null").unwrap()
+            };
+            
+            let column = processed_clause[..not_null_pos].trim().trim_matches('"').trim_matches('\'');
+            
+            if let Some(field_value) = row.get(column) {
+                return Ok(!field_value.is_null());
+            }
+            return Ok(false); // Missing field is considered NULL
+        }
+        
+        // Handle LIKE pattern matching
+        if processed_clause.contains(" LIKE ") || processed_clause.contains(" like ") {
+            let like_pos = if processed_clause.contains(" LIKE ") {
+                processed_clause.find(" LIKE ").unwrap()
+            } else {
+                processed_clause.find(" like ").unwrap()
+            };
+            
+            let column = processed_clause[..like_pos].trim().trim_matches('"').trim_matches('\'');
+            let pattern = processed_clause[like_pos + 6..].trim().trim_matches('"').trim_matches('\'');
+            
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    // Simple LIKE implementation: % = any chars, _ = single char
+                    let regex_pattern = pattern
+                        .replace("%", ".*")
+                        .replace("_", ".");
+                    
+                    if let Ok(regex) = regex::Regex::new(&format!("^{}$", regex_pattern)) {
+                        return Ok(regex.is_match(s));
+                    }
+                }
             }
         }
         
