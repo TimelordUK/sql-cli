@@ -17,3 +17,7 @@ mod test_cache_query;
 mod test_comprehensive_operators;
 #[cfg(test)]
 mod test_json_loading;
+#[cfg(test)] 
+mod test_sort_verification;
+#[cfg(test)]
+mod test_filter_fix;

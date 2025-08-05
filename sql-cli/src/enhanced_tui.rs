@@ -1351,31 +1351,47 @@ impl EnhancedTuiApp {
                     let mut row = Vec::new();
                     let mut matches = false;
                     
-                    for (_, value) in item.as_object().unwrap() {
-                        let cell_str = match value {
-                            Value::String(s) => s.clone(),
-                            Value::Number(n) => n.to_string(),
-                            Value::Bool(b) => b.to_string(),
-                            Value::Null => "".to_string(),
-                            _ => value.to_string(),
-                        };
-                        
-                        if regex.is_match(&cell_str) {
-                            matches = true;
+                    if let Some(obj) = item.as_object() {
+                        for (_, value) in obj {
+                            let cell_str = match value {
+                                Value::String(s) => s.clone(),
+                                Value::Number(n) => n.to_string(),
+                                Value::Bool(b) => b.to_string(),
+                                Value::Null => "".to_string(),
+                                _ => value.to_string(),
+                            };
+                            
+                            if regex.is_match(&cell_str) {
+                                matches = true;
+                            }
+                            row.push(cell_str);
                         }
-                        row.push(cell_str);
-                    }
-                    
-                    if matches {
-                        filtered.push(row);
+                        
+                        if matches {
+                            filtered.push(row);
+                        }
                     }
                 }
                 
+                let filtered_count = filtered.len();
                 self.filtered_data = Some(filtered);
                 self.filter_state.regex = Some(regex);
                 self.filter_state.active = true;
-                self.reset_table_state();
-                self.status_message = format!("Filtered to {} rows", self.filtered_data.as_ref().unwrap().len());
+                
+                // Reset table state but preserve filtered data
+                self.table_state = TableState::default();
+                self.scroll_offset = (0, 0);
+                self.current_column = 0;
+                
+                // Clear search state but keep filter state
+                self.search_state = SearchState {
+                    pattern: String::new(),
+                    current_match: None,
+                    matches: Vec::new(),
+                    match_index: 0,
+                };
+                
+                self.status_message = format!("Filtered to {} rows", filtered_count);
             } else {
                 self.status_message = "Invalid regex pattern".to_string();
             }
@@ -1401,7 +1417,91 @@ impl EnhancedTuiApp {
             return;
         }
 
-        if let Some(data) = self.get_current_data_mut() {
+        // Sort using original JSON values for proper type-aware comparison
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                    
+                    if column_index < headers.len() {
+                        let column_name = headers[column_index];
+                        
+                        // Create a vector of (original_json_row, row_index) pairs for sorting
+                        let mut indexed_rows: Vec<(serde_json::Value, usize)> = results.data.iter()
+                            .enumerate()
+                            .map(|(i, row)| (row.clone(), i))
+                            .collect();
+                        
+                        // Sort based on the original JSON values
+                        indexed_rows.sort_by(|(row_a, _), (row_b, _)| {
+                            let val_a = row_a.get(column_name);
+                            let val_b = row_b.get(column_name);
+                            
+                            let cmp = match (val_a, val_b) {
+                                (Some(serde_json::Value::Number(a)), Some(serde_json::Value::Number(b))) => {
+                                    // Numeric comparison - this handles integers and floats properly
+                                    let a_f64 = a.as_f64().unwrap_or(0.0);
+                                    let b_f64 = b.as_f64().unwrap_or(0.0);
+                                    a_f64.partial_cmp(&b_f64).unwrap_or(Ordering::Equal)
+                                },
+                                (Some(serde_json::Value::String(a)), Some(serde_json::Value::String(b))) => {
+                                    // String comparison
+                                    a.cmp(b)
+                                },
+                                (Some(serde_json::Value::Bool(a)), Some(serde_json::Value::Bool(b))) => {
+                                    // Boolean comparison (false < true)
+                                    a.cmp(b)
+                                },
+                                (Some(serde_json::Value::Null), Some(serde_json::Value::Null)) => {
+                                    Ordering::Equal
+                                },
+                                (Some(serde_json::Value::Null), Some(_)) => {
+                                    // NULL comes first
+                                    Ordering::Less 
+                                },
+                                (Some(_), Some(serde_json::Value::Null)) => {
+                                    // NULL comes first
+                                    Ordering::Greater
+                                },
+                                (None, None) => Ordering::Equal,
+                                (None, Some(_)) => Ordering::Less,
+                                (Some(_), None) => Ordering::Greater,
+                                // Mixed type comparison - fall back to string representation
+                                (Some(a), Some(b)) => {
+                                    let a_str = match a {
+                                        serde_json::Value::String(s) => s.clone(),
+                                        other => other.to_string(),
+                                    };
+                                    let b_str = match b {
+                                        serde_json::Value::String(s) => s.clone(),
+                                        other => other.to_string(),
+                                    };
+                                    a_str.cmp(&b_str)
+                                }
+                            };
+                            
+                            match new_order {
+                                SortOrder::Ascending => cmp,
+                                SortOrder::Descending => cmp.reverse(),
+                                SortOrder::None => Ordering::Equal,
+                            }
+                        });
+                        
+                        // Rebuild the QueryResponse with sorted data
+                        let sorted_data: Vec<serde_json::Value> = indexed_rows.into_iter()
+                            .map(|(row, _)| row)
+                            .collect();
+                        
+                        // Update both the results and clear filtered_data to force regeneration
+                        let mut new_results = results.clone();
+                        new_results.data = sorted_data;
+                        self.results = Some(new_results);
+                        self.filtered_data = None; // Force regeneration of string data
+                    }
+                }
+            }
+        } else if let Some(data) = self.get_current_data_mut() {
+            // Fallback to string-based sorting if no JSON data available
             data.sort_by(|a, b| {
                 if column_index >= a.len() || column_index >= b.len() {
                     return Ordering::Equal;
@@ -1428,18 +1528,23 @@ impl EnhancedTuiApp {
                     }
                 }
             });
-
-            self.sort_state = SortState { column: Some(column_index), order: new_order };
-            self.reset_table_state();
-            self.status_message = format!("Sorted by column {} ({})", 
-                column_index + 1, 
-                match new_order {
-                    SortOrder::Ascending => "ascending",
-                    SortOrder::Descending => "descending",
-                    SortOrder::None => "none",
-                }
-            );
         }
+
+        self.sort_state = SortState { column: Some(column_index), order: new_order };
+        
+        // Reset table state but preserve current column position
+        let current_column = self.current_column;
+        self.reset_table_state();
+        self.current_column = current_column;
+        
+        self.status_message = format!("Sorted by column {} ({}) - type-aware", 
+            column_index + 1, 
+            match new_order {
+                SortOrder::Ascending => "ascending",
+                SortOrder::Descending => "descending",
+                SortOrder::None => "none",
+            }
+        );
     }
 
     fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
