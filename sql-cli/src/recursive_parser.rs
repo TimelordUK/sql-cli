@@ -368,12 +368,19 @@ impl Parser {
         
         let from_table = if matches!(self.current_token, Token::From) {
             self.advance();
-            if let Token::Identifier(table) = &self.current_token {
-                let table_name = table.clone();
-                self.advance();
-                Some(table_name)
-            } else {
-                return Err("Expected table name after FROM".to_string());
+            match &self.current_token {
+                Token::Identifier(table) => {
+                    let table_name = table.clone();
+                    self.advance();
+                    Some(table_name)
+                }
+                Token::StringLiteral(table) => {
+                    // Handle quoted table names
+                    let table_name = table.clone();
+                    self.advance();
+                    Some(table_name)
+                }
+                _ => return Err("Expected table name after FROM".to_string()),
             }
         } else {
             None
@@ -417,11 +424,17 @@ impl Parser {
             self.advance();
         } else {
             loop {
-                if let Token::Identifier(col) = &self.current_token {
-                    columns.push(col.clone());
-                    self.advance();
-                } else {
-                    return Err("Expected column name".to_string());
+                match &self.current_token {
+                    Token::Identifier(col) => {
+                        columns.push(col.clone());
+                        self.advance();
+                    }
+                    Token::StringLiteral(col) => {
+                        // Handle quoted column names like "Customer Id"
+                        columns.push(col.clone());
+                        self.advance();
+                    }
+                    _ => return Err("Expected column name".to_string()),
                 }
                 
                 if matches!(self.current_token, Token::Comma) {
@@ -439,11 +452,17 @@ impl Parser {
         let mut identifiers = Vec::new();
         
         loop {
-            if let Token::Identifier(id) = &self.current_token {
-                identifiers.push(id.clone());
-                self.advance();
-            } else {
-                return Err("Expected identifier".to_string());
+            match &self.current_token {
+                Token::Identifier(id) => {
+                    identifiers.push(id.clone());
+                    self.advance();
+                }
+                Token::StringLiteral(id) => {
+                    // Handle quoted identifiers like "Customer Id" 
+                    identifiers.push(id.clone());
+                    self.advance();
+                }
+                _ => return Err("Expected identifier".to_string()),
             }
             
             if matches!(self.current_token, Token::Comma) {
