@@ -333,6 +333,8 @@ impl TuiApp {
                 data.len()
             )));
         
+        // Clone is needed here due to Rust's borrowing rules with closures
+        // This is a small struct so the performance impact should be minimal
         f.render_stateful_widget(virtual_table, area, &mut self.virtual_table_state.clone());
     }
     
