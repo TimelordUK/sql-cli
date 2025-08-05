@@ -1360,11 +1360,8 @@ impl EnhancedTuiApp {
 
     // Navigation functions
     fn next_row(&mut self) {
-        if let Some(data) = self.get_current_data() {
-            let total_rows = data.len();
-            if total_rows == 0 {
-                return;
-            }
+        let total_rows = self.get_row_count();
+        if total_rows > 0 {
 
             // Update viewport size before navigation
             self.update_viewport_size();
@@ -1452,23 +1449,19 @@ impl EnhancedTuiApp {
     }
 
     fn goto_last_row(&mut self) {
-        if let Some(data) = self.get_current_data() {
-            if !data.is_empty() {
-                let last_row = data.len() - 1;
-                self.table_state.select(Some(last_row));
-                // Position viewport to show the last row at the bottom
-                let visible_rows = self.last_visible_rows;
-                self.scroll_offset.0 = last_row.saturating_sub(visible_rows - 1);
-            }
+        let total_rows = self.get_row_count();
+        if total_rows > 0 {
+            let last_row = total_rows - 1;
+            self.table_state.select(Some(last_row));
+            // Position viewport to show the last row at the bottom
+            let visible_rows = self.last_visible_rows;
+            self.scroll_offset.0 = last_row.saturating_sub(visible_rows - 1);
         }
     }
 
     fn page_down(&mut self) {
-        if let Some(data) = self.get_current_data() {
-            let total_rows = data.len();
-            if total_rows == 0 {
-                return;
-            }
+        let total_rows = self.get_row_count();
+        if total_rows > 0 {
 
             let visible_rows = self.last_visible_rows;
             let current = self.table_state.selected().unwrap_or(0);
@@ -1798,6 +1791,16 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn get_row_count(&self) -> usize {
+        if let Some(filtered) = &self.filtered_data {
+            filtered.len()
+        } else if let Some(results) = &self.results {
+            results.data.len()
+        } else {
+            0
+        }
+    }
+
     fn get_current_data_mut(&mut self) -> Option<&mut Vec<Vec<String>>> {
         if self.filtered_data.is_none() && self.results.is_some() {
             let results = self.results.as_ref().unwrap();
@@ -1871,22 +1874,40 @@ impl EnhancedTuiApp {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
                     let mut widths = Vec::new();
 
+                    // For large datasets, sample rows instead of checking all
+                    const MAX_ROWS_TO_CHECK: usize = 100;
+                    let total_rows = results.data.len();
+                    
+                    // Determine which rows to sample
+                    let rows_to_check: Vec<usize> = if total_rows <= MAX_ROWS_TO_CHECK {
+                        // Check all rows for small datasets
+                        (0..total_rows).collect()
+                    } else {
+                        // Sample evenly distributed rows for large datasets
+                        let step = total_rows / MAX_ROWS_TO_CHECK;
+                        (0..MAX_ROWS_TO_CHECK)
+                            .map(|i| (i * step).min(total_rows - 1))
+                            .collect()
+                    };
+
                     for header in &headers {
                         // Start with header width
                         let mut max_width = header.len();
 
-                        // Check all data rows for this column
-                        for row in &results.data {
-                            if let Some(obj) = row.as_object() {
-                                if let Some(value) = obj.get(*header) {
-                                    let display_len = match value {
-                                        serde_json::Value::String(s) => s.len(),
-                                        serde_json::Value::Number(n) => n.to_string().len(),
-                                        serde_json::Value::Bool(b) => b.to_string().len(),
-                                        serde_json::Value::Null => 4, // "null".len()
-                                        _ => value.to_string().len(),
-                                    };
-                                    max_width = max_width.max(display_len);
+                        // Check only sampled rows for this column
+                        for &row_idx in &rows_to_check {
+                            if let Some(row) = results.data.get(row_idx) {
+                                if let Some(obj) = row.as_object() {
+                                    if let Some(value) = obj.get(*header) {
+                                        let display_len = match value {
+                                            serde_json::Value::String(s) => s.len(),
+                                            serde_json::Value::Number(n) => n.to_string().len(),
+                                            serde_json::Value::Bool(b) => b.to_string().len(),
+                                            serde_json::Value::Null => 4, // "null".len()
+                                            _ => value.to_string().len(),
+                                        };
+                                        max_width = max_width.max(display_len);
+                                    }
                                 }
                             }
                         }
@@ -2864,12 +2885,14 @@ impl EnhancedTuiApp {
 
             format!(" | Token {}/{}{}", token_pos, total_tokens, token_display)
         } else if self.mode == AppMode::Results {
-            let row_info = if let Some(data) = self.get_current_data() {
-                let total_rows = data.len();
-                let selected = self.table_state.selected().unwrap_or(0) + 1;
-                format!(" | Row {}/{}", selected, total_rows)
-            } else {
-                String::new()
+            let row_info = {
+                let total_rows = self.get_row_count();
+                if total_rows > 0 {
+                    let selected = self.table_state.selected().unwrap_or(0) + 1;
+                    format!(" | Row {}/{}", selected, total_rows)
+                } else {
+                    String::new()
+                }
             };
 
             let filter_info = if self.filter_state.active {
