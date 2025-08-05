@@ -1042,4 +1042,35 @@ mod tests {
         assert!(result.suggestions.iter().any(|s| s == "Country"),
             "Should suggest Country for partial 'coun'. Got: {:?}", result.suggestions);
     }
+    
+    #[test]
+    fn test_order_by_quoted_partial_completion() {
+        let parser = CursorAwareParser::new();
+        let mut parser = parser;
+        parser.update_single_table(
+            "customers".to_string(),
+            vec![
+                "City".to_string(),
+                "Company".to_string(),
+                "Country".to_string(),
+                "Customer Id".to_string(),
+            ],
+        );
+        
+        // Test ORDER BY completion with partial quoted identifier
+        let query = r#"select City,Company,Country,"Customer Id" from customers order by City, "Customer"#;
+        let result = parser.get_completions(query, query.len());
+        
+        // The partial word should be "Customer
+        assert_eq!(result.partial_word, Some("\"Customer".to_string()),
+            "Should extract '\"Customer' as partial");
+        
+        // Should suggest "Customer Id" with proper quotes
+        assert!(result.suggestions.iter().any(|s| s == "\"Customer Id\""),
+            "Should suggest properly quoted 'Customer Id' for partial '\"Customer'. Got: {:?}", result.suggestions);
+        
+        // Should NOT have truncated suggestions like "Customer
+        assert!(!result.suggestions.iter().any(|s| s == "\"Customer"),
+            "Should not have truncated suggestion '\"Customer'. Got: {:?}", result.suggestions);
+    }
 }

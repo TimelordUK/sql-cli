@@ -122,8 +122,8 @@ impl HybridParser {
     }
 
     pub fn debug_tree(&self, query: &str) -> String {
-        // We now use recursive descent parser, which doesn't have a tree visualization yet
-        "Recursive descent parser - AST visualization not implemented".to_string()
+        // Use the AST formatter from recursive_parser
+        crate::recursive_parser::format_ast_tree(query)
     }
 
     pub fn get_detailed_debug_info(&self, query: &str, cursor_pos: usize) -> String {
