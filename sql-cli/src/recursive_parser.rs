@@ -1,4 +1,5 @@
 use std::fmt;
+use chrono::{Local, NaiveDateTime, Datelike, Timelike};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -268,6 +269,14 @@ pub enum SqlExpression {
         year: i32,
         month: u32,
         day: u32,
+        hour: Option<u32>,
+        minute: Option<u32>,
+        second: Option<u32>,
+    },
+    DateTimeToday {
+        hour: Option<u32>,
+        minute: Option<u32>,
+        second: Option<u32>,
     },
     MethodCall {
         object: String,
@@ -525,6 +534,16 @@ impl Parser {
                 self.advance(); // consume DateTime
                 self.consume(Token::LeftParen)?;
                 
+                // Check if empty parentheses for DateTime() - today's date
+                if matches!(&self.current_token, Token::RightParen) {
+                    self.advance(); // consume )
+                    return Ok(SqlExpression::DateTimeToday { 
+                        hour: None, 
+                        minute: None, 
+                        second: None 
+                    });
+                }
+                
                 // Parse year
                 let year = if let Token::NumberLiteral(n) = &self.current_token {
                     n.parse::<i32>().map_err(|_| "Invalid year")?
@@ -551,8 +570,43 @@ impl Parser {
                 };
                 self.advance();
                 
+                // Check for optional time components
+                let mut hour = None;
+                let mut minute = None;
+                let mut second = None;
+                
+                if matches!(&self.current_token, Token::Comma) {
+                    self.advance(); // consume comma
+                    
+                    // Parse hour
+                    if let Token::NumberLiteral(n) = &self.current_token {
+                        hour = Some(n.parse::<u32>().map_err(|_| "Invalid hour")?);
+                        self.advance();
+                        
+                        // Check for minute
+                        if matches!(&self.current_token, Token::Comma) {
+                            self.advance(); // consume comma
+                            
+                            if let Token::NumberLiteral(n) = &self.current_token {
+                                minute = Some(n.parse::<u32>().map_err(|_| "Invalid minute")?);
+                                self.advance();
+                                
+                                // Check for second
+                                if matches!(&self.current_token, Token::Comma) {
+                                    self.advance(); // consume comma
+                                    
+                                    if let Token::NumberLiteral(n) = &self.current_token {
+                                        second = Some(n.parse::<u32>().map_err(|_| "Invalid second")?);
+                                        self.advance();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 self.consume(Token::RightParen)?;
-                Ok(SqlExpression::DateTimeConstructor { year, month, day })
+                Ok(SqlExpression::DateTimeConstructor { year, month, day, hour, minute, second })
             }
             Token::Identifier(id) => {
                 let expr = SqlExpression::Column(id.clone());
@@ -674,6 +728,45 @@ pub fn tokenize_query(query: &str) -> Vec<String> {
 
 pub fn format_sql_pretty(query: &str) -> Vec<String> {
     format_sql_pretty_compact(query, 5) // Default to 5 columns per line
+}
+
+// Convert DateTime expressions to ISO 8601 format strings for comparison
+pub fn datetime_to_iso_string(expr: &SqlExpression) -> Option<String> {
+    match expr {
+        SqlExpression::DateTimeConstructor { year, month, day, hour, minute, second } => {
+            let h = hour.unwrap_or(0);
+            let m = minute.unwrap_or(0);
+            let s = second.unwrap_or(0);
+            
+            // Create a NaiveDateTime
+            if let Ok(dt) = NaiveDateTime::parse_from_str(
+                &format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, h, m, s),
+                "%Y-%m-%d %H:%M:%S"
+            ) {
+                Some(dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            } else {
+                None
+            }
+        }
+        SqlExpression::DateTimeToday { hour, minute, second } => {
+            let now = Local::now();
+            let h = hour.unwrap_or(0);
+            let m = minute.unwrap_or(0);
+            let s = second.unwrap_or(0);
+            
+            // Create today's date at specified time (or midnight)
+            if let Ok(dt) = NaiveDateTime::parse_from_str(
+                &format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", 
+                    now.year(), now.month(), now.day(), h, m, s),
+                "%Y-%m-%d %H:%M:%S"
+            ) {
+                Some(dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            } else {
+                None
+            }
+        }
+        _ => None
+    }
 }
 
 pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<String> {
@@ -799,8 +892,33 @@ fn format_expression(expr: &SqlExpression) -> String {
         SqlExpression::Column(name) => name.clone(),
         SqlExpression::StringLiteral(s) => format!("'{}'", s),
         SqlExpression::NumberLiteral(n) => n.clone(),
-        SqlExpression::DateTimeConstructor { year, month, day } => {
-            format!("DateTime({}, {}, {})", year, month, day)
+        SqlExpression::DateTimeConstructor { year, month, day, hour, minute, second } => {
+            let mut result = format!("DateTime({}, {}, {}", year, month, day);
+            if let Some(h) = hour {
+                result.push_str(&format!(", {}", h));
+                if let Some(m) = minute {
+                    result.push_str(&format!(", {}", m));
+                    if let Some(s) = second {
+                        result.push_str(&format!(", {}", s));
+                    }
+                }
+            }
+            result.push(')');
+            result
+        }
+        SqlExpression::DateTimeToday { hour, minute, second } => {
+            let mut result = "DateTime()".to_string();
+            if let Some(h) = hour {
+                result = format!("DateTime(TODAY, {}", h);
+                if let Some(m) = minute {
+                    result.push_str(&format!(", {}", m));
+                    if let Some(s) = second {
+                        result.push_str(&format!(", {}", s));
+                    }
+                }
+                result.push(')');
+            }
+            result
         }
         SqlExpression::MethodCall { object, method, args } => {
             let args_str = args.iter()
@@ -1140,7 +1258,7 @@ mod tests {
         if let SqlExpression::BinaryOp { left, op, right } = &where_clause.conditions[0].expr {
             assert_eq!(op, ">");
             assert!(matches!(left.as_ref(), SqlExpression::Column(col) if col == "createdDate"));
-            assert!(matches!(right.as_ref(), SqlExpression::DateTimeConstructor { year: 2025, month: 10, day: 20 }));
+            assert!(matches!(right.as_ref(), SqlExpression::DateTimeConstructor { year: 2025, month: 10, day: 20, hour: None, minute: None, second: None }));
         } else {
             panic!("Expected BinaryOp with DateTime constructor");
         }

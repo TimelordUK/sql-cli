@@ -1,66 +1,67 @@
 # DateTime Support in SQL CLI
 
 ## Overview
+The SQL CLI supports DateTime constructors for date and time comparisons in WHERE clauses.
 
-The SQL CLI now supports DateTime constructors in WHERE clauses, enabling date comparisons similar to Dynamic LINQ syntax used in the trading server.
+## DateTime Constructor Formats
 
-## Features
-
-### 1. DateTime Constructor Parsing
-- Supports syntax: `DateTime(year, month, day)`
-- Example: `WHERE createdDate > DateTime(2025, 10, 20)`
-
-### 2. Context-Aware Completion
-After typing a comparison operator (`>`, `<`, `>=`, `<=`, `=`, `!=`) following a datetime column, the CLI suggests:
-- `DateTime(` - Constructor for specific dates
-- `DateTime.Today` - Current date (server-side)
-- `DateTime.Now` - Current date and time (server-side)
-
-### 3. DateTime Column Detection
-The following columns are recognized as datetime types:
-- `tradeDate`
-- `settlementDate`
-- `createdDate`
-- `modifiedDate`
-- `valueDate`
-- `maturityDate`
-- `confirmationDate`
-- `executionDate`
-- `lastModifiedDate`
-
-## Implementation Details
-
-### Parser Enhancement
-- Added `DateTime` token to the lexer
-- Created `DateTimeConstructor` AST node
-- Implemented parsing logic in `parse_primary`
-
-### Context Detection
-- Added `AfterComparisonOp` context for better completion suggestions
-- Enhanced `analyze_statement` and `analyze_partial` functions
-
-### Testing
-Integration tests verify:
-1. DateTime constructor parsing
-2. Context detection after comparison operators
-3. Completion suggestions for datetime columns
-
-## Usage Examples
-
+### 1. DateTime() - Today at Midnight
 ```sql
--- Find trades created after a specific date
-SELECT * FROM trade_deal WHERE createdDate > DateTime(2025, 10, 20)
+SELECT * FROM orders WHERE created_date > DateTime()
+```
+Returns all orders created after today at 00:00:00
 
--- Find trades settled before a date
-SELECT * FROM trade_deal WHERE settlementDate < DateTime(2025, 12, 31)
+### 2. DateTime(year, month, day) - Specific Date at Midnight
+```sql
+SELECT * FROM orders WHERE created_date > DateTime(2025, 1, 1)
+```
+Returns all orders created after January 1, 2025 at 00:00:00
 
--- Combined with other conditions
-SELECT * FROM trade_deal 
-WHERE createdDate >= DateTime(2025, 1, 1) 
-  AND status = 'Active'
+### 3. DateTime(year, month, day, hour) - Specific Date and Hour
+```sql
+SELECT * FROM orders WHERE created_date > DateTime(2025, 1, 1, 9)
+```
+Returns all orders created after January 1, 2025 at 09:00:00
+
+### 4. DateTime(year, month, day, hour, minute) - Specific Date and Time
+```sql
+SELECT * FROM orders WHERE created_date > DateTime(2025, 1, 1, 9, 30)
+```
+Returns all orders created after January 1, 2025 at 09:30:00
+
+### 5. DateTime(year, month, day, hour, minute, second) - Full Precision
+```sql
+SELECT * FROM orders WHERE created_date > DateTime(2025, 1, 1, 9, 30, 45)
+```
+Returns all orders created after January 1, 2025 at 09:30:45
+
+## Use Cases
+
+### Time Range for Today
+```sql
+-- All records from today
+SELECT * FROM logs WHERE timestamp >= DateTime() AND timestamp < DateTime(2025, 8, 6)
+
+-- Business hours today (9 AM to 5 PM)
+SELECT * FROM transactions 
+WHERE created_at >= DateTime() 
+  AND created_at >= DateTime(2025, 8, 5, 9) 
+  AND created_at < DateTime(2025, 8, 5, 17)
 ```
 
-## Future Enhancements
-- Support for `DateTime.Today` and `DateTime.Now`
-- Time component support: `DateTime(year, month, day, hour, minute, second)`
-- Relative date functions: `DateTime.Today.AddDays(-7)`
+### Specific Time Ranges
+```sql
+-- Last 30 days (approximate)
+SELECT * FROM events WHERE event_date > DateTime(2025, 7, 5)
+
+-- Specific day's transactions
+SELECT * FROM trades 
+WHERE trade_date >= DateTime(2025, 7, 15) 
+  AND trade_date < DateTime(2025, 7, 16)
+```
+
+## Notes
+- All DateTime values are interpreted in the local timezone
+- When time components are omitted, they default to 0 (midnight)
+- DateTime() without arguments always returns today's date at midnight
+- The parser recognizes DateTime as a keyword and provides proper syntax highlighting
