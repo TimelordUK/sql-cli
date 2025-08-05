@@ -308,6 +308,10 @@ pub enum SqlExpression {
         expr: Box<SqlExpression>,
         values: Vec<SqlExpression>,
     },
+    NotInList {
+        expr: Box<SqlExpression>,
+        values: Vec<SqlExpression>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -533,8 +537,26 @@ impl Parser {
             };
         }
 
+        // Handle NOT IN operator
+        if matches!(self.current_token, Token::Not) {
+            // Check if next token is IN
+            self.advance();
+            if matches!(self.current_token, Token::In) {
+                self.advance();
+                self.consume(Token::LeftParen)?;
+                let values = self.parse_expression_list()?;
+                self.consume(Token::RightParen)?;
+
+                left = SqlExpression::NotInList {
+                    expr: Box::new(left),
+                    values,
+                };
+            } else {
+                return Err("Expected IN after NOT".to_string());
+            }
+        }
         // Handle IN operator
-        if matches!(self.current_token, Token::In) {
+        else if matches!(self.current_token, Token::In) {
             self.advance();
             self.consume(Token::LeftParen)?;
             let values = self.parse_expression_list()?;
@@ -990,6 +1012,13 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("InList({} IN [{}])", format_expression_ast(expr), list_str)
+        },
+        SqlExpression::NotInList { expr, values } => {
+            let list_str = values.iter()
+                .map(|e| format_expression_ast(e))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("NotInList({} NOT IN [{}])", format_expression_ast(expr), list_str)
         },
     }
 }
@@ -1524,6 +1553,14 @@ fn format_expression(expr: &SqlExpression) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{} IN ({})", format_expression(expr), values_str)
+        }
+        SqlExpression::NotInList { expr, values } => {
+            let values_str = values
+                .iter()
+                .map(|v| format_expression(v))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{} NOT IN ({})", format_expression(expr), values_str)
         }
     }
 }

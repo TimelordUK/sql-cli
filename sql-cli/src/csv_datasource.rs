@@ -143,7 +143,14 @@ impl CsvDataSource {
 
                     // Handle WHERE clause
                     if let Some(where_pos) = sql_lower.find(" where ") {
-                        let where_clause = &sql[where_pos + 7..]; // Skip " where "
+                        // Extract WHERE clause, but stop at ORDER BY if present
+                        let where_start = where_pos + 7;
+                        let where_end = if let Some(order_pos) = sql_lower.find(" order by ") {
+                            order_pos.min(sql.len())
+                        } else {
+                            sql.len()
+                        };
+                        let where_clause = sql[where_start..where_end].trim();
                         results = self.filter_results(results, where_clause)?;
                     }
 
@@ -159,6 +166,22 @@ impl CsvDataSource {
                                 .map(|s| s.trim().trim_matches('"').trim_matches('\''))
                                 .collect();
                             results = self.select_columns(results, &columns)?;
+                        }
+                    }
+
+                    // Handle ORDER BY clause
+                    if let Some(order_pos) = sql_lower.find(" order by ") {
+                        let order_start = order_pos + 10; // Skip " order by "
+                        let order_clause = sql[order_start..].trim();
+                        
+                        // Parse ORDER BY columns (simple comma-separated list)
+                        let order_columns: Vec<String> = order_clause
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .collect();
+                        
+                        if !order_columns.is_empty() {
+                            results = self.sort_results(results, &order_columns)?;
                         }
                     }
 

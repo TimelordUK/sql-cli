@@ -48,6 +48,10 @@ name = "test-csv-issues"
 path = "test_csv_issues.rs"
 
 [[bin]]
+name = "test-where-order-by-issue"
+path = "test_where_order_by_issue.rs"
+
+[[bin]]
 name = "test-large-dataset-perf"
 path = "test_large_dataset_perf.rs"
 

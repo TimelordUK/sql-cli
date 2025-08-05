@@ -208,7 +208,14 @@ impl CursorAwareParser {
                         let partial_without_quote = &partial[1..]; // Remove the opening quote
 
                         // Check if suggestion is a quoted identifier that matches
-                        if suggestion.starts_with('"') && suggestion.len() > 1 {
+                        if suggestion.starts_with('"') && suggestion.ends_with('"') && suggestion.len() > 2 {
+                            // Full quoted identifier like "Customer Id"
+                            let suggestion_without_quotes = &suggestion[1..suggestion.len()-1];
+                            suggestion_without_quotes
+                                .to_lowercase()
+                                .starts_with(&partial_without_quote.to_lowercase())
+                        } else if suggestion.starts_with('"') && suggestion.len() > 1 {
+                            // Partial quoted identifier (shouldn't happen in suggestions but handle it)
                             let suggestion_without_quote = &suggestion[1..];
                             suggestion_without_quote
                                 .to_lowercase()
@@ -522,10 +529,22 @@ impl CursorAwareParser {
                     let trimmed = part.trim();
                     if !trimmed.is_empty() {
                         // Extract just the column name (handle cases like "column AS alias")
-                        let col_name = if let Some(space_pos) = trimmed.find(char::is_whitespace) {
-                            &trimmed[..space_pos]
+                        let col_name = if trimmed.starts_with('"') {
+                            // Handle quoted identifiers - find the closing quote
+                            if let Some(close_quote_pos) = trimmed[1..].find('"') {
+                                // Include both quotes
+                                &trimmed[..close_quote_pos + 2]
+                            } else {
+                                // Malformed quoted identifier, take what we have
+                                trimmed
+                            }
                         } else {
-                            trimmed
+                            // For unquoted identifiers, stop at first whitespace
+                            if let Some(space_pos) = trimmed.find(char::is_whitespace) {
+                                &trimmed[..space_pos]
+                            } else {
+                                trimmed
+                            }
                         };
                         
                         // Preserve the original case of the column name
