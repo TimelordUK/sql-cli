@@ -325,9 +325,11 @@ impl TuiApp {
         
         // Use VirtualTable for efficient rendering
         let header_refs: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
+        let current_row = self.virtual_table_state.selected + 1; // 1-based for display
         let virtual_table = crate::virtual_table::VirtualTable::new(header_refs, data, widths)
             .block(Block::default().borders(Borders::ALL).title(format!(
-                "Results ({} rows) - Use ↑↓ to navigate, Esc to return to command, G/g for top/bottom",
+                "Results (Row {}/{}) - Use ↑↓ to navigate, Esc to return, g=top G=bottom",
+                current_row,
                 data.len()
             )));
         

@@ -69,7 +69,13 @@ impl VirtualTableState {
     
     pub fn scroll_up(&mut self, amount: usize) {
         self.selected = self.selected.saturating_sub(amount);
-        // Adjust offset if selected is above visible area
+        
+        // If we're moving within the visible window, no need to adjust offset
+        if self.selected >= self.offset && self.selected < self.offset + self.visible_rows {
+            return;
+        }
+        
+        // If selected moved above the visible area, scroll up
         if self.selected < self.offset {
             self.offset = self.selected;
         }
@@ -77,7 +83,13 @@ impl VirtualTableState {
     
     pub fn scroll_down(&mut self, amount: usize, total_rows: usize) {
         self.selected = (self.selected + amount).min(total_rows.saturating_sub(1));
-        // Adjust offset if selected is below visible area
+        
+        // If we're moving within the visible window, no need to adjust offset
+        if self.selected >= self.offset && self.selected < self.offset + self.visible_rows {
+            return;
+        }
+        
+        // If selected moved below the visible area, scroll down
         if self.selected >= self.offset + self.visible_rows {
             self.offset = self.selected.saturating_sub(self.visible_rows - 1);
         }
@@ -100,8 +112,13 @@ impl VirtualTableState {
     
     pub fn goto_bottom(&mut self, total_rows: usize) {
         self.selected = total_rows.saturating_sub(1);
-        // Position the last row at the bottom of the visible area
-        self.offset = total_rows.saturating_sub(self.visible_rows);
+        // Position the viewport so the last page is visible
+        // This ensures the cursor is at the bottom row of a full viewport
+        if total_rows > self.visible_rows {
+            self.offset = total_rows.saturating_sub(self.visible_rows);
+        } else {
+            self.offset = 0;
+        }
     }
 }
 
