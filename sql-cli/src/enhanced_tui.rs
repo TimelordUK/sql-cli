@@ -244,6 +244,35 @@ impl EnhancedTuiApp {
         
         Ok(app)
     }
+    
+    pub fn new_with_json(json_path: &str) -> Result<Self> {
+        let mut csv_client = CsvApiClient::new();
+        let table_name = std::path::Path::new(json_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("data")
+            .to_string();
+        
+        csv_client.load_json(json_path, &table_name)?;
+        
+        // Get schema from JSON data
+        let schema = csv_client.get_schema()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get JSON schema"))?;
+        
+        let mut app = Self::new(""); // Empty API URL for JSON mode
+        app.csv_client = Some(csv_client);
+        app.csv_mode = true; // Reuse CSV mode since the data structure is the same
+        app.csv_table_name = table_name.clone();
+        
+        // Update parser with JSON columns
+        if let Some(columns) = schema.get(&table_name) {
+            app.hybrid_parser.update_single_table(table_name.clone(), columns.clone());
+            app.status_message = format!("JSON loaded: table '{}' with {} columns. Use: SELECT * FROM {}", 
+                table_name, columns.len(), table_name);
+        }
+        
+        Ok(app)
+    }
 
     pub fn run(mut self) -> Result<()> {
         // Setup terminal with error handling
@@ -3062,9 +3091,19 @@ impl EnhancedTuiApp {
     }
 }
 
-pub fn run_enhanced_tui(api_url: &str, csv_file: Option<&str>) -> Result<()> {
-    let app = if let Some(csv_path) = csv_file {
-        EnhancedTuiApp::new_with_csv(csv_path)?
+pub fn run_enhanced_tui(api_url: &str, data_file: Option<&str>) -> Result<()> {
+    let app = if let Some(file_path) = data_file {
+        // Determine file type by extension
+        let extension = std::path::Path::new(file_path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+        
+        match extension.to_lowercase().as_str() {
+            "csv" => EnhancedTuiApp::new_with_csv(file_path)?,
+            "json" => EnhancedTuiApp::new_with_json(file_path)?,
+            _ => return Err(anyhow::anyhow!("Unsupported file type. Please use .csv or .json files")),
+        }
     } else {
         EnhancedTuiApp::new(api_url)
     };

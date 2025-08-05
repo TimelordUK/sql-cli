@@ -1,0 +1,54 @@
+[
+  {
+    "id": 1,
+    "platformOrderId": "ORDER-2024-001",
+    "tradeDate": "2024-11-15",
+    "executionSide": "BUY",
+    "quantity": 1000,
+    "price": 150.50,
+    "counterparty": "Bank of America",
+    "counterpartyCountry": "US",
+    "commission": 75.25,
+    "status": "Completed",
+    "trader": "John Smith"
+  },
+  {
+    "id": 2,
+    "platformOrderId": "ORDER-2024-002",
+    "tradeDate": "2024-11-16",
+    "executionSide": "SELL",
+    "quantity": 500,
+    "price": 200.00,
+    "counterparty": "JP Morgan",
+    "counterpartyCountry": "US",
+    "commission": 100.00,
+    "status": "Pending",
+    "trader": "Jane Doe"
+  },
+  {
+    "id": 3,
+    "platformOrderId": "ORDER-2024-003",
+    "tradeDate": "2024-11-17",
+    "executionSide": "BUY",
+    "quantity": 750,
+    "price": 175.75,
+    "counterparty": "Mizuho Bank",
+    "counterpartyCountry": "JP",
+    "commission": 87.50,
+    "status": "Completed",
+    "trader": "Alice Johnson"
+  },
+  {
+    "id": 4,
+    "platformOrderId": "ORDER-2024-004", 
+    "tradeDate": "2024-11-18",
+    "executionSide": "BUY",
+    "quantity": 2000,
+    "price": 95.25,
+    "counterparty": "BNP Paribas",
+    "counterpartyCountry": "FR",
+    "commission": 45.00,
+    "status": "Completed",
+    "trader": "Bob Wilson"
+  }
+]

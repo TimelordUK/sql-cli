@@ -15,3 +15,5 @@ pub mod where_parser;
 mod test_cache_query;
 #[cfg(test)]
 mod test_comprehensive_operators;
+#[cfg(test)]
+mod test_json_loading;

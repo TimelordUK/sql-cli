@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::fs::File;
+use std::io::BufReader;
 use csv;
 use serde_json::{json, Value};
 use std::error::Error;
@@ -10,7 +11,7 @@ use chrono::{Local, NaiveDateTime, Datelike};
 use crate::where_parser::WhereParser;
 use crate::where_ast::{WhereExpr, evaluate_where_expr};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CsvDataSource {
     data: Vec<Value>,
     headers: Vec<String>,
@@ -53,6 +54,42 @@ impl CsvDataSource {
         
         Ok(CsvDataSource {
             data,
+            headers,
+            table_name: table_name.to_string(),
+        })
+    }
+    
+    pub fn load_from_json_file<P: AsRef<Path>>(path: P, table_name: &str) -> Result<Self> {
+        let file = File::open(&path)?;
+        let reader = BufReader::new(file);
+        
+        // Parse JSON array
+        let json_data: Vec<Value> = serde_json::from_reader(reader)?;
+        
+        if json_data.is_empty() {
+            return Err(anyhow::anyhow!("JSON file contains no data"));
+        }
+        
+        // Extract headers from the first record
+        let headers = if let Some(first_record) = json_data.first() {
+            if let Some(obj) = first_record.as_object() {
+                obj.keys().cloned().collect()
+            } else {
+                return Err(anyhow::anyhow!("JSON records must be objects"));
+            }
+        } else {
+            Vec::new()
+        };
+        
+        // Validate all records have the same structure
+        for (i, record) in json_data.iter().enumerate() {
+            if !record.is_object() {
+                return Err(anyhow::anyhow!("Record {} is not an object", i));
+            }
+        }
+        
+        Ok(CsvDataSource {
+            data: json_data,
             headers,
             table_name: table_name.to_string(),
         })
@@ -152,6 +189,11 @@ impl CsvApiClient {
     
     pub fn load_csv<P: AsRef<Path>>(&mut self, path: P, table_name: &str) -> Result<()> {
         self.datasource = Some(CsvDataSource::load_from_file(path, table_name)?);
+        Ok(())
+    }
+    
+    pub fn load_json<P: AsRef<Path>>(&mut self, path: P, table_name: &str) -> Result<()> {
+        self.datasource = Some(CsvDataSource::load_from_json_file(path, table_name)?);
         Ok(())
     }
     

@@ -4,6 +4,12 @@ A powerful terminal-based SQL editor with syntax-aware completion, advanced pars
 
 ## 🎯 Key Features
 
+### Data Source Support
+- **API Mode**: Query live trading data from REST API
+- **CSV Files**: Load and query CSV files directly
+- **JSON Files**: Load and query JSON files (array of flat objects)
+- **Cached Mode**: Save API results for offline analysis
+
 ### Smart SQL Parsing & Completion
 - **Recursive Descent Parser**: Handles complex queries with multiple AND/OR conditions
 - **Context-Aware Tab Completion**: Suggests only relevant columns, keywords, and operators based on cursor position
@@ -24,6 +30,32 @@ A powerful terminal-based SQL editor with syntax-aware completion, advanced pars
 - **Token Position Indicator**: Shows "Token: 5/12" in status bar
 - **Horizontal Scrolling**: Long queries scroll horizontally instead of wrapping
 - **Command History**: `Ctrl+R` for mcfly-style fuzzy search through past queries
+
+## 🚀 Quick Start
+
+### Load a JSON file
+```bash
+# JSON file should contain an array of flat objects
+cargo run -- --enhanced sample_trades.json
+
+# Example JSON structure:
+# [
+#   {"id": 1, "counterparty": "Bank of America", "commission": 75.25, ...},
+#   {"id": 2, "counterparty": "JP Morgan", "commission": 100.00, ...}
+# ]
+```
+
+### Load a CSV file
+```bash
+cargo run -- --enhanced trades.csv
+```
+
+### Connect to API
+```bash
+cargo run -- --enhanced
+# Or specify custom API URL:
+cargo run -- --enhanced --api-url http://localhost:5000
+```
 
 ## 🚀 Example Queries
 
@@ -214,7 +246,7 @@ The editor provides color-coded syntax:
 
 ## 🌳 AST-Based WHERE Clause Processing
 
-The SQL CLI uses a custom Abstract Syntax Tree (AST) parser for WHERE clauses, providing robust and reliable query filtering for cached and CSV data. This approach was chosen over alternatives like tree-sitter for its simplicity and perfect fit for our SQL subset.
+The SQL CLI uses a custom Abstract Syntax Tree (AST) parser for WHERE clauses, providing robust and reliable query filtering for cached data, CSV files, and JSON files. This approach was chosen over alternatives like tree-sitter for its simplicity and perfect fit for our SQL subset.
 
 ### Key Benefits
 
@@ -269,6 +301,14 @@ All standard SQL operators plus LINQ-style methods:
 - **Special**: BETWEEN, IN, NOT IN, LIKE, IS NULL, IS NOT NULL
 - **LINQ Methods**: .Contains(), .StartsWith(), .EndsWith(), .Length()
 - **DateTime**: DateTime(year, month, day, hour, minute, second)
+
+### JSON and CSV Compatibility
+
+JSON and CSV files are loaded into identical internal structures, meaning:
+- Same query syntax works for both file types
+- Tab completion shows columns from either format
+- WHERE clause filtering uses the same AST parser
+- Performance is identical for equivalent data
 
 ## 🚧 Roadmap
 
