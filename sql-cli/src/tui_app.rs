@@ -53,10 +53,13 @@ impl TuiApp {
     }
     
     pub fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
+        // Initial draw
+        terminal.draw(|f| self.ui(f))?;
+        
         loop {
-            terminal.draw(|f| self.ui(f))?;
-            
+            // Only redraw when we get an event
             if let Event::Key(key) = event::read()? {
+                let needs_redraw = true; // We'll optimize this later
                 match key.code {
                     KeyCode::Esc => {
                         if self.show_help {
@@ -107,6 +110,11 @@ impl TuiApp {
                             self.input.handle_event(&Event::Key(key));
                         }
                     }
+                }
+                
+                // Redraw after handling the event
+                if needs_redraw {
+                    terminal.draw(|f| self.ui(f))?;
                 }
             }
         }
