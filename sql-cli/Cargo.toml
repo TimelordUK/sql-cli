@@ -52,6 +52,14 @@ name = "test-where-order-by-issue"
 path = "test_where_order_by_issue.rs"
 
 [[bin]]
+name = "test-not-contains"
+path = "test_not_contains.rs"
+
+[[bin]]
+name = "test-null-handling"
+path = "test_null_handling.rs"
+
+[[bin]]
 name = "test-large-dataset-perf"
 path = "test_large_dataset_perf.rs"
 

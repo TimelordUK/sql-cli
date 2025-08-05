@@ -57,6 +57,59 @@ cargo run -- --enhanced
 cargo run -- --enhanced --api-url http://localhost:5000
 ```
 
+## 📋 Quick Query Reference
+
+### Supported SQL Syntax
+```sql
+-- Basic structure
+SELECT * FROM table WHERE conditions ORDER BY column
+
+-- Comparison operators
+WHERE column = "value"              -- Equal
+WHERE column != "value"             -- Not equal
+WHERE column > 100                  -- Greater than
+WHERE column >= 100                 -- Greater than or equal
+WHERE column < 100                  -- Less than
+WHERE column <= 100                 -- Less than or equal
+
+-- Logical operators
+WHERE condition1 AND condition2     -- Both must be true
+WHERE condition1 OR condition2      -- Either can be true
+WHERE NOT condition                 -- Negates condition
+WHERE (cond1 OR cond2) AND cond3   -- Parentheses for grouping
+
+-- NULL handling
+WHERE column IS NULL                -- Check for NULL
+WHERE column IS NOT NULL            -- Check for non-NULL
+
+-- List operations
+WHERE column IN ("A", "B", "C")     -- Value in list
+WHERE column NOT IN ("X", "Y")      -- Value not in list
+
+-- Range operations
+WHERE column BETWEEN 10 AND 20      -- Inclusive range
+
+-- String operations
+WHERE column LIKE "prefix%"         -- Pattern matching
+WHERE column.Contains("text")       -- Substring search
+WHERE column.StartsWith("text")     -- Prefix check
+WHERE column.EndsWith("text")       -- Suffix check
+WHERE column.Length() > 10          -- String length
+
+-- Case conversion
+WHERE column.ToLower() = "value"    -- Case-insensitive
+WHERE column.ToUpper() = "VALUE"    -- Case-insensitive
+
+-- Date operations
+WHERE date > DateTime(2024, 1, 1)   -- After date
+WHERE date = DateTime()             -- Today
+
+-- Ordering
+ORDER BY column                     -- Ascending (default)
+ORDER BY column DESC                -- Descending
+ORDER BY col1, col2                 -- Multiple columns
+```
+
 ## 🚀 Example Queries
 
 ### Basic Examples
@@ -86,6 +139,25 @@ SELECT * FROM trades WHERE instrumentName.EndsWith("Bond")
 ```
 
 ### Advanced Query Examples
+
+#### NOT Operator Support
+```sql
+-- Negate any condition with NOT
+SELECT * FROM trades WHERE NOT Country.Contains("US")
+
+-- NOT with IN lists
+SELECT * FROM trades WHERE Country NOT IN ("US", "CA", "MX")
+
+-- Complex NOT conditions
+SELECT * FROM trades 
+WHERE NOT (status = "CANCELLED" OR status = "FAILED")
+  AND NOT commission > 1000
+
+-- NOT with method calls
+SELECT * FROM trades 
+WHERE NOT Country.StartsWith("U")
+  AND NOT City.Contains("New")
+```
 
 #### Complex Boolean Logic with Parentheses
 ```sql
@@ -180,6 +252,21 @@ SELECT * FROM trades
 WHERE commission IS NOT NULL
   AND counterparty IS NOT NULL
   AND quantity > 0
+
+-- Complex NULL checks
+SELECT * FROM trades 
+WHERE (City IS NULL OR Phone IS NULL)
+  AND Age IS NOT NULL
+
+-- NULL values in CSV files
+-- Empty fields in CSV (e.g., Name,,City) are treated as NULL
+SELECT * FROM customers WHERE Age IS NULL
+
+-- Combine NULL checks with other conditions
+SELECT * FROM trades 
+WHERE Phone IS NULL 
+  AND Country.Contains("US")
+  AND NOT Status = "INACTIVE"
 ```
 
 #### String Length and Pattern Matching
@@ -435,11 +522,42 @@ Press F5 in the TUI to see the AST visualization of your WHERE clause, helping y
 ### Supported Operations
 
 All standard SQL operators plus LINQ-style methods:
-- **Comparisons**: =, !=, <, >, <=, >=
-- **Logical**: AND, OR, NOT
-- **Special**: BETWEEN, IN, NOT IN, LIKE, IS NULL, IS NOT NULL
-- **LINQ Methods**: .Contains(), .StartsWith(), .EndsWith(), .Length(), .ToLower(), .ToUpper()
-- **DateTime**: DateTime(year, month, day, hour, minute, second)
+
+#### Basic Operations
+- **Comparisons**: `=`, `!=`, `<`, `>`, `<=`, `>=`
+- **Logical**: `AND`, `OR`, `NOT`
+- **Grouping**: Parentheses `()` for precedence control
+
+#### Advanced Operations
+- **Range**: `BETWEEN value1 AND value2`
+- **List Membership**: `IN (value1, value2, ...)`, `NOT IN (value1, value2, ...)`
+- **Pattern Matching**: `LIKE pattern` (% = any chars, _ = single char)
+- **NULL Checks**: `IS NULL`, `IS NOT NULL`
+
+#### LINQ-Style String Methods
+- `.Contains("text")` - Case-sensitive substring search
+- `.StartsWith("prefix")` - Check string prefix
+- `.EndsWith("suffix")` - Check string suffix
+- `.Length()` - Get string length for comparison
+- `.ToLower()` - Convert to lowercase for comparison
+- `.ToUpper()` - Convert to uppercase for comparison
+
+#### DateTime Support
+- `DateTime(year, month, day)` - Date at midnight
+- `DateTime(year, month, day, hour, minute, second)` - Full precision
+- `DateTime()` - Today at midnight
+- Works with all comparison operators
+
+#### Column Name Handling
+- **Unquoted**: `columnName` (alphanumeric + underscore)
+- **Quoted**: `"Column Name"` (for spaces or special chars)
+- **Case Sensitivity**: Column names are case-insensitive by default
+
+#### ORDER BY Support
+- `ORDER BY column` - Sort ascending
+- `ORDER BY column DESC` - Sort descending
+- `ORDER BY column1, column2` - Multi-column sort
+- Works with WHERE clauses: `WHERE condition ORDER BY column`
 
 ### JSON and CSV Compatibility
 
@@ -448,6 +566,53 @@ JSON and CSV files are loaded into identical internal structures, meaning:
 - Tab completion shows columns from either format
 - WHERE clause filtering uses the same AST parser
 - Performance is identical for equivalent data
+
+## ⚠️ Limitations and Special Cases
+
+### What's NOT Supported
+- **JOIN operations**: Single table queries only
+- **Aggregate functions**: No SUM, COUNT, AVG, etc.
+- **GROUP BY / HAVING**: Not implemented
+- **Subqueries**: Not supported
+- **UNION / INTERSECT**: Not available
+- **UPDATE / DELETE**: Read-only queries
+- **DISTINCT**: Not implemented
+- **Column aliases**: No AS support
+- **SELECT specific columns**: Currently only `SELECT *` works
+
+### Special Behaviors
+1. **Case Sensitivity**:
+   - Column names: Case-insensitive (`Country` = `country` = `COUNTRY`)
+   - String values: Case-sensitive unless using `.ToLower()` or `.ToUpper()`
+   - Keywords: Case-insensitive (`WHERE` = `where` = `Where`)
+
+2. **String Quoting**:
+   - Double quotes `"` for identifiers and string values
+   - Single quotes `'` also work for string values
+   - Column names with spaces must be quoted: `"Customer Id"`
+
+3. **NULL Handling**:
+   - Empty CSV fields become NULL
+   - Cannot use `= NULL` or `!= NULL`, must use `IS NULL` / `IS NOT NULL`
+   - NULL is not equal to empty string ""
+
+4. **Method Calls**:
+   - Methods like `.Contains()` are case-sensitive
+   - Methods must have parentheses even if no arguments: `.Length()`
+   - Methods can be chained: `.ToLower().Contains("text")`
+
+5. **Operator Precedence** (highest to lowest):
+   - Parentheses `()`
+   - Method calls `.method()`
+   - Comparisons `=, !=, <, >, <=, >=, IN, LIKE, IS NULL`
+   - `NOT`
+   - `AND`
+   - `OR`
+
+6. **Data Type Handling**:
+   - Numbers in CSV are auto-detected and parsed as floats
+   - Dates must use `DateTime()` constructor for comparisons
+   - Boolean values not directly supported (use string comparison)
 
 ## 🚧 Roadmap
 
