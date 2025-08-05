@@ -18,6 +18,7 @@ mod cursor_aware_parser;
 mod recursive_parser;
 mod hybrid_parser;
 mod history;
+mod csv_fixes;
 mod sql_highlighter;
 mod schema_config;
 

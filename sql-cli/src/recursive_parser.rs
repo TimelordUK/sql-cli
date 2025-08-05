@@ -1,5 +1,4 @@
-use std::fmt;
-use chrono::{Local, NaiveDateTime, Datelike, Timelike};
+use chrono::{Local, NaiveDateTime, Datelike};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {

@@ -1,4 +1,4 @@
-use crate::cursor_aware_parser::{CursorAwareParser, ParseResult};
+use crate::cursor_aware_parser::CursorAwareParser;
 use crate::recursive_parser::{detect_cursor_context, CursorContext, LogicalOp, tokenize_query};
 
 #[derive(Clone)]
