@@ -248,7 +248,16 @@ impl CompletionContext {
         if let Some(partial) = &self.partial_word {
             suggestions
                 .into_iter()
-                .filter(|s| s.to_lowercase().starts_with(&partial.to_lowercase()))
+                .filter(|s| {
+                    // Handle quoted column names - check if the suggestion starts with a quote
+                    let s_to_check = if s.starts_with('"') && s.len() > 1 {
+                        // Remove the opening quote for comparison
+                        &s[1..]
+                    } else {
+                        s
+                    };
+                    s_to_check.to_lowercase().starts_with(&partial.to_lowercase())
+                })
                 .collect()
         } else {
             suggestions

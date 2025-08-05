@@ -170,7 +170,14 @@ impl CursorAwareParser {
             if !is_method_context {
                 // Only filter non-method suggestions
                 final_suggestions.retain(|suggestion| {
-                    suggestion.to_lowercase().starts_with(&partial.to_lowercase())
+                    // Handle quoted column names - check if the suggestion starts with a quote
+                    let suggestion_to_check = if suggestion.starts_with('"') && suggestion.len() > 1 {
+                        // Remove the opening quote for comparison
+                        &suggestion[1..]
+                    } else {
+                        suggestion
+                    };
+                    suggestion_to_check.to_lowercase().starts_with(&partial.to_lowercase())
                 });
             }
         }
