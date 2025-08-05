@@ -212,6 +212,64 @@ The editor provides color-coded syntax:
 - **Operators**: Yellow (=, >, AND, OR)
 - **Comments**: Gray (-- comment)
 
+## 🌳 AST-Based WHERE Clause Processing
+
+The SQL CLI uses a custom Abstract Syntax Tree (AST) parser for WHERE clauses, providing robust and reliable query filtering for cached and CSV data. This approach was chosen over alternatives like tree-sitter for its simplicity and perfect fit for our SQL subset.
+
+### Key Benefits
+
+1. **Correct Operator Precedence**: The parser respects standard SQL precedence rules:
+   - Comparisons (=, >, <, etc.) have highest precedence
+   - NOT comes next
+   - AND binds tighter than OR
+   - Parentheses override default precedence
+
+2. **No String Manipulation**: Unlike string-based parsing, the AST approach:
+   - Handles operators in string values correctly
+   - Eliminates case-sensitivity issues
+   - Avoids regex complexity for DateTime() parsing
+   - Prevents edge cases with nested conditions
+
+3. **Clean Architecture**:
+   - **Lexer** (`recursive_parser.rs`): Tokenizes the SQL query
+   - **Parser** (`where_parser.rs`): Builds AST from tokens using recursive descent
+   - **AST Walker** (`where_ast.rs`): Evaluates expressions against data rows
+
+### Example: How Queries Are Processed
+
+```sql
+SELECT * FROM trades WHERE (status = "Active" OR priority = "High") AND region IN ("US", "EU")
+```
+
+This query becomes the following AST:
+```
+AND
+  OR
+    EQUAL(status, "Active")
+    EQUAL(priority, "High")
+  IN(region, ["US", "EU"])
+```
+
+The walker then:
+1. Evaluates `status = "Active"` → false
+2. Evaluates `priority = "High"` → true
+3. Combines with OR → true
+4. Evaluates `region IN ("US", "EU")` → true
+5. Combines with AND → true (row matches)
+
+### Debugging with F5
+
+Press F5 in the TUI to see the AST visualization of your WHERE clause, helping you understand exactly how your query is parsed and why certain rows match or don't match.
+
+### Supported Operations
+
+All standard SQL operators plus LINQ-style methods:
+- **Comparisons**: =, !=, <, >, <=, >=
+- **Logical**: AND, OR, NOT
+- **Special**: BETWEEN, IN, NOT IN, LIKE, IS NULL, IS NOT NULL
+- **LINQ Methods**: .Contains(), .StartsWith(), .EndsWith(), .Length()
+- **DateTime**: DateTime(year, month, day, hour, minute, second)
+
 ## 🚧 Roadmap
 
 - [x] Recursive descent parser
@@ -222,10 +280,10 @@ The editor provides color-coded syntax:
 - [x] Virtual scrolling for large datasets
 - [x] CSV export
 - [x] Command history with fuzzy search
-- [ ] Complete caching implementation
+- [x] Complete caching implementation
+- [x] AST visualization (F5 debug view)
 - [ ] Server proxy endpoint
 - [ ] Offline mode
-- [ ] AST visualization
 - [ ] Query performance profiling
 
 ## 🤝 Contributing
