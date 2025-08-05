@@ -1054,7 +1054,270 @@ pub fn datetime_to_iso_string(expr: &SqlExpression) -> Option<String> {
     }
 }
 
+// Format SQL with preserved parentheses using token positions
+fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result<Vec<String>, String> {
+    let mut lines = Vec::new();
+    let mut lexer = Lexer::new(query);
+    let tokens_with_pos = lexer.tokenize_all_with_positions();
+    
+    if tokens_with_pos.is_empty() {
+        return Err("No tokens found".to_string());
+    }
+    
+    let mut i = 0;
+    let cols_per_line = cols_per_line.max(1);
+    
+    while i < tokens_with_pos.len() {
+        let (start, _end, ref token) = tokens_with_pos[i];
+        
+        match token {
+            Token::Select => {
+                lines.push("SELECT".to_string());
+                i += 1;
+                
+                // Collect columns until FROM
+                let mut columns = Vec::new();
+                let mut col_start = i;
+                while i < tokens_with_pos.len() {
+                    match &tokens_with_pos[i].2 {
+                        Token::From | Token::Eof => break,
+                        Token::Comma => {
+                            // Extract column text from original query
+                            if col_start < i {
+                                let col_text = extract_text_between_positions(
+                                    query,
+                                    tokens_with_pos[col_start].0,
+                                    tokens_with_pos[i - 1].1,
+                                );
+                                columns.push(col_text);
+                            }
+                            i += 1;
+                            col_start = i;
+                        }
+                        _ => i += 1,
+                    }
+                }
+                // Add last column
+                if col_start < i && i > 0 {
+                    let col_text = extract_text_between_positions(
+                        query,
+                        tokens_with_pos[col_start].0,
+                        tokens_with_pos[i - 1].1,
+                    );
+                    columns.push(col_text);
+                }
+                
+                // Format columns with proper indentation
+                for chunk in columns.chunks(cols_per_line) {
+                    let mut line = "    ".to_string();
+                    for (idx, col) in chunk.iter().enumerate() {
+                        if idx > 0 {
+                            line.push_str(", ");
+                        }
+                        line.push_str(col.trim());
+                    }
+                    // Add comma if not last chunk
+                    let is_last_chunk = chunk.as_ptr() as usize + chunk.len() * std::mem::size_of::<String>()
+                        >= columns.last().map(|c| c as *const _ as usize).unwrap_or(0);
+                    if !is_last_chunk && columns.len() > cols_per_line {
+                        line.push(',');
+                    }
+                    lines.push(line);
+                }
+            }
+            Token::From => {
+                i += 1;
+                if i < tokens_with_pos.len() {
+                    let table_start = tokens_with_pos[i].0;
+                    // Find end of table name
+                    while i < tokens_with_pos.len() {
+                        match &tokens_with_pos[i].2 {
+                            Token::Where | Token::OrderBy | Token::GroupBy | Token::Eof => break,
+                            _ => i += 1,
+                        }
+                    }
+                    if i > 0 {
+                        let table_text = extract_text_between_positions(
+                            query,
+                            table_start,
+                            tokens_with_pos[i - 1].1,
+                        );
+                        lines.push(format!("FROM {}", table_text.trim()));
+                    }
+                }
+            }
+            Token::Where => {
+                lines.push("WHERE".to_string());
+                i += 1;
+                
+                // Extract entire WHERE clause preserving parentheses
+                let where_start = if i < tokens_with_pos.len() {
+                    tokens_with_pos[i].0
+                } else {
+                    start
+                };
+                
+                // Find end of WHERE clause
+                let mut where_end = query.len();
+                while i < tokens_with_pos.len() {
+                    match &tokens_with_pos[i].2 {
+                        Token::OrderBy | Token::GroupBy | Token::Eof => {
+                            if i > 0 {
+                                where_end = tokens_with_pos[i - 1].1;
+                            }
+                            break;
+                        }
+                        _ => i += 1,
+                    }
+                }
+                
+                // Extract and format WHERE clause text, preserving parentheses
+                let where_text = extract_text_between_positions(query, where_start, where_end);
+                
+                // Split by AND/OR at the top level (not inside parentheses)
+                let formatted_where = format_where_clause_with_parens(&where_text);
+                for line in formatted_where {
+                    lines.push(format!("    {}", line));
+                }
+            }
+            Token::OrderBy => {
+                i += 1;
+                let order_start = if i < tokens_with_pos.len() {
+                    tokens_with_pos[i].0
+                } else {
+                    start
+                };
+                
+                // Find end of ORDER BY
+                while i < tokens_with_pos.len() {
+                    match &tokens_with_pos[i].2 {
+                        Token::GroupBy | Token::Eof => break,
+                        _ => i += 1,
+                    }
+                }
+                
+                if i > 0 {
+                    let order_text = extract_text_between_positions(
+                        query,
+                        order_start,
+                        tokens_with_pos[i - 1].1,
+                    );
+                    lines.push(format!("ORDER BY {}", order_text.trim()));
+                }
+            }
+            Token::GroupBy => {
+                i += 1;
+                let group_start = if i < tokens_with_pos.len() {
+                    tokens_with_pos[i].0
+                } else {
+                    start
+                };
+                
+                // Find end of GROUP BY
+                while i < tokens_with_pos.len() {
+                    match &tokens_with_pos[i].2 {
+                        Token::Having | Token::Eof => break,
+                        _ => i += 1,
+                    }
+                }
+                
+                if i > 0 {
+                    let group_text = extract_text_between_positions(
+                        query,
+                        group_start,
+                        tokens_with_pos[i - 1].1,
+                    );
+                    lines.push(format!("GROUP BY {}", group_text.trim()));
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    
+    Ok(lines)
+}
+
+// Helper function to extract text between positions
+fn extract_text_between_positions(query: &str, start: usize, end: usize) -> String {
+    let chars: Vec<char> = query.chars().collect();
+    let start = start.min(chars.len());
+    let end = end.min(chars.len());
+    chars[start..end].iter().collect()
+}
+
+// Format WHERE clause preserving parentheses
+fn format_where_clause_with_parens(where_text: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+    let mut paren_depth = 0;
+    let mut i = 0;
+    let chars: Vec<char> = where_text.chars().collect();
+    
+    while i < chars.len() {
+        // Check for AND/OR at top level
+        if paren_depth == 0 {
+            // Look for " AND " or " OR "
+            if i + 5 <= chars.len() {
+                let next_five: String = chars[i..i + 5].iter().collect();
+                if next_five.to_uppercase() == " AND " {
+                    if !current_line.trim().is_empty() {
+                        lines.push(current_line.trim().to_string());
+                    }
+                    lines.push("AND".to_string());
+                    current_line.clear();
+                    i += 5;
+                    continue;
+                }
+            }
+            if i + 4 <= chars.len() {
+                let next_four: String = chars[i..i + 4].iter().collect();
+                if next_four.to_uppercase() == " OR " {
+                    if !current_line.trim().is_empty() {
+                        lines.push(current_line.trim().to_string());
+                    }
+                    lines.push("OR".to_string());
+                    current_line.clear();
+                    i += 4;
+                    continue;
+                }
+            }
+        }
+        
+        // Track parentheses depth
+        match chars[i] {
+            '(' => {
+                paren_depth += 1;
+                current_line.push('(');
+            }
+            ')' => {
+                paren_depth -= 1;
+                current_line.push(')');
+            }
+            c => current_line.push(c),
+        }
+        i += 1;
+    }
+    
+    // Add remaining line
+    if !current_line.trim().is_empty() {
+        lines.push(current_line.trim().to_string());
+    }
+    
+    // If no AND/OR found, return the whole text as one line
+    if lines.is_empty() {
+        lines.push(where_text.trim().to_string());
+    }
+    
+    lines
+}
+
 pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<String> {
+    // First try to use the new AST-preserving formatter
+    if let Ok(lines) = format_sql_with_preserved_parens(query, cols_per_line) {
+        return lines;
+    }
+    
+    // Fall back to the old implementation for backward compatibility
     let mut lines = Vec::new();
     let mut parser = Parser::new(query);
 
@@ -1234,12 +1497,25 @@ fn format_expression(expr: &SqlExpression) -> String {
             format!("{}.{}({})", object, method, args_str)
         }
         SqlExpression::BinaryOp { left, op, right } => {
-            format!(
-                "{} {} {}",
-                format_expression(left),
-                op,
-                format_expression(right)
-            )
+            // Check if this is a logical operator that needs parentheses
+            // We add parentheses for OR/AND operators to preserve grouping
+            if op == "OR" || op == "AND" {
+                // For logical operators, we need to check if we should add parentheses
+                // This is a simplified approach - in production you'd track context
+                format!(
+                    "({} {} {})",
+                    format_expression(left),
+                    op,
+                    format_expression(right)
+                )
+            } else {
+                format!(
+                    "{} {} {}",
+                    format_expression(left),
+                    op,
+                    format_expression(right)
+                )
+            }
         }
         SqlExpression::InList { expr, values } => {
             let values_str = values
