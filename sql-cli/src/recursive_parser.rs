@@ -2319,4 +2319,119 @@ mod tests {
         // Should correctly parse the AND chain inside parentheses
         assert!(where_clause.conditions.len() > 0);
     }
+
+    // Format preservation tests - ensure F3 multi-line mode preserves parentheses
+    #[test]
+    fn test_format_preserves_simple_parentheses() {
+        let query = r#"SELECT * FROM trades WHERE (status = "active" OR status = "pending")"#;
+        let formatted = format_sql_pretty_compact(query, 5);
+        let formatted_text = formatted.join(" ");
+        
+        // Check parentheses are preserved
+        assert!(formatted_text.contains("(status"));
+        assert!(formatted_text.contains("\"pending\")"));
+        
+        // Count parentheses
+        let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
+        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
+        assert_eq!(original_parens, formatted_parens, "Parentheses should be preserved");
+    }
+
+    #[test]
+    fn test_format_preserves_complex_parentheses() {
+        let query = r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND price > 100"#;
+        let formatted = format_sql_pretty_compact(query, 5);
+        let formatted_text = formatted.join(" ");
+        
+        // Check the grouped OR condition is preserved
+        assert!(formatted_text.contains("(symbol"));
+        assert!(formatted_text.contains("\"GOOGL\")"));
+        
+        // Verify parentheses count
+        let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
+        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
+        assert_eq!(original_parens, formatted_parens);
+    }
+
+    #[test]
+    fn test_format_preserves_nested_parentheses() {
+        let query = r#"SELECT * FROM trades WHERE ((symbol = "AAPL" OR symbol = "GOOGL") AND price > 100) OR status = "cancelled""#;
+        let formatted = format_sql_pretty_compact(query, 5);
+        let formatted_text = formatted.join(" ");
+        
+        // Count nested parentheses
+        let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
+        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
+        assert_eq!(original_parens, formatted_parens, "Nested parentheses should be preserved");
+        assert_eq!(original_parens, 4, "Should have 4 parentheses total");
+    }
+
+    #[test]
+    fn test_format_preserves_method_calls_in_parentheses() {
+        let query = r#"SELECT * FROM trades WHERE (symbol.StartsWith("A") OR symbol.StartsWith("G")) AND volume > 1000000"#;
+        let formatted = format_sql_pretty_compact(query, 5);
+        let formatted_text = formatted.join(" ");
+        
+        // Check method calls are preserved with their parentheses
+        assert!(formatted_text.contains("(symbol.StartsWith"));
+        assert!(formatted_text.contains("StartsWith(\"A\")"));
+        assert!(formatted_text.contains("StartsWith(\"G\")"));
+        
+        // Count all parentheses (including method calls)
+        let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
+        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
+        assert_eq!(original_parens, formatted_parens);
+        assert_eq!(original_parens, 6, "Should have 6 parentheses (1 group + 2 method calls)");
+    }
+
+    #[test]
+    fn test_format_preserves_multiple_groups() {
+        let query = r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND (price > 100 AND price < 500)"#;
+        let formatted = format_sql_pretty_compact(query, 5);
+        let formatted_text = formatted.join(" ");
+        
+        // Both groups should be preserved
+        assert!(formatted_text.contains("(symbol"));
+        assert!(formatted_text.contains("(price"));
+        
+        let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
+        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
+        assert_eq!(original_parens, formatted_parens);
+        assert_eq!(original_parens, 4, "Should have 4 parentheses (2 groups)");
+    }
+
+    #[test]
+    fn test_format_preserves_date_ranges() {
+        let query = r#"SELECT * FROM trades WHERE (executionDate > DateTime(2024, 1, 1) AND executionDate < DateTime(2024, 12, 31))"#;
+        let formatted = format_sql_pretty_compact(query, 5);
+        let formatted_text = formatted.join(" ");
+        
+        // Check DateTime functions and grouping are preserved
+        assert!(formatted_text.contains("(executionDate"));
+        assert!(formatted_text.contains("DateTime(2024, 1, 1)"));
+        assert!(formatted_text.contains("DateTime(2024, 12, 31)"));
+        
+        let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
+        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
+        assert_eq!(original_parens, formatted_parens);
+    }
+
+    #[test]
+    fn test_format_multiline_layout() {
+        // Test that formatted output has proper multi-line structure
+        let query = r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND price > 100"#;
+        let formatted = format_sql_pretty_compact(query, 5);
+        
+        // Should have SELECT, FROM, WHERE, and condition lines
+        assert!(formatted.len() >= 4, "Should have multiple lines");
+        assert_eq!(formatted[0], "SELECT");
+        assert!(formatted[1].trim().starts_with("*"));
+        assert!(formatted[2].starts_with("FROM"));
+        assert_eq!(formatted[3], "WHERE");
+        
+        // WHERE conditions should be indented
+        let where_lines: Vec<_> = formatted.iter().skip(4).collect();
+        assert!(where_lines.iter().any(|l| l.contains("(symbol")));
+        assert!(where_lines.iter().any(|l| l.trim() == "AND"));
+    }
 }
