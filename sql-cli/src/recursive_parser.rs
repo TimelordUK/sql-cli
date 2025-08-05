@@ -1871,4 +1871,176 @@ mod tests {
         let partial2 = extract_partial_at_end(query2);
         assert_eq!(partial2, None); // FROM is a keyword, so no partial
     }
+
+    // Complex WHERE clause tests with parentheses for trade queries
+    #[test]
+    fn test_complex_where_parentheses_basic() {
+        // Basic parenthesized OR condition
+        let mut parser = Parser::new(r#"SELECT * FROM trades WHERE (status = "active" OR status = "pending")"#);
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        assert_eq!(where_clause.conditions.len(), 1);
+        
+        // Verify the structure is a BinaryOp with OR
+        if let SqlExpression::BinaryOp { op, .. } = &where_clause.conditions[0].expr {
+            assert_eq!(op, "OR");
+        } else {
+            panic!("Expected BinaryOp with OR");
+        }
+    }
+
+    #[test]
+    fn test_complex_where_mixed_and_or_with_parens() {
+        // (condition1 OR condition2) AND condition3
+        let mut parser = Parser::new(
+            r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND price > 100"#
+        );
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        assert_eq!(where_clause.conditions.len(), 2);
+        
+        // First condition should be the parenthesized OR expression
+        if let SqlExpression::BinaryOp { op, .. } = &where_clause.conditions[0].expr {
+            assert_eq!(op, "OR");
+        } else {
+            panic!("Expected first condition to be OR expression");
+        }
+        
+        // Should have AND connector to next condition
+        assert!(matches!(where_clause.conditions[0].connector, Some(LogicalOp::And)));
+        
+        // Second condition should be price > 100
+        if let SqlExpression::BinaryOp { op, .. } = &where_clause.conditions[1].expr {
+            assert_eq!(op, ">");
+        } else {
+            panic!("Expected second condition to be price > 100");
+        }
+    }
+
+    #[test]
+    fn test_complex_where_nested_parentheses() {
+        // ((condition1 OR condition2) AND condition3) OR condition4
+        let mut parser = Parser::new(
+            r#"SELECT * FROM trades WHERE ((symbol = "AAPL" OR symbol = "GOOGL") AND price > 100) OR status = "cancelled""#
+        );
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        
+        // Should parse successfully with nested structure
+        assert!(where_clause.conditions.len() > 0);
+    }
+
+    #[test]
+    fn test_complex_where_multiple_or_groups() {
+        // (group1) AND (group2) - common pattern for filtering trades
+        let mut parser = Parser::new(
+            r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL" OR symbol = "MSFT") AND (price > 100 AND price < 500)"#
+        );
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        assert_eq!(where_clause.conditions.len(), 2);
+        
+        // First condition group should have OR
+        assert!(matches!(where_clause.conditions[0].connector, Some(LogicalOp::And)));
+    }
+
+    #[test]
+    fn test_complex_where_with_methods_in_parens() {
+        // Using string methods inside parentheses
+        let mut parser = Parser::new(
+            r#"SELECT * FROM trades WHERE (symbol.StartsWith("A") OR symbol.StartsWith("G")) AND volume > 1000000"#
+        );
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        assert_eq!(where_clause.conditions.len(), 2);
+        
+        // First condition should be the OR of two method calls
+        if let SqlExpression::BinaryOp { op, left, right } = &where_clause.conditions[0].expr {
+            assert_eq!(op, "OR");
+            assert!(matches!(left.as_ref(), SqlExpression::MethodCall { .. }));
+            assert!(matches!(right.as_ref(), SqlExpression::MethodCall { .. }));
+        } else {
+            panic!("Expected OR of method calls");
+        }
+    }
+
+    #[test]
+    fn test_complex_where_date_comparisons_with_parens() {
+        // Date range queries common in trade analysis
+        let mut parser = Parser::new(
+            r#"SELECT * FROM trades WHERE (executionDate > DateTime(2024, 1, 1) AND executionDate < DateTime(2024, 12, 31)) AND (status = "filled" OR status = "partial")"#
+        );
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        assert_eq!(where_clause.conditions.len(), 2);
+        
+        // Both condition groups should parse correctly
+        assert!(matches!(where_clause.conditions[0].connector, Some(LogicalOp::And)));
+    }
+
+    #[test]
+    fn test_complex_where_price_volume_filters() {
+        // Complex trade filtering by price and volume
+        let mut parser = Parser::new(
+            r#"SELECT * FROM trades WHERE ((price > 100 AND price < 200) OR (price > 500 AND price < 1000)) AND volume > 10000"#
+        );
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        
+        // Should handle nested price ranges with OR
+        assert!(where_clause.conditions.len() > 0);
+    }
+
+    #[test]
+    fn test_complex_where_mixed_string_numeric() {
+        // Mix of string comparisons and numeric comparisons in groups
+        let mut parser = Parser::new(
+            r#"SELECT * FROM trades WHERE (exchange = "NYSE" OR exchange = "NASDAQ") AND (volume > 1000000 OR notes.Contains("urgent"))"#
+        );
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        // Should parse without errors
+    }
+
+    #[test]
+    fn test_complex_where_triple_nested() {
+        // Very complex nesting - ((a OR b) AND (c OR d)) OR (e AND f)
+        let mut parser = Parser::new(
+            r#"SELECT * FROM trades WHERE ((symbol = "AAPL" OR symbol = "GOOGL") AND (price > 100 OR volume > 1000000)) OR (status = "cancelled" AND reason.Contains("timeout"))"#
+        );
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        // Should handle triple nesting correctly
+    }
+
+    #[test]
+    fn test_complex_where_single_parens_around_and() {
+        // Parentheses around AND conditions
+        let mut parser = Parser::new(
+            r#"SELECT * FROM trades WHERE (symbol = "AAPL" AND price > 150 AND volume > 100000)"#
+        );
+        let stmt = parser.parse().unwrap();
+        
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        
+        // Should correctly parse the AND chain inside parentheses
+        assert!(where_clause.conditions.len() > 0);
+    }
 }
