@@ -59,54 +59,188 @@ cargo run -- --enhanced --api-url http://localhost:5000
 
 ## 🚀 Example Queries
 
-### Complex Multi-condition Query
+### Basic Examples
+
+#### Simple Filtering
 ```sql
-SELECT * FROM trade_deal 
-WHERE commission > 50 
-  AND counterparty.Contains("Bank") 
-  AND counterpartyCountry IN ("JP","FR") 
-  AND createdDate > DateTime(2025,07,01)
+-- Numeric comparison
+SELECT * FROM trades WHERE commission > 100
+
+-- String equality
+SELECT * FROM trades WHERE counterpartyCountry = "US"
+
+-- Multiple conditions
+SELECT * FROM trades WHERE commission > 50 AND quantity < 1000
 ```
 
-This query demonstrates:
-- Numeric comparisons (`commission > 50`)
-- String method calls (`counterparty.Contains("Bank")`)
-- IN clause with multiple values (`IN ("JP","FR")`)
-- DateTime constructor (`DateTime(2025,07,01)`)
-
-### String Matching Examples
+#### LINQ-Style String Methods
 ```sql
--- Find all US banks
-SELECT * FROM trade_deal 
+-- Case-sensitive contains
+SELECT * FROM trades WHERE counterparty.Contains("Bank")
+
+-- Prefix matching
+SELECT * FROM trades WHERE platformOrderId.StartsWith("ORD2024")
+
+-- Suffix matching
+SELECT * FROM trades WHERE instrumentName.EndsWith("Bond")
+```
+
+### Advanced Query Examples
+
+#### Complex Boolean Logic with Parentheses
+```sql
+-- Parentheses override default precedence
+SELECT * FROM trades 
+WHERE (status = "Active" OR priority = "High") 
+  AND (region IN ("US", "EU") OR commission > 1000)
+
+-- Nested conditions with mixed operators
+SELECT * FROM trades 
 WHERE counterparty.Contains("Bank") 
+  AND (
+    (executionSide = "BUY" AND quantity > 500) 
+    OR (executionSide = "SELL" AND commission < 50)
+  )
+```
+
+#### Case-Insensitive Comparisons
+```sql
+-- ToLower() for case-insensitive matching
+SELECT * FROM trades 
+WHERE executionSide.ToLower() = "buy"
+  AND status.ToLower() != "cancelled"
+
+-- ToUpper() with multiple operators
+SELECT * FROM trades 
+WHERE status.ToUpper() IN ("COMPLETED", "PENDING")
+  OR counterpartyCountry.ToUpper() = "US"
+
+-- Mixed case conversions in complex queries
+SELECT * FROM trades 
+WHERE executionSide.ToLower() = "buy" 
+  AND counterparty.ToUpper().Contains("BANK")
+  AND status.ToLower() != "failed"
+```
+
+#### Advanced DateTime Filtering
+```sql
+-- DateTime constructor with full precision
+SELECT * FROM trades 
+WHERE createdDate >= DateTime(2024, 01, 15, 09, 30, 00)
+  AND createdDate < DateTime(2024, 01, 15, 17, 00, 00)
+
+-- Date ranges with business logic
+SELECT * FROM trades 
+WHERE tradeDate BETWEEN DateTime(2024,01,01) AND DateTime(2024,03,31)
+  AND settlement_date > DateTime(2024,01,05)
+
+-- Today's date (empty DateTime constructor)
+SELECT * FROM trades 
+WHERE createdDate >= DateTime()
+```
+
+#### Complex IN and NOT IN Operations
+```sql
+-- Multiple country filtering
+SELECT * FROM trades 
+WHERE counterpartyCountry IN ("JP", "FR", "DE", "UK")
+  AND executionSide NOT IN ("CANCEL", "REJECT")
+
+-- Combining IN with other conditions
+SELECT * FROM trades 
+WHERE counterpartyCountry IN ("US", "CA") 
+  AND commission BETWEEN 50 AND 200
+  AND counterparty.Contains("Bank")
+```
+
+#### BETWEEN Queries with Complex Logic
+```sql
+-- Numeric ranges with additional filters
+SELECT * FROM trades 
+WHERE commission BETWEEN 100 AND 500
+  AND quantity BETWEEN 1000 AND 10000
   AND counterpartyCountry = "US"
 
--- Case-insensitive matching
-SELECT * FROM trade_deal
-WHERE executionSide.ToLower() = "buy"
-  OR status.ToUpper() = "COMPLETED"
-
--- Find orders with specific prefix
-SELECT * FROM trade_deal 
-WHERE platformOrderId.StartsWith("ORD2024")
-
--- Complex pattern matching
-SELECT * FROM trade_deal 
-WHERE instrumentName.Contains("Bond") 
-  OR instrumentName.EndsWith("Note")
+-- Date and numeric ranges combined
+SELECT * FROM trades 
+WHERE createdDate BETWEEN DateTime(2024,01,01) AND DateTime(2024,12,31)
+  AND price BETWEEN 50.00 AND 200.00
+  AND status.ToLower() = "completed"
 ```
 
-### Date Range Queries
+#### NULL Handling
 ```sql
--- Trades in Q1 2024
-SELECT * FROM trade_deal 
-WHERE tradeDate >= DateTime(2024,01,01) 
-  AND tradeDate < DateTime(2024,04,01)
+-- Check for null values
+SELECT * FROM trades 
+WHERE settlement_date IS NULL
+  AND status != "CANCELLED"
 
--- Recent trades with high commission
-SELECT * FROM trade_deal 
-WHERE createdDate > DateTime(2024,06,01) 
+-- Exclude null values
+SELECT * FROM trades 
+WHERE commission IS NOT NULL
+  AND counterparty IS NOT NULL
+  AND quantity > 0
+```
+
+#### String Length and Pattern Matching
+```sql
+-- String length comparisons
+SELECT * FROM trades 
+WHERE platformOrderId.Length() > 10
+  AND counterparty.Length() BETWEEN 5 AND 50
+
+-- LIKE pattern matching
+SELECT * FROM trades 
+WHERE platformOrderId LIKE "ORD%2024%"
+  OR instrumentName LIKE "%Bond%"
+```
+
+#### Production-Ready Complex Queries
+```sql
+-- High-value US bank trades from Q1 2024
+SELECT * FROM trades 
+WHERE counterpartyCountry = "US"
+  AND counterparty.ToUpper().Contains("BANK")
   AND commission > 1000
+  AND tradeDate BETWEEN DateTime(2024,01,01) AND DateTime(2024,03,31)
+  AND status.ToLower() IN ("completed", "settled")
+
+-- Risk analysis: Large trades with specific criteria
+SELECT * FROM trades 
+WHERE (
+    (executionSide.ToLower() = "buy" AND quantity > 10000)
+    OR (executionSide.ToLower() = "sell" AND quantity > 5000)
+  )
+  AND counterpartyCountry NOT IN ("US", "CA")
+  AND commission BETWEEN 500 AND 2000
+  AND createdDate >= DateTime(2024,06,01)
+  AND status.ToLower() != "cancelled"
+
+-- Multi-criteria filtering with parentheses precedence
+SELECT * FROM trades 
+WHERE (
+    counterparty.Contains("Morgan") OR counterparty.Contains("Goldman")
+  ) 
+  AND (
+    (region = "APAC" AND commission > 200)
+    OR (region = "EMEA" AND commission > 150)
+    OR (region = "Americas" AND commission > 300)
+  )
+  AND executionSide.ToLower() IN ("buy", "sell")
+  AND tradeDate > DateTime(2024,01,01)
+```
+
+### JSON vs CSV Query Compatibility
+
+All examples work identically with both JSON and CSV files:
+
+```bash
+# Same query works with both formats
+cargo run -- --enhanced trades.csv
+cargo run -- --enhanced trades.json
+
+# Query: SELECT * FROM trades WHERE commission > 100 AND status.ToLower() = "completed"
+# Results are identical regardless of source file format
 ```
 
 ## ⌨️ Keyboard Shortcuts
