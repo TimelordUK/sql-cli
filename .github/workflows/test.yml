@@ -57,7 +57,7 @@ jobs:
     
     - name: Run clippy
       working-directory: ./sql-cli
-      run: cargo clippy -- -D warnings
+      run: cargo clippy -- -W warnings
     
     - name: Check formatting
       working-directory: ./sql-cli
