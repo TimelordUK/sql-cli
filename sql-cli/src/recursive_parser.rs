@@ -316,6 +316,11 @@ pub enum SqlExpression {
         expr: Box<SqlExpression>,
         values: Vec<SqlExpression>,
     },
+    Between {
+        expr: Box<SqlExpression>,
+        lower: Box<SqlExpression>,
+        upper: Box<SqlExpression>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -669,6 +674,20 @@ impl Parser {
             }
         }
 
+        // Handle BETWEEN operator
+        if matches!(self.current_token, Token::Between) {
+            self.advance(); // consume BETWEEN
+            let lower = self.parse_primary()?;
+            self.consume(Token::And)?; // BETWEEN requires AND
+            let upper = self.parse_primary()?;
+
+            return Ok(SqlExpression::Between {
+                expr: Box::new(left),
+                lower: Box::new(lower),
+                upper: Box::new(upper),
+            });
+        }
+
         // Handle comparison operators
         if let Some(op) = self.get_binary_op() {
             self.advance();
@@ -974,7 +993,7 @@ pub fn format_ast_tree(query: &str) -> String {
     let mut parser = Parser::new(query);
     match parser.parse() {
         Ok(stmt) => format_select_statement(&stmt, 0),
-        Err(e) => format!("Parse error: {}", e),
+        Err(e) => format!("❌ PARSE ERROR ❌\n{}\n\n⚠️  The query could not be parsed correctly.\n💡 Check parentheses, operators, and syntax.", e),
     }
 }
 
@@ -1149,6 +1168,14 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
                 "NotInList({} NOT IN [{}])",
                 format_expression_ast(expr),
                 list_str
+            )
+        }
+        SqlExpression::Between { expr, lower, upper } => {
+            format!(
+                "Between({} BETWEEN {} AND {})",
+                format_expression_ast(expr),
+                format_expression_ast(lower),
+                format_expression_ast(upper)
             )
         }
     }
@@ -1706,6 +1733,14 @@ fn format_expression(expr: &SqlExpression) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{} NOT IN ({})", format_expression(expr), values_str)
+        }
+        SqlExpression::Between { expr, lower, upper } => {
+            format!(
+                "{} BETWEEN {} AND {}",
+                format_expression(expr),
+                format_expression(lower),
+                format_expression(upper)
+            )
         }
     }
 }
@@ -2662,5 +2697,103 @@ mod tests {
         let where_lines: Vec<_> = formatted.iter().skip(4).collect();
         assert!(where_lines.iter().any(|l| l.contains("(symbol")));
         assert!(where_lines.iter().any(|l| l.trim() == "AND"));
+    }
+
+    #[test]
+    fn test_between_simple() {
+        let mut parser = Parser::new("SELECT * FROM table WHERE price BETWEEN 50 AND 100");
+        let stmt = parser.parse().expect("Should parse simple BETWEEN");
+
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        assert_eq!(where_clause.conditions.len(), 1);
+
+        // Verify AST formatting
+        let ast = format_ast_tree("SELECT * FROM table WHERE price BETWEEN 50 AND 100");
+        assert!(!ast.contains("PARSE ERROR"));
+        assert!(ast.contains("SelectStatement"));
+    }
+
+    #[test]
+    fn test_between_in_parentheses() {
+        let mut parser = Parser::new("SELECT * FROM table WHERE (price BETWEEN 50 AND 100)");
+        let stmt = parser.parse().expect("Should parse BETWEEN in parentheses");
+
+        assert!(stmt.where_clause.is_some());
+
+        // This was the failing case before the fix
+        let ast = format_ast_tree("SELECT * FROM table WHERE (price BETWEEN 50 AND 100)");
+        assert!(!ast.contains("PARSE ERROR"), "Should not have parse error");
+    }
+
+    #[test]
+    fn test_between_with_or() {
+        let query = "SELECT * FROM test WHERE (Price BETWEEN 50 AND 100) OR (quantity > 5)";
+        let mut parser = Parser::new(query);
+        let stmt = parser.parse().expect("Should parse BETWEEN with OR");
+
+        assert!(stmt.where_clause.is_some());
+        // The parser should successfully parse the query with BETWEEN and OR
+        // That's the main test - it doesn't fail with "Expected RightParen, found Between"
+    }
+
+    #[test]
+    fn test_between_with_and() {
+        let query = "SELECT * FROM table WHERE category = 'Books' AND price BETWEEN 10 AND 50";
+        let mut parser = Parser::new(query);
+        let stmt = parser.parse().expect("Should parse BETWEEN with AND");
+
+        assert!(stmt.where_clause.is_some());
+        let where_clause = stmt.where_clause.unwrap();
+        assert_eq!(where_clause.conditions.len(), 2); // Two conditions joined by AND
+    }
+
+    #[test]
+    fn test_multiple_between() {
+        let query =
+            "SELECT * FROM table WHERE (price BETWEEN 10 AND 50) AND (quantity BETWEEN 5 AND 20)";
+        let mut parser = Parser::new(query);
+        let stmt = parser
+            .parse()
+            .expect("Should parse multiple BETWEEN clauses");
+
+        assert!(stmt.where_clause.is_some());
+    }
+
+    #[test]
+    fn test_between_complex_query() {
+        // The actual user query that was failing
+        let query = "SELECT * FROM test_sorting WHERE (Price BETWEEN 50 AND 100) OR (Product.Length() > 5) ORDER BY Category ASC, price DESC";
+        let mut parser = Parser::new(query);
+        let stmt = parser
+            .parse()
+            .expect("Should parse complex query with BETWEEN, method calls, and ORDER BY");
+
+        assert!(stmt.where_clause.is_some());
+        assert!(stmt.order_by.is_some());
+
+        let order_by = stmt.order_by.unwrap();
+        assert_eq!(order_by.len(), 2);
+        assert_eq!(order_by[0].column, "Category");
+        assert!(matches!(order_by[0].direction, SortDirection::Asc));
+        assert_eq!(order_by[1].column, "price");
+        assert!(matches!(order_by[1].direction, SortDirection::Desc));
+    }
+
+    #[test]
+    fn test_between_formatting() {
+        let expr = SqlExpression::Between {
+            expr: Box::new(SqlExpression::Column("price".to_string())),
+            lower: Box::new(SqlExpression::NumberLiteral("50".to_string())),
+            upper: Box::new(SqlExpression::NumberLiteral("100".to_string())),
+        };
+
+        let formatted = format_expression(&expr);
+        assert_eq!(formatted, "price BETWEEN 50 AND 100");
+
+        let ast_formatted = format_expression_ast(&expr);
+        assert!(ast_formatted.contains("Between"));
+        assert!(ast_formatted.contains("50"));
+        assert!(ast_formatted.contains("100"));
     }
 }

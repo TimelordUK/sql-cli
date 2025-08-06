@@ -3743,17 +3743,26 @@ impl EnhancedTuiApp {
 
         let debug_text = Text::from(visible_lines);
 
+        // Check if there's a parse error
+        let has_parse_error = self.debug_text.contains("❌ PARSE ERROR ❌");
+        let (border_color, title_prefix) = if has_parse_error {
+            (Color::Red, "⚠️  Parser Debug Info [PARSE ERROR] ")
+        } else {
+            (Color::Yellow, "Parser Debug Info ")
+        };
+
         let debug_paragraph = Paragraph::new(debug_text)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .title(format!(
-                        "Parser Debug Info - Lines {}-{} of {} (↑↓ to scroll, Enter/Esc to close)",
+                        "{}- Lines {}-{} of {} (↑↓ to scroll, Enter/Esc to close)",
+                        title_prefix,
                         start + 1,
                         end,
                         total_lines
                     ))
-                    .border_style(Style::default().fg(Color::Yellow)),
+                    .border_style(Style::default().fg(border_color)),
             )
             .style(Style::default().fg(Color::White))
             .wrap(Wrap { trim: false });
