@@ -2347,7 +2347,7 @@ impl EnhancedTuiApp {
                 "Fuzzy"
             };
             self.status_message = format!(
-                "{} filter: {} matches for '{}'",
+                "{} filter: {} matches for '{}' (highlighted in magenta)",
                 filter_type, match_count, pattern
             );
             // Reset table state for new filtered view
@@ -4210,6 +4210,30 @@ impl EnhancedTuiApp {
                         }
                     }
 
+                    // Highlight fuzzy/exact filter matches
+                    if self.fuzzy_filter_state.active && !self.fuzzy_filter_state.pattern.is_empty()
+                    {
+                        let pattern = &self.fuzzy_filter_state.pattern;
+                        let cell_matches = if pattern.starts_with('\'') && pattern.len() > 1 {
+                            // Exact match highlighting
+                            let exact_pattern = &pattern[1..];
+                            cell.to_lowercase().contains(&exact_pattern.to_lowercase())
+                        } else {
+                            // Fuzzy match highlighting - check if this cell contributes to the fuzzy match
+                            if let Some(score) =
+                                self.fuzzy_filter_state.matcher.fuzzy_match(cell, pattern)
+                            {
+                                score > 0
+                            } else {
+                                false
+                            }
+                        };
+
+                        if cell_matches {
+                            style = style.fg(Color::Magenta).add_modifier(Modifier::BOLD);
+                        }
+                    }
+
                     Cell::from(cell.as_str()).style(style)
                 }));
 
@@ -4391,6 +4415,7 @@ impl EnhancedTuiApp {
             Line::from("  Shift+F  - Filter rows (regex)"),
             Line::from("  f        - Fuzzy filter rows"),
             Line::from("  'text    - Exact match filter"),
+            Line::from("             (matches highlighted)"),
             Line::from("  s        - Sort by column"),
             Line::from("  S        - 📊 Column statistics"),
             Line::from("  1-9      - Sort by column #"),
