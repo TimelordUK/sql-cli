@@ -1255,7 +1255,13 @@ impl EnhancedTuiApp {
             let new_query = format!("{}{}{}", before_partial, suggestion_to_use, after_cursor);
 
             // Update input and cursor position
-            let cursor_pos = before_partial.len() + suggestion_to_use.len();
+            // Special case: if we completed a string method like Contains(''), position cursor inside quotes
+            let cursor_pos = if suggestion_to_use.ends_with("('')") {
+                // Position cursor between the quotes
+                before_partial.len() + suggestion_to_use.len() - 2
+            } else {
+                before_partial.len() + suggestion_to_use.len()
+            };
             self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos);
 
             // Update completion state for next tab press
@@ -1279,7 +1285,13 @@ impl EnhancedTuiApp {
             let after_cursor = &query[cursor_pos..];
             let new_query = format!("{}{}{}", before_cursor, suggestion, after_cursor);
 
-            let cursor_pos_new = cursor_pos + suggestion.len();
+            // Special case: if we completed a string method like Contains(''), position cursor inside quotes
+            let cursor_pos_new = if suggestion.ends_with("('')") {
+                // Position cursor between the quotes
+                cursor_pos + suggestion.len() - 2
+            } else {
+                cursor_pos + suggestion.len()
+            };
             self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos_new);
 
             // Update completion state
@@ -1359,7 +1371,12 @@ impl EnhancedTuiApp {
             self.textarea.insert_str(&new_line);
 
             // Move cursor to after the completion
-            let new_col = line_before.len() + suggestion_to_use.len();
+            // Special case: if we completed a string method like Contains(''), position cursor inside quotes
+            let new_col = if suggestion_to_use.ends_with("('')") {
+                line_before.len() + suggestion_to_use.len() - 2
+            } else {
+                line_before.len() + suggestion_to_use.len()
+            };
             for _ in 0..new_col {
                 self.textarea.move_cursor(CursorMove::Forward);
             }
@@ -1385,10 +1402,20 @@ impl EnhancedTuiApp {
             // Just insert the suggestion at cursor position
             self.textarea.insert_str(suggestion);
 
+            // Special case: if we inserted a string method like Contains(''), move cursor back inside quotes
+            if suggestion.ends_with("('')") {
+                self.textarea.move_cursor(CursorMove::Back);
+                self.textarea.move_cursor(CursorMove::Back);
+            }
+
             // Update completion state
             let new_query = self.textarea.lines().join("\n");
             self.completion_state.last_query = new_query;
-            self.completion_state.last_cursor_pos = cursor_pos + suggestion.len();
+            self.completion_state.last_cursor_pos = if suggestion.ends_with("('')") {
+                cursor_pos + suggestion.len() - 2
+            } else {
+                cursor_pos + suggestion.len()
+            };
 
             self.status_message = format!("Inserted: {}", suggestion);
         }
