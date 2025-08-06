@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# Pre-commit hook to check Rust formatting
+
+echo "Running rustfmt check..."
+
+# Change to the sql-cli directory
+cd sql-cli || exit 1
+
+# Check if cargo fmt would make changes
+if ! cargo fmt -- --check > /dev/null 2>&1; then
+    echo "❌ Rust code is not properly formatted!"
+    echo ""
+    echo "Please run 'cargo fmt' before committing:"
+    echo "  cd sql-cli && cargo fmt"
+    echo ""
+    echo "Or to automatically format and continue:"
+    echo "  cargo fmt && git add -u && git commit"
+    echo ""
+    exit 1
+fi
+
+echo "✅ Rust formatting check passed"
+
+# Run tests (optional - comment out if too slow)
+# echo "Running tests..."
+# if ! cargo test --quiet > /dev/null 2>&1; then
+#     echo "❌ Some tests are failing!"
+#     echo "Run 'cargo test' to see details"
+#     exit 1
+# fi
+# echo "✅ All tests passed"
+
+exit 0

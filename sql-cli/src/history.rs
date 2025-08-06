@@ -10,17 +10,17 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryMetadata {
     #[serde(default)]
-    pub tables: Vec<String>,           // Tables referenced (FROM clause)
+    pub tables: Vec<String>, // Tables referenced (FROM clause)
     #[serde(default)]
-    pub select_columns: Vec<String>,   // Columns in SELECT clause
+    pub select_columns: Vec<String>, // Columns in SELECT clause
     #[serde(default)]
-    pub where_columns: Vec<String>,    // Columns in WHERE clause
+    pub where_columns: Vec<String>, // Columns in WHERE clause
     #[serde(default)]
     pub order_by_columns: Vec<String>, // Columns in ORDER BY clause
     #[serde(default)]
-    pub functions_used: Vec<String>,   // Functions/methods used (Contains, StartsWith, etc.)
+    pub functions_used: Vec<String>, // Functions/methods used (Contains, StartsWith, etc.)
     #[serde(default)]
-    pub query_type: String,            // SELECT, INSERT, UPDATE, DELETE, etc.
+    pub query_type: String, // SELECT, INSERT, UPDATE, DELETE, etc.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,9 +31,9 @@ pub struct HistoryEntry {
     pub success: bool,
     pub duration_ms: Option<u64>,
     #[serde(default)]
-    pub schema_columns: Vec<String>,  // Column names from the data source
+    pub schema_columns: Vec<String>, // Column names from the data source
     #[serde(default)]
-    pub data_source: Option<String>,  // e.g., "customers.csv", "trades_api", etc.
+    pub data_source: Option<String>, // e.g., "customers.csv", "trades_api", etc.
     #[serde(default)]
     pub metadata: Option<QueryMetadata>, // Parsed query metadata
 }
@@ -144,11 +144,8 @@ impl CommandHistory {
                 .rev()
                 .take(100)
                 .map(|entry| {
-                    let schema_score = self.calculate_schema_match_score(
-                        entry,
-                        current_columns,
-                        current_source,
-                    );
+                    let schema_score =
+                        self.calculate_schema_match_score(entry, current_columns, current_source);
                     HistoryMatch {
                         entry: entry.clone(),
                         score: 100 + schema_score,
@@ -156,7 +153,7 @@ impl CommandHistory {
                     }
                 })
                 .collect();
-            
+
             entries.sort_by(|a, b| b.score.cmp(&a.score));
             entries.truncate(50);
             return entries;
@@ -167,11 +164,8 @@ impl CommandHistory {
             .iter()
             .filter_map(|entry| {
                 if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, query) {
-                    let schema_score = self.calculate_schema_match_score(
-                        entry,
-                        current_columns,
-                        current_source,
-                    );
+                    let schema_score =
+                        self.calculate_schema_match_score(entry, current_columns, current_source);
                     Some(HistoryMatch {
                         entry: entry.clone(),
                         score: score + schema_score,
@@ -227,7 +221,7 @@ impl CommandHistory {
                 .iter()
                 .filter(|col| current_columns.contains(col))
                 .count();
-            
+
             let total_columns = entry.schema_columns.len().max(current_columns.len());
             if total_columns > 0 {
                 // Scale bonus based on percentage of matching columns
@@ -238,16 +232,18 @@ impl CommandHistory {
 
         // Additional bonus for matching columns in query metadata
         if let Some(metadata) = &entry.metadata {
-            let metadata_columns: Vec<&String> = metadata.select_columns.iter()
+            let metadata_columns: Vec<&String> = metadata
+                .select_columns
+                .iter()
                 .chain(metadata.where_columns.iter())
                 .chain(metadata.order_by_columns.iter())
                 .collect();
-            
+
             let matching_metadata = metadata_columns
                 .iter()
                 .filter(|col| current_columns.contains(col))
                 .count();
-            
+
             if matching_metadata > 0 {
                 score += (matching_metadata as i64) * 5; // 5 points per matching column
             }
@@ -258,7 +254,7 @@ impl CommandHistory {
 
     fn extract_query_metadata(&self, query: &str) -> Option<QueryMetadata> {
         let query_upper = query.to_uppercase();
-        
+
         // Determine query type
         let query_type = if query_upper.starts_with("SELECT") {
             "SELECT"
@@ -270,7 +266,8 @@ impl CommandHistory {
             "DELETE"
         } else {
             "OTHER"
-        }.to_string();
+        }
+        .to_string();
 
         // Extract table names (simple regex-based approach)
         let mut tables = Vec::new();
@@ -294,7 +291,8 @@ impl CommandHistory {
                     if !select_clause.trim().eq("*") {
                         // Parse column names (simplified)
                         for col in select_clause.split(',') {
-                            let col_name = col.trim()
+                            let col_name = col
+                                .trim()
                                 .split_whitespace()
                                 .next()
                                 .unwrap_or("")
@@ -314,28 +312,37 @@ impl CommandHistory {
         let mut functions_used = Vec::new();
         if let Some(where_idx) = query_upper.find(" WHERE ") {
             let after_where = &query[where_idx + 7..];
-            
+
             // Look for LINQ methods
-            let linq_methods = ["Contains", "StartsWith", "EndsWith", "Length", 
-                                "ToUpper", "ToLower", "IsNullOrEmpty"];
+            let linq_methods = [
+                "Contains",
+                "StartsWith",
+                "EndsWith",
+                "Length",
+                "ToUpper",
+                "ToLower",
+                "IsNullOrEmpty",
+            ];
             for method in &linq_methods {
                 if after_where.contains(method) {
                     functions_used.push(method.to_string());
                 }
             }
-            
+
             // Extract column names before operators or methods
             // This is simplified - a proper parser would be better
-            let words: Vec<&str> = after_where.split(|c: char| !c.is_alphanumeric() && c != '_')
+            let words: Vec<&str> = after_where
+                .split(|c: char| !c.is_alphanumeric() && c != '_')
                 .filter(|s| !s.is_empty())
                 .collect();
-            
+
             for (i, word) in words.iter().enumerate() {
                 // If next word is an operator or method, this might be a column
                 if i + 1 < words.len() {
                     let next = words[i + 1];
-                    if linq_methods.contains(&next) || 
-                       ["IS", "NOT", "LIKE", "BETWEEN"].contains(&next.to_uppercase().as_str()) {
+                    if linq_methods.contains(&next)
+                        || ["IS", "NOT", "LIKE", "BETWEEN"].contains(&next.to_uppercase().as_str())
+                    {
                         where_columns.push(word.to_string());
                     }
                 }
@@ -346,18 +353,23 @@ impl CommandHistory {
         let mut order_by_columns = Vec::new();
         if let Some(order_idx) = query_upper.find(" ORDER BY ") {
             let after_order = &query[order_idx + 10..];
-            let end_idx = after_order.find(|c: char| c == ';' || c == ')')
+            let end_idx = after_order
+                .find(|c: char| c == ';' || c == ')')
                 .unwrap_or(after_order.len());
             let order_clause = &after_order[..end_idx];
-            
+
             for col in order_clause.split(',') {
-                let col_name = col.trim()
+                let col_name = col
+                    .trim()
                     .split_whitespace()
                     .next()
                     .unwrap_or("")
                     .trim_matches('"')
                     .to_string();
-                if !col_name.is_empty() && col_name.to_uppercase() != "ASC" && col_name.to_uppercase() != "DESC" {
+                if !col_name.is_empty()
+                    && col_name.to_uppercase() != "ASC"
+                    && col_name.to_uppercase() != "DESC"
+                {
                     order_by_columns.push(col_name);
                 }
             }

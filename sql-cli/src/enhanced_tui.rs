@@ -1362,7 +1362,6 @@ impl EnhancedTuiApp {
     fn next_row(&mut self) {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
-
             // Update viewport size before navigation
             self.update_viewport_size();
 
@@ -1462,7 +1461,6 @@ impl EnhancedTuiApp {
     fn page_down(&mut self) {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
-
             let visible_rows = self.last_visible_rows;
             let current = self.table_state.selected().unwrap_or(0);
             let new_position = (current + visible_rows).min(total_rows - 1);
@@ -1877,7 +1875,7 @@ impl EnhancedTuiApp {
                     // For large datasets, sample rows instead of checking all
                     const MAX_ROWS_TO_CHECK: usize = 100;
                     let total_rows = results.data.len();
-                    
+
                     // Determine which rows to sample
                     let rows_to_check: Vec<usize> = if total_rows <= MAX_ROWS_TO_CHECK {
                         // Check all rows for small datasets

@@ -122,7 +122,7 @@ impl SqlHighlighter {
 
         let operators = ["=", "!=", "<>", "<", ">", "<=", ">=", "+", "-", "*", "/"];
         let string_delimiters = ["'", "\""];
-        
+
         // Rainbow colors for nested parentheses
         let paren_colors = [
             Color::Yellow,

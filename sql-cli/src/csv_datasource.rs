@@ -173,13 +173,13 @@ impl CsvDataSource {
                     if let Some(order_pos) = sql_lower.find(" order by ") {
                         let order_start = order_pos + 10; // Skip " order by "
                         let order_clause = sql[order_start..].trim();
-                        
+
                         // Parse ORDER BY columns (simple comma-separated list)
                         let order_columns: Vec<String> = order_clause
                             .split(',')
                             .map(|s| s.trim().to_string())
                             .collect();
-                        
+
                         if !order_columns.is_empty() {
                             results = self.sort_results(results, &order_columns)?;
                         }

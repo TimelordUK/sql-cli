@@ -343,7 +343,7 @@ pub struct SelectStatement {
 pub struct Parser {
     lexer: Lexer,
     current_token: Token,
-    in_method_args: bool,  // Track if we're parsing method arguments
+    in_method_args: bool, // Track if we're parsing method arguments
 }
 
 impl Parser {
@@ -570,7 +570,7 @@ impl Parser {
 
         Ok(left)
     }
-    
+
     fn parse_comparison(&mut self) -> Result<SqlExpression, String> {
         let mut left = self.parse_primary()?;
 
@@ -613,7 +613,7 @@ impl Parser {
 
     fn parse_logical_or(&mut self) -> Result<SqlExpression, String> {
         let mut left = self.parse_logical_and()?;
-        
+
         while matches!(self.current_token, Token::Or) {
             self.advance();
             let right = self.parse_logical_and()?;
@@ -626,13 +626,13 @@ impl Parser {
                 right: Box::new(right),
             };
         }
-        
+
         Ok(left)
     }
-    
+
     fn parse_logical_and(&mut self) -> Result<SqlExpression, String> {
         let mut left = self.parse_expression()?;
-        
+
         while matches!(self.current_token, Token::And) {
             self.advance();
             let right = self.parse_expression()?;
@@ -643,7 +643,7 @@ impl Parser {
                 right: Box::new(right),
             };
         }
-        
+
         Ok(left)
     }
 
@@ -764,11 +764,11 @@ impl Parser {
             }
             Token::LeftParen => {
                 self.advance();
-                
+
                 // Parse a parenthesized expression which might contain logical operators
                 // We need to handle cases like (a OR b) as a single expression
                 let expr = self.parse_logical_or()?;
-                
+
                 self.consume(Token::RightParen)?;
                 Ok(expr)
             }
@@ -898,9 +898,9 @@ pub fn format_ast_tree(query: &str) -> String {
 fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
     let mut result = String::new();
     let indent_str = "  ".repeat(indent);
-    
+
     result.push_str(&format!("{}SelectStatement {{\n", indent_str));
-    
+
     // Format columns
     result.push_str(&format!("{}  columns: [", indent_str));
     if !stmt.columns.is_empty() {
@@ -912,19 +912,19 @@ fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
     } else {
         result.push_str("],\n");
     }
-    
+
     // Format from table
     if let Some(table) = &stmt.from_table {
         result.push_str(&format!("{}  from_table: \"{}\",\n", indent_str, table));
     }
-    
+
     // Format where clause
     if let Some(where_clause) = &stmt.where_clause {
         result.push_str(&format!("{}  where_clause: {{\n", indent_str));
         result.push_str(&format_where_clause(where_clause, indent + 2));
         result.push_str(&format!("{}  }},\n", indent_str));
     }
-    
+
     // Format order by
     if let Some(order_by) = &stmt.order_by {
         result.push_str(&format!("{}  order_by: [", indent_str));
@@ -938,7 +938,7 @@ fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
             result.push_str("],\n");
         }
     }
-    
+
     // Format group by
     if let Some(group_by) = &stmt.group_by {
         result.push_str(&format!("{}  group_by: [", indent_str));
@@ -952,7 +952,7 @@ fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
             result.push_str("],\n");
         }
     }
-    
+
     result.push_str(&format!("{}}}", indent_str));
     result
 }
@@ -960,24 +960,31 @@ fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
 fn format_where_clause(clause: &WhereClause, indent: usize) -> String {
     let mut result = String::new();
     let indent_str = "  ".repeat(indent);
-    
+
     result.push_str(&format!("{}conditions: [\n", indent_str));
-    
+
     for condition in &clause.conditions {
         result.push_str(&format!("{}  {{\n", indent_str));
-        result.push_str(&format!("{}    expr: {},\n", indent_str, format_expression_ast(&condition.expr)));
-        
+        result.push_str(&format!(
+            "{}    expr: {},\n",
+            indent_str,
+            format_expression_ast(&condition.expr)
+        ));
+
         if let Some(connector) = &condition.connector {
             let connector_str = match connector {
                 LogicalOp::And => "AND",
                 LogicalOp::Or => "OR",
             };
-            result.push_str(&format!("{}    connector: {},\n", indent_str, connector_str));
+            result.push_str(&format!(
+                "{}    connector: {},\n",
+                indent_str, connector_str
+            ));
         }
-        
+
         result.push_str(&format!("{}  }},\n", indent_str));
     }
-    
+
     result.push_str(&format!("{}]\n", indent_str));
     result
 }
@@ -987,39 +994,76 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
         SqlExpression::Column(name) => format!("Column(\"{}\")", name),
         SqlExpression::StringLiteral(value) => format!("StringLiteral(\"{}\")", value),
         SqlExpression::NumberLiteral(value) => format!("NumberLiteral({})", value),
-        SqlExpression::DateTimeConstructor { year, month, day, hour, minute, second } => {
-            format!("DateTime({}-{:02}-{:02} {:02}:{:02}:{:02})", 
-                   year, month, day, 
-                   hour.unwrap_or(0), minute.unwrap_or(0), second.unwrap_or(0))
-        },
-        SqlExpression::DateTimeToday { hour, minute, second } => {
-            format!("DateTimeToday({:02}:{:02}:{:02})", 
-                   hour.unwrap_or(0), minute.unwrap_or(0), second.unwrap_or(0))
-        },
-        SqlExpression::MethodCall { object, method, args } => {
-            let args_str = args.iter()
+        SqlExpression::DateTimeConstructor {
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+        } => {
+            format!(
+                "DateTime({}-{:02}-{:02} {:02}:{:02}:{:02})",
+                year,
+                month,
+                day,
+                hour.unwrap_or(0),
+                minute.unwrap_or(0),
+                second.unwrap_or(0)
+            )
+        }
+        SqlExpression::DateTimeToday {
+            hour,
+            minute,
+            second,
+        } => {
+            format!(
+                "DateTimeToday({:02}:{:02}:{:02})",
+                hour.unwrap_or(0),
+                minute.unwrap_or(0),
+                second.unwrap_or(0)
+            )
+        }
+        SqlExpression::MethodCall {
+            object,
+            method,
+            args,
+        } => {
+            let args_str = args
+                .iter()
                 .map(|a| format_expression_ast(a))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("MethodCall({}.{}({}))", object, method, args_str)
-        },
+        }
         SqlExpression::BinaryOp { left, op, right } => {
-            format!("BinaryOp({} {} {})", format_expression_ast(left), op, format_expression_ast(right))
-        },
+            format!(
+                "BinaryOp({} {} {})",
+                format_expression_ast(left),
+                op,
+                format_expression_ast(right)
+            )
+        }
         SqlExpression::InList { expr, values } => {
-            let list_str = values.iter()
+            let list_str = values
+                .iter()
                 .map(|e| format_expression_ast(e))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("InList({} IN [{}])", format_expression_ast(expr), list_str)
-        },
+        }
         SqlExpression::NotInList { expr, values } => {
-            let list_str = values.iter()
+            let list_str = values
+                .iter()
                 .map(|e| format_expression_ast(e))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("NotInList({} NOT IN [{}])", format_expression_ast(expr), list_str)
-        },
+            format!(
+                "NotInList({} NOT IN [{}])",
+                format_expression_ast(expr),
+                list_str
+            )
+        }
     }
 }
 
@@ -1084,26 +1128,29 @@ pub fn datetime_to_iso_string(expr: &SqlExpression) -> Option<String> {
 }
 
 // Format SQL with preserved parentheses using token positions
-fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result<Vec<String>, String> {
+fn format_sql_with_preserved_parens(
+    query: &str,
+    cols_per_line: usize,
+) -> Result<Vec<String>, String> {
     let mut lines = Vec::new();
     let mut lexer = Lexer::new(query);
     let tokens_with_pos = lexer.tokenize_all_with_positions();
-    
+
     if tokens_with_pos.is_empty() {
         return Err("No tokens found".to_string());
     }
-    
+
     let mut i = 0;
     let cols_per_line = cols_per_line.max(1);
-    
+
     while i < tokens_with_pos.len() {
         let (start, _end, ref token) = tokens_with_pos[i];
-        
+
         match token {
             Token::Select => {
                 lines.push("SELECT".to_string());
                 i += 1;
-                
+
                 // Collect columns until FROM
                 let mut columns = Vec::new();
                 let mut col_start = i;
@@ -1135,7 +1182,7 @@ fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result
                     );
                     columns.push(col_text);
                 }
-                
+
                 // Format columns with proper indentation
                 for chunk in columns.chunks(cols_per_line) {
                     let mut line = "    ".to_string();
@@ -1146,7 +1193,8 @@ fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result
                         line.push_str(col.trim());
                     }
                     // Add comma if not last chunk
-                    let is_last_chunk = chunk.as_ptr() as usize + chunk.len() * std::mem::size_of::<String>()
+                    let is_last_chunk = chunk.as_ptr() as usize
+                        + chunk.len() * std::mem::size_of::<String>()
                         >= columns.last().map(|c| c as *const _ as usize).unwrap_or(0);
                     if !is_last_chunk && columns.len() > cols_per_line {
                         line.push(',');
@@ -1178,14 +1226,14 @@ fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result
             Token::Where => {
                 lines.push("WHERE".to_string());
                 i += 1;
-                
+
                 // Extract entire WHERE clause preserving parentheses
                 let where_start = if i < tokens_with_pos.len() {
                     tokens_with_pos[i].0
                 } else {
                     start
                 };
-                
+
                 // Find end of WHERE clause
                 let mut where_end = query.len();
                 while i < tokens_with_pos.len() {
@@ -1199,10 +1247,10 @@ fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result
                         _ => i += 1,
                     }
                 }
-                
+
                 // Extract and format WHERE clause text, preserving parentheses
                 let where_text = extract_text_between_positions(query, where_start, where_end);
-                
+
                 // Split by AND/OR at the top level (not inside parentheses)
                 let formatted_where = format_where_clause_with_parens(&where_text);
                 for line in formatted_where {
@@ -1216,7 +1264,7 @@ fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result
                 } else {
                     start
                 };
-                
+
                 // Find end of ORDER BY
                 while i < tokens_with_pos.len() {
                     match &tokens_with_pos[i].2 {
@@ -1224,7 +1272,7 @@ fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result
                         _ => i += 1,
                     }
                 }
-                
+
                 if i > 0 {
                     let order_text = extract_text_between_positions(
                         query,
@@ -1241,7 +1289,7 @@ fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result
                 } else {
                     start
                 };
-                
+
                 // Find end of GROUP BY
                 while i < tokens_with_pos.len() {
                     match &tokens_with_pos[i].2 {
@@ -1249,7 +1297,7 @@ fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result
                         _ => i += 1,
                     }
                 }
-                
+
                 if i > 0 {
                     let group_text = extract_text_between_positions(
                         query,
@@ -1262,7 +1310,7 @@ fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Result
             _ => i += 1,
         }
     }
-    
+
     Ok(lines)
 }
 
@@ -1281,7 +1329,7 @@ fn format_where_clause_with_parens(where_text: &str) -> Vec<String> {
     let mut paren_depth = 0;
     let mut i = 0;
     let chars: Vec<char> = where_text.chars().collect();
-    
+
     while i < chars.len() {
         // Check for AND/OR at top level
         if paren_depth == 0 {
@@ -1311,7 +1359,7 @@ fn format_where_clause_with_parens(where_text: &str) -> Vec<String> {
                 }
             }
         }
-        
+
         // Track parentheses depth
         match chars[i] {
             '(' => {
@@ -1326,17 +1374,17 @@ fn format_where_clause_with_parens(where_text: &str) -> Vec<String> {
         }
         i += 1;
     }
-    
+
     // Add remaining line
     if !current_line.trim().is_empty() {
         lines.push(current_line.trim().to_string());
     }
-    
+
     // If no AND/OR found, return the whole text as one line
     if lines.is_empty() {
         lines.push(where_text.trim().to_string());
     }
-    
+
     lines
 }
 
@@ -1345,7 +1393,7 @@ pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<Strin
     if let Ok(lines) = format_sql_with_preserved_parens(query, cols_per_line) {
         return lines;
     }
-    
+
     // Fall back to the old implementation for backward compatibility
     let mut lines = Vec::new();
     let mut parser = Parser::new(query);
@@ -1859,7 +1907,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
 
 fn extract_partial_at_end(query: &str) -> Option<String> {
     let trimmed = query.trim();
-    
+
     // First check if the last word itself starts with a quote (unclosed quoted identifier being typed)
     if let Some(last_word) = trimmed.split_whitespace().last() {
         if last_word.starts_with('"') && !last_word.ends_with('"') {
@@ -1867,7 +1915,7 @@ fn extract_partial_at_end(query: &str) -> Option<String> {
             return Some(last_word.to_string());
         }
     }
-    
+
     // Regular identifier extraction
     let last_word = trimmed.split_whitespace().last()?;
 
@@ -2032,7 +2080,7 @@ mod tests {
     #[test]
     fn test_tokenizer_quoted_identifier() {
         let mut lexer = Lexer::new(r#"SELECT "Customer Id", "First Name" FROM customers"#);
-        
+
         assert!(matches!(lexer.next_token(), Token::Select));
         assert!(matches!(lexer.next_token(), Token::QuotedIdentifier(s) if s == "Customer Id"));
         assert!(matches!(lexer.next_token(), Token::Comma));
@@ -2045,7 +2093,7 @@ mod tests {
     fn test_tokenizer_quoted_vs_string_literal() {
         // Double quotes should be QuotedIdentifier, single quotes should be StringLiteral
         let mut lexer = Lexer::new(r#"WHERE "Customer Id" = 'John' AND Country.Contains('USA')"#);
-        
+
         assert!(matches!(lexer.next_token(), Token::Where));
         assert!(matches!(lexer.next_token(), Token::QuotedIdentifier(s) if s == "Customer Id"));
         assert!(matches!(lexer.next_token(), Token::Equal));
@@ -2064,19 +2112,19 @@ mod tests {
         // This is the bug: double quotes in method args should be treated as strings
         // Currently fails because "Alb" becomes QuotedIdentifier
         let mut lexer = Lexer::new(r#"Country.Contains("Alb")"#);
-        
+
         assert!(matches!(lexer.next_token(), Token::Identifier(s) if s == "Country"));
         assert!(matches!(lexer.next_token(), Token::Dot));
         assert!(matches!(lexer.next_token(), Token::Identifier(s) if s == "Contains"));
         assert!(matches!(lexer.next_token(), Token::LeftParen));
-        
+
         // This test currently fails - "Alb" is tokenized as QuotedIdentifier
         // but it should be StringLiteral in this context
         let token = lexer.next_token();
         println!("Token for \"Alb\": {:?}", token);
         // TODO: Fix this - should be StringLiteral, not QuotedIdentifier
         // assert!(matches!(token, Token::StringLiteral(s) if s == "Alb"));
-        
+
         assert!(matches!(lexer.next_token(), Token::RightParen));
     }
 
@@ -2084,7 +2132,7 @@ mod tests {
     fn test_parse_select_with_quoted_columns() {
         let mut parser = Parser::new(r#"SELECT "Customer Id", Company FROM customers"#);
         let stmt = parser.parse().unwrap();
-        
+
         assert_eq!(stmt.columns, vec!["Customer Id", "Company"]);
         assert_eq!(stmt.from_table, Some("customers".to_string()));
     }
@@ -2094,7 +2142,7 @@ mod tests {
         // Testing autocompletion when user types: SELECT "Cust
         let query = r#"SELECT "Cust"#;
         let (context, partial) = detect_cursor_context(query, query.len() - 1); // cursor before closing quote
-        
+
         println!("Context: {:?}, Partial: {:?}", context, partial);
         assert!(matches!(context, CursorContext::SelectClause));
         // Should extract "Cust as partial
@@ -2103,10 +2151,10 @@ mod tests {
 
     #[test]
     fn test_cursor_context_select_after_comma_with_quoted() {
-        // User has typed: SELECT Company, "Customer 
+        // User has typed: SELECT Company, "Customer
         let query = r#"SELECT Company, "Customer "#;
         let (context, partial) = detect_cursor_context(query, query.len());
-        
+
         println!("Context: {:?}, Partial: {:?}", context, partial);
         assert!(matches!(context, CursorContext::SelectClause));
         // Should suggest "Customer Id" and other quoted columns
@@ -2116,7 +2164,7 @@ mod tests {
     fn test_cursor_context_order_by_quoted() {
         let query = r#"SELECT * FROM customers ORDER BY "Cust"#;
         let (context, partial) = detect_cursor_context(query, query.len() - 1);
-        
+
         println!("Context: {:?}, Partial: {:?}", context, partial);
         assert!(matches!(context, CursorContext::OrderByClause));
         // Should extract partial for quoted identifier
@@ -2126,11 +2174,11 @@ mod tests {
     fn test_where_clause_with_quoted_column() {
         let mut parser = Parser::new(r#"SELECT * FROM customers WHERE "Customer Id" = 'C123'"#);
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
         assert_eq!(where_clause.conditions.len(), 1);
-        
+
         if let SqlExpression::BinaryOp { left, op, right } = &where_clause.conditions[0].expr {
             assert_eq!(op, "=");
             assert!(matches!(left.as_ref(), SqlExpression::Column(col) if col == "Customer Id"));
@@ -2145,12 +2193,17 @@ mod tests {
         // Now that we have context awareness, double quotes in method args should be treated as strings
         let mut parser = Parser::new(r#"SELECT * FROM customers WHERE Country.Contains("USA")"#);
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
         assert_eq!(where_clause.conditions.len(), 1);
-        
-        if let SqlExpression::MethodCall { object, method, args } = &where_clause.conditions[0].expr {
+
+        if let SqlExpression::MethodCall {
+            object,
+            method,
+            args,
+        } = &where_clause.conditions[0].expr
+        {
             assert_eq!(object, "Country");
             assert_eq!(method, "Contains");
             assert_eq!(args.len(), 1);
@@ -2166,10 +2219,13 @@ mod tests {
         // Test that extract_partial_at_end doesn't get confused by quoted columns earlier in query
         let query = r#"SELECT City,Company,Country,"Customer Id" FROM customers ORDER BY coun"#;
         let (context, partial) = detect_cursor_context(query, query.len());
-        
+
         assert!(matches!(context, CursorContext::OrderByClause));
-        assert_eq!(partial, Some("coun".to_string()), 
-            "Should extract 'coun' as partial, not everything after the quoted column");
+        assert_eq!(
+            partial,
+            Some("coun".to_string()),
+            "Should extract 'coun' as partial, not everything after the quoted column"
+        );
     }
 
     #[test]
@@ -2178,7 +2234,7 @@ mod tests {
         let query = r#"SELECT "Cust"#;
         let partial = extract_partial_at_end(query);
         assert_eq!(partial, Some("\"Cust".to_string()));
-        
+
         // But completed quoted identifiers shouldn't be extracted
         let query2 = r#"SELECT "Customer Id" FROM"#;
         let partial2 = extract_partial_at_end(query2);
@@ -2189,13 +2245,14 @@ mod tests {
     #[test]
     fn test_complex_where_parentheses_basic() {
         // Basic parenthesized OR condition
-        let mut parser = Parser::new(r#"SELECT * FROM trades WHERE (status = "active" OR status = "pending")"#);
+        let mut parser =
+            Parser::new(r#"SELECT * FROM trades WHERE (status = "active" OR status = "pending")"#);
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
         assert_eq!(where_clause.conditions.len(), 1);
-        
+
         // Verify the structure is a BinaryOp with OR
         if let SqlExpression::BinaryOp { op, .. } = &where_clause.conditions[0].expr {
             assert_eq!(op, "OR");
@@ -2208,24 +2265,27 @@ mod tests {
     fn test_complex_where_mixed_and_or_with_parens() {
         // (condition1 OR condition2) AND condition3
         let mut parser = Parser::new(
-            r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND price > 100"#
+            r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND price > 100"#,
         );
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
         assert_eq!(where_clause.conditions.len(), 2);
-        
+
         // First condition should be the parenthesized OR expression
         if let SqlExpression::BinaryOp { op, .. } = &where_clause.conditions[0].expr {
             assert_eq!(op, "OR");
         } else {
             panic!("Expected first condition to be OR expression");
         }
-        
+
         // Should have AND connector to next condition
-        assert!(matches!(where_clause.conditions[0].connector, Some(LogicalOp::And)));
-        
+        assert!(matches!(
+            where_clause.conditions[0].connector,
+            Some(LogicalOp::And)
+        ));
+
         // Second condition should be price > 100
         if let SqlExpression::BinaryOp { op, .. } = &where_clause.conditions[1].expr {
             assert_eq!(op, ">");
@@ -2238,13 +2298,13 @@ mod tests {
     fn test_complex_where_nested_parentheses() {
         // ((condition1 OR condition2) AND condition3) OR condition4
         let mut parser = Parser::new(
-            r#"SELECT * FROM trades WHERE ((symbol = "AAPL" OR symbol = "GOOGL") AND price > 100) OR status = "cancelled""#
+            r#"SELECT * FROM trades WHERE ((symbol = "AAPL" OR symbol = "GOOGL") AND price > 100) OR status = "cancelled""#,
         );
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
-        
+
         // Should parse successfully with nested structure
         assert!(where_clause.conditions.len() > 0);
     }
@@ -2253,30 +2313,33 @@ mod tests {
     fn test_complex_where_multiple_or_groups() {
         // (group1) AND (group2) - common pattern for filtering trades
         let mut parser = Parser::new(
-            r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL" OR symbol = "MSFT") AND (price > 100 AND price < 500)"#
+            r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL" OR symbol = "MSFT") AND (price > 100 AND price < 500)"#,
         );
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
         assert_eq!(where_clause.conditions.len(), 2);
-        
+
         // First condition group should have OR
-        assert!(matches!(where_clause.conditions[0].connector, Some(LogicalOp::And)));
+        assert!(matches!(
+            where_clause.conditions[0].connector,
+            Some(LogicalOp::And)
+        ));
     }
 
     #[test]
     fn test_complex_where_with_methods_in_parens() {
         // Using string methods inside parentheses
         let mut parser = Parser::new(
-            r#"SELECT * FROM trades WHERE (symbol.StartsWith("A") OR symbol.StartsWith("G")) AND volume > 1000000"#
+            r#"SELECT * FROM trades WHERE (symbol.StartsWith("A") OR symbol.StartsWith("G")) AND volume > 1000000"#,
         );
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
         assert_eq!(where_clause.conditions.len(), 2);
-        
+
         // First condition should be the OR of two method calls
         if let SqlExpression::BinaryOp { op, left, right } = &where_clause.conditions[0].expr {
             assert_eq!(op, "OR");
@@ -2291,29 +2354,32 @@ mod tests {
     fn test_complex_where_date_comparisons_with_parens() {
         // Date range queries common in trade analysis
         let mut parser = Parser::new(
-            r#"SELECT * FROM trades WHERE (executionDate > DateTime(2024, 1, 1) AND executionDate < DateTime(2024, 12, 31)) AND (status = "filled" OR status = "partial")"#
+            r#"SELECT * FROM trades WHERE (executionDate > DateTime(2024, 1, 1) AND executionDate < DateTime(2024, 12, 31)) AND (status = "filled" OR status = "partial")"#,
         );
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
         assert_eq!(where_clause.conditions.len(), 2);
-        
+
         // Both condition groups should parse correctly
-        assert!(matches!(where_clause.conditions[0].connector, Some(LogicalOp::And)));
+        assert!(matches!(
+            where_clause.conditions[0].connector,
+            Some(LogicalOp::And)
+        ));
     }
 
     #[test]
     fn test_complex_where_price_volume_filters() {
         // Complex trade filtering by price and volume
         let mut parser = Parser::new(
-            r#"SELECT * FROM trades WHERE ((price > 100 AND price < 200) OR (price > 500 AND price < 1000)) AND volume > 10000"#
+            r#"SELECT * FROM trades WHERE ((price > 100 AND price < 200) OR (price > 500 AND price < 1000)) AND volume > 10000"#,
         );
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
-        
+
         // Should handle nested price ranges with OR
         assert!(where_clause.conditions.len() > 0);
     }
@@ -2322,10 +2388,10 @@ mod tests {
     fn test_complex_where_mixed_string_numeric() {
         // Mix of string comparisons and numeric comparisons in groups
         let mut parser = Parser::new(
-            r#"SELECT * FROM trades WHERE (exchange = "NYSE" OR exchange = "NASDAQ") AND (volume > 1000000 OR notes.Contains("urgent"))"#
+            r#"SELECT * FROM trades WHERE (exchange = "NYSE" OR exchange = "NASDAQ") AND (volume > 1000000 OR notes.Contains("urgent"))"#,
         );
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         // Should parse without errors
     }
@@ -2334,10 +2400,10 @@ mod tests {
     fn test_complex_where_triple_nested() {
         // Very complex nesting - ((a OR b) AND (c OR d)) OR (e AND f)
         let mut parser = Parser::new(
-            r#"SELECT * FROM trades WHERE ((symbol = "AAPL" OR symbol = "GOOGL") AND (price > 100 OR volume > 1000000)) OR (status = "cancelled" AND reason.Contains("timeout"))"#
+            r#"SELECT * FROM trades WHERE ((symbol = "AAPL" OR symbol = "GOOGL") AND (price > 100 OR volume > 1000000)) OR (status = "cancelled" AND reason.Contains("timeout"))"#,
         );
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         // Should handle triple nesting correctly
     }
@@ -2346,13 +2412,13 @@ mod tests {
     fn test_complex_where_single_parens_around_and() {
         // Parentheses around AND conditions
         let mut parser = Parser::new(
-            r#"SELECT * FROM trades WHERE (symbol = "AAPL" AND price > 150 AND volume > 100000)"#
+            r#"SELECT * FROM trades WHERE (symbol = "AAPL" AND price > 150 AND volume > 100000)"#,
         );
         let stmt = parser.parse().unwrap();
-        
+
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
-        
+
         // Should correctly parse the AND chain inside parentheses
         assert!(where_clause.conditions.len() > 0);
     }
@@ -2363,30 +2429,40 @@ mod tests {
         let query = r#"SELECT * FROM trades WHERE (status = "active" OR status = "pending")"#;
         let formatted = format_sql_pretty_compact(query, 5);
         let formatted_text = formatted.join(" ");
-        
+
         // Check parentheses are preserved
         assert!(formatted_text.contains("(status"));
         assert!(formatted_text.contains("\"pending\")"));
-        
+
         // Count parentheses
         let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
-        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
-        assert_eq!(original_parens, formatted_parens, "Parentheses should be preserved");
+        let formatted_parens = formatted_text
+            .chars()
+            .filter(|c| *c == '(' || *c == ')')
+            .count();
+        assert_eq!(
+            original_parens, formatted_parens,
+            "Parentheses should be preserved"
+        );
     }
 
     #[test]
     fn test_format_preserves_complex_parentheses() {
-        let query = r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND price > 100"#;
+        let query =
+            r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND price > 100"#;
         let formatted = format_sql_pretty_compact(query, 5);
         let formatted_text = formatted.join(" ");
-        
+
         // Check the grouped OR condition is preserved
         assert!(formatted_text.contains("(symbol"));
         assert!(formatted_text.contains("\"GOOGL\")"));
-        
+
         // Verify parentheses count
         let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
-        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
+        let formatted_parens = formatted_text
+            .chars()
+            .filter(|c| *c == '(' || *c == ')')
+            .count();
         assert_eq!(original_parens, formatted_parens);
     }
 
@@ -2395,11 +2471,17 @@ mod tests {
         let query = r#"SELECT * FROM trades WHERE ((symbol = "AAPL" OR symbol = "GOOGL") AND price > 100) OR status = "cancelled""#;
         let formatted = format_sql_pretty_compact(query, 5);
         let formatted_text = formatted.join(" ");
-        
+
         // Count nested parentheses
         let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
-        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
-        assert_eq!(original_parens, formatted_parens, "Nested parentheses should be preserved");
+        let formatted_parens = formatted_text
+            .chars()
+            .filter(|c| *c == '(' || *c == ')')
+            .count();
+        assert_eq!(
+            original_parens, formatted_parens,
+            "Nested parentheses should be preserved"
+        );
         assert_eq!(original_parens, 4, "Should have 4 parentheses total");
     }
 
@@ -2408,17 +2490,23 @@ mod tests {
         let query = r#"SELECT * FROM trades WHERE (symbol.StartsWith("A") OR symbol.StartsWith("G")) AND volume > 1000000"#;
         let formatted = format_sql_pretty_compact(query, 5);
         let formatted_text = formatted.join(" ");
-        
+
         // Check method calls are preserved with their parentheses
         assert!(formatted_text.contains("(symbol.StartsWith"));
         assert!(formatted_text.contains("StartsWith(\"A\")"));
         assert!(formatted_text.contains("StartsWith(\"G\")"));
-        
+
         // Count all parentheses (including method calls)
         let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
-        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
+        let formatted_parens = formatted_text
+            .chars()
+            .filter(|c| *c == '(' || *c == ')')
+            .count();
         assert_eq!(original_parens, formatted_parens);
-        assert_eq!(original_parens, 6, "Should have 6 parentheses (1 group + 2 method calls)");
+        assert_eq!(
+            original_parens, 6,
+            "Should have 6 parentheses (1 group + 2 method calls)"
+        );
     }
 
     #[test]
@@ -2426,13 +2514,16 @@ mod tests {
         let query = r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND (price > 100 AND price < 500)"#;
         let formatted = format_sql_pretty_compact(query, 5);
         let formatted_text = formatted.join(" ");
-        
+
         // Both groups should be preserved
         assert!(formatted_text.contains("(symbol"));
         assert!(formatted_text.contains("(price"));
-        
+
         let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
-        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
+        let formatted_parens = formatted_text
+            .chars()
+            .filter(|c| *c == '(' || *c == ')')
+            .count();
         assert_eq!(original_parens, formatted_parens);
         assert_eq!(original_parens, 4, "Should have 4 parentheses (2 groups)");
     }
@@ -2442,30 +2533,34 @@ mod tests {
         let query = r#"SELECT * FROM trades WHERE (executionDate > DateTime(2024, 1, 1) AND executionDate < DateTime(2024, 12, 31))"#;
         let formatted = format_sql_pretty_compact(query, 5);
         let formatted_text = formatted.join(" ");
-        
+
         // Check DateTime functions and grouping are preserved
         assert!(formatted_text.contains("(executionDate"));
         assert!(formatted_text.contains("DateTime(2024, 1, 1)"));
         assert!(formatted_text.contains("DateTime(2024, 12, 31)"));
-        
+
         let original_parens = query.chars().filter(|c| *c == '(' || *c == ')').count();
-        let formatted_parens = formatted_text.chars().filter(|c| *c == '(' || *c == ')').count();
+        let formatted_parens = formatted_text
+            .chars()
+            .filter(|c| *c == '(' || *c == ')')
+            .count();
         assert_eq!(original_parens, formatted_parens);
     }
 
     #[test]
     fn test_format_multiline_layout() {
         // Test that formatted output has proper multi-line structure
-        let query = r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND price > 100"#;
+        let query =
+            r#"SELECT * FROM trades WHERE (symbol = "AAPL" OR symbol = "GOOGL") AND price > 100"#;
         let formatted = format_sql_pretty_compact(query, 5);
-        
+
         // Should have SELECT, FROM, WHERE, and condition lines
         assert!(formatted.len() >= 4, "Should have multiple lines");
         assert_eq!(formatted[0], "SELECT");
         assert!(formatted[1].trim().starts_with("*"));
         assert!(formatted[2].starts_with("FROM"));
         assert_eq!(formatted[3], "WHERE");
-        
+
         // WHERE conditions should be indented
         let where_lines: Vec<_> = formatted.iter().skip(4).collect();
         assert!(where_lines.iter().any(|l| l.contains("(symbol")));

@@ -58,12 +58,16 @@ impl CursorAwareParser {
                         // Check if this column is already selected (case-insensitive)
                         !selected_columns.iter().any(|selected| {
                             // Strip quotes from both for comparison if needed
-                            let col_clean = if col.starts_with('"') && col.ends_with('"') && col.len() > 2 {
-                                &col[1..col.len() - 1]
-                            } else {
-                                col
-                            };
-                            let selected_clean = if selected.starts_with('"') && selected.ends_with('"') && selected.len() > 2 {
+                            let col_clean =
+                                if col.starts_with('"') && col.ends_with('"') && col.len() > 2 {
+                                    &col[1..col.len() - 1]
+                                } else {
+                                    col
+                                };
+                            let selected_clean = if selected.starts_with('"')
+                                && selected.ends_with('"')
+                                && selected.len() > 2
+                            {
                                 &selected[1..selected.len() - 1]
                             } else {
                                 selected
@@ -208,9 +212,12 @@ impl CursorAwareParser {
                         let partial_without_quote = &partial[1..]; // Remove the opening quote
 
                         // Check if suggestion is a quoted identifier that matches
-                        if suggestion.starts_with('"') && suggestion.ends_with('"') && suggestion.len() > 2 {
+                        if suggestion.starts_with('"')
+                            && suggestion.ends_with('"')
+                            && suggestion.len() > 2
+                        {
                             // Full quoted identifier like "Customer Id"
-                            let suggestion_without_quotes = &suggestion[1..suggestion.len()-1];
+                            let suggestion_without_quotes = &suggestion[1..suggestion.len() - 1];
                             suggestion_without_quotes
                                 .to_lowercase()
                                 .starts_with(&partial_without_quote.to_lowercase())
@@ -229,7 +236,10 @@ impl CursorAwareParser {
                     } else {
                         // Normal non-quoted partial (e.g., "customer")
                         // Handle quoted column names - check if the suggestion starts with a quote
-                        let suggestion_to_check = if suggestion.starts_with('"') && suggestion.ends_with('"') && suggestion.len() > 2 {
+                        let suggestion_to_check = if suggestion.starts_with('"')
+                            && suggestion.ends_with('"')
+                            && suggestion.len() > 2
+                        {
                             // Remove both quotes for comparison (e.g., "Customer Id" -> "Customer Id")
                             &suggestion[1..suggestion.len() - 1]
                         } else if suggestion.starts_with('"') && suggestion.len() > 1 {
@@ -238,7 +248,7 @@ impl CursorAwareParser {
                         } else {
                             suggestion
                         };
-                        
+
                         // Now compare the cleaned suggestion with the partial
                         suggestion_to_check
                             .to_lowercase()
@@ -546,7 +556,7 @@ impl CursorAwareParser {
                                 trimmed
                             }
                         };
-                        
+
                         // Preserve the original case of the column name
                         selected_columns.push(col_name.to_string());
                     }
@@ -967,8 +977,8 @@ mod tests {
             "customers".to_string(),
             vec![
                 "Index".to_string(),
-                "Customer Id".to_string(),  // Store without quotes
-                "First Name".to_string(),   // Store without quotes
+                "Customer Id".to_string(), // Store without quotes
+                "First Name".to_string(),  // Store without quotes
                 "Company".to_string(),
             ],
         );
@@ -976,10 +986,13 @@ mod tests {
         // Test that "customer" partial matches "Customer Id"
         let query = "SELECT customer";
         let result = parser.get_completions(query, query.len());
-        
+
         // Should suggest "Customer Id" (quoted)
-        assert!(result.suggestions.iter().any(|s| s == "\"Customer Id\""),
-            "Should suggest quoted Customer Id for partial \"customer\". Got: {:?}", result.suggestions);
+        assert!(
+            result.suggestions.iter().any(|s| s == "\"Customer Id\""),
+            "Should suggest quoted Customer Id for partial \"customer\". Got: {:?}",
+            result.suggestions
+        );
     }
 
     #[test]
@@ -994,21 +1007,28 @@ mod tests {
         // Test that ORDER BY preserves case from SELECT
         let query = "SELECT Company, Country FROM customers ORDER BY Com";
         let result = parser.get_completions(query, query.len());
-        
+
         // Should suggest "Company" with proper case
-        assert!(result.suggestions.iter().any(|s| s == "Company"),
-            "Should preserve case in ORDER BY suggestions. Got: {:?}", result.suggestions);
+        assert!(
+            result.suggestions.iter().any(|s| s == "Company"),
+            "Should preserve case in ORDER BY suggestions. Got: {:?}",
+            result.suggestions
+        );
     }
 
     #[test]
     fn test_extract_selected_columns_preserves_case() {
         let parser = CursorAwareParser::new();
-        
+
         let query = "SELECT Company, Country FROM customers";
         let columns = parser.test_extract_selected_columns(query, query.len());
-        
+
         assert_eq!(columns, vec!["Company", "Country"]);
-        assert_ne!(columns, vec!["company", "country"], "Should preserve original case");
+        assert_ne!(
+            columns,
+            vec!["company", "country"],
+            "Should preserve original case"
+        );
     }
 
     #[test]
@@ -1027,13 +1047,19 @@ mod tests {
         // Already selected Company, should not suggest it again
         let query = "SELECT Company, ";
         let result = parser.get_completions(query, query.len());
-        
-        assert!(!result.suggestions.iter().any(|s| s == "Company"),
-            "Should not suggest already selected Company");
-        assert!(result.suggestions.iter().any(|s| s == "Country"),
-            "Should suggest Country");
-        assert!(result.suggestions.iter().any(|s| s == "\"Customer Id\""),
-            "Should suggest Customer Id");
+
+        assert!(
+            !result.suggestions.iter().any(|s| s == "Company"),
+            "Should not suggest already selected Company"
+        );
+        assert!(
+            result.suggestions.iter().any(|s| s == "Country"),
+            "Should suggest Country"
+        );
+        assert!(
+            result.suggestions.iter().any(|s| s == "\"Customer Id\""),
+            "Should suggest Customer Id"
+        );
     }
 
     #[test]
@@ -1053,16 +1079,22 @@ mod tests {
         // Test ORDER BY completion after query with quoted columns
         let query = r#"SELECT City,Company,Country,"Customer Id" FROM customers ORDER BY coun"#;
         let result = parser.get_completions(query, query.len());
-        
+
         // Should get the partial word right
-        assert_eq!(result.partial_word, Some("coun".to_string()),
-            "Should extract 'coun' as partial, not something weird");
-        
+        assert_eq!(
+            result.partial_word,
+            Some("coun".to_string()),
+            "Should extract 'coun' as partial, not something weird"
+        );
+
         // Should suggest Country
-        assert!(result.suggestions.iter().any(|s| s == "Country"),
-            "Should suggest Country for partial 'coun'. Got: {:?}", result.suggestions);
+        assert!(
+            result.suggestions.iter().any(|s| s == "Country"),
+            "Should suggest Country for partial 'coun'. Got: {:?}",
+            result.suggestions
+        );
     }
-    
+
     #[test]
     fn test_order_by_quoted_partial_completion() {
         let parser = CursorAwareParser::new();
@@ -1076,21 +1108,31 @@ mod tests {
                 "Customer Id".to_string(),
             ],
         );
-        
+
         // Test ORDER BY completion with partial quoted identifier
-        let query = r#"select City,Company,Country,"Customer Id" from customers order by City, "Customer"#;
+        let query =
+            r#"select City,Company,Country,"Customer Id" from customers order by City, "Customer"#;
         let result = parser.get_completions(query, query.len());
-        
+
         // The partial word should be "Customer
-        assert_eq!(result.partial_word, Some("\"Customer".to_string()),
-            "Should extract '\"Customer' as partial");
-        
+        assert_eq!(
+            result.partial_word,
+            Some("\"Customer".to_string()),
+            "Should extract '\"Customer' as partial"
+        );
+
         // Should suggest "Customer Id" with proper quotes
-        assert!(result.suggestions.iter().any(|s| s == "\"Customer Id\""),
-            "Should suggest properly quoted 'Customer Id' for partial '\"Customer'. Got: {:?}", result.suggestions);
-        
+        assert!(
+            result.suggestions.iter().any(|s| s == "\"Customer Id\""),
+            "Should suggest properly quoted 'Customer Id' for partial '\"Customer'. Got: {:?}",
+            result.suggestions
+        );
+
         // Should NOT have truncated suggestions like "Customer
-        assert!(!result.suggestions.iter().any(|s| s == "\"Customer"),
-            "Should not have truncated suggestion '\"Customer'. Got: {:?}", result.suggestions);
+        assert!(
+            !result.suggestions.iter().any(|s| s == "\"Customer"),
+            "Should not have truncated suggestion '\"Customer'. Got: {:?}",
+            result.suggestions
+        );
     }
 }
