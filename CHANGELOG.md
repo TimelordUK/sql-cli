@@ -5,44 +5,61 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🚀 Features
+- **Viewport Lock Mode** - Press Space to anchor scrolling position, data scrolls while cursor stays fixed
+- **Dynamic Column Sizing** - Columns automatically adjust width based on visible viewport data
+- **Compact Mode** - Press 'C' to reduce padding and fit more columns on screen
+- **Auto-Execute for Files** - CSV/JSON files show data immediately on load with pre-filled query
+- **Multi-Source Data Proxy** - Query SQL Server, APIs, and files seamlessly through unified interface
+- **Visual Source Indicators** - Shows data source with colored icons (📦 Cache, 📁 File, 🌐 API, 🗄️ SQL)
+- **Named Cache System** - Save queries with custom IDs like `:cache save trades_2024`
+- **Rainbow Parentheses** - Visual matching for nested SQL queries
+- **String.IsNullOrEmpty()** - LINQ-style null/empty checking in WHERE clauses
+- **Schema-Aware History** - Command history with intelligent suggestions based on query context
+
+### 🐛 Bug Fixes
+- Fixed GitHub Actions deprecation warnings by updating to v4
+- Fixed cache save to support named IDs
+- Fixed formatting issues in CI/CD pipeline
+
+### 📚 Documentation
+- Comprehensive README with keyboard shortcuts
+- Enhanced F1 help screen with all features
+- Added MULTI_SOURCE_PROXY.md documentation
+- Added tips section in help for feature discovery
+
+### 🔧 Infrastructure
+- Cross-platform CI/CD for Linux, Windows, macOS (x64 and ARM64)
+- Automated release workflow with version bumping
+- Pre-commit hooks for code formatting
+- GitHub Actions permissions properly configured
+
 ## [1.0.0] - 2024-01-06
 
-### Added
-- **LINQ String Functions**: Full support for string operations in WHERE clauses
-  - `Contains()` - Check if string contains substring
-  - `StartsWith()` - Check if string starts with prefix
-  - `EndsWith()` - Check if string ends with suffix
-  - `Length()` - Compare string length
-  - `ToUpper()/ToLower()` - Case-insensitive comparisons
-  - `IsNullOrEmpty()` - Check for null or empty strings
-- **Rainbow Parentheses**: Nested parentheses now display in different colors for better readability
-- **Schema-Aware History**: Command history now tracks and prioritizes based on:
-  - Data source (CSV file, API endpoint)
-  - Column names used in queries
-  - Query metadata (tables, functions, WHERE columns)
-- **Cross-Platform Support**: Full Windows, Linux, and macOS (Intel & ARM) support
-- **Enhanced Autocomplete**: Context-aware suggestions for columns and LINQ methods
-- **Virtual Table Rendering**: Efficient scrolling for large datasets
-- **Multi-Line Query Editor**: F3 key for complex query editing
-- **Comprehensive Test Suite**: Unit and integration tests for all features
+### Initial Release
+- Full SQL parser with LINQ support
+- Context-aware tab completion
+- Professional TUI interface with split-view design
+- Vim-like navigation and search
+- Command history with search (Ctrl+R)
+- CSV/JSON file support
+- REST API integration
+- Multi-line editor mode (F3)
+- Export to CSV (Ctrl+S)
+- Column sorting and filtering
+- Cache management system
 
-### Changed
-- Autocomplete now uses single quotes for string literals (SQL standard)
-- Improved performance for large CSV files (100k+ rows)
-- Better error messages with query context
+### Supported LINQ Methods
+- String.Contains()
+- String.StartsWith()
+- String.EndsWith()
+- String.IsNullOrEmpty()
+- Property name normalization
 
-### Fixed
-- Virtual viewport performance issues with large datasets
-- Quoted identifier handling in column names with spaces
-- Parser precedence for complex WHERE clauses
-- Memory efficiency when caching large result sets
-
-## [0.1.0] - 2023-12-01
-
-### Added
-- Initial release
-- Basic SQL SELECT support
-- CSV file parsing
-- WHERE clause filtering
-- ORDER BY sorting
-- Basic TUI interface
+### Platform Support
+- Linux x64
+- Windows x64
+- macOS x64 (Intel)
+- macOS ARM64 (Apple Silicon)

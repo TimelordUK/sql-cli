@@ -180,28 +180,102 @@ jobs:
         VERSION="${{ needs.prepare-release.outputs.new_version }}"
         echo "# SQL CLI v${VERSION}" > RELEASE_NOTES.md
         echo "" >> RELEASE_NOTES.md
-        echo "## What's Changed" >> RELEASE_NOTES.md
+        
+        # Add release date
+        echo "**Release Date:** $(date +'%B %d, %Y')" >> RELEASE_NOTES.md
         echo "" >> RELEASE_NOTES.md
         
         # Get commits since last tag
         LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        
+        # Generate categorized changelog
+        echo "## ✨ What's New" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        
+        # Features
         if [ -z "$LAST_TAG" ]; then
-          git log --pretty=format:"- %s" >> RELEASE_NOTES.md
+          FEAT_COMMITS=$(git log --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" || true)
         else
-          git log ${LAST_TAG}..HEAD --pretty=format:"- %s" >> RELEASE_NOTES.md
+          FEAT_COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" || true)
+        fi
+        
+        if [ ! -z "$FEAT_COMMITS" ]; then
+          echo "### 🚀 Features" >> RELEASE_NOTES.md
+          echo "$FEAT_COMMITS" | sed 's/^feat\(.*\): /- /' >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+        fi
+        
+        # Fixes
+        if [ -z "$LAST_TAG" ]; then
+          FIX_COMMITS=$(git log --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" || true)
+        else
+          FIX_COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" || true)
+        fi
+        
+        if [ ! -z "$FIX_COMMITS" ]; then
+          echo "### 🐛 Bug Fixes" >> RELEASE_NOTES.md
+          echo "$FIX_COMMITS" | sed 's/^fix\(.*\): /- /' >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+        fi
+        
+        # Documentation
+        if [ -z "$LAST_TAG" ]; then
+          DOCS_COMMITS=$(git log --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" || true)
+        else
+          DOCS_COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" || true)
+        fi
+        
+        if [ ! -z "$DOCS_COMMITS" ]; then
+          echo "### 📚 Documentation" >> RELEASE_NOTES.md
+          echo "$DOCS_COMMITS" | sed 's/^docs\(.*\): /- /' >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+        fi
+        
+        # All commits (detailed)
+        echo "## 📝 All Changes" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "<details>" >> RELEASE_NOTES.md
+        echo "<summary>Click to expand full commit list</summary>" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        
+        if [ -z "$LAST_TAG" ]; then
+          git log --pretty=format:"- %s (%an)" >> RELEASE_NOTES.md
+        else
+          git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%an)" >> RELEASE_NOTES.md
         fi
         
         echo "" >> RELEASE_NOTES.md
+        echo "</details>" >> RELEASE_NOTES.md
         echo "" >> RELEASE_NOTES.md
-        echo "## Installation" >> RELEASE_NOTES.md
+        
+        # Key highlights (manual - you can customize this)
+        echo "## 🎯 Highlights" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "- **Dynamic Column Sizing**: Columns automatically adjust width based on visible data" >> RELEASE_NOTES.md
+        echo "- **Compact Mode**: Press 'C' to reduce padding and fit more columns" >> RELEASE_NOTES.md
+        echo "- **Viewport Lock**: Press Space to anchor scrolling position" >> RELEASE_NOTES.md
+        echo "- **Auto-Execute**: CSV/JSON files show data immediately on load" >> RELEASE_NOTES.md
+        echo "- **Visual Source Indicators**: See where your data comes from (📦 📁 🌐 🗄️)" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        
+        echo "## 📦 Installation" >> RELEASE_NOTES.md
         echo "" >> RELEASE_NOTES.md
         echo "Download the appropriate binary for your platform from the assets below." >> RELEASE_NOTES.md
         echo "" >> RELEASE_NOTES.md
         echo "### Supported Platforms" >> RELEASE_NOTES.md
-        echo "- Linux x64: \`sql-cli-linux-x64.tar.gz\`" >> RELEASE_NOTES.md
-        echo "- Windows x64: \`sql-cli-windows-x64.zip\`" >> RELEASE_NOTES.md
-        echo "- macOS x64 (Intel): \`sql-cli-macos-x64.tar.gz\`" >> RELEASE_NOTES.md
-        echo "- macOS ARM64 (Apple Silicon): \`sql-cli-macos-arm64.tar.gz\`" >> RELEASE_NOTES.md
+        echo "- **Linux x64**: \`sql-cli-linux-x64.tar.gz\`" >> RELEASE_NOTES.md
+        echo "- **Windows x64**: \`sql-cli-windows-x64.zip\`" >> RELEASE_NOTES.md
+        echo "- **macOS x64** (Intel): \`sql-cli-macos-x64.tar.gz\`" >> RELEASE_NOTES.md
+        echo "- **macOS ARM64** (Apple Silicon): \`sql-cli-macos-arm64.tar.gz\`" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "### Quick Start" >> RELEASE_NOTES.md
+        echo "\`\`\`bash" >> RELEASE_NOTES.md
+        echo "# Load a CSV file with instant preview" >> RELEASE_NOTES.md
+        echo "sql-cli data/customers.csv" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "# Connect to API" >> RELEASE_NOTES.md
+        echo "sql-cli --url http://localhost:5000" >> RELEASE_NOTES.md
+        echo "\`\`\`" >> RELEASE_NOTES.md
     
     - name: Create Release
       uses: softprops/action-gh-release@v1
