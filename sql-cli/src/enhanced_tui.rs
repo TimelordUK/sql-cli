@@ -15,7 +15,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Text},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
     Frame, Terminal,
 };
@@ -133,6 +133,9 @@ pub struct EnhancedTuiApp {
     cache_mode: bool,
     cached_data: Option<Vec<serde_json::Value>>,
 
+    // Data source tracking
+    last_query_source: Option<String>,
+
     // Undo/redo and kill ring
     undo_stack: Vec<(String, usize)>, // (text, cursor_pos)
     redo_stack: Vec<(String, usize)>,
@@ -218,6 +221,7 @@ impl EnhancedTuiApp {
             query_cache: QueryCache::new().ok(),
             cache_mode: false,
             cached_data: None,
+            last_query_source: None,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             kill_ring: String::new(),
@@ -973,6 +977,9 @@ impl EnhancedTuiApp {
                         where_clause: r.query.where_clause,
                         order_by: r.query.order_by,
                     },
+                    source: Some("cache".to_string()),
+                    table: Some("cached_data".to_string()),
+                    cached: Some(true),
                 })
             } else {
                 Err(anyhow::anyhow!("No cached data loaded"))
@@ -988,6 +995,9 @@ impl EnhancedTuiApp {
                         where_clause: r.query.where_clause,
                         order_by: r.query.order_by,
                     },
+                    source: Some("file".to_string()),
+                    table: Some(self.csv_table_name.clone()),
+                    cached: Some(false),
                 })
             } else {
                 Err(anyhow::anyhow!("CSV client not initialized"))
@@ -1009,6 +1019,10 @@ impl EnhancedTuiApp {
 
                 // Add debug info about results
                 let row_count = response.data.len();
+
+                // Capture the source from the response
+                self.last_query_source = response.source.clone();
+
                 self.results = Some(response);
                 self.calculate_optimal_column_widths();
                 self.reset_table_state();
@@ -2917,11 +2931,100 @@ impl EnhancedTuiApp {
         } else {
             String::new()
         };
-        let status_text = format!(
-            "[{}] {}{}{} | F1:Help F7:Cache q:Quit",
+
+        // Build status line with colored source indicator
+        let mut spans = vec![Span::raw(format!(
+            "[{}] {}{}{}",
             mode_indicator, truncated_status, status_info, mode_info
-        );
-        let status = Paragraph::new(status_text)
+        ))];
+
+        // Add colored data source indicator
+        if let Some(ref source) = self.last_query_source {
+            match source.as_str() {
+                "cache" => {
+                    spans.push(Span::raw(" | "));
+                    spans.push(Span::raw("📦"));
+                    spans.push(Span::styled(
+                        " CACHE",
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
+                "file" | "FileDataSource" => {
+                    spans.push(Span::raw(" | "));
+                    spans.push(Span::raw("📁"));
+                    spans.push(Span::styled(
+                        " FILE",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
+                "SqlServerDataSource" => {
+                    spans.push(Span::raw(" | "));
+                    spans.push(Span::raw("🗄️"));
+                    spans.push(Span::styled(
+                        " SQL",
+                        Style::default()
+                            .fg(Color::Blue)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
+                "PublicApiDataSource" => {
+                    spans.push(Span::raw(" | "));
+                    spans.push(Span::raw("🌐"));
+                    spans.push(Span::styled(
+                        " API",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
+                _ => {
+                    spans.push(Span::raw(" | "));
+                    spans.push(Span::raw("🔄"));
+                    spans.push(Span::styled(
+                        format!(" {}", source),
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
+            }
+        } else if self.cache_mode {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::raw("📦"));
+            spans.push(Span::styled(
+                " CACHE",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else if self.csv_mode {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::raw("📁"));
+            spans.push(Span::styled(
+                " FILE",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::raw("🌐"));
+            spans.push(Span::styled(
+                " PROXY",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        spans.push(Span::raw(" | F1:Help F7:Cache q:Quit"));
+
+        let status_line = Line::from(spans);
+        let status = Paragraph::new(status_line)
             .block(Block::default().borders(Borders::ALL))
             .style(status_style);
         f.render_widget(status, chunks[2]);
@@ -3494,19 +3597,44 @@ impl EnhancedTuiApp {
 
         match parts[1] {
             "save" => {
-                // Save last query results to cache
+                // Save last query results to cache with optional custom ID
                 if let Some(ref results) = self.results {
                     if let Some(ref mut cache) = self.query_cache {
-                        let query = if parts.len() > 2 {
-                            parts[2..].join(" ")
+                        // Check if a custom ID is provided
+                        let (custom_id, query) = if parts.len() > 2 {
+                            // Check if the first word after "save" could be an ID (alphanumeric)
+                            let potential_id = parts[2];
+                            if potential_id
+                                .chars()
+                                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                                && !potential_id.starts_with("SELECT")
+                                && !potential_id.starts_with("select")
+                            {
+                                // First word is likely an ID
+                                let id = Some(potential_id.to_string());
+                                let query = if parts.len() > 3 {
+                                    parts[3..].join(" ")
+                                } else if let Some(last_entry) =
+                                    self.command_history.get_last_entry()
+                                {
+                                    last_entry.command.clone()
+                                } else {
+                                    self.status_message = "No query to cache".to_string();
+                                    return Ok(());
+                                };
+                                (id, query)
+                            } else {
+                                // No ID provided, treat everything as the query
+                                (None, parts[2..].join(" "))
+                            }
                         } else if let Some(last_entry) = self.command_history.get_last_entry() {
-                            last_entry.command.clone()
+                            (None, last_entry.command.clone())
                         } else {
                             self.status_message = "No query to cache".to_string();
                             return Ok(());
                         };
 
-                        match cache.save_query(&query, &results.data, None) {
+                        match cache.save_query(&query, &results.data, custom_id) {
                             Ok(id) => {
                                 self.status_message = format!(
                                     "Query cached with ID: {} ({} rows)",

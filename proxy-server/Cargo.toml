@@ -1,0 +1,20 @@
+[package]
+name = "sql-proxy"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mssql", "postgres", "sqlite", "any"] }
+reqwest = { version = "0.11", features = ["json"] }
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+async-trait = "0.1"
+dotenv = "0.15"
+cached = "0.46"

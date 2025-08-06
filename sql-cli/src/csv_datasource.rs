@@ -376,6 +376,9 @@ impl CsvApiClient {
                     where_clause: None,
                     order_by: None,
                 },
+                source: Some("file".to_string()),
+                table: Some(ds.table_name.clone()),
+                cached: Some(false),
             })
         } else {
             Err(anyhow::anyhow!("No CSV file loaded"))

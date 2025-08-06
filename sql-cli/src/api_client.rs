@@ -17,6 +17,12 @@ pub struct QueryResponse {
     pub data: Vec<Value>,
     pub count: usize,
     pub query: QueryInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
