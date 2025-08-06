@@ -83,10 +83,6 @@ path = "test_paren_method_completion.rs"
 name = "test-column-pinning"
 path = "test_column_pinning.rs"
 
-[[bin]]
-name = "test-case-insensitive-in"
-path = "test_case_insensitive_in.rs"
-
 [dependencies]
 reedline = "0.30"
 crossterm = { version = "0.28", features = ["use-dev-tty"] }
