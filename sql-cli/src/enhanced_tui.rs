@@ -172,6 +172,22 @@ fn is_sql_delimiter(ch: char) -> bool {
 }
 
 impl EnhancedTuiApp {
+    fn sanitize_table_name(name: &str) -> String {
+        // Replace spaces and other problematic characters with underscores
+        // to create SQL-friendly table names
+        // Examples: "Business Crime Borough Level" -> "Business_Crime_Borough_Level"
+        name.trim()
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect()
+    }
+
     pub fn has_results(&self) -> bool {
         self.results.is_some()
     }
@@ -252,11 +268,14 @@ impl EnhancedTuiApp {
 
     pub fn new_with_csv(csv_path: &str) -> Result<Self> {
         let mut csv_client = CsvApiClient::new();
-        let table_name = std::path::Path::new(csv_path)
+        let raw_name = std::path::Path::new(csv_path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("data")
             .to_string();
+
+        // Sanitize the table name to be SQL-friendly
+        let table_name = Self::sanitize_table_name(&raw_name);
 
         csv_client.load_csv(csv_path, &table_name)?;
 
@@ -275,11 +294,21 @@ impl EnhancedTuiApp {
             // Update the parser with CSV columns
             app.hybrid_parser
                 .update_single_table(table_name.clone(), columns.clone());
-            app.status_message = format!(
-                "CSV loaded: table '{}' with {} columns",
-                table_name,
-                columns.len()
-            );
+            let display_msg = if raw_name != table_name {
+                format!(
+                    "CSV loaded: '{}' as table '{}' with {} columns",
+                    raw_name,
+                    table_name,
+                    columns.len()
+                )
+            } else {
+                format!(
+                    "CSV loaded: table '{}' with {} columns",
+                    table_name,
+                    columns.len()
+                )
+            };
+            app.status_message = display_msg;
         }
 
         // Auto-execute SELECT * FROM table_name to show data immediately
@@ -303,11 +332,14 @@ impl EnhancedTuiApp {
 
     pub fn new_with_json(json_path: &str) -> Result<Self> {
         let mut csv_client = CsvApiClient::new();
-        let table_name = std::path::Path::new(json_path)
+        let raw_name = std::path::Path::new(json_path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("data")
             .to_string();
+
+        // Sanitize the table name to be SQL-friendly
+        let table_name = Self::sanitize_table_name(&raw_name);
 
         csv_client.load_json(json_path, &table_name)?;
 
@@ -325,11 +357,21 @@ impl EnhancedTuiApp {
         if let Some(columns) = schema.get(&table_name) {
             app.hybrid_parser
                 .update_single_table(table_name.clone(), columns.clone());
-            app.status_message = format!(
-                "JSON loaded: table '{}' with {} columns",
-                table_name,
-                columns.len()
-            );
+            let display_msg = if raw_name != table_name {
+                format!(
+                    "JSON loaded: '{}' as table '{}' with {} columns",
+                    raw_name,
+                    table_name,
+                    columns.len()
+                )
+            } else {
+                format!(
+                    "JSON loaded: table '{}' with {} columns",
+                    table_name,
+                    columns.len()
+                )
+            };
+            app.status_message = display_msg;
         }
 
         // Auto-execute SELECT * FROM table_name to show data immediately
