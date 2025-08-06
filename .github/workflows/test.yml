@@ -11,7 +11,10 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     
     steps:
     - uses: actions/checkout@v4
@@ -26,26 +29,20 @@ jobs:
     - name: Cache cargo registry
       uses: actions/cache@v3
       with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-registry-
-    
-    - name: Cache cargo index
-      uses: actions/cache@v3
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-git-
+          ${{ runner.os }}-${{ matrix.os }}-cargo-
     
     - name: Cache cargo build
       uses: actions/cache@v3
       with:
         path: sql-cli/target
-        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-${{ matrix.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-build-
+          ${{ runner.os }}-${{ matrix.os }}-cargo-build-
     
     - name: Build
       working-directory: ./sql-cli
@@ -59,14 +56,6 @@ jobs:
       working-directory: ./sql-cli
       run: cargo clippy -- -W warnings
     
-    - name: Format code
+    - name: Check formatting
       working-directory: ./sql-cli
-      run: cargo fmt
-    
-    - name: Commit formatting changes
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add -A
-        git diff --staged --quiet || git commit -m "Auto-format code with rustfmt"
-      continue-on-error: true
+      run: cargo fmt -- --check

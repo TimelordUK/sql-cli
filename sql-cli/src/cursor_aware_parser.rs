@@ -135,7 +135,7 @@ impl CursorAwareParser {
                     }
                     "string" => {
                         // For strings, suggest string literals
-                        vec!["\"\"".to_string()]
+                        vec!["''".to_string()]
                     }
                     "numeric" => {
                         // For numbers, no specific suggestions
@@ -716,15 +716,16 @@ impl CursorAwareParser {
             "string" => {
                 // Common Dynamic LINQ string methods
                 let string_methods = vec![
-                    "Contains(\"\")",
-                    "StartsWith(\"\")",
-                    "EndsWith(\"\")",
-                    "IndexOf(\"\")",
+                    "Contains('')",
+                    "StartsWith('')",
+                    "EndsWith('')",
+                    "IndexOf('')",
                     "Substring(0, 5)",
                     "ToLower()",
                     "ToUpper()",
+                    "IsNullOrEmpty()",
                     "Trim()",
-                    "Replace(\"\", \"\")",
+                    "Replace('', '')",
                     "Length",
                 ];
 
@@ -814,8 +815,8 @@ mod tests {
         let result = parser.get_completions(query, query.len());
         println!("Context for method call: {}", result.context);
         println!("Suggestions: {:?}", result.suggestions);
-        assert!(result.suggestions.contains(&"Contains(\"\")".to_string()));
-        assert!(result.suggestions.contains(&"StartsWith(\"\")".to_string()));
+        assert!(result.suggestions.contains(&"Contains('')".to_string()));
+        assert!(result.suggestions.contains(&"StartsWith('')".to_string()));
         assert!(result.context.contains("MethodCall") || result.context.contains("AfterColumn"));
     }
 
@@ -953,8 +954,8 @@ mod tests {
         assert!(result.context.contains("(partial: Some(\"Con\"))"));
 
         // Should suggest methods starting with "Con"
-        assert!(result.suggestions.contains(&"Contains(\"\")".to_string()));
-        assert!(!result.suggestions.contains(&"StartsWith(\"\")".to_string())); // Doesn't start with "Con"
+        assert!(result.suggestions.contains(&"Contains('')".to_string()));
+        assert!(!result.suggestions.contains(&"StartsWith('')".to_string())); // Doesn't start with "Con"
     }
 
     #[test]

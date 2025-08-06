@@ -113,6 +113,7 @@ impl SqlHighlighter {
             "Length",
             "ToUpper",
             "ToLower",
+            "IsNullOrEmpty",
             "Trim",
             "Substring",
             "IndexOf",
@@ -121,11 +122,22 @@ impl SqlHighlighter {
 
         let operators = ["=", "!=", "<>", "<", ">", "<=", ">=", "+", "-", "*", "/"];
         let string_delimiters = ["'", "\""];
+        
+        // Rainbow colors for nested parentheses
+        let paren_colors = [
+            Color::Yellow,
+            Color::Cyan,
+            Color::Magenta,
+            Color::Green,
+            Color::Blue,
+            Color::Red,
+        ];
 
         let mut spans = Vec::new();
         let mut current_word = String::new();
         let mut in_string = false;
         let mut string_delimiter = '\0';
+        let mut paren_depth = 0;
 
         let chars: Vec<char> = text.chars().collect();
         let mut i = 0;
@@ -222,10 +234,21 @@ impl SqlHighlighter {
                         ch.to_string(),
                         Style::default().fg(Color::Cyan),
                     ));
-                } else if ch == '(' || ch == ')' {
+                } else if ch == '(' {
+                    let color = paren_colors[paren_depth % paren_colors.len()];
                     spans.push(Span::styled(
                         ch.to_string(),
-                        Style::default().fg(Color::Yellow),
+                        Style::default().fg(color).add_modifier(Modifier::BOLD),
+                    ));
+                    paren_depth += 1;
+                } else if ch == ')' {
+                    if paren_depth > 0 {
+                        paren_depth -= 1;
+                    }
+                    let color = paren_colors[paren_depth % paren_colors.len()];
+                    spans.push(Span::styled(
+                        ch.to_string(),
+                        Style::default().fg(color).add_modifier(Modifier::BOLD),
                     ));
                 } else {
                     spans.push(Span::raw(ch.to_string()));

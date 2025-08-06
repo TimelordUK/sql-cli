@@ -30,6 +30,7 @@ pub enum WhereExpr {
     EndsWith(String, String),
     ToLower(String, ComparisonOp, String), // column.ToLower() == "value"
     ToUpper(String, ComparisonOp, String), // column.ToUpper() == "VALUE"
+    IsNullOrEmpty(String),                  // String.IsNullOrEmpty(column)
 
     // Numeric methods
     Length(String, ComparisonOp, i64),
@@ -138,6 +139,9 @@ pub fn format_where_ast(expr: &WhereExpr, indent: usize) -> String {
         }
         WhereExpr::Length(col, op, value) => {
             format!("{}LENGTH({}, {:?}, {})", indent_str, col, op, value)
+        }
+        WhereExpr::IsNullOrEmpty(col) => {
+            format!("{}IS_NULL_OR_EMPTY({})", indent_str, col)
         }
     }
 }
@@ -385,5 +389,132 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                 Ok(false)
             }
         }
+
+        WhereExpr::IsNullOrEmpty(column) => {
+            if let Some(field_value) = row.get(column) {
+                if field_value.is_null() {
+                    Ok(true)
+                } else if let Some(s) = field_value.as_str() {
+                    Ok(s.is_empty())
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(true) // Missing field is considered null/empty
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_is_null_or_empty_with_null() {
+        let row = json!({
+            "name": null,
+            "age": 25
+        });
+
+        // Test that null values return true
+        let expr = WhereExpr::IsNullOrEmpty("name".to_string());
+        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), true);
+    }
+
+    #[test]
+    fn test_is_null_or_empty_with_empty_string() {
+        let row = json!({
+            "name": "",
+            "age": 25
+        });
+
+        // Test that empty strings return true
+        let expr = WhereExpr::IsNullOrEmpty("name".to_string());
+        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), true);
+    }
+
+    #[test]
+    fn test_is_null_or_empty_with_non_empty_string() {
+        let row = json!({
+            "name": "John",
+            "age": 25
+        });
+
+        // Test that non-empty strings return false
+        let expr = WhereExpr::IsNullOrEmpty("name".to_string());
+        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), false);
+    }
+
+    #[test]
+    fn test_is_null_or_empty_with_missing_field() {
+        let row = json!({
+            "age": 25
+        });
+
+        // Test that missing fields are considered null/empty
+        let expr = WhereExpr::IsNullOrEmpty("name".to_string());
+        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), true);
+    }
+
+    #[test]
+    fn test_is_null_or_empty_with_whitespace() {
+        let row = json!({
+            "name": "   ",
+            "description": " \t\n "
+        });
+
+        // Test that whitespace-only strings are NOT considered empty
+        // (following standard IsNullOrEmpty behavior)
+        let expr = WhereExpr::IsNullOrEmpty("name".to_string());
+        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), false);
+        
+        let expr2 = WhereExpr::IsNullOrEmpty("description".to_string());
+        assert_eq!(evaluate_where_expr(&expr2, &row).unwrap(), false);
+    }
+
+    #[test]
+    fn test_is_null_or_empty_with_number_field() {
+        let row = json!({
+            "count": 0,
+            "price": 100.5
+        });
+
+        // Test that numeric fields return false (not strings)
+        let expr = WhereExpr::IsNullOrEmpty("count".to_string());
+        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), false);
+        
+        let expr2 = WhereExpr::IsNullOrEmpty("price".to_string());
+        assert_eq!(evaluate_where_expr(&expr2, &row).unwrap(), false);
+    }
+
+    #[test]
+    fn test_is_null_or_empty_in_complex_expression() {
+        let row = json!({
+            "name": "",
+            "age": 25,
+            "city": "New York"
+        });
+
+        // Test: name.IsNullOrEmpty() AND age > 20
+        let expr = WhereExpr::And(
+            Box::new(WhereExpr::IsNullOrEmpty("name".to_string())),
+            Box::new(WhereExpr::GreaterThan("age".to_string(), WhereValue::Number(20.0)))
+        );
+        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), true);
+
+        // Test: name.IsNullOrEmpty() OR city = "Boston"
+        let expr2 = WhereExpr::Or(
+            Box::new(WhereExpr::IsNullOrEmpty("name".to_string())),
+            Box::new(WhereExpr::Equal("city".to_string(), WhereValue::String("Boston".to_string())))
+        );
+        assert_eq!(evaluate_where_expr(&expr2, &row).unwrap(), true); // true because name is empty
+
+        // Test: NOT name.IsNullOrEmpty()
+        let expr3 = WhereExpr::Not(
+            Box::new(WhereExpr::IsNullOrEmpty("name".to_string()))
+        );
+        assert_eq!(evaluate_where_expr(&expr3, &row).unwrap(), false);
     }
 }

@@ -238,6 +238,11 @@ impl WhereParser {
                     let value = self.parse_string_value()?;
                     Ok(WhereExpr::ToUpper(column, op, value))
                 }
+                "IsNullOrEmpty" => {
+                    self.expect_token(Token::LeftParen)?;
+                    self.expect_token(Token::RightParen)?;
+                    Ok(WhereExpr::IsNullOrEmpty(column))
+                }
                 _ => Err(anyhow!("Unknown method: {}", method)),
             }
         } else {
@@ -551,6 +556,51 @@ mod tests {
                 assert_eq!(val, "PENDING");
             }
             _ => panic!("Wrong expression type for ToUpper"),
+        }
+    }
+
+    #[test]
+    fn test_is_null_or_empty() {
+        // Test IsNullOrEmpty parsing
+        let expr = WhereParser::parse("name.IsNullOrEmpty()").unwrap();
+        match expr {
+            WhereExpr::IsNullOrEmpty(col) => {
+                assert_eq!(col, "name");
+            }
+            _ => panic!("Wrong expression type for IsNullOrEmpty"),
+        }
+
+        // Test with quoted identifier
+        let expr2 = WhereParser::parse("\"Customer Name\".IsNullOrEmpty()").unwrap();
+        match expr2 {
+            WhereExpr::IsNullOrEmpty(col) => {
+                assert_eq!(col, "Customer Name");
+            }
+            _ => panic!("Wrong expression type for IsNullOrEmpty with quoted identifier"),
+        }
+    }
+
+    #[test]
+    fn test_is_null_or_empty_in_complex_expression() {
+        // Test IsNullOrEmpty in AND expression
+        let expr = WhereParser::parse("name.IsNullOrEmpty() OR age > 18").unwrap();
+        match expr {
+            WhereExpr::Or(left, right) => {
+                match *left {
+                    WhereExpr::IsNullOrEmpty(col) => {
+                        assert_eq!(col, "name");
+                    }
+                    _ => panic!("Left side should be IsNullOrEmpty"),
+                }
+                match *right {
+                    WhereExpr::GreaterThan(col, val) => {
+                        assert_eq!(col, "age");
+                        assert_eq!(val, WhereValue::Number(18.0));
+                    }
+                    _ => panic!("Right side should be GreaterThan"),
+                }
+            }
+            _ => panic!("Should be an OR expression"),
         }
     }
 }
