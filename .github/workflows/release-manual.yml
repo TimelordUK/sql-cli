@@ -153,7 +153,7 @@ jobs:
         mv ${{ matrix.artifact }}.zip ../../../../
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact }}
         path: |
@@ -170,7 +170,7 @@ jobs:
         ref: 'v${{ needs.prepare-release.outputs.new_version }}'
     
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         path: artifacts
     
