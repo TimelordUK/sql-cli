@@ -406,6 +406,12 @@ impl EnhancedTuiApp {
             // Use blocking read for better performance - only process when there's an actual event
             match event::read()? {
                 Event::Key(key) => {
+                    // On Windows, filter out key release events - only handle key press
+                    // This prevents double-triggering of toggles
+                    if key.kind != crossterm::event::KeyEventKind::Press {
+                        continue;
+                    }
+
                     let should_exit = match self.mode {
                         AppMode::Command => self.handle_command_input(key)?,
                         AppMode::Results => self.handle_results_input(key)?,
