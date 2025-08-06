@@ -162,6 +162,10 @@ fn is_sql_delimiter(ch: char) -> bool {
 }
 
 impl EnhancedTuiApp {
+    pub fn has_results(&self) -> bool {
+        self.results.is_some()
+    }
+
     pub fn new(api_url: &str) -> Self {
         let mut textarea = TextArea::default();
         textarea.set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
@@ -255,10 +259,25 @@ impl EnhancedTuiApp {
             app.hybrid_parser
                 .update_single_table(table_name.clone(), columns.clone());
             app.status_message = format!(
-                "CSV loaded: table '{}' with {} columns. Use: SELECT * FROM {}",
+                "CSV loaded: table '{}' with {} columns",
                 table_name,
-                columns.len(),
-                table_name
+                columns.len()
+            );
+        }
+
+        // Auto-execute SELECT * FROM table_name to show data immediately
+        let auto_query = format!("SELECT * FROM {}", table_name);
+
+        // Populate the input field with the query for easy editing
+        app.input = tui_input::Input::new(auto_query.clone()).with_cursor(auto_query.len());
+
+        if let Err(e) = app.execute_query(&auto_query) {
+            // If auto-query fails, just log it in status but don't fail the load
+            app.status_message = format!(
+                "CSV loaded: table '{}' ({} columns) - Note: {}",
+                table_name,
+                schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
+                e
             );
         }
 
@@ -290,10 +309,25 @@ impl EnhancedTuiApp {
             app.hybrid_parser
                 .update_single_table(table_name.clone(), columns.clone());
             app.status_message = format!(
-                "JSON loaded: table '{}' with {} columns. Use: SELECT * FROM {}",
+                "JSON loaded: table '{}' with {} columns",
                 table_name,
-                columns.len(),
-                table_name
+                columns.len()
+            );
+        }
+
+        // Auto-execute SELECT * FROM table_name to show data immediately
+        let auto_query = format!("SELECT * FROM {}", table_name);
+
+        // Populate the input field with the query for easy editing
+        app.input = tui_input::Input::new(auto_query.clone()).with_cursor(auto_query.len());
+
+        if let Err(e) = app.execute_query(&auto_query) {
+            // If auto-query fails, just log it in status but don't fail the load
+            app.status_message = format!(
+                "JSON loaded: table '{}' ({} columns) - Note: {}",
+                table_name,
+                schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
+                e
             );
         }
 
