@@ -1,6 +1,6 @@
 use crate::api_client::{QueryInfo, QueryResponse};
 use crate::csv_fixes::{build_column_lookup, find_column_case_insensitive, parse_column_name};
-use crate::recursive_parser::Parser;
+use crate::recursive_parser::{OrderByColumn, Parser, SortDirection};
 use crate::where_ast::evaluate_where_expr;
 use crate::where_parser::WhereParser;
 use anyhow::Result;
@@ -174,10 +174,22 @@ impl CsvDataSource {
                         let order_start = order_pos + 10; // Skip " order by "
                         let order_clause = sql[order_start..].trim();
 
-                        // Parse ORDER BY columns (simple comma-separated list)
-                        let order_columns: Vec<String> = order_clause
+                        // Parse ORDER BY columns with ASC/DESC support
+                        let order_columns: Vec<OrderByColumn> = order_clause
                             .split(',')
-                            .map(|s| s.trim().to_string())
+                            .map(|s| {
+                                let parts: Vec<&str> = s.trim().split_whitespace().collect();
+                                let column = parts.get(0).unwrap_or(&"").to_string();
+                                let direction = if let Some(dir) = parts.get(1) {
+                                    match dir.to_uppercase().as_str() {
+                                        "DESC" => SortDirection::Desc,
+                                        _ => SortDirection::Asc,
+                                    }
+                                } else {
+                                    SortDirection::Asc
+                                };
+                                OrderByColumn { column, direction }
+                            })
                             .collect();
 
                         if !order_columns.is_empty() {
@@ -237,7 +249,7 @@ impl CsvDataSource {
     fn sort_results(
         &self,
         mut data: Vec<Value>,
-        order_by_columns: &[String],
+        order_by_columns: &[OrderByColumn],
     ) -> Result<Vec<Value>> {
         if order_by_columns.is_empty() {
             return Ok(data);
@@ -245,8 +257,8 @@ impl CsvDataSource {
 
         // Sort by multiple columns with proper type-aware comparison
         data.sort_by(|a, b| {
-            for column_name in order_by_columns {
-                let col_parsed = parse_column_name(column_name);
+            for order_col in order_by_columns {
+                let col_parsed = parse_column_name(&order_col.column);
 
                 let val_a = if let Some(obj_a) = a.as_object() {
                     find_column_case_insensitive(obj_a, col_parsed, &self.column_lookup)
@@ -315,9 +327,15 @@ impl CsvDataSource {
                     }
                 };
 
+                // Apply sort direction (ASC or DESC)
+                let final_cmp = match order_col.direction {
+                    SortDirection::Asc => cmp,
+                    SortDirection::Desc => cmp.reverse(),
+                };
+
                 // If this column comparison is not equal, return the result
-                if cmp != Ordering::Equal {
-                    return cmp;
+                if final_cmp != Ordering::Equal {
+                    return final_cmp;
                 }
 
                 // Otherwise, continue to the next column for tie-breaking

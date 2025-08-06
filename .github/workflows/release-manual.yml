@@ -137,14 +137,13 @@ jobs:
     
     - name: Build Release
       working-directory: ./sql-cli
-      run: |
-        # Add metadata to help with false positives
-        cargo build --release --target ${{ matrix.target }}
-        
-        # Strip debug symbols on Windows to reduce false positives
-        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          strip target/${{ matrix.target }}/release/sql-cli.exe || true
-        fi
+      run: cargo build --release --target ${{ matrix.target }}
+    
+    - name: Strip debug symbols (Windows)
+      if: matrix.os == 'windows-latest'
+      working-directory: ./sql-cli
+      shell: bash
+      run: strip target/${{ matrix.target }}/release/sql-cli.exe || true
     
     - name: Create archive (Unix)
       if: matrix.os != 'windows-latest'

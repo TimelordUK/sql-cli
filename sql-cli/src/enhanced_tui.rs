@@ -2348,6 +2348,8 @@ impl EnhancedTuiApp {
                     Token::GroupBy => "GROUP BY",
                     Token::OrderBy => "ORDER BY",
                     Token::Having => "HAVING",
+                    Token::Asc => "ASC",
+                    Token::Desc => "DESC",
                     Token::And => "AND",
                     Token::Or => "OR",
                     Token::In => "IN",

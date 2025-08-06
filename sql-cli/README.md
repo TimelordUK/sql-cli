@@ -104,10 +104,13 @@ WHERE column.ToUpper() = "VALUE"    -- Case-insensitive
 WHERE date > DateTime(2024, 1, 1)   -- After date
 WHERE date = DateTime()             -- Today
 
--- Ordering
+-- Ordering with ASC/DESC support
 ORDER BY column                     -- Ascending (default)
+ORDER BY column ASC                  -- Explicitly ascending
 ORDER BY column DESC                -- Descending
-ORDER BY col1, col2                 -- Multiple columns
+ORDER BY col1, col2                 -- Multiple columns (both ASC by default)
+ORDER BY col1 DESC, col2 ASC        -- Mixed directions
+ORDER BY col1 ASC, col2 DESC, col3  -- Complex multi-column sorting
 ```
 
 ## 🚀 Example Queries
@@ -554,10 +557,15 @@ All standard SQL operators plus LINQ-style methods:
 - **Case Sensitivity**: Column names are case-insensitive by default
 
 #### ORDER BY Support
-- `ORDER BY column` - Sort ascending
+- `ORDER BY column` - Sort ascending (default)
+- `ORDER BY column ASC` - Explicitly sort ascending
 - `ORDER BY column DESC` - Sort descending
-- `ORDER BY column1, column2` - Multi-column sort
+- `ORDER BY column1, column2` - Multi-column sort (both ASC by default)
+- `ORDER BY column1 DESC, column2 ASC` - Mixed sort directions
+- `ORDER BY col1 ASC, col2 DESC, col3` - Complex multi-column with mixed directions
 - Works with WHERE clauses: `WHERE condition ORDER BY column`
+- Supports numeric column names: `ORDER BY 202204 DESC` (useful for date columns in CSV)
+- Proper precedence: sorts by first column, then second for ties, etc.
 
 ### JSON and CSV Compatibility
 

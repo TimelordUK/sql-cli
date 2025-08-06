@@ -17,6 +17,8 @@ pub enum Token {
     OrderBy,
     GroupBy,
     Having,
+    Asc,
+    Desc,
     DateTime, // DateTime constructor
 
     // Literals
@@ -215,6 +217,8 @@ impl Lexer {
                         Token::GroupBy
                     }
                     "HAVING" => Token::Having,
+                    "ASC" => Token::Asc,
+                    "DESC" => Token::Desc,
                     "DATETIME" => Token::DateTime,
                     _ => Token::Identifier(ident),
                 }
@@ -332,11 +336,23 @@ pub enum LogicalOp {
 }
 
 #[derive(Debug, Clone)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+#[derive(Debug, Clone)]
+pub struct OrderByColumn {
+    pub column: String,
+    pub direction: SortDirection,
+}
+
+#[derive(Debug, Clone)]
 pub struct SelectStatement {
     pub columns: Vec<String>,
     pub from_table: Option<String>,
     pub where_clause: Option<WhereClause>,
-    pub order_by: Option<Vec<String>>,
+    pub order_by: Option<Vec<OrderByColumn>>,
     pub group_by: Option<Vec<String>>,
 }
 
@@ -418,7 +434,7 @@ impl Parser {
 
         let order_by = if matches!(self.current_token, Token::OrderBy) {
             self.advance();
-            Some(self.parse_identifier_list()?)
+            Some(self.parse_order_by_list()?)
         } else {
             None
         };
@@ -496,6 +512,55 @@ impl Parser {
         }
 
         Ok(identifiers)
+    }
+
+    fn parse_order_by_list(&mut self) -> Result<Vec<OrderByColumn>, String> {
+        let mut order_columns = Vec::new();
+
+        loop {
+            let column = match &self.current_token {
+                Token::Identifier(id) => {
+                    let col = id.clone();
+                    self.advance();
+                    col
+                }
+                Token::QuotedIdentifier(id) => {
+                    let col = id.clone();
+                    self.advance();
+                    col
+                }
+                Token::NumberLiteral(num) if self.columns.iter().any(|col| col == num) => {
+                    // Support numeric column names like "202204"
+                    let col = num.clone();
+                    self.advance();
+                    col
+                }
+                _ => return Err("Expected column name in ORDER BY".to_string()),
+            };
+
+            // Check for ASC/DESC
+            let direction = match &self.current_token {
+                Token::Asc => {
+                    self.advance();
+                    SortDirection::Asc
+                }
+                Token::Desc => {
+                    self.advance();
+                    SortDirection::Desc
+                }
+                _ => SortDirection::Asc, // Default to ASC if not specified
+            };
+
+            order_columns.push(OrderByColumn { column, direction });
+
+            if matches!(self.current_token, Token::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        Ok(order_columns)
     }
 
     fn parse_where_clause(&mut self) -> Result<WhereClause, String> {
@@ -949,7 +1014,11 @@ fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
         if !order_by.is_empty() {
             result.push('\n');
             for col in order_by {
-                result.push_str(&format!("{}    \"{}\",\n", indent_str, col));
+                let dir = match col.direction {
+                    SortDirection::Asc => "ASC",
+                    SortDirection::Desc => "DESC",
+                };
+                result.push_str(&format!("{}    \"{}\" {},\n", indent_str, col.column, dir));
             }
             result.push_str(&format!("{}  ],\n", indent_str));
         } else {
@@ -1471,7 +1540,17 @@ pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<Strin
 
             // ORDER BY clause
             if let Some(order_by) = &stmt.order_by {
-                let order_str = order_by.join(", ");
+                let order_str = order_by
+                    .iter()
+                    .map(|col| {
+                        let dir = match col.direction {
+                            SortDirection::Asc => " ASC",
+                            SortDirection::Desc => " DESC",
+                        };
+                        format!("{}{}", col.column, dir)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 lines.push(format!("ORDER BY {}", order_str));
             }
 
