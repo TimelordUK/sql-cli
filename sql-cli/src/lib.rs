@@ -1,4 +1,5 @@
 pub mod api_client;
+pub mod app_paths;
 pub mod cache;
 pub mod csv_datasource;
 pub mod csv_fixes;

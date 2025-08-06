@@ -1,0 +1,4 @@
+id,name,price,quantity,status
+1,Apple,1.50,100,active
+2,Banana,0.75,150,active
+3,Orange,2.00,75,inactive

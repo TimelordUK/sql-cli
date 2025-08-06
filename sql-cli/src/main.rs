@@ -4,6 +4,7 @@ use reedline::{
     MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline,
     ReedlineEvent, ReedlineMenu, Signal, ValidationResult, Validator,
 };
+use sql_cli::app_paths::AppPaths;
 use std::{borrow::Cow, io};
 
 mod api_client;
@@ -11,7 +12,6 @@ mod completer;
 mod csv_fixes;
 mod cursor_aware_parser;
 mod enhanced_tui;
-mod history;
 mod hybrid_parser;
 mod parser;
 mod recursive_parser;
@@ -191,10 +191,10 @@ fn main() -> io::Result<()> {
     // Classic mode (original interface)
     print_help();
 
-    let history_file = dirs::home_dir().unwrap().join(".sql_cli_history");
+    let history_file = AppPaths::history_file()
+        .unwrap_or_else(|_| dirs::home_dir().unwrap().join(".sql_cli_history"));
     let history = Box::new(
-        FileBackedHistory::with_file(50, history_file.to_path_buf())
-            .expect("Error configuring history"),
+        FileBackedHistory::with_file(50, history_file).expect("Error configuring history"),
     );
 
     let completer = Box::new(SqlCompleter::new());

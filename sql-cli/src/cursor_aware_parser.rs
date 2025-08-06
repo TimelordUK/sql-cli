@@ -29,6 +29,10 @@ impl CursorAwareParser {
         self.schema.set_single_table(table_name, columns);
     }
 
+    pub fn get_table_columns(&self, table_name: &str) -> Vec<String> {
+        self.schema.get_columns(table_name)
+    }
+
     pub fn get_completions(&self, query: &str, cursor_pos: usize) -> ParseResult {
         // Use the recursive parser for better context detection
         let (cursor_context, partial_word) = detect_cursor_context(query, cursor_pos);

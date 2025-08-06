@@ -1,3 +1,4 @@
+use crate::app_paths::AppPaths;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -52,10 +53,7 @@ pub struct SchemaManager {
 
 impl SchemaManager {
     pub fn new(api_client: crate::api_client::ApiClient) -> Self {
-        let cache_path = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".sql-cli")
-            .join("schema_cache.json");
+        let cache_path = AppPaths::schemas_file().unwrap_or_else(|_| PathBuf::from("schemas.json"));
 
         Self {
             cache_path,

@@ -1,3 +1,4 @@
+use crate::app_paths::AppPaths;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -54,9 +55,8 @@ pub struct CommandHistory {
 
 impl CommandHistory {
     pub fn new() -> Result<Self> {
-        let history_file = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".sql_cli_history.json");
+        let history_file = AppPaths::history_file()
+            .map_err(|e| anyhow::anyhow!("Failed to get history file path: {}", e))?;
 
         let mut history = Self {
             entries: Vec::new(),
@@ -481,7 +481,8 @@ impl Default for CommandHistory {
     fn default() -> Self {
         Self::new().unwrap_or_else(|_| Self {
             entries: Vec::new(),
-            history_file: PathBuf::from(".sql_cli_history.json"),
+            history_file: AppPaths::history_file()
+                .unwrap_or_else(|_| PathBuf::from(".sql_cli_history.json")),
             matcher: SkimMatcherV2::default(),
             command_counts: HashMap::new(),
         })

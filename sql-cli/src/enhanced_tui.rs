@@ -1,5 +1,4 @@
 use crate::api_client::{ApiClient, QueryResponse};
-use crate::history::{CommandHistory, HistoryMatch};
 use crate::hybrid_parser::HybridParser;
 use crate::parser::SqlParser;
 use crate::sql_highlighter::SqlHighlighter;
@@ -25,6 +24,7 @@ use regex::Regex;
 use serde_json::Value;
 use sql_cli::cache::QueryCache;
 use sql_cli::csv_datasource::CsvApiClient;
+use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::where_ast::format_where_ast;
 use sql_cli::where_parser::WhereParser;
 use std::cmp::Ordering;
@@ -565,9 +565,21 @@ impl EnhancedTuiApp {
     fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Store old cursor position
         let old_cursor = self.input.cursor();
+
+        // Debug: Log all Ctrl key combinations
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            if let KeyCode::Char(c) = key.code {
+                self.status_message = format!("DEBUG: Ctrl+{} pressed", c);
+            }
+        }
+
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
+            KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Expand SELECT * to all column names
+                self.expand_asterisk();
+            }
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.show_help = !self.show_help;
                 self.mode = if self.show_help {
@@ -704,6 +716,30 @@ impl EnhancedTuiApp {
                     if self.case_insensitive { "ON" } else { "OFF" }
                 );
             }
+            KeyCode::F(9) => {
+                // F9 as alternative for kill line (for terminals that intercept Ctrl+K)
+                self.kill_line();
+                self.status_message = format!(
+                    "Killed to end of line{}",
+                    if !self.kill_ring.is_empty() {
+                        format!(" ('{}' saved to kill ring)", self.kill_ring)
+                    } else {
+                        "".to_string()
+                    }
+                );
+            }
+            KeyCode::F(10) => {
+                // F10 as alternative for kill line backward (for consistency with F9)
+                self.kill_line_backward();
+                self.status_message = format!(
+                    "Killed to beginning of line{}",
+                    if !self.kill_ring.is_empty() {
+                        format!(" ('{}' saved to kill ring)", self.kill_ring)
+                    } else {
+                        "".to_string()
+                    }
+                );
+            }
             KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Delete word backward (like bash/zsh)
                 self.delete_word_backward();
@@ -714,6 +750,12 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Kill line - delete from cursor to end of line
+                self.status_message = "Ctrl+K pressed - killing to end of line".to_string();
+                self.kill_line();
+            }
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Alternative: Alt+K for kill line (for terminals that intercept Ctrl+K)
+                self.status_message = "Alt+K - killing to end of line".to_string();
                 self.kill_line();
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1789,6 +1831,90 @@ impl EnhancedTuiApp {
 
             self.status_message = format!("Inserted: {}", suggestion);
         }
+    }
+
+    fn expand_asterisk(&mut self) {
+        // Expand SELECT * to all column names
+        let query = if self.edit_mode == EditMode::SingleLine {
+            self.input.value().to_string()
+        } else {
+            self.textarea.lines().join(" ")
+        };
+
+        // Simple regex-like pattern to find SELECT * FROM table_name
+        let query_upper = query.to_uppercase();
+
+        // Find SELECT * pattern
+        if let Some(select_pos) = query_upper.find("SELECT") {
+            if let Some(star_pos) = query_upper[select_pos..].find("*") {
+                let star_abs_pos = select_pos + star_pos;
+
+                // Find FROM clause after the *
+                if let Some(from_rel_pos) = query_upper[star_abs_pos..].find("FROM") {
+                    let from_abs_pos = star_abs_pos + from_rel_pos;
+
+                    // Extract table name after FROM
+                    let after_from = &query[from_abs_pos + 4..].trim_start();
+                    let table_name = after_from
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
+
+                    if !table_name.is_empty() {
+                        // Get columns from the schema
+                        let columns = self.get_table_columns(table_name);
+
+                        if !columns.is_empty() {
+                            // Build the replacement with all columns
+                            let columns_str = columns.join(", ");
+
+                            // Replace * with the column list
+                            let before_star = &query[..star_abs_pos];
+                            let after_star = &query[star_abs_pos + 1..];
+                            let new_query = format!("{}{}{}", before_star, columns_str, after_star);
+
+                            // Update the input
+                            if self.edit_mode == EditMode::SingleLine {
+                                self.input = tui_input::Input::new(new_query.clone())
+                                    .with_cursor(new_query.len());
+                                self.update_horizontal_scroll(120);
+                            } else {
+                                // For multiline, format nicely
+                                let formatted_lines =
+                                    crate::recursive_parser::format_sql_pretty_compact(
+                                        &new_query, 5,
+                                    );
+                                self.textarea = TextArea::from(formatted_lines);
+                                self.textarea.set_cursor_line_style(
+                                    Style::default().add_modifier(Modifier::UNDERLINED),
+                                );
+                            }
+
+                            self.status_message =
+                                format!("Expanded * to {} columns", columns.len());
+                        } else {
+                            self.status_message =
+                                format!("No columns found for table '{}'", table_name);
+                        }
+                    } else {
+                        self.status_message = "Could not determine table name".to_string();
+                    }
+                } else {
+                    self.status_message = "No FROM clause found after SELECT *".to_string();
+                }
+            } else {
+                self.status_message = "No * found in SELECT clause".to_string();
+            }
+        } else {
+            self.status_message = "No SELECT clause found".to_string();
+        }
+    }
+
+    fn get_table_columns(&self, table_name: &str) -> Vec<String> {
+        // Try to get columns from the hybrid parser's schema
+        // This will include CSV/JSON loaded tables
+        self.hybrid_parser.get_table_columns(table_name)
     }
 
     fn handle_completion_multiline(&mut self) {
@@ -3222,40 +3348,112 @@ impl EnhancedTuiApp {
     }
 
     fn kill_line(&mut self) {
-        let query = self.input.value();
-        let cursor_pos = self.input.cursor();
+        match self.edit_mode {
+            EditMode::SingleLine => {
+                let query = self.input.value();
+                let cursor_pos = self.input.cursor();
 
-        if cursor_pos < query.len() {
-            // Save to undo stack before modifying
-            self.undo_stack.push((query.to_string(), cursor_pos));
-            if self.undo_stack.len() > 100 {
-                self.undo_stack.remove(0);
+                // Debug info
+                self.status_message = format!(
+                    "kill_line: cursor={}, len={}, text='{}'",
+                    cursor_pos,
+                    query.len(),
+                    query
+                );
+
+                if cursor_pos < query.len() {
+                    // Save to undo stack before modifying
+                    self.undo_stack.push((query.to_string(), cursor_pos));
+                    if self.undo_stack.len() > 100 {
+                        self.undo_stack.remove(0);
+                    }
+                    self.redo_stack.clear();
+
+                    // Save to kill ring before deleting
+                    self.kill_ring = query.chars().skip(cursor_pos).collect::<String>();
+                    let new_query = query.chars().take(cursor_pos).collect::<String>();
+                    self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
+
+                    // Update status to show what was killed
+                    self.status_message =
+                        format!("Killed '{}' (cursor was at {})", self.kill_ring, cursor_pos);
+                } else {
+                    self.status_message = format!(
+                        "Nothing to kill - cursor at end (pos={}, len={})",
+                        cursor_pos,
+                        query.len()
+                    );
+                }
             }
-            self.redo_stack.clear();
+            EditMode::MultiLine => {
+                // For multiline mode, kill from cursor to end of current line
+                let (row, col) = self.textarea.cursor();
+                let lines = self.textarea.lines();
+                if row < lines.len() {
+                    let current_line = &lines[row];
+                    if col < current_line.len() {
+                        // Save killed text to kill ring
+                        self.kill_ring = current_line.chars().skip(col).collect::<String>();
 
-            // Save to kill ring before deleting
-            self.kill_ring = query.chars().skip(cursor_pos).collect::<String>();
-            let new_query = query.chars().take(cursor_pos).collect::<String>();
-            self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
+                        // Create new line with text up to cursor
+                        let new_line = current_line.chars().take(col).collect::<String>();
+
+                        // Update the textarea
+                        let mut new_lines: Vec<String> = lines.iter().cloned().collect();
+                        new_lines[row] = new_line;
+                        self.textarea = TextArea::from(new_lines);
+                        self.textarea.set_cursor_line_style(
+                            Style::default().add_modifier(Modifier::UNDERLINED),
+                        );
+                        self.textarea
+                            .move_cursor(CursorMove::Jump(row as u16, col as u16));
+                    }
+                }
+            }
         }
     }
 
     fn kill_line_backward(&mut self) {
-        let query = self.input.value();
-        let cursor_pos = self.input.cursor();
+        match self.edit_mode {
+            EditMode::SingleLine => {
+                let query = self.input.value();
+                let cursor_pos = self.input.cursor();
 
-        if cursor_pos > 0 {
-            // Save to undo stack before modifying
-            self.undo_stack.push((query.to_string(), cursor_pos));
-            if self.undo_stack.len() > 100 {
-                self.undo_stack.remove(0);
+                if cursor_pos > 0 {
+                    // Save to undo stack before modifying
+                    self.undo_stack.push((query.to_string(), cursor_pos));
+                    if self.undo_stack.len() > 100 {
+                        self.undo_stack.remove(0);
+                    }
+                    self.redo_stack.clear();
+
+                    // Save to kill ring before deleting
+                    self.kill_ring = query.chars().take(cursor_pos).collect::<String>();
+                    let new_query = query.chars().skip(cursor_pos).collect::<String>();
+                    self.input = tui_input::Input::new(new_query).with_cursor(0);
+                }
             }
-            self.redo_stack.clear();
+            EditMode::MultiLine => {
+                // For multiline mode, kill from beginning of line to cursor
+                let (row, col) = self.textarea.cursor();
+                let lines = self.textarea.lines();
+                if row < lines.len() && col > 0 {
+                    let current_line = &lines[row];
+                    // Save killed text to kill ring
+                    self.kill_ring = current_line.chars().take(col).collect::<String>();
 
-            // Save to kill ring before deleting
-            self.kill_ring = query.chars().take(cursor_pos).collect::<String>();
-            let new_query = query.chars().skip(cursor_pos).collect::<String>();
-            self.input = tui_input::Input::new(new_query).with_cursor(0);
+                    // Create new line with text after cursor
+                    let new_line = current_line.chars().skip(col).collect::<String>();
+
+                    // Update the textarea
+                    let mut new_lines: Vec<String> = lines.iter().cloned().collect();
+                    new_lines[row] = new_line;
+                    self.textarea = TextArea::from(new_lines);
+                    self.textarea
+                        .set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
+                    self.textarea.move_cursor(CursorMove::Jump(row as u16, 0));
+                }
+            }
         }
     }
 
@@ -4474,6 +4672,7 @@ impl EnhancedTuiApp {
             Line::from("  Enter    - Execute query"),
             Line::from("  Tab      - Auto-complete"),
             Line::from("  Ctrl+R   - Search history"),
+            Line::from("  Ctrl+X   - Expand SELECT * to columns"),
             Line::from("  F3       - Toggle multi-line"),
             Line::from(""),
             Line::from("NAVIGATION").style(
@@ -4493,8 +4692,8 @@ impl EnhancedTuiApp {
             ),
             Line::from("  Ctrl+W   - Delete word backward"),
             Line::from("  Alt+D    - Delete word forward"),
-            Line::from("  Ctrl+K   - Kill line to end"),
-            Line::from("  Ctrl+U   - Kill line backward"),
+            Line::from("  F9       - Kill to end of line (Ctrl+K alternative)"),
+            Line::from("  F10      - Kill to beginning (Ctrl+U alternative)"),
             Line::from("  Ctrl+Y   - Yank (paste)"),
             Line::from("  Ctrl+Z   - Undo"),
             Line::from(""),

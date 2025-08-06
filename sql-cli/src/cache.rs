@@ -1,3 +1,4 @@
+use crate::app_paths::AppPaths;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -32,14 +33,13 @@ pub struct QueryCache {
 
 impl QueryCache {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let home_dir = dirs::home_dir().ok_or("Cannot find home directory")?;
-        let cache_dir = home_dir.join(".sql-cli").join("cache");
-        let data_dir = cache_dir.join("data");
+        let cache_dir = AppPaths::cache_dir()?;
+        let data_dir = AppPaths::cache_data_dir()?;
 
         // Create directories if they don't exist
         fs::create_dir_all(&data_dir)?;
 
-        let metadata_path = cache_dir.join("metadata.json");
+        let metadata_path = AppPaths::cache_metadata_file()?;
 
         // Load or create metadata
         let metadata = if metadata_path.exists() {

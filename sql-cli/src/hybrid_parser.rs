@@ -35,6 +35,10 @@ impl HybridParser {
         self.parser.update_single_table(table_name, columns);
     }
 
+    pub fn get_table_columns(&self, table_name: &str) -> Vec<String> {
+        self.parser.get_table_columns(table_name)
+    }
+
     pub fn get_completions(&self, query: &str, cursor_pos: usize) -> HybridResult {
         // Use the improved parser with recursive descent for context detection
         let result = self.parser.get_completions(query, cursor_pos);
