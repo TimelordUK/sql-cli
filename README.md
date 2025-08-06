@@ -115,7 +115,12 @@ chmod +x sql-cli
 
 # Windows
 # Extract the zip file and run sql-cli.exe
+# If Windows Defender blocks it (false positive), either:
+# 1. Click "More info" → "Run anyway" in the SmartScreen dialog
+# 2. Or run: PowerShell -ExecutionPolicy Bypass .\scripts\unblock-windows.ps1
 ```
+
+**Note for Windows users**: The binary is not code-signed, which may trigger false positives in Windows Defender. This is common for open-source Rust applications. The tool is completely safe - you can review the source code and build it yourself if preferred.
 
 ### Build from Source
 
