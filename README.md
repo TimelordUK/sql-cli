@@ -2,6 +2,8 @@
 
 A fast, context-aware SQL command-line interface with intelligent tab completion and a sophisticated TUI for querying REST API-based database engines.
 
+![SQL-CLI Overview](sql-cli/demos/overview-optimized.gif)
+
 ## Features
 
 ### ✨ Smart SQL Completion
@@ -94,6 +96,19 @@ Features when loading files:
 - **Pre-filled query** - Input shows `SELECT * FROM table_name` for easy editing
 - **Schema detection** - Automatically detects columns and types
 - **Virtual viewport** - Efficiently handles large files
+
+## More Demos
+
+<details>
+<summary>📺 View additional feature demos</summary>
+
+- [Fuzzy Search & Filtering](sql-cli/demos/fuzzy-filter.gif)
+- [Column Navigation](sql-cli/demos/column-navigation.gif)  
+- [Column Statistics](sql-cli/demos/statistics.gif)
+- [SQL Queries & Autocomplete](sql-cli/demos/sql-queries.gif)
+- [Vim-style Navigation](sql-cli/demos/vim-navigation.gif)
+
+</details>
 
 ## Installation
 

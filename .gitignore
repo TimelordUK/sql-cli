@@ -36,3 +36,12 @@ Thumbs.db
 *.log
 logs/
 customers.csv
+
+# VHS and demos
+sql-cli/demos/vhs
+sql-cli/demos/ttyd
+sql-cli/demos/*-optimized.gif
+sql-cli/demos/*-small.gif
+# Keep the main demo GIFs but ignore optimized versions
+# Uncomment below to ignore all generated GIFs during development
+# sql-cli/demos/*.gif

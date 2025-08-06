@@ -641,8 +641,17 @@ impl EnhancedTuiApp {
                 };
 
                 if !query.is_empty() {
-                    // Check for cache commands
-                    if query.starts_with(":cache ") {
+                    // Check for special commands
+                    if query == ":help" {
+                        self.show_help = true;
+                        self.mode = AppMode::Help;
+                        self.status_message = "Help Mode - Press ESC to return".to_string();
+                    } else if query == ":exit" || query == ":quit" {
+                        return Ok(true);
+                    } else if query == ":tui" {
+                        // Already in TUI mode
+                        self.status_message = "Already in TUI mode".to_string();
+                    } else if query.starts_with(":cache ") {
                         self.handle_cache_command(&query)?;
                     } else {
                         self.status_message = format!("Processing query: '{}'", query);
