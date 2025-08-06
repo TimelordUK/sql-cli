@@ -885,6 +885,14 @@ impl EnhancedTuiApp {
             KeyCode::Char('l') | KeyCode::Right => {
                 self.move_column_right();
             }
+            KeyCode::Char('^') | KeyCode::Char('0') => {
+                // Jump to first column (vim-like)
+                self.goto_first_column();
+            }
+            KeyCode::Char('$') => {
+                // Jump to last column (vim-like)
+                self.goto_last_column();
+            }
             KeyCode::Char('g') => {
                 self.goto_first_row();
             }
@@ -1681,6 +1689,30 @@ impl EnhancedTuiApp {
                         self.scroll_offset.1 += 1;
                         self.status_message =
                             format!("Column {} selected", self.current_column + 1);
+                    }
+                }
+            }
+        }
+    }
+
+    fn goto_first_column(&mut self) {
+        self.current_column = 0;
+        self.scroll_offset.1 = 0;
+        self.status_message = "First column selected".to_string();
+    }
+
+    fn goto_last_column(&mut self) {
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let max_columns = obj.len();
+                    if max_columns > 0 {
+                        self.current_column = max_columns - 1;
+                        // Update horizontal scroll to show the last column
+                        // This ensures the last column is visible in the viewport
+                        self.scroll_offset.1 = self.current_column.saturating_sub(5); // Keep some context
+                        self.status_message =
+                            format!("Last column selected ({})", self.current_column + 1);
                     }
                 }
             }
@@ -3706,8 +3738,8 @@ impl EnhancedTuiApp {
             Line::from("  l/→      - Move to next column"),
             Line::from("  g        - First row"),
             Line::from("  G        - Last row"),
-            Line::from("  0        - First column"),
-            Line::from("  $        - Last column"),
+            Line::from("  0/^      - First column (vim-style)"),
+            Line::from("  $        - Last column (vim-style)"),
             Line::from("  PgDn/Ctrl+F - Page down"),
             Line::from("  PgUp/Ctrl+B - Page up"),
             Line::from("  C        - 🎯 TOGGLE COMPACT MODE (fit more columns)"),
