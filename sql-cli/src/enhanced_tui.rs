@@ -11,6 +11,8 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout, Rect},
@@ -26,7 +28,7 @@ use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::where_ast::format_where_ast;
 use sql_cli::where_parser::WhereParser;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io;
 use std::io::Write;
@@ -39,6 +41,7 @@ enum AppMode {
     Results,
     Search,
     Filter,
+    FuzzyFilter,
     Help,
     History,
     Debug,
@@ -72,6 +75,24 @@ struct FilterState {
     pattern: String,
     regex: Option<Regex>,
     active: bool,
+}
+
+struct FuzzyFilterState {
+    pattern: String,
+    active: bool,
+    matcher: SkimMatcherV2,
+    filtered_indices: Vec<usize>, // Indices of rows that match
+}
+
+impl Clone for FuzzyFilterState {
+    fn clone(&self) -> Self {
+        Self {
+            pattern: self.pattern.clone(),
+            active: self.active,
+            matcher: SkimMatcherV2::default(), // Create new matcher
+            filtered_indices: self.filtered_indices.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -140,6 +161,7 @@ pub struct EnhancedTuiApp {
     // Enhanced features
     sort_state: SortState,
     filter_state: FilterState,
+    fuzzy_filter_state: FuzzyFilterState,
     search_state: SearchState,
     completion_state: CompletionState,
     history_state: HistoryState,
@@ -251,6 +273,12 @@ impl EnhancedTuiApp {
                 pattern: String::new(),
                 regex: None,
                 active: false,
+            },
+            fuzzy_filter_state: FuzzyFilterState {
+                pattern: String::new(),
+                active: false,
+                matcher: SkimMatcherV2::default(),
+                filtered_indices: Vec::new(),
             },
             search_state: SearchState {
                 pattern: String::new(),
@@ -494,6 +522,7 @@ impl EnhancedTuiApp {
                         AppMode::Results => self.handle_results_input(key)?,
                         AppMode::Search => self.handle_search_input(key)?,
                         AppMode::Filter => self.handle_filter_input(key)?,
+                        AppMode::FuzzyFilter => self.handle_fuzzy_filter_input(key)?,
                         AppMode::Help => self.handle_help_input(key)?,
                         AppMode::History => self.handle_history_input(key)?,
                         AppMode::Debug => self.handle_debug_input(key)?,
@@ -952,15 +981,6 @@ impl EnhancedTuiApp {
                 // Recalculate column widths with new mode
                 self.calculate_optimal_column_widths();
             }
-            KeyCode::Char('N') => {
-                // Toggle row numbers display with Shift+N
-                self.show_row_numbers = !self.show_row_numbers;
-                self.status_message = if self.show_row_numbers {
-                    "Row numbers: ON (showing line numbers)".to_string()
-                } else {
-                    "Row numbers: OFF".to_string()
-                };
-            }
             KeyCode::Char(':') => {
                 // Start jump to row command
                 self.mode = AppMode::JumpToRow;
@@ -1001,13 +1021,35 @@ impl EnhancedTuiApp {
             KeyCode::Char('n') => {
                 self.next_search_match();
             }
-            KeyCode::Char('N') => {
-                self.previous_search_match();
+            KeyCode::Char('N') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                // Only for search navigation when Shift is held
+                if !self.search_state.pattern.is_empty() {
+                    self.previous_search_match();
+                } else {
+                    // Toggle row numbers display
+                    self.show_row_numbers = !self.show_row_numbers;
+                    self.status_message = if self.show_row_numbers {
+                        "Row numbers: ON (showing line numbers)".to_string()
+                    } else {
+                        "Row numbers: OFF".to_string()
+                    };
+                    // Recalculate column widths with new mode
+                    self.calculate_optimal_column_widths();
+                }
             }
-            // Filter functionality
-            KeyCode::Char('F') => {
+            // Regex filter functionality (uppercase F)
+            KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.mode = AppMode::Filter;
                 self.filter_state.pattern.clear();
+            }
+            // Fuzzy filter functionality (lowercase f)
+            KeyCode::Char('f')
+                if !key.modifiers.contains(KeyModifiers::ALT)
+                    && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                self.mode = AppMode::FuzzyFilter;
+                self.fuzzy_filter_state.pattern.clear();
+                self.fuzzy_filter_state.filtered_indices.clear();
             }
             // Sort functionality (lowercase s)
             KeyCode::Char('s')
@@ -1076,6 +1118,44 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char(c) => {
                 self.filter_state.pattern.push(c);
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn handle_fuzzy_filter_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match key.code {
+            KeyCode::Esc => {
+                // Clear fuzzy filter and return to results
+                self.fuzzy_filter_state.active = false;
+                self.fuzzy_filter_state.pattern.clear();
+                self.fuzzy_filter_state.filtered_indices.clear();
+                self.mode = AppMode::Results;
+                self.status_message = "Fuzzy filter cleared".to_string();
+            }
+            KeyCode::Enter => {
+                // Apply fuzzy filter and return to results
+                if !self.fuzzy_filter_state.pattern.is_empty() {
+                    self.apply_fuzzy_filter();
+                    self.fuzzy_filter_state.active = true;
+                }
+                self.mode = AppMode::Results;
+            }
+            KeyCode::Backspace => {
+                self.fuzzy_filter_state.pattern.pop();
+                // Re-apply filter in real-time
+                if !self.fuzzy_filter_state.pattern.is_empty() {
+                    self.apply_fuzzy_filter();
+                } else {
+                    self.fuzzy_filter_state.filtered_indices.clear();
+                    self.fuzzy_filter_state.active = false;
+                }
+            }
+            KeyCode::Char(c) => {
+                self.fuzzy_filter_state.pattern.push(c);
+                // Apply filter in real-time as user types
+                self.apply_fuzzy_filter();
             }
             _ => {}
         }
@@ -2182,6 +2262,104 @@ impl EnhancedTuiApp {
             } else {
                 self.status_message = "Invalid regex pattern".to_string();
             }
+        }
+    }
+
+    fn apply_fuzzy_filter(&mut self) {
+        if self.fuzzy_filter_state.pattern.is_empty() {
+            self.fuzzy_filter_state.filtered_indices.clear();
+            self.fuzzy_filter_state.active = false;
+            self.status_message = "Fuzzy filter cleared".to_string();
+            return;
+        }
+
+        let pattern = &self.fuzzy_filter_state.pattern;
+        let mut filtered_indices = Vec::new();
+
+        // Get the data to filter - either already filtered data or original results
+        let data_to_filter = if self.filter_state.active && self.filtered_data.is_some() {
+            // If regex filter is active, fuzzy filter on top of that
+            self.filtered_data.as_ref()
+        } else if let Some(results) = &self.results {
+            // Otherwise filter original results
+            let mut rows = Vec::new();
+            for item in &results.data {
+                let mut row = Vec::new();
+                if let Some(obj) = item.as_object() {
+                    for (_, value) in obj {
+                        let cell_str = match value {
+                            Value::String(s) => s.clone(),
+                            Value::Number(n) => n.to_string(),
+                            Value::Bool(b) => b.to_string(),
+                            Value::Null => "".to_string(),
+                            _ => value.to_string(),
+                        };
+                        row.push(cell_str);
+                    }
+                    rows.push(row);
+                }
+            }
+            self.filtered_data = Some(rows);
+            self.filtered_data.as_ref()
+        } else {
+            return;
+        };
+
+        if let Some(data) = data_to_filter {
+            for (index, row) in data.iter().enumerate() {
+                // Concatenate all columns into a single string for matching
+                let row_text = row.join(" ");
+
+                // Check if pattern starts with ' for exact matching
+                let matches = if pattern.starts_with('\'') && pattern.len() > 1 {
+                    // Exact substring matching (case-insensitive)
+                    let exact_pattern = &pattern[1..];
+                    row_text
+                        .to_lowercase()
+                        .contains(&exact_pattern.to_lowercase())
+                } else {
+                    // Fuzzy matching
+                    if let Some(score) = self
+                        .fuzzy_filter_state
+                        .matcher
+                        .fuzzy_match(&row_text, pattern)
+                    {
+                        score > 0
+                    } else {
+                        false
+                    }
+                };
+
+                if matches {
+                    filtered_indices.push(index);
+                }
+            }
+        }
+
+        let match_count = filtered_indices.len();
+        self.fuzzy_filter_state.filtered_indices = filtered_indices;
+        self.fuzzy_filter_state.active = !self.fuzzy_filter_state.filtered_indices.is_empty();
+
+        if self.fuzzy_filter_state.active {
+            let filter_type = if pattern.starts_with('\'') {
+                "Exact"
+            } else {
+                "Fuzzy"
+            };
+            self.status_message = format!(
+                "{} filter: {} matches for '{}'",
+                filter_type, match_count, pattern
+            );
+            // Reset table state for new filtered view
+            self.table_state = TableState::default();
+            self.scroll_offset = (0, 0);
+        } else {
+            let filter_type = if pattern.starts_with('\'') {
+                "exact"
+            } else {
+                "fuzzy"
+            };
+            self.status_message = format!("No {} matches for '{}'", filter_type, pattern);
         }
     }
 
@@ -3334,6 +3512,7 @@ impl EnhancedTuiApp {
             AppMode::Results => "SQL Query (Results Mode - Press ↑ to edit)".to_string(),
             AppMode::Search => "Search Pattern".to_string(),
             AppMode::Filter => "Filter Pattern".to_string(),
+            AppMode::FuzzyFilter => "Fuzzy Filter".to_string(),
             AppMode::Help => "Help".to_string(),
             AppMode::History => format!(
                 "History Search: '{}' (Esc to cancel)",
@@ -3351,6 +3530,7 @@ impl EnhancedTuiApp {
         let input_text = match self.mode {
             AppMode::Search => &self.search_state.pattern,
             AppMode::Filter => &self.filter_state.pattern,
+            AppMode::FuzzyFilter => &self.fuzzy_filter_state.pattern,
             AppMode::History => &self.history_state.search_query,
             _ => self.input.value(),
         };
@@ -3381,6 +3561,7 @@ impl EnhancedTuiApp {
                         AppMode::Results => Style::default().fg(Color::DarkGray),
                         AppMode::Search => Style::default().fg(Color::Yellow),
                         AppMode::Filter => Style::default().fg(Color::Cyan),
+                        AppMode::FuzzyFilter => Style::default().fg(Color::Magenta),
                         AppMode::Help => Style::default().fg(Color::DarkGray),
                         AppMode::History => Style::default().fg(Color::Magenta),
                         AppMode::Debug => Style::default().fg(Color::Yellow),
@@ -3442,6 +3623,12 @@ impl EnhancedTuiApp {
             AppMode::Filter => {
                 f.set_cursor_position((
                     chunks[0].x + self.filter_state.pattern.len() as u16 + 1,
+                    chunks[0].y + 1,
+                ));
+            }
+            AppMode::FuzzyFilter => {
+                f.set_cursor_position((
+                    chunks[0].x + self.fuzzy_filter_state.pattern.len() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
@@ -3507,6 +3694,7 @@ impl EnhancedTuiApp {
             AppMode::Results => Style::default().fg(Color::Blue),
             AppMode::Search => Style::default().fg(Color::Yellow),
             AppMode::Filter => Style::default().fg(Color::Cyan),
+            AppMode::FuzzyFilter => Style::default().fg(Color::Magenta),
             AppMode::Help => Style::default().fg(Color::Magenta),
             AppMode::History => Style::default().fg(Color::Magenta),
             AppMode::Debug => Style::default().fg(Color::Yellow),
@@ -3521,6 +3709,7 @@ impl EnhancedTuiApp {
             AppMode::Results => "NAV",
             AppMode::Search => "SEARCH",
             AppMode::Filter => "FILTER",
+            AppMode::FuzzyFilter => "FUZZY",
             AppMode::Help => "HELP",
             AppMode::History => "HISTORY",
             AppMode::Debug => "DEBUG",
@@ -3554,7 +3743,9 @@ impl EnhancedTuiApp {
                 }
             };
 
-            let filter_info = if self.filter_state.active {
+            let filter_info = if self.fuzzy_filter_state.active {
+                format!(" | FUZZY [{}]", self.fuzzy_filter_state.pattern)
+            } else if self.filter_state.active {
                 format!(" | FILTERED [{}]", self.filter_state.pattern)
             } else {
                 String::new()
@@ -3837,7 +4028,13 @@ impl EnhancedTuiApp {
         let max_visible_rows = terminal_height.saturating_sub(3).max(10);
 
         let total_rows = if let Some(filtered) = &self.filtered_data {
-            filtered.len()
+            if self.fuzzy_filter_state.active
+                && !self.fuzzy_filter_state.filtered_indices.is_empty()
+            {
+                self.fuzzy_filter_state.filtered_indices.len()
+            } else {
+                filtered.len()
+            }
         } else {
             results.data.len()
         };
@@ -3848,16 +4045,44 @@ impl EnhancedTuiApp {
 
         // Prepare table data (only visible rows AND columns)
         let data_to_display = if let Some(filtered) = &self.filtered_data {
-            // Apply both row and column viewport to filtered data
-            filtered[row_viewport_start..row_viewport_end]
-                .iter()
-                .map(|row| {
-                    visible_columns
-                        .iter()
-                        .map(|(idx, _)| row[*idx].clone())
-                        .collect()
-                })
-                .collect()
+            // Check if fuzzy filter is active
+            if self.fuzzy_filter_state.active
+                && !self.fuzzy_filter_state.filtered_indices.is_empty()
+            {
+                // Apply fuzzy filter on top of existing filter
+                let mut fuzzy_filtered = Vec::new();
+                for &idx in &self.fuzzy_filter_state.filtered_indices {
+                    if idx < filtered.len() {
+                        fuzzy_filtered.push(filtered[idx].clone());
+                    }
+                }
+
+                // Recalculate viewport for fuzzy filtered data
+                let fuzzy_total = fuzzy_filtered.len();
+                let fuzzy_start = self.scroll_offset.0.min(fuzzy_total.saturating_sub(1));
+                let fuzzy_end = (fuzzy_start + max_visible_rows).min(fuzzy_total);
+
+                fuzzy_filtered[fuzzy_start..fuzzy_end]
+                    .iter()
+                    .map(|row| {
+                        visible_columns
+                            .iter()
+                            .map(|(idx, _)| row[*idx].clone())
+                            .collect()
+                    })
+                    .collect()
+            } else {
+                // Apply both row and column viewport to filtered data
+                filtered[row_viewport_start..row_viewport_end]
+                    .iter()
+                    .map(|row| {
+                        visible_columns
+                            .iter()
+                            .map(|(idx, _)| row[*idx].clone())
+                            .collect()
+                    })
+                    .collect()
+            }
         } else {
             // Convert JSON data to string matrix (only visible rows AND columns)
             results.data[row_viewport_start..row_viewport_end]
@@ -4163,7 +4388,9 @@ impl EnhancedTuiApp {
             Line::from("  P        - Clear all pins"),
             Line::from("  /        - Search in results"),
             Line::from("  n/N      - Next/prev match"),
-            Line::from("  f        - Filter rows (regex)"),
+            Line::from("  Shift+F  - Filter rows (regex)"),
+            Line::from("  f        - Fuzzy filter rows"),
+            Line::from("  'text    - Exact match filter"),
             Line::from("  s        - Sort by column"),
             Line::from("  S        - 📊 Column statistics"),
             Line::from("  1-9      - Sort by column #"),
@@ -4192,6 +4419,7 @@ impl EnhancedTuiApp {
             Line::from("  • Space locks viewport"),
             Line::from("  • Columns auto-adjust width"),
             Line::from("  • Named: :cache save q1"),
+            Line::from("  • f + 'ubs = exact 'ubs' match"),
             Line::from(""),
             Line::from("📦 Cache 📁 File 🌐 API 🗄️ SQL"),
         ];
