@@ -603,7 +603,7 @@ impl EnhancedTuiApp {
                     KeyModifiers::empty(),
                 )));
             }
-            KeyCode::Char('i') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
                 self.case_insensitive = !self.case_insensitive;
 
@@ -840,6 +840,20 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('q') => return Ok(true),
+            KeyCode::F(8) => {
+                // Toggle case-insensitive string comparisons
+                self.case_insensitive = !self.case_insensitive;
+
+                // Update CSV client if in CSV mode
+                if let Some(ref mut csv_client) = self.csv_client {
+                    csv_client.set_case_insensitive(self.case_insensitive);
+                }
+
+                self.status_message = format!(
+                    "Case-insensitive string comparisons: {}",
+                    if self.case_insensitive { "ON" } else { "OFF" }
+                );
+            }
             KeyCode::Esc => {
                 // Save current position before switching to Command mode
                 if let Some(selected) = self.table_state.selected() {
@@ -3369,7 +3383,7 @@ impl EnhancedTuiApp {
             ));
         }
 
-        spans.push(Span::raw(" | F1:Help C:Compact q:Quit"));
+        spans.push(Span::raw(" | F1:Help F8:Case q:Quit"));
 
         let status_line = Line::from(spans);
         let status = Paragraph::new(status_line)
@@ -3659,7 +3673,7 @@ impl EnhancedTuiApp {
             Line::from("  Ctrl+→/Alt+F - Move forward one word"),
             Line::from(""),
             Line::from("Query Options:"),
-            Line::from("  Ctrl+I   - Toggle case-insensitive string comparisons"),
+            Line::from("  F8       - Toggle case-insensitive string comparisons"),
             Line::from("  Alt+[    - Jump to previous SQL token"),
             Line::from("  Alt+]    - Jump to next SQL token"),
             Line::from("  "),
