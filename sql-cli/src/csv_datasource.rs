@@ -122,7 +122,8 @@ impl CsvDataSource {
                         sql.len()
                     };
                     let where_clause = sql[where_start..where_end].trim();
-                    results = self.filter_results(results, where_clause)?;
+                    results =
+                        self.filter_results_with_options(results, where_clause, case_insensitive)?;
                 }
 
                 // Handle specific column selection
