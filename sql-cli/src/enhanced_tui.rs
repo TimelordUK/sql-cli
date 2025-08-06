@@ -143,6 +143,9 @@ pub struct EnhancedTuiApp {
 
     // Viewport tracking
     last_visible_rows: usize, // Track the last calculated viewport height
+
+    // Display options
+    compact_mode: bool, // Compact display mode with reduced padding
 }
 
 fn escape_csv_field(field: &str) -> String {
@@ -230,6 +233,7 @@ impl EnhancedTuiApp {
             redo_stack: Vec::new(),
             kill_ring: String::new(),
             last_visible_rows: 30, // Default estimate
+            compact_mode: false,
         }
     }
 
@@ -779,6 +783,17 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('G') => {
                 self.goto_last_row();
+            }
+            KeyCode::Char('C') => {
+                // Toggle compact mode with Shift+C
+                self.compact_mode = !self.compact_mode;
+                self.status_message = if self.compact_mode {
+                    "Compact mode: ON (reduced padding, more columns visible)".to_string()
+                } else {
+                    "Compact mode: OFF (standard padding)".to_string()
+                };
+                // Recalculate column widths with new mode
+                self.calculate_optimal_column_widths();
             }
             KeyCode::PageDown | KeyCode::Char('f')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
@@ -1913,6 +1928,54 @@ impl EnhancedTuiApp {
         self.filtered_data = None;
     }
 
+    fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
+        // Calculate column widths based only on visible rows in viewport
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                    let mut widths = Vec::with_capacity(headers.len());
+
+                    // Use compact mode settings
+                    let min_width = if self.compact_mode { 4 } else { 6 };
+                    let max_width = if self.compact_mode { 20 } else { 30 };
+                    let padding = if self.compact_mode { 1 } else { 2 };
+
+                    // Only check visible rows
+                    let rows_to_check =
+                        &results.data[viewport_start..viewport_end.min(results.data.len())];
+
+                    for header in &headers {
+                        // Start with header width
+                        let mut max_col_width = header.len();
+
+                        // Check only visible rows for this column
+                        for row in rows_to_check {
+                            if let Some(obj) = row.as_object() {
+                                if let Some(value) = obj.get(*header) {
+                                    let display_value = if value.is_null() {
+                                        "NULL"
+                                    } else if let Some(s) = value.as_str() {
+                                        s
+                                    } else {
+                                        &value.to_string()
+                                    };
+                                    max_col_width = max_col_width.max(display_value.len());
+                                }
+                            }
+                        }
+
+                        // Apply min/max constraints and padding
+                        let width = (max_col_width + padding).clamp(min_width, max_width) as u16;
+                        widths.push(width);
+                    }
+
+                    self.column_widths = widths;
+                }
+            }
+        }
+    }
+
     fn calculate_optimal_column_widths(&mut self) {
         if let Some(results) = &self.results {
             if let Some(first_row) = results.data.first() {
@@ -2881,7 +2944,28 @@ impl EnhancedTuiApp {
             (AppMode::PrettyQuery, false) => self.render_pretty_query(f, results_area),
             (AppMode::CacheList, false) => self.render_cache_list(f, results_area),
             (_, false) if self.results.is_some() => {
-                self.render_table(f, results_area, self.results.as_ref().unwrap());
+                // We need to work around the borrow checker here
+                // Calculate widths needs mutable self, but we also need to pass results
+                if let Some(results) = &self.results {
+                    // Extract viewport info first
+                    let terminal_height = results_area.height as usize;
+                    let max_visible_rows = terminal_height.saturating_sub(3).max(10);
+                    let total_rows = if let Some(filtered) = &self.filtered_data {
+                        filtered.len()
+                    } else {
+                        results.data.len()
+                    };
+                    let row_viewport_start = self.scroll_offset.0.min(total_rows.saturating_sub(1));
+                    let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
+
+                    // Calculate column widths based on viewport
+                    self.calculate_viewport_column_widths(row_viewport_start, row_viewport_end);
+                }
+
+                // Now render the table
+                if let Some(results) = &self.results {
+                    self.render_table_immutable(f, results_area, results);
+                }
             }
             _ => {
                 // Simple placeholder - reduced text to improve rendering speed
@@ -3055,7 +3139,13 @@ impl EnhancedTuiApp {
             ));
         }
 
-        spans.push(Span::raw(" | F1:Help F7:Cache q:Quit"));
+        // Add compact mode indicator
+        if self.compact_mode {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled("[COMPACT]", Style::default().fg(Color::Green)));
+        }
+
+        spans.push(Span::raw(" | F1:Help C:Compact q:Quit"));
 
         let status_line = Line::from(spans);
         let status = Paragraph::new(status_line)
@@ -3064,7 +3154,7 @@ impl EnhancedTuiApp {
         f.render_widget(status, chunks[2]);
     }
 
-    fn render_table(&self, f: &mut Frame, area: Rect, results: &QueryResponse) {
+    fn render_table_immutable(&self, f: &mut Frame, area: Rect, results: &QueryResponse) {
         if results.data.is_empty() {
             let empty = Paragraph::new("No results found")
                 .block(Block::default().borders(Borders::ALL).title("Results"))
