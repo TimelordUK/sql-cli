@@ -145,7 +145,9 @@ pub struct EnhancedTuiApp {
     last_visible_rows: usize, // Track the last calculated viewport height
 
     // Display options
-    compact_mode: bool, // Compact display mode with reduced padding
+    compact_mode: bool,               // Compact display mode with reduced padding
+    viewport_lock: bool,              // Lock viewport position for anchor scrolling
+    viewport_lock_row: Option<usize>, // The row position to lock to in viewport
 }
 
 fn escape_csv_field(field: &str) -> String {
@@ -234,6 +236,8 @@ impl EnhancedTuiApp {
             kill_ring: String::new(),
             last_visible_rows: 30, // Default estimate
             compact_mode: false,
+            viewport_lock: false,
+            viewport_lock_row: None,
         }
     }
 
@@ -794,6 +798,22 @@ impl EnhancedTuiApp {
                 };
                 // Recalculate column widths with new mode
                 self.calculate_optimal_column_widths();
+            }
+            KeyCode::Char(' ') => {
+                // Toggle viewport lock with Space
+                self.viewport_lock = !self.viewport_lock;
+                if self.viewport_lock {
+                    // Lock to current position in viewport (middle of screen)
+                    let visible_rows = self.last_visible_rows;
+                    self.viewport_lock_row = Some(visible_rows / 2);
+                    self.status_message = format!(
+                        "Viewport lock: ON (anchored at row {} of viewport)",
+                        visible_rows / 2 + 1
+                    );
+                } else {
+                    self.viewport_lock_row = None;
+                    self.status_message = "Viewport lock: OFF (normal scrolling)".to_string();
+                }
             }
             KeyCode::PageDown | KeyCode::Char('f')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
@@ -1436,13 +1456,22 @@ impl EnhancedTuiApp {
             let new_position = current + 1;
             self.table_state.select(Some(new_position));
 
-            // Update viewport if needed
-            let visible_rows = self.last_visible_rows;
+            // Update viewport based on lock mode
+            if self.viewport_lock {
+                // In lock mode, keep cursor at fixed viewport position
+                if let Some(lock_row) = self.viewport_lock_row {
+                    // Adjust viewport so cursor stays at lock_row position
+                    self.scroll_offset.0 = new_position.saturating_sub(lock_row);
+                }
+            } else {
+                // Normal scrolling behavior
+                let visible_rows = self.last_visible_rows;
 
-            // Check if cursor would be below the last visible row
-            if new_position > self.scroll_offset.0 + visible_rows - 1 {
-                // Cursor moved below viewport - scroll down by one
-                self.scroll_offset.0 += 1;
+                // Check if cursor would be below the last visible row
+                if new_position > self.scroll_offset.0 + visible_rows - 1 {
+                    // Cursor moved below viewport - scroll down by one
+                    self.scroll_offset.0 += 1;
+                }
             }
         }
     }
@@ -1456,10 +1485,19 @@ impl EnhancedTuiApp {
         let new_position = current - 1;
         self.table_state.select(Some(new_position));
 
-        // Update viewport if needed
-        if new_position < self.scroll_offset.0 {
-            // Cursor moved above viewport - scroll up
-            self.scroll_offset.0 = new_position;
+        // Update viewport based on lock mode
+        if self.viewport_lock {
+            // In lock mode, keep cursor at fixed viewport position
+            if let Some(lock_row) = self.viewport_lock_row {
+                // Adjust viewport so cursor stays at lock_row position
+                self.scroll_offset.0 = new_position.saturating_sub(lock_row);
+            }
+        } else {
+            // Normal scrolling behavior
+            if new_position < self.scroll_offset.0 {
+                // Cursor moved above viewport - scroll up
+                self.scroll_offset.0 = new_position;
+            }
         }
     }
 
@@ -3145,6 +3183,17 @@ impl EnhancedTuiApp {
             spans.push(Span::styled("[COMPACT]", Style::default().fg(Color::Green)));
         }
 
+        // Add viewport lock indicator
+        if self.viewport_lock {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(
+                "🔒 LOCKED",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
         spans.push(Span::raw(" | F1:Help C:Compact q:Quit"));
 
         let status_line = Line::from(spans);
@@ -3441,6 +3490,7 @@ impl EnhancedTuiApp {
             Line::from("  PgDn/Ctrl+F - Page down"),
             Line::from("  PgUp/Ctrl+B - Page up"),
             Line::from("  C        - 🎯 TOGGLE COMPACT MODE (fit more columns)"),
+            Line::from("  Space    - 🔒 TOGGLE VIEWPORT LOCK (anchor scrolling)"),
             Line::from("  /        - Search in results"),
             Line::from("  n/N      - Next/previous search match"),
             Line::from("  f        - Filter rows (regex)"),
@@ -3476,6 +3526,7 @@ impl EnhancedTuiApp {
             Line::from("💡 Tips:"),
             Line::from("  • Load CSV: sql-cli data.csv (auto-shows data)"),
             Line::from("  • Press C in results to toggle compact mode"),
+            Line::from("  • Press Space to lock viewport (data scrolls, cursor stays)"),
             Line::from("  • Column widths adjust as you scroll"),
             Line::from("  • Use :cache save trades_2024 for named caches"),
         ]);
