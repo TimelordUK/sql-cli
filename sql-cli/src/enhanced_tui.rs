@@ -121,6 +121,7 @@ pub struct EnhancedTuiApp {
     column_widths: Vec<u16>,
     scroll_offset: (usize, usize), // (row, col)
     current_column: usize,         // For column-based operations
+    pinned_columns: Vec<usize>,    // Indices of pinned columns
     sql_highlighter: SqlHighlighter,
     debug_text: String,
     debug_scroll: u16,
@@ -244,6 +245,7 @@ impl EnhancedTuiApp {
             column_widths: Vec::new(),
             scroll_offset: (0, 0),
             current_column: 0,
+            pinned_columns: Vec::new(),
             sql_highlighter: SqlHighlighter::new(),
             debug_text: String::new(),
             debug_scroll: 0,
@@ -898,6 +900,14 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('G') => {
                 self.goto_last_row();
+            }
+            KeyCode::Char('p') => {
+                // Toggle pin for current column
+                self.toggle_column_pin();
+            }
+            KeyCode::Char('P') => {
+                // Clear all pinned columns
+                self.clear_pinned_columns();
             }
             KeyCode::Char('C') => {
                 // Toggle compact mode with Shift+C
@@ -1722,6 +1732,33 @@ impl EnhancedTuiApp {
     fn goto_first_row(&mut self) {
         self.table_state.select(Some(0));
         self.scroll_offset.0 = 0; // Reset viewport to top
+    }
+
+    fn toggle_column_pin(&mut self) {
+        // Pin or unpin the current column
+        if let Some(pos) = self
+            .pinned_columns
+            .iter()
+            .position(|&x| x == self.current_column)
+        {
+            // Column is already pinned, unpin it
+            self.pinned_columns.remove(pos);
+            self.status_message = format!("Column {} unpinned", self.current_column + 1);
+        } else {
+            // Pin the column (max 4 pinned columns)
+            if self.pinned_columns.len() < 4 {
+                self.pinned_columns.push(self.current_column);
+                self.pinned_columns.sort(); // Keep them in order
+                self.status_message = format!("Column {} pinned 📌", self.current_column + 1);
+            } else {
+                self.status_message = "Maximum 4 pinned columns allowed".to_string();
+            }
+        }
+    }
+
+    fn clear_pinned_columns(&mut self) {
+        self.pinned_columns.clear();
+        self.status_message = "All columns unpinned".to_string();
     }
 
     fn check_parser_error(&self, query: &str) -> Option<String> {
@@ -3502,44 +3539,92 @@ impl EnhancedTuiApp {
         let terminal_width = area.width as usize;
         let available_width = terminal_width.saturating_sub(4); // Account for borders and padding
 
-        // Calculate how many columns can fit using actual column widths
-        let max_visible_cols = if !self.column_widths.is_empty() {
+        // Split columns into pinned and scrollable
+        let mut pinned_headers: Vec<(usize, &str)> = Vec::new();
+        let mut scrollable_indices: Vec<usize> = Vec::new();
+
+        for (i, header) in headers.iter().enumerate() {
+            if self.pinned_columns.contains(&i) {
+                pinned_headers.push((i, header));
+            } else {
+                scrollable_indices.push(i);
+            }
+        }
+
+        // Calculate space used by pinned columns
+        let mut pinned_width = 0;
+        for &(idx, _) in &pinned_headers {
+            if idx < self.column_widths.len() {
+                pinned_width += self.column_widths[idx] as usize;
+            } else {
+                pinned_width += 15; // Default width
+            }
+        }
+
+        // Calculate how many scrollable columns can fit in remaining space
+        let remaining_width = available_width.saturating_sub(pinned_width);
+        let max_visible_scrollable_cols = if !self.column_widths.is_empty() {
             let mut width_used = 0;
             let mut cols_that_fit = 0;
 
-            for (i, &col_width) in self.column_widths.iter().enumerate() {
-                if i >= headers.len() {
+            for &idx in &scrollable_indices {
+                if idx >= headers.len() {
                     break;
                 }
-                if width_used + col_width as usize <= available_width {
-                    width_used += col_width as usize;
+                let col_width = if idx < self.column_widths.len() {
+                    self.column_widths[idx] as usize
+                } else {
+                    15
+                };
+                if width_used + col_width <= remaining_width {
+                    width_used += col_width;
                     cols_that_fit += 1;
                 } else {
                     break;
                 }
             }
-            cols_that_fit.max(1).min(headers.len())
+            cols_that_fit.max(1)
         } else {
             // Fallback to old method if no calculated widths
             let avg_col_width = 15;
-            (available_width / avg_col_width).max(1).min(headers.len())
+            (remaining_width / avg_col_width).max(1)
         };
 
-        // Calculate column viewport based on current_column
-        let viewport_start = if self.current_column < max_visible_cols / 2 {
-            0
-        } else if self.current_column + max_visible_cols / 2 >= headers.len() {
-            headers.len().saturating_sub(max_visible_cols)
+        // Calculate viewport for scrollable columns based on current_column
+        let current_in_scrollable = scrollable_indices
+            .iter()
+            .position(|&x| x == self.current_column);
+        let viewport_start = if let Some(pos) = current_in_scrollable {
+            if pos < max_visible_scrollable_cols / 2 {
+                0
+            } else if pos + max_visible_scrollable_cols / 2 >= scrollable_indices.len() {
+                scrollable_indices
+                    .len()
+                    .saturating_sub(max_visible_scrollable_cols)
+            } else {
+                pos.saturating_sub(max_visible_scrollable_cols / 2)
+            }
         } else {
-            self.current_column.saturating_sub(max_visible_cols / 2)
+            // Current column is pinned, use scroll offset
+            self.scroll_offset.1.min(
+                scrollable_indices
+                    .len()
+                    .saturating_sub(max_visible_scrollable_cols),
+            )
         };
-        let viewport_end = (viewport_start + max_visible_cols).min(headers.len());
+        let viewport_end =
+            (viewport_start + max_visible_scrollable_cols).min(scrollable_indices.len());
+
+        // Build final list of visible columns (pinned + scrollable viewport)
+        let mut visible_columns: Vec<(usize, &str)> = Vec::new();
+        visible_columns.extend(pinned_headers.iter().copied());
+        for i in viewport_start..viewport_end {
+            let idx = scrollable_indices[i];
+            visible_columns.push((idx, headers[idx]));
+        }
 
         // Only work with visible headers
-        let visible_headers: Vec<&str> = headers[viewport_start..viewport_end]
-            .iter()
-            .copied()
-            .collect();
+        let visible_headers: Vec<&str> = visible_columns.iter().map(|(_, h)| *h).collect();
 
         // Calculate viewport dimensions FIRST before processing any data
         let terminal_height = area.height as usize;
@@ -3560,7 +3645,12 @@ impl EnhancedTuiApp {
             // Apply both row and column viewport to filtered data
             filtered[row_viewport_start..row_viewport_end]
                 .iter()
-                .map(|row| row[viewport_start..viewport_end].to_vec())
+                .map(|row| {
+                    visible_columns
+                        .iter()
+                        .map(|(idx, _)| row[*idx].clone())
+                        .collect()
+                })
                 .collect()
         } else {
             // Convert JSON data to string matrix (only visible rows AND columns)
@@ -3568,9 +3658,9 @@ impl EnhancedTuiApp {
                 .iter()
                 .map(|item| {
                     if let Some(obj) = item.as_object() {
-                        visible_headers
+                        visible_columns
                             .iter()
-                            .map(|&header| match obj.get(header) {
+                            .map(|(_, header)| match obj.get(*header) {
                                 Some(Value::String(s)) => s.clone(),
                                 Some(Value::Number(n)) => n.to_string(),
                                 Some(Value::Bool(b)) => b.to_string(),
@@ -3601,45 +3691,49 @@ impl EnhancedTuiApp {
         }
 
         // Add data headers
-        header_cells.extend(
-            visible_headers
-                .iter()
-                .enumerate()
-                .map(|(visible_i, &header)| {
-                    let actual_col_index = viewport_start + visible_i;
-                    let sort_indicator = if let Some(col) = self.sort_state.column {
-                        if col == actual_col_index {
-                            match self.sort_state.order {
-                                SortOrder::Ascending => " ↑",
-                                SortOrder::Descending => " ↓",
-                                SortOrder::None => "",
-                            }
-                        } else {
-                            ""
-                        }
-                    } else {
-                        ""
-                    };
-
-                    let column_indicator = if actual_col_index == self.current_column {
-                        " [*]"
-                    } else {
-                        ""
-                    };
-
-                    let header_text = format!("{}{}{}", header, sort_indicator, column_indicator);
-                    let mut style = Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD);
-
-                    // Highlight the current column
-                    if actual_col_index == self.current_column {
-                        style = style.bg(Color::DarkGray);
+        header_cells.extend(visible_columns.iter().map(|(actual_col_index, header)| {
+            let sort_indicator = if let Some(col) = self.sort_state.column {
+                if col == *actual_col_index {
+                    match self.sort_state.order {
+                        SortOrder::Ascending => " ↑",
+                        SortOrder::Descending => " ↓",
+                        SortOrder::None => "",
                     }
+                } else {
+                    ""
+                }
+            } else {
+                ""
+            };
 
-                    Cell::from(header_text).style(style)
-                }),
-        );
+            let column_indicator = if *actual_col_index == self.current_column {
+                " [*]"
+            } else {
+                ""
+            };
+
+            // Add pin indicator for pinned columns
+            let pin_indicator = if self.pinned_columns.contains(actual_col_index) {
+                "📌 "
+            } else {
+                ""
+            };
+
+            let header_text = format!(
+                "{}{}{}{}",
+                pin_indicator, header, sort_indicator, column_indicator
+            );
+            let mut style = Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD);
+
+            // Highlight the current column
+            if *actual_col_index == self.current_column {
+                style = style.bg(Color::DarkGray);
+            }
+
+            Cell::from(header_text).style(style)
+        }));
 
         let selected_row = self.table_state.selected().unwrap_or(0);
 
@@ -3661,7 +3755,7 @@ impl EnhancedTuiApp {
 
                 // Add data cells
                 cells.extend(row.iter().enumerate().map(|(visible_col_idx, cell)| {
-                    let actual_col_idx = viewport_start + visible_col_idx;
+                    let actual_col_idx = visible_columns[visible_col_idx].0;
                     let mut style = Style::default();
 
                     // Highlight current column
@@ -3706,9 +3800,9 @@ impl EnhancedTuiApp {
         // Add data column constraints
         if !self.column_widths.is_empty() {
             // Use calculated optimal widths for visible columns
-            constraints.extend((viewport_start..viewport_end).map(|col_idx| {
-                if col_idx < self.column_widths.len() {
-                    Constraint::Length(self.column_widths[col_idx])
+            constraints.extend(visible_columns.iter().map(|(col_idx, _)| {
+                if *col_idx < self.column_widths.len() {
+                    Constraint::Length(self.column_widths[*col_idx])
                 } else {
                     Constraint::Min(10) // Fallback
                 }
@@ -3722,10 +3816,10 @@ impl EnhancedTuiApp {
             .header(Row::new(header_cells).height(1))
             .block(Block::default()
                 .borders(Borders::ALL)
-                .title(format!("Results ({} rows) - Columns {}-{} of {} | Viewport rows {}-{} (selected: {}) | Use h/l to scroll",
+                .title(format!("Results ({} rows) - {} pinned, {} visible of {} | Viewport rows {}-{} (selected: {}) | Use h/l to scroll",
                     total_rows,
-                    viewport_start + 1,
-                    viewport_end,
+                    self.pinned_columns.len(),
+                    visible_columns.len(),
                     headers.len(),
                     row_viewport_start + 1,
                     row_viewport_end,
@@ -3800,6 +3894,8 @@ impl EnhancedTuiApp {
             Line::from("  N        - 🔢 TOGGLE ROW NUMBERS (like vim :set nu)"),
             Line::from("  :        - 📍 JUMP TO ROW (enter row number)"),
             Line::from("  Space    - 🔒 TOGGLE VIEWPORT LOCK (anchor scrolling)"),
+            Line::from("  p        - 📌 PIN/UNPIN CURRENT COLUMN (max 4)"),
+            Line::from("  P        - CLEAR ALL PINNED COLUMNS"),
             Line::from("  /        - Search in results"),
             Line::from("  n/N      - Next/previous search match"),
             Line::from("  f        - Filter rows (regex)"),
@@ -3824,6 +3920,7 @@ impl EnhancedTuiApp {
             Line::from("  Esc      - Cancel"),
             Line::from(""),
             Line::from("🌟 Enhanced Features:"),
+            Line::from("  • Column pinning - keep important columns visible while scrolling"),
             Line::from("  • Dynamic column sizing - auto-adjusts to visible data"),
             Line::from("  • Compact mode (C key) - fits more columns on screen"),
             Line::from("  • Rainbow parentheses - visual matching for nested SQL"),
