@@ -6,10 +6,15 @@ use chrono::{Datelike, Local};
 pub struct WhereParser {
     tokens: Vec<Token>,
     current: usize,
+    columns: Vec<String>,
 }
 
 impl WhereParser {
     pub fn parse(where_clause: &str) -> Result<WhereExpr> {
+        Self::parse_with_columns(where_clause, vec![])
+    }
+
+    pub fn parse_with_columns(where_clause: &str, columns: Vec<String>) -> Result<WhereExpr> {
         let mut lexer = Lexer::new(where_clause);
         let mut tokens = Vec::new();
 
@@ -21,7 +26,11 @@ impl WhereParser {
             tokens.push(token);
         }
 
-        let mut parser = WhereParser { tokens, current: 0 };
+        let mut parser = WhereParser {
+            tokens,
+            current: 0,
+            columns,
+        };
         parser.parse_or_expr()
     }
 
@@ -40,9 +49,24 @@ impl WhereParser {
     }
 
     fn expect_identifier(&mut self) -> Result<String> {
+        // Check current token before advancing to avoid borrow issues
+        let is_numeric_column = if let Some(Token::NumberLiteral(num)) = self.current_token() {
+            self.columns.iter().any(|col| col == num)
+        } else {
+            false
+        };
+
         match self.advance() {
             Some(Token::Identifier(name)) => Ok(name.clone()),
             Some(Token::QuotedIdentifier(name)) => Ok(name.clone()), // Handle quoted column names
+            Some(Token::NumberLiteral(num)) => {
+                // Check if this number matches a known column name
+                if is_numeric_column {
+                    Ok(num.clone())
+                } else {
+                    Err(anyhow!("Expected identifier, got number {}", num))
+                }
+            }
             _ => Err(anyhow!("Expected identifier")),
         }
     }
@@ -601,6 +625,65 @@ mod tests {
                 }
             }
             _ => panic!("Should be an OR expression"),
+        }
+    }
+
+    #[test]
+    fn test_numeric_column_names() {
+        // Test that numeric column names (like date columns "202204") are recognized as identifiers
+        let columns = vec![
+            "Borough".to_string(),
+            "202202".to_string(),
+            "202203".to_string(),
+            "202204".to_string(),
+            "202205".to_string(),
+        ];
+
+        // Test simple comparison with numeric column
+        let expr = WhereParser::parse_with_columns("202204 > 2.0", columns.clone()).unwrap();
+        match expr {
+            WhereExpr::GreaterThan(col, val) => {
+                assert_eq!(col, "202204");
+                assert_eq!(val, WhereValue::Number(2.0));
+            }
+            _ => panic!("Expected GreaterThan with numeric column name"),
+        }
+
+        // Test complex expression with numeric column
+        let expr2 = WhereParser::parse_with_columns(
+            "Borough = \"London\" AND 202204 > 1.0",
+            columns.clone(),
+        )
+        .unwrap();
+        match expr2 {
+            WhereExpr::And(left, right) => {
+                match &*left {
+                    WhereExpr::Equal(col, val) => {
+                        assert_eq!(col, "Borough");
+                        assert_eq!(val, &WhereValue::String("London".to_string()));
+                    }
+                    _ => panic!("Expected Equal on left"),
+                }
+                match &*right {
+                    WhereExpr::GreaterThan(col, val) => {
+                        assert_eq!(col, "202204");
+                        assert_eq!(val, &WhereValue::Number(1.0));
+                    }
+                    _ => panic!("Expected GreaterThan on right"),
+                }
+            }
+            _ => panic!("Expected And expression"),
+        }
+
+        // Test that numbers not in column list are still treated as literals
+        let limited_columns = vec!["price".to_string(), "quantity".to_string()];
+        let expr3 = WhereParser::parse_with_columns("price > 100", limited_columns).unwrap();
+        match expr3 {
+            WhereExpr::GreaterThan(col, val) => {
+                assert_eq!(col, "price");
+                assert_eq!(val, WhereValue::Number(100.0));
+            }
+            _ => panic!("Expected GreaterThan"),
         }
     }
 }

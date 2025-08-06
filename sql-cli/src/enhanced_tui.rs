@@ -1214,7 +1214,26 @@ impl EnhancedTuiApp {
         if let Some(where_pos) = query_lower.find(" where ") {
             let where_clause = &query[where_pos + 7..]; // Skip " where "
 
-            match WhereParser::parse(where_clause) {
+            // Get columns from CSV client if available
+            let columns = if self.csv_mode {
+                if let Some(ref csv_client) = self.csv_client {
+                    if let Some(schema) = csv_client.get_schema() {
+                        schema
+                            .iter()
+                            .next()
+                            .map(|(_, cols)| cols.clone())
+                            .unwrap_or_default()
+                    } else {
+                        vec![]
+                    }
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            };
+
+            match WhereParser::parse_with_columns(where_clause, columns) {
                 Ok(ast) => {
                     let tree = format_where_ast(&ast, 0);
                     Ok(format!(

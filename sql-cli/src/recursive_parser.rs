@@ -344,6 +344,7 @@ pub struct Parser {
     lexer: Lexer,
     current_token: Token,
     in_method_args: bool, // Track if we're parsing method arguments
+    columns: Vec<String>, // Known column names for context-aware parsing
 }
 
 impl Parser {
@@ -354,7 +355,13 @@ impl Parser {
             lexer,
             current_token,
             in_method_args: false,
+            columns: Vec::new(),
         }
+    }
+
+    pub fn with_columns(mut self, columns: Vec<String>) -> Self {
+        self.columns = columns;
+        self
     }
 
     fn consume(&mut self, expected: Token) -> Result<(), String> {
@@ -648,6 +655,17 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<SqlExpression, String> {
+        // Special case: check if a number literal could actually be a column name
+        // This handles cases where columns are named with pure numbers like "202204"
+        if let Token::NumberLiteral(num_str) = &self.current_token {
+            // Check if this number matches a known column name
+            if self.columns.iter().any(|col| col == num_str) {
+                let expr = SqlExpression::Column(num_str.clone());
+                self.advance();
+                return Ok(expr);
+            }
+        }
+
         match &self.current_token {
             Token::DateTime => {
                 self.advance(); // consume DateTime

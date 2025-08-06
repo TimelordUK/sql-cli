@@ -196,8 +196,9 @@ impl CsvDataSource {
     }
 
     fn filter_results(&self, data: Vec<Value>, where_clause: &str) -> Result<Vec<Value>> {
-        // Parse WHERE clause into AST
-        let expr = WhereParser::parse(where_clause)?;
+        // Parse WHERE clause into AST with column context
+        let columns = self.headers.clone();
+        let expr = WhereParser::parse_with_columns(where_clause, columns)?;
 
         let mut filtered = Vec::new();
         for row in data {
