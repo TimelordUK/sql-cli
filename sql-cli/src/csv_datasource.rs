@@ -101,6 +101,10 @@ impl CsvDataSource {
     }
 
     pub fn query(&self, sql: &str) -> Result<Vec<Value>> {
+        self.query_with_options(sql, false)
+    }
+
+    pub fn query_with_options(&self, sql: &str, case_insensitive: bool) -> Result<Vec<Value>> {
         // Parse SQL using the recursive parser to extract ORDER BY
         let mut parser = Parser::new(sql);
         match parser.parse() {
@@ -151,7 +155,11 @@ impl CsvDataSource {
                             sql.len()
                         };
                         let where_clause = sql[where_start..where_end].trim();
-                        results = self.filter_results(results, where_clause)?;
+                        results = self.filter_results_with_options(
+                            results,
+                            where_clause,
+                            case_insensitive,
+                        )?;
                     }
 
                     // Handle specific column selection
@@ -208,9 +216,18 @@ impl CsvDataSource {
     }
 
     fn filter_results(&self, data: Vec<Value>, where_clause: &str) -> Result<Vec<Value>> {
+        self.filter_results_with_options(data, where_clause, false)
+    }
+
+    fn filter_results_with_options(
+        &self,
+        data: Vec<Value>,
+        where_clause: &str,
+        case_insensitive: bool,
+    ) -> Result<Vec<Value>> {
         // Parse WHERE clause into AST with column context
         let columns = self.headers.clone();
-        let expr = WhereParser::parse_with_columns(where_clause, columns)?;
+        let expr = WhereParser::parse_with_options(where_clause, columns, case_insensitive)?;
 
         let mut filtered = Vec::new();
         for row in data {
@@ -365,11 +382,19 @@ impl CsvDataSource {
 #[derive(Clone)]
 pub struct CsvApiClient {
     datasource: Option<CsvDataSource>,
+    case_insensitive: bool,
 }
 
 impl CsvApiClient {
     pub fn new() -> Self {
-        Self { datasource: None }
+        Self {
+            datasource: None,
+            case_insensitive: false,
+        }
+    }
+
+    pub fn set_case_insensitive(&mut self, case_insensitive: bool) {
+        self.case_insensitive = case_insensitive;
     }
 
     pub fn load_csv<P: AsRef<Path>>(&mut self, path: P, table_name: &str) -> Result<()> {
@@ -384,7 +409,7 @@ impl CsvApiClient {
 
     pub fn query_csv(&self, sql: &str) -> Result<QueryResponse> {
         if let Some(ref ds) = self.datasource {
-            let data = ds.query(sql)?;
+            let data = ds.query_with_options(sql, self.case_insensitive)?;
             let count = data.len();
 
             Ok(QueryResponse {

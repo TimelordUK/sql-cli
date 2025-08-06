@@ -7,6 +7,7 @@ pub struct WhereParser {
     tokens: Vec<Token>,
     current: usize,
     columns: Vec<String>,
+    case_insensitive: bool,
 }
 
 impl WhereParser {
@@ -15,6 +16,14 @@ impl WhereParser {
     }
 
     pub fn parse_with_columns(where_clause: &str, columns: Vec<String>) -> Result<WhereExpr> {
+        Self::parse_with_options(where_clause, columns, false)
+    }
+
+    pub fn parse_with_options(
+        where_clause: &str,
+        columns: Vec<String>,
+        case_insensitive: bool,
+    ) -> Result<WhereExpr> {
         let mut lexer = Lexer::new(where_clause);
         let mut tokens = Vec::new();
 
@@ -30,6 +39,7 @@ impl WhereParser {
             tokens,
             current: 0,
             columns,
+            case_insensitive,
         };
         parser.parse_or_expr()
     }
@@ -221,19 +231,31 @@ impl WhereParser {
                     self.expect_token(Token::LeftParen)?;
                     let value = self.parse_string_value()?;
                     self.expect_token(Token::RightParen)?;
-                    Ok(WhereExpr::Contains(column, value))
+                    if self.case_insensitive {
+                        Ok(WhereExpr::ContainsIgnoreCase(column, value))
+                    } else {
+                        Ok(WhereExpr::Contains(column, value))
+                    }
                 }
                 "StartsWith" => {
                     self.expect_token(Token::LeftParen)?;
                     let value = self.parse_string_value()?;
                     self.expect_token(Token::RightParen)?;
-                    Ok(WhereExpr::StartsWith(column, value))
+                    if self.case_insensitive {
+                        Ok(WhereExpr::StartsWithIgnoreCase(column, value))
+                    } else {
+                        Ok(WhereExpr::StartsWith(column, value))
+                    }
                 }
                 "EndsWith" => {
                     self.expect_token(Token::LeftParen)?;
                     let value = self.parse_string_value()?;
                     self.expect_token(Token::RightParen)?;
-                    Ok(WhereExpr::EndsWith(column, value))
+                    if self.case_insensitive {
+                        Ok(WhereExpr::EndsWithIgnoreCase(column, value))
+                    } else {
+                        Ok(WhereExpr::EndsWith(column, value))
+                    }
                 }
                 "Length" => {
                     self.expect_token(Token::LeftParen)?;

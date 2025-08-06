@@ -361,12 +361,25 @@ pub struct SelectStatement {
     pub group_by: Option<Vec<String>>,
 }
 
+pub struct ParserConfig {
+    pub case_insensitive: bool,
+}
+
+impl Default for ParserConfig {
+    fn default() -> Self {
+        Self {
+            case_insensitive: false,
+        }
+    }
+}
+
 pub struct Parser {
     lexer: Lexer,
     current_token: Token,
     in_method_args: bool, // Track if we're parsing method arguments
     columns: Vec<String>, // Known column names for context-aware parsing
     paren_depth: i32,     // Track parentheses nesting depth
+    config: ParserConfig, // Parser configuration including case sensitivity
 }
 
 impl Parser {
@@ -379,6 +392,20 @@ impl Parser {
             in_method_args: false,
             columns: Vec::new(),
             paren_depth: 0,
+            config: ParserConfig::default(),
+        }
+    }
+
+    pub fn with_config(input: &str, config: ParserConfig) -> Self {
+        let mut lexer = Lexer::new(input);
+        let current_token = lexer.next_token();
+        Self {
+            lexer,
+            current_token,
+            in_method_args: false,
+            columns: Vec::new(),
+            paren_depth: 0,
+            config,
         }
     }
 

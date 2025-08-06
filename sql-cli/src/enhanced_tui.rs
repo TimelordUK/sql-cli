@@ -125,6 +125,7 @@ pub struct EnhancedTuiApp {
     debug_text: String,
     debug_scroll: u16,
     input_scroll_offset: u16, // Horizontal scroll offset for input
+    case_insensitive: bool,   // Toggle for case-insensitive string comparisons
 
     // CSV mode
     csv_client: Option<CsvApiClient>,
@@ -247,6 +248,7 @@ impl EnhancedTuiApp {
             debug_text: String::new(),
             debug_scroll: 0,
             input_scroll_offset: 0,
+            case_insensitive: false,
             csv_client: None,
             csv_mode: false,
             csv_table_name: String::new(),
@@ -600,6 +602,20 @@ impl EnhancedTuiApp {
                     KeyCode::End,
                     KeyModifiers::empty(),
                 )));
+            }
+            KeyCode::Char('i') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Toggle case-insensitive string comparisons
+                self.case_insensitive = !self.case_insensitive;
+
+                // Update CSV client if in CSV mode
+                if let Some(ref mut csv_client) = self.csv_client {
+                    csv_client.set_case_insensitive(self.case_insensitive);
+                }
+
+                self.status_message = format!(
+                    "Case-insensitive string comparisons: {}",
+                    if self.case_insensitive { "ON" } else { "OFF" }
+                );
             }
             KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Delete word backward (like bash/zsh)
@@ -1233,7 +1249,7 @@ impl EnhancedTuiApp {
                 vec![]
             };
 
-            match WhereParser::parse_with_columns(where_clause, columns) {
+            match WhereParser::parse_with_options(where_clause, columns, self.case_insensitive) {
                 Ok(ast) => {
                     let tree = format_where_ast(&ast, 0);
                     Ok(format!(
@@ -3342,6 +3358,17 @@ impl EnhancedTuiApp {
             ));
         }
 
+        // Add case-insensitive indicator
+        if self.case_insensitive {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(
+                "[Ⓘ]",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
         spans.push(Span::raw(" | F1:Help C:Compact q:Quit"));
 
         let status_line = Line::from(spans);
@@ -3630,6 +3657,9 @@ impl EnhancedTuiApp {
             Line::from("  Ctrl+E   - Jump to end of line"),
             Line::from("  Ctrl+←/Alt+B - Move backward one word"),
             Line::from("  Ctrl+→/Alt+F - Move forward one word"),
+            Line::from(""),
+            Line::from("Query Options:"),
+            Line::from("  Ctrl+I   - Toggle case-insensitive string comparisons"),
             Line::from("  Alt+[    - Jump to previous SQL token"),
             Line::from("  Alt+]    - Jump to next SQL token"),
             Line::from("  "),

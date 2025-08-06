@@ -28,9 +28,12 @@ pub enum WhereExpr {
     Contains(String, String),
     StartsWith(String, String),
     EndsWith(String, String),
+    ContainsIgnoreCase(String, String), // Case-insensitive contains
+    StartsWithIgnoreCase(String, String), // Case-insensitive starts with
+    EndsWithIgnoreCase(String, String), // Case-insensitive ends with
     ToLower(String, ComparisonOp, String), // column.ToLower() == "value"
     ToUpper(String, ComparisonOp, String), // column.ToUpper() == "VALUE"
-    IsNullOrEmpty(String),                 // String.IsNullOrEmpty(column)
+    IsNullOrEmpty(String),              // String.IsNullOrEmpty(column)
 
     // Numeric methods
     Length(String, ComparisonOp, i64),
@@ -130,6 +133,24 @@ pub fn format_where_ast(expr: &WhereExpr, indent: usize) -> String {
         }
         WhereExpr::EndsWith(col, suffix) => {
             format!("{}ENDS_WITH({}, \"{}\")", indent_str, col, suffix)
+        }
+        WhereExpr::ContainsIgnoreCase(col, search) => {
+            format!(
+                "{}CONTAINS_IGNORE_CASE({}, \"{}\")",
+                indent_str, col, search
+            )
+        }
+        WhereExpr::StartsWithIgnoreCase(col, prefix) => {
+            format!(
+                "{}STARTS_WITH_IGNORE_CASE({}, \"{}\")",
+                indent_str, col, prefix
+            )
+        }
+        WhereExpr::EndsWithIgnoreCase(col, suffix) => {
+            format!(
+                "{}ENDS_WITH_IGNORE_CASE({}, \"{}\")",
+                indent_str, col, suffix
+            )
         }
         WhereExpr::ToLower(col, op, value) => {
             format!("{}TO_LOWER({}, {:?}, \"{}\")", indent_str, col, op, value)
@@ -322,6 +343,42 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
             if let Some(field_value) = row.get(column) {
                 if let Some(s) = field_value.as_str() {
                     Ok(s.ends_with(suffix))
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+
+        WhereExpr::ContainsIgnoreCase(column, search) => {
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    Ok(s.to_lowercase().contains(&search.to_lowercase()))
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+
+        WhereExpr::StartsWithIgnoreCase(column, prefix) => {
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    Ok(s.to_lowercase().starts_with(&prefix.to_lowercase()))
+                } else {
+                    Ok(false)
+                }
+            } else {
+                Ok(false)
+            }
+        }
+
+        WhereExpr::EndsWithIgnoreCase(column, suffix) => {
+            if let Some(field_value) = row.get(column) {
+                if let Some(s) = field_value.as_str() {
+                    Ok(s.to_lowercase().ends_with(&suffix.to_lowercase()))
                 } else {
                     Ok(false)
                 }
