@@ -126,6 +126,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         ref: 'v${{ needs.prepare-release.outputs.new_version }}'
+        fetch-depth: 0  # Fetch all history for proper changelog generation
     
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
@@ -168,6 +169,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         ref: 'v${{ needs.prepare-release.outputs.new_version }}'
+        fetch-depth: 0  # Fetch all history for proper changelog generation
     
     - name: Download all artifacts
       uses: actions/download-artifact@v4
@@ -185,18 +187,22 @@ jobs:
         echo "**Release Date:** $(date +'%B %d, %Y')" >> RELEASE_NOTES.md
         echo "" >> RELEASE_NOTES.md
         
-        # Get commits since last tag
-        LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        # Get commits since last tag (excluding the current tag)
+        # We need to skip the version bump commit to find the actual previous release tag
+        LAST_TAG=$(git tag --sort=-version:refname | grep -v "^v$VERSION$" | head -n 1 || echo "")
+        
+        echo "Debug: Current version: v$VERSION"
+        echo "Debug: Last tag found: $LAST_TAG"
         
         # Generate categorized changelog
         echo "## ✨ What's New" >> RELEASE_NOTES.md
         echo "" >> RELEASE_NOTES.md
         
-        # Features
+        # Features (exclude version bump commits)
         if [ -z "$LAST_TAG" ]; then
-          FEAT_COMMITS=$(git log --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" || true)
+          FEAT_COMMITS=$(git log --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" | grep -v "^chore: bump version" || true)
         else
-          FEAT_COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" || true)
+          FEAT_COMMITS=$(git log ${LAST_TAG}..HEAD^ --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" | grep -v "^chore: bump version" || true)
         fi
         
         if [ ! -z "$FEAT_COMMITS" ]; then
@@ -205,11 +211,11 @@ jobs:
           echo "" >> RELEASE_NOTES.md
         fi
         
-        # Fixes
+        # Fixes (exclude version bump commits)
         if [ -z "$LAST_TAG" ]; then
-          FIX_COMMITS=$(git log --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" || true)
+          FIX_COMMITS=$(git log --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" | grep -v "^chore: bump version" || true)
         else
-          FIX_COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" || true)
+          FIX_COMMITS=$(git log ${LAST_TAG}..HEAD^ --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" | grep -v "^chore: bump version" || true)
         fi
         
         if [ ! -z "$FIX_COMMITS" ]; then
@@ -218,11 +224,11 @@ jobs:
           echo "" >> RELEASE_NOTES.md
         fi
         
-        # Documentation
+        # Documentation (exclude version bump commits)
         if [ -z "$LAST_TAG" ]; then
-          DOCS_COMMITS=$(git log --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" || true)
+          DOCS_COMMITS=$(git log --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" | grep -v "^chore: bump version" || true)
         else
-          DOCS_COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" || true)
+          DOCS_COMMITS=$(git log ${LAST_TAG}..HEAD^ --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" | grep -v "^chore: bump version" || true)
         fi
         
         if [ ! -z "$DOCS_COMMITS" ]; then
@@ -239,9 +245,9 @@ jobs:
         echo "" >> RELEASE_NOTES.md
         
         if [ -z "$LAST_TAG" ]; then
-          git log --pretty=format:"- %s (%an)" >> RELEASE_NOTES.md
+          git log --pretty=format:"- %s (%an)" | grep -v "^- chore: bump version" >> RELEASE_NOTES.md
         else
-          git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%an)" >> RELEASE_NOTES.md
+          git log ${LAST_TAG}..HEAD^ --pretty=format:"- %s (%an)" | grep -v "^- chore: bump version" >> RELEASE_NOTES.md
         fi
         
         echo "" >> RELEASE_NOTES.md
