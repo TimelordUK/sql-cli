@@ -1724,6 +1724,44 @@ impl EnhancedTuiApp {
         self.scroll_offset.0 = 0; // Reset viewport to top
     }
 
+    fn check_parser_error(&self, query: &str) -> Option<String> {
+        // Quick check for common parser errors
+        let mut paren_depth = 0;
+        let mut in_string = false;
+        let mut escape_next = false;
+
+        for ch in query.chars() {
+            if escape_next {
+                escape_next = false;
+                continue;
+            }
+
+            match ch {
+                '\\' if in_string => escape_next = true,
+                '\'' => in_string = !in_string,
+                '(' if !in_string => paren_depth += 1,
+                ')' if !in_string => {
+                    paren_depth -= 1;
+                    if paren_depth < 0 {
+                        return Some("Extra )".to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if paren_depth > 0 {
+            return Some(format!("Missing {} )", paren_depth));
+        }
+
+        // Could add more checks here (unclosed strings, etc.)
+        if in_string {
+            return Some("Unclosed string".to_string());
+        }
+
+        None
+    }
+
     fn update_viewport_size(&mut self) {
         // Update the stored viewport size based on current terminal size
         if let Ok((_, height)) = crossterm::terminal::size() {
@@ -3413,6 +3451,22 @@ impl EnhancedTuiApp {
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ));
+        }
+
+        // Check for parser errors in real-time
+        if self.mode == AppMode::Command {
+            let query = self.input.value();
+            if !query.trim().is_empty() {
+                if let Some(error_msg) = self.check_parser_error(query) {
+                    spans.push(Span::raw(" | "));
+                    spans.push(Span::styled(
+                        format!("⚠️  {}", error_msg),
+                        Style::default()
+                            .fg(Color::Red)
+                            .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK),
+                    ));
+                }
+            }
         }
 
         spans.push(Span::raw(" | F1:Help F8:Case q:Quit"));
