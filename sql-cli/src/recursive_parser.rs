@@ -366,6 +366,7 @@ pub struct Parser {
     current_token: Token,
     in_method_args: bool, // Track if we're parsing method arguments
     columns: Vec<String>, // Known column names for context-aware parsing
+    paren_depth: i32,     // Track parentheses nesting depth
 }
 
 impl Parser {
@@ -377,6 +378,7 @@ impl Parser {
             current_token,
             in_method_args: false,
             columns: Vec::new(),
+            paren_depth: 0,
         }
     }
 
@@ -387,17 +389,59 @@ impl Parser {
 
     fn consume(&mut self, expected: Token) -> Result<(), String> {
         if std::mem::discriminant(&self.current_token) == std::mem::discriminant(&expected) {
+            // Track parentheses depth
+            match &expected {
+                Token::LeftParen => self.paren_depth += 1,
+                Token::RightParen => {
+                    self.paren_depth -= 1;
+                    // Check for extra closing parenthesis
+                    if self.paren_depth < 0 {
+                        return Err(
+                            "Unexpected closing parenthesis - no matching opening parenthesis"
+                                .to_string(),
+                        );
+                    }
+                }
+                _ => {}
+            }
+
             self.current_token = self.lexer.next_token();
             Ok(())
         } else {
-            Err(format!(
-                "Expected {:?}, found {:?}",
-                expected, self.current_token
-            ))
+            // Provide better error messages for common cases
+            let error_msg = match (&expected, &self.current_token) {
+                (Token::RightParen, Token::Eof) if self.paren_depth > 0 => {
+                    format!(
+                        "Unclosed parenthesis - missing {} closing parenthes{}",
+                        self.paren_depth,
+                        if self.paren_depth == 1 { "is" } else { "es" }
+                    )
+                }
+                (Token::RightParen, _) if self.paren_depth > 0 => {
+                    format!(
+                        "Expected closing parenthesis but found {:?} (currently {} unclosed parenthes{})",
+                        self.current_token,
+                        self.paren_depth,
+                        if self.paren_depth == 1 { "is" } else { "es" }
+                    )
+                }
+                _ => format!("Expected {:?}, found {:?}", expected, self.current_token),
+            };
+            Err(error_msg)
         }
     }
 
     fn advance(&mut self) {
+        // Track parentheses depth when advancing
+        match &self.current_token {
+            Token::LeftParen => self.paren_depth += 1,
+            Token::RightParen => {
+                self.paren_depth -= 1;
+                // Note: We don't check for < 0 here because advance() is used
+                // in contexts where we're not necessarily expecting a right paren
+            }
+            _ => {}
+        }
         self.current_token = self.lexer.next_token();
     }
 
@@ -450,6 +494,19 @@ impl Parser {
         } else {
             None
         };
+
+        // Check for balanced parentheses at the end of parsing
+        if self.paren_depth > 0 {
+            return Err(format!(
+                "Unclosed parenthesis - missing {} closing parenthes{}",
+                self.paren_depth,
+                if self.paren_depth == 1 { "is" } else { "es" }
+            ));
+        } else if self.paren_depth < 0 {
+            return Err(
+                "Extra closing parenthesis found - no matching opening parenthesis".to_string(),
+            );
+        }
 
         Ok(SelectStatement {
             columns,
@@ -582,6 +639,13 @@ impl Parser {
                 Token::Or => {
                     self.advance();
                     Some(LogicalOp::Or)
+                }
+                Token::RightParen if self.paren_depth <= 0 => {
+                    // Unexpected closing parenthesis
+                    return Err(
+                        "Unexpected closing parenthesis - no matching opening parenthesis"
+                            .to_string(),
+                    );
                 }
                 _ => None,
             };
