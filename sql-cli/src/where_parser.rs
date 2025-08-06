@@ -336,7 +336,11 @@ impl WhereParser {
                     self.expect_token(Token::LeftParen)?;
                     let values = self.parse_value_list()?;
                     self.expect_token(Token::RightParen)?;
-                    Ok(WhereExpr::In(column, values))
+                    if self.case_insensitive {
+                        Ok(WhereExpr::InIgnoreCase(column, values))
+                    } else {
+                        Ok(WhereExpr::In(column, values))
+                    }
                 }
                 Some(Token::Not) if matches!(self.peek_token(), Some(Token::In)) => {
                     self.advance(); // consume NOT
@@ -344,7 +348,11 @@ impl WhereParser {
                     self.expect_token(Token::LeftParen)?;
                     let values = self.parse_value_list()?;
                     self.expect_token(Token::RightParen)?;
-                    Ok(WhereExpr::NotIn(column, values))
+                    if self.case_insensitive {
+                        Ok(WhereExpr::NotInIgnoreCase(column, values))
+                    } else {
+                        Ok(WhereExpr::NotIn(column, values))
+                    }
                 }
                 Some(Token::Like) => {
                     self.advance();

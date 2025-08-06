@@ -20,6 +20,8 @@ pub enum WhereExpr {
     Between(String, WhereValue, WhereValue),
     In(String, Vec<WhereValue>),
     NotIn(String, Vec<WhereValue>),
+    InIgnoreCase(String, Vec<WhereValue>),
+    NotInIgnoreCase(String, Vec<WhereValue>),
     Like(String, String),
     IsNull(String),
     IsNotNull(String),
@@ -115,6 +117,12 @@ pub fn format_where_ast(expr: &WhereExpr, indent: usize) -> String {
         }
         WhereExpr::NotIn(col, values) => {
             format!("{}NOT_IN({}, {:?})", indent_str, col, values)
+        }
+        WhereExpr::InIgnoreCase(col, values) => {
+            format!("{}IN_IGNORE_CASE({}, {:?})", indent_str, col, values)
+        }
+        WhereExpr::NotInIgnoreCase(col, values) => {
+            format!("{}NOT_IN_IGNORE_CASE({}, {:?})", indent_str, col, values)
         }
         WhereExpr::Like(col, pattern) => {
             format!("{}LIKE({}, \"{}\")", indent_str, col, pattern)
@@ -275,6 +283,48 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
             if let Some(field_value) = row.get(column) {
                 let val = WhereValue::from_json(field_value);
                 Ok(!values.contains(&val))
+            } else {
+                Ok(true) // NULL is not in any list
+            }
+        }
+
+        WhereExpr::InIgnoreCase(column, values) => {
+            if let Some(field_value) = row.get(column) {
+                let val = WhereValue::from_json(field_value);
+                // For case-insensitive comparison, convert to lowercase
+                if let WhereValue::String(ref field_str) = val {
+                    let field_lower = field_str.to_lowercase();
+                    Ok(values.iter().any(|v| {
+                        if let WhereValue::String(s) = v {
+                            s.to_lowercase() == field_lower
+                        } else {
+                            v == &val
+                        }
+                    }))
+                } else {
+                    Ok(values.contains(&val))
+                }
+            } else {
+                Ok(false)
+            }
+        }
+
+        WhereExpr::NotInIgnoreCase(column, values) => {
+            if let Some(field_value) = row.get(column) {
+                let val = WhereValue::from_json(field_value);
+                // For case-insensitive comparison, convert to lowercase
+                if let WhereValue::String(ref field_str) = val {
+                    let field_lower = field_str.to_lowercase();
+                    Ok(!values.iter().any(|v| {
+                        if let WhereValue::String(s) = v {
+                            s.to_lowercase() == field_lower
+                        } else {
+                            v == &val
+                        }
+                    }))
+                } else {
+                    Ok(!values.contains(&val))
+                }
             } else {
                 Ok(true) // NULL is not in any list
             }
