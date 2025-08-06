@@ -58,6 +58,9 @@ A fast, context-aware SQL command-line interface with intelligent tab completion
 - **F1** - Show help
 - **F3** - Toggle single/multi-line editor
 - **C** - Toggle compact mode (more columns visible)
+- **N** - Toggle row numbers (vim-style :set nu)
+- **:** - Jump to row number (e.g., :200 jumps to row 200)
+- **Space** - Toggle viewport lock (anchor scrolling)
 - **/** - Search in results
 - **n/N** - Next/previous search match
 - **s** - Sort by current column
@@ -189,8 +192,12 @@ cargo test
 
 ## Recent Enhancements 🎉
 
+- ✅ **Vim-style row numbers** - Press 'N' to toggle row numbers display
+- ✅ **Jump to row** - Press ':' then row number to jump directly (e.g., :200)
+- ✅ **Viewport position preservation** - Maintains position when toggling between modes
 - ✅ **Dynamic viewport column sizing** - Columns resize based on visible data
 - ✅ **Compact mode** - Press 'C' to fit more columns (reduced padding)
+- ✅ **Viewport lock** - Press Space to anchor scrolling position
 - ✅ **Auto-execute on file load** - CSV/JSON files show data immediately
 - ✅ **Rainbow parentheses** - Visual matching for nested queries
 - ✅ **Multi-source data proxy** - Query SQL Server, APIs, and files seamlessly
