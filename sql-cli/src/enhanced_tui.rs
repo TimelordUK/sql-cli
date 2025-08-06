@@ -125,6 +125,7 @@ pub struct EnhancedTuiApp {
     sql_highlighter: SqlHighlighter,
     debug_text: String,
     debug_scroll: u16,
+    help_scroll: u16,         // Scroll offset for help page
     input_scroll_offset: u16, // Horizontal scroll offset for input
     case_insensitive: bool,   // Toggle for case-insensitive string comparisons
 
@@ -249,6 +250,7 @@ impl EnhancedTuiApp {
             sql_highlighter: SqlHighlighter::new(),
             debug_text: String::new(),
             debug_scroll: 0,
+            help_scroll: 0,
             input_scroll_offset: 0,
             case_insensitive: false,
             csv_client: None,
@@ -1046,11 +1048,43 @@ impl EnhancedTuiApp {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::F(1) => {
                 self.show_help = false;
+                self.help_scroll = 0; // Reset scroll when closing
                 self.mode = if self.results.is_some() {
                     AppMode::Results
                 } else {
                     AppMode::Command
                 };
+            }
+            // Scroll help with arrow keys or vim keys
+            KeyCode::Down | KeyCode::Char('j') => {
+                // Calculate max scroll based on help content
+                let max_lines: usize = 58; // Approximate number of lines in help
+                let visible_height: usize = 30; // Approximate visible height
+                let max_scroll = max_lines.saturating_sub(visible_height);
+                if (self.help_scroll as usize) < max_scroll {
+                    self.help_scroll += 1;
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.help_scroll = self.help_scroll.saturating_sub(1);
+            }
+            KeyCode::PageDown => {
+                let max_lines: usize = 58;
+                let visible_height: usize = 30;
+                let max_scroll = max_lines.saturating_sub(visible_height);
+                self.help_scroll = (self.help_scroll + 10).min(max_scroll as u16);
+            }
+            KeyCode::PageUp => {
+                self.help_scroll = self.help_scroll.saturating_sub(10);
+            }
+            KeyCode::Home => {
+                self.help_scroll = 0;
+            }
+            KeyCode::End => {
+                let max_lines: usize = 58;
+                let visible_height: usize = 30;
+                let max_scroll = max_lines.saturating_sub(visible_height);
+                self.help_scroll = max_scroll as u16;
             }
             _ => {}
         }
@@ -3837,115 +3871,210 @@ impl EnhancedTuiApp {
     }
 
     fn render_help(&self, f: &mut Frame, area: Rect) {
-        let help_text = Text::from(vec![
-            Line::from("SQL CLI Help - Enhanced Features 🚀"),
+        // Create two-column layout
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+
+        // Left column content
+        let left_content = vec![
+            Line::from("SQL CLI Help - Enhanced Features 🚀").style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::from(""),
-            Line::from("Command Mode:"),
+            Line::from("COMMAND MODE").style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::from("  Enter    - Execute query"),
-            Line::from("  Tab      - Auto-complete (context-aware)"),
-            Line::from("  Ctrl+R   - Search command history"),
-            Line::from("  F3       - Toggle single/multi-line editor"),
-            Line::from("  "),
-            Line::from("Navigation:"),
-            Line::from("  Ctrl+A   - Jump to beginning of line"),
-            Line::from("  Ctrl+E   - Jump to end of line"),
-            Line::from("  Ctrl+←/Alt+B - Move backward one word"),
-            Line::from("  Ctrl+→/Alt+F - Move forward one word"),
+            Line::from("  Tab      - Auto-complete"),
+            Line::from("  Ctrl+R   - Search history"),
+            Line::from("  F3       - Toggle multi-line"),
             Line::from(""),
-            Line::from("Query Options:"),
-            Line::from("  F8       - Toggle case-insensitive string comparisons"),
-            Line::from("  Alt+[    - Jump to previous SQL token"),
-            Line::from("  Alt+]    - Jump to next SQL token"),
-            Line::from("  "),
-            Line::from("Editing:"),
+            Line::from("NAVIGATION").style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Line::from("  Ctrl+A   - Beginning of line"),
+            Line::from("  Ctrl+E   - End of line"),
+            Line::from("  Ctrl+←   - Move backward word"),
+            Line::from("  Ctrl+→   - Move forward word"),
+            Line::from(""),
+            Line::from("EDITING").style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::from("  Ctrl+W   - Delete word backward"),
             Line::from("  Alt+D    - Delete word forward"),
-            Line::from("  Ctrl+K   - Kill line (delete to end)"),
+            Line::from("  Ctrl+K   - Kill line to end"),
             Line::from("  Ctrl+U   - Kill line backward"),
-            Line::from("  Ctrl+Y   - Yank (paste from kill ring)"),
+            Line::from("  Ctrl+Y   - Yank (paste)"),
             Line::from("  Ctrl+Z   - Undo"),
-            Line::from("  "),
-            Line::from("View Modes:"),
+            Line::from(""),
+            Line::from("VIEW MODES").style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::from("  F1/?     - Toggle this help"),
             Line::from("  F5       - Debug info"),
             Line::from("  F6       - Pretty query view"),
             Line::from("  F7       - Cache management"),
+            Line::from("  F8       - Case-insensitive"),
             Line::from("  ↓        - Enter results mode"),
             Line::from("  Ctrl+C/q - Exit"),
             Line::from(""),
-            Line::from("Cache Commands:"),
-            Line::from("  :cache save [id] - Save results with optional ID"),
-            Line::from("  :cache load ID   - Load cached query by ID"),
-            Line::from("  :cache list      - Show cached queries (F7)"),
-            Line::from("  :cache clear     - Disable cache mode"),
+            Line::from("CACHE COMMANDS").style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Line::from("  :cache save [id] - Save with ID"),
+            Line::from("  :cache load ID   - Load by ID"),
+            Line::from("  :cache list      - Show cached"),
+            Line::from("  :cache clear     - Disable cache"),
             Line::from(""),
-            Line::from("Results Navigation Mode:"),
+            Line::from("🌟 FEATURES").style(
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Line::from("  • Column pinning (p/P keys)"),
+            Line::from("  • Dynamic column sizing"),
+            Line::from("  • Compact mode (C key)"),
+            Line::from("  • Rainbow parentheses"),
+            Line::from("  • Auto-execute CSV/JSON"),
+            Line::from("  • Multi-source indicators"),
+            Line::from("  • LINQ-style null checking"),
+            Line::from("  • Named cache IDs"),
+            Line::from("  • Row numbers (N key)"),
+            Line::from("  • Jump to row (: key)"),
+        ];
+
+        // Right column content
+        let right_content = vec![
+            Line::from("Use ↓/↑ or j/k to scroll help").style(Style::default().fg(Color::DarkGray)),
+            Line::from(""),
+            Line::from("RESULTS NAVIGATION").style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::from("  j/↓      - Next row"),
             Line::from("  k/↑      - Previous row"),
-            Line::from("  h/←      - Move to previous column"),
-            Line::from("  l/→      - Move to next column"),
+            Line::from("  h/←      - Previous column"),
+            Line::from("  l/→      - Next column"),
             Line::from("  g        - First row"),
             Line::from("  G        - Last row"),
-            Line::from("  0/^      - First column (vim-style)"),
-            Line::from("  $        - Last column (vim-style)"),
-            Line::from("  PgDn/Ctrl+F - Page down"),
-            Line::from("  PgUp/Ctrl+B - Page up"),
-            Line::from("  C        - 🎯 TOGGLE COMPACT MODE (fit more columns)"),
-            Line::from("  N        - 🔢 TOGGLE ROW NUMBERS (like vim :set nu)"),
-            Line::from("  :        - 📍 JUMP TO ROW (enter row number)"),
-            Line::from("  Space    - 🔒 TOGGLE VIEWPORT LOCK (anchor scrolling)"),
-            Line::from("  p        - 📌 PIN/UNPIN CURRENT COLUMN (max 4)"),
-            Line::from("  P        - CLEAR ALL PINNED COLUMNS"),
+            Line::from("  0/^      - First column"),
+            Line::from("  $        - Last column"),
+            Line::from("  PgDn     - Page down"),
+            Line::from("  PgUp     - Page up"),
+            Line::from(""),
+            Line::from("RESULTS FEATURES").style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Line::from("  C        - 🎯 Toggle compact"),
+            Line::from("  N        - 🔢 Toggle row nums"),
+            Line::from("  :        - 📍 Jump to row"),
+            Line::from("  Space    - 🔒 Viewport lock"),
+            Line::from("  p        - 📌 Pin/unpin column"),
+            Line::from("  P        - Clear all pins"),
             Line::from("  /        - Search in results"),
-            Line::from("  n/N      - Next/previous search match"),
+            Line::from("  n/N      - Next/prev match"),
             Line::from("  f        - Filter rows (regex)"),
-            Line::from("  s        - Sort by current column"),
-            Line::from("  1-9      - Sort by column number"),
+            Line::from("  s        - Sort by column"),
+            Line::from("  1-9      - Sort by column #"),
             Line::from("  Ctrl+S   - Export to CSV"),
-            Line::from("  Ctrl+C   - Copy current row/cell"),
-            Line::from("  ↑/Esc    - Back to command mode"),
+            Line::from("  Ctrl+C   - Copy row/cell"),
+            Line::from("  ↑/Esc    - Back to command"),
             Line::from("  q        - Quit"),
             Line::from(""),
-            Line::from("History Search Mode:"),
-            Line::from("  j/k/↓/↑  - Navigate history"),
-            Line::from("  Enter    - Select command"),
+            Line::from("SEARCH/FILTER").style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Line::from("  Enter    - Apply"),
             Line::from("  Esc      - Cancel"),
             Line::from(""),
-            Line::from("Search Mode:"),
-            Line::from("  Enter    - Execute search"),
-            Line::from("  Esc      - Cancel"),
+            Line::from("💡 TIPS").style(
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Line::from("  • Load CSV: sql-cli data.csv"),
+            Line::from("  • Press C for compact view"),
+            Line::from("  • Press N for row numbers"),
+            Line::from("  • Press : then 200 → row 200"),
+            Line::from("  • Space locks viewport"),
+            Line::from("  • Columns auto-adjust width"),
+            Line::from("  • Named: :cache save q1"),
             Line::from(""),
-            Line::from("Filter Mode:"),
-            Line::from("  Enter    - Apply filter"),
-            Line::from("  Esc      - Cancel"),
-            Line::from(""),
-            Line::from("🌟 Enhanced Features:"),
-            Line::from("  • Column pinning - keep important columns visible while scrolling"),
-            Line::from("  • Dynamic column sizing - auto-adjusts to visible data"),
-            Line::from("  • Compact mode (C key) - fits more columns on screen"),
-            Line::from("  • Rainbow parentheses - visual matching for nested SQL"),
-            Line::from("  • Auto-execute for CSV/JSON - instant data viewing"),
-            Line::from("  • Multi-source indicators - 📦 Cache 📁 File 🌐 API 🗄️ SQL"),
-            Line::from("  • String.IsNullOrEmpty() - LINQ-style null checking"),
-            Line::from("  • Named cache IDs - organize your cached queries"),
-            Line::from("  • Row numbers - press N to show line numbers"),
-            Line::from("  • Jump to row - press : then enter row number"),
-            Line::from(""),
-            Line::from("💡 Tips:"),
-            Line::from("  • Load CSV: sql-cli data.csv (auto-shows data)"),
-            Line::from("  • Press C in results to toggle compact mode"),
-            Line::from("  • Press N to show row numbers (vim-style)"),
-            Line::from("  • Press : then 200 to jump to row 200"),
-            Line::from("  • Press Space to lock viewport (data scrolls, cursor stays)"),
-            Line::from("  • Column widths adjust as you scroll"),
-            Line::from("  • Use :cache save trades_2024 for named caches"),
-        ]);
+            Line::from("📦 Cache 📁 File 🌐 API 🗄️ SQL"),
+        ];
 
-        let help_paragraph = Paragraph::new(help_text)
-            .block(Block::default().borders(Borders::ALL).title("Help"))
+        // Calculate visible area for scrolling
+        let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
+        let left_total_lines = left_content.len();
+        let right_total_lines = right_content.len();
+        let max_lines = left_total_lines.max(right_total_lines);
+
+        // Apply scroll offset
+        let scroll_offset = self.help_scroll as usize;
+
+        // Get visible portions with scrolling
+        let left_visible: Vec<Line> = left_content
+            .into_iter()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .collect();
+
+        let right_visible: Vec<Line> = right_content
+            .into_iter()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .collect();
+
+        // Create scroll indicator in title
+        let scroll_indicator = if max_lines > visible_height {
+            format!(
+                " (↓/↑ to scroll, {}/{})",
+                scroll_offset + 1,
+                max_lines.saturating_sub(visible_height) + 1
+            )
+        } else {
+            String::new()
+        };
+
+        // Render left column
+        let left_paragraph = Paragraph::new(Text::from(left_visible))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("Help - Commands{}", scroll_indicator)),
+            )
             .style(Style::default());
 
-        f.render_widget(help_paragraph, area);
+        // Render right column
+        let right_paragraph = Paragraph::new(Text::from(right_visible))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Help - Navigation & Features"),
+            )
+            .style(Style::default());
+
+        f.render_widget(left_paragraph, chunks[0]);
+        f.render_widget(right_paragraph, chunks[1]);
     }
 
     fn render_debug(&self, f: &mut Frame, area: Rect) {
