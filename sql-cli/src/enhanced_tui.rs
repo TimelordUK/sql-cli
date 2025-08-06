@@ -42,6 +42,7 @@ enum AppMode {
     Search,
     Filter,
     FuzzyFilter,
+    ColumnSearch,
     Help,
     History,
     Debug,
@@ -93,6 +94,13 @@ impl Clone for FuzzyFilterState {
             filtered_indices: self.filtered_indices.clone(),
         }
     }
+}
+
+#[derive(Clone)]
+struct ColumnSearchState {
+    pattern: String,
+    matching_columns: Vec<(usize, String)>, // (index, column_name)
+    current_match: usize,                   // Index into matching_columns
 }
 
 #[derive(Clone, Debug)]
@@ -163,6 +171,7 @@ pub struct EnhancedTuiApp {
     filter_state: FilterState,
     fuzzy_filter_state: FuzzyFilterState,
     search_state: SearchState,
+    column_search_state: ColumnSearchState,
     completion_state: CompletionState,
     history_state: HistoryState,
     command_history: CommandHistory,
@@ -285,6 +294,11 @@ impl EnhancedTuiApp {
                 current_match: None,
                 matches: Vec::new(),
                 match_index: 0,
+            },
+            column_search_state: ColumnSearchState {
+                pattern: String::new(),
+                matching_columns: Vec::new(),
+                current_match: 0,
             },
             completion_state: CompletionState {
                 suggestions: Vec::new(),
@@ -523,6 +537,7 @@ impl EnhancedTuiApp {
                         AppMode::Search => self.handle_search_input(key)?,
                         AppMode::Filter => self.handle_filter_input(key)?,
                         AppMode::FuzzyFilter => self.handle_fuzzy_filter_input(key)?,
+                        AppMode::ColumnSearch => self.handle_column_search_input(key)?,
                         AppMode::Help => self.handle_help_input(key)?,
                         AppMode::History => self.handle_history_input(key)?,
                         AppMode::Debug => self.handle_debug_input(key)?,
@@ -1018,6 +1033,13 @@ impl EnhancedTuiApp {
                 self.mode = AppMode::Search;
                 self.search_state.pattern.clear();
             }
+            // Column navigation/search functionality (backslash like vim reverse search)
+            KeyCode::Char('\\') => {
+                self.mode = AppMode::ColumnSearch;
+                self.column_search_state.pattern.clear();
+                self.column_search_state.matching_columns.clear();
+                self.column_search_state.current_match = 0;
+            }
             KeyCode::Char('n') => {
                 self.next_search_match();
             }
@@ -1156,6 +1178,77 @@ impl EnhancedTuiApp {
                 self.fuzzy_filter_state.pattern.push(c);
                 // Apply filter in real-time as user types
                 self.apply_fuzzy_filter();
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn handle_column_search_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match key.code {
+            KeyCode::Esc => {
+                // Cancel column search and return to results
+                self.mode = AppMode::Results;
+                self.column_search_state.pattern.clear();
+                self.column_search_state.matching_columns.clear();
+                self.status_message = "Column search cancelled".to_string();
+            }
+            KeyCode::Enter => {
+                // Jump to first matching column
+                if !self.column_search_state.matching_columns.is_empty() {
+                    let (column_index, column_name) = &self.column_search_state.matching_columns
+                        [self.column_search_state.current_match];
+                    self.current_column = *column_index;
+                    self.status_message = format!("Jumped to column: {}", column_name);
+                } else {
+                    self.status_message = "No matching columns found".to_string();
+                }
+                self.mode = AppMode::Results;
+            }
+            KeyCode::Tab | KeyCode::Char('n') => {
+                // Next match (Tab or n like vim)
+                if !self.column_search_state.matching_columns.is_empty() {
+                    self.column_search_state.current_match =
+                        (self.column_search_state.current_match + 1)
+                            % self.column_search_state.matching_columns.len();
+                    let (column_index, column_name) = &self.column_search_state.matching_columns
+                        [self.column_search_state.current_match];
+                    self.current_column = *column_index;
+                    self.status_message = format!(
+                        "Column {} of {}: {}",
+                        self.column_search_state.current_match + 1,
+                        self.column_search_state.matching_columns.len(),
+                        column_name
+                    );
+                }
+            }
+            KeyCode::BackTab | KeyCode::Char('N') => {
+                // Previous match (Shift+Tab or N like vim)
+                if !self.column_search_state.matching_columns.is_empty() {
+                    if self.column_search_state.current_match == 0 {
+                        self.column_search_state.current_match =
+                            self.column_search_state.matching_columns.len() - 1;
+                    } else {
+                        self.column_search_state.current_match -= 1;
+                    }
+                    let (column_index, column_name) = &self.column_search_state.matching_columns
+                        [self.column_search_state.current_match];
+                    self.current_column = *column_index;
+                    self.status_message = format!(
+                        "Column {} of {}: {}",
+                        self.column_search_state.current_match + 1,
+                        self.column_search_state.matching_columns.len(),
+                        column_name
+                    );
+                }
+            }
+            KeyCode::Backspace => {
+                self.column_search_state.pattern.pop();
+                self.update_column_search();
+            }
+            KeyCode::Char(c) => {
+                self.column_search_state.pattern.push(c);
+                self.update_column_search();
             }
             _ => {}
         }
@@ -2363,6 +2456,53 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn update_column_search(&mut self) {
+        // Get column headers from the current results
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+
+                    // Find matching columns (case-insensitive)
+                    let pattern = self.column_search_state.pattern.to_lowercase();
+                    let mut matching_columns = Vec::new();
+
+                    for (index, header) in headers.iter().enumerate() {
+                        if header.to_lowercase().contains(&pattern) {
+                            matching_columns.push((index, header.to_string()));
+                        }
+                    }
+
+                    self.column_search_state.matching_columns = matching_columns;
+                    self.column_search_state.current_match = 0;
+
+                    // Update status message
+                    if self.column_search_state.pattern.is_empty() {
+                        self.status_message = "Enter column name to search".to_string();
+                    } else if self.column_search_state.matching_columns.is_empty() {
+                        self.status_message =
+                            format!("No columns match '{}'", self.column_search_state.pattern);
+                    } else {
+                        let (column_index, column_name) =
+                            &self.column_search_state.matching_columns[0];
+                        self.current_column = *column_index;
+                        self.status_message = format!(
+                            "Column 1 of {}: {} (Tab/n=next, Enter=select)",
+                            self.column_search_state.matching_columns.len(),
+                            column_name
+                        );
+                    }
+                } else {
+                    self.status_message = "No column data available".to_string();
+                }
+            } else {
+                self.status_message = "No data available for column search".to_string();
+            }
+        } else {
+            self.status_message = "No results available for column search".to_string();
+        }
+    }
+
     fn sort_by_column(&mut self, column_index: usize) {
         let new_order = match &self.sort_state {
             SortState {
@@ -3513,6 +3653,7 @@ impl EnhancedTuiApp {
             AppMode::Search => "Search Pattern".to_string(),
             AppMode::Filter => "Filter Pattern".to_string(),
             AppMode::FuzzyFilter => "Fuzzy Filter".to_string(),
+            AppMode::ColumnSearch => "Column Search".to_string(),
             AppMode::Help => "Help".to_string(),
             AppMode::History => format!(
                 "History Search: '{}' (Esc to cancel)",
@@ -3531,6 +3672,7 @@ impl EnhancedTuiApp {
             AppMode::Search => &self.search_state.pattern,
             AppMode::Filter => &self.filter_state.pattern,
             AppMode::FuzzyFilter => &self.fuzzy_filter_state.pattern,
+            AppMode::ColumnSearch => &self.column_search_state.pattern,
             AppMode::History => &self.history_state.search_query,
             _ => self.input.value(),
         };
@@ -3562,6 +3704,7 @@ impl EnhancedTuiApp {
                         AppMode::Search => Style::default().fg(Color::Yellow),
                         AppMode::Filter => Style::default().fg(Color::Cyan),
                         AppMode::FuzzyFilter => Style::default().fg(Color::Magenta),
+                        AppMode::ColumnSearch => Style::default().fg(Color::Green),
                         AppMode::Help => Style::default().fg(Color::DarkGray),
                         AppMode::History => Style::default().fg(Color::Magenta),
                         AppMode::Debug => Style::default().fg(Color::Yellow),
@@ -3632,6 +3775,12 @@ impl EnhancedTuiApp {
                     chunks[0].y + 1,
                 ));
             }
+            AppMode::ColumnSearch => {
+                f.set_cursor_position((
+                    chunks[0].x + self.column_search_state.pattern.len() as u16 + 1,
+                    chunks[0].y + 1,
+                ));
+            }
             AppMode::JumpToRow => {
                 f.set_cursor_position((
                     chunks[0].x + self.jump_to_row_input.len() as u16 + 1,
@@ -3695,6 +3844,7 @@ impl EnhancedTuiApp {
             AppMode::Search => Style::default().fg(Color::Yellow),
             AppMode::Filter => Style::default().fg(Color::Cyan),
             AppMode::FuzzyFilter => Style::default().fg(Color::Magenta),
+            AppMode::ColumnSearch => Style::default().fg(Color::Green),
             AppMode::Help => Style::default().fg(Color::Magenta),
             AppMode::History => Style::default().fg(Color::Magenta),
             AppMode::Debug => Style::default().fg(Color::Yellow),
@@ -3710,6 +3860,7 @@ impl EnhancedTuiApp {
             AppMode::Search => "SEARCH",
             AppMode::Filter => "FILTER",
             AppMode::FuzzyFilter => "FUZZY",
+            AppMode::ColumnSearch => "COL",
             AppMode::Help => "HELP",
             AppMode::History => "HISTORY",
             AppMode::Debug => "DEBUG",
@@ -4411,6 +4562,7 @@ impl EnhancedTuiApp {
             Line::from("  p        - 📌 Pin/unpin column"),
             Line::from("  P        - Clear all pins"),
             Line::from("  /        - Search in results"),
+            Line::from("  \\        - Search column names"),
             Line::from("  n/N      - Next/prev match"),
             Line::from("  Shift+F  - Filter rows (regex)"),
             Line::from("  f        - Fuzzy filter rows"),
@@ -4445,6 +4597,7 @@ impl EnhancedTuiApp {
             Line::from("  • Columns auto-adjust width"),
             Line::from("  • Named: :cache save q1"),
             Line::from("  • f + 'ubs = exact 'ubs' match"),
+            Line::from("  • \\ + name = find column by name"),
             Line::from(""),
             Line::from("📦 Cache 📁 File 🌐 API 🗄️ SQL"),
         ];
