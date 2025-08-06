@@ -43,6 +43,7 @@ enum AppMode {
     Debug,
     PrettyQuery,
     CacheList,
+    JumpToRow,
 }
 
 #[derive(Clone, PartialEq)]
@@ -150,6 +151,8 @@ pub struct EnhancedTuiApp {
     compact_mode: bool,               // Compact display mode with reduced padding
     viewport_lock: bool,              // Lock viewport position for anchor scrolling
     viewport_lock_row: Option<usize>, // The row position to lock to in viewport
+    show_row_numbers: bool,           // Show row numbers in results view
+    jump_to_row_input: String,        // Input buffer for jump to row command
 }
 
 fn escape_csv_field(field: &str) -> String {
@@ -242,6 +245,8 @@ impl EnhancedTuiApp {
             compact_mode: false,
             viewport_lock: false,
             viewport_lock_row: None,
+            show_row_numbers: false,
+            jump_to_row_input: String::new(),
         }
     }
 
@@ -411,6 +416,7 @@ impl EnhancedTuiApp {
                         AppMode::Debug => self.handle_debug_input(key)?,
                         AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
                         AppMode::CacheList => self.handle_cache_list_input(key)?,
+                        AppMode::JumpToRow => self.handle_jump_to_row_input(key)?,
                     };
 
                     if should_exit {
@@ -817,6 +823,21 @@ impl EnhancedTuiApp {
                 };
                 // Recalculate column widths with new mode
                 self.calculate_optimal_column_widths();
+            }
+            KeyCode::Char('N') => {
+                // Toggle row numbers display with Shift+N
+                self.show_row_numbers = !self.show_row_numbers;
+                self.status_message = if self.show_row_numbers {
+                    "Row numbers: ON (showing line numbers)".to_string()
+                } else {
+                    "Row numbers: OFF".to_string()
+                };
+            }
+            KeyCode::Char(':') => {
+                // Start jump to row command
+                self.mode = AppMode::JumpToRow;
+                self.jump_to_row_input.clear();
+                self.status_message = "Enter row number:".to_string();
             }
             KeyCode::Char(' ') => {
                 // Toggle viewport lock with Space
@@ -2887,6 +2908,7 @@ impl EnhancedTuiApp {
             AppMode::Debug => "Parser Debug (F5)".to_string(),
             AppMode::PrettyQuery => "Pretty Query View (F6)".to_string(),
             AppMode::CacheList => "Cache Management (F7)".to_string(),
+            AppMode::JumpToRow => format!("Jump to row: {}", self.jump_to_row_input),
         };
 
         let input_block = Block::default().borders(Borders::ALL).title(input_title);
@@ -2929,6 +2951,7 @@ impl EnhancedTuiApp {
                         AppMode::Debug => Style::default().fg(Color::Yellow),
                         AppMode::PrettyQuery => Style::default().fg(Color::Green),
                         AppMode::CacheList => Style::default().fg(Color::Cyan),
+                        AppMode::JumpToRow => Style::default().fg(Color::Magenta),
                         _ => Style::default(),
                     })
                     .scroll((0, self.get_horizontal_scroll_offset()))
@@ -2983,6 +3006,12 @@ impl EnhancedTuiApp {
             AppMode::Filter => {
                 f.set_cursor_position((
                     chunks[0].x + self.filter_state.pattern.len() as u16 + 1,
+                    chunks[0].y + 1,
+                ));
+            }
+            AppMode::JumpToRow => {
+                f.set_cursor_position((
+                    chunks[0].x + self.jump_to_row_input.len() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
@@ -3046,6 +3075,7 @@ impl EnhancedTuiApp {
             AppMode::Debug => Style::default().fg(Color::Yellow),
             AppMode::PrettyQuery => Style::default().fg(Color::Green),
             AppMode::CacheList => Style::default().fg(Color::Cyan),
+            AppMode::JumpToRow => Style::default().fg(Color::Magenta),
         };
 
         let mode_indicator = match self.mode {
@@ -3058,6 +3088,7 @@ impl EnhancedTuiApp {
             AppMode::Debug => "DEBUG",
             AppMode::PrettyQuery => "PRETTY",
             AppMode::CacheList => "CACHE",
+            AppMode::JumpToRow => "JUMP",
         };
 
         // Add useful status info
@@ -3333,44 +3364,59 @@ impl EnhancedTuiApp {
         };
 
         // Create header row with sort indicators and column selection
-        let header_cells: Vec<Cell> = visible_headers
-            .iter()
-            .enumerate()
-            .map(|(visible_i, &header)| {
-                let actual_col_index = viewport_start + visible_i;
-                let sort_indicator = if let Some(col) = self.sort_state.column {
-                    if col == actual_col_index {
-                        match self.sort_state.order {
-                            SortOrder::Ascending => " ↑",
-                            SortOrder::Descending => " ↓",
-                            SortOrder::None => "",
+        let mut header_cells: Vec<Cell> = Vec::new();
+
+        // Add row number header if enabled
+        if self.show_row_numbers {
+            header_cells.push(
+                Cell::from("#").style(
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            );
+        }
+
+        // Add data headers
+        header_cells.extend(
+            visible_headers
+                .iter()
+                .enumerate()
+                .map(|(visible_i, &header)| {
+                    let actual_col_index = viewport_start + visible_i;
+                    let sort_indicator = if let Some(col) = self.sort_state.column {
+                        if col == actual_col_index {
+                            match self.sort_state.order {
+                                SortOrder::Ascending => " ↑",
+                                SortOrder::Descending => " ↓",
+                                SortOrder::None => "",
+                            }
+                        } else {
+                            ""
                         }
                     } else {
                         ""
+                    };
+
+                    let column_indicator = if actual_col_index == self.current_column {
+                        " [*]"
+                    } else {
+                        ""
+                    };
+
+                    let header_text = format!("{}{}{}", header, sort_indicator, column_indicator);
+                    let mut style = Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD);
+
+                    // Highlight the current column
+                    if actual_col_index == self.current_column {
+                        style = style.bg(Color::DarkGray);
                     }
-                } else {
-                    ""
-                };
 
-                let column_indicator = if actual_col_index == self.current_column {
-                    " [*]"
-                } else {
-                    ""
-                };
-
-                let header_text = format!("{}{}{}", header, sort_indicator, column_indicator);
-                let mut style = Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD);
-
-                // Highlight the current column
-                if actual_col_index == self.current_column {
-                    style = style.bg(Color::DarkGray);
-                }
-
-                Cell::from(header_text).style(style)
-            })
-            .collect();
+                    Cell::from(header_text).style(style)
+                }),
+        );
 
         let selected_row = self.table_state.selected().unwrap_or(0);
 
@@ -3380,60 +3426,74 @@ impl EnhancedTuiApp {
             .enumerate()
             .map(|(visible_row_idx, row)| {
                 let actual_row_idx = row_viewport_start + visible_row_idx;
-                let cells: Vec<Cell> = row
-                    .iter()
-                    .enumerate()
-                    .map(|(visible_col_idx, cell)| {
-                        let actual_col_idx = viewport_start + visible_col_idx;
-                        let mut style = Style::default();
+                let mut cells: Vec<Cell> = Vec::new();
 
-                        // Highlight current column
-                        if actual_col_idx == self.current_column {
-                            style = style.bg(Color::DarkGray);
+                // Add row number if enabled
+                if self.show_row_numbers {
+                    let row_num = actual_row_idx + 1; // 1-based numbering
+                    cells.push(
+                        Cell::from(row_num.to_string()).style(Style::default().fg(Color::Magenta)),
+                    );
+                }
+
+                // Add data cells
+                cells.extend(row.iter().enumerate().map(|(visible_col_idx, cell)| {
+                    let actual_col_idx = viewport_start + visible_col_idx;
+                    let mut style = Style::default();
+
+                    // Highlight current column
+                    if actual_col_idx == self.current_column {
+                        style = style.bg(Color::DarkGray);
+                    }
+
+                    // Highlight search matches (override column highlight)
+                    if let Some((match_row, match_col)) = self.search_state.current_match {
+                        if actual_row_idx == match_row && actual_col_idx == match_col {
+                            style = style.bg(Color::Yellow).fg(Color::Black);
                         }
+                    }
 
-                        // Highlight search matches (override column highlight)
-                        if let Some((match_row, match_col)) = self.search_state.current_match {
-                            if actual_row_idx == match_row && actual_col_idx == match_col {
-                                style = style.bg(Color::Yellow).fg(Color::Black);
+                    // Highlight filter matches
+                    if self.filter_state.active {
+                        if let Some(ref regex) = self.filter_state.regex {
+                            if regex.is_match(cell) {
+                                style = style.fg(Color::Cyan);
                             }
                         }
+                    }
 
-                        // Highlight filter matches
-                        if self.filter_state.active {
-                            if let Some(ref regex) = self.filter_state.regex {
-                                if regex.is_match(cell) {
-                                    style = style.fg(Color::Cyan);
-                                }
-                            }
-                        }
-
-                        Cell::from(cell.as_str()).style(style)
-                    })
-                    .collect();
+                    Cell::from(cell.as_str()).style(style)
+                }));
 
                 Row::new(cells)
             })
             .collect();
 
         // Calculate column constraints using optimal widths (only for visible columns)
-        let constraints: Vec<Constraint> = if !self.column_widths.is_empty() {
+        let mut constraints: Vec<Constraint> = Vec::new();
+
+        // Add constraint for row number column if enabled
+        if self.show_row_numbers {
+            // Calculate width needed for row numbers (max row count digits + padding)
+            let max_row_num = total_rows;
+            let row_num_width = max_row_num.to_string().len() as u16 + 2;
+            constraints.push(Constraint::Length(row_num_width.min(8))); // Cap at 8 chars
+        }
+
+        // Add data column constraints
+        if !self.column_widths.is_empty() {
             // Use calculated optimal widths for visible columns
-            (viewport_start..viewport_end)
-                .map(|col_idx| {
-                    if col_idx < self.column_widths.len() {
-                        Constraint::Length(self.column_widths[col_idx])
-                    } else {
-                        Constraint::Min(10) // Fallback
-                    }
-                })
-                .collect()
+            constraints.extend((viewport_start..viewport_end).map(|col_idx| {
+                if col_idx < self.column_widths.len() {
+                    Constraint::Length(self.column_widths[col_idx])
+                } else {
+                    Constraint::Min(10) // Fallback
+                }
+            }));
         } else {
             // Fallback to minimum width if no calculated widths available
-            (0..visible_headers.len())
-                .map(|_| Constraint::Min(10))
-                .collect()
-        };
+            constraints.extend((0..visible_headers.len()).map(|_| Constraint::Min(10)));
+        }
 
         let table = Table::new(rows, constraints)
             .header(Row::new(header_cells).height(1))
@@ -3511,6 +3571,8 @@ impl EnhancedTuiApp {
             Line::from("  PgDn/Ctrl+F - Page down"),
             Line::from("  PgUp/Ctrl+B - Page up"),
             Line::from("  C        - 🎯 TOGGLE COMPACT MODE (fit more columns)"),
+            Line::from("  N        - 🔢 TOGGLE ROW NUMBERS (like vim :set nu)"),
+            Line::from("  :        - 📍 JUMP TO ROW (enter row number)"),
             Line::from("  Space    - 🔒 TOGGLE VIEWPORT LOCK (anchor scrolling)"),
             Line::from("  /        - Search in results"),
             Line::from("  n/N      - Next/previous search match"),
@@ -3543,10 +3605,14 @@ impl EnhancedTuiApp {
             Line::from("  • Multi-source indicators - 📦 Cache 📁 File 🌐 API 🗄️ SQL"),
             Line::from("  • String.IsNullOrEmpty() - LINQ-style null checking"),
             Line::from("  • Named cache IDs - organize your cached queries"),
+            Line::from("  • Row numbers - press N to show line numbers"),
+            Line::from("  • Jump to row - press : then enter row number"),
             Line::from(""),
             Line::from("💡 Tips:"),
             Line::from("  • Load CSV: sql-cli data.csv (auto-shows data)"),
             Line::from("  • Press C in results to toggle compact mode"),
+            Line::from("  • Press N to show row numbers (vim-style)"),
+            Line::from("  • Press : then 200 to jump to row 200"),
             Line::from("  • Press Space to lock viewport (data scrolls, cursor stays)"),
             Line::from("  • Column widths adjust as you scroll"),
             Line::from("  • Use :cache save trades_2024 for named caches"),
@@ -3926,6 +3992,49 @@ impl EnhancedTuiApp {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
                 self.mode = AppMode::Command;
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn handle_jump_to_row_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match key.code {
+            KeyCode::Esc => {
+                self.mode = AppMode::Results;
+                self.jump_to_row_input.clear();
+                self.status_message = "Jump cancelled".to_string();
+            }
+            KeyCode::Enter => {
+                if let Ok(row_num) = self.jump_to_row_input.parse::<usize>() {
+                    if row_num > 0 {
+                        let target_row = row_num - 1; // Convert to 0-based index
+                        let max_row = self.get_current_data().map(|d| d.len()).unwrap_or(0);
+
+                        if target_row < max_row {
+                            self.table_state.select(Some(target_row));
+
+                            // Adjust viewport to center the target row
+                            let visible_rows = self.last_visible_rows;
+                            if visible_rows > 0 {
+                                self.scroll_offset.0 = target_row.saturating_sub(visible_rows / 2);
+                            }
+
+                            self.status_message = format!("Jumped to row {}", row_num);
+                        } else {
+                            self.status_message =
+                                format!("Row {} out of range (max: {})", row_num, max_row);
+                        }
+                    }
+                }
+                self.mode = AppMode::Results;
+                self.jump_to_row_input.clear();
+            }
+            KeyCode::Backspace => {
+                self.jump_to_row_input.pop();
+            }
+            KeyCode::Char(c) if c.is_ascii_digit() => {
+                self.jump_to_row_input.push(c);
             }
             _ => {}
         }
