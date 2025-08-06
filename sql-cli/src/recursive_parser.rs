@@ -1919,8 +1919,54 @@ fn analyze_statement(
             // Check if the part after dot looks like an incomplete method call
             // (not a complete method call like "Contains(...)")
             if !after_dot.contains('(') {
-                if let Some(col_name) = before_dot.split_whitespace().last() {
-                    if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                // Try to extract the column name - could be quoted or regular
+                let col_name = if before_dot.ends_with('"') {
+                    // Handle quoted identifier - search backwards for matching opening quote
+                    let bytes = before_dot.as_bytes();
+                    let mut pos = before_dot.len() - 1; // Position of closing quote
+                    let mut found_start = None;
+
+                    // Skip the closing quote and search backwards
+                    if pos > 0 {
+                        pos -= 1;
+                        while pos > 0 {
+                            if bytes[pos] == b'"' {
+                                // Check if it's not an escaped quote
+                                if pos == 0 || bytes[pos - 1] != b'\\' {
+                                    found_start = Some(pos);
+                                    break;
+                                }
+                            }
+                            pos -= 1;
+                        }
+                        // Check position 0 separately
+                        if found_start.is_none() && bytes[0] == b'"' {
+                            found_start = Some(0);
+                        }
+                    }
+
+                    if let Some(start) = found_start {
+                        // Extract the full quoted identifier including quotes
+                        Some(&before_dot[start..])
+                    } else {
+                        None
+                    }
+                } else {
+                    // Regular identifier - get the last word
+                    before_dot.split_whitespace().last()
+                };
+
+                if let Some(col_name) = col_name {
+                    // For quoted identifiers, keep the quotes, for regular identifiers check validity
+                    let is_valid = if col_name.starts_with('"') && col_name.ends_with('"') {
+                        // Quoted identifier - always valid
+                        true
+                    } else {
+                        // Regular identifier - check if it's alphanumeric or underscore
+                        col_name.chars().all(|c| c.is_alphanumeric() || c == '_')
+                    };
+
+                    if is_valid {
                         // We're in a method call context
                         // Check if there's a partial method name after the dot
                         let partial_method = if after_dot.is_empty() {
@@ -1931,8 +1977,18 @@ fn analyze_statement(
                             None
                         };
 
+                        // For AfterColumn context, strip quotes if present for consistency
+                        let col_name_for_context = if col_name.starts_with('"')
+                            && col_name.ends_with('"')
+                            && col_name.len() > 2
+                        {
+                            col_name[1..col_name.len() - 1].to_string()
+                        } else {
+                            col_name.to_string()
+                        };
+
                         return (
-                            CursorContext::AfterColumn(col_name.to_string()),
+                            CursorContext::AfterColumn(col_name_for_context),
                             partial_method,
                         );
                     }
@@ -2010,6 +2066,16 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
     // Check for method call context first (e.g., "columnName." or "columnName.Con")
     let trimmed = query.trim();
 
+    #[cfg(test)]
+    {
+        if trimmed.contains("\"Last Name\"") {
+            eprintln!(
+                "DEBUG analyze_partial: query='{}', trimmed='{}'",
+                query, trimmed
+            );
+        }
+    }
+
     // Check if we're after a comparison operator (e.g., "createdDate > ")
     let comparison_ops = [" > ", " < ", " >= ", " <= ", " = ", " != "];
     for op in &comparison_ops {
@@ -2079,6 +2145,12 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
 
     // Look for the last dot in the query (method call context)
     if let Some(dot_pos) = trimmed.rfind('.') {
+        #[cfg(test)]
+        {
+            if trimmed.contains("\"Last Name\"") {
+                eprintln!("DEBUG: Found dot at position {}", dot_pos);
+            }
+        }
         // Check if we're after a column name and dot
         let before_dot = &trimmed[..dot_pos];
         let after_dot = &trimmed[dot_pos + 1..];
@@ -2086,8 +2158,92 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
         // Check if the part after dot looks like an incomplete method call
         // (not a complete method call like "Contains(...)")
         if !after_dot.contains('(') {
-            if let Some(col_name) = before_dot.split_whitespace().last() {
-                if col_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            // Try to extract the column name before the dot
+            // It could be a quoted identifier like "Last Name" or a regular identifier
+            let col_name = if before_dot.ends_with('"') {
+                // Handle quoted identifier - search backwards for matching opening quote
+                let bytes = before_dot.as_bytes();
+                let mut pos = before_dot.len() - 1; // Position of closing quote
+                let mut found_start = None;
+
+                #[cfg(test)]
+                {
+                    if trimmed.contains("\"Last Name\"") {
+                        eprintln!(
+                            "DEBUG: before_dot='{}', looking for opening quote",
+                            before_dot
+                        );
+                    }
+                }
+
+                // Skip the closing quote and search backwards
+                if pos > 0 {
+                    pos -= 1;
+                    while pos > 0 {
+                        if bytes[pos] == b'"' {
+                            // Check if it's not an escaped quote
+                            if pos == 0 || bytes[pos - 1] != b'\\' {
+                                found_start = Some(pos);
+                                break;
+                            }
+                        }
+                        pos -= 1;
+                    }
+                    // Check position 0 separately
+                    if found_start.is_none() && bytes[0] == b'"' {
+                        found_start = Some(0);
+                    }
+                }
+
+                if let Some(start) = found_start {
+                    // Extract the full quoted identifier including quotes
+                    let result = &before_dot[start..];
+                    #[cfg(test)]
+                    {
+                        if trimmed.contains("\"Last Name\"") {
+                            eprintln!("DEBUG: Extracted quoted identifier: '{}'", result);
+                        }
+                    }
+                    Some(result)
+                } else {
+                    #[cfg(test)]
+                    {
+                        if trimmed.contains("\"Last Name\"") {
+                            eprintln!("DEBUG: No opening quote found!");
+                        }
+                    }
+                    None
+                }
+            } else {
+                // Regular identifier - get the last word
+                before_dot.split_whitespace().last()
+            };
+
+            if let Some(col_name) = col_name {
+                #[cfg(test)]
+                {
+                    if trimmed.contains("\"Last Name\"") {
+                        eprintln!("DEBUG: col_name = '{}'", col_name);
+                    }
+                }
+
+                // For quoted identifiers, keep the quotes, for regular identifiers check validity
+                let is_valid = if col_name.starts_with('"') && col_name.ends_with('"') {
+                    // Quoted identifier - always valid
+                    true
+                } else {
+                    // Regular identifier - check if it's alphanumeric or underscore
+                    col_name.chars().all(|c| c.is_alphanumeric() || c == '_')
+                };
+
+                #[cfg(test)]
+                {
+                    if trimmed.contains("\"Last Name\"") {
+                        eprintln!("DEBUG: is_valid = {}", is_valid);
+                    }
+                }
+
+                if is_valid {
                     // We're in a method call context
                     // Check if there's a partial method name after the dot
                     let partial_method = if after_dot.is_empty() {
@@ -2098,8 +2254,18 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
                         None
                     };
 
+                    // For AfterColumn context, strip quotes if present for consistency
+                    let col_name_for_context = if col_name.starts_with('"')
+                        && col_name.ends_with('"')
+                        && col_name.len() > 2
+                    {
+                        col_name[1..col_name.len() - 1].to_string()
+                    } else {
+                        col_name.to_string()
+                    };
+
                     return (
-                        CursorContext::AfterColumn(col_name.to_string()),
+                        CursorContext::AfterColumn(col_name_for_context),
                         partial_method,
                     );
                 }

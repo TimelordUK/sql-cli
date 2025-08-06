@@ -67,6 +67,14 @@ path = "test_large_dataset_perf.rs"
 name = "test-case-insensitive-csv"
 path = "test_case_insensitive_csv.rs"
 
+[[bin]]
+name = "test-quoted-method-completion"
+path = "test_quoted_method_completion.rs"
+
+[[bin]]
+name = "test-quoted-debug"
+path = "test_quoted_debug.rs"
+
 [dependencies]
 reedline = "0.30"
 crossterm = { version = "0.28", features = ["use-dev-tty"] }
