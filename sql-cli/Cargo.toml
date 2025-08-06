@@ -75,6 +75,10 @@ path = "test_quoted_method_completion.rs"
 name = "test-quoted-debug"
 path = "test_quoted_debug.rs"
 
+[[bin]]
+name = "test-paren-method-completion"
+path = "test_paren_method_completion.rs"
+
 [dependencies]
 reedline = "0.30"
 crossterm = { version = "0.28", features = ["use-dev-tty"] }

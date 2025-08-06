@@ -1952,8 +1952,12 @@ fn analyze_statement(
                         None
                     }
                 } else {
-                    // Regular identifier - get the last word
-                    before_dot.split_whitespace().last()
+                    // Regular identifier - get the last word, handling parentheses
+                    // Strip all leading parentheses
+                    before_dot
+                        .split_whitespace()
+                        .last()
+                        .map(|word| word.trim_start_matches('('))
                 };
 
                 if let Some(col_name) = col_name {
@@ -2112,38 +2116,8 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
         }
     }
 
-    // Check if we're after AND/OR - but make sure to extract partial word correctly
-    if let Some(and_pos) = upper.rfind(" AND ") {
-        // Check if cursor is after AND
-        if cursor_pos >= and_pos + 5 {
-            // Extract any partial word after AND
-            let after_and = &query[and_pos + 5..];
-            let partial = extract_partial_at_end(after_and);
-            return (CursorContext::AfterLogicalOp(LogicalOp::And), partial);
-        }
-    }
-
-    if let Some(or_pos) = upper.rfind(" OR ") {
-        // Check if cursor is after OR
-        if cursor_pos >= or_pos + 4 {
-            // Extract any partial word after OR
-            let after_or = &query[or_pos + 4..];
-            let partial = extract_partial_at_end(after_or);
-            return (CursorContext::AfterLogicalOp(LogicalOp::Or), partial);
-        }
-    }
-
-    // Handle case where AND/OR is at the very end
-    if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") {
-        let op = if trimmed.to_uppercase().ends_with(" AND") {
-            LogicalOp::And
-        } else {
-            LogicalOp::Or
-        };
-        return (CursorContext::AfterLogicalOp(op), None);
-    }
-
-    // Look for the last dot in the query (method call context)
+    // Look for the last dot in the query (method call context) - check this FIRST
+    // before AND/OR detection to properly handle cases like "AND (Country."
     if let Some(dot_pos) = trimmed.rfind('.') {
         #[cfg(test)]
         {
@@ -2215,8 +2189,12 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
                     None
                 }
             } else {
-                // Regular identifier - get the last word
-                before_dot.split_whitespace().last()
+                // Regular identifier - get the last word, handling parentheses
+                // Strip all leading parentheses
+                before_dot
+                    .split_whitespace()
+                    .last()
+                    .map(|word| word.trim_start_matches('('))
             };
 
             if let Some(col_name) = col_name {
@@ -2271,6 +2249,37 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
                 }
             }
         }
+    }
+
+    // Check if we're after AND/OR - but only after checking for method calls
+    if let Some(and_pos) = upper.rfind(" AND ") {
+        // Check if cursor is after AND
+        if cursor_pos >= and_pos + 5 {
+            // Extract any partial word after AND
+            let after_and = &query[and_pos + 5..];
+            let partial = extract_partial_at_end(after_and);
+            return (CursorContext::AfterLogicalOp(LogicalOp::And), partial);
+        }
+    }
+
+    if let Some(or_pos) = upper.rfind(" OR ") {
+        // Check if cursor is after OR
+        if cursor_pos >= or_pos + 4 {
+            // Extract any partial word after OR
+            let after_or = &query[or_pos + 4..];
+            let partial = extract_partial_at_end(after_or);
+            return (CursorContext::AfterLogicalOp(LogicalOp::Or), partial);
+        }
+    }
+
+    // Handle case where AND/OR is at the very end
+    if trimmed.to_uppercase().ends_with(" AND") || trimmed.to_uppercase().ends_with(" OR") {
+        let op = if trimmed.to_uppercase().ends_with(" AND") {
+            LogicalOp::And
+        } else {
+            LogicalOp::Or
+        };
+        return (CursorContext::AfterLogicalOp(op), None);
     }
 
     // Check if we're after ORDER BY
