@@ -18,7 +18,11 @@ A fast, context-aware SQL command-line interface with intelligent tab completion
 ### 🖥️ Professional TUI Interface  
 - **Split-view design** - command input at top, results grid below
 - **Scrollable data grid** - handles large result sets efficiently
-- **Status bar** - shows query status and navigation hints
+- **Dynamic column sizing** - automatically adjusts column widths based on visible data
+- **Compact mode** - toggle with 'C' to fit more columns on screen
+- **Rainbow parentheses** - visual matching for nested SQL queries
+- **Multi-source indicators** - shows data source (📦 Cache, 📁 File, 🌐 API, 🗄️ SQL)
+- **Status bar** - shows query status, mode indicators, and navigation hints
 - **Mode switching** - Command mode for input, Results mode for navigation
 
 ### ⚡ High Performance
@@ -38,6 +42,55 @@ A fast, context-aware SQL command-line interface with intelligent tab completion
 │ • Completions   │                 │ • 190+ columns  │
 └─────────────────┘                 └──────────────────┘
 ```
+
+## Keyboard Shortcuts
+
+### Navigation
+- **↑/↓, j/k** - Navigate rows
+- **←/→, h/l** - Navigate columns  
+- **Page Up/Down** - Page through results
+- **g/G** - Go to first/last row
+- **0/$** - Go to first/last column
+- **Tab** - Autocomplete in command mode
+
+### Features
+- **Enter** - Execute query
+- **F1** - Show help
+- **F3** - Toggle single/multi-line editor
+- **C** - Toggle compact mode (more columns visible)
+- **/** - Search in results
+- **n/N** - Next/previous search match
+- **s** - Sort by current column
+- **f** - Filter results
+- **Ctrl+R** - Command history search
+- **Ctrl+C** - Copy current row/cell
+- **ESC** - Return to command mode
+- **q** - Quit application
+
+### Advanced SQL Features
+- **String.IsNullOrEmpty()** - Check for null or empty strings
+- **String.Contains()** - Substring search
+- **String.StartsWith()** - Prefix matching
+- **String.EndsWith()** - Suffix matching
+- **Rainbow parentheses** - Automatic color coding for nested queries
+
+## File Support
+
+### CSV/JSON Loading
+Load CSV or JSON files directly with automatic schema detection:
+```bash
+# Load CSV file - automatically executes SELECT * and shows data
+sql-cli data/customers.csv
+
+# Load JSON file  
+sql-cli data/users.json
+```
+
+Features when loading files:
+- **Auto-execution** - Immediately shows data without typing a query
+- **Pre-filled query** - Input shows `SELECT * FROM table_name` for easy editing
+- **Schema detection** - Automatically detects columns and types
+- **Virtual viewport** - Efficiently handles large files
 
 ## Installation
 
@@ -134,14 +187,29 @@ cargo test
 - `Services/TradeDataService.cs` - Mock data service with 190+ columns
 - `Models/TradeDeal.cs` - Trade entity with comprehensive field set
 
+## Recent Enhancements 🎉
+
+- ✅ **Dynamic viewport column sizing** - Columns resize based on visible data
+- ✅ **Compact mode** - Press 'C' to fit more columns (reduced padding)
+- ✅ **Auto-execute on file load** - CSV/JSON files show data immediately
+- ✅ **Rainbow parentheses** - Visual matching for nested queries
+- ✅ **Multi-source data proxy** - Query SQL Server, APIs, and files seamlessly
+- ✅ **Visual source indicators** - See where your data comes from
+- ✅ **String.IsNullOrEmpty()** - LINQ-style null/empty checking
+- ✅ **Named cache system** - Save and reload query results
+- ✅ **Schema-aware history** - Smart command suggestions
+- ✅ **Cross-platform CI/CD** - Automated builds for Linux, Windows, macOS
+
 ## Roadmap
 
-- [ ] csvlens-style table features (column sorting, filtering)
-- [ ] Vim-like search and navigation
+- ✅ csvlens-style table features (column sorting, filtering) - **DONE!**
+- ✅ Vim-like search and navigation - **DONE!** 
+- ✅ Query history and persistence - **DONE!**
 - [ ] Grammar tree visualization
 - [ ] Separate diagnostic console
-- [ ] Query history and persistence
 - [ ] Multiple database connection support
+- [ ] Export to various formats (CSV, JSON, Excel)
+- [ ] Query performance profiling
 
 ## License
 
