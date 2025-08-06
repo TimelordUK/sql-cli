@@ -102,6 +102,8 @@ pub struct EnhancedTuiApp {
     mode: AppMode,
     results: Option<QueryResponse>,
     table_state: TableState,
+    last_results_row: Option<usize>, // Preserve row position when switching modes
+    last_scroll_offset: (usize, usize), // Preserve scroll offset when switching modes
     show_help: bool,
     status_message: String,
     sql_parser: SqlParser,
@@ -183,6 +185,8 @@ impl EnhancedTuiApp {
             mode: AppMode::Command,
             results: None,
             table_state: TableState::default(),
+            last_results_row: None,
+            last_scroll_offset: (0, 0),
             show_help: false,
             status_message: "Ready - Type SQL query and press Enter (F3 to toggle multi-line mode)"
                 .to_string(),
@@ -593,7 +597,12 @@ impl EnhancedTuiApp {
             }
             KeyCode::Down if self.results.is_some() && self.edit_mode == EditMode::SingleLine => {
                 self.mode = AppMode::Results;
-                self.table_state.select(Some(0));
+                // Restore previous position or default to 0
+                let row = self.last_results_row.unwrap_or(0);
+                self.table_state.select(Some(row));
+
+                // Restore the exact scroll offset from when we left
+                self.scroll_offset = self.last_scroll_offset;
             }
             KeyCode::F(5) => {
                 // Debug command - show detailed parser information
@@ -762,10 +771,20 @@ impl EnhancedTuiApp {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('q') => return Ok(true),
             KeyCode::Esc => {
+                // Save current position before switching to Command mode
+                if let Some(selected) = self.table_state.selected() {
+                    self.last_results_row = Some(selected);
+                    self.last_scroll_offset = self.scroll_offset;
+                }
                 self.mode = AppMode::Command;
                 self.table_state.select(None);
             }
             KeyCode::Up => {
+                // Save current position before switching to Command mode
+                if let Some(selected) = self.table_state.selected() {
+                    self.last_results_row = Some(selected);
+                    self.last_scroll_offset = self.scroll_offset;
+                }
                 self.mode = AppMode::Command;
                 self.table_state.select(None);
             }
@@ -1946,6 +1965,8 @@ impl EnhancedTuiApp {
         self.table_state = TableState::default();
         self.scroll_offset = (0, 0);
         self.current_column = 0;
+        self.last_results_row = None; // Reset saved position for new results
+        self.last_scroll_offset = (0, 0); // Reset saved scroll offset for new results
 
         // Clear filter state to prevent old filtered data from persisting
         self.filter_state = FilterState {
