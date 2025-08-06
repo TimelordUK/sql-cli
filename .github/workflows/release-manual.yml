@@ -1,0 +1,209 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      prerelease:
+        description: 'Pre-release?'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Get current version
+      id: current_version
+      run: |
+        cd sql-cli
+        CURRENT_VERSION=$(grep "^version" Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+        echo "current=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+        echo "Current version: ${CURRENT_VERSION}"
+    
+    - name: Calculate new version
+      id: version
+      run: |
+        CURRENT="${{ steps.current_version.outputs.current }}"
+        IFS='.' read -r major minor patch <<< "${CURRENT}"
+        
+        case "${{ github.event.inputs.version_bump }}" in
+          major)
+            major=$((major + 1))
+            minor=0
+            patch=0
+            ;;
+          minor)
+            minor=$((minor + 1))
+            patch=0
+            ;;
+          patch)
+            patch=$((patch + 1))
+            ;;
+        esac
+        
+        NEW_VERSION="${major}.${minor}.${patch}"
+        echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+        echo "New version: ${NEW_VERSION}"
+    
+    - name: Update Cargo.toml version
+      run: |
+        cd sql-cli
+        sed -i 's/^version = .*/version = "${{ steps.version.outputs.new_version }}"/' Cargo.toml
+        cargo update
+    
+    - name: Commit version bump
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .
+        git commit -m "chore: bump version to v${{ steps.version.outputs.new_version }}"
+    
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
+    
+    - name: Create tag
+      run: |
+        git tag "v${{ steps.version.outputs.new_version }}"
+        git push origin "v${{ steps.version.outputs.new_version }}"
+
+  build-release:
+    needs: prepare-release
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: sql-cli-linux-x64
+            binary: sql-cli
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: sql-cli-windows-x64
+            binary: sql-cli.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: sql-cli-macos-x64
+            binary: sql-cli
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: sql-cli-macos-arm64
+            binary: sql-cli
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: 'v${{ needs.prepare-release.outputs.new_version }}'
+    
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        override: true
+    
+    - name: Build Release
+      working-directory: ./sql-cli
+      run: cargo build --release --target ${{ matrix.target }}
+    
+    - name: Create archive (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        cd sql-cli/target/${{ matrix.target }}/release
+        tar czf ${{ matrix.artifact }}.tar.gz ${{ matrix.binary }}
+        mv ${{ matrix.artifact }}.tar.gz ../../../../
+    
+    - name: Create archive (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd sql-cli/target/${{ matrix.target }}/release
+        7z a -tzip ${{ matrix.artifact }}.zip ${{ matrix.binary }}
+        mv ${{ matrix.artifact }}.zip ../../../../
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.artifact }}
+        path: |
+          *.tar.gz
+          *.zip
+
+  create-release:
+    needs: [prepare-release, build-release]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: 'v${{ needs.prepare-release.outputs.new_version }}'
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        VERSION="${{ needs.prepare-release.outputs.new_version }}"
+        echo "# SQL CLI v${VERSION}" > RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "## What's Changed" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        
+        # Get commits since last tag
+        LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        if [ -z "$LAST_TAG" ]; then
+          git log --pretty=format:"- %s" >> RELEASE_NOTES.md
+        else
+          git log ${LAST_TAG}..HEAD --pretty=format:"- %s" >> RELEASE_NOTES.md
+        fi
+        
+        echo "" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "## Installation" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "Download the appropriate binary for your platform from the assets below." >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "### Supported Platforms" >> RELEASE_NOTES.md
+        echo "- Linux x64: \`sql-cli-linux-x64.tar.gz\`" >> RELEASE_NOTES.md
+        echo "- Windows x64: \`sql-cli-windows-x64.zip\`" >> RELEASE_NOTES.md
+        echo "- macOS x64 (Intel): \`sql-cli-macos-x64.tar.gz\`" >> RELEASE_NOTES.md
+        echo "- macOS ARM64 (Apple Silicon): \`sql-cli-macos-arm64.tar.gz\`" >> RELEASE_NOTES.md
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ needs.prepare-release.outputs.new_version }}
+        name: SQL CLI v${{ needs.prepare-release.outputs.new_version }}
+        body_path: RELEASE_NOTES.md
+        draft: false
+        prerelease: ${{ github.event.inputs.prerelease }}
+        files: |
+          artifacts/**/*.tar.gz
+          artifacts/**/*.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

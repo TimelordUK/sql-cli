@@ -39,13 +39,56 @@ A fast, context-aware SQL command-line interface with intelligent tab completion
 └─────────────────┘                 └──────────────────┘
 ```
 
+## Installation
+
+### Download Pre-built Binaries
+
+Download the latest release from the [Releases](https://github.com/YOUR_USERNAME/sql-cli/releases) page:
+
+- **Linux x64**: `sql-cli-linux-x64.tar.gz`
+- **Windows x64**: `sql-cli-windows-x64.zip`
+- **macOS x64 (Intel)**: `sql-cli-macos-x64.tar.gz`
+- **macOS ARM64 (Apple Silicon)**: `sql-cli-macos-arm64.tar.gz`
+
+Extract and run:
+```bash
+# Linux/macOS
+tar xzf sql-cli-*.tar.gz
+chmod +x sql-cli
+./sql-cli
+
+# Windows
+# Extract the zip file and run sql-cli.exe
+```
+
+### Build from Source
+
+```bash
+git clone https://github.com/YOUR_USERNAME/sql-cli.git
+cd sql-cli/sql-cli
+cargo build --release
+./target/release/sql-cli
+```
+
 ## Quick Start
 
-### Running the API Server
+### Standalone Mode (CSV/JSON Files)
+```bash
+# Query a CSV file
+sql-cli data/customers.csv
+
+# Query a JSON file  
+sql-cli data/trades.json
+```
+
+### API Server Mode
 ```bash
 cd TradeApi
 dotnet run
 # Server starts on http://localhost:5073
+
+# In another terminal
+sql-cli --api http://localhost:5073
 ```
 
 ### Running the CLI
