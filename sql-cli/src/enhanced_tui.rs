@@ -1205,8 +1205,8 @@ impl EnhancedTuiApp {
                 }
                 self.mode = AppMode::Results;
             }
-            KeyCode::Tab | KeyCode::Char('n') => {
-                // Next match (Tab or n like vim)
+            KeyCode::Tab => {
+                // Next match (Tab only, not 'n' to allow typing 'n' in search)
                 if !self.column_search_state.matching_columns.is_empty() {
                     self.column_search_state.current_match =
                         (self.column_search_state.current_match + 1)
@@ -1222,8 +1222,8 @@ impl EnhancedTuiApp {
                     );
                 }
             }
-            KeyCode::BackTab | KeyCode::Char('N') => {
-                // Previous match (Shift+Tab or N like vim)
+            KeyCode::BackTab => {
+                // Previous match (Shift+Tab only, not 'N' to allow typing 'N' in search)
                 if !self.column_search_state.matching_columns.is_empty() {
                     if self.column_search_state.current_match == 0 {
                         self.column_search_state.current_match =
@@ -2487,7 +2487,7 @@ impl EnhancedTuiApp {
                             &self.column_search_state.matching_columns[0];
                         self.current_column = *column_index;
                         self.status_message = format!(
-                            "Column 1 of {}: {} (Tab/n=next, Enter=select)",
+                            "Column 1 of {}: {} (Tab=next, Enter=select)",
                             self.column_search_state.matching_columns.len(),
                             column_name
                         );
