@@ -26,6 +26,7 @@ use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::where_ast::format_where_ast;
 use sql_cli::where_parser::WhereParser;
 use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io;
 use std::io::Write;
@@ -44,6 +45,7 @@ enum AppMode {
     PrettyQuery,
     CacheList,
     JumpToRow,
+    ColumnStats,
 }
 
 #[derive(Clone, PartialEq)]
@@ -70,6 +72,31 @@ struct FilterState {
     pattern: String,
     regex: Option<Regex>,
     active: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ColumnStatistics {
+    column_name: String,
+    column_type: ColumnType,
+    // For all columns
+    total_count: usize,
+    null_count: usize,
+    unique_count: usize,
+    // For categorical/string columns
+    frequency_map: Option<BTreeMap<String, usize>>,
+    // For numeric columns
+    min: Option<f64>,
+    max: Option<f64>,
+    sum: Option<f64>,
+    mean: Option<f64>,
+    median: Option<f64>,
+}
+
+#[derive(Clone, Debug)]
+enum ColumnType {
+    String,
+    Numeric,
+    Mixed,
 }
 
 #[derive(Clone)]
@@ -119,9 +146,10 @@ pub struct EnhancedTuiApp {
     command_history: CommandHistory,
     filtered_data: Option<Vec<Vec<String>>>,
     column_widths: Vec<u16>,
-    scroll_offset: (usize, usize), // (row, col)
-    current_column: usize,         // For column-based operations
-    pinned_columns: Vec<usize>,    // Indices of pinned columns
+    scroll_offset: (usize, usize),          // (row, col)
+    current_column: usize,                  // For column-based operations
+    pinned_columns: Vec<usize>,             // Indices of pinned columns
+    column_stats: Option<ColumnStatistics>, // Current column statistics
     sql_highlighter: SqlHighlighter,
     debug_text: String,
     debug_scroll: u16,
@@ -247,6 +275,7 @@ impl EnhancedTuiApp {
             scroll_offset: (0, 0),
             current_column: 0,
             pinned_columns: Vec::new(),
+            column_stats: None,
             sql_highlighter: SqlHighlighter::new(),
             debug_text: String::new(),
             debug_scroll: 0,
@@ -471,6 +500,7 @@ impl EnhancedTuiApp {
                         AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
                         AppMode::CacheList => self.handle_cache_list_input(key)?,
                         AppMode::JumpToRow => self.handle_jump_to_row_input(key)?,
+                        AppMode::ColumnStats => self.handle_column_stats_input(key)?,
                     };
 
                     if should_exit {
@@ -979,9 +1009,18 @@ impl EnhancedTuiApp {
                 self.mode = AppMode::Filter;
                 self.filter_state.pattern.clear();
             }
-            // Sort functionality
-            KeyCode::Char('s') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Sort functionality (lowercase s)
+            KeyCode::Char('s')
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
                 self.sort_by_column(self.current_column);
+            }
+            // Column statistics (uppercase S)
+            KeyCode::Char('S') | KeyCode::Char('s')
+                if key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                self.calculate_column_statistics();
             }
             // Export to CSV
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1793,6 +1832,134 @@ impl EnhancedTuiApp {
     fn clear_pinned_columns(&mut self) {
         self.pinned_columns.clear();
         self.status_message = "All columns unpinned".to_string();
+    }
+
+    fn calculate_column_statistics(&mut self) {
+        // Get the current column name and data
+        if let Some(results) = &self.results {
+            if results.data.is_empty() {
+                return;
+            }
+
+            // Get column names from first row
+            let headers: Vec<String> = if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    obj.keys().map(|k| k.to_string()).collect()
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            };
+
+            if self.current_column >= headers.len() {
+                return;
+            }
+
+            let column_name = &headers[self.current_column];
+
+            // Use filtered data if available, otherwise use original data
+            let data_to_analyze = if let Some(filtered) = &self.filtered_data {
+                // Convert filtered data back to JSON values for analysis
+                let mut json_data = Vec::new();
+                for row in filtered {
+                    if self.current_column < row.len() {
+                        json_data.push(row[self.current_column].clone());
+                    }
+                }
+                json_data
+            } else {
+                // Extract column values from JSON data
+                results
+                    .data
+                    .iter()
+                    .filter_map(|row| {
+                        if let Some(obj) = row.as_object() {
+                            obj.get(column_name).map(|v| match v {
+                                Value::String(s) => s.clone(),
+                                Value::Number(n) => n.to_string(),
+                                Value::Bool(b) => b.to_string(),
+                                Value::Null => String::new(),
+                                _ => v.to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            };
+
+            // Calculate statistics
+            let mut stats = ColumnStatistics {
+                column_name: column_name.clone(),
+                column_type: ColumnType::Mixed,
+                total_count: data_to_analyze.len(),
+                null_count: 0,
+                unique_count: 0,
+                frequency_map: None,
+                min: None,
+                max: None,
+                sum: None,
+                mean: None,
+                median: None,
+            };
+
+            // Analyze data type and calculate appropriate statistics
+            let mut numeric_values = Vec::new();
+            let mut string_values = Vec::new();
+            let mut frequency_map: BTreeMap<String, usize> = BTreeMap::new();
+
+            for value in &data_to_analyze {
+                if value.is_empty() {
+                    stats.null_count += 1;
+                } else if let Ok(num) = value.parse::<f64>() {
+                    numeric_values.push(num);
+                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
+                } else {
+                    string_values.push(value.clone());
+                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
+                }
+            }
+
+            stats.unique_count = frequency_map.len();
+
+            // Determine column type
+            if numeric_values.len() > 0 && string_values.is_empty() {
+                stats.column_type = ColumnType::Numeric;
+
+                // Calculate numeric statistics
+                if !numeric_values.is_empty() {
+                    numeric_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+
+                    stats.min = Some(numeric_values[0]);
+                    stats.max = Some(numeric_values[numeric_values.len() - 1]);
+                    stats.sum = Some(numeric_values.iter().sum());
+                    stats.mean = Some(stats.sum.unwrap() / numeric_values.len() as f64);
+
+                    // Calculate median
+                    let mid = numeric_values.len() / 2;
+                    stats.median = if numeric_values.len() % 2 == 0 {
+                        Some((numeric_values[mid - 1] + numeric_values[mid]) / 2.0)
+                    } else {
+                        Some(numeric_values[mid])
+                    };
+                }
+
+                // Only keep frequency map for small number of unique values
+                if frequency_map.len() <= 20 {
+                    stats.frequency_map = Some(frequency_map);
+                }
+            } else if string_values.len() > 0 && numeric_values.is_empty() {
+                stats.column_type = ColumnType::String;
+                stats.frequency_map = Some(frequency_map);
+            } else {
+                stats.column_type = ColumnType::Mixed;
+                stats.frequency_map = Some(frequency_map);
+            }
+
+            self.column_stats = Some(stats);
+            self.mode = AppMode::ColumnStats;
+        }
     }
 
     fn check_parser_error(&self, query: &str) -> Option<String> {
@@ -3176,6 +3343,7 @@ impl EnhancedTuiApp {
             AppMode::PrettyQuery => "Pretty Query View (F6)".to_string(),
             AppMode::CacheList => "Cache Management (F7)".to_string(),
             AppMode::JumpToRow => format!("Jump to row: {}", self.jump_to_row_input),
+            AppMode::ColumnStats => "Column Statistics (S to close)".to_string(),
         };
 
         let input_block = Block::default().borders(Borders::ALL).title(input_title);
@@ -3219,6 +3387,7 @@ impl EnhancedTuiApp {
                         AppMode::PrettyQuery => Style::default().fg(Color::Green),
                         AppMode::CacheList => Style::default().fg(Color::Cyan),
                         AppMode::JumpToRow => Style::default().fg(Color::Magenta),
+                        AppMode::ColumnStats => Style::default().fg(Color::Cyan),
                         _ => Style::default(),
                     })
                     .scroll((0, self.get_horizontal_scroll_offset()))
@@ -3298,6 +3467,7 @@ impl EnhancedTuiApp {
             (AppMode::Debug, false) => self.render_debug(f, results_area),
             (AppMode::PrettyQuery, false) => self.render_pretty_query(f, results_area),
             (AppMode::CacheList, false) => self.render_cache_list(f, results_area),
+            (AppMode::ColumnStats, false) => self.render_column_stats(f, results_area),
             (_, false) if self.results.is_some() => {
                 // We need to work around the borrow checker here
                 // Calculate widths needs mutable self, but we also need to pass results
@@ -3343,6 +3513,7 @@ impl EnhancedTuiApp {
             AppMode::PrettyQuery => Style::default().fg(Color::Green),
             AppMode::CacheList => Style::default().fg(Color::Cyan),
             AppMode::JumpToRow => Style::default().fg(Color::Magenta),
+            AppMode::ColumnStats => Style::default().fg(Color::Cyan),
         };
 
         let mode_indicator = match self.mode {
@@ -3356,6 +3527,7 @@ impl EnhancedTuiApp {
             AppMode::PrettyQuery => "PRETTY",
             AppMode::CacheList => "CACHE",
             AppMode::JumpToRow => "JUMP",
+            AppMode::ColumnStats => "STATS",
         };
 
         // Add useful status info
@@ -3945,6 +4117,7 @@ impl EnhancedTuiApp {
                     .fg(Color::Magenta)
                     .add_modifier(Modifier::BOLD),
             ),
+            Line::from("  • Column statistics (S key)"),
             Line::from("  • Column pinning (p/P keys)"),
             Line::from("  • Dynamic column sizing"),
             Line::from("  • Compact mode (C key)"),
@@ -3992,6 +4165,7 @@ impl EnhancedTuiApp {
             Line::from("  n/N      - Next/prev match"),
             Line::from("  f        - Filter rows (regex)"),
             Line::from("  s        - Sort by column"),
+            Line::from("  S        - 📊 Column statistics"),
             Line::from("  1-9      - Sort by column #"),
             Line::from("  Ctrl+S   - Export to CSV"),
             Line::from("  Ctrl+C   - Copy row/cell"),
@@ -4459,6 +4633,18 @@ impl EnhancedTuiApp {
         Ok(false)
     }
 
+    fn handle_column_stats_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
+            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('S') => {
+                self.column_stats = None;
+                self.mode = AppMode::Results;
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
     fn handle_jump_to_row_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Esc => {
@@ -4564,6 +4750,117 @@ impl EnhancedTuiApp {
         } else {
             let error = Paragraph::new("Cache not available")
                 .block(Block::default().borders(Borders::ALL).title("Cache Error"))
+                .style(Style::default().fg(Color::Red));
+            f.render_widget(error, area);
+        }
+    }
+
+    fn render_column_stats(&self, f: &mut Frame, area: Rect) {
+        if let Some(ref stats) = self.column_stats {
+            let mut lines = vec![
+                Line::from(format!("Column Statistics: {}", stats.column_name)).style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Line::from(""),
+                Line::from(format!("Type: {:?}", stats.column_type))
+                    .style(Style::default().fg(Color::Yellow)),
+                Line::from(format!("Total Rows: {}", stats.total_count)),
+                Line::from(format!("Unique Values: {}", stats.unique_count)),
+                Line::from(format!("Null/Empty Count: {}", stats.null_count)),
+                Line::from(""),
+            ];
+
+            // Add numeric statistics if available
+            if matches!(stats.column_type, ColumnType::Numeric | ColumnType::Mixed) {
+                lines.push(
+                    Line::from("Numeric Statistics:").style(
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                );
+                if let Some(min) = stats.min {
+                    lines.push(Line::from(format!("  Min: {:.2}", min)));
+                }
+                if let Some(max) = stats.max {
+                    lines.push(Line::from(format!("  Max: {:.2}", max)));
+                }
+                if let Some(mean) = stats.mean {
+                    lines.push(Line::from(format!("  Mean: {:.2}", mean)));
+                }
+                if let Some(median) = stats.median {
+                    lines.push(Line::from(format!("  Median: {:.2}", median)));
+                }
+                if let Some(sum) = stats.sum {
+                    lines.push(Line::from(format!("  Sum: {:.2}", sum)));
+                }
+                lines.push(Line::from(""));
+            }
+
+            // Add frequency distribution if available
+            if let Some(ref freq_map) = stats.frequency_map {
+                lines.push(
+                    Line::from("Frequency Distribution:").style(
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                );
+
+                // Sort by frequency (descending) and take top 20
+                let mut freq_vec: Vec<_> = freq_map.iter().collect();
+                freq_vec.sort_by(|a, b| b.1.cmp(a.1));
+
+                let max_count = freq_vec.first().map(|(_, c)| **c).unwrap_or(1);
+
+                for (value, count) in freq_vec.iter().take(20) {
+                    let bar_width = ((**count as f64 / max_count as f64) * 30.0) as usize;
+                    let bar = "█".repeat(bar_width);
+                    let display_value = if value.len() > 30 {
+                        format!("{}...", &value[..27])
+                    } else {
+                        value.to_string()
+                    };
+                    lines.push(Line::from(format!(
+                        "  {:30} {} ({})",
+                        display_value, bar, count
+                    )));
+                }
+
+                if freq_vec.len() > 20 {
+                    lines.push(
+                        Line::from(format!(
+                            "  ... and {} more unique values",
+                            freq_vec.len() - 20
+                        ))
+                        .style(Style::default().fg(Color::DarkGray)),
+                    );
+                }
+            }
+
+            lines.push(Line::from(""));
+            lines.push(
+                Line::from("Press S or Esc to return to results")
+                    .style(Style::default().fg(Color::DarkGray)),
+            );
+
+            let stats_paragraph = Paragraph::new(Text::from(lines))
+                .block(Block::default().borders(Borders::ALL).title(format!(
+                    "Column Statistics - {} (S to close)",
+                    stats.column_name
+                )))
+                .wrap(Wrap { trim: false });
+
+            f.render_widget(stats_paragraph, area);
+        } else {
+            let error = Paragraph::new("No statistics available")
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Column Statistics"),
+                )
                 .style(Style::default().fg(Color::Red));
             f.render_widget(error, area);
         }
