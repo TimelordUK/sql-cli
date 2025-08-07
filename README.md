@@ -1,8 +1,26 @@
-# SQL CLI with Dynamic LINQ Support
+# SQL CLI - Advanced CSV/JSON Viewer with SQL Support
 
-A fast, context-aware SQL command-line interface with intelligent tab completion and a sophisticated TUI for querying REST API-based database engines.
+A powerful command-line tool for exploring CSV and JSON files using SQL queries, with intelligent tab completion and a sophisticated TUI. Works standalone (like csvlens) or can connect to REST API data sources.
 
 ![SQL-CLI Overview](sql-cli/demos/overview-optimized.gif)
+
+## Primary Use Cases
+
+### 📊 Standalone CSV/JSON Viewer (Most Common)
+```bash
+# Just point at any CSV or JSON file - no setup required!
+sql-cli data.csv
+sql-cli sales.json
+
+# Instantly query with SQL, filter, sort, aggregate, export
+SELECT * FROM data WHERE amount > 1000 ORDER BY date DESC
+```
+
+### 🔌 REST API Data Source (Advanced)
+```bash
+# Optionally connect to a proxy server for remote data
+sql-cli --api-url http://api.example.com
+```
 
 ## Features
 
@@ -97,11 +115,18 @@ Features when loading files:
 - **Schema detection** - Automatically detects columns and types
 - **Virtual viewport** - Efficiently handles large files
 
-## More Demos
+## Feature Demos
 
 <details>
-<summary>📺 View additional feature demos</summary>
+<summary>📺 View detailed feature demonstrations</summary>
 
+### Column Search & Statistics
+Press `/` to search for a specific column (e.g., `CounterpartyCountry`), then press `Enter` to focus. 
+Press `Shift+S` to view frequency statistics for the filtered dataset.
+
+![Column Search Demo](sql-cli/demos/column-search.gif)
+
+### More Features (Coming Soon)
 - [Fuzzy Search & Filtering](sql-cli/demos/fuzzy-filter.gif)
 - [Column Navigation](sql-cli/demos/column-navigation.gif)  
 - [Column Statistics](sql-cli/demos/statistics.gif)
