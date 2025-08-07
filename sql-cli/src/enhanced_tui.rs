@@ -897,7 +897,7 @@ impl EnhancedTuiApp {
         // Debug: Log all Ctrl key combinations
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             if let KeyCode::Char(c) = key.code {
-                self.status_message = format!("DEBUG: Ctrl+{} pressed", c);
+                self.set_status_message(format!("DEBUG: Ctrl+{} pressed", c));
             }
         }
 
@@ -938,7 +938,7 @@ impl EnhancedTuiApp {
                         // Move cursor to the beginning
                         self.textarea.move_cursor(CursorMove::Top);
                         self.textarea.move_cursor(CursorMove::Head);
-                        self.status_message = "Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string();
+                        self.set_status_message("Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string());
                     }
                     EditMode::MultiLine => {
                         self.set_edit_mode(EditMode::SingleLine);
@@ -952,8 +952,9 @@ impl EnhancedTuiApp {
                             .collect::<Vec<_>>()
                             .join(" ");
                         self.input = tui_input::Input::new(text);
-                        self.status_message =
-                            "Single-line mode enabled (F3 to toggle multi-line)".to_string();
+                        self.set_status_message(
+                            "Single-line mode enabled (F3 to toggle multi-line)".to_string(),
+                        );
                     }
                 }
             }
@@ -985,7 +986,7 @@ impl EnhancedTuiApp {
                     if query == ":help" {
                         self.show_help = true;
                         self.mode = AppMode::Help;
-                        self.status_message = "Help Mode - Press ESC to return".to_string();
+                        self.set_status_message("Help Mode - Press ESC to return".to_string());
                     } else if query == ":exit" || query == ":quit" {
                         return Ok(true);
                     } else if query == ":tui" {
