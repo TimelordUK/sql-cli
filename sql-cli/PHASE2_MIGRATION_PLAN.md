@@ -30,7 +30,7 @@ These are buffer-specific and should move:
 #### Display State
 - `column_widths` - Calculated widths for this buffer's columns
 - ✅ `scroll_offset` - Current scroll position (row, col) **[DONE - Wrapper added, tested, working]**
-- `current_column` - Currently selected column
+- ✅ `current_column` - Currently selected column **[DONE - Wrapper added, migrated, tested]**
 - `pinned_columns` - Which columns are pinned in this buffer
 - `column_stats` - Statistics for selected column
 - `compact_mode` - Per-buffer display preference
