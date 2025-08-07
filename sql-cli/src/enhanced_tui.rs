@@ -513,6 +513,22 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn get_compact_mode(&self) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.is_compact_mode()
+        } else {
+            self.compact_mode
+        }
+    }
+
+    fn set_compact_mode(&mut self, compact: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_compact_mode(compact);
+        } else {
+            self.compact_mode = compact;
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -1327,7 +1343,7 @@ impl EnhancedTuiApp {
                     Active Filters: {}\n",
                     self.mode,
                     self.get_case_insensitive(),
-                    self.compact_mode,
+                    self.get_compact_mode(),
                     self.viewport_lock,
                     self.csv_mode,
                     self.cache_mode,
@@ -1532,8 +1548,9 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('C') => {
                 // Toggle compact mode with Shift+C
-                self.compact_mode = !self.compact_mode;
-                self.set_status_message(if self.compact_mode {
+                let current_mode = self.get_compact_mode();
+                self.set_compact_mode(!current_mode);
+                self.set_status_message(if self.get_compact_mode() {
                     "Compact mode: ON (reduced padding, more columns visible)".to_string()
                 } else {
                     "Compact mode: OFF (standard padding)".to_string()
@@ -3583,9 +3600,10 @@ impl EnhancedTuiApp {
                     let mut widths = Vec::with_capacity(headers.len());
 
                     // Use compact mode settings
-                    let min_width = if self.compact_mode { 4 } else { 6 };
-                    let max_width = if self.compact_mode { 20 } else { 30 };
-                    let padding = if self.compact_mode { 1 } else { 2 };
+                    let compact = self.get_compact_mode();
+                    let min_width = if compact { 4 } else { 6 };
+                    let max_width = if compact { 20 } else { 30 };
+                    let padding = if compact { 1 } else { 2 };
 
                     // Only check visible rows
                     let rows_to_check =
@@ -5425,7 +5443,7 @@ impl EnhancedTuiApp {
             ));
         }
 
-        if self.compact_mode {
+        if self.get_compact_mode() {
             spans.push(Span::raw(" | "));
             spans.push(Span::styled("COMPACT", Style::default().fg(Color::Green)));
         }

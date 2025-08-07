@@ -83,25 +83,6 @@ path = "test_paren_method_completion.rs"
 name = "test-column-pinning"
 path = "test_column_pinning.rs"
 
-[[bin]]
-name = "test-limit"
-path = "test_limit.rs"
-
-[[bin]]
-name = "test-limit-fixed"
-path = "test_limit_fixed.rs"
-
-[[bin]]
-name = "debug-limit-parsing"
-path = "debug_limit_parsing.rs"
-
-[[bin]]
-name = "debug-actual-parsing"
-path = "debug_actual_parsing.rs"
-
-[[bin]]
-name = "test-limit-with-trades"
-path = "test_limit_with_trades.rs"
 
 
 [dependencies]
