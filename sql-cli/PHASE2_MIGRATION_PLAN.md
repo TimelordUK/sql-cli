@@ -35,8 +35,8 @@ These are buffer-specific and should move:
 - `column_stats` - Statistics for selected column
 - ✅ `compact_mode` - Per-buffer display preference **[DONE - Wrapper added, migrated, tested]**
 - ✅ `show_row_numbers` - Per-buffer display preference **[DONE - Wrapper added, migrated, tested]**
-- `viewport_lock` - Viewport locking for this buffer
-- `viewport_lock_row` - The locked row
+- ✅ `viewport_lock` - Viewport locking for this buffer **[DONE - Wrapper added, migrated, tested]**
+- ✅ `viewport_lock_row` - The locked row **[DONE - Wrapper added, migrated, tested]**
 
 #### CSV/Data State
 - `csv_client` - CSV data source for this buffer

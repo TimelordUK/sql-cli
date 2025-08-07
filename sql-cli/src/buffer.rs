@@ -189,6 +189,10 @@ pub trait BufferAPI {
     fn set_compact_mode(&mut self, compact: bool);
     fn is_show_row_numbers(&self) -> bool;
     fn set_show_row_numbers(&mut self, show: bool);
+    fn is_viewport_lock(&self) -> bool;
+    fn set_viewport_lock(&mut self, locked: bool);
+    fn get_viewport_lock_row(&self) -> Option<usize>;
+    fn set_viewport_lock_row(&mut self, row: Option<usize>);
     fn get_pinned_columns(&self) -> &Vec<usize>;
     fn add_pinned_column(&mut self, col: usize);
     fn remove_pinned_column(&mut self, col: usize);
@@ -470,6 +474,22 @@ impl BufferAPI for Buffer {
 
     fn set_show_row_numbers(&mut self, show: bool) {
         self.show_row_numbers = show;
+    }
+
+    fn is_viewport_lock(&self) -> bool {
+        self.viewport_lock
+    }
+
+    fn set_viewport_lock(&mut self, locked: bool) {
+        self.viewport_lock = locked;
+    }
+
+    fn get_viewport_lock_row(&self) -> Option<usize> {
+        self.viewport_lock_row
+    }
+
+    fn set_viewport_lock_row(&mut self, row: Option<usize>) {
+        self.viewport_lock_row = row;
     }
 
     fn get_pinned_columns(&self) -> &Vec<usize> {

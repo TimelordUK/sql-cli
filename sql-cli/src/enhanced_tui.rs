@@ -545,6 +545,38 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn is_viewport_lock(&self) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.is_viewport_lock()
+        } else {
+            self.viewport_lock
+        }
+    }
+
+    fn set_viewport_lock(&mut self, locked: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_viewport_lock(locked);
+        } else {
+            self.viewport_lock = locked;
+        }
+    }
+
+    fn get_viewport_lock_row(&self) -> Option<usize> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_viewport_lock_row()
+        } else {
+            self.viewport_lock_row
+        }
+    }
+
+    fn set_viewport_lock_row(&mut self, row: Option<usize>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_viewport_lock_row(row);
+        } else {
+            self.viewport_lock_row = row;
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -1360,7 +1392,7 @@ impl EnhancedTuiApp {
                     self.mode,
                     self.get_case_insensitive(),
                     self.get_compact_mode(),
-                    self.viewport_lock,
+                    self.is_viewport_lock(),
                     self.csv_mode,
                     self.cache_mode,
                     &self.get_last_query_source().unwrap_or("None".to_string()),
@@ -1582,17 +1614,18 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char(' ') => {
                 // Toggle viewport lock with Space
-                self.viewport_lock = !self.viewport_lock;
-                if self.viewport_lock {
+                let current_lock = self.is_viewport_lock();
+                self.set_viewport_lock(!current_lock);
+                if self.is_viewport_lock() {
                     // Lock to current position in viewport (middle of screen)
                     let visible_rows = self.last_visible_rows;
-                    self.viewport_lock_row = Some(visible_rows / 2);
+                    self.set_viewport_lock_row(Some(visible_rows / 2));
                     self.set_status_message(format!(
                         "Viewport lock: ON (anchored at row {} of viewport)",
                         visible_rows / 2 + 1
                     ));
                 } else {
-                    self.viewport_lock_row = None;
+                    self.set_viewport_lock_row(None);
                     self.set_status_message("Viewport lock: OFF (normal scrolling)".to_string());
                 }
             }
@@ -2695,9 +2728,9 @@ impl EnhancedTuiApp {
             self.get_table_state_mut().select(Some(new_position));
 
             // Update viewport based on lock mode
-            if self.viewport_lock {
+            if self.is_viewport_lock() {
                 // In lock mode, keep cursor at fixed viewport position
-                if let Some(lock_row) = self.viewport_lock_row {
+                if let Some(lock_row) = self.get_viewport_lock_row() {
                     // Adjust viewport so cursor stays at lock_row position
                     let mut offset = self.get_scroll_offset();
                     offset.0 = new_position.saturating_sub(lock_row);
@@ -2727,9 +2760,9 @@ impl EnhancedTuiApp {
         self.get_table_state_mut().select(Some(new_position));
 
         // Update viewport based on lock mode
-        if self.viewport_lock {
+        if self.is_viewport_lock() {
             // In lock mode, keep cursor at fixed viewport position
-            if let Some(lock_row) = self.viewport_lock_row {
+            if let Some(lock_row) = self.get_viewport_lock_row() {
                 // Adjust viewport so cursor stays at lock_row position
                 let mut offset = self.get_scroll_offset();
                 offset.0 = new_position.saturating_sub(lock_row);
@@ -5465,7 +5498,7 @@ impl EnhancedTuiApp {
             spans.push(Span::styled("COMPACT", Style::default().fg(Color::Green)));
         }
 
-        if self.viewport_lock {
+        if self.is_viewport_lock() {
             spans.push(Span::raw(" | "));
             spans.push(Span::styled(
                 &self.config.display.icons.lock,
