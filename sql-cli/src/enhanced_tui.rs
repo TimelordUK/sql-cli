@@ -2006,7 +2006,7 @@ impl EnhancedTuiApp {
     }
 
     fn execute_query(&mut self, query: &str) -> Result<()> {
-        self.status_message = format!("Executing query: '{}'...", query);
+        self.set_status_message(format!("Executing query: '{}'...", query));
         let start_time = std::time::Instant::now();
 
         let result = if self.cache_mode {
@@ -2092,7 +2092,7 @@ impl EnhancedTuiApp {
                     false,
                     Some(duration.as_millis() as u64),
                 );
-                self.status_message = format!("Error: {}", e);
+                self.set_status_message(format!("Error: {}", e));
             }
         }
         Ok(())
@@ -2175,7 +2175,7 @@ impl EnhancedTuiApp {
             // New completion context - get fresh suggestions
             let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
             if hybrid_result.suggestions.is_empty() {
-                self.status_message = "No completions available".to_string();
+                self.set_status_message("No completions available".to_string());
                 return;
             }
 
@@ -2186,7 +2186,7 @@ impl EnhancedTuiApp {
             self.completion_state.current_index =
                 (self.completion_state.current_index + 1) % self.completion_state.suggestions.len();
         } else {
-            self.status_message = "No completions available".to_string();
+            self.set_status_message("No completions available".to_string());
             return;
         }
 
@@ -2258,7 +2258,7 @@ impl EnhancedTuiApp {
             self.completion_state.last_query = new_query;
             self.completion_state.last_cursor_pos = cursor_pos_new;
 
-            self.status_message = format!("Inserted: {}", suggestion);
+            self.set_status_message(format!("Inserted: {}", suggestion));
         }
     }
 
@@ -2286,7 +2286,7 @@ impl EnhancedTuiApp {
             // New completion context - get fresh suggestions
             let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
             if hybrid_result.suggestions.is_empty() {
-                self.status_message = "No completions available".to_string();
+                self.set_status_message("No completions available".to_string());
                 return;
             }
 
@@ -2297,7 +2297,7 @@ impl EnhancedTuiApp {
             self.completion_state.current_index =
                 (self.completion_state.current_index + 1) % self.completion_state.suggestions.len();
         } else {
-            self.status_message = "No completions available".to_string();
+            self.set_status_message("No completions available".to_string());
             return;
         }
 
@@ -2377,7 +2377,7 @@ impl EnhancedTuiApp {
                 cursor_pos + suggestion.len()
             };
 
-            self.status_message = format!("Inserted: {}", suggestion);
+            self.set_status_message(format!("Inserted: {}", suggestion));
         }
     }
 
@@ -2615,7 +2615,7 @@ impl EnhancedTuiApp {
     fn move_column_left(&mut self) {
         self.current_column = self.current_column.saturating_sub(1);
         self.scroll_offset.1 = self.scroll_offset.1.saturating_sub(1);
-        self.status_message = format!("Column {} selected", self.current_column + 1);
+        self.set_status_message(format!("Column {} selected", self.current_column + 1));
     }
 
     fn move_column_right(&mut self) {
@@ -2626,8 +2626,10 @@ impl EnhancedTuiApp {
                     if self.current_column + 1 < max_columns {
                         self.current_column += 1;
                         self.scroll_offset.1 += 1;
-                        self.status_message =
-                            format!("Column {} selected", self.current_column + 1);
+                        self.set_status_message(format!(
+                            "Column {} selected",
+                            self.current_column + 1
+                        ));
                     }
                 }
             }
@@ -2637,7 +2639,7 @@ impl EnhancedTuiApp {
     fn goto_first_column(&mut self) {
         self.current_column = 0;
         self.scroll_offset.1 = 0;
-        self.status_message = "First column selected".to_string();
+        self.set_status_message("First column selected".to_string());
     }
 
     fn goto_last_column(&mut self) {
@@ -2672,22 +2674,22 @@ impl EnhancedTuiApp {
         {
             // Column is already pinned, unpin it
             self.pinned_columns.remove(pos);
-            self.status_message = format!("Column {} unpinned", self.current_column + 1);
+            self.set_status_message(format!("Column {} unpinned", self.current_column + 1));
         } else {
             // Pin the column (max 4 pinned columns)
             if self.pinned_columns.len() < 4 {
                 self.pinned_columns.push(self.current_column);
                 self.pinned_columns.sort(); // Keep them in order
-                self.status_message = format!("Column {} pinned 📌", self.current_column + 1);
+                self.set_status_message(format!("Column {} pinned 📌", self.current_column + 1));
             } else {
-                self.status_message = "Maximum 4 pinned columns allowed".to_string();
+                self.set_status_message("Maximum 4 pinned columns allowed".to_string());
             }
         }
     }
 
     fn clear_pinned_columns(&mut self) {
         self.pinned_columns.clear();
-        self.status_message = "All columns unpinned".to_string();
+        self.set_status_message("All columns unpinned".to_string());
     }
 
     fn calculate_column_statistics(&mut self) {
@@ -2982,7 +2984,7 @@ impl EnhancedTuiApp {
         if self.filter_state.pattern.is_empty() {
             self.filtered_data = None;
             self.filter_state.active = false;
-            self.status_message = "Filter cleared".to_string();
+            self.set_status_message("Filter cleared".to_string());
             return;
         }
 
@@ -3176,13 +3178,13 @@ impl EnhancedTuiApp {
                         );
                     }
                 } else {
-                    self.status_message = "No column data available".to_string();
+                    self.set_status_message("No column data available".to_string());
                 }
             } else {
-                self.status_message = "No data available for column search".to_string();
+                self.set_status_message("No data available for column search".to_string());
             }
         } else {
-            self.status_message = "No results available for column search".to_string();
+            self.set_status_message("No results available for column search".to_string());
         }
     }
 
@@ -3205,7 +3207,7 @@ impl EnhancedTuiApp {
                 column: None,
                 order: SortOrder::None,
             };
-            self.status_message = "Sort cleared".to_string();
+            self.set_status_message("Sort cleared".to_string());
             return;
         }
 
@@ -3606,13 +3608,13 @@ impl EnhancedTuiApp {
                         }
                     }
                 } else {
-                    self.status_message = "No data to export".to_string();
+                    self.set_status_message("No data to export".to_string());
                 }
             } else {
-                self.status_message = "No data to export".to_string();
+                self.set_status_message("No data to export".to_string());
             }
         } else {
-            self.status_message = "No results to export - run a query first".to_string();
+            self.set_status_message("No results to export - run a query first".to_string());
         }
     }
 
@@ -3852,11 +3854,17 @@ impl EnhancedTuiApp {
                                 self.input = tui_input::Input::new(new_value)
                                     .with_cursor(cursor_pos + text.len());
 
-                                self.status_message = format!("Pasted {} characters", text.len());
+                                self.set_status_message(format!(
+                                    "Pasted {} characters",
+                                    text.len()
+                                ));
                             } else {
                                 // Multi-line mode - insert at cursor
                                 self.textarea.insert_str(&text);
-                                self.status_message = format!("Pasted {} characters", text.len());
+                                self.set_status_message(format!(
+                                    "Pasted {} characters",
+                                    text.len()
+                                ));
                             }
                         }
                         AppMode::Filter
@@ -3951,7 +3959,7 @@ impl EnhancedTuiApp {
                 }
             }
         } else {
-            self.status_message = "No results to export - run a query first".to_string();
+            self.set_status_message("No results to export - run a query first".to_string());
         }
     }
 
@@ -6259,7 +6267,9 @@ impl EnhancedTuiApp {
                         }
                     }
                 } else {
-                    self.status_message = "No results to cache. Execute a query first.".to_string();
+                    self.set_status_message(
+                        "No results to cache. Execute a query first.".to_string(),
+                    );
                 }
             }
             "load" => {
