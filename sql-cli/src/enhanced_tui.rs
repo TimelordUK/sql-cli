@@ -755,6 +755,35 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Wrapper methods for csv_client (uses buffer system)
+    fn get_csv_client(&self) -> Option<&CsvApiClient> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_csv_client()
+        } else {
+            self.csv_client.as_ref()
+        }
+    }
+
+    fn set_csv_client(&mut self, client: Option<CsvApiClient>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_csv_client(client);
+        } else {
+            self.csv_client = client;
+        }
+    }
+
+    fn set_csv_client_case_insensitive(&mut self, case_insensitive: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            if let Some(csv_client) = buffer.get_csv_client_mut() {
+                csv_client.set_case_insensitive(case_insensitive);
+            }
+        } else {
+            if let Some(csv_client) = self.csv_client.as_mut() {
+                csv_client.set_case_insensitive(case_insensitive);
+            }
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -960,7 +989,7 @@ impl EnhancedTuiApp {
             .ok_or_else(|| anyhow::anyhow!("Failed to get CSV schema"))?;
 
         // Configure the app for CSV mode
-        app.csv_client = Some(csv_client.clone());
+        app.set_csv_client(Some(csv_client.clone()));
         app.set_csv_mode(true);
         app.set_csv_table_name(table_name.clone());
         app.current_buffer_name = Some(format!("{}", raw_name));
@@ -1054,7 +1083,7 @@ impl EnhancedTuiApp {
             .ok_or_else(|| anyhow::anyhow!("Failed to get JSON schema"))?;
 
         // Configure the app for JSON mode
-        app.csv_client = Some(csv_client.clone());
+        app.set_csv_client(Some(csv_client.clone()));
         app.set_csv_mode(true); // Reuse CSV mode since the data structure is the same
         app.set_csv_table_name(table_name.clone());
         app.current_buffer_name = Some(format!("{}", raw_name));
@@ -1360,9 +1389,7 @@ impl EnhancedTuiApp {
                 self.set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
-                if let Some(ref mut csv_client) = self.csv_client {
-                    csv_client.set_case_insensitive(!current);
-                }
+                self.set_csv_client_case_insensitive(!current);
 
                 self.set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
@@ -1484,7 +1511,7 @@ impl EnhancedTuiApp {
 
                 // Add dataset information
                 let dataset_info = if self.is_csv_mode() {
-                    if let Some(ref csv_client) = self.csv_client {
+                    if let Some(csv_client) = self.get_csv_client() {
                         if let Some(schema) = csv_client.get_schema() {
                             let (table_name, columns) = schema
                                 .iter()
@@ -1746,9 +1773,7 @@ impl EnhancedTuiApp {
                 self.set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
-                if let Some(ref mut csv_client) = self.csv_client {
-                    csv_client.set_case_insensitive(!current);
-                }
+                self.set_csv_client_case_insensitive(!current);
 
                 self.set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
@@ -2400,7 +2425,7 @@ impl EnhancedTuiApp {
                 Err(anyhow::anyhow!("No cached data loaded"))
             }
         } else if self.is_csv_mode() {
-            if let Some(ref csv_client) = self.csv_client {
+            if let Some(csv_client) = self.get_csv_client() {
                 // Convert CSV result to match the expected type
                 csv_client.query_csv(query).map(|r| QueryResponse {
                     data: r.data,
@@ -2474,7 +2499,7 @@ impl EnhancedTuiApp {
 
             // Get columns from CSV client if available
             let columns = if self.is_csv_mode() {
-                if let Some(ref csv_client) = self.csv_client {
+                if let Some(csv_client) = self.get_csv_client() {
                     if let Some(schema) = csv_client.get_schema() {
                         schema
                             .iter()

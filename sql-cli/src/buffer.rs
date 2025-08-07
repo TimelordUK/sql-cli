@@ -213,6 +213,7 @@ pub trait BufferAPI {
     // --- CSV/Data Source ---
     fn get_csv_client(&self) -> Option<&CsvApiClient>;
     fn get_csv_client_mut(&mut self) -> Option<&mut CsvApiClient>;
+    fn set_csv_client(&mut self, client: Option<CsvApiClient>);
     fn is_csv_mode(&self) -> bool;
     fn get_table_name(&self) -> String;
     fn is_cache_mode(&self) -> bool;
@@ -583,6 +584,10 @@ impl BufferAPI for Buffer {
 
     fn get_csv_client_mut(&mut self) -> Option<&mut CsvApiClient> {
         self.csv_client.as_mut()
+    }
+
+    fn set_csv_client(&mut self, client: Option<CsvApiClient>) {
+        self.csv_client = client;
     }
 
     fn is_csv_mode(&self) -> bool {
