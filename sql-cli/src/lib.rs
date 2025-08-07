@@ -23,6 +23,8 @@ mod test_cache_query;
 #[cfg(test)]
 mod test_column_sizing;
 #[cfg(test)]
+mod test_complex_queries;
+#[cfg(test)]
 mod test_comprehensive_operators;
 #[cfg(test)]
 mod test_filter_fix;
