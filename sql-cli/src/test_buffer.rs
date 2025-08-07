@@ -238,4 +238,62 @@ mod tests {
         buffer.set_input_value("SELECT id FROM users".to_string());
         assert_eq!(buffer.get_input_value(), "SELECT id FROM users");
     }
+
+    #[test]
+    fn test_buffer_case_insensitive() {
+        let mut buffer = Buffer::new(1);
+
+        // Should start as false (based on config default)
+        assert!(!buffer.is_case_insensitive());
+
+        // Toggle on
+        buffer.set_case_insensitive(true);
+        assert!(buffer.is_case_insensitive());
+
+        // Toggle off
+        buffer.set_case_insensitive(false);
+        assert!(!buffer.is_case_insensitive());
+    }
+
+    #[test]
+    fn test_buffer_last_query_source() {
+        let mut buffer = Buffer::new(1);
+
+        // Should start as None
+        assert_eq!(buffer.get_last_query_source(), None);
+
+        // Set cache source
+        buffer.set_last_query_source(Some("cache".to_string()));
+        assert_eq!(buffer.get_last_query_source(), Some("cache".to_string()));
+
+        // Set file source
+        buffer.set_last_query_source(Some("FileDataSource".to_string()));
+        assert_eq!(
+            buffer.get_last_query_source(),
+            Some("FileDataSource".to_string())
+        );
+
+        // Clear source
+        buffer.set_last_query_source(None);
+        assert_eq!(buffer.get_last_query_source(), None);
+    }
+
+    #[test]
+    fn test_buffer_position_preservation() {
+        let mut buffer = Buffer::new(1);
+
+        // Test last_results_row
+        assert_eq!(buffer.get_last_results_row(), None);
+        buffer.set_last_results_row(Some(42));
+        assert_eq!(buffer.get_last_results_row(), Some(42));
+        buffer.set_last_results_row(None);
+        assert_eq!(buffer.get_last_results_row(), None);
+
+        // Test last_scroll_offset
+        assert_eq!(buffer.get_last_scroll_offset(), (0, 0));
+        buffer.set_last_scroll_offset((10, 25));
+        assert_eq!(buffer.get_last_scroll_offset(), (10, 25));
+        buffer.set_last_scroll_offset((0, 0));
+        assert_eq!(buffer.get_last_scroll_offset(), (0, 0));
+    }
 }

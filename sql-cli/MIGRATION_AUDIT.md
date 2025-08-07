@@ -25,14 +25,14 @@ These fields already exist in Buffer and have BufferAPI methods:
 - [x] `csv_table_name: String` → `get_table_name()`
 - [x] `filtered_data: Option<Vec<Vec<String>>>` → `get_filtered_data()`, `set_filtered_data()`
 
-### 🔄 Phase 1: Simple Fields (Start Here)
+### ✅ Phase 1: Simple Fields (COMPLETED)
 These are straightforward to migrate and test:
 
-- [ ] `edit_mode: EditMode` - How the editor is being used (single/multi-line)
-- [ ] `last_results_row: Option<usize>` - Position preservation
-- [ ] `last_scroll_offset: (usize, usize)` - Position preservation
-- [ ] `case_insensitive: bool` - Search/filter behavior
-- [ ] `last_query_source: Option<String>` - Track where query came from
+- [x] `edit_mode: EditMode` - How the editor is being used (single/multi-line)
+- [x] `last_results_row: Option<usize>` - Position preservation
+- [x] `last_scroll_offset: (usize, usize)` - Position preservation
+- [x] `case_insensitive: bool` - Search/filter behavior
+- [x] `last_query_source: Option<String>` - Track where query came from
 
 ### 🔄 Phase 2: Buffer-Specific Complex State
 These need to move but require more care:

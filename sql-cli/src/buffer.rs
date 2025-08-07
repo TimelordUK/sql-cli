@@ -157,6 +157,10 @@ pub trait BufferAPI {
     fn set_current_column(&mut self, col: usize);
     fn get_scroll_offset(&self) -> (usize, usize);
     fn set_scroll_offset(&mut self, offset: (usize, usize));
+    fn get_last_results_row(&self) -> Option<usize>;
+    fn set_last_results_row(&mut self, row: Option<usize>);
+    fn get_last_scroll_offset(&self) -> (usize, usize);
+    fn set_last_scroll_offset(&mut self, offset: (usize, usize));
 
     // --- Filtering ---
     fn get_filter_pattern(&self) -> String;
@@ -189,12 +193,16 @@ pub trait BufferAPI {
     fn add_pinned_column(&mut self, col: usize);
     fn remove_pinned_column(&mut self, col: usize);
     fn clear_pinned_columns(&mut self);
+    fn is_case_insensitive(&self) -> bool;
+    fn set_case_insensitive(&mut self, case_insensitive: bool);
 
     // --- Buffer Metadata ---
     fn get_name(&self) -> String;
     fn get_file_path(&self) -> Option<&PathBuf>;
     fn is_modified(&self) -> bool;
     fn set_modified(&mut self, modified: bool);
+    fn get_last_query_source(&self) -> Option<String>;
+    fn set_last_query_source(&mut self, source: Option<String>);
 
     // --- CSV/Data Source ---
     fn get_csv_client(&self) -> Option<&CsvApiClient>;
@@ -280,6 +288,7 @@ pub struct Buffer {
     pub redo_stack: Vec<String>,
     pub kill_ring: String,
     pub last_visible_rows: usize,
+    pub last_query_source: Option<String>,
 }
 
 // Implement BufferAPI for Buffer
@@ -361,6 +370,22 @@ impl BufferAPI for Buffer {
 
     fn set_scroll_offset(&mut self, offset: (usize, usize)) {
         self.scroll_offset = offset;
+    }
+
+    fn get_last_results_row(&self) -> Option<usize> {
+        self.last_results_row
+    }
+
+    fn set_last_results_row(&mut self, row: Option<usize>) {
+        self.last_results_row = row;
+    }
+
+    fn get_last_scroll_offset(&self) -> (usize, usize) {
+        self.last_scroll_offset
+    }
+
+    fn set_last_scroll_offset(&mut self, offset: (usize, usize)) {
+        self.last_scroll_offset = offset;
     }
 
     // --- Filtering ---
@@ -466,6 +491,14 @@ impl BufferAPI for Buffer {
         self.pinned_columns.clear();
     }
 
+    fn is_case_insensitive(&self) -> bool {
+        self.case_insensitive
+    }
+
+    fn set_case_insensitive(&mut self, case_insensitive: bool) {
+        self.case_insensitive = case_insensitive;
+    }
+
     // --- Buffer Metadata ---
     fn get_name(&self) -> String {
         self.name.clone()
@@ -481,6 +514,14 @@ impl BufferAPI for Buffer {
 
     fn set_modified(&mut self, modified: bool) {
         self.modified = modified;
+    }
+
+    fn get_last_query_source(&self) -> Option<String> {
+        self.last_query_source.clone()
+    }
+
+    fn set_last_query_source(&mut self, source: Option<String>) {
+        self.last_query_source = source;
     }
 
     // --- CSV/Data Source ---
@@ -579,6 +620,10 @@ impl BufferAPI for Buffer {
         output.push_str(&format!("Input Cursor: {}\n", self.input.cursor()));
         output.push_str(&format!("Last Query: '{}'\n", self.last_query));
         output.push_str(&format!("Status Message: '{}'\n", self.status_message));
+        output.push_str(&format!(
+            "Last Query Source: {:?}\n",
+            self.last_query_source
+        ));
         output.push_str("\n--- Results ---\n");
         output.push_str(&format!("Has Results: {}\n", self.results.is_some()));
         output.push_str(&format!("Row Count: {}\n", self.get_row_count()));
@@ -734,6 +779,7 @@ impl Buffer {
             redo_stack: Vec::new(),
             kill_ring: String::new(),
             last_visible_rows: 30,
+            last_query_source: None,
         }
     }
 

@@ -296,6 +296,74 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Compatibility wrapper for case_insensitive
+    fn get_case_insensitive(&self) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.is_case_insensitive()
+        } else {
+            self.case_insensitive
+        }
+    }
+
+    fn set_case_insensitive(&mut self, case_insensitive: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_case_insensitive(case_insensitive);
+        } else {
+            self.case_insensitive = case_insensitive;
+        }
+    }
+
+    // Compatibility wrapper for last_results_row
+    fn get_last_results_row(&self) -> Option<usize> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_last_results_row()
+        } else {
+            self.last_results_row
+        }
+    }
+
+    fn set_last_results_row(&mut self, row: Option<usize>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_results_row(row);
+        } else {
+            self.last_results_row = row;
+        }
+    }
+
+    // Compatibility wrapper for last_scroll_offset
+    fn get_last_scroll_offset(&self) -> (usize, usize) {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_last_scroll_offset()
+        } else {
+            self.last_scroll_offset
+        }
+    }
+
+    fn set_last_scroll_offset(&mut self, offset: (usize, usize)) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_scroll_offset(offset);
+        } else {
+            self.last_scroll_offset = offset;
+        }
+    }
+
+    // Compatibility wrapper for last_query_source
+    fn get_last_query_source(&self) -> Option<String> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_last_query_source()
+        } else {
+            self.last_query_source.clone()
+        }
+    }
+
+    fn set_last_query_source(&mut self, source: Option<String>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_query_source(source);
+        } else {
+            self.last_query_source = source;
+        }
+    }
+
     fn sanitize_table_name(name: &str) -> String {
         // Replace spaces and other problematic characters with underscores
         // to create SQL-friendly table names
@@ -784,16 +852,17 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
-                self.case_insensitive = !self.case_insensitive;
+                let current = self.get_case_insensitive();
+                self.set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
                 if let Some(ref mut csv_client) = self.csv_client {
-                    csv_client.set_case_insensitive(self.case_insensitive);
+                    csv_client.set_case_insensitive(!current);
                 }
 
                 self.status_message = format!(
                     "Case-insensitive string comparisons: {}",
-                    if self.case_insensitive { "ON" } else { "OFF" }
+                    if !current { "ON" } else { "OFF" }
                 );
             }
             KeyCode::F(9) => {
@@ -881,11 +950,11 @@ impl EnhancedTuiApp {
             KeyCode::Down if self.results.is_some() && self.edit_mode == EditMode::SingleLine => {
                 self.mode = AppMode::Results;
                 // Restore previous position or default to 0
-                let row = self.last_results_row.unwrap_or(0);
+                let row = self.get_last_results_row().unwrap_or(0);
                 self.table_state.select(Some(row));
 
                 // Restore the exact scroll offset from when we left
-                self.scroll_offset = self.last_scroll_offset;
+                self.scroll_offset = self.get_last_scroll_offset();
             }
             KeyCode::F(5) => {
                 // Debug command - show detailed parser information
@@ -995,14 +1064,12 @@ impl EnhancedTuiApp {
                     Data Source: {}\n\
                     Active Filters: {}\n",
                     self.mode,
-                    self.case_insensitive,
+                    self.get_case_insensitive(),
                     self.compact_mode,
                     self.viewport_lock,
                     self.csv_mode,
                     self.cache_mode,
-                    self.last_query_source
-                        .as_ref()
-                        .unwrap_or(&"None".to_string()),
+                    &self.get_last_query_source().unwrap_or("None".to_string()),
                     if self.fuzzy_filter_state.active {
                         format!("Fuzzy: {}", self.fuzzy_filter_state.pattern)
                     } else if self.filter_state.active {
@@ -1085,16 +1152,17 @@ impl EnhancedTuiApp {
             KeyCode::Char('q') => return Ok(true),
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
-                self.case_insensitive = !self.case_insensitive;
+                let current = self.get_case_insensitive();
+                self.set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
                 if let Some(ref mut csv_client) = self.csv_client {
-                    csv_client.set_case_insensitive(self.case_insensitive);
+                    csv_client.set_case_insensitive(!current);
                 }
 
                 self.status_message = format!(
                     "Case-insensitive string comparisons: {}",
-                    if self.case_insensitive { "ON" } else { "OFF" }
+                    if !current { "ON" } else { "OFF" }
                 );
             }
             KeyCode::Esc => {
@@ -1105,8 +1173,8 @@ impl EnhancedTuiApp {
                 } else {
                     // Save current position before switching to Command mode
                     if let Some(selected) = self.table_state.selected() {
-                        self.last_results_row = Some(selected);
-                        self.last_scroll_offset = self.scroll_offset;
+                        self.set_last_results_row(Some(selected));
+                        self.set_last_scroll_offset(self.scroll_offset);
                     }
                     self.mode = AppMode::Command;
                     self.table_state.select(None);
@@ -1700,7 +1768,7 @@ impl EnhancedTuiApp {
                 let row_count = response.data.len();
 
                 // Capture the source from the response
-                self.last_query_source = response.source.clone();
+                self.set_last_query_source(response.source.clone());
 
                 self.results = Some(response);
                 self.calculate_optimal_column_widths();
@@ -1755,7 +1823,11 @@ impl EnhancedTuiApp {
                 vec![]
             };
 
-            match WhereParser::parse_with_options(where_clause, columns, self.case_insensitive) {
+            match WhereParser::parse_with_options(
+                where_clause,
+                columns,
+                self.get_case_insensitive(),
+            ) {
                 Ok(ast) => {
                     let tree = format_where_ast(&ast, 0);
                     Ok(format!(
@@ -3048,8 +3120,8 @@ impl EnhancedTuiApp {
         self.table_state = TableState::default();
         self.scroll_offset = (0, 0);
         self.current_column = 0;
-        self.last_results_row = None; // Reset saved position for new results
-        self.last_scroll_offset = (0, 0); // Reset saved scroll offset for new results
+        self.set_last_results_row(None); // Reset saved position for new results
+        self.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
 
         // Clear filter state to prevent old filtered data from persisting
         self.filter_state = FilterState {
@@ -4845,18 +4917,32 @@ impl EnhancedTuiApp {
         }
 
         // Data source indicator (shown in all modes)
-        if let Some(ref source) = self.last_query_source {
+        if let Some(source) = self.get_last_query_source() {
             spans.push(Span::raw(" | "));
             let (icon, label, color) = match source.as_str() {
-                "cache" => (&self.config.display.icons.cache, "CACHE", Color::Cyan),
-                "file" | "FileDataSource" => {
-                    (&self.config.display.icons.file, "FILE", Color::Green)
-                }
-                "SqlServerDataSource" => (&self.config.display.icons.database, "SQL", Color::Blue),
-                "PublicApiDataSource" => (&self.config.display.icons.api, "API", Color::Yellow),
+                "cache" => (
+                    &self.config.display.icons.cache,
+                    "CACHE".to_string(),
+                    Color::Cyan,
+                ),
+                "file" | "FileDataSource" => (
+                    &self.config.display.icons.file,
+                    "FILE".to_string(),
+                    Color::Green,
+                ),
+                "SqlServerDataSource" => (
+                    &self.config.display.icons.database,
+                    "SQL".to_string(),
+                    Color::Blue,
+                ),
+                "PublicApiDataSource" => (
+                    &self.config.display.icons.api,
+                    "API".to_string(),
+                    Color::Yellow,
+                ),
                 _ => (
                     &self.config.display.icons.api,
-                    source.as_str(),
+                    source.clone(),
                     Color::Magenta,
                 ),
             };
@@ -4878,7 +4964,7 @@ impl EnhancedTuiApp {
         }
 
         // Global indicators (shown when active)
-        if self.case_insensitive {
+        if self.get_case_insensitive() {
             spans.push(Span::raw(" | "));
             spans.push(Span::styled(
                 &self.config.display.icons.case_insensitive,
