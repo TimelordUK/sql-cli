@@ -1,8 +1,10 @@
 use crate::api_client::QueryResponse;
 use crate::csv_datasource::CsvApiClient;
+use anyhow::Result;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::widgets::TableState;
 use regex::Regex;
+use serde_json::Value;
 use std::path::PathBuf;
 use tui_input::Input;
 use tui_textarea::TextArea;
@@ -31,7 +33,7 @@ pub enum EditMode {
     MultiLine,
 }
 
-#[derive(Clone, PartialEq, Copy)]
+#[derive(Clone, PartialEq, Copy, Debug)]
 pub enum SortOrder {
     Ascending,
     Descending,
@@ -128,6 +130,91 @@ impl Default for ColumnSearchState {
 
 pub type ColumnStatistics = std::collections::BTreeMap<String, String>;
 
+/// BufferAPI trait - defines the interface for interacting with buffer state
+/// This abstraction allows the TUI to work with buffer state without knowing
+/// the implementation details, enabling gradual migration and testing
+pub trait BufferAPI {
+    // --- Query and Results ---
+    fn get_query(&self) -> String;
+    fn set_query(&mut self, query: String);
+    fn get_results(&self) -> Option<&QueryResponse>;
+    fn set_results(&mut self, results: Option<QueryResponse>);
+    fn get_last_query(&self) -> String;
+    fn set_last_query(&mut self, query: String);
+
+    // --- Mode and Status ---
+    fn get_mode(&self) -> AppMode;
+    fn set_mode(&mut self, mode: AppMode);
+    fn get_status_message(&self) -> String;
+    fn set_status_message(&mut self, message: String);
+
+    // --- Table Navigation ---
+    fn get_selected_row(&self) -> Option<usize>;
+    fn set_selected_row(&mut self, row: Option<usize>);
+    fn get_current_column(&self) -> usize;
+    fn set_current_column(&mut self, col: usize);
+    fn get_scroll_offset(&self) -> (usize, usize);
+    fn set_scroll_offset(&mut self, offset: (usize, usize));
+
+    // --- Filtering ---
+    fn get_filter_pattern(&self) -> String;
+    fn set_filter_pattern(&mut self, pattern: String);
+    fn is_filter_active(&self) -> bool;
+    fn set_filter_active(&mut self, active: bool);
+    fn get_filtered_data(&self) -> Option<&Vec<Vec<String>>>;
+    fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>);
+
+    // --- Search ---
+    fn get_search_pattern(&self) -> String;
+    fn set_search_pattern(&mut self, pattern: String);
+    fn get_search_matches(&self) -> Vec<(usize, usize)>;
+    fn set_search_matches(&mut self, matches: Vec<(usize, usize)>);
+    fn get_current_match(&self) -> Option<(usize, usize)>;
+    fn set_current_match(&mut self, match_pos: Option<(usize, usize)>);
+
+    // --- Sorting ---
+    fn get_sort_column(&self) -> Option<usize>;
+    fn set_sort_column(&mut self, column: Option<usize>);
+    fn get_sort_order(&self) -> SortOrder;
+    fn set_sort_order(&mut self, order: SortOrder);
+
+    // --- Display Options ---
+    fn is_compact_mode(&self) -> bool;
+    fn set_compact_mode(&mut self, compact: bool);
+    fn is_show_row_numbers(&self) -> bool;
+    fn set_show_row_numbers(&mut self, show: bool);
+    fn get_pinned_columns(&self) -> &Vec<usize>;
+    fn add_pinned_column(&mut self, col: usize);
+    fn remove_pinned_column(&mut self, col: usize);
+    fn clear_pinned_columns(&mut self);
+
+    // --- Buffer Metadata ---
+    fn get_name(&self) -> String;
+    fn get_file_path(&self) -> Option<&PathBuf>;
+    fn is_modified(&self) -> bool;
+    fn set_modified(&mut self, modified: bool);
+
+    // --- CSV/Data Source ---
+    fn get_csv_client(&self) -> Option<&CsvApiClient>;
+    fn get_csv_client_mut(&mut self) -> Option<&mut CsvApiClient>;
+    fn is_csv_mode(&self) -> bool;
+    fn get_table_name(&self) -> String;
+
+    // --- Input State ---
+    fn get_input_value(&self) -> String;
+    fn set_input_value(&mut self, value: String);
+    fn get_input_cursor(&self) -> usize;
+    fn set_input_cursor(&mut self, pos: usize);
+
+    // --- Advanced Operations ---
+    fn apply_filter(&mut self) -> Result<()>;
+    fn apply_sort(&mut self) -> Result<()>;
+    fn search(&mut self) -> Result<()>;
+    fn clear_filters(&mut self);
+    fn get_row_count(&self) -> usize;
+    fn get_column_count(&self) -> usize;
+}
+
 /// Represents a single buffer/tab with its own independent state
 #[derive(Clone)]
 pub struct Buffer {
@@ -188,6 +275,281 @@ pub struct Buffer {
     pub redo_stack: Vec<String>,
     pub kill_ring: String,
     pub last_visible_rows: usize,
+}
+
+// Implement BufferAPI for Buffer
+impl BufferAPI for Buffer {
+    // --- Query and Results ---
+    fn get_query(&self) -> String {
+        self.input.value().to_string()
+    }
+
+    fn set_query(&mut self, query: String) {
+        self.input = Input::new(query.clone()).with_cursor(query.len());
+    }
+
+    fn get_results(&self) -> Option<&QueryResponse> {
+        self.results.as_ref()
+    }
+
+    fn set_results(&mut self, results: Option<QueryResponse>) {
+        self.results = results;
+    }
+
+    fn get_last_query(&self) -> String {
+        self.last_query.clone()
+    }
+
+    fn set_last_query(&mut self, query: String) {
+        self.last_query = query;
+    }
+
+    // --- Mode and Status ---
+    fn get_mode(&self) -> AppMode {
+        self.mode.clone()
+    }
+
+    fn set_mode(&mut self, mode: AppMode) {
+        self.mode = mode;
+    }
+
+    fn get_status_message(&self) -> String {
+        self.status_message.clone()
+    }
+
+    fn set_status_message(&mut self, message: String) {
+        self.status_message = message;
+    }
+
+    // --- Table Navigation ---
+    fn get_selected_row(&self) -> Option<usize> {
+        self.table_state.selected()
+    }
+
+    fn set_selected_row(&mut self, row: Option<usize>) {
+        if let Some(r) = row {
+            self.table_state.select(Some(r));
+        } else {
+            self.table_state.select(None);
+        }
+    }
+
+    fn get_current_column(&self) -> usize {
+        self.current_column
+    }
+
+    fn set_current_column(&mut self, col: usize) {
+        self.current_column = col;
+    }
+
+    fn get_scroll_offset(&self) -> (usize, usize) {
+        self.scroll_offset
+    }
+
+    fn set_scroll_offset(&mut self, offset: (usize, usize)) {
+        self.scroll_offset = offset;
+    }
+
+    // --- Filtering ---
+    fn get_filter_pattern(&self) -> String {
+        self.filter_state.pattern.clone()
+    }
+
+    fn set_filter_pattern(&mut self, pattern: String) {
+        self.filter_state.pattern = pattern;
+    }
+
+    fn is_filter_active(&self) -> bool {
+        self.filter_state.active
+    }
+
+    fn set_filter_active(&mut self, active: bool) {
+        self.filter_state.active = active;
+    }
+
+    fn get_filtered_data(&self) -> Option<&Vec<Vec<String>>> {
+        self.filtered_data.as_ref()
+    }
+
+    fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>) {
+        self.filtered_data = data;
+    }
+
+    // --- Search ---
+    fn get_search_pattern(&self) -> String {
+        self.search_state.pattern.clone()
+    }
+
+    fn set_search_pattern(&mut self, pattern: String) {
+        self.search_state.pattern = pattern;
+    }
+
+    fn get_search_matches(&self) -> Vec<(usize, usize)> {
+        self.search_state.matches.clone()
+    }
+
+    fn set_search_matches(&mut self, matches: Vec<(usize, usize)>) {
+        self.search_state.matches = matches;
+    }
+
+    fn get_current_match(&self) -> Option<(usize, usize)> {
+        self.search_state.current_match
+    }
+
+    fn set_current_match(&mut self, match_pos: Option<(usize, usize)>) {
+        self.search_state.current_match = match_pos;
+    }
+
+    // --- Sorting ---
+    fn get_sort_column(&self) -> Option<usize> {
+        self.sort_state.column
+    }
+
+    fn set_sort_column(&mut self, column: Option<usize>) {
+        self.sort_state.column = column;
+    }
+
+    fn get_sort_order(&self) -> SortOrder {
+        self.sort_state.order
+    }
+
+    fn set_sort_order(&mut self, order: SortOrder) {
+        self.sort_state.order = order;
+    }
+
+    // --- Display Options ---
+    fn is_compact_mode(&self) -> bool {
+        self.compact_mode
+    }
+
+    fn set_compact_mode(&mut self, compact: bool) {
+        self.compact_mode = compact;
+    }
+
+    fn is_show_row_numbers(&self) -> bool {
+        self.show_row_numbers
+    }
+
+    fn set_show_row_numbers(&mut self, show: bool) {
+        self.show_row_numbers = show;
+    }
+
+    fn get_pinned_columns(&self) -> &Vec<usize> {
+        &self.pinned_columns
+    }
+
+    fn add_pinned_column(&mut self, col: usize) {
+        if !self.pinned_columns.contains(&col) {
+            self.pinned_columns.push(col);
+            self.pinned_columns.sort();
+        }
+    }
+
+    fn remove_pinned_column(&mut self, col: usize) {
+        self.pinned_columns.retain(|&c| c != col);
+    }
+
+    fn clear_pinned_columns(&mut self) {
+        self.pinned_columns.clear();
+    }
+
+    // --- Buffer Metadata ---
+    fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn get_file_path(&self) -> Option<&PathBuf> {
+        self.file_path.as_ref()
+    }
+
+    fn is_modified(&self) -> bool {
+        self.modified
+    }
+
+    fn set_modified(&mut self, modified: bool) {
+        self.modified = modified;
+    }
+
+    // --- CSV/Data Source ---
+    fn get_csv_client(&self) -> Option<&CsvApiClient> {
+        self.csv_client.as_ref()
+    }
+
+    fn get_csv_client_mut(&mut self) -> Option<&mut CsvApiClient> {
+        self.csv_client.as_mut()
+    }
+
+    fn is_csv_mode(&self) -> bool {
+        self.csv_mode
+    }
+
+    fn get_table_name(&self) -> String {
+        self.csv_table_name.clone()
+    }
+
+    // --- Input State ---
+    fn get_input_value(&self) -> String {
+        self.input.value().to_string()
+    }
+
+    fn set_input_value(&mut self, value: String) {
+        let cursor = value.len();
+        self.input = Input::new(value).with_cursor(cursor);
+    }
+
+    fn get_input_cursor(&self) -> usize {
+        self.input.cursor()
+    }
+
+    fn set_input_cursor(&mut self, pos: usize) {
+        let value = self.input.value().to_string();
+        self.input = Input::new(value).with_cursor(pos);
+    }
+
+    // --- Advanced Operations ---
+    fn apply_filter(&mut self) -> Result<()> {
+        // TODO: Implement actual filtering logic
+        Ok(())
+    }
+
+    fn apply_sort(&mut self) -> Result<()> {
+        // TODO: Implement actual sorting logic
+        Ok(())
+    }
+
+    fn search(&mut self) -> Result<()> {
+        // TODO: Implement actual search logic
+        Ok(())
+    }
+
+    fn clear_filters(&mut self) {
+        self.filter_state.active = false;
+        self.filter_state.pattern.clear();
+        self.fuzzy_filter_state.active = false;
+        self.fuzzy_filter_state.pattern.clear();
+        self.filtered_data = None;
+    }
+
+    fn get_row_count(&self) -> usize {
+        if let Some(filtered) = &self.filtered_data {
+            filtered.len()
+        } else if let Some(results) = &self.results {
+            results.data.len()
+        } else {
+            0
+        }
+    }
+
+    fn get_column_count(&self) -> usize {
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    return obj.len();
+                }
+            }
+        }
+        0
+    }
 }
 
 impl Buffer {
