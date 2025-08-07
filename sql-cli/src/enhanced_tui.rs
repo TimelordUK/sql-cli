@@ -1068,6 +1068,7 @@ impl EnhancedTuiApp {
                 let mut buffer = sql_cli::buffer::Buffer::new(1);
                 // Sync initial settings from config
                 buffer.set_case_insensitive(config.behavior.case_insensitive_default);
+                buffer.set_compact_mode(config.display.compact_mode);
                 manager.add_buffer(buffer);
                 Some(manager)
             },
@@ -1131,6 +1132,7 @@ impl EnhancedTuiApp {
             );
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
+            buffer.set_compact_mode(app.config.display.compact_mode);
             manager.add_buffer(buffer);
 
             // Sync app-level state from the buffer to ensure status line renders correctly
@@ -1225,6 +1227,7 @@ impl EnhancedTuiApp {
             );
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
+            buffer.set_compact_mode(app.config.display.compact_mode);
             manager.add_buffer(buffer);
 
             // Sync app-level state from the buffer to ensure status line renders correctly
