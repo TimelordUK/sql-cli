@@ -1,6 +1,8 @@
 pub mod api_client;
 pub mod app_paths;
+pub mod buffer;
 pub mod cache;
+pub mod config;
 pub mod csv_datasource;
 pub mod csv_fixes;
 pub mod cursor_aware_parser;

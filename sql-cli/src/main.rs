@@ -92,6 +92,21 @@ impl Prompt for SqlPrompt {
 fn print_help() {
     println!("{}", "SQL CLI - Syntax-aware SQL editor".blue().bold());
     println!();
+    println!("{}", "Usage:".yellow());
+    println!("  sql-cli [OPTIONS] [FILE.csv|FILE.json]");
+    println!();
+    println!("{}", "Options:".yellow());
+    println!(
+        "  {}  - Initialize configuration with wizard",
+        "--init-config".green()
+    );
+    println!(
+        "  {} - Generate config file with defaults",
+        "--generate-config".green()
+    );
+    println!("  {}      - Use classic CLI mode", "--classic".green());
+    println!("  {}       - Use simple TUI mode", "--simple".green());
+    println!();
     println!("{}", "Commands:".yellow());
     println!("  {}  - Execute query and fetch results", "Enter".green());
     println!("  {}    - Syntax-aware completion", "Tab".green());
@@ -132,6 +147,50 @@ fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::err
 fn main() -> io::Result<()> {
     // Check if user wants TUI mode (default) or classic mode
     let args: Vec<String> = std::env::args().collect();
+
+    // Check for config initialization
+    if args.contains(&"--init-config".to_string()) {
+        match sql_cli::config::Config::init_wizard() {
+            Ok(config) => {
+                println!("\nConfiguration initialized successfully!");
+                if !config.display.use_glyphs {
+                    println!("Note: Simple mode enabled (ASCII icons)");
+                }
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Error initializing config: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Check for config file generation
+    if args.contains(&"--generate-config".to_string()) {
+        match sql_cli::config::Config::get_config_path() {
+            Ok(path) => {
+                let config_content = sql_cli::config::Config::create_default_with_comments();
+                if let Some(parent) = path.parent() {
+                    if let Err(e) = std::fs::create_dir_all(parent) {
+                        eprintln!("Error creating config directory: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+                if let Err(e) = std::fs::write(&path, config_content) {
+                    eprintln!("Error writing config file: {}", e);
+                    std::process::exit(1);
+                }
+                println!("Configuration file created at: {:?}", path);
+                println!("Edit this file to customize your SQL CLI experience.");
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Error determining config path: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     let use_classic_tui = args.contains(&"--simple".to_string());
     let use_tui = !args.contains(&"--classic".to_string());
 

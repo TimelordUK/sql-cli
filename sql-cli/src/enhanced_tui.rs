@@ -23,6 +23,7 @@ use ratatui::{
 use regex::Regex;
 use serde_json::Value;
 use sql_cli::cache::QueryCache;
+use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::where_ast::format_where_ast;
@@ -35,7 +36,7 @@ use std::io::Write;
 use tui_input::{backend::crossterm::EventHandler, Input};
 use tui_textarea::{CursorMove, TextArea};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 enum AppMode {
     Command,
     Results,
@@ -56,6 +57,12 @@ enum AppMode {
 enum EditMode {
     SingleLine,
     MultiLine,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+enum SelectionMode {
+    Row,
+    Cell,
 }
 
 #[derive(Clone, PartialEq, Copy)]
@@ -166,6 +173,9 @@ pub struct EnhancedTuiApp {
     sql_parser: SqlParser,
     hybrid_parser: HybridParser,
 
+    // Configuration
+    config: Config,
+
     // Enhanced features
     sort_state: SortState,
     filter_state: FilterState,
@@ -187,6 +197,11 @@ pub struct EnhancedTuiApp {
     help_scroll: u16,         // Scroll offset for help page
     input_scroll_offset: u16, // Horizontal scroll offset for input
     case_insensitive: bool,   // Toggle for case-insensitive string comparisons
+
+    // Selection and clipboard
+    selection_mode: SelectionMode,         // Row or Cell mode
+    yank_mode: Option<char>,               // Track multi-key yank commands (e.g., 'yy', 'yc')
+    last_yanked: Option<(String, String)>, // (description, value) of last yanked item
 
     // CSV mode
     csv_client: Option<CsvApiClient>,
@@ -258,6 +273,12 @@ impl EnhancedTuiApp {
         let mut textarea = TextArea::default();
         textarea.set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
 
+        // Load configuration
+        let config = Config::load().unwrap_or_else(|e| {
+            eprintln!("Warning: Could not load config: {}. Using defaults.", e);
+            Config::default()
+        });
+
         Self {
             api_client: ApiClient::new(api_url),
             input: Input::default(),
@@ -273,6 +294,7 @@ impl EnhancedTuiApp {
                 .to_string(),
             sql_parser: SqlParser::new(),
             hybrid_parser: HybridParser::new(),
+            config: config.clone(),
 
             sort_state: SortState {
                 column: None,
@@ -323,7 +345,10 @@ impl EnhancedTuiApp {
             debug_scroll: 0,
             help_scroll: 0,
             input_scroll_offset: 0,
-            case_insensitive: false,
+            case_insensitive: config.behavior.case_insensitive_default,
+            selection_mode: SelectionMode::Row, // Default to row mode
+            yank_mode: None,
+            last_yanked: None,
             csv_client: None,
             csv_mode: false,
             csv_table_name: String::new(),
@@ -335,10 +360,10 @@ impl EnhancedTuiApp {
             redo_stack: Vec::new(),
             kill_ring: String::new(),
             last_visible_rows: 30, // Default estimate
-            compact_mode: false,
+            compact_mode: config.display.compact_mode,
             viewport_lock: false,
             viewport_lock_row: None,
-            show_row_numbers: false,
+            show_row_numbers: config.display.show_row_numbers,
             jump_to_row_input: String::new(),
         }
     }
@@ -388,20 +413,22 @@ impl EnhancedTuiApp {
             app.status_message = display_msg;
         }
 
-        // Auto-execute SELECT * FROM table_name to show data immediately
+        // Auto-execute SELECT * FROM table_name to show data immediately (if configured)
         let auto_query = format!("SELECT * FROM {}", table_name);
 
         // Populate the input field with the query for easy editing
         app.input = tui_input::Input::new(auto_query.clone()).with_cursor(auto_query.len());
 
-        if let Err(e) = app.execute_query(&auto_query) {
-            // If auto-query fails, just log it in status but don't fail the load
-            app.status_message = format!(
-                "CSV loaded: table '{}' ({} columns) - Note: {}",
-                table_name,
-                schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
-                e
-            );
+        if app.config.behavior.auto_execute_on_load {
+            if let Err(e) = app.execute_query(&auto_query) {
+                // If auto-query fails, just log it in status but don't fail the load
+                app.status_message = format!(
+                    "CSV loaded: table '{}' ({} columns) - Note: {}",
+                    table_name,
+                    schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
+                    e
+                );
+            }
         }
 
         Ok(app)
@@ -451,20 +478,22 @@ impl EnhancedTuiApp {
             app.status_message = display_msg;
         }
 
-        // Auto-execute SELECT * FROM table_name to show data immediately
+        // Auto-execute SELECT * FROM table_name to show data immediately (if configured)
         let auto_query = format!("SELECT * FROM {}", table_name);
 
         // Populate the input field with the query for easy editing
         app.input = tui_input::Input::new(auto_query.clone()).with_cursor(auto_query.len());
 
-        if let Err(e) = app.execute_query(&auto_query) {
-            // If auto-query fails, just log it in status but don't fail the load
-            app.status_message = format!(
-                "JSON loaded: table '{}' ({} columns) - Note: {}",
-                table_name,
-                schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
-                e
-            );
+        if app.config.behavior.auto_execute_on_load {
+            if let Err(e) = app.execute_query(&auto_query) {
+                // If auto-query fails, just log it in status but don't fail the load
+                app.status_message = format!(
+                    "JSON loaded: table '{}' ({} columns) - Note: {}",
+                    table_name,
+                    schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
+                    e
+                );
+            }
         }
 
         Ok(app)
@@ -899,6 +928,36 @@ impl EnhancedTuiApp {
                     debug_info.push_str(&where_ast_info);
                 }
 
+                // Add status line info
+                let status_line_info = format!(
+                    "\n========== STATUS LINE INFO ==========\n\
+                    Current Mode: {:?}\n\
+                    Case Insensitive: {}\n\
+                    Compact Mode: {}\n\
+                    Viewport Lock: {}\n\
+                    CSV Mode: {}\n\
+                    Cache Mode: {}\n\
+                    Data Source: {}\n\
+                    Active Filters: {}\n",
+                    self.mode,
+                    self.case_insensitive,
+                    self.compact_mode,
+                    self.viewport_lock,
+                    self.csv_mode,
+                    self.cache_mode,
+                    self.last_query_source
+                        .as_ref()
+                        .unwrap_or(&"None".to_string()),
+                    if self.fuzzy_filter_state.active {
+                        format!("Fuzzy: {}", self.fuzzy_filter_state.pattern)
+                    } else if self.filter_state.active {
+                        format!("Filter: {}", self.filter_state.pattern)
+                    } else {
+                        "None".to_string()
+                    }
+                );
+                debug_info.push_str(&status_line_info);
+
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();
                 self.debug_scroll = 0;
@@ -984,13 +1043,19 @@ impl EnhancedTuiApp {
                 );
             }
             KeyCode::Esc => {
-                // Save current position before switching to Command mode
-                if let Some(selected) = self.table_state.selected() {
-                    self.last_results_row = Some(selected);
-                    self.last_scroll_offset = self.scroll_offset;
+                if self.yank_mode.is_some() {
+                    // Cancel yank mode
+                    self.yank_mode = None;
+                    self.status_message = "Yank cancelled".to_string();
+                } else {
+                    // Save current position before switching to Command mode
+                    if let Some(selected) = self.table_state.selected() {
+                        self.last_results_row = Some(selected);
+                        self.last_scroll_offset = self.scroll_offset;
+                    }
+                    self.mode = AppMode::Command;
+                    self.table_state.select(None);
                 }
-                self.mode = AppMode::Command;
-                self.table_state.select(None);
             }
             KeyCode::Up => {
                 // Save current position before switching to Command mode
@@ -1137,9 +1202,60 @@ impl EnhancedTuiApp {
             {
                 self.calculate_column_statistics();
             }
+            // Toggle cell/row selection mode
+            KeyCode::Char('v') => {
+                self.selection_mode = match self.selection_mode {
+                    SelectionMode::Row => {
+                        self.status_message =
+                            "Cell mode - Navigate to select individual cells".to_string();
+                        SelectionMode::Cell
+                    }
+                    SelectionMode::Cell => {
+                        self.status_message =
+                            "Row mode - Navigate to select entire rows".to_string();
+                        SelectionMode::Row
+                    }
+                };
+            }
+            // Clipboard operations (vim-like yank)
+            KeyCode::Char('y') => {
+                match self.selection_mode {
+                    SelectionMode::Cell => {
+                        // In cell mode, single 'y' yanks the cell
+                        self.yank_cell();
+                        // Status message will be set by yank_cell
+                    }
+                    SelectionMode::Row => {
+                        if self.yank_mode.is_some() {
+                            // Second 'y' for yank row
+                            self.yank_row();
+                            self.yank_mode = None;
+                        } else {
+                            // First 'y', enter yank mode
+                            self.yank_mode = Some('y');
+                            self.status_message =
+                                "Yank mode: y=row, c=column, a=all, ESC=cancel".to_string();
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('c') if self.yank_mode.is_some() => {
+                // 'yc' - yank column
+                self.yank_column();
+                self.yank_mode = None;
+            }
+            KeyCode::Char('a') if self.yank_mode.is_some() => {
+                // 'ya' - yank all (filtered or all data)
+                self.yank_all();
+                self.yank_mode = None;
+            }
             // Export to CSV
-            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.export_to_csv();
+            }
+            // Export to JSON
+            KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.export_to_json();
             }
             // Number keys for direct column sorting
             KeyCode::Char(c) if c.is_ascii_digit() => {
@@ -1152,7 +1268,13 @@ impl EnhancedTuiApp {
                 self.show_help = true;
                 self.mode = AppMode::Help;
             }
-            _ => {}
+            _ => {
+                // Any other key cancels yank mode
+                if self.yank_mode.is_some() {
+                    self.yank_mode = None;
+                    self.status_message = "Yank cancelled".to_string();
+                }
+            }
         }
         Ok(false)
     }
@@ -2997,6 +3119,14 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn escape_csv_field(s: &str) -> String {
+        if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
+            format!("\"{}\"", s.replace('"', "\"\""))
+        } else {
+            s.to_string()
+        }
+    }
+
     fn export_to_csv(&mut self) {
         if let Some(results) = &self.results {
             if let Some(first_row) = results.data.first() {
@@ -3022,11 +3152,13 @@ impl EnhancedTuiApp {
                                     let row: Vec<String> = headers
                                         .iter()
                                         .map(|&header| match obj.get(header) {
-                                            Some(Value::String(s)) => escape_csv_field(s),
+                                            Some(Value::String(s)) => Self::escape_csv_field(s),
                                             Some(Value::Number(n)) => n.to_string(),
                                             Some(Value::Bool(b)) => b.to_string(),
                                             Some(Value::Null) => String::new(),
-                                            Some(other) => escape_csv_field(&other.to_string()),
+                                            Some(other) => {
+                                                Self::escape_csv_field(&other.to_string())
+                                            }
                                             None => String::new(),
                                         })
                                         .collect();
@@ -3055,6 +3187,310 @@ impl EnhancedTuiApp {
             }
         } else {
             self.status_message = "No results to export - run a query first".to_string();
+        }
+    }
+
+    fn yank_cell(&mut self) {
+        if let Some(results) = &self.results {
+            if let Some(selected_row) = self.table_state.selected() {
+                if let Some(row_data) = results.data.get(selected_row) {
+                    if let Some(obj) = row_data.as_object() {
+                        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                        if self.current_column < headers.len() {
+                            let header = headers[self.current_column];
+                            let value = match obj.get(header) {
+                                Some(Value::String(s)) => s.clone(),
+                                Some(Value::Number(n)) => n.to_string(),
+                                Some(Value::Bool(b)) => b.to_string(),
+                                Some(Value::Null) => "NULL".to_string(),
+                                Some(other) => other.to_string(),
+                                None => String::new(),
+                            };
+
+                            // Copy to clipboard
+                            match arboard::Clipboard::new() {
+                                Ok(mut clipboard) => match clipboard.set_text(&value) {
+                                    Ok(_) => {
+                                        // Store what was yanked
+                                        let col_name = header.to_string();
+                                        let display_value = if value.len() > 20 {
+                                            format!("{}...", &value[..17])
+                                        } else {
+                                            value.clone()
+                                        };
+                                        self.last_yanked = Some((col_name, display_value));
+                                        self.status_message = format!("Yanked cell: {}", value);
+                                    }
+                                    Err(e) => {
+                                        self.status_message = format!("Clipboard error: {}", e);
+                                    }
+                                },
+                                Err(e) => {
+                                    self.status_message = format!("Can't access clipboard: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn yank_row(&mut self) {
+        if let Some(results) = &self.results {
+            if let Some(selected_row) = self.table_state.selected() {
+                if let Some(row_data) = results.data.get(selected_row) {
+                    // Convert row to tab-separated values
+                    if let Some(obj) = row_data.as_object() {
+                        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                        let values: Vec<String> = headers
+                            .iter()
+                            .map(|&header| match obj.get(header) {
+                                Some(Value::String(s)) => s.clone(),
+                                Some(Value::Number(n)) => n.to_string(),
+                                Some(Value::Bool(b)) => b.to_string(),
+                                Some(Value::Null) => "NULL".to_string(),
+                                Some(other) => other.to_string(),
+                                None => String::new(),
+                            })
+                            .collect();
+
+                        let row_text = values.join("\t");
+
+                        // Copy to clipboard
+                        match arboard::Clipboard::new() {
+                            Ok(mut clipboard) => match clipboard.set_text(&row_text) {
+                                Ok(_) => {
+                                    self.last_yanked = Some((
+                                        format!("Row {}", selected_row + 1),
+                                        format!("{} columns", values.len()),
+                                    ));
+                                    self.status_message = format!(
+                                        "Yanked row {} ({} columns)",
+                                        selected_row + 1,
+                                        values.len()
+                                    );
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Clipboard error: {}", e);
+                                }
+                            },
+                            Err(e) => {
+                                self.status_message = format!("Can't access clipboard: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn yank_column(&mut self) {
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                    if self.current_column < headers.len() {
+                        let header = headers[self.current_column];
+
+                        // Collect all values from this column
+                        let column_values: Vec<String> = results
+                            .data
+                            .iter()
+                            .filter_map(|row| {
+                                row.as_object().and_then(|obj| {
+                                    obj.get(header).map(|v| match v {
+                                        Value::String(s) => s.clone(),
+                                        Value::Number(n) => n.to_string(),
+                                        Value::Bool(b) => b.to_string(),
+                                        Value::Null => "NULL".to_string(),
+                                        other => other.to_string(),
+                                    })
+                                })
+                            })
+                            .collect();
+
+                        let column_text = column_values.join("\n");
+
+                        // Copy to clipboard
+                        match arboard::Clipboard::new() {
+                            Ok(mut clipboard) => match clipboard.set_text(&column_text) {
+                                Ok(_) => {
+                                    self.last_yanked = Some((
+                                        format!("Column '{}'", header),
+                                        format!("{} rows", column_values.len()),
+                                    ));
+                                    self.status_message = format!(
+                                        "Yanked column '{}' ({} rows)",
+                                        header,
+                                        column_values.len()
+                                    );
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Clipboard error: {}", e);
+                                }
+                            },
+                            Err(e) => {
+                                self.status_message = format!("Can't access clipboard: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn yank_all(&mut self) {
+        if let Some(results) = &self.results {
+            // Get the actual data to yank (filtered or all)
+            let data_to_export = if self.filter_state.active || self.fuzzy_filter_state.active {
+                // Use filtered data
+                self.get_filtered_json_data()
+            } else {
+                // Use all data
+                results.data.clone()
+            };
+
+            if let Some(first_row) = data_to_export.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+
+                    // Create CSV format
+                    let mut csv_text = headers.join(",") + "\n";
+
+                    for row in &data_to_export {
+                        if let Some(obj) = row.as_object() {
+                            let values: Vec<String> = headers
+                                .iter()
+                                .map(|&header| match obj.get(header) {
+                                    Some(Value::String(s)) => escape_csv_field(s),
+                                    Some(Value::Number(n)) => n.to_string(),
+                                    Some(Value::Bool(b)) => b.to_string(),
+                                    Some(Value::Null) => String::new(),
+                                    Some(other) => escape_csv_field(&other.to_string()),
+                                    None => String::new(),
+                                })
+                                .collect();
+                            csv_text.push_str(&values.join(","));
+                            csv_text.push('\n');
+                        }
+                    }
+
+                    // Copy to clipboard
+                    match arboard::Clipboard::new() {
+                        Ok(mut clipboard) => match clipboard.set_text(&csv_text) {
+                            Ok(_) => {
+                                let filter_info =
+                                    if self.filter_state.active || self.fuzzy_filter_state.active {
+                                        " (filtered)"
+                                    } else {
+                                        ""
+                                    };
+                                self.status_message = format!(
+                                    "Yanked all data{}: {} rows",
+                                    filter_info,
+                                    data_to_export.len()
+                                );
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Clipboard error: {}", e);
+                            }
+                        },
+                        Err(e) => {
+                            self.status_message = format!("Can't access clipboard: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn export_to_json(&mut self) {
+        if let Some(results) = &self.results {
+            // Get the actual data to export (filtered or all)
+            let data_to_export = if self.filter_state.active || self.fuzzy_filter_state.active {
+                self.get_filtered_json_data()
+            } else {
+                results.data.clone()
+            };
+
+            // Generate filename with timestamp
+            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+            let filename = format!("query_results_{}.json", timestamp);
+
+            match File::create(&filename) {
+                Ok(file) => match serde_json::to_writer_pretty(file, &data_to_export) {
+                    Ok(_) => {
+                        let filter_info =
+                            if self.filter_state.active || self.fuzzy_filter_state.active {
+                                " (filtered)"
+                            } else {
+                                ""
+                            };
+                        self.status_message = format!(
+                            "Exported{} {} rows to {}",
+                            filter_info,
+                            data_to_export.len(),
+                            filename
+                        );
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Failed to write JSON: {}", e);
+                    }
+                },
+                Err(e) => {
+                    self.status_message = format!("Failed to create file: {}", e);
+                }
+            }
+        } else {
+            self.status_message = "No results to export - run a query first".to_string();
+        }
+    }
+
+    fn get_filtered_json_data(&self) -> Vec<Value> {
+        if let Some(results) = &self.results {
+            if self.fuzzy_filter_state.active
+                && !self.fuzzy_filter_state.filtered_indices.is_empty()
+            {
+                self.fuzzy_filter_state
+                    .filtered_indices
+                    .iter()
+                    .filter_map(|&idx| results.data.get(idx).cloned())
+                    .collect()
+            } else if self.filter_state.active && self.filtered_data.is_some() {
+                // Convert filtered_data back to JSON values
+                // This is a bit inefficient but maintains consistency
+                if let Some(first_row) = results.data.first() {
+                    if let Some(obj) = first_row.as_object() {
+                        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                        self.filtered_data
+                            .as_ref()
+                            .unwrap()
+                            .iter()
+                            .map(|row| {
+                                let mut json_obj = serde_json::Map::new();
+                                for (i, value) in row.iter().enumerate() {
+                                    if i < headers.len() {
+                                        json_obj.insert(
+                                            headers[i].to_string(),
+                                            Value::String(value.clone()),
+                                        );
+                                    }
+                                }
+                                Value::Object(json_obj)
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                }
+            } else {
+                results.data.clone()
+            }
+        } else {
+            Vec::new()
         }
     }
 
@@ -4044,21 +4480,26 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Status bar
-        let status_style = match self.mode {
-            AppMode::Command => Style::default().fg(Color::Green),
-            AppMode::Results => Style::default().fg(Color::Blue),
-            AppMode::Search => Style::default().fg(Color::Yellow),
-            AppMode::Filter => Style::default().fg(Color::Cyan),
-            AppMode::FuzzyFilter => Style::default().fg(Color::Magenta),
-            AppMode::ColumnSearch => Style::default().fg(Color::Green),
-            AppMode::Help => Style::default().fg(Color::Magenta),
-            AppMode::History => Style::default().fg(Color::Magenta),
-            AppMode::Debug => Style::default().fg(Color::Yellow),
-            AppMode::PrettyQuery => Style::default().fg(Color::Green),
-            AppMode::CacheList => Style::default().fg(Color::Cyan),
-            AppMode::JumpToRow => Style::default().fg(Color::Magenta),
-            AppMode::ColumnStats => Style::default().fg(Color::Cyan),
+        // Render mode-specific status line
+        self.render_status_line(f, chunks[2]);
+    }
+
+    fn render_status_line(&self, f: &mut Frame, area: Rect) {
+        // Determine the mode color
+        let (status_style, mode_color) = match self.mode {
+            AppMode::Command => (Style::default().fg(Color::Green), Color::Green),
+            AppMode::Results => (Style::default().fg(Color::Blue), Color::Blue),
+            AppMode::Search => (Style::default().fg(Color::Yellow), Color::Yellow),
+            AppMode::Filter => (Style::default().fg(Color::Cyan), Color::Cyan),
+            AppMode::FuzzyFilter => (Style::default().fg(Color::Magenta), Color::Magenta),
+            AppMode::ColumnSearch => (Style::default().fg(Color::Green), Color::Green),
+            AppMode::Help => (Style::default().fg(Color::Magenta), Color::Magenta),
+            AppMode::History => (Style::default().fg(Color::Magenta), Color::Magenta),
+            AppMode::Debug => (Style::default().fg(Color::Yellow), Color::Yellow),
+            AppMode::PrettyQuery => (Style::default().fg(Color::Green), Color::Green),
+            AppMode::CacheList => (Style::default().fg(Color::Cyan), Color::Cyan),
+            AppMode::JumpToRow => (Style::default().fg(Color::Magenta), Color::Magenta),
+            AppMode::ColumnStats => (Style::default().fg(Color::Cyan), Color::Cyan),
         };
 
         let mode_indicator = match self.mode {
@@ -4077,197 +4518,271 @@ impl EnhancedTuiApp {
             AppMode::ColumnStats => "STATS",
         };
 
-        // Add useful status info
-        let status_info = if self.mode == AppMode::Command {
-            let (token_pos, total_tokens) = self.get_cursor_token_position();
+        let mut spans = Vec::new();
 
-            // Get current token at cursor
-            let current_token = self.get_token_at_cursor();
-            let token_display = if let Some(token) = current_token {
-                format!(" [{}]", token)
-            } else {
-                String::new()
-            };
+        // Mode indicator with color
+        spans.push(Span::styled(
+            format!("[{}]", mode_indicator),
+            Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
+        ));
 
-            format!(" | Token {}/{}{}", token_pos, total_tokens, token_display)
-        } else if self.mode == AppMode::Results {
-            let row_info = {
+        // Mode-specific information
+        match self.mode {
+            AppMode::Command => {
+                // In command mode, show editing-related info
+                if !self.input.value().trim().is_empty() {
+                    let (token_pos, total_tokens) = self.get_cursor_token_position();
+                    spans.push(Span::raw(" | "));
+                    spans.push(Span::styled(
+                        format!("Token {}/{}", token_pos, total_tokens),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+
+                    // Show current token if available
+                    if let Some(token) = self.get_token_at_cursor() {
+                        spans.push(Span::raw(" "));
+                        spans.push(Span::styled(
+                            format!("[{}]", token),
+                            Style::default().fg(Color::Cyan),
+                        ));
+                    }
+
+                    // Check for parser errors
+                    if let Some(error_msg) = self.check_parser_error(self.input.value()) {
+                        spans.push(Span::raw(" | "));
+                        spans.push(Span::styled(
+                            format!("{} {}", self.config.display.icons.warning, error_msg),
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        ));
+                    }
+                }
+            }
+            AppMode::Results => {
+                // In results mode, show navigation and data info
                 let total_rows = self.get_row_count();
                 if total_rows > 0 {
                     let selected = self.table_state.selected().unwrap_or(0) + 1;
-                    format!(" | Row {}/{}", selected, total_rows)
-                } else {
-                    String::new()
-                }
-            };
-
-            let filter_info = if self.fuzzy_filter_state.active {
-                format!(" | FUZZY [{}]", self.fuzzy_filter_state.pattern)
-            } else if self.filter_state.active {
-                format!(" | FILTERED [{}]", self.filter_state.pattern)
-            } else {
-                String::new()
-            };
-
-            format!("{}{}", row_info, filter_info)
-        } else {
-            String::new()
-        };
-
-        // Limit status message length to reduce rendering overhead
-        let truncated_status = if self.status_message.len() > 40 {
-            format!("{}...", &self.status_message[..37])
-        } else {
-            self.status_message.clone()
-        };
-        let mode_info = if self.csv_mode {
-            format!(" | CSV: {}", self.csv_table_name)
-        } else if self.cache_mode {
-            " | CACHE MODE".to_string()
-        } else {
-            String::new()
-        };
-
-        // Build status line with colored source indicator
-        let mut spans = vec![Span::raw(format!(
-            "[{}] {}{}{}",
-            mode_indicator, truncated_status, status_info, mode_info
-        ))];
-
-        // Add colored data source indicator
-        if let Some(ref source) = self.last_query_source {
-            match source.as_str() {
-                "cache" => {
                     spans.push(Span::raw(" | "));
-                    spans.push(Span::raw("📦"));
+
+                    // Show selection mode
+                    let mode_text = match self.selection_mode {
+                        SelectionMode::Cell => "CELL",
+                        SelectionMode::Row => "ROW",
+                    };
                     spans.push(Span::styled(
-                        " CACHE",
+                        format!("[{}]", mode_text),
                         Style::default()
                             .fg(Color::Cyan)
                             .add_modifier(Modifier::BOLD),
                     ));
-                }
-                "file" | "FileDataSource" => {
-                    spans.push(Span::raw(" | "));
-                    spans.push(Span::raw("📁"));
+
+                    spans.push(Span::raw(" "));
                     spans.push(Span::styled(
-                        " FILE",
-                        Style::default()
-                            .fg(Color::Green)
-                            .add_modifier(Modifier::BOLD),
+                        format!("Row {}/{}", selected, total_rows),
+                        Style::default().fg(Color::White),
                     ));
-                }
-                "SqlServerDataSource" => {
-                    spans.push(Span::raw(" | "));
-                    spans.push(Span::raw("🗄️"));
-                    spans.push(Span::styled(
-                        " SQL",
-                        Style::default()
-                            .fg(Color::Blue)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                }
-                "PublicApiDataSource" => {
-                    spans.push(Span::raw(" | "));
-                    spans.push(Span::raw("🌐"));
-                    spans.push(Span::styled(
-                        " API",
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                }
-                _ => {
-                    spans.push(Span::raw(" | "));
-                    spans.push(Span::raw("🔄"));
-                    spans.push(Span::styled(
-                        format!(" {}", source),
-                        Style::default()
-                            .fg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD),
-                    ));
+
+                    // Column information
+                    if let Some(results) = &self.results {
+                        if let Some(first_row) = results.data.first() {
+                            if let Some(obj) = first_row.as_object() {
+                                let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                                if self.current_column < headers.len() {
+                                    spans.push(Span::raw(" | Col: "));
+                                    spans.push(Span::styled(
+                                        headers[self.current_column],
+                                        Style::default().fg(Color::Cyan),
+                                    ));
+
+                                    // Show pinned columns count if any
+                                    if !self.pinned_columns.is_empty() {
+                                        spans.push(Span::raw(" | "));
+                                        spans.push(Span::styled(
+                                            format!("📌{}", self.pinned_columns.len()),
+                                            Style::default().fg(Color::Magenta),
+                                        ));
+                                    }
+
+                                    // In cell mode, show the current cell value
+                                    if self.selection_mode == SelectionMode::Cell {
+                                        if let Some(selected_row) = self.table_state.selected() {
+                                            if let Some(row_data) = results.data.get(selected_row) {
+                                                if let Some(row_obj) = row_data.as_object() {
+                                                    if let Some(value) =
+                                                        row_obj.get(headers[self.current_column])
+                                                    {
+                                                        let cell_value = match value {
+                                                            Value::String(s) => s.clone(),
+                                                            Value::Number(n) => n.to_string(),
+                                                            Value::Bool(b) => b.to_string(),
+                                                            Value::Null => "NULL".to_string(),
+                                                            other => other.to_string(),
+                                                        };
+
+                                                        // Truncate if too long
+                                                        let display_value = if cell_value.len() > 30
+                                                        {
+                                                            format!("{}...", &cell_value[..27])
+                                                        } else {
+                                                            cell_value
+                                                        };
+
+                                                        spans.push(Span::raw(" = "));
+                                                        spans.push(Span::styled(
+                                                            display_value,
+                                                            Style::default().fg(Color::Yellow),
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Filter indicators
+                    if self.fuzzy_filter_state.active {
+                        spans.push(Span::raw(" | "));
+                        spans.push(Span::styled(
+                            format!("Fuzzy: {}", self.fuzzy_filter_state.pattern),
+                            Style::default().fg(Color::Magenta),
+                        ));
+                    } else if self.filter_state.active {
+                        spans.push(Span::raw(" | "));
+                        spans.push(Span::styled(
+                            format!("Filter: {}", self.filter_state.pattern),
+                            Style::default().fg(Color::Cyan),
+                        ));
+                    }
+
+                    // Show last yanked value
+                    if let Some((col, val)) = &self.last_yanked {
+                        spans.push(Span::raw(" | "));
+                        spans.push(Span::styled(
+                            "Yanked: ",
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                        spans.push(Span::styled(
+                            format!("{}={}", col, val),
+                            Style::default().fg(Color::Green),
+                        ));
+                    }
                 }
             }
-        } else if self.cache_mode {
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
+                // Show the pattern being typed
+                let pattern = match self.mode {
+                    AppMode::Search => &self.search_state.pattern,
+                    AppMode::Filter => &self.filter_state.pattern,
+                    AppMode::FuzzyFilter => &self.fuzzy_filter_state.pattern,
+                    AppMode::ColumnSearch => &self.column_search_state.pattern,
+                    _ => "",
+                };
+                if !pattern.is_empty() {
+                    spans.push(Span::raw(" | Pattern: "));
+                    spans.push(Span::styled(pattern, Style::default().fg(mode_color)));
+                }
+            }
+            _ => {}
+        }
+
+        // Data source indicator (shown in all modes)
+        if let Some(ref source) = self.last_query_source {
             spans.push(Span::raw(" | "));
-            spans.push(Span::raw("📦"));
-            spans.push(Span::styled(
-                " CACHE",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ));
+            let (icon, label, color) = match source.as_str() {
+                "cache" => (&self.config.display.icons.cache, "CACHE", Color::Cyan),
+                "file" | "FileDataSource" => {
+                    (&self.config.display.icons.file, "FILE", Color::Green)
+                }
+                "SqlServerDataSource" => (&self.config.display.icons.database, "SQL", Color::Blue),
+                "PublicApiDataSource" => (&self.config.display.icons.api, "API", Color::Yellow),
+                _ => (
+                    &self.config.display.icons.api,
+                    source.as_str(),
+                    Color::Magenta,
+                ),
+            };
+            spans.push(Span::raw(format!("{} ", icon)));
+            spans.push(Span::styled(label, Style::default().fg(color)));
         } else if self.csv_mode {
             spans.push(Span::raw(" | "));
-            spans.push(Span::raw("📁"));
+            spans.push(Span::raw(&self.config.display.icons.file));
+            spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                " FILE",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
+                format!("CSV: {}", self.csv_table_name),
+                Style::default().fg(Color::Green),
             ));
-        } else {
+        } else if self.cache_mode {
             spans.push(Span::raw(" | "));
-            spans.push(Span::raw("🌐"));
-            spans.push(Span::styled(
-                " PROXY",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ));
+            spans.push(Span::raw(&self.config.display.icons.cache));
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled("CACHE", Style::default().fg(Color::Cyan)));
         }
 
-        // Add compact mode indicator
-        if self.compact_mode {
-            spans.push(Span::raw(" | "));
-            spans.push(Span::styled("[COMPACT]", Style::default().fg(Color::Green)));
-        }
-
-        // Add viewport lock indicator
-        if self.viewport_lock {
-            spans.push(Span::raw(" | "));
-            spans.push(Span::styled(
-                "🔒 LOCKED",
-                Style::default()
-                    .fg(Color::Magenta)
-                    .add_modifier(Modifier::BOLD),
-            ));
-        }
-
-        // Add case-insensitive indicator
+        // Global indicators (shown when active)
         if self.case_insensitive {
             spans.push(Span::raw(" | "));
             spans.push(Span::styled(
-                "[Ⓘ]",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                &self.config.display.icons.case_insensitive,
+                Style::default().fg(Color::Cyan),
             ));
         }
 
-        // Check for parser errors in real-time
-        if self.mode == AppMode::Command {
-            let query = self.input.value();
-            if !query.trim().is_empty() {
-                if let Some(error_msg) = self.check_parser_error(query) {
-                    spans.push(Span::raw(" | "));
-                    spans.push(Span::styled(
-                        format!("⚠️  {}", error_msg),
-                        Style::default()
-                            .fg(Color::Red)
-                            .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK),
-                    ));
-                }
-            }
+        if self.compact_mode {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled("COMPACT", Style::default().fg(Color::Green)));
         }
 
-        spans.push(Span::raw(" | F1:Help F8:Case q:Quit"));
+        if self.viewport_lock {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(
+                &self.config.display.icons.lock,
+                Style::default().fg(Color::Magenta),
+            ));
+        }
+
+        // Help shortcuts (right side)
+        let help_text = match self.mode {
+            AppMode::Command => "Enter:Run | Tab:Complete | ↓:Results | F1:Help",
+            AppMode::Results => match self.selection_mode {
+                SelectionMode::Cell => "v:Row mode | y:Yank cell | ↑:Edit | F1:Help",
+                SelectionMode::Row => "v:Cell mode | y:Yank | f:Filter | ↑:Edit | F1:Help",
+            },
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
+                "Enter:Apply | Esc:Cancel"
+            }
+            AppMode::Help
+            | AppMode::Debug
+            | AppMode::PrettyQuery
+            | AppMode::CacheList
+            | AppMode::ColumnStats => "Esc:Close",
+            AppMode::History => "Enter:Select | Esc:Cancel",
+            AppMode::JumpToRow => "Enter:Jump | Esc:Cancel",
+        };
+
+        // Calculate available space for help text
+        let current_length: usize = spans.iter().map(|s| s.content.len()).sum();
+        let available_width = area.width.saturating_sub(4) as usize; // Account for borders
+        let help_length = help_text.len();
+
+        if current_length + help_length + 3 < available_width {
+            // Add spacing to right-align help text
+            let padding = available_width - current_length - help_length - 3;
+            spans.push(Span::raw(" ".repeat(padding)));
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(
+                help_text,
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
 
         let status_line = Line::from(spans);
         let status = Paragraph::new(status_line)
             .block(Block::default().borders(Borders::ALL))
             .style(status_style);
-        f.render_widget(status, chunks[2]);
+        f.render_widget(status, area);
     }
 
     fn render_table_immutable(&self, f: &mut Frame, area: Rect, results: &QueryResponse) {
@@ -4547,9 +5062,24 @@ impl EnhancedTuiApp {
                     let actual_col_idx = visible_columns[visible_col_idx].0;
                     let mut style = Style::default();
 
-                    // Highlight current column
-                    if actual_col_idx == self.current_column {
-                        style = style.bg(Color::DarkGray);
+                    // Cell mode highlighting - highlight only the selected cell
+                    let is_selected_row = actual_row_idx == selected_row;
+                    let is_selected_cell = is_selected_row && actual_col_idx == self.current_column;
+
+                    if self.selection_mode == SelectionMode::Cell {
+                        // In cell mode, only highlight the specific cell
+                        if is_selected_cell {
+                            // Use a highlighted foreground instead of changing background
+                            // This works better with various terminal color schemes
+                            style = style
+                                .fg(Color::Yellow) // Bright, readable color
+                                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+                        }
+                    } else {
+                        // In row mode, highlight the current column for all rows
+                        if actual_col_idx == self.current_column {
+                            style = style.bg(Color::DarkGray);
+                        }
                     }
 
                     // Highlight search matches (override column highlight)
@@ -4625,7 +5155,8 @@ impl EnhancedTuiApp {
             constraints.extend((0..visible_headers.len()).map(|_| Constraint::Min(10)));
         }
 
-        let table = Table::new(rows, constraints)
+        // Build the table with conditional row highlighting
+        let mut table = Table::new(rows, constraints)
             .header(Row::new(header_cells).height(1))
             .block(Block::default()
                 .borders(Borders::ALL)
@@ -4636,9 +5167,17 @@ impl EnhancedTuiApp {
                     headers.len(),
                     row_viewport_start + 1,
                     row_viewport_end,
-                    selected_row + 1)))
-            .row_highlight_style(Style::default().bg(Color::DarkGray))
-            .highlight_symbol("► ");
+                    selected_row + 1)));
+
+        // Only apply row highlighting in row mode
+        if self.selection_mode == SelectionMode::Row {
+            table = table
+                .row_highlight_style(Style::default().bg(Color::DarkGray))
+                .highlight_symbol("► ");
+        } else {
+            // In cell mode, no row highlighting - cell highlighting is handled above
+            table = table.highlight_symbol("  ");
+        }
 
         let mut table_state = self.table_state.clone();
         // Adjust table state to use relative position within the viewport
@@ -4776,11 +5315,16 @@ impl EnhancedTuiApp {
             Line::from("  f        - Fuzzy filter rows"),
             Line::from("  'text    - Exact match filter"),
             Line::from("             (matches highlighted)"),
+            Line::from("  v        - Toggle cell/row mode"),
             Line::from("  s        - Sort by column"),
             Line::from("  S        - 📊 Column statistics"),
             Line::from("  1-9      - Sort by column #"),
-            Line::from("  Ctrl+S   - Export to CSV"),
-            Line::from("  Ctrl+C   - Copy row/cell"),
+            Line::from("  y        - Yank (cell mode: yank cell)"),
+            Line::from("    yy     - Yank current row (row mode)"),
+            Line::from("    yc     - Yank current column"),
+            Line::from("    ya     - Yank all data"),
+            Line::from("  Ctrl+E   - Export to CSV"),
+            Line::from("  Ctrl+J   - Export to JSON"),
             Line::from("  ↑/Esc    - Back to command"),
             Line::from("  q        - Quit"),
             Line::from(""),
