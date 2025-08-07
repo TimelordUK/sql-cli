@@ -17,9 +17,13 @@ pub mod where_ast;
 pub mod where_parser;
 
 #[cfg(test)]
+mod test_buffer;
+#[cfg(test)]
 mod test_cache_query;
 #[cfg(test)]
 mod test_column_sizing;
+#[cfg(test)]
+mod test_complex_queries;
 #[cfg(test)]
 mod test_comprehensive_operators;
 #[cfg(test)]

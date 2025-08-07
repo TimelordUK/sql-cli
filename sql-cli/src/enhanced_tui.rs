@@ -22,6 +22,7 @@ use ratatui::{
 };
 use regex::Regex;
 use serde_json::Value;
+use sql_cli::buffer::{BufferAPI, BufferManager};
 use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
@@ -208,6 +209,10 @@ pub struct EnhancedTuiApp {
     csv_mode: bool,
     csv_table_name: String,
 
+    // Buffer management (new - for supporting multiple files)
+    buffer_manager: Option<BufferManager>,
+    current_buffer_name: Option<String>, // Name of current buffer/table
+
     // Cache
     query_cache: Option<QueryCache>,
     cache_mode: bool,
@@ -249,6 +254,120 @@ fn is_sql_delimiter(ch: char) -> bool {
 }
 
 impl EnhancedTuiApp {
+    // --- Buffer Compatibility Layer ---
+    // These methods provide a gradual migration path from direct field access to BufferAPI
+
+    /// Get current buffer if available (for reading)
+    fn current_buffer(&self) -> Option<&dyn sql_cli::buffer::BufferAPI> {
+        self.buffer_manager
+            .as_ref()?
+            .current()
+            .map(|b| b as &dyn sql_cli::buffer::BufferAPI)
+    }
+
+    /// Get current buffer if available (for writing)  
+    fn current_buffer_mut(&mut self) -> Option<&mut dyn sql_cli::buffer::BufferAPI> {
+        self.buffer_manager
+            .as_mut()?
+            .current_mut()
+            .map(|b| b as &mut dyn sql_cli::buffer::BufferAPI)
+    }
+
+    // Compatibility wrapper for edit_mode
+    fn get_edit_mode(&self) -> EditMode {
+        if let Some(buffer) = self.current_buffer() {
+            // Convert from buffer::EditMode to local EditMode
+            match buffer.get_edit_mode() {
+                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
+                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
+            }
+        } else {
+            self.edit_mode.clone()
+        }
+    }
+
+    fn set_edit_mode(&mut self, mode: EditMode) {
+        // Update local field (will be removed later)
+        self.edit_mode = mode.clone();
+
+        // Also update in buffer if available
+        if let Some(buffer) = self.current_buffer_mut() {
+            let buffer_mode = match mode {
+                EditMode::SingleLine => sql_cli::buffer::EditMode::SingleLine,
+                EditMode::MultiLine => sql_cli::buffer::EditMode::MultiLine,
+            };
+            buffer.set_edit_mode(buffer_mode);
+        }
+    }
+
+    // Compatibility wrapper for case_insensitive
+    fn get_case_insensitive(&self) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.is_case_insensitive()
+        } else {
+            self.case_insensitive
+        }
+    }
+
+    fn set_case_insensitive(&mut self, case_insensitive: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_case_insensitive(case_insensitive);
+        } else {
+            self.case_insensitive = case_insensitive;
+        }
+    }
+
+    // Compatibility wrapper for last_results_row
+    fn get_last_results_row(&self) -> Option<usize> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_last_results_row()
+        } else {
+            self.last_results_row
+        }
+    }
+
+    fn set_last_results_row(&mut self, row: Option<usize>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_results_row(row);
+        } else {
+            self.last_results_row = row;
+        }
+    }
+
+    // Compatibility wrapper for last_scroll_offset
+    fn get_last_scroll_offset(&self) -> (usize, usize) {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_last_scroll_offset()
+        } else {
+            self.last_scroll_offset
+        }
+    }
+
+    fn set_last_scroll_offset(&mut self, offset: (usize, usize)) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_scroll_offset(offset);
+        } else {
+            self.last_scroll_offset = offset;
+        }
+    }
+
+    // Compatibility wrapper for last_query_source
+    fn get_last_query_source(&self) -> Option<String> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_last_query_source()
+        } else {
+            self.last_query_source.clone()
+        }
+    }
+
+    fn set_last_query_source(&mut self, source: Option<String>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_query_source(source);
+        } else {
+            self.last_query_source = source;
+        }
+    }
+
     fn sanitize_table_name(name: &str) -> String {
         // Replace spaces and other problematic characters with underscores
         // to create SQL-friendly table names
@@ -352,6 +471,16 @@ impl EnhancedTuiApp {
             csv_client: None,
             csv_mode: false,
             csv_table_name: String::new(),
+            buffer_manager: {
+                // Initialize buffer manager with a default buffer
+                let mut manager = BufferManager::new();
+                let mut buffer = sql_cli::buffer::Buffer::new(1);
+                // Sync initial settings from config
+                buffer.set_case_insensitive(config.behavior.case_insensitive_default);
+                manager.add_buffer(buffer);
+                Some(manager)
+            },
+            current_buffer_name: None,
             query_cache: QueryCache::new().ok(),
             cache_mode: false,
             cached_data: None,
@@ -370,6 +499,13 @@ impl EnhancedTuiApp {
 
     pub fn new_with_csv(csv_path: &str) -> Result<Self> {
         let mut csv_client = CsvApiClient::new();
+
+        // First create the app to get its config
+        let mut app = Self::new(""); // Empty API URL for CSV mode
+
+        // Use the app's config for consistency
+        csv_client.set_case_insensitive(app.config.behavior.case_insensitive_default);
+
         let raw_name = std::path::Path::new(csv_path)
             .file_stem()
             .and_then(|s| s.to_str())
@@ -386,10 +522,31 @@ impl EnhancedTuiApp {
             .get_schema()
             .ok_or_else(|| anyhow::anyhow!("Failed to get CSV schema"))?;
 
-        let mut app = Self::new(""); // Empty API URL for CSV mode
-        app.csv_client = Some(csv_client);
+        // Configure the app for CSV mode
+        app.csv_client = Some(csv_client.clone());
         app.csv_mode = true;
         app.csv_table_name = table_name.clone();
+        app.current_buffer_name = Some(format!("{}", raw_name));
+
+        // Replace the default buffer with a CSV buffer
+        if let Some(ref mut manager) = app.buffer_manager {
+            // Clear all buffers and add a CSV buffer
+            manager.clear_all();
+            let mut buffer = sql_cli::buffer::Buffer::from_csv(
+                1,
+                std::path::PathBuf::from(csv_path),
+                csv_client,
+                table_name.clone(),
+            );
+            // Apply config settings to the buffer - use app's config
+            buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
+            manager.add_buffer(buffer);
+
+            // Sync app-level state from the buffer to ensure status line renders correctly
+            if let Some(current_buffer) = manager.current() {
+                app.case_insensitive = current_buffer.is_case_insensitive();
+            }
+        }
 
         // Update parser with CSV columns
         if let Some(columns) = schema.get(&table_name) {
@@ -436,6 +593,13 @@ impl EnhancedTuiApp {
 
     pub fn new_with_json(json_path: &str) -> Result<Self> {
         let mut csv_client = CsvApiClient::new();
+
+        // First create the app to get its config
+        let mut app = Self::new(""); // Empty API URL for JSON mode
+
+        // Use the app's config for consistency
+        csv_client.set_case_insensitive(app.config.behavior.case_insensitive_default);
+
         let raw_name = std::path::Path::new(json_path)
             .file_stem()
             .and_then(|s| s.to_str())
@@ -452,10 +616,31 @@ impl EnhancedTuiApp {
             .get_schema()
             .ok_or_else(|| anyhow::anyhow!("Failed to get JSON schema"))?;
 
-        let mut app = Self::new(""); // Empty API URL for JSON mode
-        app.csv_client = Some(csv_client);
+        // Configure the app for JSON mode
+        app.csv_client = Some(csv_client.clone());
         app.csv_mode = true; // Reuse CSV mode since the data structure is the same
         app.csv_table_name = table_name.clone();
+        app.current_buffer_name = Some(format!("{}", raw_name));
+
+        // Replace the default buffer with a JSON buffer
+        if let Some(ref mut manager) = app.buffer_manager {
+            // Clear all buffers and add a JSON buffer
+            manager.clear_all();
+            let mut buffer = sql_cli::buffer::Buffer::from_json(
+                1,
+                std::path::PathBuf::from(json_path),
+                csv_client,
+                table_name.clone(),
+            );
+            // Apply config settings to the buffer - use app's config
+            buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
+            manager.add_buffer(buffer);
+
+            // Sync app-level state from the buffer to ensure status line renders correctly
+            if let Some(current_buffer) = manager.current() {
+                app.case_insensitive = current_buffer.is_case_insensitive();
+            }
+        }
 
         // Update parser with JSON columns
         if let Some(columns) = schema.get(&table_name) {
@@ -619,9 +804,9 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(3) => {
                 // Toggle between single-line and multi-line mode
-                match self.edit_mode {
+                match self.get_edit_mode() {
                     EditMode::SingleLine => {
-                        self.edit_mode = EditMode::MultiLine;
+                        self.set_edit_mode(EditMode::MultiLine);
                         let current_text = self.input.value().to_string();
 
                         // Pretty format the query for multi-line editing
@@ -642,7 +827,7 @@ impl EnhancedTuiApp {
                         self.status_message = "Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string();
                     }
                     EditMode::MultiLine => {
-                        self.edit_mode = EditMode::SingleLine;
+                        self.set_edit_mode(EditMode::SingleLine);
                         // Join lines with single space to create compact query
                         let text = self
                             .textarea
@@ -667,7 +852,7 @@ impl EnhancedTuiApp {
                 }
             }
             KeyCode::Enter => {
-                let query = match self.edit_mode {
+                let query = match self.get_edit_mode() {
                     EditMode::SingleLine => self.input.value().trim().to_string(),
                     EditMode::MultiLine => {
                         if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -733,16 +918,17 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
-                self.case_insensitive = !self.case_insensitive;
+                let current = self.get_case_insensitive();
+                self.set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
                 if let Some(ref mut csv_client) = self.csv_client {
-                    csv_client.set_case_insensitive(self.case_insensitive);
+                    csv_client.set_case_insensitive(!current);
                 }
 
                 self.status_message = format!(
                     "Case-insensitive string comparisons: {}",
-                    if self.case_insensitive { "ON" } else { "OFF" }
+                    if !current { "ON" } else { "OFF" }
                 );
             }
             KeyCode::F(9) => {
@@ -799,6 +985,10 @@ impl EnhancedTuiApp {
                 // Yank - paste from kill ring
                 self.yank();
             }
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Paste from system clipboard
+                self.paste_from_clipboard();
+            }
             KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Jump to previous SQL token
                 self.jump_to_prev_token();
@@ -826,11 +1016,11 @@ impl EnhancedTuiApp {
             KeyCode::Down if self.results.is_some() && self.edit_mode == EditMode::SingleLine => {
                 self.mode = AppMode::Results;
                 // Restore previous position or default to 0
-                let row = self.last_results_row.unwrap_or(0);
+                let row = self.get_last_results_row().unwrap_or(0);
                 self.table_state.select(Some(row));
 
                 // Restore the exact scroll offset from when we left
-                self.scroll_offset = self.last_scroll_offset;
+                self.scroll_offset = self.get_last_scroll_offset();
             }
             KeyCode::F(5) => {
                 // Debug command - show detailed parser information
@@ -940,14 +1130,12 @@ impl EnhancedTuiApp {
                     Data Source: {}\n\
                     Active Filters: {}\n",
                     self.mode,
-                    self.case_insensitive,
+                    self.get_case_insensitive(),
                     self.compact_mode,
                     self.viewport_lock,
                     self.csv_mode,
                     self.cache_mode,
-                    self.last_query_source
-                        .as_ref()
-                        .unwrap_or(&"None".to_string()),
+                    &self.get_last_query_source().unwrap_or("None".to_string()),
                     if self.fuzzy_filter_state.active {
                         format!("Fuzzy: {}", self.fuzzy_filter_state.pattern)
                     } else if self.filter_state.active {
@@ -957,6 +1145,49 @@ impl EnhancedTuiApp {
                     }
                 );
                 debug_info.push_str(&status_line_info);
+
+                // Add buffer manager debug info
+                debug_info.push_str("\n========== BUFFER MANAGER STATE ==========\n");
+                if let Some(ref manager) = self.buffer_manager {
+                    debug_info.push_str(&format!("Buffer Manager: INITIALIZED\n"));
+                    debug_info.push_str(&format!(
+                        "Number of Buffers: {}\n",
+                        manager.all_buffers().len()
+                    ));
+                    debug_info.push_str(&format!(
+                        "Current Buffer Index: {}\n",
+                        manager.current_index()
+                    ));
+                    debug_info.push_str(&format!(
+                        "Has Multiple Buffers: {}\n",
+                        manager.has_multiple()
+                    ));
+
+                    // Add info about all buffers
+                    for (i, buffer) in manager.all_buffers().iter().enumerate() {
+                        debug_info.push_str(&format!(
+                            "\nBuffer [{}]: {}\n",
+                            i,
+                            buffer.display_name()
+                        ));
+                        debug_info.push_str(&format!("  ID: {}\n", buffer.id));
+                        debug_info.push_str(&format!("  Path: {:?}\n", buffer.file_path));
+                        debug_info.push_str(&format!("  Modified: {}\n", buffer.modified));
+                        debug_info.push_str(&format!("  CSV Mode: {}\n", buffer.csv_mode));
+                    }
+
+                    // Add current buffer debug dump
+                    if let Some(buffer) = manager.current() {
+                        debug_info.push_str("\n========== CURRENT BUFFER DEBUG DUMP ==========\n");
+                        debug_info.push_str(&buffer.debug_dump());
+                        debug_info.push_str("================================================\n");
+                    } else {
+                        debug_info.push_str("\nNo current buffer available!\n");
+                    }
+                } else {
+                    debug_info.push_str("Buffer Manager: NOT INITIALIZED\n");
+                }
+                debug_info.push_str("============================================\n");
 
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();
@@ -1030,16 +1261,17 @@ impl EnhancedTuiApp {
             KeyCode::Char('q') => return Ok(true),
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
-                self.case_insensitive = !self.case_insensitive;
+                let current = self.get_case_insensitive();
+                self.set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
                 if let Some(ref mut csv_client) = self.csv_client {
-                    csv_client.set_case_insensitive(self.case_insensitive);
+                    csv_client.set_case_insensitive(!current);
                 }
 
                 self.status_message = format!(
                     "Case-insensitive string comparisons: {}",
-                    if self.case_insensitive { "ON" } else { "OFF" }
+                    if !current { "ON" } else { "OFF" }
                 );
             }
             KeyCode::Esc => {
@@ -1050,8 +1282,8 @@ impl EnhancedTuiApp {
                 } else {
                     // Save current position before switching to Command mode
                     if let Some(selected) = self.table_state.selected() {
-                        self.last_results_row = Some(selected);
-                        self.last_scroll_offset = self.scroll_offset;
+                        self.set_last_results_row(Some(selected));
+                        self.set_last_scroll_offset(self.scroll_offset);
                     }
                     self.mode = AppMode::Command;
                     self.table_state.select(None);
@@ -1148,6 +1380,10 @@ impl EnhancedTuiApp {
             KeyCode::Char('/') => {
                 self.mode = AppMode::Search;
                 self.search_state.pattern.clear();
+                // Save SQL query and use temporary input for search display
+                self.undo_stack
+                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.input = tui_input::Input::default();
             }
             // Column navigation/search functionality (backslash like vim reverse search)
             KeyCode::Char('\\') => {
@@ -1155,6 +1391,10 @@ impl EnhancedTuiApp {
                 self.column_search_state.pattern.clear();
                 self.column_search_state.matching_columns.clear();
                 self.column_search_state.current_match = 0;
+                // Save current SQL query before clearing input for column search
+                self.undo_stack
+                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.input = tui_input::Input::default();
             }
             KeyCode::Char('n') => {
                 self.next_search_match();
@@ -1179,6 +1419,10 @@ impl EnhancedTuiApp {
             KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.mode = AppMode::Filter;
                 self.filter_state.pattern.clear();
+                // Save SQL query and use temporary input for filter display
+                self.undo_stack
+                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.input = tui_input::Input::default();
             }
             // Fuzzy filter functionality (lowercase f)
             KeyCode::Char('f')
@@ -1188,6 +1432,11 @@ impl EnhancedTuiApp {
                 self.mode = AppMode::FuzzyFilter;
                 self.fuzzy_filter_state.pattern.clear();
                 self.fuzzy_filter_state.filtered_indices.clear();
+                self.fuzzy_filter_state.active = false; // Clear active state when entering mode
+                                                        // Save SQL query and use temporary input for fuzzy filter display
+                self.undo_stack
+                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.input = tui_input::Input::default();
             }
             // Sort functionality (lowercase s)
             KeyCode::Char('s')
@@ -1282,17 +1531,31 @@ impl EnhancedTuiApp {
     fn handle_search_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Esc => {
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
             }
             KeyCode::Enter => {
                 self.perform_search();
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
             }
             KeyCode::Backspace => {
                 self.search_state.pattern.pop();
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.search_state.pattern.clone())
+                    .with_cursor(self.search_state.pattern.len());
             }
             KeyCode::Char(c) => {
                 self.search_state.pattern.push(c);
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.search_state.pattern.clone())
+                    .with_cursor(self.search_state.pattern.len());
             }
             _ => {}
         }
@@ -1302,17 +1565,31 @@ impl EnhancedTuiApp {
     fn handle_filter_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Esc => {
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
             }
             KeyCode::Enter => {
                 self.apply_filter();
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
             }
             KeyCode::Backspace => {
                 self.filter_state.pattern.pop();
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.filter_state.pattern.clone())
+                    .with_cursor(self.filter_state.pattern.len());
             }
             KeyCode::Char(c) => {
                 self.filter_state.pattern.push(c);
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.filter_state.pattern.clone())
+                    .with_cursor(self.filter_state.pattern.len());
             }
             _ => {}
         }
@@ -1326,6 +1603,10 @@ impl EnhancedTuiApp {
                 self.fuzzy_filter_state.active = false;
                 self.fuzzy_filter_state.pattern.clear();
                 self.fuzzy_filter_state.filtered_indices.clear();
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
                 self.status_message = "Fuzzy filter cleared".to_string();
             }
@@ -1335,10 +1616,17 @@ impl EnhancedTuiApp {
                     self.apply_fuzzy_filter();
                     self.fuzzy_filter_state.active = true;
                 }
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
             }
             KeyCode::Backspace => {
                 self.fuzzy_filter_state.pattern.pop();
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.fuzzy_filter_state.pattern.clone())
+                    .with_cursor(self.fuzzy_filter_state.pattern.len());
                 // Re-apply filter in real-time
                 if !self.fuzzy_filter_state.pattern.is_empty() {
                     self.apply_fuzzy_filter();
@@ -1349,6 +1637,9 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char(c) => {
                 self.fuzzy_filter_state.pattern.push(c);
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.fuzzy_filter_state.pattern.clone())
+                    .with_cursor(self.fuzzy_filter_state.pattern.len());
                 // Apply filter in real-time as user types
                 self.apply_fuzzy_filter();
             }
@@ -1364,6 +1655,10 @@ impl EnhancedTuiApp {
                 self.mode = AppMode::Results;
                 self.column_search_state.pattern.clear();
                 self.column_search_state.matching_columns.clear();
+                // Restore original SQL query from undo stack
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.status_message = "Column search cancelled".to_string();
             }
             KeyCode::Enter => {
@@ -1375,6 +1670,10 @@ impl EnhancedTuiApp {
                     self.status_message = format!("Jumped to column: {}", column_name);
                 } else {
                     self.status_message = "No matching columns found".to_string();
+                }
+                // Restore original SQL query from undo stack
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.mode = AppMode::Results;
             }
@@ -1417,10 +1716,16 @@ impl EnhancedTuiApp {
             }
             KeyCode::Backspace => {
                 self.column_search_state.pattern.pop();
+                // Also update input to keep it in sync for rendering
+                self.input = tui_input::Input::new(self.column_search_state.pattern.clone())
+                    .with_cursor(self.column_search_state.pattern.len());
                 self.update_column_search();
             }
             KeyCode::Char(c) => {
                 self.column_search_state.pattern.push(c);
+                // Also update input to keep it in sync for rendering
+                self.input = tui_input::Input::new(self.column_search_state.pattern.clone())
+                    .with_cursor(self.column_search_state.pattern.len());
                 self.update_column_search();
             }
             _ => {}
@@ -1645,7 +1950,7 @@ impl EnhancedTuiApp {
                 let row_count = response.data.len();
 
                 // Capture the source from the response
-                self.last_query_source = response.source.clone();
+                self.set_last_query_source(response.source.clone());
 
                 self.results = Some(response);
                 self.calculate_optimal_column_widths();
@@ -1700,7 +2005,11 @@ impl EnhancedTuiApp {
                 vec![]
             };
 
-            match WhereParser::parse_with_options(where_clause, columns, self.case_insensitive) {
+            match WhereParser::parse_with_options(
+                where_clause,
+                columns,
+                self.get_case_insensitive(),
+            ) {
                 Ok(ast) => {
                     let tree = format_where_ast(&ast, 0);
                     Ok(format!(
@@ -2993,8 +3302,8 @@ impl EnhancedTuiApp {
         self.table_state = TableState::default();
         self.scroll_offset = (0, 0);
         self.current_column = 0;
-        self.last_results_row = None; // Reset saved position for new results
-        self.last_scroll_offset = (0, 0); // Reset saved scroll offset for new results
+        self.set_last_results_row(None); // Reset saved position for new results
+        self.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
 
         // Clear filter state to prevent old filtered data from persisting
         self.filter_state = FilterState {
@@ -3401,6 +3710,88 @@ impl EnhancedTuiApp {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    fn paste_from_clipboard(&mut self) {
+        // Paste from system clipboard into the current input field
+        match arboard::Clipboard::new() {
+            Ok(mut clipboard) => match clipboard.get_text() {
+                Ok(text) => {
+                    match self.mode {
+                        AppMode::Command => {
+                            if self.edit_mode == EditMode::SingleLine {
+                                // Get current cursor position
+                                let cursor_pos = self.input.cursor();
+                                let current_value = self.input.value().to_string();
+
+                                // Insert at cursor position
+                                let mut new_value = String::new();
+                                new_value.push_str(&current_value[..cursor_pos]);
+                                new_value.push_str(&text);
+                                new_value.push_str(&current_value[cursor_pos..]);
+
+                                self.input = tui_input::Input::new(new_value)
+                                    .with_cursor(cursor_pos + text.len());
+
+                                self.status_message = format!("Pasted {} characters", text.len());
+                            } else {
+                                // Multi-line mode - insert at cursor
+                                self.textarea.insert_str(&text);
+                                self.status_message = format!("Pasted {} characters", text.len());
+                            }
+                        }
+                        AppMode::Filter
+                        | AppMode::FuzzyFilter
+                        | AppMode::Search
+                        | AppMode::ColumnSearch => {
+                            // For search/filter modes, append to current pattern
+                            let cursor_pos = self.input.cursor();
+                            let current_value = self.input.value().to_string();
+
+                            let mut new_value = String::new();
+                            new_value.push_str(&current_value[..cursor_pos]);
+                            new_value.push_str(&text);
+                            new_value.push_str(&current_value[cursor_pos..]);
+
+                            self.input = tui_input::Input::new(new_value)
+                                .with_cursor(cursor_pos + text.len());
+
+                            // Update the appropriate filter/search state
+                            match self.mode {
+                                AppMode::Filter => {
+                                    self.filter_state.pattern = self.input.value().to_string();
+                                    self.apply_filter();
+                                }
+                                AppMode::FuzzyFilter => {
+                                    self.fuzzy_filter_state.pattern =
+                                        self.input.value().to_string();
+                                    self.apply_fuzzy_filter();
+                                }
+                                AppMode::Search => {
+                                    self.search_state.pattern = self.input.value().to_string();
+                                    // TODO: self.search_in_results();
+                                }
+                                AppMode::ColumnSearch => {
+                                    self.column_search_state.pattern =
+                                        self.input.value().to_string();
+                                    // TODO: self.search_columns();
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {
+                            self.status_message = "Paste not available in this mode".to_string();
+                        }
+                    }
+                }
+                Err(e) => {
+                    self.status_message = format!("Failed to paste: {}", e);
+                }
+            },
+            Err(e) => {
+                self.status_message = format!("Can't access clipboard: {}", e);
             }
         }
     }
@@ -4312,10 +4703,10 @@ impl EnhancedTuiApp {
         let input_block = Block::default().borders(Borders::ALL).title(input_title);
 
         let input_text = match self.mode {
-            AppMode::Search => &self.search_state.pattern,
-            AppMode::Filter => &self.filter_state.pattern,
-            AppMode::FuzzyFilter => &self.fuzzy_filter_state.pattern,
-            AppMode::ColumnSearch => &self.column_search_state.pattern,
+            AppMode::Search => self.input.value(), // Use input for rendering
+            AppMode::Filter => self.input.value(), // Use input for rendering
+            AppMode::FuzzyFilter => self.input.value(), // Use input for rendering
+            AppMode::ColumnSearch => self.input.value(), // Column search still uses input since it saves/restores
             AppMode::History => &self.history_state.search_query,
             _ => self.input.value(),
         };
@@ -4402,25 +4793,25 @@ impl EnhancedTuiApp {
             }
             AppMode::Search => {
                 f.set_cursor_position((
-                    chunks[0].x + self.search_state.pattern.len() as u16 + 1,
+                    chunks[0].x + self.input.cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
             AppMode::Filter => {
                 f.set_cursor_position((
-                    chunks[0].x + self.filter_state.pattern.len() as u16 + 1,
+                    chunks[0].x + self.input.cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
             AppMode::FuzzyFilter => {
                 f.set_cursor_position((
-                    chunks[0].x + self.fuzzy_filter_state.pattern.len() as u16 + 1,
+                    chunks[0].x + self.input.cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
             AppMode::ColumnSearch => {
                 f.set_cursor_position((
-                    chunks[0].x + self.column_search_state.pattern.len() as u16 + 1,
+                    chunks[0].x + self.input.cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
@@ -4525,6 +4916,25 @@ impl EnhancedTuiApp {
             format!("[{}]", mode_indicator),
             Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
         ));
+
+        // Show buffer/table name if available
+        if let Some(buffer_name) = &self.current_buffer_name {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                buffer_name.clone(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else if self.csv_mode && !self.csv_table_name.is_empty() {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                self.csv_table_name.clone(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
 
         // Mode-specific information
         match self.mode {
@@ -4672,14 +5082,8 @@ impl EnhancedTuiApp {
                 }
             }
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
-                // Show the pattern being typed
-                let pattern = match self.mode {
-                    AppMode::Search => &self.search_state.pattern,
-                    AppMode::Filter => &self.filter_state.pattern,
-                    AppMode::FuzzyFilter => &self.fuzzy_filter_state.pattern,
-                    AppMode::ColumnSearch => &self.column_search_state.pattern,
-                    _ => "",
-                };
+                // Show the pattern being typed - always use input for consistency
+                let pattern = self.input.value();
                 if !pattern.is_empty() {
                     spans.push(Span::raw(" | Pattern: "));
                     spans.push(Span::styled(pattern, Style::default().fg(mode_color)));
@@ -4689,18 +5093,32 @@ impl EnhancedTuiApp {
         }
 
         // Data source indicator (shown in all modes)
-        if let Some(ref source) = self.last_query_source {
+        if let Some(source) = self.get_last_query_source() {
             spans.push(Span::raw(" | "));
             let (icon, label, color) = match source.as_str() {
-                "cache" => (&self.config.display.icons.cache, "CACHE", Color::Cyan),
-                "file" | "FileDataSource" => {
-                    (&self.config.display.icons.file, "FILE", Color::Green)
-                }
-                "SqlServerDataSource" => (&self.config.display.icons.database, "SQL", Color::Blue),
-                "PublicApiDataSource" => (&self.config.display.icons.api, "API", Color::Yellow),
+                "cache" => (
+                    &self.config.display.icons.cache,
+                    "CACHE".to_string(),
+                    Color::Cyan,
+                ),
+                "file" | "FileDataSource" => (
+                    &self.config.display.icons.file,
+                    "FILE".to_string(),
+                    Color::Green,
+                ),
+                "SqlServerDataSource" => (
+                    &self.config.display.icons.database,
+                    "SQL".to_string(),
+                    Color::Blue,
+                ),
+                "PublicApiDataSource" => (
+                    &self.config.display.icons.api,
+                    "API".to_string(),
+                    Color::Yellow,
+                ),
                 _ => (
                     &self.config.display.icons.api,
-                    source.as_str(),
+                    source.clone(),
                     Color::Magenta,
                 ),
             };
@@ -4722,10 +5140,13 @@ impl EnhancedTuiApp {
         }
 
         // Global indicators (shown when active)
-        if self.case_insensitive {
+        let case_insensitive = self.get_case_insensitive();
+        if case_insensitive {
             spans.push(Span::raw(" | "));
+            // Use to_string() to ensure we get the actual string value
+            let icon = self.config.display.icons.case_insensitive.clone();
             spans.push(Span::styled(
-                &self.config.display.icons.case_insensitive,
+                format!("{} CASE", icon),
                 Style::default().fg(Color::Cyan),
             ));
         }
@@ -6025,25 +6446,50 @@ impl EnhancedTuiApp {
     }
 }
 
-pub fn run_enhanced_tui(api_url: &str, data_file: Option<&str>) -> Result<()> {
-    let app = if let Some(file_path) = data_file {
-        // Determine file type by extension
-        let extension = std::path::Path::new(file_path)
+pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()> {
+    let app = if !data_files.is_empty() {
+        // Load the first file using existing logic
+        let first_file = data_files[0];
+        let extension = std::path::Path::new(first_file)
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("");
 
-        match extension.to_lowercase().as_str() {
-            "csv" => EnhancedTuiApp::new_with_csv(file_path)?,
-            "json" => EnhancedTuiApp::new_with_json(file_path)?,
+        let mut app = match extension.to_lowercase().as_str() {
+            "csv" => EnhancedTuiApp::new_with_csv(first_file)?,
+            "json" => EnhancedTuiApp::new_with_json(first_file)?,
             _ => {
                 return Err(anyhow::anyhow!(
-                    "Unsupported file type. Please use .csv or .json files"
+                    "Unsupported file type: {}. Use .csv or .json files.",
+                    first_file
                 ))
             }
+        };
+
+        // TODO: Load additional files into buffers
+        // For now, just note that we have multiple files
+        if data_files.len() > 1 {
+            app.status_message = format!(
+                "{} | {} more file(s) to load - buffer support coming soon",
+                app.status_message,
+                data_files.len() - 1
+            );
         }
+
+        app
     } else {
         EnhancedTuiApp::new(api_url)
     };
+
     app.run()
+}
+
+pub fn run_enhanced_tui(api_url: &str, data_file: Option<&str>) -> Result<()> {
+    // For backward compatibility, convert single file to vec and call multi version
+    let files = if let Some(file) = data_file {
+        vec![file]
+    } else {
+        vec![]
+    };
+    run_enhanced_tui_multi(api_url, files)
 }
