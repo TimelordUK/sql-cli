@@ -42,3 +42,7 @@ sql-cli/demos/vhs
 sql-cli/demos/ttyd
 # Keep demo GIFs in the repo for README
 # sql-cli/demos/*.gif
+
+# Large test data files
+data/trades_*.json
+!data/trades.json
