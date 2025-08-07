@@ -1,0 +1,136 @@
+# Phase 2 Buffer Migration Plan
+
+## Field Categorization
+
+### ✅ Already Migrated to Buffer (Phase 1)
+- `edit_mode` - How the current buffer is being edited
+- `case_insensitive` - Per-buffer setting for comparisons
+- `last_results_row` - Last selected row in results
+- `last_scroll_offset` - Last scroll position
+- `last_query_source` - Source of last query (cache/api/file)
+
+### 🔴 Should Move to Buffer (Phase 2)
+These are buffer-specific and should move:
+
+#### Core Query/Results State
+- `input` - The SQL input for this buffer
+- `textarea` - Multi-line editor for this buffer
+- `results` - Query results for this buffer
+- `table_state` - Table selection state
+- `mode` - Current mode (Command/Results/etc) for this buffer
+- `status_message` - Status message for current buffer
+
+#### Filtering/Search State
+- `filter_state` - Active filters on this buffer's data
+- `fuzzy_filter_state` - Fuzzy filter state
+- `search_state` - Search within results
+- `column_search_state` - Column search state
+- `filtered_data` - Filtered view of results
+
+#### Display State
+- `column_widths` - Calculated widths for this buffer's columns
+- `scroll_offset` - Current scroll position (row, col)
+- `current_column` - Currently selected column
+- `pinned_columns` - Which columns are pinned in this buffer
+- `column_stats` - Statistics for selected column
+- `compact_mode` - Per-buffer display preference
+- `show_row_numbers` - Per-buffer display preference
+- `viewport_lock` - Viewport locking for this buffer
+- `viewport_lock_row` - The locked row
+
+#### CSV/Data State
+- `csv_client` - CSV data source for this buffer
+- `csv_mode` - Whether this buffer is in CSV mode
+- `csv_table_name` - Table name for CSV data
+- `cached_data` - Cached JSON data for this buffer
+
+#### Edit State
+- `undo_stack` - Undo history for this buffer
+- `redo_stack` - Redo history for this buffer
+- `kill_ring` - Kill ring for this buffer
+
+### 🟢 Should Stay Global (in GlobalState)
+These are truly application-wide:
+
+#### Core Services
+- `api_client` - Shared API client
+- `sql_parser` - Shared parser instance
+- `hybrid_parser` - Shared parser instance
+- `sql_highlighter` - Shared syntax highlighter
+- `config` - Application configuration
+- `command_history` - Global command history
+- `query_cache` - Global query cache
+
+#### UI State
+- `show_help` - Global help display toggle
+- `help_scroll` - Help page scroll position
+- `debug_text` - Debug output text
+- `debug_scroll` - Debug view scroll position
+- `input_scroll_offset` - Horizontal scroll for input (might move to buffer?)
+
+#### Global Features
+- `selection_mode` - Row vs Cell selection mode (global preference)
+- `yank_mode` - Multi-key yank tracking
+- `last_yanked` - Last yanked content (could be global or per-buffer)
+- `completion_state` - Autocomplete state (might be per-buffer?)
+- `history_state` - History search state
+- `jump_to_row_input` - Jump dialog input
+
+#### Buffer Management
+- `buffer_manager` - The buffer manager itself
+- `current_buffer_name` - Display name of current buffer
+
+### 🟡 Needs Discussion
+These could go either way:
+- `cache_mode` - Could be global or per-buffer
+- `last_visible_rows` - Viewport tracking, probably per-buffer
+
+## Migration Steps
+
+### Step 1: Create GlobalState struct ✅
+- Move truly global fields into a new GlobalState struct
+- Keep in TUI but behind a single field
+
+### Step 2: Move Query/Results State
+- Move `input`, `textarea`, `results`, `table_state`
+- Move `mode`, `status_message`
+- Add compatibility wrappers
+
+### Step 3: Move Filter/Search State
+- Move all filter states
+- Move search states
+- Move `filtered_data`
+
+### Step 4: Move Display State
+- Move column widths, scroll offset
+- Move pinned columns, column stats
+- Move viewport settings
+
+### Step 5: Move CSV/Data State
+- Move CSV client and mode
+- Move cached data
+
+### Step 6: Move Edit State
+- Move undo/redo stacks
+- Move kill ring
+
+### Step 7: Clean Up
+- Remove redundant fields from TUI
+- Remove compatibility wrappers where possible
+- Update all references
+
+## Testing Strategy
+
+After each step:
+1. Build and run basic queries
+2. Test the specific functionality moved
+3. Test F5 debug to ensure buffer state is correct
+4. Run through test_all_fixes.sh scenarios
+5. Commit with clear message about what was moved
+
+## Notes
+
+- Each step should be a separate commit
+- Compatibility wrappers allow gradual migration
+- Test thoroughly after each step
+- Don't try to do too much at once
