@@ -2074,12 +2074,12 @@ impl EnhancedTuiApp {
                 self.reset_table_state();
 
                 if row_count == 0 {
-                    self.status_message = format!(
+                    self.set_status_message(format!(
                         "Query executed successfully but returned 0 rows ({}ms)",
                         duration.as_millis()
-                    );
+                    ));
                 } else {
-                    self.status_message = format!("Query executed successfully - {} rows returned ({}ms) - Use ↓ or j/k to navigate", row_count, duration.as_millis());
+                    self.set_status_message(format!("Query executed successfully - {} rows returned ({}ms) - Use ↓ or j/k to navigate", row_count, duration.as_millis()));
                 }
 
                 self.mode = AppMode::Results;
@@ -2159,7 +2159,10 @@ impl EnhancedTuiApp {
 
         let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
         if !hybrid_result.suggestions.is_empty() {
-            self.status_message = format!("Suggestions: {}", hybrid_result.suggestions.join(", "));
+            self.set_status_message(format!(
+                "Suggestions: {}",
+                hybrid_result.suggestions.join(", ")
+            ));
         }
     }
 
@@ -2446,16 +2449,16 @@ impl EnhancedTuiApp {
                                 format!("No columns found for table '{}'", table_name);
                         }
                     } else {
-                        self.status_message = "Could not determine table name".to_string();
+                        self.set_status_message("Could not determine table name".to_string());
                     }
                 } else {
-                    self.status_message = "No FROM clause found after SELECT *".to_string();
+                    self.set_status_message("No FROM clause found after SELECT *".to_string());
                 }
             } else {
-                self.status_message = "No * found in SELECT clause".to_string();
+                self.set_status_message("No * found in SELECT clause".to_string());
             }
         } else {
-            self.status_message = "No SELECT clause found".to_string();
+            self.set_status_message("No SELECT clause found".to_string());
         }
     }
 
@@ -2937,10 +2940,10 @@ impl EnhancedTuiApp {
                     self.status_message =
                         format!("Found {} matches", self.search_state.matches.len());
                 } else {
-                    self.status_message = "No matches found".to_string();
+                    self.set_status_message("No matches found".to_string());
                 }
             } else {
-                self.status_message = "Invalid regex pattern".to_string();
+                self.set_status_message("Invalid regex pattern".to_string());
             }
         }
     }
@@ -3036,9 +3039,9 @@ impl EnhancedTuiApp {
                     match_index: 0,
                 };
 
-                self.status_message = format!("Filtered to {} rows", filtered_count);
+                self.set_status_message(format!("Filtered to {} rows", filtered_count));
             } else {
-                self.status_message = "Invalid regex pattern".to_string();
+                self.set_status_message("Invalid regex pattern".to_string());
             }
         }
     }
@@ -3137,7 +3140,7 @@ impl EnhancedTuiApp {
             } else {
                 "fuzzy"
             };
-            self.status_message = format!("No {} matches for '{}'", filter_type, pattern);
+            self.set_status_message(format!("No {} matches for '{}'", filter_type, pattern));
         }
     }
 
@@ -3163,7 +3166,7 @@ impl EnhancedTuiApp {
 
                     // Update status message
                     if self.column_search_state.pattern.is_empty() {
-                        self.status_message = "Enter column name to search".to_string();
+                        self.set_status_message("Enter column name to search".to_string());
                     } else if self.column_search_state.matching_columns.is_empty() {
                         self.status_message =
                             format!("No columns match '{}'", self.column_search_state.pattern);
@@ -3569,7 +3572,7 @@ impl EnhancedTuiApp {
                             let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
                             let header_line = headers.join(",");
                             if let Err(e) = writeln!(file, "{}", header_line) {
-                                self.status_message = format!("Failed to write headers: {}", e);
+                                self.set_status_message(format!("Failed to write headers: {}", e));
                                 return;
                             }
 
@@ -3593,7 +3596,10 @@ impl EnhancedTuiApp {
 
                                     let row_line = row.join(",");
                                     if let Err(e) = writeln!(file, "{}", row_line) {
-                                        self.status_message = format!("Failed to write row: {}", e);
+                                        self.set_status_message(format!(
+                                            "Failed to write row: {}",
+                                            e
+                                        ));
                                         return;
                                     }
                                     row_count += 1;
@@ -3604,7 +3610,7 @@ impl EnhancedTuiApp {
                                 format!("Exported {} rows to {}", row_count, filename);
                         }
                         Err(e) => {
-                            self.status_message = format!("Failed to create file: {}", e);
+                            self.set_status_message(format!("Failed to create file: {}", e));
                         }
                     }
                 } else {
@@ -3647,10 +3653,10 @@ impl EnhancedTuiApp {
                                             value.clone()
                                         };
                                         self.last_yanked = Some((col_name, display_value));
-                                        self.status_message = format!("Yanked cell: {}", value);
+                                        self.set_status_message(format!("Yanked cell: {}", value));
                                     }
                                     Err(e) => {
-                                        self.status_message = format!("Clipboard error: {}", e);
+                                        self.set_status_message(format!("Clipboard error: {}", e));
                                     }
                                 },
                                 Err(e) => {
@@ -3700,7 +3706,7 @@ impl EnhancedTuiApp {
                                     );
                                 }
                                 Err(e) => {
-                                    self.status_message = format!("Clipboard error: {}", e);
+                                    self.set_status_message(format!("Clipboard error: {}", e));
                                 }
                             },
                             Err(e) => {
@@ -3755,7 +3761,7 @@ impl EnhancedTuiApp {
                                     );
                                 }
                                 Err(e) => {
-                                    self.status_message = format!("Clipboard error: {}", e);
+                                    self.set_status_message(format!("Clipboard error: {}", e));
                                 }
                             },
                             Err(e) => {
@@ -3821,7 +3827,7 @@ impl EnhancedTuiApp {
                                 );
                             }
                             Err(e) => {
-                                self.status_message = format!("Clipboard error: {}", e);
+                                self.set_status_message(format!("Clipboard error: {}", e));
                             }
                         },
                         Err(e) => {
@@ -3912,7 +3918,7 @@ impl EnhancedTuiApp {
                     }
                 }
                 Err(e) => {
-                    self.status_message = format!("Failed to paste: {}", e);
+                    self.set_status_message(format!("Failed to paste: {}", e));
                 }
             },
             Err(e) => {
@@ -3951,11 +3957,11 @@ impl EnhancedTuiApp {
                         );
                     }
                     Err(e) => {
-                        self.status_message = format!("Failed to write JSON: {}", e);
+                        self.set_status_message(format!("Failed to write JSON: {}", e));
                     }
                 },
                 Err(e) => {
-                    self.status_message = format!("Failed to create file: {}", e);
+                    self.set_status_message(format!("Failed to create file: {}", e));
                 }
             }
         } else {
@@ -6262,7 +6268,7 @@ impl EnhancedTuiApp {
                                 );
                             }
                             Err(e) => {
-                                self.status_message = format!("Failed to cache query: {}", e);
+                                self.set_status_message(format!("Failed to cache query: {}", e));
                             }
                         }
                     }
@@ -6303,7 +6309,7 @@ impl EnhancedTuiApp {
                                 }
                             }
                             Err(e) => {
-                                self.status_message = format!("Failed to load cache: {}", e);
+                                self.set_status_message(format!("Failed to load cache: {}", e));
                             }
                         }
                     }
