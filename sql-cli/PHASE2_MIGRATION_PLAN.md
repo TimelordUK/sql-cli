@@ -16,7 +16,7 @@ These are buffer-specific and should move:
 - `input` - The SQL input for this buffer
 - `textarea` - Multi-line editor for this buffer
 - `results` - Query results for this buffer
-- `table_state` - Table selection state
+- ✅ `table_state` - Table selection state **[DONE - Wrapper added, tested, working]**
 - `mode` - Current mode (Command/Results/etc) for this buffer
 - ✅ `status_message` - Status message for current buffer **[DONE - Fully migrated]**
 
@@ -98,6 +98,12 @@ These could go either way:
   - All 26 references migrated to use wrapper methods
   - Get/set wrapper methods working with buffer system
   - Field still present for backward compatibility (can be removed later)
+  - Tested and working with TUI
+
+- ✅ **table_state** - Successfully migrated to buffer system
+  - All 31 references migrated to use wrapper methods
+  - Using get_table_state() and get_table_state_mut() accessors
+  - Table selection state ready for per-buffer management
   - Tested and working with TUI
 
 ### Pending
