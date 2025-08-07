@@ -3446,6 +3446,12 @@ impl EnhancedTuiApp {
     }
 
     fn get_row_count(&self) -> usize {
+        // TODO: Fix row count when fuzzy filter is active
+        // Currently this returns the count from filtered_data (WHERE clause results)
+        // but doesn't account for fuzzy_filter_state.filtered_indices
+        // This causes incorrect row counts in the status line (e.g., showing 1/1513 instead of 1/257)
+        // This will be fixed when fuzzy_filter_state is migrated to the buffer system
+        // and we have a single source of truth for visible rows
         if let Some(filtered) = &self.filtered_data {
             filtered.len()
         } else if let Some(results) = &self.results {
