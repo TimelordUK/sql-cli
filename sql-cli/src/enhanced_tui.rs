@@ -4320,16 +4320,16 @@ impl EnhancedTuiApp {
             EditMode::SingleLine => {
                 let query = self.input.value();
                 let cursor_pos = self.input.cursor();
+                let query_len = query.len();
+                let query_str = query.to_string();
 
                 // Debug info
                 self.set_status_message(format!(
                     "kill_line: cursor={}, len={}, text='{}'",
-                    cursor_pos,
-                    query.len(),
-                    query
+                    cursor_pos, query_len, query_str
                 ));
 
-                if cursor_pos < query.len() {
+                if cursor_pos < query_len {
                     // Save to undo stack before modifying
                     self.undo_stack.push((query.to_string(), cursor_pos));
                     if self.undo_stack.len() > 100 {
@@ -4350,8 +4350,7 @@ impl EnhancedTuiApp {
                 } else {
                     self.set_status_message(format!(
                         "Nothing to kill - cursor at end (pos={}, len={})",
-                        cursor_pos,
-                        query.len()
+                        cursor_pos, query_len
                     ));
                 }
             }
