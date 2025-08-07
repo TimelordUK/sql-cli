@@ -713,6 +713,23 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Wrapper methods for last_visible_rows (uses buffer system)
+    fn get_last_visible_rows(&self) -> usize {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_last_visible_rows()
+        } else {
+            self.last_visible_rows
+        }
+    }
+
+    fn set_last_visible_rows(&mut self, rows: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_visible_rows(rows);
+        } else {
+            self.last_visible_rows = rows;
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -1796,7 +1813,7 @@ impl EnhancedTuiApp {
                 self.set_viewport_lock(!current_lock);
                 if self.is_viewport_lock() {
                     // Lock to current position in viewport (middle of screen)
-                    let visible_rows = self.last_visible_rows;
+                    let visible_rows = self.get_last_visible_rows();
                     self.set_viewport_lock_row(Some(visible_rows / 2));
                     self.set_status_message(format!(
                         "Viewport lock: ON (anchored at row {} of viewport)",
@@ -2882,7 +2899,7 @@ impl EnhancedTuiApp {
             let max_visible_rows = available_height.saturating_sub(1).max(10); // Reserve space for header
             max_visible_rows
         } else {
-            self.last_visible_rows // Fallback to stored value
+            self.get_last_visible_rows() // Fallback to stored value
         }
     }
 
@@ -2912,7 +2929,7 @@ impl EnhancedTuiApp {
                 }
             } else {
                 // Normal scrolling behavior
-                let visible_rows = self.last_visible_rows;
+                let visible_rows = self.get_last_visible_rows();
 
                 // Check if cursor would be below the last visible row
                 let offset = self.get_scroll_offset();
@@ -3223,7 +3240,7 @@ impl EnhancedTuiApp {
             // - 1 row for top border
             // - 1 row for header
             // - 1 row for bottom border
-            self.last_visible_rows = results_area_height.saturating_sub(3).max(10);
+            self.set_last_visible_rows(results_area_height.saturating_sub(3).max(10));
         }
     }
 
@@ -3233,7 +3250,7 @@ impl EnhancedTuiApp {
             let last_row = total_rows - 1;
             self.get_table_state_mut().select(Some(last_row));
             // Position viewport to show the last row at the bottom
-            let visible_rows = self.last_visible_rows;
+            let visible_rows = self.get_last_visible_rows();
             let mut offset = self.get_scroll_offset();
             offset.0 = last_row.saturating_sub(visible_rows - 1);
             self.set_scroll_offset(offset);
@@ -3243,7 +3260,7 @@ impl EnhancedTuiApp {
     fn page_down(&mut self) {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
-            let visible_rows = self.last_visible_rows;
+            let visible_rows = self.get_last_visible_rows();
             let current = self.get_table_state().selected().unwrap_or(0);
             let new_position = (current + visible_rows).min(total_rows - 1);
 
@@ -3257,7 +3274,7 @@ impl EnhancedTuiApp {
     }
 
     fn page_up(&mut self) {
-        let visible_rows = self.last_visible_rows;
+        let visible_rows = self.get_last_visible_rows();
         let current = self.get_table_state().selected().unwrap_or(0);
         let new_position = current.saturating_sub(visible_rows);
 
@@ -6762,7 +6779,7 @@ impl EnhancedTuiApp {
                             self.get_table_state_mut().select(Some(target_row));
 
                             // Adjust viewport to center the target row
-                            let visible_rows = self.last_visible_rows;
+                            let visible_rows = self.get_last_visible_rows();
                             if visible_rows > 0 {
                                 let mut offset = self.get_scroll_offset();
                                 offset.0 = target_row.saturating_sub(visible_rows / 2);

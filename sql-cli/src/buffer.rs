@@ -244,6 +244,10 @@ pub trait BufferAPI {
     fn set_kill_ring(&mut self, text: String);
     fn is_kill_ring_empty(&self) -> bool;
 
+    // --- Viewport State ---
+    fn get_last_visible_rows(&self) -> usize;
+    fn set_last_visible_rows(&mut self, rows: usize);
+
     // --- Debug ---
     fn debug_dump(&self) -> String;
 }
@@ -700,6 +704,15 @@ impl BufferAPI for Buffer {
 
     fn is_kill_ring_empty(&self) -> bool {
         self.kill_ring.is_empty()
+    }
+
+    // --- Viewport State ---
+    fn get_last_visible_rows(&self) -> usize {
+        self.last_visible_rows
+    }
+
+    fn set_last_visible_rows(&mut self, rows: usize) {
+        self.last_visible_rows = rows;
     }
 
     fn debug_dump(&self) -> String {

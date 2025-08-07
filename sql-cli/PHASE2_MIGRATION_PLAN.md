@@ -83,7 +83,7 @@ These are truly application-wide:
 ### 🟡 Needs Discussion
 These could go either way:
 - ✅ `cache_mode` - Could be global or per-buffer **[DONE - Migrated to buffer system]**
-- `last_visible_rows` - Viewport tracking, probably per-buffer
+- ✅ `last_visible_rows` - Viewport tracking, probably per-buffer **[DONE - Migrated to buffer system]**
 
 ## Migration Status
 
