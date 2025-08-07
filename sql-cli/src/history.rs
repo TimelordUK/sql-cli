@@ -66,6 +66,13 @@ impl CommandHistory {
         };
 
         history.load_from_file()?;
+
+        // Clean the history file on startup to remove any duplicates
+        // This ensures the file stays clean over time
+        if !history.entries.is_empty() {
+            history.clean_and_save()?;
+        }
+
         Ok(history)
     }
 
@@ -418,7 +425,8 @@ impl CommandHistory {
             return Ok(());
         }
 
-        let mut entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
+        let entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
+        let original_count = entries.len();
 
         // Deduplicate entries, keeping only the most recent of each command
         // This cleans up any existing duplicates in the history file
@@ -434,6 +442,15 @@ impl CommandHistory {
 
         // Reverse back to chronological order
         deduplicated.reverse();
+
+        // Log if we removed duplicates (only on first load, not every save)
+        let removed_count = original_count - deduplicated.len();
+        if removed_count > 0 {
+            eprintln!(
+                "[sql-cli] Cleaned {} duplicate commands from history",
+                removed_count
+            );
+        }
 
         // Rebuild command counts
         self.command_counts.clear();
@@ -451,6 +468,15 @@ impl CommandHistory {
     fn save_to_file(&self) -> Result<()> {
         let content = serde_json::to_string_pretty(&self.entries)?;
         fs::write(&self.history_file, content)?;
+        Ok(())
+    }
+
+    /// Clean the history file by removing duplicates and rewriting it
+    /// This is called after loading to ensure the file stays clean
+    pub fn clean_and_save(&mut self) -> Result<()> {
+        // The entries are already deduplicated in memory after loading
+        // Just save them back to clean the file
+        self.save_to_file()?;
         Ok(())
     }
 
