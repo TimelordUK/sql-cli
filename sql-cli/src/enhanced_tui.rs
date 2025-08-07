@@ -524,9 +524,8 @@ impl EnhancedTuiApp {
 
         // Replace the default buffer with a CSV buffer
         if let Some(ref mut manager) = app.buffer_manager {
-            // Remove the default buffer
-            manager.close_current();
-            // Add a CSV buffer
+            // Clear all buffers and add a CSV buffer
+            manager.clear_all();
             let buffer = sql_cli::buffer::Buffer::from_csv(
                 1,
                 std::path::PathBuf::from(csv_path),
@@ -610,9 +609,8 @@ impl EnhancedTuiApp {
 
         // Replace the default buffer with a JSON buffer
         if let Some(ref mut manager) = app.buffer_manager {
-            // Remove the default buffer
-            manager.close_current();
-            // Add a JSON buffer
+            // Clear all buffers and add a JSON buffer
+            manager.clear_all();
             let buffer = sql_cli::buffer::Buffer::from_json(
                 1,
                 std::path::PathBuf::from(json_path),
@@ -1126,12 +1124,48 @@ impl EnhancedTuiApp {
                 );
                 debug_info.push_str(&status_line_info);
 
-                // Add buffer debug dump if available
-                if let Some(buffer) = self.current_buffer() {
-                    debug_info.push_str("\n========== BUFFER DEBUG DUMP ==========\n");
-                    debug_info.push_str(&buffer.debug_dump());
-                    debug_info.push_str("========================================\n");
+                // Add buffer manager debug info
+                debug_info.push_str("\n========== BUFFER MANAGER STATE ==========\n");
+                if let Some(ref manager) = self.buffer_manager {
+                    debug_info.push_str(&format!("Buffer Manager: INITIALIZED\n"));
+                    debug_info.push_str(&format!(
+                        "Number of Buffers: {}\n",
+                        manager.all_buffers().len()
+                    ));
+                    debug_info.push_str(&format!(
+                        "Current Buffer Index: {}\n",
+                        manager.current_index()
+                    ));
+                    debug_info.push_str(&format!(
+                        "Has Multiple Buffers: {}\n",
+                        manager.has_multiple()
+                    ));
+
+                    // Add info about all buffers
+                    for (i, buffer) in manager.all_buffers().iter().enumerate() {
+                        debug_info.push_str(&format!(
+                            "\nBuffer [{}]: {}\n",
+                            i,
+                            buffer.display_name()
+                        ));
+                        debug_info.push_str(&format!("  ID: {}\n", buffer.id));
+                        debug_info.push_str(&format!("  Path: {:?}\n", buffer.file_path));
+                        debug_info.push_str(&format!("  Modified: {}\n", buffer.modified));
+                        debug_info.push_str(&format!("  CSV Mode: {}\n", buffer.csv_mode));
+                    }
+
+                    // Add current buffer debug dump
+                    if let Some(buffer) = manager.current() {
+                        debug_info.push_str("\n========== CURRENT BUFFER DEBUG DUMP ==========\n");
+                        debug_info.push_str(&buffer.debug_dump());
+                        debug_info.push_str("================================================\n");
+                    } else {
+                        debug_info.push_str("\nNo current buffer available!\n");
+                    }
+                } else {
+                    debug_info.push_str("Buffer Manager: NOT INITIALIZED\n");
                 }
+                debug_info.push_str("============================================\n");
 
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();

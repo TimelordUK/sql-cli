@@ -951,4 +951,10 @@ impl BufferManager {
     pub fn has_multiple(&self) -> bool {
         self.buffers.len() > 1
     }
+
+    /// Clear all buffers (used when loading a new file)
+    pub fn clear_all(&mut self) {
+        self.buffers.clear();
+        self.current_buffer_index = 0;
+    }
 }
