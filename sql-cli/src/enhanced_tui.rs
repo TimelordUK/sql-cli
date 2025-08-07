@@ -526,12 +526,14 @@ impl EnhancedTuiApp {
         if let Some(ref mut manager) = app.buffer_manager {
             // Clear all buffers and add a CSV buffer
             manager.clear_all();
-            let buffer = sql_cli::buffer::Buffer::from_csv(
+            let mut buffer = sql_cli::buffer::Buffer::from_csv(
                 1,
                 std::path::PathBuf::from(csv_path),
                 csv_client,
                 table_name.clone(),
             );
+            // Apply config settings to the buffer
+            buffer.set_case_insensitive(config.behavior.case_insensitive_default);
             manager.add_buffer(buffer);
         }
 
@@ -611,12 +613,14 @@ impl EnhancedTuiApp {
         if let Some(ref mut manager) = app.buffer_manager {
             // Clear all buffers and add a JSON buffer
             manager.clear_all();
-            let buffer = sql_cli::buffer::Buffer::from_json(
+            let mut buffer = sql_cli::buffer::Buffer::from_json(
                 1,
                 std::path::PathBuf::from(json_path),
                 csv_client,
                 table_name.clone(),
             );
+            // Apply config settings to the buffer
+            buffer.set_case_insensitive(config.behavior.case_insensitive_default);
             manager.add_buffer(buffer);
         }
 
