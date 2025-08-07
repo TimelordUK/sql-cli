@@ -513,6 +513,50 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Wrapper methods for pinned_columns (uses buffer system)
+    fn get_pinned_columns(&self) -> Vec<usize> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_pinned_columns().clone()
+        } else {
+            self.pinned_columns.clone()
+        }
+    }
+
+    fn add_pinned_column(&mut self, col: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.add_pinned_column(col);
+        } else {
+            if !self.pinned_columns.contains(&col) {
+                self.pinned_columns.push(col);
+                self.pinned_columns.sort();
+            }
+        }
+    }
+
+    fn remove_pinned_column(&mut self, col: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.remove_pinned_column(col);
+        } else {
+            self.pinned_columns.retain(|&c| c != col);
+        }
+    }
+
+    fn clear_pinned_columns(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.clear_pinned_columns();
+        } else {
+            self.pinned_columns.clear();
+        }
+    }
+
+    fn contains_pinned_column(&self, col: usize) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_pinned_columns().contains(&col)
+        } else {
+            self.pinned_columns.contains(&col)
+        }
+    }
+
     fn get_filter_state(&self) -> &FilterState {
         &self.filter_state
     }
@@ -1484,7 +1528,7 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('P') => {
                 // Clear all pinned columns
-                self.clear_pinned_columns();
+                self.clear_all_pinned_columns();
             }
             KeyCode::Char('C') => {
                 // Toggle compact mode with Shift+C
@@ -2735,31 +2779,24 @@ impl EnhancedTuiApp {
 
     fn toggle_column_pin(&mut self) {
         // Pin or unpin the current column
-        if let Some(pos) = self
-            .pinned_columns
-            .iter()
-            .position(|&x| x == self.get_current_column())
-        {
+        let current_col = self.get_current_column();
+        if self.contains_pinned_column(current_col) {
             // Column is already pinned, unpin it
-            self.pinned_columns.remove(pos);
-            self.set_status_message(format!("Column {} unpinned", self.get_current_column() + 1));
+            self.remove_pinned_column(current_col);
+            self.set_status_message(format!("Column {} unpinned", current_col + 1));
         } else {
             // Pin the column (max 4 pinned columns)
-            if self.pinned_columns.len() < 4 {
-                self.pinned_columns.push(self.get_current_column());
-                self.pinned_columns.sort(); // Keep them in order
-                self.set_status_message(format!(
-                    "Column {} pinned 📌",
-                    self.get_current_column() + 1
-                ));
+            if self.get_pinned_columns().len() < 4 {
+                self.add_pinned_column(current_col);
+                self.set_status_message(format!("Column {} pinned 📌", current_col + 1));
             } else {
                 self.set_status_message("Maximum 4 pinned columns allowed".to_string());
             }
         }
     }
 
-    fn clear_pinned_columns(&mut self) {
-        self.pinned_columns.clear();
+    fn clear_all_pinned_columns(&mut self) {
+        self.clear_pinned_columns();
         self.set_status_message("All columns unpinned".to_string());
     }
 
@@ -5238,10 +5275,10 @@ impl EnhancedTuiApp {
                                     ));
 
                                     // Show pinned columns count if any
-                                    if !self.pinned_columns.is_empty() {
+                                    if !self.get_pinned_columns().is_empty() {
                                         spans.push(Span::raw(" | "));
                                         spans.push(Span::styled(
-                                            format!("📌{}", self.pinned_columns.len()),
+                                            format!("📌{}", self.get_pinned_columns().len()),
                                             Style::default().fg(Color::Magenta),
                                         ));
                                     }
@@ -5470,7 +5507,7 @@ impl EnhancedTuiApp {
         let mut scrollable_indices: Vec<usize> = Vec::new();
 
         for (i, header) in headers.iter().enumerate() {
-            if self.pinned_columns.contains(&i) {
+            if self.contains_pinned_column(i) {
                 pinned_headers.push((i, header));
             } else {
                 scrollable_indices.push(i);
@@ -5676,7 +5713,7 @@ impl EnhancedTuiApp {
             };
 
             // Add pin indicator for pinned columns
-            let pin_indicator = if self.pinned_columns.contains(actual_col_index) {
+            let pin_indicator = if self.contains_pinned_column(*actual_col_index) {
                 "📌 "
             } else {
                 ""
@@ -5822,7 +5859,7 @@ impl EnhancedTuiApp {
                 .borders(Borders::ALL)
                 .title(format!("Results ({} rows) - {} pinned, {} visible of {} | Viewport rows {}-{} (selected: {}) | Use h/l to scroll",
                     total_rows,
-                    self.pinned_columns.len(),
+                    self.get_pinned_columns().len(),
                     visible_columns.len(),
                     headers.len(),
                     row_viewport_start + 1,
