@@ -621,6 +621,22 @@ impl EnhancedTuiApp {
         // TODO: Update buffer when buffer system is fully integrated
     }
 
+    fn is_cache_mode(&self) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.is_cache_mode()
+        } else {
+            self.cache_mode
+        }
+    }
+
+    fn set_cache_mode(&mut self, cache_mode: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_cache_mode(cache_mode);
+        } else {
+            self.cache_mode = cache_mode;
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -1048,7 +1064,7 @@ impl EnhancedTuiApp {
                         continue;
                     }
 
-                    let should_exit = match self.mode {
+                    let should_exit = match self.get_mode() {
                         AppMode::Command => self.handle_command_input(key)?,
                         AppMode::Results => self.handle_results_input(key)?,
                         AppMode::Search => self.handle_search_input(key)?,
@@ -1149,10 +1165,10 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(7) => {
                 // F7 - Toggle cache mode or show cache list
-                if self.cache_mode {
-                    self.mode = AppMode::CacheList;
+                if self.is_cache_mode() {
+                    self.set_mode(AppMode::CacheList);
                 } else {
-                    self.mode = AppMode::CacheList;
+                    self.set_mode(AppMode::CacheList);
                 }
             }
             KeyCode::Enter => {
@@ -1174,7 +1190,7 @@ impl EnhancedTuiApp {
                     // Check for special commands
                     if query == ":help" {
                         self.show_help = true;
-                        self.mode = AppMode::Help;
+                        self.set_mode(AppMode::Help);
                         self.set_status_message("Help Mode - Press ESC to return".to_string());
                     } else if query == ":exit" || query == ":quit" {
                         return Ok(true);
@@ -1202,7 +1218,7 @@ impl EnhancedTuiApp {
                 }
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.mode = AppMode::History;
+                self.set_mode(AppMode::History);
                 self.history_state.search_query.clear();
                 self.update_history_matches();
             }
@@ -1318,7 +1334,7 @@ impl EnhancedTuiApp {
                 self.move_cursor_word_forward();
             }
             KeyCode::Down if self.results.is_some() && self.edit_mode == EditMode::SingleLine => {
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
                 // Restore previous position or default to 0
                 let row = self.get_last_results_row().unwrap_or(0);
                 self.get_table_state_mut().select(Some(row));
@@ -1433,12 +1449,12 @@ impl EnhancedTuiApp {
                     Cache Mode: {}\n\
                     Data Source: {}\n\
                     Active Filters: {}\n",
-                    self.mode,
+                    self.get_mode(),
                     self.get_case_insensitive(),
                     self.get_compact_mode(),
                     self.is_viewport_lock(),
                     self.is_csv_mode(),
-                    self.cache_mode,
+                    self.is_cache_mode(),
                     &self.get_last_query_source().unwrap_or("None".to_string()),
                     if self.fuzzy_filter_state.active {
                         format!("Fuzzy: {}", self.fuzzy_filter_state.pattern)
@@ -1496,7 +1512,7 @@ impl EnhancedTuiApp {
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();
                 self.debug_scroll = 0;
-                self.mode = AppMode::Debug;
+                self.set_mode(AppMode::Debug);
 
                 // Try to copy to clipboard
                 match arboard::Clipboard::new() {
@@ -1523,7 +1539,7 @@ impl EnhancedTuiApp {
                         crate::recursive_parser::format_sql_pretty_compact(query, 5).join("\n")
                     );
                     self.debug_scroll = 0;
-                    self.mode = AppMode::PrettyQuery;
+                    self.set_mode(AppMode::PrettyQuery);
                     self.set_status_message(
                         "Pretty query view (press Esc or q to return)".to_string(),
                     );
@@ -1590,7 +1606,7 @@ impl EnhancedTuiApp {
                         self.set_last_results_row(Some(selected));
                         self.set_last_scroll_offset(self.get_scroll_offset());
                     }
-                    self.mode = AppMode::Command;
+                    self.set_mode(AppMode::Command);
                     self.get_table_state_mut().select(None);
                 }
             }
@@ -1600,7 +1616,7 @@ impl EnhancedTuiApp {
                     self.last_results_row = Some(selected);
                     self.last_scroll_offset = self.get_scroll_offset();
                 }
-                self.mode = AppMode::Command;
+                self.set_mode(AppMode::Command);
                 self.get_table_state_mut().select(None);
             }
             // Vim-like navigation
@@ -1652,7 +1668,7 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char(':') => {
                 // Start jump to row command
-                self.mode = AppMode::JumpToRow;
+                self.set_mode(AppMode::JumpToRow);
                 self.jump_to_row_input.clear();
                 self.set_status_message("Enter row number:".to_string());
             }
@@ -1685,7 +1701,7 @@ impl EnhancedTuiApp {
             }
             // Search functionality
             KeyCode::Char('/') => {
-                self.mode = AppMode::Search;
+                self.set_mode(AppMode::Search);
                 self.search_state.pattern.clear();
                 // Save SQL query and use temporary input for search display
                 self.undo_stack
@@ -1694,7 +1710,7 @@ impl EnhancedTuiApp {
             }
             // Column navigation/search functionality (backslash like vim reverse search)
             KeyCode::Char('\\') => {
-                self.mode = AppMode::ColumnSearch;
+                self.set_mode(AppMode::ColumnSearch);
                 self.column_search_state.pattern.clear();
                 self.column_search_state.matching_columns.clear();
                 self.column_search_state.current_match = 0;
@@ -1725,7 +1741,7 @@ impl EnhancedTuiApp {
             }
             // Regex filter functionality (uppercase F)
             KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.mode = AppMode::Filter;
+                self.set_mode(AppMode::Filter);
                 self.get_filter_state_mut().pattern.clear();
                 // Save SQL query and use temporary input for filter display
                 self.undo_stack
@@ -1737,7 +1753,7 @@ impl EnhancedTuiApp {
                 if !key.modifiers.contains(KeyModifiers::ALT)
                     && !key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                self.mode = AppMode::FuzzyFilter;
+                self.set_mode(AppMode::FuzzyFilter);
                 self.fuzzy_filter_state.pattern.clear();
                 self.fuzzy_filter_state.filtered_indices.clear();
                 self.fuzzy_filter_state.active = false; // Clear active state when entering mode
@@ -1826,7 +1842,7 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.show_help = true;
-                self.mode = AppMode::Help;
+                self.set_mode(AppMode::Help);
             }
             _ => {
                 // Any other key cancels yank mode
@@ -1846,7 +1862,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
             }
             KeyCode::Enter => {
                 self.perform_search();
@@ -1854,7 +1870,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
                 self.search_state.pattern.pop();
@@ -1880,7 +1896,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
             }
             KeyCode::Enter => {
                 self.apply_filter();
@@ -1888,7 +1904,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
                 self.get_filter_state_mut().pattern.pop();
@@ -1918,7 +1934,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
                 self.set_status_message("Fuzzy filter cleared".to_string());
             }
             KeyCode::Enter => {
@@ -1931,7 +1947,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
                 self.fuzzy_filter_state.pattern.pop();
@@ -1963,7 +1979,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Esc => {
                 // Cancel column search and return to results
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
                 self.column_search_state.pattern.clear();
                 self.column_search_state.matching_columns.clear();
                 // Restore original SQL query from undo stack
@@ -1987,7 +2003,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
             }
             KeyCode::Tab => {
                 // Next match (Tab only, not 'n' to allow typing 'n' in search)
@@ -2053,11 +2069,11 @@ impl EnhancedTuiApp {
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::F(1) => {
                 self.show_help = false;
                 self.help_scroll = 0; // Reset scroll when closing
-                self.mode = if self.results.is_some() {
+                self.set_mode(if self.results.is_some() {
                     AppMode::Results
                 } else {
                     AppMode::Command
-                };
+                });
             }
             // Scroll help with arrow keys or vim keys
             KeyCode::Down | KeyCode::Char('j') => {
@@ -2099,7 +2115,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Esc => {
-                self.mode = AppMode::Command;
+                self.set_mode(AppMode::Command);
             }
             KeyCode::Enter => {
                 if !self.history_state.matches.is_empty()
@@ -2112,7 +2128,7 @@ impl EnhancedTuiApp {
                         .clone();
                     let cursor_pos = selected_command.len();
                     self.input = tui_input::Input::new(selected_command).with_cursor(cursor_pos);
-                    self.mode = AppMode::Command;
+                    self.set_mode(AppMode::Command);
                     self.set_status_message("Command loaded from history".to_string());
                     // Reset scroll to show end of command
                     self.input_scroll_offset = 0;
@@ -2156,7 +2172,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
-                self.mode = AppMode::Command;
+                self.set_mode(AppMode::Command);
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.debug_scroll > 0 {
@@ -2181,7 +2197,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
-                self.mode = AppMode::Command;
+                self.set_mode(AppMode::Command);
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.debug_scroll > 0 {
@@ -2206,7 +2222,7 @@ impl EnhancedTuiApp {
         self.set_status_message(format!("Executing query: '{}'...", query));
         let start_time = std::time::Instant::now();
 
-        let result = if self.cache_mode {
+        let result = if self.is_cache_mode() {
             // When in cache mode, use CSV client to query cached data
             if let Some(ref cached_data) = self.cached_data {
                 let mut csv_client = CsvApiClient::new();
@@ -2279,7 +2295,7 @@ impl EnhancedTuiApp {
                     self.set_status_message(format!("Query executed successfully - {} rows returned ({}ms) - Use ↓ or j/k to navigate", row_count, duration.as_millis()));
                 }
 
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
                 self.get_table_state_mut().select(Some(0));
             }
             Err(e) => {
@@ -3035,7 +3051,7 @@ impl EnhancedTuiApp {
             }
 
             self.column_stats = Some(stats);
-            self.mode = AppMode::ColumnStats;
+            self.set_mode(AppMode::ColumnStats);
         }
     }
 
@@ -4091,7 +4107,7 @@ impl EnhancedTuiApp {
         match arboard::Clipboard::new() {
             Ok(mut clipboard) => match clipboard.get_text() {
                 Ok(text) => {
-                    match self.mode {
+                    match self.get_mode() {
                         AppMode::Command => {
                             if self.edit_mode == EditMode::SingleLine {
                                 // Get current cursor position
@@ -4137,7 +4153,7 @@ impl EnhancedTuiApp {
                                 .with_cursor(cursor_pos + text.len());
 
                             // Update the appropriate filter/search state
-                            match self.mode {
+                            match self.get_mode() {
                                 AppMode::Filter => {
                                     self.get_filter_state_mut().pattern =
                                         self.input.value().to_string();
@@ -5064,7 +5080,7 @@ impl EnhancedTuiApp {
         self.update_horizontal_scroll(chunks[0].width);
 
         // Command input area
-        let input_title = match self.mode {
+        let input_title = match self.get_mode() {
             AppMode::Command => "SQL Query".to_string(),
             AppMode::Results => "SQL Query (Results Mode - Press ↑ to edit)".to_string(),
             AppMode::Search => "Search Pattern".to_string(),
@@ -5085,7 +5101,7 @@ impl EnhancedTuiApp {
 
         let input_block = Block::default().borders(Borders::ALL).title(input_title);
 
-        let input_text = match self.mode {
+        let input_text = match self.get_mode() {
             AppMode::Search => self.input.value(), // Use input for rendering
             AppMode::Filter => self.input.value(), // Use input for rendering
             AppMode::FuzzyFilter => self.input.value(), // Use input for rendering
@@ -5094,7 +5110,7 @@ impl EnhancedTuiApp {
             _ => self.input.value(),
         };
 
-        let input_paragraph = match self.mode {
+        let input_paragraph = match self.get_mode() {
             AppMode::Command => {
                 match self.edit_mode {
                     EditMode::SingleLine => {
@@ -5116,7 +5132,7 @@ impl EnhancedTuiApp {
                 // Plain text for other modes
                 Paragraph::new(input_text)
                     .block(input_block)
-                    .style(match self.mode {
+                    .style(match self.get_mode() {
                         AppMode::Results => Style::default().fg(Color::DarkGray),
                         AppMode::Search => Style::default().fg(Color::Yellow),
                         AppMode::Filter => Style::default().fg(Color::Cyan),
@@ -5136,22 +5152,22 @@ impl EnhancedTuiApp {
         };
 
         // Determine the actual results area based on edit mode
-        let results_area = if self.mode == AppMode::Command && self.edit_mode == EditMode::MultiLine
-        {
-            // In multi-line mode, render textarea in the input area
-            f.render_widget(&self.textarea, chunks[0]);
+        let results_area =
+            if self.get_mode() == AppMode::Command && self.edit_mode == EditMode::MultiLine {
+                // In multi-line mode, render textarea in the input area
+                f.render_widget(&self.textarea, chunks[0]);
 
-            // Use the full results area - no preview in multi-line mode anymore
-            chunks[1]
-        } else {
-            // Single-line mode - render the input
-            f.render_widget(input_paragraph, chunks[0]);
-            // Use the full results area
-            chunks[1]
-        };
+                // Use the full results area - no preview in multi-line mode anymore
+                chunks[1]
+            } else {
+                // Single-line mode - render the input
+                f.render_widget(input_paragraph, chunks[0]);
+                // Use the full results area
+                chunks[1]
+            };
 
         // Set cursor position for input modes
-        match self.mode {
+        match self.get_mode() {
             AppMode::Command => {
                 match self.edit_mode {
                     EditMode::SingleLine => {
@@ -5214,7 +5230,7 @@ impl EnhancedTuiApp {
         }
 
         // Results area - render based on mode to reduce complexity
-        match (&self.mode, self.show_help) {
+        match (&self.get_mode(), self.show_help) {
             (_, true) => self.render_help(f, results_area),
             (AppMode::History, false) => self.render_history(f, results_area),
             (AppMode::Debug, false) => self.render_debug(f, results_area),
@@ -5261,7 +5277,7 @@ impl EnhancedTuiApp {
 
     fn render_status_line(&self, f: &mut Frame, area: Rect) {
         // Determine the mode color
-        let (status_style, mode_color) = match self.mode {
+        let (status_style, mode_color) = match self.get_mode() {
             AppMode::Command => (Style::default().fg(Color::Green), Color::Green),
             AppMode::Results => (Style::default().fg(Color::Blue), Color::Blue),
             AppMode::Search => (Style::default().fg(Color::Yellow), Color::Yellow),
@@ -5277,7 +5293,7 @@ impl EnhancedTuiApp {
             AppMode::ColumnStats => (Style::default().fg(Color::Cyan), Color::Cyan),
         };
 
-        let mode_indicator = match self.mode {
+        let mode_indicator = match self.get_mode() {
             AppMode::Command => "CMD",
             AppMode::Results => "NAV",
             AppMode::Search => "SEARCH",
@@ -5321,7 +5337,7 @@ impl EnhancedTuiApp {
         }
 
         // Mode-specific information
-        match self.mode {
+        match self.get_mode() {
             AppMode::Command => {
                 // In command mode, show editing-related info
                 if !self.input.value().trim().is_empty() {
@@ -5518,7 +5534,7 @@ impl EnhancedTuiApp {
                 format!("CSV: {}", self.get_csv_table_name()),
                 Style::default().fg(Color::Green),
             ));
-        } else if self.cache_mode {
+        } else if self.is_cache_mode() {
             spans.push(Span::raw(" | "));
             spans.push(Span::raw(&self.config.display.icons.cache));
             spans.push(Span::raw(" "));
@@ -5551,7 +5567,7 @@ impl EnhancedTuiApp {
         }
 
         // Help shortcuts (right side)
-        let help_text = match self.mode {
+        let help_text = match self.get_mode() {
             AppMode::Command => "Enter:Run | Tab:Complete | ↓:Results | F1:Help",
             AppMode::Results => match self.selection_mode {
                 SelectionMode::Cell => "v:Row mode | y:Yank cell | ↑:Edit | F1:Help",
@@ -6552,7 +6568,7 @@ impl EnhancedTuiApp {
                         match cache.load_query(id) {
                             Ok((_query, data)) => {
                                 self.cached_data = Some(data.clone());
-                                self.cache_mode = true;
+                                self.set_cache_mode(true);
                                 self.set_status_message(format!(
                                     "Loaded cache ID {} with {} rows. Cache mode enabled.",
                                     id,
@@ -6581,10 +6597,10 @@ impl EnhancedTuiApp {
                 }
             }
             "list" => {
-                self.mode = AppMode::CacheList;
+                self.set_mode(AppMode::CacheList);
             }
             "clear" => {
-                self.cache_mode = false;
+                self.set_cache_mode(false);
                 self.cached_data = None;
                 self.set_status_message("Cache mode disabled".to_string());
             }
@@ -6602,7 +6618,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
-                self.mode = AppMode::Command;
+                self.set_mode(AppMode::Command);
             }
             _ => {}
         }
@@ -6614,7 +6630,7 @@ impl EnhancedTuiApp {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('S') => {
                 self.column_stats = None;
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
             }
             _ => {}
         }
@@ -6624,7 +6640,7 @@ impl EnhancedTuiApp {
     fn handle_jump_to_row_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Esc => {
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
                 self.jump_to_row_input.clear();
                 self.set_status_message("Jump cancelled".to_string());
             }
@@ -6654,7 +6670,7 @@ impl EnhancedTuiApp {
                         }
                     }
                 }
-                self.mode = AppMode::Results;
+                self.set_mode(AppMode::Results);
                 self.jump_to_row_input.clear();
             }
             KeyCode::Backspace => {

@@ -17,7 +17,7 @@ These are buffer-specific and should move:
 - `textarea` - Multi-line editor for this buffer
 - `results` - Query results for this buffer
 - ✅ `table_state` - Table selection state **[DONE - Wrapper added, tested, working]**
-- `mode` - Current mode (Command/Results/etc) for this buffer
+- ✅ `mode` - Current mode (Command/Results/etc) for this buffer **[DONE - Using existing wrapper methods]**
 - ✅ `status_message` - Status message for current buffer **[DONE - Fully migrated]**
 
 #### Filtering/Search State
@@ -82,7 +82,7 @@ These are truly application-wide:
 
 ### 🟡 Needs Discussion
 These could go either way:
-- `cache_mode` - Could be global or per-buffer
+- ✅ `cache_mode` - Could be global or per-buffer **[DONE - Migrated to buffer system]**
 - `last_visible_rows` - Viewport tracking, probably per-buffer
 
 ## Migration Status

@@ -215,6 +215,8 @@ pub trait BufferAPI {
     fn get_csv_client_mut(&mut self) -> Option<&mut CsvApiClient>;
     fn is_csv_mode(&self) -> bool;
     fn get_table_name(&self) -> String;
+    fn is_cache_mode(&self) -> bool;
+    fn set_cache_mode(&mut self, cache_mode: bool);
 
     // --- Input State ---
     fn get_input_value(&self) -> String;
@@ -253,6 +255,7 @@ pub struct Buffer {
     pub csv_client: Option<CsvApiClient>,
     pub csv_mode: bool,
     pub csv_table_name: String,
+    pub cache_mode: bool,
     pub results: Option<QueryResponse>,
     pub cached_data: Option<Vec<serde_json::Value>>,
 
@@ -571,6 +574,14 @@ impl BufferAPI for Buffer {
         self.csv_table_name.clone()
     }
 
+    fn is_cache_mode(&self) -> bool {
+        self.cache_mode
+    }
+
+    fn set_cache_mode(&mut self, cache_mode: bool) {
+        self.cache_mode = cache_mode;
+    }
+
     // --- Input State ---
     fn get_input_value(&self) -> String {
         self.input.value().to_string()
@@ -722,6 +733,7 @@ impl BufferAPI for Buffer {
         output.push_str("\n--- CSV/Data Source ---\n");
         output.push_str(&format!("CSV Mode: {}\n", self.csv_mode));
         output.push_str(&format!("CSV Table Name: '{}'\n", self.csv_table_name));
+        output.push_str(&format!("Cache Mode: {}\n", self.cache_mode));
         output.push_str(&format!("Has CSV Client: {}\n", self.csv_client.is_some()));
         output.push_str(&format!(
             "Has Cached Data: {}\n",
@@ -770,6 +782,7 @@ impl Buffer {
             csv_client: None,
             csv_mode: false,
             csv_table_name: String::new(),
+            cache_mode: false,
             results: None,
             cached_data: None,
 
