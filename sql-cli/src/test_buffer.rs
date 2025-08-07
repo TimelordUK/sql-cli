@@ -13,6 +13,13 @@ mod tests {
         buffer.set_mode(AppMode::Results);
         assert_eq!(buffer.get_mode(), AppMode::Results);
 
+        // Test edit mode operations
+        assert_eq!(buffer.get_edit_mode(), crate::buffer::EditMode::SingleLine);
+        buffer.set_edit_mode(crate::buffer::EditMode::MultiLine);
+        assert_eq!(buffer.get_edit_mode(), crate::buffer::EditMode::MultiLine);
+        buffer.set_edit_mode(crate::buffer::EditMode::SingleLine);
+        assert_eq!(buffer.get_edit_mode(), crate::buffer::EditMode::SingleLine);
+
         // Test status message
         buffer.set_status_message("Test status".to_string());
         assert_eq!(buffer.get_status_message(), "Test status");
@@ -182,6 +189,36 @@ mod tests {
         // Set current match
         buffer.set_current_match(Some((2, 10)));
         assert_eq!(buffer.get_current_match(), Some((2, 10)));
+    }
+
+    #[test]
+    fn test_buffer_edit_mode_transitions() {
+        let mut buffer = Buffer::new(1);
+        use crate::buffer::EditMode;
+
+        // Should start in SingleLine mode
+        assert_eq!(buffer.get_edit_mode(), EditMode::SingleLine);
+
+        // Test transition to MultiLine
+        buffer.set_edit_mode(EditMode::MultiLine);
+        assert_eq!(buffer.get_edit_mode(), EditMode::MultiLine);
+
+        // Test that mode persists
+        buffer.set_mode(AppMode::Results); // Change app mode
+        assert_eq!(buffer.get_edit_mode(), EditMode::MultiLine); // Edit mode unchanged
+
+        // Test transition back to SingleLine
+        buffer.set_edit_mode(EditMode::SingleLine);
+        assert_eq!(buffer.get_edit_mode(), EditMode::SingleLine);
+
+        // Test that query input works in both modes
+        buffer.set_edit_mode(EditMode::SingleLine);
+        buffer.set_query("SELECT * FROM test".to_string());
+        assert_eq!(buffer.get_query(), "SELECT * FROM test");
+
+        buffer.set_edit_mode(EditMode::MultiLine);
+        buffer.set_query("SELECT *\nFROM test\nWHERE id = 1".to_string());
+        assert_eq!(buffer.get_query(), "SELECT *\nFROM test\nWHERE id = 1");
     }
 
     #[test]

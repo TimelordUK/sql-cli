@@ -22,6 +22,7 @@ use ratatui::{
 };
 use regex::Regex;
 use serde_json::Value;
+use sql_cli::buffer::{Buffer, BufferManager};
 use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
@@ -253,6 +254,48 @@ fn is_sql_delimiter(ch: char) -> bool {
 }
 
 impl EnhancedTuiApp {
+    // --- Buffer Compatibility Layer ---
+    // These methods provide a gradual migration path from direct field access to BufferAPI
+
+    /// Get current buffer if available (for reading)
+    fn current_buffer(&self) -> Option<&dyn sql_cli::buffer::BufferAPI> {
+        // For now return None - will be implemented when we activate BufferManager
+        None
+    }
+
+    /// Get current buffer if available (for writing)  
+    fn current_buffer_mut(&mut self) -> Option<&mut dyn sql_cli::buffer::BufferAPI> {
+        // For now return None - will be implemented when we activate BufferManager
+        None
+    }
+
+    // Compatibility wrapper for edit_mode
+    fn get_edit_mode(&self) -> EditMode {
+        if let Some(buffer) = self.current_buffer() {
+            // Convert from buffer::EditMode to local EditMode
+            match buffer.get_edit_mode() {
+                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
+                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
+            }
+        } else {
+            self.edit_mode.clone()
+        }
+    }
+
+    fn set_edit_mode(&mut self, mode: EditMode) {
+        // Update local field (will be removed later)
+        self.edit_mode = mode.clone();
+
+        // Also update in buffer if available
+        if let Some(buffer) = self.current_buffer_mut() {
+            let buffer_mode = match mode {
+                EditMode::SingleLine => sql_cli::buffer::EditMode::SingleLine,
+                EditMode::MultiLine => sql_cli::buffer::EditMode::MultiLine,
+            };
+            buffer.set_edit_mode(buffer_mode);
+        }
+    }
+
     fn sanitize_table_name(name: &str) -> String {
         // Replace spaces and other problematic characters with underscores
         // to create SQL-friendly table names
@@ -627,9 +670,9 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(3) => {
                 // Toggle between single-line and multi-line mode
-                match self.edit_mode {
+                match self.get_edit_mode() {
                     EditMode::SingleLine => {
-                        self.edit_mode = EditMode::MultiLine;
+                        self.set_edit_mode(EditMode::MultiLine);
                         let current_text = self.input.value().to_string();
 
                         // Pretty format the query for multi-line editing
@@ -650,7 +693,7 @@ impl EnhancedTuiApp {
                         self.status_message = "Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string();
                     }
                     EditMode::MultiLine => {
-                        self.edit_mode = EditMode::SingleLine;
+                        self.set_edit_mode(EditMode::SingleLine);
                         // Join lines with single space to create compact query
                         let text = self
                             .textarea
@@ -675,7 +718,7 @@ impl EnhancedTuiApp {
                 }
             }
             KeyCode::Enter => {
-                let query = match self.edit_mode {
+                let query = match self.get_edit_mode() {
                     EditMode::SingleLine => self.input.value().trim().to_string(),
                     EditMode::MultiLine => {
                         if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -3474,12 +3517,12 @@ impl EnhancedTuiApp {
                                 }
                                 AppMode::Search => {
                                     self.search_state.pattern = self.input.value().to_string();
-                                    self.search_in_results();
+                                    // TODO: self.search_in_results();
                                 }
                                 AppMode::ColumnSearch => {
                                     self.column_search_state.pattern =
                                         self.input.value().to_string();
-                                    self.search_columns();
+                                    // TODO: self.search_columns();
                                 }
                                 _ => {}
                             }

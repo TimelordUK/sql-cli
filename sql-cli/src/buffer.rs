@@ -27,7 +27,7 @@ pub enum AppMode {
     ColumnStats,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum EditMode {
     SingleLine,
     MultiLine,
@@ -145,6 +145,8 @@ pub trait BufferAPI {
     // --- Mode and Status ---
     fn get_mode(&self) -> AppMode;
     fn set_mode(&mut self, mode: AppMode);
+    fn get_edit_mode(&self) -> EditMode;
+    fn set_edit_mode(&mut self, mode: EditMode);
     fn get_status_message(&self) -> String;
     fn set_status_message(&mut self, message: String);
 
@@ -213,6 +215,9 @@ pub trait BufferAPI {
     fn clear_filters(&mut self);
     fn get_row_count(&self) -> usize;
     fn get_column_count(&self) -> usize;
+
+    // --- Debug ---
+    fn debug_dump(&self) -> String;
 }
 
 /// Represents a single buffer/tab with its own independent state
@@ -311,6 +316,14 @@ impl BufferAPI for Buffer {
 
     fn set_mode(&mut self, mode: AppMode) {
         self.mode = mode;
+    }
+
+    fn get_edit_mode(&self) -> EditMode {
+        self.edit_mode.clone()
+    }
+
+    fn set_edit_mode(&mut self, mode: EditMode) {
+        self.edit_mode = mode;
     }
 
     fn get_status_message(&self) -> String {
@@ -549,6 +562,124 @@ impl BufferAPI for Buffer {
             }
         }
         0
+    }
+
+    fn debug_dump(&self) -> String {
+        let mut output = String::new();
+        output.push_str("=== BUFFER DEBUG DUMP ===\n");
+        output.push_str(&format!("Buffer ID: {}\n", self.id));
+        output.push_str(&format!("Name: {}\n", self.name));
+        output.push_str(&format!("File Path: {:?}\n", self.file_path));
+        output.push_str(&format!("Modified: {}\n", self.modified));
+        output.push_str("\n--- Modes ---\n");
+        output.push_str(&format!("App Mode: {:?}\n", self.mode));
+        output.push_str(&format!("Edit Mode: {:?}\n", self.edit_mode));
+        output.push_str("\n--- Query State ---\n");
+        output.push_str(&format!("Current Input: '{}'\n", self.input.value()));
+        output.push_str(&format!("Input Cursor: {}\n", self.input.cursor()));
+        output.push_str(&format!("Last Query: '{}'\n", self.last_query));
+        output.push_str(&format!("Status Message: '{}'\n", self.status_message));
+        output.push_str("\n--- Results ---\n");
+        output.push_str(&format!("Has Results: {}\n", self.results.is_some()));
+        output.push_str(&format!("Row Count: {}\n", self.get_row_count()));
+        output.push_str(&format!("Column Count: {}\n", self.get_column_count()));
+        output.push_str(&format!(
+            "Selected Row: {:?}\n",
+            self.table_state.selected()
+        ));
+        output.push_str(&format!("Current Column: {}\n", self.current_column));
+        output.push_str(&format!("Scroll Offset: {:?}\n", self.scroll_offset));
+        output.push_str("\n--- Filtering ---\n");
+        output.push_str(&format!("Filter Active: {}\n", self.filter_state.active));
+        output.push_str(&format!(
+            "Filter Pattern: '{}'\n",
+            self.filter_state.pattern
+        ));
+        output.push_str(&format!(
+            "Has Filtered Data: {}\n",
+            self.filtered_data.is_some()
+        ));
+        output.push_str(&format!(
+            "Fuzzy Filter Active: {}\n",
+            self.fuzzy_filter_state.active
+        ));
+        output.push_str(&format!(
+            "Fuzzy Pattern: '{}'\n",
+            self.fuzzy_filter_state.pattern
+        ));
+        output.push_str("\n--- Search ---\n");
+        output.push_str(&format!(
+            "Search Pattern: '{}'\n",
+            self.search_state.pattern
+        ));
+        output.push_str(&format!(
+            "Search Matches: {} found\n",
+            self.search_state.matches.len()
+        ));
+        output.push_str(&format!(
+            "Current Match: {:?}\n",
+            self.search_state.current_match
+        ));
+        output.push_str(&format!("Match Index: {}\n", self.search_state.match_index));
+        output.push_str("\n--- Column Search ---\n");
+        output.push_str(&format!(
+            "Column Search Pattern: '{}'\n",
+            self.column_search_state.pattern
+        ));
+        output.push_str(&format!(
+            "Matching Columns: {:?}\n",
+            self.column_search_state.matching_columns
+        ));
+        output.push_str("\n--- Sorting ---\n");
+        output.push_str(&format!("Sort Column: {:?}\n", self.sort_state.column));
+        output.push_str(&format!("Sort Order: {:?}\n", self.sort_state.order));
+        output.push_str("\n--- Display Options ---\n");
+        output.push_str(&format!("Compact Mode: {}\n", self.compact_mode));
+        output.push_str(&format!("Show Row Numbers: {}\n", self.show_row_numbers));
+        output.push_str(&format!("Case Insensitive: {}\n", self.case_insensitive));
+        output.push_str(&format!("Pinned Columns: {:?}\n", self.pinned_columns));
+        output.push_str(&format!("Column Widths: {:?}\n", self.column_widths));
+        output.push_str(&format!("Viewport Lock: {}\n", self.viewport_lock));
+        output.push_str(&format!(
+            "Viewport Lock Row: {:?}\n",
+            self.viewport_lock_row
+        ));
+        output.push_str("\n--- CSV/Data Source ---\n");
+        output.push_str(&format!("CSV Mode: {}\n", self.csv_mode));
+        output.push_str(&format!("CSV Table Name: '{}'\n", self.csv_table_name));
+        output.push_str(&format!("Has CSV Client: {}\n", self.csv_client.is_some()));
+        output.push_str(&format!(
+            "Has Cached Data: {}\n",
+            self.cached_data.is_some()
+        ));
+        output.push_str("\n--- Undo/Redo ---\n");
+        output.push_str(&format!("Undo Stack Size: {}\n", self.undo_stack.len()));
+        output.push_str(&format!("Redo Stack Size: {}\n", self.redo_stack.len()));
+        output.push_str(&format!(
+            "Kill Ring: '{}'\n",
+            if self.kill_ring.len() > 50 {
+                format!(
+                    "{}... ({} chars)",
+                    &self.kill_ring[..50],
+                    self.kill_ring.len()
+                )
+            } else {
+                self.kill_ring.clone()
+            }
+        ));
+        output.push_str("\n--- Stats ---\n");
+        output.push_str(&format!(
+            "Has Column Stats: {}\n",
+            self.column_stats.is_some()
+        ));
+        output.push_str(&format!("Last Visible Rows: {}\n", self.last_visible_rows));
+        output.push_str(&format!("Last Results Row: {:?}\n", self.last_results_row));
+        output.push_str(&format!(
+            "Last Scroll Offset: {:?}\n",
+            self.last_scroll_offset
+        ));
+        output.push_str("\n=== END BUFFER DEBUG ===\n");
+        output
     }
 }
 
