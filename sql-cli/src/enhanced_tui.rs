@@ -1144,7 +1144,7 @@ impl EnhancedTuiApp {
                 self.mode = AppMode::Results;
                 // Restore previous position or default to 0
                 let row = self.get_last_results_row().unwrap_or(0);
-                self.table_state.select(Some(row));
+                self.get_table_state_mut().select(Some(row));
 
                 // Restore the exact scroll offset from when we left
                 self.set_scroll_offset(self.get_last_scroll_offset());
@@ -1409,22 +1409,22 @@ impl EnhancedTuiApp {
                     self.set_status_message("Yank cancelled".to_string());
                 } else {
                     // Save current position before switching to Command mode
-                    if let Some(selected) = self.table_state.selected() {
+                    if let Some(selected) = self.get_table_state().selected() {
                         self.set_last_results_row(Some(selected));
                         self.set_last_scroll_offset(self.get_scroll_offset());
                     }
                     self.mode = AppMode::Command;
-                    self.table_state.select(None);
+                    self.get_table_state_mut().select(None);
                 }
             }
             KeyCode::Up => {
                 // Save current position before switching to Command mode
-                if let Some(selected) = self.table_state.selected() {
+                if let Some(selected) = self.get_table_state().selected() {
                     self.last_results_row = Some(selected);
                     self.last_scroll_offset = self.get_scroll_offset();
                 }
                 self.mode = AppMode::Command;
-                self.table_state.select(None);
+                self.get_table_state_mut().select(None);
             }
             // Vim-like navigation
             KeyCode::Char('j') | KeyCode::Down => {
@@ -2097,7 +2097,7 @@ impl EnhancedTuiApp {
                 }
 
                 self.mode = AppMode::Results;
-                self.table_state.select(Some(0));
+                self.get_table_state_mut().select(Some(0));
             }
             Err(e) => {
                 let duration = start_time.elapsed();
@@ -2580,13 +2580,13 @@ impl EnhancedTuiApp {
             // Update viewport size before navigation
             self.update_viewport_size();
 
-            let current = self.table_state.selected().unwrap_or(0);
+            let current = self.get_table_state().selected().unwrap_or(0);
             if current >= total_rows - 1 {
                 return;
             } // Already at bottom
 
             let new_position = current + 1;
-            self.table_state.select(Some(new_position));
+            self.get_table_state_mut().select(Some(new_position));
 
             // Update viewport based on lock mode
             if self.viewport_lock {
@@ -2612,13 +2612,13 @@ impl EnhancedTuiApp {
     }
 
     fn previous_row(&mut self) {
-        let current = self.table_state.selected().unwrap_or(0);
+        let current = self.get_table_state().selected().unwrap_or(0);
         if current == 0 {
             return;
         } // Already at top
 
         let new_position = current - 1;
-        self.table_state.select(Some(new_position));
+        self.get_table_state_mut().select(Some(new_position));
 
         // Update viewport based on lock mode
         if self.viewport_lock {
@@ -2699,7 +2699,7 @@ impl EnhancedTuiApp {
     }
 
     fn goto_first_row(&mut self) {
-        self.table_state.select(Some(0));
+        self.get_table_state_mut().select(Some(0));
         let mut offset = self.get_scroll_offset();
         offset.0 = 0; // Reset viewport to top
         self.set_scroll_offset(offset);
@@ -2922,7 +2922,7 @@ impl EnhancedTuiApp {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
             let last_row = total_rows - 1;
-            self.table_state.select(Some(last_row));
+            self.get_table_state_mut().select(Some(last_row));
             // Position viewport to show the last row at the bottom
             let visible_rows = self.last_visible_rows;
             let mut offset = self.get_scroll_offset();
@@ -2935,10 +2935,10 @@ impl EnhancedTuiApp {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
             let visible_rows = self.last_visible_rows;
-            let current = self.table_state.selected().unwrap_or(0);
+            let current = self.get_table_state().selected().unwrap_or(0);
             let new_position = (current + visible_rows).min(total_rows - 1);
 
-            self.table_state.select(Some(new_position));
+            self.get_table_state_mut().select(Some(new_position));
 
             // Scroll viewport down by a page
             let mut offset = self.get_scroll_offset();
@@ -2949,10 +2949,10 @@ impl EnhancedTuiApp {
 
     fn page_up(&mut self) {
         let visible_rows = self.last_visible_rows;
-        let current = self.table_state.selected().unwrap_or(0);
+        let current = self.get_table_state().selected().unwrap_or(0);
         let new_position = current.saturating_sub(visible_rows);
 
-        self.table_state.select(Some(new_position));
+        self.get_table_state_mut().select(Some(new_position));
 
         // Scroll viewport up by a page
         let mut offset = self.get_scroll_offset();
@@ -2978,7 +2978,7 @@ impl EnhancedTuiApp {
                     self.search_state.match_index = 0;
                     self.search_state.current_match = Some(self.search_state.matches[0]);
                     let (row, _) = self.search_state.matches[0];
-                    self.table_state.select(Some(row));
+                    self.get_table_state_mut().select(Some(row));
                     self.set_status_message(format!(
                         "Found {} matches",
                         self.search_state.matches.len()
@@ -2997,7 +2997,7 @@ impl EnhancedTuiApp {
             self.search_state.match_index =
                 (self.search_state.match_index + 1) % self.search_state.matches.len();
             let (row, _) = self.search_state.matches[self.search_state.match_index];
-            self.table_state.select(Some(row));
+            self.get_table_state_mut().select(Some(row));
             self.search_state.current_match =
                 Some(self.search_state.matches[self.search_state.match_index]);
             self.set_status_message(format!(
@@ -3016,7 +3016,7 @@ impl EnhancedTuiApp {
                 self.search_state.match_index - 1
             };
             let (row, _) = self.search_state.matches[self.search_state.match_index];
-            self.table_state.select(Some(row));
+            self.get_table_state_mut().select(Some(row));
             self.search_state.current_match =
                 Some(self.search_state.matches[self.search_state.match_index]);
             self.set_status_message(format!(
@@ -3071,7 +3071,7 @@ impl EnhancedTuiApp {
                 self.filter_state.active = true;
 
                 // Reset table state but preserve filtered data
-                self.table_state = TableState::default();
+                *self.get_table_state_mut() = TableState::default();
                 self.set_scroll_offset((0, 0));
                 self.current_column = 0;
 
@@ -3176,7 +3176,7 @@ impl EnhancedTuiApp {
                 filter_type, match_count, pattern
             ));
             // Reset table state for new filtered view
-            self.table_state = TableState::default();
+            *self.get_table_state_mut() = TableState::default();
             self.set_scroll_offset((0, 0));
         } else {
             let filter_type = if pattern.starts_with('\'') {
@@ -3467,7 +3467,7 @@ impl EnhancedTuiApp {
     }
 
     fn reset_table_state(&mut self) {
-        self.table_state = TableState::default();
+        *self.get_table_state_mut() = TableState::default();
         self.set_scroll_offset((0, 0));
         self.current_column = 0;
         self.set_last_results_row(None); // Reset saved position for new results
@@ -3682,7 +3682,7 @@ impl EnhancedTuiApp {
 
     fn yank_cell(&mut self) {
         if let Some(results) = &self.results {
-            if let Some(selected_row) = self.table_state.selected() {
+            if let Some(selected_row) = self.get_table_state().selected() {
                 if let Some(row_data) = results.data.get(selected_row) {
                     if let Some(obj) = row_data.as_object() {
                         let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -3731,7 +3731,7 @@ impl EnhancedTuiApp {
 
     fn yank_row(&mut self) {
         if let Some(results) = &self.results {
-            if let Some(selected_row) = self.table_state.selected() {
+            if let Some(selected_row) = self.get_table_state().selected() {
                 if let Some(row_data) = results.data.get(selected_row) {
                     // Convert row to tab-separated values
                     if let Some(obj) = row_data.as_object() {
@@ -5163,7 +5163,7 @@ impl EnhancedTuiApp {
                 // In results mode, show navigation and data info
                 let total_rows = self.get_row_count();
                 if total_rows > 0 {
-                    let selected = self.table_state.selected().unwrap_or(0) + 1;
+                    let selected = self.get_table_state().selected().unwrap_or(0) + 1;
                     spans.push(Span::raw(" | "));
 
                     // Show selection mode
@@ -5207,7 +5207,9 @@ impl EnhancedTuiApp {
 
                                     // In cell mode, show the current cell value
                                     if self.selection_mode == SelectionMode::Cell {
-                                        if let Some(selected_row) = self.table_state.selected() {
+                                        if let Some(selected_row) =
+                                            self.get_table_state().selected()
+                                        {
                                             if let Some(row_data) = results.data.get(selected_row) {
                                                 if let Some(row_obj) = row_data.as_object() {
                                                     if let Some(value) =
@@ -5655,7 +5657,7 @@ impl EnhancedTuiApp {
             Cell::from(header_text).style(style)
         }));
 
-        let selected_row = self.table_state.selected().unwrap_or(0);
+        let selected_row = self.get_table_state().selected().unwrap_or(0);
 
         // Create data rows (already filtered to visible rows and columns)
         let rows: Vec<Row> = data_to_display
@@ -5795,7 +5797,7 @@ impl EnhancedTuiApp {
             table = table.highlight_symbol("  ");
         }
 
-        let mut table_state = self.table_state.clone();
+        let mut table_state = self.get_table_state().clone();
         // Adjust table state to use relative position within the viewport
         if let Some(selected) = table_state.selected() {
             let relative_position = selected.saturating_sub(row_viewport_start);
@@ -6437,7 +6439,7 @@ impl EnhancedTuiApp {
                         let max_row = self.get_current_data().map(|d| d.len()).unwrap_or(0);
 
                         if target_row < max_row {
-                            self.table_state.select(Some(target_row));
+                            self.get_table_state_mut().select(Some(target_row));
 
                             // Adjust viewport to center the target row
                             let visible_rows = self.last_visible_rows;
