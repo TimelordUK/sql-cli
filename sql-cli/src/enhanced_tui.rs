@@ -2535,6 +2535,7 @@ impl EnhancedTuiApp {
             // When in cache mode, use CSV client to query cached data
             if let Some(cached_data) = self.get_cached_data() {
                 let mut csv_client = CsvApiClient::new();
+                csv_client.set_case_insensitive(self.get_case_insensitive());
                 csv_client.load_from_json(cached_data.clone(), "cached_data")?;
 
                 csv_client.query_csv(query).map(|r| QueryResponse {

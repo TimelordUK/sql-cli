@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use sql_cli::where_ast::{evaluate_where_expr, WhereExpr};
+use sql_cli::where_ast::{evaluate_where_expr, evaluate_where_expr_with_options, WhereExpr};
 use sql_cli::where_parser::WhereParser;
 
 #[test]
@@ -25,7 +25,7 @@ fn test_case_insensitive_contains() {
         true,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr(&expr, &data).unwrap(), true);
+    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn test_case_insensitive_starts_with() {
         true,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr(&expr, &data).unwrap(), true);
+    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
 }
 
 #[test]
@@ -75,7 +75,68 @@ fn test_case_insensitive_ends_with() {
         true,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr(&expr, &data).unwrap(), true);
+    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
+}
+
+#[test]
+fn test_case_insensitive_equality() {
+    // Test case for the exact issue reported with confirmationStatus = 'pending'
+    let data = json!({
+        "confirmationStatus": "Pending",  // Note: capital P
+        "status": "active"
+    });
+
+    // Case-sensitive equality (should fail with 'pending')
+    let expr = WhereParser::parse_with_options(
+        "confirmationStatus = 'pending'",
+        vec!["confirmationStatus".to_string(), "status".to_string()],
+        false,
+    )
+    .unwrap();
+    assert_eq!(evaluate_where_expr_with_options(&expr, &data, false).unwrap(), false);
+
+    // Case-insensitive equality (should succeed with 'pending')
+    let expr = WhereParser::parse_with_options(
+        "confirmationStatus = 'pending'",
+        vec!["confirmationStatus".to_string(), "status".to_string()],
+        true,
+    )
+    .unwrap();
+    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
+
+    // Case-insensitive equality with exact case (should also succeed)
+    let expr = WhereParser::parse_with_options(
+        "confirmationStatus = 'Pending'",
+        vec!["confirmationStatus".to_string(), "status".to_string()],
+        true,
+    )
+    .unwrap();
+    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
+}
+
+#[test]
+fn test_case_insensitive_not_equal() {
+    let data = json!({
+        "status": "Active"
+    });
+
+    // Case-sensitive not equal
+    let expr = WhereParser::parse_with_options(
+        "status != 'active'",
+        vec!["status".to_string()],
+        false,
+    )
+    .unwrap();
+    assert_eq!(evaluate_where_expr_with_options(&expr, &data, false).unwrap(), true);
+
+    // Case-insensitive not equal (should be false since 'Active' equals 'active' ignoring case)
+    let expr = WhereParser::parse_with_options(
+        "status != 'active'",
+        vec!["status".to_string()],
+        true,
+    )
+    .unwrap();
+    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), false);
 }
 
 #[test]
@@ -97,5 +158,5 @@ fn test_case_insensitive_complex_query() {
         true,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr(&expr, &data).unwrap(), true);
+    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
 }

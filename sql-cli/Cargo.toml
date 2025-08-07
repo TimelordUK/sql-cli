@@ -83,6 +83,10 @@ path = "test_paren_method_completion.rs"
 name = "test-column-pinning"
 path = "test_column_pinning.rs"
 
+[[bin]]
+name = "test-trades-equality"
+path = "test_trades_equality.rs"
+
 
 
 [dependencies]

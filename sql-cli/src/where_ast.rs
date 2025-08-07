@@ -211,14 +211,18 @@ pub fn format_where_ast(expr: &WhereExpr, indent: usize) -> String {
 }
 
 pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
+    evaluate_where_expr_with_options(expr, row, false)
+}
+
+pub fn evaluate_where_expr_with_options(expr: &WhereExpr, row: &Value, case_insensitive: bool) -> Result<bool> {
     match expr {
         WhereExpr::And(left, right) => {
-            Ok(evaluate_where_expr(left, row)? && evaluate_where_expr(right, row)?)
+            Ok(evaluate_where_expr_with_options(left, row, case_insensitive)? && evaluate_where_expr_with_options(right, row, case_insensitive)?)
         }
         WhereExpr::Or(left, right) => {
-            Ok(evaluate_where_expr(left, row)? || evaluate_where_expr(right, row)?)
+            Ok(evaluate_where_expr_with_options(left, row, case_insensitive)? || evaluate_where_expr_with_options(right, row, case_insensitive)?)
         }
-        WhereExpr::Not(inner) => Ok(!evaluate_where_expr(inner, row)?),
+        WhereExpr::Not(inner) => Ok(!evaluate_where_expr_with_options(inner, row, case_insensitive)?),
 
         WhereExpr::Equal(column, value) => {
             if let Some(field_value) = row.get(column) {
@@ -229,9 +233,15 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
                     return Ok((n1 - n2).abs() < f64::EPSILON);
                 }
 
-                // Fall back to exact matching
+                // Fall back to string matching (with optional case insensitivity)
                 match (&left, value) {
-                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 == s2),
+                    (WhereValue::String(s1), WhereValue::String(s2)) => {
+                        if case_insensitive {
+                            Ok(s1.to_lowercase() == s2.to_lowercase())
+                        } else {
+                            Ok(s1 == s2)
+                        }
+                    },
                     (WhereValue::Null, WhereValue::Null) => Ok(true),
                     _ => Ok(false),
                 }
@@ -240,9 +250,10 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
             }
         }
 
-        WhereExpr::NotEqual(column, value) => Ok(!evaluate_where_expr(
+        WhereExpr::NotEqual(column, value) => Ok(!evaluate_where_expr_with_options(
             &WhereExpr::Equal(column.clone(), value.clone()),
             row,
+            case_insensitive,
         )?),
 
         WhereExpr::GreaterThan(column, value) => {

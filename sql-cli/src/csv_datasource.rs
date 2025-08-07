@@ -1,7 +1,7 @@
 use crate::api_client::{QueryInfo, QueryResponse};
 use crate::csv_fixes::{build_column_lookup, find_column_case_insensitive, parse_column_name};
 use crate::recursive_parser::{OrderByColumn, Parser, SortDirection};
-use crate::where_ast::evaluate_where_expr;
+use crate::where_ast::evaluate_where_expr_with_options;
 use crate::where_parser::WhereParser;
 use anyhow::Result;
 use csv;
@@ -249,7 +249,7 @@ impl CsvDataSource {
 
         let mut filtered = Vec::new();
         for row in data {
-            if evaluate_where_expr(&expr, &row)? {
+            if evaluate_where_expr_with_options(&expr, &row, case_insensitive)? {
                 filtered.push(row);
             }
         }
