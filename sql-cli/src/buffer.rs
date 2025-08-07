@@ -197,6 +197,8 @@ pub trait BufferAPI {
     fn add_pinned_column(&mut self, col: usize);
     fn remove_pinned_column(&mut self, col: usize);
     fn clear_pinned_columns(&mut self);
+    fn get_column_widths(&self) -> &Vec<u16>;
+    fn set_column_widths(&mut self, widths: Vec<u16>);
     fn is_case_insensitive(&self) -> bool;
     fn set_case_insensitive(&mut self, case_insensitive: bool);
 
@@ -509,6 +511,14 @@ impl BufferAPI for Buffer {
 
     fn clear_pinned_columns(&mut self) {
         self.pinned_columns.clear();
+    }
+
+    fn get_column_widths(&self) -> &Vec<u16> {
+        &self.column_widths
+    }
+
+    fn set_column_widths(&mut self, widths: Vec<u16>) {
+        self.column_widths = widths;
     }
 
     fn is_case_insensitive(&self) -> bool {

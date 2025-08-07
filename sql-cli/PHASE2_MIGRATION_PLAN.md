@@ -28,7 +28,7 @@ These are buffer-specific and should move:
 - `filtered_data` - Filtered view of results
 
 #### Display State
-- `column_widths` - Calculated widths for this buffer's columns
+- ✅ `column_widths` - Calculated widths for this buffer's columns **[DONE - Wrapper added, migrated, tested]**
 - ✅ `scroll_offset` - Current scroll position (row, col) **[DONE - Wrapper added, tested, working]**
 - ✅ `current_column` - Currently selected column **[DONE - Wrapper added, migrated, tested]**
 - ✅ `pinned_columns` - Which columns are pinned in this buffer **[DONE - Wrapper added, migrated, tested]**

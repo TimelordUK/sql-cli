@@ -577,6 +577,22 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn get_column_widths(&self) -> Vec<u16> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_column_widths().clone()
+        } else {
+            self.column_widths.clone()
+        }
+    }
+
+    fn set_column_widths(&mut self, widths: Vec<u16>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_column_widths(widths.clone());
+        } else {
+            self.column_widths = widths;
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -3684,7 +3700,7 @@ impl EnhancedTuiApp {
                         widths.push(width);
                     }
 
-                    self.column_widths = widths;
+                    self.set_column_widths(widths);
                 }
             }
         }
@@ -3740,7 +3756,7 @@ impl EnhancedTuiApp {
                         widths.push(optimal_width as u16);
                     }
 
-                    self.column_widths = widths;
+                    self.set_column_widths(widths);
                 }
             }
         }
@@ -5587,8 +5603,9 @@ impl EnhancedTuiApp {
         // Calculate space used by pinned columns
         let mut pinned_width = 0;
         for &(idx, _) in &pinned_headers {
-            if idx < self.column_widths.len() {
-                pinned_width += self.column_widths[idx] as usize;
+            let column_widths = self.get_column_widths();
+            if idx < column_widths.len() {
+                pinned_width += column_widths[idx] as usize;
             } else {
                 pinned_width += 15; // Default width
             }
@@ -5596,7 +5613,8 @@ impl EnhancedTuiApp {
 
         // Calculate how many scrollable columns can fit in remaining space
         let remaining_width = available_width.saturating_sub(pinned_width);
-        let max_visible_scrollable_cols = if !self.column_widths.is_empty() {
+        let column_widths = self.get_column_widths();
+        let max_visible_scrollable_cols = if !column_widths.is_empty() {
             let mut width_used = 0;
             let mut cols_that_fit = 0;
 
@@ -5604,8 +5622,8 @@ impl EnhancedTuiApp {
                 if idx >= headers.len() {
                     break;
                 }
-                let col_width = if idx < self.column_widths.len() {
-                    self.column_widths[idx] as usize
+                let col_width = if idx < column_widths.len() {
+                    column_widths[idx] as usize
                 } else {
                     15
                 };
@@ -5908,11 +5926,12 @@ impl EnhancedTuiApp {
         }
 
         // Add data column constraints
-        if !self.column_widths.is_empty() {
+        let column_widths = self.get_column_widths();
+        if !column_widths.is_empty() {
             // Use calculated optimal widths for visible columns
             constraints.extend(visible_columns.iter().map(|(col_idx, _)| {
-                if *col_idx < self.column_widths.len() {
-                    Constraint::Length(self.column_widths[*col_idx])
+                if *col_idx < column_widths.len() {
+                    Constraint::Length(column_widths[*col_idx])
                 } else {
                     Constraint::Min(10) // Fallback
                 }
