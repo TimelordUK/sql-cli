@@ -1,0 +1,10 @@
+[alias]
+# Simple aliases that run formatting before build operations
+# Use: cargo fb    instead of cargo build
+# Use: cargo fr    instead of cargo run
+# Use: cargo ft    instead of cargo test
+
+# Note: These use shell scripts to ensure formatting happens first
+fb = "!./build.sh"
+fr = "!./run.sh"
+ft = "!./test.sh"
