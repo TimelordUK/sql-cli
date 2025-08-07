@@ -607,6 +607,20 @@ impl EnhancedTuiApp {
         // TODO: Update buffer when buffer system is fully integrated
     }
 
+    fn get_csv_table_name(&self) -> String {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_table_name()
+        } else {
+            self.csv_table_name.clone()
+        }
+    }
+
+    fn set_csv_table_name(&mut self, table_name: String) {
+        // Note: csv_table_name is stored in the buffer, but we also need to update local field for now
+        self.csv_table_name = table_name;
+        // TODO: Update buffer when buffer system is fully integrated
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -814,7 +828,7 @@ impl EnhancedTuiApp {
         // Configure the app for CSV mode
         app.csv_client = Some(csv_client.clone());
         app.set_csv_mode(true);
-        app.csv_table_name = table_name.clone();
+        app.set_csv_table_name(table_name.clone());
         app.current_buffer_name = Some(format!("{}", raw_name));
 
         // Replace the default buffer with a CSV buffer
@@ -908,7 +922,7 @@ impl EnhancedTuiApp {
         // Configure the app for JSON mode
         app.csv_client = Some(csv_client.clone());
         app.set_csv_mode(true); // Reuse CSV mode since the data structure is the same
-        app.csv_table_name = table_name.clone();
+        app.set_csv_table_name(table_name.clone());
         app.current_buffer_name = Some(format!("{}", raw_name));
 
         // Replace the default buffer with a JSON buffer
@@ -2225,7 +2239,7 @@ impl EnhancedTuiApp {
                         order_by: r.query.order_by,
                     },
                     source: Some("file".to_string()),
-                    table: Some(self.csv_table_name.clone()),
+                    table: Some(self.get_csv_table_name()),
                     cached: Some(false),
                 })
             } else {
@@ -5296,10 +5310,10 @@ impl EnhancedTuiApp {
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ));
-        } else if self.is_csv_mode() && !self.csv_table_name.is_empty() {
+        } else if self.is_csv_mode() && !self.get_csv_table_name().is_empty() {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                self.csv_table_name.clone(),
+                self.get_csv_table_name(),
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
@@ -5501,7 +5515,7 @@ impl EnhancedTuiApp {
             spans.push(Span::raw(&self.config.display.icons.file));
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                format!("CSV: {}", self.csv_table_name),
+                format!("CSV: {}", self.get_csv_table_name()),
                 Style::default().fg(Color::Green),
             ));
         } else if self.cache_mode {

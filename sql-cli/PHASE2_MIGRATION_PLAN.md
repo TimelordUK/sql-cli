@@ -41,7 +41,7 @@ These are buffer-specific and should move:
 #### CSV/Data State
 - `csv_client` - CSV data source for this buffer
 - ✅ `csv_mode` - Whether this buffer is in CSV mode **[DONE - Wrapper added, migrated, tested]**
-- `csv_table_name` - Table name for CSV data
+- ✅ `csv_table_name` - Table name for CSV data **[DONE - Wrapper added, migrated, tested]**
 - `cached_data` - Cached JSON data for this buffer
 
 #### Edit State
