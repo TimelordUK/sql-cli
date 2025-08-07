@@ -113,7 +113,11 @@ impl CommandHistory {
         };
 
         // Update command count
-        *self.command_counts.entry(command).or_insert(0) += 1;
+        *self.command_counts.entry(command.clone()).or_insert(0) += 1;
+
+        // Remove any existing entry with the same command to avoid duplicates
+        // This moves the command to the end of the history with updated timestamp
+        self.entries.retain(|e| e.command != command);
 
         self.entries.push(entry);
 
@@ -414,18 +418,33 @@ impl CommandHistory {
             return Ok(());
         }
 
-        let entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
+        let mut entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
+
+        // Deduplicate entries, keeping only the most recent of each command
+        // This cleans up any existing duplicates in the history file
+        let mut seen_commands = std::collections::HashSet::new();
+        let mut deduplicated = Vec::new();
+
+        // Process in reverse to keep the most recent version of each command
+        for entry in entries.into_iter().rev() {
+            if seen_commands.insert(entry.command.clone()) {
+                deduplicated.push(entry);
+            }
+        }
+
+        // Reverse back to chronological order
+        deduplicated.reverse();
 
         // Rebuild command counts
         self.command_counts.clear();
-        for entry in &entries {
+        for entry in &deduplicated {
             *self
                 .command_counts
                 .entry(entry.command.clone())
-                .or_insert(0) += 1;
+                .or_insert(0) = entry.execution_count;
         }
 
-        self.entries = entries;
+        self.entries = deduplicated;
         Ok(())
     }
 
