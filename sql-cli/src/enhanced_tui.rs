@@ -22,7 +22,7 @@ use ratatui::{
 };
 use regex::Regex;
 use serde_json::Value;
-use sql_cli::buffer::{Buffer, BufferAPI, BufferManager};
+use sql_cli::buffer::{BufferAPI, BufferManager};
 use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
@@ -495,6 +495,11 @@ impl EnhancedTuiApp {
 
     pub fn new_with_csv(csv_path: &str) -> Result<Self> {
         let mut csv_client = CsvApiClient::new();
+
+        // Load config to get case_insensitive_default
+        let config = Config::load().unwrap_or_default();
+        csv_client.set_case_insensitive(config.behavior.case_insensitive_default);
+
         let raw_name = std::path::Path::new(csv_path)
             .file_stem()
             .and_then(|s| s.to_str())
@@ -576,6 +581,11 @@ impl EnhancedTuiApp {
 
     pub fn new_with_json(json_path: &str) -> Result<Self> {
         let mut csv_client = CsvApiClient::new();
+
+        // Load config to get case_insensitive_default
+        let config = Config::load().unwrap_or_default();
+        csv_client.set_case_insensitive(config.behavior.case_insensitive_default);
+
         let raw_name = std::path::Path::new(json_path)
             .file_stem()
             .and_then(|s| s.to_str())

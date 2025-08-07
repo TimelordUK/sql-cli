@@ -186,7 +186,7 @@ impl Default for BehaviorConfig {
     fn default() -> Self {
         Self {
             auto_execute_on_load: true,
-            case_insensitive_default: false,
+            case_insensitive_default: true, // Default to case-insensitive for practical use
             max_display_rows: 10000,
             cache_dir: None,
             enable_history: true,
@@ -310,8 +310,8 @@ vim_mode = true
 # Automatically execute SELECT * when loading CSV/JSON files
 auto_execute_on_load = true
 
-# Use case-insensitive string comparisons by default
-case_insensitive_default = false
+# Use case-insensitive string comparisons by default (recommended for practical use)
+case_insensitive_default = true
 
 # Maximum rows to display without warning
 max_display_rows = 10000
