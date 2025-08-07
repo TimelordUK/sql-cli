@@ -496,6 +496,14 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn get_filter_state(&self) -> &FilterState {
+        &self.filter_state
+    }
+
+    fn get_filter_state_mut(&mut self) -> &mut FilterState {
+        &mut self.filter_state
+    }
+
     fn sanitize_table_name(name: &str) -> String {
         // Replace spaces and other problematic characters with underscores
         // to create SQL-friendly table names
@@ -1265,8 +1273,8 @@ impl EnhancedTuiApp {
                     &self.get_last_query_source().unwrap_or("None".to_string()),
                     if self.fuzzy_filter_state.active {
                         format!("Fuzzy: {}", self.fuzzy_filter_state.pattern)
-                    } else if self.filter_state.active {
-                        format!("Filter: {}", self.filter_state.pattern)
+                    } else if self.get_filter_state().active {
+                        format!("Filter: {}", self.get_filter_state().pattern)
                     } else {
                         "None".to_string()
                     }
@@ -1546,7 +1554,7 @@ impl EnhancedTuiApp {
             // Regex filter functionality (uppercase F)
             KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.mode = AppMode::Filter;
-                self.filter_state.pattern.clear();
+                self.get_filter_state_mut().pattern.clear();
                 // Save SQL query and use temporary input for filter display
                 self.undo_stack
                     .push((self.input.value().to_string(), self.input.cursor()));
@@ -1711,16 +1719,16 @@ impl EnhancedTuiApp {
                 self.mode = AppMode::Results;
             }
             KeyCode::Backspace => {
-                self.filter_state.pattern.pop();
+                self.get_filter_state_mut().pattern.pop();
                 // Update input for rendering
-                self.input = tui_input::Input::new(self.filter_state.pattern.clone())
-                    .with_cursor(self.filter_state.pattern.len());
+                let pattern = self.get_filter_state().pattern.clone();
+                self.input = tui_input::Input::new(pattern.clone()).with_cursor(pattern.len());
             }
             KeyCode::Char(c) => {
-                self.filter_state.pattern.push(c);
+                self.get_filter_state_mut().pattern.push(c);
                 // Update input for rendering
-                self.input = tui_input::Input::new(self.filter_state.pattern.clone())
-                    .with_cursor(self.filter_state.pattern.len());
+                let pattern = self.get_filter_state().pattern.clone();
+                self.input = tui_input::Input::new(pattern.clone()).with_cursor(pattern.len());
             }
             _ => {}
         }
@@ -3028,15 +3036,15 @@ impl EnhancedTuiApp {
     }
 
     fn apply_filter(&mut self) {
-        if self.filter_state.pattern.is_empty() {
+        if self.get_filter_state().pattern.is_empty() {
             self.filtered_data = None;
-            self.filter_state.active = false;
+            self.get_filter_state_mut().active = false;
             self.set_status_message("Filter cleared".to_string());
             return;
         }
 
         if let Some(results) = &self.results {
-            if let Ok(regex) = Regex::new(&self.filter_state.pattern) {
+            if let Ok(regex) = Regex::new(&self.get_filter_state().pattern) {
                 let mut filtered = Vec::new();
 
                 for item in &results.data {
@@ -3067,8 +3075,8 @@ impl EnhancedTuiApp {
 
                 let filtered_count = filtered.len();
                 self.filtered_data = Some(filtered);
-                self.filter_state.regex = Some(regex);
-                self.filter_state.active = true;
+                self.get_filter_state_mut().regex = Some(regex);
+                self.get_filter_state_mut().active = true;
 
                 // Reset table state but preserve filtered data
                 *self.get_table_state_mut() = TableState::default();
@@ -3102,7 +3110,7 @@ impl EnhancedTuiApp {
         let mut filtered_indices = Vec::new();
 
         // Get the data to filter - either already filtered data or original results
-        let data_to_filter = if self.filter_state.active && self.filtered_data.is_some() {
+        let data_to_filter = if self.get_filter_state().active && self.filtered_data.is_some() {
             // If regex filter is active, fuzzy filter on top of that
             self.filtered_data.as_ref()
         } else if let Some(results) = &self.results {
@@ -3474,7 +3482,7 @@ impl EnhancedTuiApp {
         self.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
 
         // Clear filter state to prevent old filtered data from persisting
-        self.filter_state = FilterState {
+        *self.get_filter_state_mut() = FilterState {
             pattern: String::new(),
             regex: None,
             active: false,
@@ -3836,7 +3844,8 @@ impl EnhancedTuiApp {
     fn yank_all(&mut self) {
         if let Some(results) = &self.results {
             // Get the actual data to yank (filtered or all)
-            let data_to_export = if self.filter_state.active || self.fuzzy_filter_state.active {
+            let data_to_export = if self.get_filter_state().active || self.fuzzy_filter_state.active
+            {
                 // Use filtered data
                 self.get_filtered_json_data()
             } else {
@@ -3873,12 +3882,13 @@ impl EnhancedTuiApp {
                     match arboard::Clipboard::new() {
                         Ok(mut clipboard) => match clipboard.set_text(&csv_text) {
                             Ok(_) => {
-                                let filter_info =
-                                    if self.filter_state.active || self.fuzzy_filter_state.active {
-                                        " (filtered)"
-                                    } else {
-                                        ""
-                                    };
+                                let filter_info = if self.get_filter_state().active
+                                    || self.fuzzy_filter_state.active
+                                {
+                                    " (filtered)"
+                                } else {
+                                    ""
+                                };
                                 self.set_status_message(format!(
                                     "Yanked all data{}: {} rows",
                                     filter_info,
@@ -3951,7 +3961,8 @@ impl EnhancedTuiApp {
                             // Update the appropriate filter/search state
                             match self.mode {
                                 AppMode::Filter => {
-                                    self.filter_state.pattern = self.input.value().to_string();
+                                    self.get_filter_state_mut().pattern =
+                                        self.input.value().to_string();
                                     self.apply_filter();
                                 }
                                 AppMode::FuzzyFilter => {
@@ -3989,7 +4000,8 @@ impl EnhancedTuiApp {
     fn export_to_json(&mut self) {
         if let Some(results) = &self.results {
             // Get the actual data to export (filtered or all)
-            let data_to_export = if self.filter_state.active || self.fuzzy_filter_state.active {
+            let data_to_export = if self.get_filter_state().active || self.fuzzy_filter_state.active
+            {
                 self.get_filtered_json_data()
             } else {
                 results.data.clone()
@@ -4003,7 +4015,7 @@ impl EnhancedTuiApp {
                 Ok(file) => match serde_json::to_writer_pretty(file, &data_to_export) {
                     Ok(_) => {
                         let filter_info =
-                            if self.filter_state.active || self.fuzzy_filter_state.active {
+                            if self.get_filter_state().active || self.fuzzy_filter_state.active {
                                 " (filtered)"
                             } else {
                                 ""
@@ -4038,7 +4050,7 @@ impl EnhancedTuiApp {
                     .iter()
                     .filter_map(|&idx| results.data.get(idx).cloned())
                     .collect()
-            } else if self.filter_state.active && self.filtered_data.is_some() {
+            } else if self.get_filter_state().active && self.filtered_data.is_some() {
                 // Convert filtered_data back to JSON values
                 // This is a bit inefficient but maintains consistency
                 if let Some(first_row) = results.data.first() {
@@ -5253,10 +5265,10 @@ impl EnhancedTuiApp {
                             format!("Fuzzy: {}", self.fuzzy_filter_state.pattern),
                             Style::default().fg(Color::Magenta),
                         ));
-                    } else if self.filter_state.active {
+                    } else if self.get_filter_state().active {
                         spans.push(Span::raw(" | "));
                         spans.push(Span::styled(
-                            format!("Filter: {}", self.filter_state.pattern),
+                            format!("Filter: {}", self.get_filter_state().pattern),
                             Style::default().fg(Color::Cyan),
                         ));
                     }
@@ -5708,8 +5720,8 @@ impl EnhancedTuiApp {
                     }
 
                     // Highlight filter matches
-                    if self.filter_state.active {
-                        if let Some(ref regex) = self.filter_state.regex {
+                    if self.get_filter_state().active {
+                        if let Some(ref regex) = self.get_filter_state().regex {
                             if regex.is_match(cell) {
                                 style = style.fg(Color::Cyan);
                             }
