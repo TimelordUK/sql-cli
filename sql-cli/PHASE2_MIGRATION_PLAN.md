@@ -23,7 +23,7 @@ These are buffer-specific and should move:
 #### Filtering/Search State
 - ✅ `filter_state` - Active filters on this buffer's data **[DONE - Wrapper added, tested, working]**
 - `fuzzy_filter_state` - Fuzzy filter state
-- `search_state` - Search within results
+- ✅ `search_state` - Search within results **[DONE - Wrapper added, migrated, tested]**
 - `column_search_state` - Column search state
 - ✅ `filtered_data` - Filtered view of results **[DONE - Wrapper added, migrated, tested]**
 

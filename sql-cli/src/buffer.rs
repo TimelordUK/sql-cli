@@ -177,6 +177,9 @@ pub trait BufferAPI {
     fn set_search_matches(&mut self, matches: Vec<(usize, usize)>);
     fn get_current_match(&self) -> Option<(usize, usize)>;
     fn set_current_match(&mut self, match_pos: Option<(usize, usize)>);
+    fn get_search_match_index(&self) -> usize;
+    fn set_search_match_index(&mut self, index: usize);
+    fn clear_search_state(&mut self);
 
     // --- Sorting ---
     fn get_sort_column(&self) -> Option<usize>;
@@ -465,6 +468,21 @@ impl BufferAPI for Buffer {
 
     fn set_current_match(&mut self, match_pos: Option<(usize, usize)>) {
         self.search_state.current_match = match_pos;
+    }
+
+    fn get_search_match_index(&self) -> usize {
+        self.search_state.match_index
+    }
+
+    fn set_search_match_index(&mut self, index: usize) {
+        self.search_state.match_index = index;
+    }
+
+    fn clear_search_state(&mut self) {
+        self.search_state.pattern.clear();
+        self.search_state.matches.clear();
+        self.search_state.current_match = None;
+        self.search_state.match_index = 0;
     }
 
     // --- Sorting ---

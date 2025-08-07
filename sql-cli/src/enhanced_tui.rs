@@ -809,6 +809,106 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Wrapper methods for search_state (uses buffer system)
+    fn get_search_pattern(&self) -> String {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_search_pattern()
+        } else {
+            self.search_state.pattern.clone()
+        }
+    }
+
+    fn set_search_pattern(&mut self, pattern: String) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_search_pattern(pattern);
+        } else {
+            self.search_state.pattern = pattern;
+        }
+    }
+
+    fn push_search_pattern_char(&mut self, c: char) {
+        let mut pattern = self.get_search_pattern();
+        pattern.push(c);
+        self.set_search_pattern(pattern);
+    }
+
+    fn pop_search_pattern_char(&mut self) {
+        let mut pattern = self.get_search_pattern();
+        pattern.pop();
+        self.set_search_pattern(pattern);
+    }
+
+    fn clear_search_pattern(&mut self) {
+        self.set_search_pattern(String::new());
+    }
+
+    fn is_search_pattern_empty(&self) -> bool {
+        self.get_search_pattern().is_empty()
+    }
+
+    fn get_search_matches(&self) -> Vec<(usize, usize)> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_search_matches()
+        } else {
+            self.search_state.matches.clone()
+        }
+    }
+
+    fn set_search_matches(&mut self, matches: Vec<(usize, usize)>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_search_matches(matches);
+        } else {
+            self.search_state.matches = matches;
+        }
+    }
+
+    fn clear_search_matches(&mut self) {
+        self.set_search_matches(Vec::new());
+    }
+
+    fn get_search_match_index(&self) -> usize {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_search_match_index()
+        } else {
+            self.search_state.match_index
+        }
+    }
+
+    fn set_search_match_index(&mut self, index: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_search_match_index(index);
+        } else {
+            self.search_state.match_index = index;
+        }
+    }
+
+    fn get_current_search_match(&self) -> Option<(usize, usize)> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_current_match()
+        } else {
+            self.search_state.current_match
+        }
+    }
+
+    fn set_current_search_match(&mut self, match_pos: Option<(usize, usize)>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_current_match(match_pos);
+        } else {
+            self.search_state.current_match = match_pos;
+        }
+    }
+
+    fn clear_search_state(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.clear_search_state();
+        } else {
+            self.search_state.pattern.clear();
+            self.search_state.matches.clear();
+            self.search_state.current_match = None;
+            self.search_state.match_index = 0;
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -1912,7 +2012,7 @@ impl EnhancedTuiApp {
             // Search functionality
             KeyCode::Char('/') => {
                 self.set_mode(AppMode::Search);
-                self.search_state.pattern.clear();
+                self.clear_search_pattern();
                 // Save SQL query and use temporary input for search display
                 self.push_undo((self.input.value().to_string(), self.input.cursor()));
                 self.input = tui_input::Input::default();
@@ -1932,7 +2032,7 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('N') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 // Only for search navigation when Shift is held
-                if !self.search_state.pattern.is_empty() {
+                if !self.is_search_pattern_empty() {
                     self.previous_search_match();
                 } else {
                     // Toggle row numbers display
@@ -2079,16 +2179,16 @@ impl EnhancedTuiApp {
                 self.set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
-                self.search_state.pattern.pop();
+                self.pop_search_pattern_char();
                 // Update input for rendering
-                self.input = tui_input::Input::new(self.search_state.pattern.clone())
-                    .with_cursor(self.search_state.pattern.len());
+                self.input = tui_input::Input::new(self.get_search_pattern())
+                    .with_cursor(self.get_search_pattern().len());
             }
             KeyCode::Char(c) => {
-                self.search_state.pattern.push(c);
+                self.push_search_pattern_char(c);
                 // Update input for rendering
-                self.input = tui_input::Input::new(self.search_state.pattern.clone())
-                    .with_cursor(self.search_state.pattern.len());
+                self.input = tui_input::Input::new(self.get_search_pattern())
+                    .with_cursor(self.get_search_pattern().len());
             }
             _ => {}
         }
@@ -3364,26 +3464,26 @@ impl EnhancedTuiApp {
     // Search and filter functions
     fn perform_search(&mut self) {
         if let Some(data) = self.get_current_data() {
-            self.search_state.matches.clear();
+            self.clear_search_matches();
 
-            if let Ok(regex) = Regex::new(&self.search_state.pattern) {
+            if let Ok(regex) = Regex::new(&self.get_search_pattern()) {
                 for (row_idx, row) in data.iter().enumerate() {
                     for (col_idx, cell) in row.iter().enumerate() {
                         if regex.is_match(cell) {
-                            self.search_state.matches.push((row_idx, col_idx));
+                            let mut matches = self.get_search_matches();
+                            matches.push((row_idx, col_idx));
+                            self.set_search_matches(matches);
                         }
                     }
                 }
 
-                if !self.search_state.matches.is_empty() {
-                    self.search_state.match_index = 0;
-                    self.search_state.current_match = Some(self.search_state.matches[0]);
-                    let (row, _) = self.search_state.matches[0];
+                if !self.get_search_matches().is_empty() {
+                    self.set_search_match_index(0);
+                    let matches = self.get_search_matches();
+                    self.set_current_search_match(Some(matches[0]));
+                    let (row, _) = matches[0];
                     self.get_table_state_mut().select(Some(row));
-                    self.set_status_message(format!(
-                        "Found {} matches",
-                        self.search_state.matches.len()
-                    ));
+                    self.set_status_message(format!("Found {} matches", matches.len()));
                 } else {
                     self.set_status_message("No matches found".to_string());
                 }
@@ -3394,37 +3494,31 @@ impl EnhancedTuiApp {
     }
 
     fn next_search_match(&mut self) {
-        if !self.search_state.matches.is_empty() {
-            self.search_state.match_index =
-                (self.search_state.match_index + 1) % self.search_state.matches.len();
-            let (row, _) = self.search_state.matches[self.search_state.match_index];
+        if !self.get_search_matches().is_empty() {
+            let matches = self.get_search_matches();
+            let new_index = (self.get_search_match_index() + 1) % matches.len();
+            self.set_search_match_index(new_index);
+            let (row, _) = matches[new_index];
             self.get_table_state_mut().select(Some(row));
-            self.search_state.current_match =
-                Some(self.search_state.matches[self.search_state.match_index]);
-            self.set_status_message(format!(
-                "Match {} of {}",
-                self.search_state.match_index + 1,
-                self.search_state.matches.len()
-            ));
+            self.set_current_search_match(Some(matches[new_index]));
+            self.set_status_message(format!("Match {} of {}", new_index + 1, matches.len()));
         }
     }
 
     fn previous_search_match(&mut self) {
-        if !self.search_state.matches.is_empty() {
-            self.search_state.match_index = if self.search_state.match_index == 0 {
-                self.search_state.matches.len() - 1
+        if !self.get_search_matches().is_empty() {
+            let matches = self.get_search_matches();
+            let current_index = self.get_search_match_index();
+            let new_index = if current_index == 0 {
+                matches.len() - 1
             } else {
-                self.search_state.match_index - 1
+                current_index - 1
             };
-            let (row, _) = self.search_state.matches[self.search_state.match_index];
+            self.set_search_match_index(new_index);
+            let (row, _) = matches[new_index];
             self.get_table_state_mut().select(Some(row));
-            self.search_state.current_match =
-                Some(self.search_state.matches[self.search_state.match_index]);
-            self.set_status_message(format!(
-                "Match {} of {}",
-                self.search_state.match_index + 1,
-                self.search_state.matches.len()
-            ));
+            self.set_current_search_match(Some(matches[new_index]));
+            self.set_status_message(format!("Match {} of {}", new_index + 1, matches.len()));
         }
     }
 
@@ -4372,7 +4466,7 @@ impl EnhancedTuiApp {
                                     self.apply_fuzzy_filter();
                                 }
                                 AppMode::Search => {
-                                    self.search_state.pattern = self.input.value().to_string();
+                                    self.set_search_pattern(self.input.value().to_string());
                                     // TODO: self.search_in_results();
                                 }
                                 AppMode::ColumnSearch => {
@@ -6112,7 +6206,7 @@ impl EnhancedTuiApp {
                     }
 
                     // Highlight search matches (override column highlight)
-                    if let Some((match_row, match_col)) = self.search_state.current_match {
+                    if let Some((match_row, match_col)) = self.get_current_search_match() {
                         if actual_row_idx == match_row && actual_col_idx == match_col {
                             style = style.bg(Color::Yellow).fg(Color::Black);
                         }
