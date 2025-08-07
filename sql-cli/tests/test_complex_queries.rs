@@ -290,3 +290,137 @@ fn test_string_literals_with_special_chars() {
         assert!(result.is_ok(), "Query '{}' should parse", query);
     }
 }
+
+#[test]
+fn test_complex_query_with_limit_and_offset() {
+    // Test a comprehensive query with BETWEEN, ORDER BY, and LIMIT
+    let query = "SELECT * FROM trades_10k WHERE commission BETWEEN 1000 AND 4000 ORDER BY commission DESC LIMIT 100";
+
+    let mut parser = Parser::new(query);
+    let result = parser.parse();
+
+    assert!(
+        result.is_ok(),
+        "Complex query with LIMIT should parse successfully"
+    );
+
+    let stmt = result.unwrap();
+
+    // Verify SELECT columns
+    assert_eq!(stmt.columns.len(), 1);
+    assert_eq!(stmt.columns[0], "*");
+
+    // Verify FROM table
+    assert_eq!(stmt.from_table.as_deref(), Some("trades_10k"));
+
+    // Verify WHERE clause exists and has BETWEEN condition
+    assert!(stmt.where_clause.is_some());
+    let where_clause = stmt.where_clause.unwrap();
+    assert_eq!(where_clause.conditions.len(), 1);
+
+    // Verify ORDER BY
+    assert!(stmt.order_by.is_some());
+    let order_by = stmt.order_by.unwrap();
+    assert_eq!(order_by.len(), 1);
+    assert_eq!(order_by[0].column, "commission");
+    assert_eq!(order_by[0].direction, SortDirection::Desc);
+
+    // Verify LIMIT
+    assert_eq!(stmt.limit, Some(100));
+    assert_eq!(stmt.offset, None);
+}
+
+#[test]
+fn test_limit_with_offset() {
+    // Test LIMIT with OFFSET for pagination
+    let query = "SELECT id, commission FROM trades ORDER BY commission ASC LIMIT 10 OFFSET 5";
+
+    let mut parser = Parser::new(query);
+    let result = parser.parse();
+
+    assert!(
+        result.is_ok(),
+        "Query with LIMIT and OFFSET should parse successfully"
+    );
+
+    let stmt = result.unwrap();
+
+    // Verify columns
+    assert_eq!(stmt.columns.len(), 2);
+    assert_eq!(stmt.columns[0], "id");
+    assert_eq!(stmt.columns[1], "commission");
+
+    // Verify LIMIT and OFFSET
+    assert_eq!(stmt.limit, Some(10));
+    assert_eq!(stmt.offset, Some(5));
+
+    // Verify ORDER BY
+    assert!(stmt.order_by.is_some());
+    let order_by = stmt.order_by.unwrap();
+    assert_eq!(order_by[0].direction, SortDirection::Asc);
+}
+
+#[test]
+fn test_tokenization_of_limit_keywords() {
+    // Test that LIMIT and OFFSET are properly tokenized as keywords
+    let queries = vec![
+        "SELECT * FROM trades LIMIT 100",
+        "SELECT * FROM trades limit 100", // lowercase
+        "SELECT * FROM trades LIMIT 50 OFFSET 10",
+        "SELECT * FROM trades ORDER BY id LIMIT 25",
+    ];
+
+    for query in queries {
+        let mut lexer = Lexer::new(query);
+        let tokens = lexer.tokenize_all();
+
+        // Find LIMIT token
+        let limit_found = tokens.iter().any(|t| matches!(t, Token::Limit));
+        assert!(
+            limit_found,
+            "Query '{}' should tokenize LIMIT as Token::Limit",
+            query
+        );
+
+        // If OFFSET is in query, it should be tokenized correctly too
+        if query.to_lowercase().contains("offset") {
+            let offset_found = tokens.iter().any(|t| matches!(t, Token::Offset));
+            assert!(
+                offset_found,
+                "Query '{}' should tokenize OFFSET as Token::Offset",
+                query
+            );
+        }
+    }
+}
+
+#[test]
+fn test_comprehensive_query_features() {
+    // Test a query that combines many features we've implemented
+    let query = "SELECT accruedInterest, commission, counterparty FROM trades_10k WHERE commission > 1000.5 AND counterparty.Contains('Bank') ORDER BY commission DESC, counterparty ASC LIMIT 20 OFFSET 5";
+
+    let mut parser = Parser::new(query);
+    let result = parser.parse();
+
+    assert!(
+        result.is_ok(),
+        "Comprehensive query should parse successfully"
+    );
+
+    let stmt = result.unwrap();
+
+    // Verify all components
+    assert_eq!(stmt.columns.len(), 3);
+    assert!(stmt.where_clause.is_some());
+    assert!(stmt.order_by.is_some());
+    assert_eq!(stmt.limit, Some(20));
+    assert_eq!(stmt.offset, Some(5));
+
+    // Verify ORDER BY has multiple columns
+    let order_by = stmt.order_by.unwrap();
+    assert_eq!(order_by.len(), 2);
+    assert_eq!(order_by[0].column, "commission");
+    assert_eq!(order_by[0].direction, SortDirection::Desc);
+    assert_eq!(order_by[1].column, "counterparty");
+    assert_eq!(order_by[1].direction, SortDirection::Asc);
+}

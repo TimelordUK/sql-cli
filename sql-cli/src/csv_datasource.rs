@@ -114,13 +114,21 @@ impl CsvDataSource {
                 // Handle WHERE clause using the existing WhereParser
                 let sql_lower = sql.to_lowercase();
                 if let Some(where_pos) = sql_lower.find(" where ") {
-                    // Extract WHERE clause, but stop at ORDER BY if present
+                    // Extract WHERE clause, but stop at ORDER BY, LIMIT, or OFFSET if present
                     let where_start = where_pos + 7;
-                    let where_end = if let Some(order_pos) = sql_lower.find(" order by ") {
-                        order_pos.min(sql.len())
-                    } else {
-                        sql.len()
-                    };
+                    let mut where_end = sql.len();
+
+                    // Find the earliest of ORDER BY, LIMIT, or OFFSET to terminate WHERE clause
+                    if let Some(order_pos) = sql_lower.find(" order by ") {
+                        where_end = where_end.min(order_pos);
+                    }
+                    if let Some(limit_pos) = sql_lower.find(" limit ") {
+                        where_end = where_end.min(limit_pos);
+                    }
+                    if let Some(offset_pos) = sql_lower.find(" offset ") {
+                        where_end = where_end.min(offset_pos);
+                    }
+
                     let where_clause = sql[where_start..where_end].trim();
                     results =
                         self.filter_results_with_options(results, where_clause, case_insensitive)?;
@@ -135,6 +143,15 @@ impl CsvDataSource {
                 // Handle ORDER BY clause
                 if let Some(order_by_columns) = &stmt.order_by {
                     results = self.sort_results(results, order_by_columns)?;
+                }
+
+                // Handle OFFSET and LIMIT clauses
+                if let Some(offset) = stmt.offset {
+                    results = results.into_iter().skip(offset).collect();
+                }
+
+                if let Some(limit) = stmt.limit {
+                    results = results.into_iter().take(limit).collect();
                 }
 
                 Ok(results)

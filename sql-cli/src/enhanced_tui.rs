@@ -4260,6 +4260,8 @@ impl EnhancedTuiApp {
                     Token::Like => "LIKE",
                     Token::Is => "IS",
                     Token::Null => "NULL",
+                    Token::Limit => "LIMIT",
+                    Token::Offset => "OFFSET",
                     Token::Eof => "EOF",
                 };
                 return Some(token_str.to_string());

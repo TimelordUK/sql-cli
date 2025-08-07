@@ -19,6 +19,8 @@ pub enum Token {
     Having,
     Asc,
     Desc,
+    Limit,
+    Offset,
     DateTime, // DateTime constructor
 
     // Literals
@@ -219,6 +221,8 @@ impl Lexer {
                     "HAVING" => Token::Having,
                     "ASC" => Token::Asc,
                     "DESC" => Token::Desc,
+                    "LIMIT" => Token::Limit,
+                    "OFFSET" => Token::Offset,
                     "DATETIME" => Token::DateTime,
                     _ => Token::Identifier(ident),
                 }
@@ -359,6 +363,8 @@ pub struct SelectStatement {
     pub where_clause: Option<WhereClause>,
     pub order_by: Option<Vec<OrderByColumn>>,
     pub group_by: Option<Vec<String>>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 pub struct ParserConfig {
@@ -522,6 +528,40 @@ impl Parser {
             None
         };
 
+        // Parse LIMIT clause
+        let limit = if matches!(self.current_token, Token::Limit) {
+            self.advance();
+            match &self.current_token {
+                Token::NumberLiteral(num) => {
+                    let limit_val = num
+                        .parse::<usize>()
+                        .map_err(|_| format!("Invalid LIMIT value: {}", num))?;
+                    self.advance();
+                    Some(limit_val)
+                }
+                _ => return Err("Expected number after LIMIT".to_string()),
+            }
+        } else {
+            None
+        };
+
+        // Parse OFFSET clause
+        let offset = if matches!(self.current_token, Token::Offset) {
+            self.advance();
+            match &self.current_token {
+                Token::NumberLiteral(num) => {
+                    let offset_val = num
+                        .parse::<usize>()
+                        .map_err(|_| format!("Invalid OFFSET value: {}", num))?;
+                    self.advance();
+                    Some(offset_val)
+                }
+                _ => return Err("Expected number after OFFSET".to_string()),
+            }
+        } else {
+            None
+        };
+
         // Check for balanced parentheses at the end of parsing
         if self.paren_depth > 0 {
             return Err(format!(
@@ -541,6 +581,8 @@ impl Parser {
             where_clause,
             order_by,
             group_by,
+            limit,
+            offset,
         })
     }
 

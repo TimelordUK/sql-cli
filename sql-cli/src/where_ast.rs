@@ -67,6 +67,41 @@ impl WhereValue {
             _ => WhereValue::Null,
         }
     }
+
+    /// Try to parse a string as a number, supporting scientific notation
+    fn try_parse_number(s: &str) -> Option<f64> {
+        // Parse the string as f64, which handles scientific notation (1e-4, 1.5E+3, etc.)
+        s.parse::<f64>().ok().filter(|n| n.is_finite())
+    }
+
+    /// Try to coerce values for numeric comparison
+    /// Returns (left_value, right_value) if coercion is possible
+    fn try_coerce_numeric(left: &WhereValue, right: &WhereValue) -> Option<(f64, f64)> {
+        match (left, right) {
+            // Both are already numbers
+            (WhereValue::Number(n1), WhereValue::Number(n2)) => Some((*n1, *n2)),
+
+            // Left is string, right is number - try to parse left
+            (WhereValue::String(s), WhereValue::Number(n)) => {
+                Self::try_parse_number(s).map(|parsed| (parsed, *n))
+            }
+
+            // Left is number, right is string - try to parse right
+            (WhereValue::Number(n), WhereValue::String(s)) => {
+                Self::try_parse_number(s).map(|parsed| (*n, parsed))
+            }
+
+            // Both are strings - try to parse both for numeric comparison
+            (WhereValue::String(s1), WhereValue::String(s2)) => {
+                match (Self::try_parse_number(s1), Self::try_parse_number(s2)) {
+                    (Some(n1), Some(n2)) => Some((n1, n2)),
+                    _ => None,
+                }
+            }
+
+            _ => None,
+        }
+    }
 }
 
 pub fn format_where_ast(expr: &WhereExpr, indent: usize) -> String {
@@ -187,11 +222,16 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
 
         WhereExpr::Equal(column, value) => {
             if let Some(field_value) = row.get(column) {
-                match (WhereValue::from_json(field_value), value) {
-                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 == *s2),
-                    (WhereValue::Number(n1), WhereValue::Number(n2)) => {
-                        Ok((n1 - n2).abs() < f64::EPSILON)
-                    }
+                let left = WhereValue::from_json(field_value);
+
+                // Try numeric comparison first for potential numeric values
+                if let Some((n1, n2)) = WhereValue::try_coerce_numeric(&left, value) {
+                    return Ok((n1 - n2).abs() < f64::EPSILON);
+                }
+
+                // Fall back to exact matching
+                match (&left, value) {
+                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 == s2),
                     (WhereValue::Null, WhereValue::Null) => Ok(true),
                     _ => Ok(false),
                 }
@@ -207,9 +247,16 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
 
         WhereExpr::GreaterThan(column, value) => {
             if let Some(field_value) = row.get(column) {
-                match (WhereValue::from_json(field_value), value) {
-                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 > *s2),
-                    (WhereValue::Number(n1), WhereValue::Number(n2)) => Ok(n1 > *n2),
+                let left = WhereValue::from_json(field_value);
+
+                // Try numeric comparison first
+                if let Some((n1, n2)) = WhereValue::try_coerce_numeric(&left, value) {
+                    return Ok(n1 > n2);
+                }
+
+                // Fall back to string comparison
+                match (&left, value) {
+                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 > s2),
                     _ => Ok(false),
                 }
             } else {
@@ -219,9 +266,16 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
 
         WhereExpr::GreaterThanOrEqual(column, value) => {
             if let Some(field_value) = row.get(column) {
-                match (WhereValue::from_json(field_value), value) {
-                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 >= *s2),
-                    (WhereValue::Number(n1), WhereValue::Number(n2)) => Ok(n1 >= *n2),
+                let left = WhereValue::from_json(field_value);
+
+                // Try numeric comparison first
+                if let Some((n1, n2)) = WhereValue::try_coerce_numeric(&left, value) {
+                    return Ok(n1 >= n2);
+                }
+
+                // Fall back to string comparison
+                match (&left, value) {
+                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 >= s2),
                     _ => Ok(false),
                 }
             } else {
@@ -231,9 +285,16 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
 
         WhereExpr::LessThan(column, value) => {
             if let Some(field_value) = row.get(column) {
-                match (WhereValue::from_json(field_value), value) {
-                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 < *s2),
-                    (WhereValue::Number(n1), WhereValue::Number(n2)) => Ok(n1 < *n2),
+                let left = WhereValue::from_json(field_value);
+
+                // Try numeric comparison first
+                if let Some((n1, n2)) = WhereValue::try_coerce_numeric(&left, value) {
+                    return Ok(n1 < n2);
+                }
+
+                // Fall back to string comparison
+                match (&left, value) {
+                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 < s2),
                     _ => Ok(false),
                 }
             } else {
@@ -243,9 +304,16 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
 
         WhereExpr::LessThanOrEqual(column, value) => {
             if let Some(field_value) = row.get(column) {
-                match (WhereValue::from_json(field_value), value) {
-                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 <= *s2),
-                    (WhereValue::Number(n1), WhereValue::Number(n2)) => Ok(n1 <= *n2),
+                let left = WhereValue::from_json(field_value);
+
+                // Try numeric comparison first
+                if let Some((n1, n2)) = WhereValue::try_coerce_numeric(&left, value) {
+                    return Ok(n1 <= n2);
+                }
+
+                // Fall back to string comparison
+                match (&left, value) {
+                    (WhereValue::String(s1), WhereValue::String(s2)) => Ok(s1 <= s2),
                     _ => Ok(false),
                 }
             } else {
@@ -256,12 +324,20 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
         WhereExpr::Between(column, lower, upper) => {
             if let Some(field_value) = row.get(column) {
                 let val = WhereValue::from_json(field_value);
+
+                // Try numeric comparison first
+                if let (Some((v, l)), Some((_v2, u))) = (
+                    WhereValue::try_coerce_numeric(&val, lower),
+                    WhereValue::try_coerce_numeric(&val, upper),
+                ) {
+                    // Both coercions succeeded, use the value from first coercion
+                    return Ok(v >= l && v <= u);
+                }
+
+                // Fall back to string comparison
                 match (&val, lower, upper) {
                     (WhereValue::String(s), WhereValue::String(l), WhereValue::String(u)) => {
                         Ok(s >= l && s <= u)
-                    }
-                    (WhereValue::Number(n), WhereValue::Number(l), WhereValue::Number(u)) => {
-                        Ok(*n >= *l && *n <= *u)
                     }
                     _ => Ok(false),
                 }
