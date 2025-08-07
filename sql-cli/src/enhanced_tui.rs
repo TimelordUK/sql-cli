@@ -208,6 +208,10 @@ pub struct EnhancedTuiApp {
     csv_mode: bool,
     csv_table_name: String,
 
+    // Buffer management (new - for supporting multiple files)
+    buffer_manager: Option<BufferManager>,
+    current_buffer_name: Option<String>, // Name of current buffer/table
+
     // Cache
     query_cache: Option<QueryCache>,
     cache_mode: bool,
@@ -352,6 +356,8 @@ impl EnhancedTuiApp {
             csv_client: None,
             csv_mode: false,
             csv_table_name: String::new(),
+            buffer_manager: None,
+            current_buffer_name: None,
             query_cache: QueryCache::new().ok(),
             cache_mode: false,
             cached_data: None,
@@ -390,6 +396,7 @@ impl EnhancedTuiApp {
         app.csv_client = Some(csv_client);
         app.csv_mode = true;
         app.csv_table_name = table_name.clone();
+        app.current_buffer_name = Some(format!("{}", raw_name));
 
         // Update parser with CSV columns
         if let Some(columns) = schema.get(&table_name) {
@@ -456,6 +463,7 @@ impl EnhancedTuiApp {
         app.csv_client = Some(csv_client);
         app.csv_mode = true; // Reuse CSV mode since the data structure is the same
         app.csv_table_name = table_name.clone();
+        app.current_buffer_name = Some(format!("{}", raw_name));
 
         // Update parser with JSON columns
         if let Some(columns) = schema.get(&table_name) {
@@ -798,6 +806,10 @@ impl EnhancedTuiApp {
             KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Yank - paste from kill ring
                 self.yank();
+            }
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Paste from system clipboard
+                self.paste_from_clipboard();
             }
             KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Jump to previous SQL token
@@ -3405,6 +3417,88 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn paste_from_clipboard(&mut self) {
+        // Paste from system clipboard into the current input field
+        match arboard::Clipboard::new() {
+            Ok(mut clipboard) => match clipboard.get_text() {
+                Ok(text) => {
+                    match self.mode {
+                        AppMode::Command => {
+                            if self.edit_mode == EditMode::SingleLine {
+                                // Get current cursor position
+                                let cursor_pos = self.input.cursor();
+                                let current_value = self.input.value().to_string();
+
+                                // Insert at cursor position
+                                let mut new_value = String::new();
+                                new_value.push_str(&current_value[..cursor_pos]);
+                                new_value.push_str(&text);
+                                new_value.push_str(&current_value[cursor_pos..]);
+
+                                self.input = tui_input::Input::new(new_value)
+                                    .with_cursor(cursor_pos + text.len());
+
+                                self.status_message = format!("Pasted {} characters", text.len());
+                            } else {
+                                // Multi-line mode - insert at cursor
+                                self.textarea.insert_str(&text);
+                                self.status_message = format!("Pasted {} characters", text.len());
+                            }
+                        }
+                        AppMode::Filter
+                        | AppMode::FuzzyFilter
+                        | AppMode::Search
+                        | AppMode::ColumnSearch => {
+                            // For search/filter modes, append to current pattern
+                            let cursor_pos = self.input.cursor();
+                            let current_value = self.input.value().to_string();
+
+                            let mut new_value = String::new();
+                            new_value.push_str(&current_value[..cursor_pos]);
+                            new_value.push_str(&text);
+                            new_value.push_str(&current_value[cursor_pos..]);
+
+                            self.input = tui_input::Input::new(new_value)
+                                .with_cursor(cursor_pos + text.len());
+
+                            // Update the appropriate filter/search state
+                            match self.mode {
+                                AppMode::Filter => {
+                                    self.filter_state.pattern = self.input.value().to_string();
+                                    self.apply_filter();
+                                }
+                                AppMode::FuzzyFilter => {
+                                    self.fuzzy_filter_state.pattern =
+                                        self.input.value().to_string();
+                                    self.apply_fuzzy_filter();
+                                }
+                                AppMode::Search => {
+                                    self.search_state.pattern = self.input.value().to_string();
+                                    self.search_in_results();
+                                }
+                                AppMode::ColumnSearch => {
+                                    self.column_search_state.pattern =
+                                        self.input.value().to_string();
+                                    self.search_columns();
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {
+                            self.status_message = "Paste not available in this mode".to_string();
+                        }
+                    }
+                }
+                Err(e) => {
+                    self.status_message = format!("Failed to paste: {}", e);
+                }
+            },
+            Err(e) => {
+                self.status_message = format!("Can't access clipboard: {}", e);
+            }
+        }
+    }
+
     fn export_to_json(&mut self) {
         if let Some(results) = &self.results {
             // Get the actual data to export (filtered or all)
@@ -4525,6 +4619,25 @@ impl EnhancedTuiApp {
             format!("[{}]", mode_indicator),
             Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
         ));
+
+        // Show buffer/table name if available
+        if let Some(buffer_name) = &self.current_buffer_name {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                buffer_name.clone(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else if self.csv_mode && !self.csv_table_name.is_empty() {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                self.csv_table_name.clone(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
 
         // Mode-specific information
         match self.mode {
@@ -6025,25 +6138,50 @@ impl EnhancedTuiApp {
     }
 }
 
-pub fn run_enhanced_tui(api_url: &str, data_file: Option<&str>) -> Result<()> {
-    let app = if let Some(file_path) = data_file {
-        // Determine file type by extension
-        let extension = std::path::Path::new(file_path)
+pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()> {
+    let app = if !data_files.is_empty() {
+        // Load the first file using existing logic
+        let first_file = data_files[0];
+        let extension = std::path::Path::new(first_file)
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("");
 
-        match extension.to_lowercase().as_str() {
-            "csv" => EnhancedTuiApp::new_with_csv(file_path)?,
-            "json" => EnhancedTuiApp::new_with_json(file_path)?,
+        let mut app = match extension.to_lowercase().as_str() {
+            "csv" => EnhancedTuiApp::new_with_csv(first_file)?,
+            "json" => EnhancedTuiApp::new_with_json(first_file)?,
             _ => {
                 return Err(anyhow::anyhow!(
-                    "Unsupported file type. Please use .csv or .json files"
+                    "Unsupported file type: {}. Use .csv or .json files.",
+                    first_file
                 ))
             }
+        };
+
+        // TODO: Load additional files into buffers
+        // For now, just note that we have multiple files
+        if data_files.len() > 1 {
+            app.status_message = format!(
+                "{} | {} more file(s) to load - buffer support coming soon",
+                app.status_message,
+                data_files.len() - 1
+            );
         }
+
+        app
     } else {
         EnhancedTuiApp::new(api_url)
     };
+
     app.run()
+}
+
+pub fn run_enhanced_tui(api_url: &str, data_file: Option<&str>) -> Result<()> {
+    // For backward compatibility, convert single file to vec and call multi version
+    let files = if let Some(file) = data_file {
+        vec![file]
+    } else {
+        vec![]
+    };
+    run_enhanced_tui_multi(api_url, files)
 }

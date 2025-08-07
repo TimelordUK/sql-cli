@@ -203,12 +203,16 @@ fn main() -> io::Result<()> {
         .map(|s| s.to_string());
 
     // If no --csv flag, check if last argument is a file
-    let data_file = csv_file_flag.or_else(|| {
-        args.last()
-            .filter(|arg| !arg.starts_with("--"))
-            .filter(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
-            .map(|s| s.to_string())
-    });
+    // Collect all data files (CSV/JSON) from arguments
+    let data_files: Vec<String> = args
+        .iter()
+        .filter(|arg| !arg.starts_with("--"))
+        .filter(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+        .cloned()
+        .collect();
+
+    // For backward compatibility, get the first file as data_file
+    let data_file = csv_file_flag.or_else(|| data_files.first().cloned());
 
     if use_tui {
         if use_classic_tui {
@@ -235,7 +239,16 @@ fn main() -> io::Result<()> {
             }
             let api_url = std::env::var("TRADE_API_URL")
                 .unwrap_or_else(|_| "http://localhost:5000".to_string());
-            if let Err(e) = enhanced_tui::run_enhanced_tui(&api_url, data_file.as_deref()) {
+
+            // Pass all data files if we have multiple, otherwise use single file for compatibility
+            let result = if data_files.len() > 1 {
+                let file_refs: Vec<&str> = data_files.iter().map(|s| s.as_str()).collect();
+                enhanced_tui::run_enhanced_tui_multi(&api_url, file_refs)
+            } else {
+                enhanced_tui::run_enhanced_tui(&api_url, data_file.as_deref())
+            };
+
+            if let Err(e) = result {
                 eprintln!("Enhanced TUI Error: {}", e);
                 eprintln!("Falling back to classic CLI mode...");
                 eprintln!("");
