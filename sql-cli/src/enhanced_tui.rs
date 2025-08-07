@@ -784,6 +784,31 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Wrapper methods for filtered_data (uses buffer system)
+    fn get_filtered_data(&self) -> Option<&Vec<Vec<String>>> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_filtered_data()
+        } else {
+            self.filtered_data.as_ref()
+        }
+    }
+
+    fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_filtered_data(data);
+        } else {
+            self.filtered_data = data;
+        }
+    }
+
+    fn has_filtered_data(&self) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_filtered_data().is_some()
+        } else {
+            self.filtered_data.is_some()
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -1554,7 +1579,7 @@ impl EnhancedTuiApp {
                     Current Column: {}\n\
                     Sort State: {}\n",
                     self.results.as_ref().map(|r| r.data.len()).unwrap_or(0),
-                    self.filtered_data.as_ref().map(|d| d.len()).unwrap_or(0),
+                    self.get_filtered_data().map(|d| d.len()).unwrap_or(0),
                     self.get_current_column(),
                     match &self.sort_state {
                         SortState {
@@ -3133,7 +3158,7 @@ impl EnhancedTuiApp {
             let column_name = &headers[self.get_current_column()];
 
             // Use filtered data if available, otherwise use original data
-            let data_to_analyze = if let Some(filtered) = &self.filtered_data {
+            let data_to_analyze = if let Some(filtered) = self.get_filtered_data() {
                 // Convert filtered data back to JSON values for analysis
                 let mut json_data = Vec::new();
                 for row in filtered {
@@ -3405,7 +3430,7 @@ impl EnhancedTuiApp {
 
     fn apply_filter(&mut self) {
         if self.get_filter_state().pattern.is_empty() {
-            self.filtered_data = None;
+            self.set_filtered_data(None);
             self.get_filter_state_mut().active = false;
             self.set_status_message("Filter cleared".to_string());
             return;
@@ -3442,7 +3467,7 @@ impl EnhancedTuiApp {
                 }
 
                 let filtered_count = filtered.len();
-                self.filtered_data = Some(filtered);
+                self.set_filtered_data(Some(filtered));
                 self.get_filter_state_mut().regex = Some(regex);
                 self.get_filter_state_mut().active = true;
 
@@ -3474,13 +3499,13 @@ impl EnhancedTuiApp {
             return;
         }
 
-        let pattern = &self.fuzzy_filter_state.pattern;
+        let pattern = self.fuzzy_filter_state.pattern.clone();
         let mut filtered_indices = Vec::new();
 
         // Get the data to filter - either already filtered data or original results
-        let data_to_filter = if self.get_filter_state().active && self.filtered_data.is_some() {
+        let data_to_filter = if self.get_filter_state().active && self.has_filtered_data() {
             // If regex filter is active, fuzzy filter on top of that
-            self.filtered_data.as_ref()
+            self.get_filtered_data()
         } else if let Some(results) = &self.results {
             // Otherwise filter original results
             let mut rows = Vec::new();
@@ -3500,8 +3525,8 @@ impl EnhancedTuiApp {
                     rows.push(row);
                 }
             }
-            self.filtered_data = Some(rows);
-            self.filtered_data.as_ref()
+            self.set_filtered_data(Some(rows));
+            self.get_filtered_data()
         } else {
             return;
         };
@@ -3523,7 +3548,7 @@ impl EnhancedTuiApp {
                     if let Some(score) = self
                         .fuzzy_filter_state
                         .matcher
-                        .fuzzy_match(&row_text, pattern)
+                        .fuzzy_match(&row_text, &pattern)
                     {
                         score > 0
                     } else {
@@ -3725,7 +3750,7 @@ impl EnhancedTuiApp {
                         let mut new_results = results.clone();
                         new_results.data = sorted_data;
                         self.results = Some(new_results);
-                        self.filtered_data = None; // Force regeneration of string data
+                        self.set_filtered_data(None); // Force regeneration of string data
                     }
                 }
             }
@@ -3781,7 +3806,7 @@ impl EnhancedTuiApp {
     }
 
     fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
-        if let Some(filtered) = &self.filtered_data {
+        if let Some(filtered) = self.get_filtered_data() {
             Some(filtered.clone())
         } else if let Some(results) = &self.results {
             Some(self.convert_json_to_strings(results))
@@ -3797,7 +3822,7 @@ impl EnhancedTuiApp {
         // This causes incorrect row counts in the status line (e.g., showing 1/1513 instead of 1/257)
         // This will be fixed when fuzzy_filter_state is migrated to the buffer system
         // and we have a single source of truth for visible rows
-        if let Some(filtered) = &self.filtered_data {
+        if let Some(filtered) = self.get_filtered_data() {
             filtered.len()
         } else if let Some(results) = &self.results {
             results.data.len()
@@ -3807,10 +3832,11 @@ impl EnhancedTuiApp {
     }
 
     fn get_current_data_mut(&mut self) -> Option<&mut Vec<Vec<String>>> {
-        if self.filtered_data.is_none() && self.results.is_some() {
+        if !self.has_filtered_data() && self.results.is_some() {
             let results = self.results.as_ref().unwrap();
-            self.filtered_data = Some(self.convert_json_to_strings(results));
+            self.set_filtered_data(Some(self.convert_json_to_strings(results)));
         }
+        // TODO: Add get_filtered_data_mut() wrapper method to handle mutable access
         self.filtered_data.as_mut()
     }
 
@@ -3879,7 +3905,7 @@ impl EnhancedTuiApp {
         };
 
         // Clear filtered data
-        self.filtered_data = None;
+        self.set_filtered_data(None);
     }
 
     fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
@@ -4425,14 +4451,13 @@ impl EnhancedTuiApp {
                     .iter()
                     .filter_map(|&idx| results.data.get(idx).cloned())
                     .collect()
-            } else if self.get_filter_state().active && self.filtered_data.is_some() {
+            } else if self.get_filter_state().active && self.has_filtered_data() {
                 // Convert filtered_data back to JSON values
                 // This is a bit inefficient but maintains consistency
                 if let Some(first_row) = results.data.first() {
                     if let Some(obj) = first_row.as_object() {
                         let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                        self.filtered_data
-                            .as_ref()
+                        self.get_filtered_data()
                             .unwrap()
                             .iter()
                             .map(|row| {
@@ -5419,7 +5444,7 @@ impl EnhancedTuiApp {
                     // Extract viewport info first
                     let terminal_height = results_area.height as usize;
                     let max_visible_rows = terminal_height.saturating_sub(3).max(10);
-                    let total_rows = if let Some(filtered) = &self.filtered_data {
+                    let total_rows = if let Some(filtered) = self.get_filtered_data() {
                         filtered.len()
                     } else {
                         results.data.len()
@@ -5900,7 +5925,7 @@ impl EnhancedTuiApp {
         let terminal_height = area.height as usize;
         let max_visible_rows = terminal_height.saturating_sub(3).max(10);
 
-        let total_rows = if let Some(filtered) = &self.filtered_data {
+        let total_rows = if let Some(filtered) = self.get_filtered_data() {
             if self.fuzzy_filter_state.active
                 && !self.fuzzy_filter_state.filtered_indices.is_empty()
             {
@@ -5917,7 +5942,7 @@ impl EnhancedTuiApp {
         let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
 
         // Prepare table data (only visible rows AND columns)
-        let data_to_display = if let Some(filtered) = &self.filtered_data {
+        let data_to_display = if let Some(filtered) = self.get_filtered_data() {
             // Check if fuzzy filter is active
             if self.fuzzy_filter_state.active
                 && !self.fuzzy_filter_state.filtered_indices.is_empty()
@@ -6113,7 +6138,7 @@ impl EnhancedTuiApp {
                         } else {
                             // Fuzzy match highlighting - check if this cell contributes to the fuzzy match
                             if let Some(score) =
-                                self.fuzzy_filter_state.matcher.fuzzy_match(cell, pattern)
+                                self.fuzzy_filter_state.matcher.fuzzy_match(cell, &pattern)
                             {
                                 score > 0
                             } else {

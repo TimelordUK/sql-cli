@@ -25,7 +25,7 @@ These are buffer-specific and should move:
 - `fuzzy_filter_state` - Fuzzy filter state
 - `search_state` - Search within results
 - `column_search_state` - Column search state
-- `filtered_data` - Filtered view of results
+- ✅ `filtered_data` - Filtered view of results **[DONE - Wrapper added, migrated, tested]**
 
 #### Display State
 - ✅ `column_widths` - Calculated widths for this buffer's columns **[DONE - Wrapper added, migrated, tested]**
