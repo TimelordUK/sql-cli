@@ -897,7 +897,7 @@ impl EnhancedTuiApp {
         // Debug: Log all Ctrl key combinations
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             if let KeyCode::Char(c) = key.code {
-                self.status_message = format!("DEBUG: Ctrl+{} pressed", c);
+                self.set_status_message(format!("DEBUG: Ctrl+{} pressed", c));
             }
         }
 
@@ -938,7 +938,7 @@ impl EnhancedTuiApp {
                         // Move cursor to the beginning
                         self.textarea.move_cursor(CursorMove::Top);
                         self.textarea.move_cursor(CursorMove::Head);
-                        self.status_message = "Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string();
+                        self.set_status_message("Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string());
                     }
                     EditMode::MultiLine => {
                         self.set_edit_mode(EditMode::SingleLine);
@@ -952,8 +952,9 @@ impl EnhancedTuiApp {
                             .collect::<Vec<_>>()
                             .join(" ");
                         self.input = tui_input::Input::new(text);
-                        self.status_message =
-                            "Single-line mode enabled (F3 to toggle multi-line)".to_string();
+                        self.set_status_message(
+                            "Single-line mode enabled (F3 to toggle multi-line)".to_string(),
+                        );
                     }
                 }
             }
@@ -985,20 +986,20 @@ impl EnhancedTuiApp {
                     if query == ":help" {
                         self.show_help = true;
                         self.mode = AppMode::Help;
-                        self.status_message = "Help Mode - Press ESC to return".to_string();
+                        self.set_status_message("Help Mode - Press ESC to return".to_string());
                     } else if query == ":exit" || query == ":quit" {
                         return Ok(true);
                     } else if query == ":tui" {
                         // Already in TUI mode
-                        self.status_message = "Already in TUI mode".to_string();
+                        self.set_status_message("Already in TUI mode".to_string());
                     } else if query.starts_with(":cache ") {
                         self.handle_cache_command(&query)?;
                     } else {
-                        self.status_message = format!("Processing query: '{}'", query);
+                        self.set_status_message(format!("Processing query: '{}'", query));
                         self.execute_query(&query)?;
                     }
                 } else {
-                    self.status_message = "Empty query - please enter a SQL command".to_string();
+                    self.set_status_message("Empty query - please enter a SQL command".to_string());
                 }
             }
             KeyCode::Tab => {
@@ -1040,10 +1041,10 @@ impl EnhancedTuiApp {
                     csv_client.set_case_insensitive(!current);
                 }
 
-                self.status_message = format!(
+                self.set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
                     if !current { "ON" } else { "OFF" }
-                );
+                ));
             }
             KeyCode::F(9) => {
                 // F9 as alternative for kill line (for terminals that intercept Ctrl+K)
@@ -1079,12 +1080,12 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Kill line - delete from cursor to end of line
-                self.status_message = "Ctrl+K pressed - killing to end of line".to_string();
+                self.set_status_message("Ctrl+K pressed - killing to end of line".to_string());
                 self.kill_line();
             }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Alternative: Alt+K for kill line (for terminals that intercept Ctrl+K)
-                self.status_message = "Alt+K - killing to end of line".to_string();
+                self.set_status_message("Alt+K - killing to end of line".to_string());
                 self.kill_line();
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1312,14 +1313,14 @@ impl EnhancedTuiApp {
                 match arboard::Clipboard::new() {
                     Ok(mut clipboard) => match clipboard.set_text(&debug_info) {
                         Ok(_) => {
-                            self.status_message = "DEBUG INFO copied to clipboard!".to_string();
+                            self.set_status_message("DEBUG INFO copied to clipboard!".to_string());
                         }
                         Err(e) => {
-                            self.status_message = format!("Clipboard error: {}", e);
+                            self.set_status_message(format!("Clipboard error: {}", e));
                         }
                     },
                     Err(e) => {
-                        self.status_message = format!("Can't access clipboard: {}", e);
+                        self.set_status_message(format!("Can't access clipboard: {}", e));
                     }
                 }
             }
@@ -1334,10 +1335,11 @@ impl EnhancedTuiApp {
                     );
                     self.debug_scroll = 0;
                     self.mode = AppMode::PrettyQuery;
-                    self.status_message =
-                        "Pretty query view (press Esc or q to return)".to_string();
+                    self.set_status_message(
+                        "Pretty query view (press Esc or q to return)".to_string(),
+                    );
                 } else {
-                    self.status_message = "No query to format".to_string();
+                    self.set_status_message("No query to format".to_string());
                 }
             }
             _ => {
@@ -1383,16 +1385,16 @@ impl EnhancedTuiApp {
                     csv_client.set_case_insensitive(!current);
                 }
 
-                self.status_message = format!(
+                self.set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
                     if !current { "ON" } else { "OFF" }
-                );
+                ));
             }
             KeyCode::Esc => {
                 if self.yank_mode.is_some() {
                     // Cancel yank mode
                     self.yank_mode = None;
-                    self.status_message = "Yank cancelled".to_string();
+                    self.set_status_message("Yank cancelled".to_string());
                 } else {
                     // Save current position before switching to Command mode
                     if let Some(selected) = self.table_state.selected() {
@@ -1450,11 +1452,11 @@ impl EnhancedTuiApp {
             KeyCode::Char('C') => {
                 // Toggle compact mode with Shift+C
                 self.compact_mode = !self.compact_mode;
-                self.status_message = if self.compact_mode {
+                self.set_status_message(if self.compact_mode {
                     "Compact mode: ON (reduced padding, more columns visible)".to_string()
                 } else {
                     "Compact mode: OFF (standard padding)".to_string()
-                };
+                });
                 // Recalculate column widths with new mode
                 self.calculate_optimal_column_widths();
             }
@@ -1462,7 +1464,7 @@ impl EnhancedTuiApp {
                 // Start jump to row command
                 self.mode = AppMode::JumpToRow;
                 self.jump_to_row_input.clear();
-                self.status_message = "Enter row number:".to_string();
+                self.set_status_message("Enter row number:".to_string());
             }
             KeyCode::Char(' ') => {
                 // Toggle viewport lock with Space
@@ -1477,7 +1479,7 @@ impl EnhancedTuiApp {
                     );
                 } else {
                     self.viewport_lock_row = None;
-                    self.status_message = "Viewport lock: OFF (normal scrolling)".to_string();
+                    self.set_status_message("Viewport lock: OFF (normal scrolling)".to_string());
                 }
             }
             KeyCode::PageDown | KeyCode::Char('f')
@@ -1520,11 +1522,11 @@ impl EnhancedTuiApp {
                 } else {
                     // Toggle row numbers display
                     self.show_row_numbers = !self.show_row_numbers;
-                    self.status_message = if self.show_row_numbers {
+                    self.set_status_message(if self.show_row_numbers {
                         "Row numbers: ON (showing line numbers)".to_string()
                     } else {
                         "Row numbers: OFF".to_string()
-                    };
+                    });
                     // Recalculate column widths with new mode
                     self.calculate_optimal_column_widths();
                 }
@@ -1569,8 +1571,9 @@ impl EnhancedTuiApp {
             KeyCode::Char('v') => {
                 self.selection_mode = match self.selection_mode {
                     SelectionMode::Row => {
-                        self.status_message =
-                            "Cell mode - Navigate to select individual cells".to_string();
+                        self.set_status_message(
+                            "Cell mode - Navigate to select individual cells".to_string(),
+                        );
                         SelectionMode::Cell
                     }
                     SelectionMode::Cell => {
@@ -1635,7 +1638,7 @@ impl EnhancedTuiApp {
                 // Any other key cancels yank mode
                 if self.yank_mode.is_some() {
                     self.yank_mode = None;
-                    self.status_message = "Yank cancelled".to_string();
+                    self.set_status_message("Yank cancelled".to_string());
                 }
             }
         }
@@ -1722,7 +1725,7 @@ impl EnhancedTuiApp {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.mode = AppMode::Results;
-                self.status_message = "Fuzzy filter cleared".to_string();
+                self.set_status_message("Fuzzy filter cleared".to_string());
             }
             KeyCode::Enter => {
                 // Apply fuzzy filter and return to results
@@ -1773,7 +1776,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
-                self.status_message = "Column search cancelled".to_string();
+                self.set_status_message("Column search cancelled".to_string());
             }
             KeyCode::Enter => {
                 // Jump to first matching column
@@ -1781,9 +1784,9 @@ impl EnhancedTuiApp {
                     let (column_index, column_name) = &self.column_search_state.matching_columns
                         [self.column_search_state.current_match];
                     self.current_column = *column_index;
-                    self.status_message = format!("Jumped to column: {}", column_name);
+                    self.set_status_message(format!("Jumped to column: {}", column_name));
                 } else {
-                    self.status_message = "No matching columns found".to_string();
+                    self.set_status_message("No matching columns found".to_string());
                 }
                 // Restore original SQL query from undo stack
                 if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
@@ -1913,7 +1916,7 @@ impl EnhancedTuiApp {
                     let cursor_pos = selected_command.len();
                     self.input = tui_input::Input::new(selected_command).with_cursor(cursor_pos);
                     self.mode = AppMode::Command;
-                    self.status_message = "Command loaded from history".to_string();
+                    self.set_status_message("Command loaded from history".to_string());
                     // Reset scroll to show end of command
                     self.input_scroll_offset = 0;
                     self.update_horizontal_scroll(120); // Will be properly updated on next render
@@ -3042,7 +3045,7 @@ impl EnhancedTuiApp {
         if self.fuzzy_filter_state.pattern.is_empty() {
             self.fuzzy_filter_state.filtered_indices.clear();
             self.fuzzy_filter_state.active = false;
-            self.status_message = "Fuzzy filter cleared".to_string();
+            self.set_status_message("Fuzzy filter cleared".to_string());
             return;
         }
 
