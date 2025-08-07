@@ -42,7 +42,7 @@ These are buffer-specific and should move:
 - `csv_client` - CSV data source for this buffer
 - ✅ `csv_mode` - Whether this buffer is in CSV mode **[DONE - Wrapper added, migrated, tested]**
 - ✅ `csv_table_name` - Table name for CSV data **[DONE - Wrapper added, migrated, tested]**
-- `cached_data` - Cached JSON data for this buffer
+- ✅ `cached_data` - Cached JSON data for this buffer **[DONE - Wrapper added, migrated, tested]**
 
 #### Edit State
 - ✅ `undo_stack` - Undo history for this buffer **[DONE - Wrapper added, migrated, tested]**

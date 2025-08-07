@@ -730,6 +730,31 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Wrapper methods for cached_data (uses buffer system)
+    fn get_cached_data(&self) -> Option<&Vec<serde_json::Value>> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_cached_data()
+        } else {
+            self.cached_data.as_ref()
+        }
+    }
+
+    fn set_cached_data(&mut self, data: Option<Vec<serde_json::Value>>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_cached_data(data);
+        } else {
+            self.cached_data = data;
+        }
+    }
+
+    fn has_cached_data(&self) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.has_cached_data()
+        } else {
+            self.cached_data.is_some()
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -2355,7 +2380,7 @@ impl EnhancedTuiApp {
 
         let result = if self.is_cache_mode() {
             // When in cache mode, use CSV client to query cached data
-            if let Some(ref cached_data) = self.cached_data {
+            if let Some(cached_data) = self.get_cached_data() {
                 let mut csv_client = CsvApiClient::new();
                 csv_client.load_from_json(cached_data.clone(), "cached_data")?;
 
@@ -6692,7 +6717,7 @@ impl EnhancedTuiApp {
                     if let Some(ref cache) = self.query_cache {
                         match cache.load_query(id) {
                             Ok((_query, data)) => {
-                                self.cached_data = Some(data.clone());
+                                self.set_cached_data(Some(data.clone()));
                                 self.set_cache_mode(true);
                                 self.set_status_message(format!(
                                     "Loaded cache ID {} with {} rows. Cache mode enabled.",
@@ -6726,7 +6751,7 @@ impl EnhancedTuiApp {
             }
             "clear" => {
                 self.set_cache_mode(false);
-                self.cached_data = None;
+                self.set_cached_data(None);
                 self.set_status_message("Cache mode disabled".to_string());
             }
             _ => {

@@ -217,6 +217,9 @@ pub trait BufferAPI {
     fn get_table_name(&self) -> String;
     fn is_cache_mode(&self) -> bool;
     fn set_cache_mode(&mut self, cache_mode: bool);
+    fn get_cached_data(&self) -> Option<&Vec<Value>>;
+    fn set_cached_data(&mut self, data: Option<Vec<Value>>);
+    fn has_cached_data(&self) -> bool;
 
     // --- Input State ---
     fn get_input_value(&self) -> String;
@@ -596,6 +599,18 @@ impl BufferAPI for Buffer {
 
     fn set_cache_mode(&mut self, cache_mode: bool) {
         self.cache_mode = cache_mode;
+    }
+
+    fn get_cached_data(&self) -> Option<&Vec<Value>> {
+        self.cached_data.as_ref()
+    }
+
+    fn set_cached_data(&mut self, data: Option<Vec<Value>>) {
+        self.cached_data = data;
+    }
+
+    fn has_cached_data(&self) -> bool {
+        self.cached_data.is_some()
     }
 
     // --- Input State ---
