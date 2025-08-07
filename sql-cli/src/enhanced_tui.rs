@@ -259,14 +259,18 @@ impl EnhancedTuiApp {
 
     /// Get current buffer if available (for reading)
     fn current_buffer(&self) -> Option<&dyn sql_cli::buffer::BufferAPI> {
-        // For now return None - will be implemented when we activate BufferManager
-        None
+        self.buffer_manager
+            .as_ref()?
+            .current()
+            .map(|b| b as &dyn sql_cli::buffer::BufferAPI)
     }
 
     /// Get current buffer if available (for writing)  
     fn current_buffer_mut(&mut self) -> Option<&mut dyn sql_cli::buffer::BufferAPI> {
-        // For now return None - will be implemented when we activate BufferManager
-        None
+        self.buffer_manager
+            .as_mut()?
+            .current_mut()
+            .map(|b| b as &mut dyn sql_cli::buffer::BufferAPI)
     }
 
     // Compatibility wrapper for edit_mode
@@ -496,9 +500,11 @@ impl EnhancedTuiApp {
     pub fn new_with_csv(csv_path: &str) -> Result<Self> {
         let mut csv_client = CsvApiClient::new();
 
-        // Load config to get case_insensitive_default
-        let config = Config::load().unwrap_or_default();
-        csv_client.set_case_insensitive(config.behavior.case_insensitive_default);
+        // First create the app to get its config
+        let mut app = Self::new(""); // Empty API URL for CSV mode
+
+        // Use the app's config for consistency
+        csv_client.set_case_insensitive(app.config.behavior.case_insensitive_default);
 
         let raw_name = std::path::Path::new(csv_path)
             .file_stem()
@@ -516,7 +522,7 @@ impl EnhancedTuiApp {
             .get_schema()
             .ok_or_else(|| anyhow::anyhow!("Failed to get CSV schema"))?;
 
-        let mut app = Self::new(""); // Empty API URL for CSV mode
+        // Configure the app for CSV mode
         app.csv_client = Some(csv_client.clone());
         app.csv_mode = true;
         app.csv_table_name = table_name.clone();
@@ -532,9 +538,14 @@ impl EnhancedTuiApp {
                 csv_client,
                 table_name.clone(),
             );
-            // Apply config settings to the buffer
-            buffer.set_case_insensitive(config.behavior.case_insensitive_default);
+            // Apply config settings to the buffer - use app's config
+            buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             manager.add_buffer(buffer);
+
+            // Sync app-level state from the buffer to ensure status line renders correctly
+            if let Some(current_buffer) = manager.current() {
+                app.case_insensitive = current_buffer.is_case_insensitive();
+            }
         }
 
         // Update parser with CSV columns
@@ -583,9 +594,11 @@ impl EnhancedTuiApp {
     pub fn new_with_json(json_path: &str) -> Result<Self> {
         let mut csv_client = CsvApiClient::new();
 
-        // Load config to get case_insensitive_default
-        let config = Config::load().unwrap_or_default();
-        csv_client.set_case_insensitive(config.behavior.case_insensitive_default);
+        // First create the app to get its config
+        let mut app = Self::new(""); // Empty API URL for JSON mode
+
+        // Use the app's config for consistency
+        csv_client.set_case_insensitive(app.config.behavior.case_insensitive_default);
 
         let raw_name = std::path::Path::new(json_path)
             .file_stem()
@@ -603,7 +616,7 @@ impl EnhancedTuiApp {
             .get_schema()
             .ok_or_else(|| anyhow::anyhow!("Failed to get JSON schema"))?;
 
-        let mut app = Self::new(""); // Empty API URL for JSON mode
+        // Configure the app for JSON mode
         app.csv_client = Some(csv_client.clone());
         app.csv_mode = true; // Reuse CSV mode since the data structure is the same
         app.csv_table_name = table_name.clone();
@@ -619,9 +632,14 @@ impl EnhancedTuiApp {
                 csv_client,
                 table_name.clone(),
             );
-            // Apply config settings to the buffer
-            buffer.set_case_insensitive(config.behavior.case_insensitive_default);
+            // Apply config settings to the buffer - use app's config
+            buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             manager.add_buffer(buffer);
+
+            // Sync app-level state from the buffer to ensure status line renders correctly
+            if let Some(current_buffer) = manager.current() {
+                app.case_insensitive = current_buffer.is_case_insensitive();
+            }
         }
 
         // Update parser with JSON columns
@@ -1362,6 +1380,10 @@ impl EnhancedTuiApp {
             KeyCode::Char('/') => {
                 self.mode = AppMode::Search;
                 self.search_state.pattern.clear();
+                // Save SQL query and use temporary input for search display
+                self.undo_stack
+                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.input = tui_input::Input::default();
             }
             // Column navigation/search functionality (backslash like vim reverse search)
             KeyCode::Char('\\') => {
@@ -1369,6 +1391,10 @@ impl EnhancedTuiApp {
                 self.column_search_state.pattern.clear();
                 self.column_search_state.matching_columns.clear();
                 self.column_search_state.current_match = 0;
+                // Save current SQL query before clearing input for column search
+                self.undo_stack
+                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.input = tui_input::Input::default();
             }
             KeyCode::Char('n') => {
                 self.next_search_match();
@@ -1393,6 +1419,10 @@ impl EnhancedTuiApp {
             KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.mode = AppMode::Filter;
                 self.filter_state.pattern.clear();
+                // Save SQL query and use temporary input for filter display
+                self.undo_stack
+                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.input = tui_input::Input::default();
             }
             // Fuzzy filter functionality (lowercase f)
             KeyCode::Char('f')
@@ -1402,6 +1432,11 @@ impl EnhancedTuiApp {
                 self.mode = AppMode::FuzzyFilter;
                 self.fuzzy_filter_state.pattern.clear();
                 self.fuzzy_filter_state.filtered_indices.clear();
+                self.fuzzy_filter_state.active = false; // Clear active state when entering mode
+                                                        // Save SQL query and use temporary input for fuzzy filter display
+                self.undo_stack
+                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.input = tui_input::Input::default();
             }
             // Sort functionality (lowercase s)
             KeyCode::Char('s')
@@ -1496,17 +1531,31 @@ impl EnhancedTuiApp {
     fn handle_search_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Esc => {
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
             }
             KeyCode::Enter => {
                 self.perform_search();
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
             }
             KeyCode::Backspace => {
                 self.search_state.pattern.pop();
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.search_state.pattern.clone())
+                    .with_cursor(self.search_state.pattern.len());
             }
             KeyCode::Char(c) => {
                 self.search_state.pattern.push(c);
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.search_state.pattern.clone())
+                    .with_cursor(self.search_state.pattern.len());
             }
             _ => {}
         }
@@ -1516,17 +1565,31 @@ impl EnhancedTuiApp {
     fn handle_filter_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Esc => {
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
             }
             KeyCode::Enter => {
                 self.apply_filter();
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
             }
             KeyCode::Backspace => {
                 self.filter_state.pattern.pop();
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.filter_state.pattern.clone())
+                    .with_cursor(self.filter_state.pattern.len());
             }
             KeyCode::Char(c) => {
                 self.filter_state.pattern.push(c);
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.filter_state.pattern.clone())
+                    .with_cursor(self.filter_state.pattern.len());
             }
             _ => {}
         }
@@ -1540,6 +1603,10 @@ impl EnhancedTuiApp {
                 self.fuzzy_filter_state.active = false;
                 self.fuzzy_filter_state.pattern.clear();
                 self.fuzzy_filter_state.filtered_indices.clear();
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
                 self.status_message = "Fuzzy filter cleared".to_string();
             }
@@ -1549,10 +1616,17 @@ impl EnhancedTuiApp {
                     self.apply_fuzzy_filter();
                     self.fuzzy_filter_state.active = true;
                 }
+                // Restore original SQL query
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.mode = AppMode::Results;
             }
             KeyCode::Backspace => {
                 self.fuzzy_filter_state.pattern.pop();
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.fuzzy_filter_state.pattern.clone())
+                    .with_cursor(self.fuzzy_filter_state.pattern.len());
                 // Re-apply filter in real-time
                 if !self.fuzzy_filter_state.pattern.is_empty() {
                     self.apply_fuzzy_filter();
@@ -1563,6 +1637,9 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char(c) => {
                 self.fuzzy_filter_state.pattern.push(c);
+                // Update input for rendering
+                self.input = tui_input::Input::new(self.fuzzy_filter_state.pattern.clone())
+                    .with_cursor(self.fuzzy_filter_state.pattern.len());
                 // Apply filter in real-time as user types
                 self.apply_fuzzy_filter();
             }
@@ -1578,6 +1655,10 @@ impl EnhancedTuiApp {
                 self.mode = AppMode::Results;
                 self.column_search_state.pattern.clear();
                 self.column_search_state.matching_columns.clear();
+                // Restore original SQL query from undo stack
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                }
                 self.status_message = "Column search cancelled".to_string();
             }
             KeyCode::Enter => {
@@ -1589,6 +1670,10 @@ impl EnhancedTuiApp {
                     self.status_message = format!("Jumped to column: {}", column_name);
                 } else {
                     self.status_message = "No matching columns found".to_string();
+                }
+                // Restore original SQL query from undo stack
+                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.mode = AppMode::Results;
             }
@@ -1631,10 +1716,16 @@ impl EnhancedTuiApp {
             }
             KeyCode::Backspace => {
                 self.column_search_state.pattern.pop();
+                // Also update input to keep it in sync for rendering
+                self.input = tui_input::Input::new(self.column_search_state.pattern.clone())
+                    .with_cursor(self.column_search_state.pattern.len());
                 self.update_column_search();
             }
             KeyCode::Char(c) => {
                 self.column_search_state.pattern.push(c);
+                // Also update input to keep it in sync for rendering
+                self.input = tui_input::Input::new(self.column_search_state.pattern.clone())
+                    .with_cursor(self.column_search_state.pattern.len());
                 self.update_column_search();
             }
             _ => {}
@@ -4612,10 +4703,10 @@ impl EnhancedTuiApp {
         let input_block = Block::default().borders(Borders::ALL).title(input_title);
 
         let input_text = match self.mode {
-            AppMode::Search => &self.search_state.pattern,
-            AppMode::Filter => &self.filter_state.pattern,
-            AppMode::FuzzyFilter => &self.fuzzy_filter_state.pattern,
-            AppMode::ColumnSearch => &self.column_search_state.pattern,
+            AppMode::Search => self.input.value(), // Use input for rendering
+            AppMode::Filter => self.input.value(), // Use input for rendering
+            AppMode::FuzzyFilter => self.input.value(), // Use input for rendering
+            AppMode::ColumnSearch => self.input.value(), // Column search still uses input since it saves/restores
             AppMode::History => &self.history_state.search_query,
             _ => self.input.value(),
         };
@@ -4702,25 +4793,25 @@ impl EnhancedTuiApp {
             }
             AppMode::Search => {
                 f.set_cursor_position((
-                    chunks[0].x + self.search_state.pattern.len() as u16 + 1,
+                    chunks[0].x + self.input.cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
             AppMode::Filter => {
                 f.set_cursor_position((
-                    chunks[0].x + self.filter_state.pattern.len() as u16 + 1,
+                    chunks[0].x + self.input.cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
             AppMode::FuzzyFilter => {
                 f.set_cursor_position((
-                    chunks[0].x + self.fuzzy_filter_state.pattern.len() as u16 + 1,
+                    chunks[0].x + self.input.cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
             AppMode::ColumnSearch => {
                 f.set_cursor_position((
-                    chunks[0].x + self.column_search_state.pattern.len() as u16 + 1,
+                    chunks[0].x + self.input.cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
@@ -4991,14 +5082,8 @@ impl EnhancedTuiApp {
                 }
             }
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
-                // Show the pattern being typed
-                let pattern = match self.mode {
-                    AppMode::Search => &self.search_state.pattern,
-                    AppMode::Filter => &self.filter_state.pattern,
-                    AppMode::FuzzyFilter => &self.fuzzy_filter_state.pattern,
-                    AppMode::ColumnSearch => &self.column_search_state.pattern,
-                    _ => "",
-                };
+                // Show the pattern being typed - always use input for consistency
+                let pattern = self.input.value();
                 if !pattern.is_empty() {
                     spans.push(Span::raw(" | Pattern: "));
                     spans.push(Span::styled(pattern, Style::default().fg(mode_color)));
@@ -5055,10 +5140,13 @@ impl EnhancedTuiApp {
         }
 
         // Global indicators (shown when active)
-        if self.get_case_insensitive() {
+        let case_insensitive = self.get_case_insensitive();
+        if case_insensitive {
             spans.push(Span::raw(" | "));
+            // Use to_string() to ensure we get the actual string value
+            let icon = self.config.display.icons.case_insensitive.clone();
             spans.push(Span::styled(
-                &self.config.display.icons.case_insensitive,
+                format!("{} CASE", icon),
                 Style::default().fg(Color::Cyan),
             ));
         }
