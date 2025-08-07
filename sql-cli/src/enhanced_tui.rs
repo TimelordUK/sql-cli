@@ -368,6 +368,120 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Compatibility wrapper for input
+    fn get_input(&self) -> &tui_input::Input {
+        if let Some(buffer) = self.current_buffer() {
+            // TODO: Need to get input from buffer - for now use TUI field
+            &self.input
+        } else {
+            &self.input
+        }
+    }
+
+    fn get_input_mut(&mut self) -> &mut tui_input::Input {
+        // For now, always use TUI field since Buffer input access is more complex
+        &mut self.input
+    }
+
+    // Helper functions to convert between buffer AppMode and local AppMode
+    fn buffer_mode_to_local(buffer_mode: sql_cli::buffer::AppMode) -> AppMode {
+        match buffer_mode {
+            sql_cli::buffer::AppMode::Command => AppMode::Command,
+            sql_cli::buffer::AppMode::Results => AppMode::Results,
+            sql_cli::buffer::AppMode::Search => AppMode::Search,
+            sql_cli::buffer::AppMode::Filter => AppMode::Filter,
+            sql_cli::buffer::AppMode::FuzzyFilter => AppMode::FuzzyFilter,
+            sql_cli::buffer::AppMode::ColumnSearch => AppMode::ColumnSearch,
+            sql_cli::buffer::AppMode::Help => AppMode::Help,
+            sql_cli::buffer::AppMode::History => AppMode::History,
+            sql_cli::buffer::AppMode::Debug => AppMode::Debug,
+            sql_cli::buffer::AppMode::PrettyQuery => AppMode::PrettyQuery,
+            sql_cli::buffer::AppMode::CacheList => AppMode::CacheList,
+            sql_cli::buffer::AppMode::JumpToRow => AppMode::JumpToRow,
+            sql_cli::buffer::AppMode::ColumnStats => AppMode::ColumnStats,
+        }
+    }
+
+    fn local_mode_to_buffer(local_mode: &AppMode) -> sql_cli::buffer::AppMode {
+        match local_mode {
+            AppMode::Command => sql_cli::buffer::AppMode::Command,
+            AppMode::Results => sql_cli::buffer::AppMode::Results,
+            AppMode::Search => sql_cli::buffer::AppMode::Search,
+            AppMode::Filter => sql_cli::buffer::AppMode::Filter,
+            AppMode::FuzzyFilter => sql_cli::buffer::AppMode::FuzzyFilter,
+            AppMode::ColumnSearch => sql_cli::buffer::AppMode::ColumnSearch,
+            AppMode::Help => sql_cli::buffer::AppMode::Help,
+            AppMode::History => sql_cli::buffer::AppMode::History,
+            AppMode::Debug => sql_cli::buffer::AppMode::Debug,
+            AppMode::PrettyQuery => sql_cli::buffer::AppMode::PrettyQuery,
+            AppMode::CacheList => sql_cli::buffer::AppMode::CacheList,
+            AppMode::JumpToRow => sql_cli::buffer::AppMode::JumpToRow,
+            AppMode::ColumnStats => sql_cli::buffer::AppMode::ColumnStats,
+        }
+    }
+
+    // Compatibility wrapper for mode
+    fn get_mode(&self) -> AppMode {
+        if let Some(buffer) = self.current_buffer() {
+            Self::buffer_mode_to_local(buffer.get_mode())
+        } else {
+            self.mode.clone()
+        }
+    }
+
+    fn set_mode(&mut self, mode: AppMode) {
+        // Update local field (will be removed later)
+        self.mode = mode.clone();
+
+        // Also update in buffer if available
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_mode(Self::local_mode_to_buffer(&mode));
+        }
+    }
+
+    // Compatibility wrapper for results
+    fn get_results(&self) -> Option<&QueryResponse> {
+        // For now, always use TUI field due to type conflicts
+        // TODO: Resolve QueryResponse type mismatch between crate::api_client and sql_cli::api_client
+        self.results.as_ref()
+    }
+
+    fn set_results(&mut self, results: Option<QueryResponse>) {
+        // Update local field
+        self.results = results;
+
+        // TODO: Also update in buffer when type conflicts are resolved
+    }
+
+    // Compatibility wrapper for table_state
+    fn get_table_state(&self) -> &TableState {
+        // For now, always use TUI field since TableState access is complex
+        &self.table_state
+    }
+
+    fn get_table_state_mut(&mut self) -> &mut TableState {
+        &mut self.table_state
+    }
+
+    // Compatibility wrapper for status_message
+    fn get_status_message(&self) -> String {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_status_message()
+        } else {
+            self.status_message.clone()
+        }
+    }
+
+    fn set_status_message(&mut self, message: String) {
+        // Update local field (will be removed later)
+        self.status_message = message.clone();
+
+        // Also update in buffer if available
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_status_message(message);
+        }
+    }
+
     fn sanitize_table_name(name: &str) -> String {
         // Replace spaces and other problematic characters with underscores
         // to create SQL-friendly table names
@@ -385,7 +499,7 @@ impl EnhancedTuiApp {
     }
 
     pub fn has_results(&self) -> bool {
-        self.results.is_some()
+        self.get_results().is_some()
     }
 
     pub fn new(api_url: &str) -> Self {
@@ -796,11 +910,11 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.show_help = !self.show_help;
-                self.mode = if self.show_help {
+                self.set_mode(if self.show_help {
                     AppMode::Help
                 } else {
                     AppMode::Command
-                };
+                });
             }
             KeyCode::F(3) => {
                 // Toggle between single-line and multi-line mode
