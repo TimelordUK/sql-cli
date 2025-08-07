@@ -637,6 +637,82 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Wrapper methods for undo/redo/kill ring (uses buffer system)
+    fn get_undo_stack(&self) -> &Vec<(String, usize)> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_undo_stack()
+        } else {
+            &self.undo_stack
+        }
+    }
+
+    fn push_undo(&mut self, state: (String, usize)) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.push_undo(state);
+        } else {
+            self.undo_stack.push(state);
+            if self.undo_stack.len() > 100 {
+                self.undo_stack.remove(0);
+            }
+        }
+    }
+
+    fn pop_undo(&mut self) -> Option<(String, usize)> {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.pop_undo()
+        } else {
+            self.undo_stack.pop()
+        }
+    }
+
+    fn push_redo(&mut self, state: (String, usize)) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.push_redo(state);
+        } else {
+            self.redo_stack.push(state);
+        }
+    }
+
+    fn pop_redo(&mut self) -> Option<(String, usize)> {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.pop_redo()
+        } else {
+            self.redo_stack.pop()
+        }
+    }
+
+    fn clear_redo(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.clear_redo();
+        } else {
+            self.redo_stack.clear();
+        }
+    }
+
+    fn get_kill_ring(&self) -> String {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_kill_ring()
+        } else {
+            self.kill_ring.clone()
+        }
+    }
+
+    fn set_kill_ring(&mut self, text: String) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_kill_ring(text);
+        } else {
+            self.kill_ring = text;
+        }
+    }
+
+    fn is_kill_ring_empty(&self) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.is_kill_ring_empty()
+        } else {
+            self.kill_ring.is_empty()
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -1256,8 +1332,8 @@ impl EnhancedTuiApp {
                 self.kill_line();
                 self.set_status_message(format!(
                     "Killed to end of line{}",
-                    if !self.kill_ring.is_empty() {
-                        format!(" ('{}' saved to kill ring)", self.kill_ring)
+                    if !self.is_kill_ring_empty() {
+                        format!(" ('{}' saved to kill ring)", self.get_kill_ring())
                     } else {
                         "".to_string()
                     }
@@ -1268,8 +1344,8 @@ impl EnhancedTuiApp {
                 self.kill_line_backward();
                 self.set_status_message(format!(
                     "Killed to beginning of line{}",
-                    if !self.kill_ring.is_empty() {
-                        format!(" ('{}' saved to kill ring)", self.kill_ring)
+                    if !self.is_kill_ring_empty() {
+                        format!(" ('{}' saved to kill ring)", self.get_kill_ring())
                     } else {
                         "".to_string()
                     }
@@ -1580,6 +1656,48 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('q') => return Ok(true),
+            KeyCode::F(5) => {
+                // Debug mode - show buffer state and parser information
+                // Build debug information similar to Command mode
+                let cursor_pos = self.input.cursor();
+                let visual_cursor = self.input.visual_cursor();
+                let query = self.input.value();
+
+                // Create debug info showing buffer state
+                let mut debug_info = String::new();
+                debug_info.push_str("=== Debug Information (Results Mode) ===\n\n");
+
+                // Add current query info
+                debug_info.push_str("Current Query:\n");
+                debug_info.push_str(&format!("  Query: '{}'\n", query));
+                debug_info.push_str(&format!("  Cursor Position: {}\n", cursor_pos));
+                debug_info.push_str(&format!("  Visual Cursor: {}\n", visual_cursor));
+                debug_info.push_str("\n");
+
+                // Add buffer manager info if available
+                if let Some(ref manager) = self.buffer_manager {
+                    debug_info.push_str("=== Buffer Manager ===\n");
+                    debug_info.push_str(&format!(
+                        "  Total Buffers: {}\n",
+                        manager.all_buffers().len()
+                    ));
+                    debug_info.push_str(&format!(
+                        "  Current Buffer Index: {}\n",
+                        manager.current_index()
+                    ));
+
+                    // Add current buffer debug dump
+                    if let Some(buffer) = manager.current() {
+                        debug_info.push_str("\n=== Current Buffer State ===\n");
+                        debug_info.push_str(&buffer.debug_dump());
+                    }
+                }
+
+                self.debug_text = debug_info;
+                self.debug_scroll = 0;
+                self.set_mode(AppMode::Debug);
+                self.set_status_message("Debug mode - Press 'q' or ESC to return".to_string());
+            }
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
                 let current = self.get_case_insensitive();
@@ -1704,8 +1822,7 @@ impl EnhancedTuiApp {
                 self.set_mode(AppMode::Search);
                 self.search_state.pattern.clear();
                 // Save SQL query and use temporary input for search display
-                self.undo_stack
-                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.push_undo((self.input.value().to_string(), self.input.cursor()));
                 self.input = tui_input::Input::default();
             }
             // Column navigation/search functionality (backslash like vim reverse search)
@@ -1715,8 +1832,7 @@ impl EnhancedTuiApp {
                 self.column_search_state.matching_columns.clear();
                 self.column_search_state.current_match = 0;
                 // Save current SQL query before clearing input for column search
-                self.undo_stack
-                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.push_undo((self.input.value().to_string(), self.input.cursor()));
                 self.input = tui_input::Input::default();
             }
             KeyCode::Char('n') => {
@@ -1744,8 +1860,7 @@ impl EnhancedTuiApp {
                 self.set_mode(AppMode::Filter);
                 self.get_filter_state_mut().pattern.clear();
                 // Save SQL query and use temporary input for filter display
-                self.undo_stack
-                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.push_undo((self.input.value().to_string(), self.input.cursor()));
                 self.input = tui_input::Input::default();
             }
             // Fuzzy filter functionality (lowercase f)
@@ -1758,8 +1873,7 @@ impl EnhancedTuiApp {
                 self.fuzzy_filter_state.filtered_indices.clear();
                 self.fuzzy_filter_state.active = false; // Clear active state when entering mode
                                                         // Save SQL query and use temporary input for fuzzy filter display
-                self.undo_stack
-                    .push((self.input.value().to_string(), self.input.cursor()));
+                self.push_undo((self.input.value().to_string(), self.input.cursor()));
                 self.input = tui_input::Input::default();
             }
             // Sort functionality (lowercase s)
@@ -1859,7 +1973,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Esc => {
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                if let Some((original_query, cursor_pos)) = self.pop_undo() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -1867,7 +1981,7 @@ impl EnhancedTuiApp {
             KeyCode::Enter => {
                 self.perform_search();
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                if let Some((original_query, cursor_pos)) = self.pop_undo() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -1893,7 +2007,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Esc => {
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                if let Some((original_query, cursor_pos)) = self.pop_undo() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -1901,7 +2015,7 @@ impl EnhancedTuiApp {
             KeyCode::Enter => {
                 self.apply_filter();
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                if let Some((original_query, cursor_pos)) = self.pop_undo() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -1931,7 +2045,7 @@ impl EnhancedTuiApp {
                 self.fuzzy_filter_state.pattern.clear();
                 self.fuzzy_filter_state.filtered_indices.clear();
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                if let Some((original_query, cursor_pos)) = self.pop_undo() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -1944,7 +2058,7 @@ impl EnhancedTuiApp {
                     self.fuzzy_filter_state.active = true;
                 }
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                if let Some((original_query, cursor_pos)) = self.pop_undo() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -1983,7 +2097,7 @@ impl EnhancedTuiApp {
                 self.column_search_state.pattern.clear();
                 self.column_search_state.matching_columns.clear();
                 // Restore original SQL query from undo stack
-                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                if let Some((original_query, cursor_pos)) = self.pop_undo() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.set_status_message("Column search cancelled".to_string());
@@ -2000,7 +2114,7 @@ impl EnhancedTuiApp {
                     self.set_status_message("No matching columns found".to_string());
                 }
                 // Restore original SQL query from undo stack
-                if let Some((original_query, cursor_pos)) = self.undo_stack.pop() {
+                if let Some((original_query, cursor_pos)) = self.pop_undo() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -4443,7 +4557,7 @@ impl EnhancedTuiApp {
     }
 
     fn delete_word_backward(&mut self) {
-        let query = self.input.value();
+        let query = self.input.value().to_string();
         let cursor_pos = self.input.cursor();
 
         if cursor_pos == 0 {
@@ -4451,11 +4565,8 @@ impl EnhancedTuiApp {
         }
 
         // Save to undo stack before modifying
-        self.undo_stack.push((query.to_string(), cursor_pos));
-        if self.undo_stack.len() > 100 {
-            self.undo_stack.remove(0);
-        }
-        self.redo_stack.clear();
+        self.push_undo((query.clone(), cursor_pos));
+        self.clear_redo();
 
         // Find the start of the previous word
         let chars: Vec<char> = query.chars().collect();
@@ -4531,7 +4642,7 @@ impl EnhancedTuiApp {
     }
 
     fn delete_word_forward(&mut self) {
-        let query = self.input.value();
+        let query = self.input.value().to_string();
         let cursor_pos = self.input.cursor();
         let query_len = query.len();
 
@@ -4540,11 +4651,8 @@ impl EnhancedTuiApp {
         }
 
         // Save to undo stack before modifying
-        self.undo_stack.push((query.to_string(), cursor_pos));
-        if self.undo_stack.len() > 100 {
-            self.undo_stack.remove(0);
-        }
-        self.redo_stack.clear();
+        self.push_undo((query.clone(), cursor_pos));
+        self.clear_redo();
 
         // Find the end of the current/next word
         let chars: Vec<char> = query.chars().collect();
@@ -4588,21 +4696,19 @@ impl EnhancedTuiApp {
 
                 if cursor_pos < query_len {
                     // Save to undo stack before modifying
-                    self.undo_stack.push((query_str.clone(), cursor_pos));
-                    if self.undo_stack.len() > 100 {
-                        self.undo_stack.remove(0);
-                    }
-                    self.redo_stack.clear();
+                    self.push_undo((query_str.clone(), cursor_pos));
+                    self.clear_redo();
 
                     // Save to kill ring before deleting
-                    self.kill_ring = query_str.chars().skip(cursor_pos).collect::<String>();
+                    self.set_kill_ring(query_str.chars().skip(cursor_pos).collect::<String>());
                     let new_query = query_str.chars().take(cursor_pos).collect::<String>();
                     self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
 
                     // Update status to show what was killed
                     self.set_status_message(format!(
                         "Killed '{}' (cursor was at {})",
-                        self.kill_ring, cursor_pos
+                        self.get_kill_ring(),
+                        cursor_pos
                     ));
                 } else {
                     self.set_status_message(format!(
@@ -4618,15 +4724,17 @@ impl EnhancedTuiApp {
                 if row < lines.len() {
                     let current_line = &lines[row];
                     if col < current_line.len() {
-                        // Save killed text to kill ring
-                        self.kill_ring = current_line.chars().skip(col).collect::<String>();
-
+                        // Collect text that will be killed
+                        let killed_text = current_line.chars().skip(col).collect::<String>();
                         // Create new line with text up to cursor
                         let new_line = current_line.chars().take(col).collect::<String>();
 
                         // Update the textarea
                         let mut new_lines: Vec<String> = lines.iter().cloned().collect();
-                        new_lines[row] = new_line;
+                        new_lines[row] = new_line.clone();
+
+                        // Save killed text to kill ring (after releasing the borrow)
+                        self.set_kill_ring(killed_text);
                         self.textarea = TextArea::from(new_lines);
                         self.textarea.set_cursor_line_style(
                             Style::default().add_modifier(Modifier::UNDERLINED),
@@ -4646,16 +4754,16 @@ impl EnhancedTuiApp {
                 let cursor_pos = self.input.cursor();
 
                 if cursor_pos > 0 {
+                    // Collect text that will be killed and the new query
+                    let killed_text = query.chars().take(cursor_pos).collect::<String>();
+                    let new_query = query.chars().skip(cursor_pos).collect::<String>();
+
                     // Save to undo stack before modifying
-                    self.undo_stack.push((query.to_string(), cursor_pos));
-                    if self.undo_stack.len() > 100 {
-                        self.undo_stack.remove(0);
-                    }
-                    self.redo_stack.clear();
+                    self.push_undo((query.to_string(), cursor_pos));
+                    self.clear_redo();
 
                     // Save to kill ring before deleting
-                    self.kill_ring = query.chars().take(cursor_pos).collect::<String>();
-                    let new_query = query.chars().skip(cursor_pos).collect::<String>();
+                    self.set_kill_ring(killed_text);
                     self.input = tui_input::Input::new(new_query).with_cursor(0);
                 }
             }
@@ -4665,15 +4773,17 @@ impl EnhancedTuiApp {
                 let lines = self.textarea.lines();
                 if row < lines.len() && col > 0 {
                     let current_line = &lines[row];
-                    // Save killed text to kill ring
-                    self.kill_ring = current_line.chars().take(col).collect::<String>();
-
+                    // Collect text that will be killed
+                    let killed_text = current_line.chars().take(col).collect::<String>();
                     // Create new line with text after cursor
                     let new_line = current_line.chars().skip(col).collect::<String>();
 
                     // Update the textarea
                     let mut new_lines: Vec<String> = lines.iter().cloned().collect();
                     new_lines[row] = new_line;
+
+                    // Save killed text to kill ring (after releasing the borrow)
+                    self.set_kill_ring(killed_text);
                     self.textarea = TextArea::from(new_lines);
                     self.textarea
                         .set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
@@ -4685,30 +4795,28 @@ impl EnhancedTuiApp {
 
     fn undo(&mut self) {
         // Simple undo - restore from undo stack
-        if let Some(prev_state) = self.undo_stack.pop() {
+        if let Some(prev_state) = self.pop_undo() {
             let current_state = (self.input.value().to_string(), self.input.cursor());
-            self.redo_stack.push(current_state);
+            self.push_redo(current_state);
             self.input = tui_input::Input::new(prev_state.0).with_cursor(prev_state.1);
         }
     }
 
     fn yank(&mut self) {
-        if !self.kill_ring.is_empty() {
+        if !self.is_kill_ring_empty() {
             let query = self.input.value();
             let cursor_pos = self.input.cursor();
 
-            // Save to undo stack before modifying
-            self.undo_stack.push((query.to_string(), cursor_pos));
-            if self.undo_stack.len() > 100 {
-                self.undo_stack.remove(0);
-            }
-            self.redo_stack.clear();
-
-            // Insert kill ring content at cursor
+            // Get kill ring content and calculate new query
+            let kill_ring_content = self.get_kill_ring();
             let before = query.chars().take(cursor_pos).collect::<String>();
             let after = query.chars().skip(cursor_pos).collect::<String>();
-            let new_query = format!("{}{}{}", before, self.kill_ring, after);
-            let new_cursor = cursor_pos + self.kill_ring.len();
+            let new_query = format!("{}{}{}", before, kill_ring_content, after);
+            let new_cursor = cursor_pos + kill_ring_content.len();
+
+            // Save to undo stack before modifying
+            self.push_undo((query.to_string(), cursor_pos));
+            self.clear_redo();
             self.input = tui_input::Input::new(new_query).with_cursor(new_cursor);
         }
     }

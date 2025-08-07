@@ -232,6 +232,18 @@ pub trait BufferAPI {
     fn get_row_count(&self) -> usize;
     fn get_column_count(&self) -> usize;
 
+    // --- Edit State ---
+    fn get_undo_stack(&self) -> &Vec<(String, usize)>;
+    fn push_undo(&mut self, state: (String, usize));
+    fn pop_undo(&mut self) -> Option<(String, usize)>;
+    fn get_redo_stack(&self) -> &Vec<(String, usize)>;
+    fn push_redo(&mut self, state: (String, usize));
+    fn pop_redo(&mut self) -> Option<(String, usize)>;
+    fn clear_redo(&mut self);
+    fn get_kill_ring(&self) -> String;
+    fn set_kill_ring(&mut self, text: String);
+    fn is_kill_ring_empty(&self) -> bool;
+
     // --- Debug ---
     fn debug_dump(&self) -> String;
 }
@@ -293,8 +305,8 @@ pub struct Buffer {
     pub case_insensitive: bool,
 
     // --- Misc State ---
-    pub undo_stack: Vec<String>,
-    pub redo_stack: Vec<String>,
+    pub undo_stack: Vec<(String, usize)>,
+    pub redo_stack: Vec<(String, usize)>,
     pub kill_ring: String,
     pub last_visible_rows: usize,
     pub last_query_source: Option<String>,
@@ -644,6 +656,50 @@ impl BufferAPI for Buffer {
             }
         }
         0
+    }
+
+    // --- Edit State ---
+    fn get_undo_stack(&self) -> &Vec<(String, usize)> {
+        &self.undo_stack
+    }
+
+    fn push_undo(&mut self, state: (String, usize)) {
+        self.undo_stack.push(state);
+        if self.undo_stack.len() > 100 {
+            self.undo_stack.remove(0);
+        }
+    }
+
+    fn pop_undo(&mut self) -> Option<(String, usize)> {
+        self.undo_stack.pop()
+    }
+
+    fn get_redo_stack(&self) -> &Vec<(String, usize)> {
+        &self.redo_stack
+    }
+
+    fn push_redo(&mut self, state: (String, usize)) {
+        self.redo_stack.push(state);
+    }
+
+    fn pop_redo(&mut self) -> Option<(String, usize)> {
+        self.redo_stack.pop()
+    }
+
+    fn clear_redo(&mut self) {
+        self.redo_stack.clear();
+    }
+
+    fn get_kill_ring(&self) -> String {
+        self.kill_ring.clone()
+    }
+
+    fn set_kill_ring(&mut self, text: String) {
+        self.kill_ring = text;
+    }
+
+    fn is_kill_ring_empty(&self) -> bool {
+        self.kill_ring.is_empty()
     }
 
     fn debug_dump(&self) -> String {

@@ -45,9 +45,9 @@ These are buffer-specific and should move:
 - `cached_data` - Cached JSON data for this buffer
 
 #### Edit State
-- `undo_stack` - Undo history for this buffer
-- `redo_stack` - Redo history for this buffer
-- `kill_ring` - Kill ring for this buffer
+- ✅ `undo_stack` - Undo history for this buffer **[DONE - Wrapper added, migrated, tested]**
+- ✅ `redo_stack` - Redo history for this buffer **[DONE - Wrapper added, migrated, tested]**
+- ✅ `kill_ring` - Kill ring for this buffer **[DONE - Wrapper added, migrated, tested]**
 
 ### 🟢 Should Stay Global (in GlobalState)
 These are truly application-wide:
