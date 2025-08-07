@@ -3488,6 +3488,14 @@ impl EnhancedTuiApp {
             match_index: 0,
         };
 
+        // Clear fuzzy filter state to prevent it from persisting across queries
+        self.fuzzy_filter_state = FuzzyFilterState {
+            pattern: String::new(),
+            active: false,
+            matcher: SkimMatcherV2::default(),
+            filtered_indices: Vec::new(),
+        };
+
         // Clear filtered data
         self.filtered_data = None;
     }
