@@ -18,7 +18,7 @@ These are buffer-specific and should move:
 - `results` - Query results for this buffer
 - `table_state` - Table selection state
 - `mode` - Current mode (Command/Results/etc) for this buffer
-- `status_message` - Status message for current buffer
+- ✅ `status_message` - Status message for current buffer **[DONE - Fully migrated]**
 
 #### Filtering/Search State
 - `filter_state` - Active filters on this buffer's data
@@ -29,7 +29,7 @@ These are buffer-specific and should move:
 
 #### Display State
 - `column_widths` - Calculated widths for this buffer's columns
-- `scroll_offset` - Current scroll position (row, col)
+- 🔄 `scroll_offset` - Current scroll position (row, col) **[IN PROGRESS - Wrapper added, testing]**
 - `current_column` - Currently selected column
 - `pinned_columns` - Which columns are pinned in this buffer
 - `column_stats` - Statistics for selected column
@@ -84,6 +84,23 @@ These are truly application-wide:
 These could go either way:
 - `cache_mode` - Could be global or per-buffer
 - `last_visible_rows` - Viewport tracking, probably per-buffer
+
+## Migration Status
+
+### Completed Migrations
+- ✅ **status_message** - Fully migrated to buffer system, field removed from TUI struct
+  - All 149 references migrated
+  - Wrapper methods work with buffer system
+  - Field completely removed from EnhancedTuiApp
+
+### In Progress
+- 🔄 **scroll_offset** - Wrapper methods added, 26 references migrated, testing needed
+  - Get/set wrapper methods added
+  - All direct accesses migrated
+  - Field still present for backward compatibility
+
+### Pending
+- All other fields listed above
 
 ## Migration Steps
 
