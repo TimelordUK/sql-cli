@@ -529,6 +529,22 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn get_show_row_numbers(&self) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.is_show_row_numbers()
+        } else {
+            self.show_row_numbers
+        }
+    }
+
+    fn set_show_row_numbers(&mut self, show: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_show_row_numbers(show);
+        } else {
+            self.show_row_numbers = show;
+        }
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -1619,8 +1635,9 @@ impl EnhancedTuiApp {
                     self.previous_search_match();
                 } else {
                     // Toggle row numbers display
-                    self.show_row_numbers = !self.show_row_numbers;
-                    self.set_status_message(if self.show_row_numbers {
+                    let current = self.get_show_row_numbers();
+                    self.set_show_row_numbers(!current);
+                    self.set_status_message(if self.get_show_row_numbers() {
                         "Row numbers: ON (showing line numbers)".to_string()
                     } else {
                         "Row numbers: OFF".to_string()
@@ -5700,7 +5717,7 @@ impl EnhancedTuiApp {
         let mut header_cells: Vec<Cell> = Vec::new();
 
         // Add row number header if enabled
-        if self.show_row_numbers {
+        if self.get_show_row_numbers() {
             header_cells.push(
                 Cell::from("#").style(
                     Style::default()
@@ -5766,7 +5783,7 @@ impl EnhancedTuiApp {
                 let mut cells: Vec<Cell> = Vec::new();
 
                 // Add row number if enabled
-                if self.show_row_numbers {
+                if self.get_show_row_numbers() {
                     let row_num = actual_row_idx + 1; // 1-based numbering
                     cells.push(
                         Cell::from(row_num.to_string()).style(Style::default().fg(Color::Magenta)),
@@ -5850,7 +5867,7 @@ impl EnhancedTuiApp {
         let mut constraints: Vec<Constraint> = Vec::new();
 
         // Add constraint for row number column if enabled
-        if self.show_row_numbers {
+        if self.get_show_row_numbers() {
             // Calculate width needed for row numbers (max row count digits + padding)
             let max_row_num = total_rows;
             let row_num_width = max_row_num.to_string().len() as u16 + 2;
