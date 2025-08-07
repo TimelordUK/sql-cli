@@ -477,6 +477,25 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Wrapper methods for scroll_offset (uses buffer system)
+    fn get_scroll_offset(&self) -> (usize, usize) {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_scroll_offset()
+        } else {
+            self.scroll_offset
+        }
+    }
+
+    fn set_scroll_offset(&mut self, offset: (usize, usize)) {
+        // Update local field (will be removed later)
+        self.scroll_offset = offset;
+
+        // Also update in buffer if available
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_scroll_offset(offset);
+        }
+    }
+
     fn sanitize_table_name(name: &str) -> String {
         // Replace spaces and other problematic characters with underscores
         // to create SQL-friendly table names
@@ -1128,7 +1147,7 @@ impl EnhancedTuiApp {
                 self.table_state.select(Some(row));
 
                 // Restore the exact scroll offset from when we left
-                self.scroll_offset = self.get_last_scroll_offset();
+                self.set_scroll_offset(self.get_last_scroll_offset());
             }
             KeyCode::F(5) => {
                 // Debug command - show detailed parser information
@@ -1392,7 +1411,7 @@ impl EnhancedTuiApp {
                     // Save current position before switching to Command mode
                     if let Some(selected) = self.table_state.selected() {
                         self.set_last_results_row(Some(selected));
-                        self.set_last_scroll_offset(self.scroll_offset);
+                        self.set_last_scroll_offset(self.get_scroll_offset());
                     }
                     self.mode = AppMode::Command;
                     self.table_state.select(None);
@@ -1402,7 +1421,7 @@ impl EnhancedTuiApp {
                 // Save current position before switching to Command mode
                 if let Some(selected) = self.table_state.selected() {
                     self.last_results_row = Some(selected);
-                    self.last_scroll_offset = self.scroll_offset;
+                    self.last_scroll_offset = self.get_scroll_offset();
                 }
                 self.mode = AppMode::Command;
                 self.table_state.select(None);
@@ -2574,16 +2593,19 @@ impl EnhancedTuiApp {
                 // In lock mode, keep cursor at fixed viewport position
                 if let Some(lock_row) = self.viewport_lock_row {
                     // Adjust viewport so cursor stays at lock_row position
-                    self.scroll_offset.0 = new_position.saturating_sub(lock_row);
+                    let mut offset = self.get_scroll_offset();
+                    offset.0 = new_position.saturating_sub(lock_row);
+                    self.set_scroll_offset(offset);
                 }
             } else {
                 // Normal scrolling behavior
                 let visible_rows = self.last_visible_rows;
 
                 // Check if cursor would be below the last visible row
-                if new_position > self.scroll_offset.0 + visible_rows - 1 {
+                let offset = self.get_scroll_offset();
+                if new_position > offset.0 + visible_rows - 1 {
                     // Cursor moved below viewport - scroll down by one
-                    self.scroll_offset.0 += 1;
+                    self.set_scroll_offset((offset.0 + 1, offset.1));
                 }
             }
         }
@@ -2603,20 +2625,26 @@ impl EnhancedTuiApp {
             // In lock mode, keep cursor at fixed viewport position
             if let Some(lock_row) = self.viewport_lock_row {
                 // Adjust viewport so cursor stays at lock_row position
-                self.scroll_offset.0 = new_position.saturating_sub(lock_row);
+                let mut offset = self.get_scroll_offset();
+                offset.0 = new_position.saturating_sub(lock_row);
+                self.set_scroll_offset(offset);
             }
         } else {
             // Normal scrolling behavior
-            if new_position < self.scroll_offset.0 {
+            let mut offset = self.get_scroll_offset();
+            if new_position < offset.0 {
                 // Cursor moved above viewport - scroll up
-                self.scroll_offset.0 = new_position;
+                offset.0 = new_position;
+                self.set_scroll_offset(offset);
             }
         }
     }
 
     fn move_column_left(&mut self) {
         self.current_column = self.current_column.saturating_sub(1);
-        self.scroll_offset.1 = self.scroll_offset.1.saturating_sub(1);
+        let mut offset = self.get_scroll_offset();
+        offset.1 = offset.1.saturating_sub(1);
+        self.set_scroll_offset(offset);
         self.set_status_message(format!("Column {} selected", self.current_column + 1));
     }
 
@@ -2627,7 +2655,9 @@ impl EnhancedTuiApp {
                     let max_columns = obj.len();
                     if self.current_column + 1 < max_columns {
                         self.current_column += 1;
-                        self.scroll_offset.1 += 1;
+                        let mut offset = self.get_scroll_offset();
+                        offset.1 += 1;
+                        self.set_scroll_offset(offset);
                         self.set_status_message(format!(
                             "Column {} selected",
                             self.current_column + 1
@@ -2640,7 +2670,9 @@ impl EnhancedTuiApp {
 
     fn goto_first_column(&mut self) {
         self.current_column = 0;
-        self.scroll_offset.1 = 0;
+        let mut offset = self.get_scroll_offset();
+        offset.1 = 0;
+        self.set_scroll_offset(offset);
         self.set_status_message("First column selected".to_string());
     }
 
@@ -2653,7 +2685,9 @@ impl EnhancedTuiApp {
                         self.current_column = max_columns - 1;
                         // Update horizontal scroll to show the last column
                         // This ensures the last column is visible in the viewport
-                        self.scroll_offset.1 = self.current_column.saturating_sub(5); // Keep some context
+                        let mut offset = self.get_scroll_offset();
+                        offset.1 = self.current_column.saturating_sub(5); // Keep some context
+                        self.set_scroll_offset(offset);
                         self.set_status_message(format!(
                             "Last column selected ({})",
                             self.current_column + 1
@@ -2666,7 +2700,9 @@ impl EnhancedTuiApp {
 
     fn goto_first_row(&mut self) {
         self.table_state.select(Some(0));
-        self.scroll_offset.0 = 0; // Reset viewport to top
+        let mut offset = self.get_scroll_offset();
+        offset.0 = 0; // Reset viewport to top
+        self.set_scroll_offset(offset);
     }
 
     fn toggle_column_pin(&mut self) {
@@ -2889,7 +2925,9 @@ impl EnhancedTuiApp {
             self.table_state.select(Some(last_row));
             // Position viewport to show the last row at the bottom
             let visible_rows = self.last_visible_rows;
-            self.scroll_offset.0 = last_row.saturating_sub(visible_rows - 1);
+            let mut offset = self.get_scroll_offset();
+            offset.0 = last_row.saturating_sub(visible_rows - 1);
+            self.set_scroll_offset(offset);
         }
     }
 
@@ -2903,8 +2941,9 @@ impl EnhancedTuiApp {
             self.table_state.select(Some(new_position));
 
             // Scroll viewport down by a page
-            self.scroll_offset.0 =
-                (self.scroll_offset.0 + visible_rows).min(total_rows.saturating_sub(visible_rows));
+            let mut offset = self.get_scroll_offset();
+            offset.0 = (offset.0 + visible_rows).min(total_rows.saturating_sub(visible_rows));
+            self.set_scroll_offset(offset);
         }
     }
 
@@ -2916,7 +2955,9 @@ impl EnhancedTuiApp {
         self.table_state.select(Some(new_position));
 
         // Scroll viewport up by a page
-        self.scroll_offset.0 = self.scroll_offset.0.saturating_sub(visible_rows);
+        let mut offset = self.get_scroll_offset();
+        offset.0 = offset.0.saturating_sub(visible_rows);
+        self.set_scroll_offset(offset);
     }
 
     // Search and filter functions
@@ -3031,7 +3072,7 @@ impl EnhancedTuiApp {
 
                 // Reset table state but preserve filtered data
                 self.table_state = TableState::default();
-                self.scroll_offset = (0, 0);
+                self.set_scroll_offset((0, 0));
                 self.current_column = 0;
 
                 // Clear search state but keep filter state
@@ -3136,7 +3177,7 @@ impl EnhancedTuiApp {
             ));
             // Reset table state for new filtered view
             self.table_state = TableState::default();
-            self.scroll_offset = (0, 0);
+            self.set_scroll_offset((0, 0));
         } else {
             let filter_type = if pattern.starts_with('\'') {
                 "exact"
@@ -3427,7 +3468,7 @@ impl EnhancedTuiApp {
 
     fn reset_table_state(&mut self) {
         self.table_state = TableState::default();
-        self.scroll_offset = (0, 0);
+        self.set_scroll_offset((0, 0));
         self.current_column = 0;
         self.set_last_results_row(None); // Reset saved position for new results
         self.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
@@ -4992,7 +5033,8 @@ impl EnhancedTuiApp {
                     } else {
                         results.data.len()
                     };
-                    let row_viewport_start = self.scroll_offset.0.min(total_rows.saturating_sub(1));
+                    let row_viewport_start =
+                        self.get_scroll_offset().0.min(total_rows.saturating_sub(1));
                     let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
 
                     // Calculate column widths based on viewport
@@ -5439,7 +5481,7 @@ impl EnhancedTuiApp {
             }
         } else {
             // Current column is pinned, use scroll offset
-            self.scroll_offset.1.min(
+            self.get_scroll_offset().1.min(
                 scrollable_indices
                     .len()
                     .saturating_sub(max_visible_scrollable_cols),
@@ -5476,7 +5518,7 @@ impl EnhancedTuiApp {
         };
 
         // Calculate row viewport
-        let row_viewport_start = self.scroll_offset.0.min(total_rows.saturating_sub(1));
+        let row_viewport_start = self.get_scroll_offset().0.min(total_rows.saturating_sub(1));
         let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
 
         // Prepare table data (only visible rows AND columns)
@@ -5495,7 +5537,10 @@ impl EnhancedTuiApp {
 
                 // Recalculate viewport for fuzzy filtered data
                 let fuzzy_total = fuzzy_filtered.len();
-                let fuzzy_start = self.scroll_offset.0.min(fuzzy_total.saturating_sub(1));
+                let fuzzy_start = self
+                    .get_scroll_offset()
+                    .0
+                    .min(fuzzy_total.saturating_sub(1));
                 let fuzzy_end = (fuzzy_start + max_visible_rows).min(fuzzy_total);
 
                 fuzzy_filtered[fuzzy_start..fuzzy_end]
@@ -6389,7 +6434,9 @@ impl EnhancedTuiApp {
                             // Adjust viewport to center the target row
                             let visible_rows = self.last_visible_rows;
                             if visible_rows > 0 {
-                                self.scroll_offset.0 = target_row.saturating_sub(visible_rows / 2);
+                                let mut offset = self.get_scroll_offset();
+                                offset.0 = target_row.saturating_sub(visible_rows / 2);
+                                self.set_scroll_offset(offset);
                             }
 
                             self.set_status_message(format!("Jumped to row {}", row_num));
