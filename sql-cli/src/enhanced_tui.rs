@@ -593,6 +593,20 @@ impl EnhancedTuiApp {
         }
     }
 
+    fn is_csv_mode(&self) -> bool {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.is_csv_mode()
+        } else {
+            self.csv_mode
+        }
+    }
+
+    fn set_csv_mode(&mut self, csv_mode: bool) {
+        // Note: csv_mode is stored in the buffer, but we also need to update local field for now
+        self.csv_mode = csv_mode;
+        // TODO: Update buffer when buffer system is fully integrated
+    }
+
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
         if let Some(buffer) = self.current_buffer() {
@@ -799,7 +813,7 @@ impl EnhancedTuiApp {
 
         // Configure the app for CSV mode
         app.csv_client = Some(csv_client.clone());
-        app.csv_mode = true;
+        app.set_csv_mode(true);
         app.csv_table_name = table_name.clone();
         app.current_buffer_name = Some(format!("{}", raw_name));
 
@@ -893,7 +907,7 @@ impl EnhancedTuiApp {
 
         // Configure the app for JSON mode
         app.csv_client = Some(csv_client.clone());
-        app.csv_mode = true; // Reuse CSV mode since the data structure is the same
+        app.set_csv_mode(true); // Reuse CSV mode since the data structure is the same
         app.csv_table_name = table_name.clone();
         app.current_buffer_name = Some(format!("{}", raw_name));
 
@@ -1321,7 +1335,7 @@ impl EnhancedTuiApp {
                 debug_info.push_str(&input_state);
 
                 // Add dataset information
-                let dataset_info = if self.csv_mode {
+                let dataset_info = if self.is_csv_mode() {
                     if let Some(ref csv_client) = self.csv_client {
                         if let Some(schema) = csv_client.get_schema() {
                             let (table_name, columns) = schema
@@ -1409,7 +1423,7 @@ impl EnhancedTuiApp {
                     self.get_case_insensitive(),
                     self.get_compact_mode(),
                     self.is_viewport_lock(),
-                    self.csv_mode,
+                    self.is_csv_mode(),
                     self.cache_mode,
                     &self.get_last_query_source().unwrap_or("None".to_string()),
                     if self.fuzzy_filter_state.active {
@@ -1449,7 +1463,7 @@ impl EnhancedTuiApp {
                         debug_info.push_str(&format!("  ID: {}\n", buffer.id));
                         debug_info.push_str(&format!("  Path: {:?}\n", buffer.file_path));
                         debug_info.push_str(&format!("  Modified: {}\n", buffer.modified));
-                        debug_info.push_str(&format!("  CSV Mode: {}\n", buffer.csv_mode));
+                        debug_info.push_str(&format!("  CSV Mode: {}\n", buffer.is_csv_mode()));
                     }
 
                     // Add current buffer debug dump
@@ -2199,7 +2213,7 @@ impl EnhancedTuiApp {
             } else {
                 Err(anyhow::anyhow!("No cached data loaded"))
             }
-        } else if self.csv_mode {
+        } else if self.is_csv_mode() {
             if let Some(ref csv_client) = self.csv_client {
                 // Convert CSV result to match the expected type
                 csv_client.query_csv(query).map(|r| QueryResponse {
@@ -2273,7 +2287,7 @@ impl EnhancedTuiApp {
             let where_clause = &query[where_pos + 7..]; // Skip " where "
 
             // Get columns from CSV client if available
-            let columns = if self.csv_mode {
+            let columns = if self.is_csv_mode() {
                 if let Some(ref csv_client) = self.csv_client {
                     if let Some(schema) = csv_client.get_schema() {
                         schema
@@ -5282,7 +5296,7 @@ impl EnhancedTuiApp {
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ));
-        } else if self.csv_mode && !self.csv_table_name.is_empty() {
+        } else if self.is_csv_mode() && !self.csv_table_name.is_empty() {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 self.csv_table_name.clone(),
@@ -5482,7 +5496,7 @@ impl EnhancedTuiApp {
             };
             spans.push(Span::raw(format!("{} ", icon)));
             spans.push(Span::styled(label, Style::default().fg(color)));
-        } else if self.csv_mode {
+        } else if self.is_csv_mode() {
             spans.push(Span::raw(" | "));
             spans.push(Span::raw(&self.config.display.icons.file));
             spans.push(Span::raw(" "));
