@@ -674,7 +674,7 @@ impl EnhancedTuiApp {
                     columns.len()
                 )
             };
-            app.status_message = display_msg;
+            app.set_status_message(display_msg);
         }
 
         // Auto-execute SELECT * FROM table_name to show data immediately (if configured)
@@ -686,12 +686,12 @@ impl EnhancedTuiApp {
         if app.config.behavior.auto_execute_on_load {
             if let Err(e) = app.execute_query(&auto_query) {
                 // If auto-query fails, just log it in status but don't fail the load
-                app.status_message = format!(
+                app.set_status_message(format!(
                     "CSV loaded: table '{}' ({} columns) - Note: {}",
                     table_name,
                     schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
                     e
-                );
+                ));
             }
         }
 
@@ -767,7 +767,7 @@ impl EnhancedTuiApp {
                     columns.len()
                 )
             };
-            app.status_message = display_msg;
+            app.set_status_message(display_msg);
         }
 
         // Auto-execute SELECT * FROM table_name to show data immediately (if configured)
@@ -779,12 +779,12 @@ impl EnhancedTuiApp {
         if app.config.behavior.auto_execute_on_load {
             if let Err(e) = app.execute_query(&auto_query) {
                 // If auto-query fails, just log it in status but don't fail the load
-                app.status_message = format!(
+                app.set_status_message(format!(
                     "JSON loaded: table '{}' ({} columns) - Note: {}",
                     table_name,
                     schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
                     e
-                );
+                ));
             }
         }
 
@@ -4331,15 +4331,15 @@ impl EnhancedTuiApp {
 
                 if cursor_pos < query_len {
                     // Save to undo stack before modifying
-                    self.undo_stack.push((query.to_string(), cursor_pos));
+                    self.undo_stack.push((query_str.clone(), cursor_pos));
                     if self.undo_stack.len() > 100 {
                         self.undo_stack.remove(0);
                     }
                     self.redo_stack.clear();
 
                     // Save to kill ring before deleting
-                    self.kill_ring = query.chars().skip(cursor_pos).collect::<String>();
-                    let new_query = query.chars().take(cursor_pos).collect::<String>();
+                    self.kill_ring = query_str.chars().skip(cursor_pos).collect::<String>();
+                    let new_query = query_str.chars().take(cursor_pos).collect::<String>();
                     self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
 
                     // Update status to show what was killed
@@ -6617,11 +6617,11 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
         // TODO: Load additional files into buffers
         // For now, just note that we have multiple files
         if data_files.len() > 1 {
-            app.status_message = format!(
+            app.set_status_message(format!(
                 "{} | {} more file(s) to load - buffer support coming soon",
-                app.status_message,
+                app.get_status_message(),
                 data_files.len() - 1
-            );
+            ));
         }
 
         app
