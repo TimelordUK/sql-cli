@@ -2,6 +2,8 @@
 
 A powerful terminal-based SQL editor with syntax-aware completion, advanced parsing, and intelligent caching for querying trading data.
 
+**Designed for interactive analysis of datasets up to 100K+ rows** - Not a replacement for SQLite, but a hybrid tool for visual analysis with SQL querying and dual-layer filtering (SQL + fuzzy search).
+
 ## 🎯 Key Features
 
 ### Data Source Support
@@ -56,6 +58,35 @@ cargo run -- --enhanced
 # Or specify custom API URL:
 cargo run -- --enhanced --api-url http://localhost:5000
 ```
+
+## ⚡ Performance Characteristics
+
+**Target Use Case**: Interactive analysis of datasets **10K-100K+ rows**
+
+### Benchmark Results (100K rows)
+- **Complex queries**: ~100-200ms
+- **String filtering**: ~30ms  
+- **Multi-column sorting**: ~180ms
+- **Data loading**: ~90ms
+- **Memory usage**: ~50MB for 100K rows
+
+### Query Performance Breakdown
+```sql
+-- Example complex query (109ms on 100K rows)
+SELECT accruedInterest,book,clearingHouse,counterparty 
+FROM trades 
+WHERE platformOrderId.Contains('P') 
+  AND counterparty.Contains('morgan') 
+  AND clearingHouse IN ('lch') 
+ORDER BY counterparty DESC, book ASC
+```
+
+**Performance Test**: Run `cargo run --release --bin test-large-dataset-perf` to benchmark on your system.
+
+**Recommended Dataset Sizes**:
+- **1K-10K rows**: Instant queries (<10ms)
+- **10K-100K rows**: Fast interactive queries (50-200ms)  
+- **100K+ rows**: Still usable (200ms-2s), consider pagination for very large result sets
 
 ## 📋 Quick Query Reference
 
