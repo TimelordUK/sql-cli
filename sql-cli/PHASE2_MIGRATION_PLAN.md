@@ -29,7 +29,7 @@ These are buffer-specific and should move:
 
 #### Display State
 - `column_widths` - Calculated widths for this buffer's columns
-- 🔄 `scroll_offset` - Current scroll position (row, col) **[IN PROGRESS - Wrapper added, testing]**
+- ✅ `scroll_offset` - Current scroll position (row, col) **[DONE - Wrapper added, tested, working]**
 - `current_column` - Currently selected column
 - `pinned_columns` - Which columns are pinned in this buffer
 - `column_stats` - Statistics for selected column
@@ -93,11 +93,12 @@ These could go either way:
   - Wrapper methods work with buffer system
   - Field completely removed from EnhancedTuiApp
 
-### In Progress
-- 🔄 **scroll_offset** - Wrapper methods added, 26 references migrated, testing needed
-  - Get/set wrapper methods added
-  - All direct accesses migrated
-  - Field still present for backward compatibility
+### Completed Migrations (Continued)
+- ✅ **scroll_offset** - Successfully migrated to buffer system
+  - All 26 references migrated to use wrapper methods
+  - Get/set wrapper methods working with buffer system
+  - Field still present for backward compatibility (can be removed later)
+  - Tested and working with TUI
 
 ### Pending
 - All other fields listed above
