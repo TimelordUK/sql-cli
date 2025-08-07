@@ -21,7 +21,7 @@ These are buffer-specific and should move:
 - ✅ `status_message` - Status message for current buffer **[DONE - Fully migrated]**
 
 #### Filtering/Search State
-- `filter_state` - Active filters on this buffer's data
+- ✅ `filter_state` - Active filters on this buffer's data **[DONE - Wrapper added, tested, working]**
 - `fuzzy_filter_state` - Fuzzy filter state
 - `search_state` - Search within results
 - `column_search_state` - Column search state
@@ -104,6 +104,12 @@ These could go either way:
   - All 31 references migrated to use wrapper methods
   - Using get_table_state() and get_table_state_mut() accessors
   - Table selection state ready for per-buffer management
+  - Tested and working with TUI
+
+- ✅ **filter_state** - Successfully migrated to buffer system
+  - All 26 references migrated to use wrapper methods
+  - Using get_filter_state() and get_filter_state_mut() accessors
+  - Filter state ready for per-buffer management
   - Tested and working with TUI
 
 ### Pending
