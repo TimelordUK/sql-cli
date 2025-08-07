@@ -22,7 +22,7 @@ use ratatui::{
 };
 use regex::Regex;
 use serde_json::Value;
-use sql_cli::buffer::{Buffer, BufferManager};
+use sql_cli::buffer::{Buffer, BufferAPI, BufferManager};
 use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
@@ -467,7 +467,15 @@ impl EnhancedTuiApp {
             csv_client: None,
             csv_mode: false,
             csv_table_name: String::new(),
-            buffer_manager: None,
+            buffer_manager: {
+                // Initialize buffer manager with a default buffer
+                let mut manager = BufferManager::new();
+                let mut buffer = sql_cli::buffer::Buffer::new(1);
+                // Sync initial settings from config
+                buffer.set_case_insensitive(config.behavior.case_insensitive_default);
+                manager.add_buffer(buffer);
+                Some(manager)
+            },
             current_buffer_name: None,
             query_cache: QueryCache::new().ok(),
             cache_mode: false,
@@ -504,10 +512,24 @@ impl EnhancedTuiApp {
             .ok_or_else(|| anyhow::anyhow!("Failed to get CSV schema"))?;
 
         let mut app = Self::new(""); // Empty API URL for CSV mode
-        app.csv_client = Some(csv_client);
+        app.csv_client = Some(csv_client.clone());
         app.csv_mode = true;
         app.csv_table_name = table_name.clone();
         app.current_buffer_name = Some(format!("{}", raw_name));
+
+        // Replace the default buffer with a CSV buffer
+        if let Some(ref mut manager) = app.buffer_manager {
+            // Remove the default buffer
+            manager.close_current();
+            // Add a CSV buffer
+            let buffer = sql_cli::buffer::Buffer::from_csv(
+                1,
+                std::path::PathBuf::from(csv_path),
+                csv_client,
+                table_name.clone(),
+            );
+            manager.add_buffer(buffer);
+        }
 
         // Update parser with CSV columns
         if let Some(columns) = schema.get(&table_name) {
@@ -571,10 +593,24 @@ impl EnhancedTuiApp {
             .ok_or_else(|| anyhow::anyhow!("Failed to get JSON schema"))?;
 
         let mut app = Self::new(""); // Empty API URL for JSON mode
-        app.csv_client = Some(csv_client);
+        app.csv_client = Some(csv_client.clone());
         app.csv_mode = true; // Reuse CSV mode since the data structure is the same
         app.csv_table_name = table_name.clone();
         app.current_buffer_name = Some(format!("{}", raw_name));
+
+        // Replace the default buffer with a JSON buffer
+        if let Some(ref mut manager) = app.buffer_manager {
+            // Remove the default buffer
+            manager.close_current();
+            // Add a JSON buffer
+            let buffer = sql_cli::buffer::Buffer::from_json(
+                1,
+                std::path::PathBuf::from(json_path),
+                csv_client,
+                table_name.clone(),
+            );
+            manager.add_buffer(buffer);
+        }
 
         // Update parser with JSON columns
         if let Some(columns) = schema.get(&table_name) {
@@ -1079,6 +1115,13 @@ impl EnhancedTuiApp {
                     }
                 );
                 debug_info.push_str(&status_line_info);
+
+                // Add buffer debug dump if available
+                if let Some(buffer) = self.current_buffer() {
+                    debug_info.push_str("\n========== BUFFER DEBUG DUMP ==========\n");
+                    debug_info.push_str(&buffer.debug_dump());
+                    debug_info.push_str("========================================\n");
+                }
 
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();
