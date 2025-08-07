@@ -496,6 +496,23 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Wrapper methods for current_column (uses buffer system)
+    fn get_current_column(&self) -> usize {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_current_column()
+        } else {
+            self.current_column
+        }
+    }
+
+    fn set_current_column(&mut self, col: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_current_column(col);
+        } else {
+            self.current_column = col;
+        }
+    }
+
     fn get_filter_state(&self) -> &FilterState {
         &self.filter_state
     }
@@ -1225,7 +1242,7 @@ impl EnhancedTuiApp {
                     Sort State: {}\n",
                     self.results.as_ref().map(|r| r.data.len()).unwrap_or(0),
                     self.filtered_data.as_ref().map(|d| d.len()).unwrap_or(0),
-                    self.current_column,
+                    self.get_current_column(),
                     match &self.sort_state {
                         SortState {
                             column: Some(col),
@@ -1579,7 +1596,7 @@ impl EnhancedTuiApp {
                 if !key.modifiers.contains(KeyModifiers::CONTROL)
                     && !key.modifiers.contains(KeyModifiers::SHIFT) =>
             {
-                self.sort_by_column(self.current_column);
+                self.sort_by_column(self.get_current_column());
             }
             // Column statistics (uppercase S)
             KeyCode::Char('S') | KeyCode::Char('s')
@@ -1803,9 +1820,10 @@ impl EnhancedTuiApp {
             KeyCode::Enter => {
                 // Jump to first matching column
                 if !self.column_search_state.matching_columns.is_empty() {
-                    let (column_index, column_name) = &self.column_search_state.matching_columns
-                        [self.column_search_state.current_match];
-                    self.current_column = *column_index;
+                    let (column_index, column_name) = self.column_search_state.matching_columns
+                        [self.column_search_state.current_match]
+                        .clone();
+                    self.set_current_column(column_index);
                     self.set_status_message(format!("Jumped to column: {}", column_name));
                 } else {
                     self.set_status_message("No matching columns found".to_string());
@@ -1822,9 +1840,10 @@ impl EnhancedTuiApp {
                     self.column_search_state.current_match =
                         (self.column_search_state.current_match + 1)
                             % self.column_search_state.matching_columns.len();
-                    let (column_index, column_name) = &self.column_search_state.matching_columns
-                        [self.column_search_state.current_match];
-                    self.current_column = *column_index;
+                    let (column_index, column_name) = self.column_search_state.matching_columns
+                        [self.column_search_state.current_match]
+                        .clone();
+                    self.set_current_column(column_index);
                     self.set_status_message(format!(
                         "Column {} of {}: {}",
                         self.column_search_state.current_match + 1,
@@ -1842,9 +1861,10 @@ impl EnhancedTuiApp {
                     } else {
                         self.column_search_state.current_match -= 1;
                     }
-                    let (column_index, column_name) = &self.column_search_state.matching_columns
-                        [self.column_search_state.current_match];
-                    self.current_column = *column_index;
+                    let (column_index, column_name) = self.column_search_state.matching_columns
+                        [self.column_search_state.current_match]
+                        .clone();
+                    self.set_current_column(column_index);
                     self.set_status_message(format!(
                         "Column {} of {}: {}",
                         self.column_search_state.current_match + 1,
@@ -2649,11 +2669,11 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_left(&mut self) {
-        self.current_column = self.current_column.saturating_sub(1);
+        self.set_current_column(self.get_current_column().saturating_sub(1));
         let mut offset = self.get_scroll_offset();
         offset.1 = offset.1.saturating_sub(1);
         self.set_scroll_offset(offset);
-        self.set_status_message(format!("Column {} selected", self.current_column + 1));
+        self.set_status_message(format!("Column {} selected", self.get_current_column() + 1));
     }
 
     fn move_column_right(&mut self) {
@@ -2661,14 +2681,14 @@ impl EnhancedTuiApp {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
-                    if self.current_column + 1 < max_columns {
-                        self.current_column += 1;
+                    if self.get_current_column() + 1 < max_columns {
+                        self.set_current_column(self.get_current_column() + 1);
                         let mut offset = self.get_scroll_offset();
                         offset.1 += 1;
                         self.set_scroll_offset(offset);
                         self.set_status_message(format!(
                             "Column {} selected",
-                            self.current_column + 1
+                            self.get_current_column() + 1
                         ));
                     }
                 }
@@ -2677,7 +2697,7 @@ impl EnhancedTuiApp {
     }
 
     fn goto_first_column(&mut self) {
-        self.current_column = 0;
+        self.set_current_column(0);
         let mut offset = self.get_scroll_offset();
         offset.1 = 0;
         self.set_scroll_offset(offset);
@@ -2690,15 +2710,15 @@ impl EnhancedTuiApp {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
                     if max_columns > 0 {
-                        self.current_column = max_columns - 1;
+                        self.set_current_column(max_columns - 1);
                         // Update horizontal scroll to show the last column
                         // This ensures the last column is visible in the viewport
                         let mut offset = self.get_scroll_offset();
-                        offset.1 = self.current_column.saturating_sub(5); // Keep some context
+                        offset.1 = self.get_current_column().saturating_sub(5); // Keep some context
                         self.set_scroll_offset(offset);
                         self.set_status_message(format!(
                             "Last column selected ({})",
-                            self.current_column + 1
+                            self.get_current_column() + 1
                         ));
                     }
                 }
@@ -2718,17 +2738,20 @@ impl EnhancedTuiApp {
         if let Some(pos) = self
             .pinned_columns
             .iter()
-            .position(|&x| x == self.current_column)
+            .position(|&x| x == self.get_current_column())
         {
             // Column is already pinned, unpin it
             self.pinned_columns.remove(pos);
-            self.set_status_message(format!("Column {} unpinned", self.current_column + 1));
+            self.set_status_message(format!("Column {} unpinned", self.get_current_column() + 1));
         } else {
             // Pin the column (max 4 pinned columns)
             if self.pinned_columns.len() < 4 {
-                self.pinned_columns.push(self.current_column);
+                self.pinned_columns.push(self.get_current_column());
                 self.pinned_columns.sort(); // Keep them in order
-                self.set_status_message(format!("Column {} pinned 📌", self.current_column + 1));
+                self.set_status_message(format!(
+                    "Column {} pinned 📌",
+                    self.get_current_column() + 1
+                ));
             } else {
                 self.set_status_message("Maximum 4 pinned columns allowed".to_string());
             }
@@ -2758,19 +2781,19 @@ impl EnhancedTuiApp {
                 return;
             };
 
-            if self.current_column >= headers.len() {
+            if self.get_current_column() >= headers.len() {
                 return;
             }
 
-            let column_name = &headers[self.current_column];
+            let column_name = &headers[self.get_current_column()];
 
             // Use filtered data if available, otherwise use original data
             let data_to_analyze = if let Some(filtered) = &self.filtered_data {
                 // Convert filtered data back to JSON values for analysis
                 let mut json_data = Vec::new();
                 for row in filtered {
-                    if self.current_column < row.len() {
-                        json_data.push(row[self.current_column].clone());
+                    if self.get_current_column() < row.len() {
+                        json_data.push(row[self.get_current_column()].clone());
                     }
                 }
                 json_data
@@ -3081,7 +3104,7 @@ impl EnhancedTuiApp {
                 // Reset table state but preserve filtered data
                 *self.get_table_state_mut() = TableState::default();
                 self.set_scroll_offset((0, 0));
-                self.current_column = 0;
+                self.set_current_column(0);
 
                 // Clear search state but keep filter state
                 self.search_state = SearchState {
@@ -3226,8 +3249,8 @@ impl EnhancedTuiApp {
                         ));
                     } else {
                         let (column_index, column_name) =
-                            &self.column_search_state.matching_columns[0];
-                        self.current_column = *column_index;
+                            self.column_search_state.matching_columns[0].clone();
+                        self.set_current_column(column_index);
                         self.set_status_message(format!(
                             "Column 1 of {}: {} (Tab=next, Enter=select)",
                             self.column_search_state.matching_columns.len(),
@@ -3397,9 +3420,9 @@ impl EnhancedTuiApp {
         };
 
         // Reset table state but preserve current column position
-        let current_column = self.current_column;
+        let current_column = self.get_current_column();
         self.reset_table_state();
-        self.current_column = current_column;
+        self.set_current_column(current_column);
 
         self.set_status_message(format!(
             "Sorted by column {} ({}) - type-aware",
@@ -3477,7 +3500,7 @@ impl EnhancedTuiApp {
     fn reset_table_state(&mut self) {
         *self.get_table_state_mut() = TableState::default();
         self.set_scroll_offset((0, 0));
-        self.current_column = 0;
+        self.set_current_column(0);
         self.set_last_results_row(None); // Reset saved position for new results
         self.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
 
@@ -3694,8 +3717,8 @@ impl EnhancedTuiApp {
                 if let Some(row_data) = results.data.get(selected_row) {
                     if let Some(obj) = row_data.as_object() {
                         let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                        if self.current_column < headers.len() {
-                            let header = headers[self.current_column];
+                        if self.get_current_column() < headers.len() {
+                            let header = headers[self.get_current_column()];
                             let value = match obj.get(header) {
                                 Some(Value::String(s)) => s.clone(),
                                 Some(Value::Number(n)) => n.to_string(),
@@ -3791,8 +3814,8 @@ impl EnhancedTuiApp {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                    if self.current_column < headers.len() {
-                        let header = headers[self.current_column];
+                    if self.get_current_column() < headers.len() {
+                        let header = headers[self.get_current_column()];
 
                         // Collect all values from this column
                         let column_values: Vec<String> = results
@@ -5201,10 +5224,10 @@ impl EnhancedTuiApp {
                         if let Some(first_row) = results.data.first() {
                             if let Some(obj) = first_row.as_object() {
                                 let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                                if self.current_column < headers.len() {
+                                if self.get_current_column() < headers.len() {
                                     spans.push(Span::raw(" | Col: "));
                                     spans.push(Span::styled(
-                                        headers[self.current_column],
+                                        headers[self.get_current_column()],
                                         Style::default().fg(Color::Cyan),
                                     ));
 
@@ -5224,8 +5247,8 @@ impl EnhancedTuiApp {
                                         {
                                             if let Some(row_data) = results.data.get(selected_row) {
                                                 if let Some(row_obj) = row_data.as_object() {
-                                                    if let Some(value) =
-                                                        row_obj.get(headers[self.current_column])
+                                                    if let Some(value) = row_obj
+                                                        .get(headers[self.get_current_column()])
                                                     {
                                                         let cell_value = match value {
                                                             Value::String(s) => s.clone(),
@@ -5490,7 +5513,7 @@ impl EnhancedTuiApp {
         // Calculate viewport for scrollable columns based on current_column
         let current_in_scrollable = scrollable_indices
             .iter()
-            .position(|&x| x == self.current_column);
+            .position(|&x| x == self.get_current_column());
         let viewport_start = if let Some(pos) = current_in_scrollable {
             if pos < max_visible_scrollable_cols / 2 {
                 0
@@ -5640,7 +5663,7 @@ impl EnhancedTuiApp {
                 ""
             };
 
-            let column_indicator = if *actual_col_index == self.current_column {
+            let column_indicator = if *actual_col_index == self.get_current_column() {
                 " [*]"
             } else {
                 ""
@@ -5662,7 +5685,7 @@ impl EnhancedTuiApp {
                 .add_modifier(Modifier::BOLD);
 
             // Highlight the current column
-            if *actual_col_index == self.current_column {
+            if *actual_col_index == self.get_current_column() {
                 style = style.bg(Color::DarkGray);
             }
 
@@ -5694,7 +5717,8 @@ impl EnhancedTuiApp {
 
                     // Cell mode highlighting - highlight only the selected cell
                     let is_selected_row = actual_row_idx == selected_row;
-                    let is_selected_cell = is_selected_row && actual_col_idx == self.current_column;
+                    let is_selected_cell =
+                        is_selected_row && actual_col_idx == self.get_current_column();
 
                     if self.selection_mode == SelectionMode::Cell {
                         // In cell mode, only highlight the specific cell
@@ -5707,7 +5731,7 @@ impl EnhancedTuiApp {
                         }
                     } else {
                         // In row mode, highlight the current column for all rows
-                        if actual_col_idx == self.current_column {
+                        if actual_col_idx == self.get_current_column() {
                             style = style.bg(Color::DarkGray);
                         }
                     }

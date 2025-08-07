@@ -21,6 +21,7 @@ Type "# Search for column, then view frequency histogram"
 Enter
 Sleep 2s
 
+
 # Show initial query
 Type "SELECT * FROM trades"
 Enter
