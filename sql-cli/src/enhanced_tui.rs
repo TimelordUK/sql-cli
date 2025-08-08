@@ -1499,11 +1499,12 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Navigate to previous command in history
-                if let Some(buffer) = self.current_buffer_mut() {
-                    let history_entries = self.command_history.get_navigation_entries();
-                    let history_commands: Vec<String> =
-                        history_entries.iter().map(|e| e.command.clone()).collect();
+                // Get history entries first, before mutable borrow
+                let history_entries = self.command_history.get_navigation_entries();
+                let history_commands: Vec<String> =
+                    history_entries.iter().map(|e| e.command.clone()).collect();
 
+                if let Some(buffer) = self.current_buffer_mut() {
                     if buffer.navigate_history_up(&history_commands) {
                         // Sync the input field with buffer (for now, until we complete migration)
                         let text = buffer.get_input_text();
@@ -1527,11 +1528,12 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Navigate to next command in history
-                if let Some(buffer) = self.current_buffer_mut() {
-                    let history_entries = self.command_history.get_navigation_entries();
-                    let history_commands: Vec<String> =
-                        history_entries.iter().map(|e| e.command.clone()).collect();
+                // Get history entries first, before mutable borrow
+                let history_entries = self.command_history.get_navigation_entries();
+                let history_commands: Vec<String> =
+                    history_entries.iter().map(|e| e.command.clone()).collect();
 
+                if let Some(buffer) = self.current_buffer_mut() {
                     if buffer.navigate_history_down(&history_commands) {
                         // Sync the input field with buffer (for now, until we complete migration)
                         let text = buffer.get_input_text();
