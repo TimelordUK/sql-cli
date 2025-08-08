@@ -25,7 +25,10 @@ fn test_case_insensitive_contains() {
         true,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
+    assert_eq!(
+        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
+        true
+    );
 }
 
 #[test]
@@ -50,7 +53,10 @@ fn test_case_insensitive_starts_with() {
         true,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
+    assert_eq!(
+        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
+        true
+    );
 }
 
 #[test]
@@ -75,7 +81,10 @@ fn test_case_insensitive_ends_with() {
         true,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
+    assert_eq!(
+        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
+        true
+    );
 }
 
 #[test]
@@ -93,7 +102,10 @@ fn test_case_insensitive_equality() {
         false,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr_with_options(&expr, &data, false).unwrap(), false);
+    assert_eq!(
+        evaluate_where_expr_with_options(&expr, &data, false).unwrap(),
+        false
+    );
 
     // Case-insensitive equality (should succeed with 'pending')
     let expr = WhereParser::parse_with_options(
@@ -102,7 +114,10 @@ fn test_case_insensitive_equality() {
         true,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
+    assert_eq!(
+        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
+        true
+    );
 
     // Case-insensitive equality with exact case (should also succeed)
     let expr = WhereParser::parse_with_options(
@@ -111,7 +126,10 @@ fn test_case_insensitive_equality() {
         true,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
+    assert_eq!(
+        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
+        true
+    );
 }
 
 #[test]
@@ -121,22 +139,22 @@ fn test_case_insensitive_not_equal() {
     });
 
     // Case-sensitive not equal
-    let expr = WhereParser::parse_with_options(
-        "status != 'active'",
-        vec!["status".to_string()],
-        false,
-    )
-    .unwrap();
-    assert_eq!(evaluate_where_expr_with_options(&expr, &data, false).unwrap(), true);
+    let expr =
+        WhereParser::parse_with_options("status != 'active'", vec!["status".to_string()], false)
+            .unwrap();
+    assert_eq!(
+        evaluate_where_expr_with_options(&expr, &data, false).unwrap(),
+        true
+    );
 
     // Case-insensitive not equal (should be false since 'Active' equals 'active' ignoring case)
-    let expr = WhereParser::parse_with_options(
-        "status != 'active'",
-        vec!["status".to_string()],
-        true,
-    )
-    .unwrap();
-    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), false);
+    let expr =
+        WhereParser::parse_with_options("status != 'active'", vec!["status".to_string()], true)
+            .unwrap();
+    assert_eq!(
+        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
+        false
+    );
 }
 
 #[test]
@@ -158,5 +176,8 @@ fn test_case_insensitive_complex_query() {
         true,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr_with_options(&expr, &data, true).unwrap(), true);
+    assert_eq!(
+        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
+        true
+    );
 }

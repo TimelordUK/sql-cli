@@ -214,15 +214,29 @@ pub fn evaluate_where_expr(expr: &WhereExpr, row: &Value) -> Result<bool> {
     evaluate_where_expr_with_options(expr, row, false)
 }
 
-pub fn evaluate_where_expr_with_options(expr: &WhereExpr, row: &Value, case_insensitive: bool) -> Result<bool> {
+pub fn evaluate_where_expr_with_options(
+    expr: &WhereExpr,
+    row: &Value,
+    case_insensitive: bool,
+) -> Result<bool> {
     match expr {
         WhereExpr::And(left, right) => {
-            Ok(evaluate_where_expr_with_options(left, row, case_insensitive)? && evaluate_where_expr_with_options(right, row, case_insensitive)?)
+            Ok(
+                evaluate_where_expr_with_options(left, row, case_insensitive)?
+                    && evaluate_where_expr_with_options(right, row, case_insensitive)?,
+            )
         }
         WhereExpr::Or(left, right) => {
-            Ok(evaluate_where_expr_with_options(left, row, case_insensitive)? || evaluate_where_expr_with_options(right, row, case_insensitive)?)
+            Ok(
+                evaluate_where_expr_with_options(left, row, case_insensitive)?
+                    || evaluate_where_expr_with_options(right, row, case_insensitive)?,
+            )
         }
-        WhereExpr::Not(inner) => Ok(!evaluate_where_expr_with_options(inner, row, case_insensitive)?),
+        WhereExpr::Not(inner) => Ok(!evaluate_where_expr_with_options(
+            inner,
+            row,
+            case_insensitive,
+        )?),
 
         WhereExpr::Equal(column, value) => {
             if let Some(field_value) = row.get(column) {
@@ -241,7 +255,7 @@ pub fn evaluate_where_expr_with_options(expr: &WhereExpr, row: &Value, case_inse
                         } else {
                             Ok(s1 == s2)
                         }
-                    },
+                    }
                     (WhereValue::Null, WhereValue::Null) => Ok(true),
                     _ => Ok(false),
                 }
