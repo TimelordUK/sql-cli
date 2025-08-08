@@ -15,14 +15,14 @@ These are buffer-specific and should move:
 #### Core Query/Results State
 - `input` - The SQL input for this buffer
 - `textarea` - Multi-line editor for this buffer
-- `results` - Query results for this buffer
+- ✅ `results` - Query results for this buffer **[DONE - All 38 references migrated, field removed]**
 - ✅ `table_state` - Table selection state **[DONE - Wrapper added, tested, working]**
 - ✅ `mode` - Current mode (Command/Results/etc) for this buffer **[DONE - Using existing wrapper methods]**
 - ✅ `status_message` - Status message for current buffer **[DONE - Fully migrated]**
 
 #### Filtering/Search State
 - ✅ `filter_state` - Active filters on this buffer's data **[DONE - Wrapper added, tested, working]**
-- `fuzzy_filter_state` - Fuzzy filter state
+- ✅ `fuzzy_filter_state` - Fuzzy filter state **[DONE - All 42 references migrated, field removed]**
 - ✅ `search_state` - Search within results **[DONE - Wrapper added, migrated, tested]**
 - `column_search_state` - Column search state
 - ✅ `filtered_data` - Filtered view of results **[DONE - Wrapper added, migrated, tested]**
@@ -164,3 +164,35 @@ After each step:
 - Compatibility wrappers allow gradual migration
 - Test thoroughly after each step
 - Don't try to do too much at once
+
+## Current Migration Status (as of latest update)
+
+### ✅ Successfully Migrated (Fields Removed from TUI)
+- `status_message` - Fully migrated, field removed
+- `results` - All 38 references migrated, field removed
+- `fuzzy_filter_state` - All 42 references migrated, field removed
+
+### 🔄 Migrated with Wrappers (Fields Still Present)
+Most other fields have been migrated but fields remain for compatibility:
+- `table_state`, `mode`, `filter_state`, `search_state`
+- `filtered_data`, `column_widths`, `scroll_offset`
+- `current_column`, `pinned_columns`, `compact_mode`
+- `show_row_numbers`, `viewport_lock`, `viewport_lock_row`
+- `csv_client`, `csv_mode`, `csv_table_name`, `cached_data`
+- `undo_stack`, `redo_stack`, `kill_ring`
+- `last_results_row`, `last_scroll_offset`, `last_query_source`
+- `cache_mode`, `last_visible_rows`
+
+### ❌ Not Yet Migrated
+- `input` - Partially migrated (InputManager in buffer, but TUI still uses direct field)
+- `textarea` - Partially migrated (InputManager in buffer, but TUI still uses direct field)
+- `column_search_state` - Column search state
+- `column_stats` - Statistics for selected column
+
+### 📊 Progress Summary
+- **Total Fields to Migrate**: ~40
+- **Fully Migrated (Field Removed)**: 3
+- **Migrated with Wrappers**: ~33
+- **Not Yet Migrated**: 4
+
+The buffer system architecture is nearly complete. Most fields are using the buffer system through wrappers, and we're progressively removing the redundant fields from the TUI struct.
