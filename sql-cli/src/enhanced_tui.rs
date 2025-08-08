@@ -1,4 +1,3 @@
-use crate::api_client::{ApiClient, QueryResponse};
 use crate::hybrid_parser::HybridParser;
 use crate::parser::SqlParser;
 use crate::sql_highlighter::SqlHighlighter;
@@ -23,6 +22,7 @@ use ratatui::{
 };
 use regex::Regex;
 use serde_json::Value;
+use sql_cli::api_client::{ApiClient, QueryResponse};
 use sql_cli::buffer::{BufferAPI, BufferManager};
 use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
@@ -1266,6 +1266,12 @@ impl EnhancedTuiApp {
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             buffer.set_compact_mode(app.config.display.compact_mode);
+            buffer.set_show_row_numbers(app.config.display.show_row_numbers);
+
+            info!(target: "buffer", "Configured CSV buffer with: compact_mode={}, case_insensitive={}, show_row_numbers={}",
+                  app.config.display.compact_mode,
+                  app.config.behavior.case_insensitive_default,
+                  app.config.display.show_row_numbers);
             manager.add_buffer(buffer);
 
             // Sync app-level state from the buffer to ensure status line renders correctly
@@ -1361,6 +1367,12 @@ impl EnhancedTuiApp {
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             buffer.set_compact_mode(app.config.display.compact_mode);
+            buffer.set_show_row_numbers(app.config.display.show_row_numbers);
+
+            info!(target: "buffer", "Configured CSV buffer with: compact_mode={}, case_insensitive={}, show_row_numbers={}",
+                  app.config.display.compact_mode,
+                  app.config.behavior.case_insensitive_default,
+                  app.config.display.show_row_numbers);
             manager.add_buffer(buffer);
 
             // Sync app-level state from the buffer to ensure status line renders correctly
@@ -2081,7 +2093,7 @@ impl EnhancedTuiApp {
                             i,
                             buffer.display_name()
                         ));
-                        debug_info.push_str(&format!("  ID: {}\n", buffer.id));
+                        debug_info.push_str(&format!("  ID: {}\n", buffer.get_id()));
                         debug_info.push_str(&format!("  Path: {:?}\n", buffer.file_path));
                         debug_info.push_str(&format!("  Modified: {}\n", buffer.modified));
                         debug_info.push_str(&format!("  CSV Mode: {}\n", buffer.is_csv_mode()));
@@ -2887,7 +2899,7 @@ impl EnhancedTuiApp {
                 csv_client.query_csv(query).map(|r| QueryResponse {
                     data: r.data,
                     count: r.count,
-                    query: crate::api_client::QueryInfo {
+                    query: sql_cli::api_client::QueryInfo {
                         select: r.query.select,
                         where_clause: r.query.where_clause,
                         order_by: r.query.order_by,
@@ -2905,7 +2917,7 @@ impl EnhancedTuiApp {
                 csv_client.query_csv(query).map(|r| QueryResponse {
                     data: r.data,
                     count: r.count,
-                    query: crate::api_client::QueryInfo {
+                    query: sql_cli::api_client::QueryInfo {
                         select: r.query.select,
                         where_clause: r.query.where_clause,
                         order_by: r.query.order_by,
@@ -2938,7 +2950,13 @@ impl EnhancedTuiApp {
                 // Capture the source from the response
                 self.set_last_query_source(response.source.clone());
 
-                self.results = Some(response);
+                // Store results in the current buffer
+                if let Some(buffer) = self.current_buffer_mut() {
+                    let buffer_id = buffer.get_id();
+                    buffer.set_results(Some(response.clone()));
+                    info!(target: "buffer", "Stored {} results in buffer {}", row_count, buffer_id);
+                }
+                self.results = Some(response); // Keep for compatibility during migration
                 self.calculate_optimal_column_widths();
                 self.reset_table_state();
 
@@ -5422,6 +5440,46 @@ impl EnhancedTuiApp {
             let index = manager.current_index();
             let total = manager.all_buffers().len();
             debug!(target: "buffer", "Switched from buffer {} to {} (total: {})", prev_index + 1, index + 1, total);
+
+            // Sync results and state from the new buffer
+            if let Some(buffer) = manager.current() {
+                // Sync query text to input fields
+                let query_text = buffer.get_query();
+                self.input = Input::new(query_text.clone()).with_cursor(query_text.len());
+                self.textarea = {
+                    let mut ta = TextArea::from(
+                        query_text
+                            .lines()
+                            .map(|s| s.to_string())
+                            .collect::<Vec<_>>(),
+                    );
+                    ta.move_cursor(tui_textarea::CursorMove::End);
+                    ta
+                };
+
+                // Sync edit mode
+                self.edit_mode = buffer.get_edit_mode();
+
+                // Sync results and data source state
+                self.results = buffer.get_results().cloned();
+                self.csv_client = buffer.csv_client.clone();
+                self.csv_mode = buffer.csv_mode;
+                self.csv_table_name = buffer.csv_table_name.clone();
+                self.cache_mode = buffer.cache_mode;
+                self.cached_data = buffer.cached_data.clone();
+
+                let result_count = self.results.as_ref().map(|r| r.data.len()).unwrap_or(0);
+                info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
+                      result_count, buffer.get_id(), buffer.get_name(), buffer.csv_mode, buffer.cache_mode,
+                      buffer.get_query());
+
+                // Recalculate column widths and reset table state for new results
+                if self.results.is_some() {
+                    self.calculate_optimal_column_widths();
+                    self.reset_table_state();
+                }
+            }
+
             self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
         }
     }
@@ -5433,13 +5491,63 @@ impl EnhancedTuiApp {
             let index = manager.current_index();
             let total = manager.all_buffers().len();
             debug!(target: "buffer", "Switched from buffer {} to {} (total: {})", prev_index + 1, index + 1, total);
+
+            // Sync results and state from the new buffer
+            if let Some(buffer) = manager.current() {
+                // Sync query text to input fields
+                let query_text = buffer.get_query();
+                self.input = Input::new(query_text.clone()).with_cursor(query_text.len());
+                self.textarea = {
+                    let mut ta = TextArea::from(
+                        query_text
+                            .lines()
+                            .map(|s| s.to_string())
+                            .collect::<Vec<_>>(),
+                    );
+                    ta.move_cursor(tui_textarea::CursorMove::End);
+                    ta
+                };
+
+                // Sync edit mode
+                self.edit_mode = buffer.get_edit_mode();
+
+                // Sync results and data source state
+                self.results = buffer.get_results().cloned();
+                self.csv_client = buffer.csv_client.clone();
+                self.csv_mode = buffer.csv_mode;
+                self.csv_table_name = buffer.csv_table_name.clone();
+                self.cache_mode = buffer.cache_mode;
+                self.cached_data = buffer.cached_data.clone();
+
+                let result_count = self.results.as_ref().map(|r| r.data.len()).unwrap_or(0);
+                info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
+                      result_count, buffer.get_id(), buffer.get_name(), buffer.csv_mode, buffer.cache_mode,
+                      buffer.get_query());
+
+                // Recalculate column widths and reset table state for new results
+                if self.results.is_some() {
+                    self.calculate_optimal_column_widths();
+                    self.reset_table_state();
+                }
+            }
+
             self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
         }
     }
 
     fn new_buffer(&mut self) {
         if let Some(manager) = self.buffer_manager.as_mut() {
-            let new_buffer = sql_cli::buffer::Buffer::new(manager.all_buffers().len() + 1);
+            let mut new_buffer = sql_cli::buffer::Buffer::new(manager.all_buffers().len() + 1);
+            // Apply config settings to the new buffer
+            new_buffer.set_compact_mode(self.config.display.compact_mode);
+            new_buffer.set_case_insensitive(self.config.behavior.case_insensitive_default);
+            new_buffer.set_show_row_numbers(self.config.display.show_row_numbers);
+
+            info!(target: "buffer", "Creating new buffer with config: compact_mode={}, case_insensitive={}, show_row_numbers={}",
+                  self.config.display.compact_mode,
+                  self.config.behavior.case_insensitive_default,
+                  self.config.display.show_row_numbers);
+
             let index = manager.add_buffer(new_buffer);
             self.set_status_message(format!("Created new buffer #{}", index + 1));
         }
@@ -7794,6 +7902,9 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                             buffer.set_csv_client(Some(csv_client));
                             buffer.set_csv_mode(true);
                             buffer.set_table_name(table_name.clone());
+
+                            info!(target: "buffer", "Loaded {} file '{}' into buffer {}: table='{}', case_insensitive={}", 
+                                  extension.to_uppercase(), file_path, buffer.get_id(), table_name, case_insensitive);
 
                             // Set query
                             let query = format!("SELECT * FROM {}", table_name);

@@ -139,6 +139,8 @@ pub type ColumnStatistics = std::collections::BTreeMap<String, String>;
 /// This abstraction allows the TUI to work with buffer state without knowing
 /// the implementation details, enabling gradual migration and testing
 pub trait BufferAPI {
+    // --- Identity ---
+    fn get_id(&self) -> usize;
     // --- Query and Results ---
     fn get_query(&self) -> String;
     fn set_query(&mut self, query: String);
@@ -363,6 +365,11 @@ pub struct Buffer {
 
 // Implement BufferAPI for Buffer
 impl BufferAPI for Buffer {
+    // --- Identity ---
+    fn get_id(&self) -> usize {
+        self.id
+    }
+
     // --- Query and Results ---
     fn get_query(&self) -> String {
         // Use InputManager if available, fallback to legacy input

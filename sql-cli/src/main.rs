@@ -7,7 +7,6 @@ use reedline::{
 use sql_cli::app_paths::AppPaths;
 use std::{borrow::Cow, io};
 
-mod api_client;
 mod completer;
 mod csv_fixes;
 mod cursor_aware_parser;
@@ -22,9 +21,9 @@ mod table_display;
 mod tui_app;
 mod virtual_table;
 
-use api_client::ApiClient;
 use completer::SqlCompleter;
 use parser::{ParseState, SqlParser};
+use sql_cli::api_client::ApiClient;
 use table_display::{display_results, export_to_csv};
 
 struct SqlValidator;
