@@ -165,7 +165,7 @@ pub struct EnhancedTuiApp {
     completion_state: CompletionState,
     history_state: HistoryState,
     command_history: CommandHistory,
-    filtered_data: Option<Vec<Vec<String>>>,
+    // filtered_data removed - now exclusively in Buffer
     column_widths: Vec<u16>,
     scroll_offset: (usize, usize), // (row, col)
     current_column: usize,         // For column-based operations
@@ -185,9 +185,7 @@ pub struct EnhancedTuiApp {
     last_yanked: Option<(String, String)>, // (description, value) of last yanked item
 
     // CSV mode
-    csv_client: Option<CsvApiClient>,
-    csv_mode: bool,
-    csv_table_name: String,
+    // CSV/cache fields removed - now exclusively in Buffer
 
     // Buffer management (new - for supporting multiple files)
     buffer_manager: BufferManager,
@@ -195,8 +193,7 @@ pub struct EnhancedTuiApp {
 
     // Cache
     query_cache: Option<QueryCache>,
-    cache_mode: bool,
-    cached_data: Option<Vec<serde_json::Value>>,
+    // Cache fields removed - now exclusively in Buffer
 
     // Data source tracking
     last_query_source: Option<String>,
@@ -729,47 +726,39 @@ impl EnhancedTuiApp {
     }
 
     fn is_csv_mode(&self) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.is_csv_mode()
-        } else {
-            self.csv_mode
-        }
+        self.current_buffer()
+            .expect("No active buffer")
+            .is_csv_mode()
     }
 
     fn set_csv_mode(&mut self, csv_mode: bool) {
-        // Note: csv_mode is stored in the buffer, but we also need to update local field for now
-        self.csv_mode = csv_mode;
-        // TODO: Update buffer when buffer system is fully integrated
+        self.current_buffer_mut()
+            .expect("No active buffer")
+            .set_csv_mode(csv_mode);
     }
 
     fn get_csv_table_name(&self) -> String {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_table_name()
-        } else {
-            self.csv_table_name.clone()
-        }
+        self.current_buffer()
+            .expect("No active buffer")
+            .get_table_name()
     }
 
     fn set_csv_table_name(&mut self, table_name: String) {
-        // Note: csv_table_name is stored in the buffer, but we also need to update local field for now
-        self.csv_table_name = table_name;
-        // TODO: Update buffer when buffer system is fully integrated
+        self.current_buffer_mut()
+            .expect("No active buffer")
+            .set_table_name(table_name);
     }
 
     fn is_cache_mode(&self) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.is_cache_mode()
-        } else {
-            self.cache_mode
-        }
+        self.current_buffer()
+            .expect("No active buffer")
+            .is_cache_mode()
     }
 
     fn set_cache_mode(&mut self, cache_mode: bool) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_cache_mode(cache_mode);
-        } else {
-            self.cache_mode = cache_mode;
-        }
+        self.current_buffer_mut()
+            .expect("No active buffer")
+            .set_cache_mode(cache_mode);
     }
 
     // Wrapper methods for undo/redo/kill ring (uses buffer system)
@@ -867,81 +856,61 @@ impl EnhancedTuiApp {
 
     // Wrapper methods for cached_data (uses buffer system)
     fn get_cached_data(&self) -> Option<&Vec<serde_json::Value>> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_cached_data()
-        } else {
-            self.cached_data.as_ref()
-        }
+        self.current_buffer()
+            .expect("No active buffer")
+            .get_cached_data()
     }
 
     fn set_cached_data(&mut self, data: Option<Vec<serde_json::Value>>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_cached_data(data);
-        } else {
-            self.cached_data = data;
-        }
+        self.current_buffer_mut()
+            .expect("No active buffer")
+            .set_cached_data(data);
     }
 
     fn has_cached_data(&self) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.has_cached_data()
-        } else {
-            self.cached_data.is_some()
-        }
+        self.current_buffer()
+            .expect("No active buffer")
+            .has_cached_data()
     }
 
     // Wrapper methods for csv_client (uses buffer system)
     fn get_csv_client(&self) -> Option<&CsvApiClient> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_csv_client()
-        } else {
-            self.csv_client.as_ref()
-        }
+        self.current_buffer()
+            .expect("No active buffer")
+            .get_csv_client()
     }
 
     fn set_csv_client(&mut self, client: Option<CsvApiClient>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_csv_client(client);
-        } else {
-            self.csv_client = client;
-        }
+        self.current_buffer_mut()
+            .expect("No active buffer")
+            .set_csv_client(client);
     }
 
     fn set_csv_client_case_insensitive(&mut self, case_insensitive: bool) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            if let Some(csv_client) = buffer.get_csv_client_mut() {
-                csv_client.set_case_insensitive(case_insensitive);
-            }
-        } else {
-            if let Some(csv_client) = self.csv_client.as_mut() {
-                csv_client.set_case_insensitive(case_insensitive);
-            }
+        let buffer = self.current_buffer_mut().expect("No active buffer");
+        if let Some(csv_client) = buffer.get_csv_client_mut() {
+            csv_client.set_case_insensitive(case_insensitive);
         }
     }
 
     // Wrapper methods for filtered_data (uses buffer system)
     fn get_filtered_data(&self) -> Option<&Vec<Vec<String>>> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_filtered_data()
-        } else {
-            self.filtered_data.as_ref()
-        }
+        self.current_buffer()
+            .expect("No active buffer")
+            .get_filtered_data()
     }
 
     fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_filtered_data(data);
-        } else {
-            self.filtered_data = data;
-        }
+        self.current_buffer_mut()
+            .expect("No active buffer")
+            .set_filtered_data(data);
     }
 
     fn has_filtered_data(&self) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_filtered_data().is_some()
-        } else {
-            self.filtered_data.is_some()
-        }
+        self.current_buffer()
+            .expect("No active buffer")
+            .get_filtered_data()
+            .is_some()
     }
 
     // Wrapper methods for search_state (uses buffer system)
@@ -1301,7 +1270,7 @@ impl EnhancedTuiApp {
                 selected_index: 0,
             },
             command_history: CommandHistory::new().unwrap_or_default(),
-            filtered_data: None,
+            // filtered_data now in Buffer
             column_widths: Vec::new(),
             scroll_offset: (0, 0),
             current_column: 0,
@@ -1317,9 +1286,7 @@ impl EnhancedTuiApp {
             selection_mode: SelectionMode::Row, // Default to row mode
             yank_mode: None,
             last_yanked: None,
-            csv_client: None,
-            csv_mode: false,
-            csv_table_name: String::new(),
+            // CSV fields now in Buffer
             buffer_manager: {
                 // Initialize buffer manager with a default buffer
                 let mut manager = BufferManager::new();
@@ -1333,8 +1300,7 @@ impl EnhancedTuiApp {
             },
             current_buffer_name: None,
             query_cache: QueryCache::new().ok(),
-            cache_mode: false,
-            cached_data: None,
+            // Cache fields now in Buffer
             last_query_source: None,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -2985,15 +2951,16 @@ impl EnhancedTuiApp {
 
     fn update_history_matches(&mut self) {
         // Get current schema columns and data source for better matching
-        let (current_columns, current_source) = if self.is_csv_mode() {
+        let (current_columns, current_source_str) = if self.is_csv_mode() {
             if let Some(csv_client) = self.get_csv_client() {
                 if let Some(schema) = csv_client.get_schema() {
                     // Get the first (and usually only) table's columns and name
-                    schema
+                    let (cols, table_name) = schema
                         .iter()
                         .next()
-                        .map(|(table_name, cols)| (cols.clone(), Some(table_name.as_str())))
-                        .unwrap_or((vec![], None))
+                        .map(|(table_name, cols)| (cols.clone(), Some(table_name.clone())))
+                        .unwrap_or((vec![], None));
+                    (cols, table_name)
                 } else {
                     (vec![], None)
                 }
@@ -3001,10 +2968,12 @@ impl EnhancedTuiApp {
                 (vec![], None)
             }
         } else if self.is_cache_mode() {
-            (vec![], Some("cache"))
+            (vec![], Some("cache".to_string()))
         } else {
-            (vec![], Some("api"))
+            (vec![], Some("api".to_string()))
         };
+
+        let current_source = current_source_str.as_deref();
 
         self.history_state.matches = self.command_history.search_with_schema(
             &self.history_state.search_query,
@@ -4471,9 +4440,11 @@ impl EnhancedTuiApp {
                     }
                 }
             }
-        } else if let Some(data) = self.get_current_data_mut() {
+        } else if let Some(data) = self.get_filtered_data() {
             // Fallback to string-based sorting if no JSON data available
-            data.sort_by(|a, b| {
+            // Clone the data, sort it, and set it back
+            let mut sorted_data = data.clone();
+            sorted_data.sort_by(|a, b| {
                 if column_index >= a.len() || column_index >= b.len() {
                     return Ordering::Equal;
                 }
@@ -4499,6 +4470,7 @@ impl EnhancedTuiApp {
                     }
                 }
             });
+            self.set_filtered_data(Some(sorted_data));
         }
 
         self.sort_state = SortState {
@@ -4548,14 +4520,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn get_current_data_mut(&mut self) -> Option<&mut Vec<Vec<String>>> {
-        if !self.has_filtered_data() && self.get_results().is_some() {
-            let results = self.get_results().unwrap();
-            self.set_filtered_data(Some(self.convert_json_to_strings(results)));
-        }
-        // TODO: Add get_filtered_data_mut() wrapper method to handle mutable access
-        self.filtered_data.as_mut()
-    }
+    // Removed get_current_data_mut - sorting now uses immutable data and clones when needed
 
     fn convert_json_to_strings(&self, results: &QueryResponse) -> Vec<Vec<String>> {
         if let Some(first_row) = results.data.first() {
@@ -5664,14 +5629,11 @@ impl EnhancedTuiApp {
                 sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
             };
             let results = buffer.get_results().cloned();
-            let csv_client = buffer.csv_client.clone();
-            let csv_mode = buffer.csv_mode;
-            let csv_table_name = buffer.csv_table_name.clone();
-            let cache_mode = buffer.cache_mode;
-            let cached_data = buffer.cached_data.clone();
             let buffer_id = buffer.get_id();
             let buffer_name = buffer.get_name();
             let buffer_query = buffer.get_query();
+            let csv_mode = buffer.csv_mode;
+            let cache_mode = buffer.cache_mode;
 
             // Now update self
             self.set_input_text_with_cursor(query_text.clone(), query_text.len());
@@ -5687,11 +5649,6 @@ impl EnhancedTuiApp {
             };
             self.edit_mode = edit_mode;
             self.set_results(results);
-            self.csv_client = csv_client;
-            self.csv_mode = csv_mode;
-            self.csv_table_name = csv_table_name;
-            self.cache_mode = cache_mode;
-            self.cached_data = cached_data;
 
             let result_count = self.get_results().map(|r| r.data.len()).unwrap_or(0);
             info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
@@ -5724,14 +5681,11 @@ impl EnhancedTuiApp {
                 sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
             };
             let results = buffer.get_results().cloned();
-            let csv_client = buffer.csv_client.clone();
-            let csv_mode = buffer.csv_mode;
-            let csv_table_name = buffer.csv_table_name.clone();
-            let cache_mode = buffer.cache_mode;
-            let cached_data = buffer.cached_data.clone();
             let buffer_id = buffer.get_id();
             let buffer_name = buffer.get_name();
             let buffer_query = buffer.get_query();
+            let csv_mode = buffer.csv_mode;
+            let cache_mode = buffer.cache_mode;
 
             // Now update self
             self.set_input_text_with_cursor(query_text.clone(), query_text.len());
@@ -5747,11 +5701,6 @@ impl EnhancedTuiApp {
             };
             self.edit_mode = edit_mode;
             self.set_results(results);
-            self.csv_client = csv_client;
-            self.csv_mode = csv_mode;
-            self.csv_table_name = csv_table_name;
-            self.cache_mode = cache_mode;
-            self.cached_data = cached_data;
 
             let result_count = self.get_results().map(|r| r.data.len()).unwrap_or(0);
             info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
