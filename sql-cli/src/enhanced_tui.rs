@@ -326,7 +326,7 @@ impl EnhancedTuiApp {
     // Helper to get cursor position from buffer or fallback to direct input
     fn get_input_cursor(&self) -> usize {
         if let Some(buffer) = self.current_buffer() {
-            buffer.get_cursor_position()
+            buffer.get_input_cursor_position()
         } else {
             // Fallback to direct input access during migration
             match self.get_edit_mode() {
@@ -355,7 +355,7 @@ impl EnhancedTuiApp {
             // Buffer should provide visual cursor for rendering
             // For now, use a simple calculation
             let text = buffer.get_input_text();
-            let cursor = buffer.get_cursor_position();
+            let cursor = buffer.get_input_cursor_position();
             let lines: Vec<&str> = text.split('\n').collect();
 
             let mut current_pos = 0;
@@ -1819,7 +1819,7 @@ impl EnhancedTuiApp {
                 let query = self.get_input_text();
                 let mut debug_info = self
                     .hybrid_parser
-                    .get_detailed_debug_info(query, cursor_pos);
+                    .get_detailed_debug_info(&query, cursor_pos);
 
                 // Add input state information
                 let input_state = format!(
@@ -1901,7 +1901,7 @@ impl EnhancedTuiApp {
 
                 // Add WHERE clause AST if query contains WHERE
                 if query.to_lowercase().contains(" where ") {
-                    let where_ast_info = match self.parse_where_clause_ast(query) {
+                    let where_ast_info = match self.parse_where_clause_ast(&query) {
                         Ok(ast_str) => ast_str,
                         Err(e) => format!("\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {}\n", e)
                     };
