@@ -1757,17 +1757,11 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Jump to beginning of line (like bash/zsh)
-                self.input.handle_event(&Event::Key(KeyEvent::new(
-                    KeyCode::Home,
-                    KeyModifiers::empty(),
-                )));
+                self.handle_input_key(KeyEvent::new(KeyCode::Home, KeyModifiers::empty()));
             }
             KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Jump to end of line (like bash/zsh)
-                self.input.handle_event(&Event::Key(KeyEvent::new(
-                    KeyCode::End,
-                    KeyModifiers::empty(),
-                )));
+                self.handle_input_key(KeyEvent::new(KeyCode::End, KeyModifiers::empty()));
             }
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
