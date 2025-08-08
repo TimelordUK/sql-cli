@@ -41,21 +41,51 @@ pub trait InputManager: Send {
 
     /// Clone the input manager (for undo/redo)
     fn clone_box(&self) -> Box<dyn InputManager>;
+
+    // --- History Navigation ---
+
+    /// Set the history entries for navigation
+    fn set_history(&mut self, history: Vec<String>);
+
+    /// Navigate to previous history entry (returns true if navigation occurred)
+    fn history_previous(&mut self) -> bool;
+
+    /// Navigate to next history entry (returns true if navigation occurred)
+    fn history_next(&mut self) -> bool;
+
+    /// Get current history index (None if not navigating history)
+    fn get_history_index(&self) -> Option<usize>;
+
+    /// Reset history navigation (go back to user input)
+    fn reset_history_position(&mut self);
 }
 
 /// Single-line input manager wrapping tui_input::Input
 pub struct SingleLineInput {
     input: Input,
+    history: Vec<String>,
+    history_index: Option<usize>,
+    temp_storage: Option<String>, // Store user input when navigating history
 }
 
 impl SingleLineInput {
     pub fn new(text: String) -> Self {
         let input = Input::new(text.clone()).with_cursor(text.len());
-        Self { input }
+        Self {
+            input,
+            history: Vec::new(),
+            history_index: None,
+            temp_storage: None,
+        }
     }
 
     pub fn from_input(input: Input) -> Self {
-        Self { input }
+        Self {
+            input,
+            history: Vec::new(),
+            history_index: None,
+            temp_storage: None,
+        }
     }
 
     pub fn as_input(&self) -> &Input {
@@ -124,13 +154,91 @@ impl InputManager for SingleLineInput {
     fn clone_box(&self) -> Box<dyn InputManager> {
         Box::new(SingleLineInput {
             input: self.input.clone(),
+            history: self.history.clone(),
+            history_index: self.history_index,
+            temp_storage: self.temp_storage.clone(),
         })
+    }
+
+    // --- History Navigation ---
+
+    fn set_history(&mut self, history: Vec<String>) {
+        self.history = history;
+        self.history_index = None;
+        self.temp_storage = None;
+    }
+
+    fn history_previous(&mut self) -> bool {
+        if self.history.is_empty() {
+            return false;
+        }
+
+        match self.history_index {
+            None => {
+                // First time navigating, save current input
+                self.temp_storage = Some(self.input.value().to_string());
+                self.history_index = Some(self.history.len() - 1);
+            }
+            Some(0) => return false, // Already at oldest
+            Some(idx) => {
+                self.history_index = Some(idx - 1);
+            }
+        }
+
+        // Update input with history entry
+        if let Some(idx) = self.history_index {
+            if let Some(entry) = self.history.get(idx) {
+                let len = entry.len();
+                self.input = Input::new(entry.clone()).with_cursor(len);
+                return true;
+            }
+        }
+        false
+    }
+
+    fn history_next(&mut self) -> bool {
+        match self.history_index {
+            None => false, // Not navigating history
+            Some(idx) => {
+                if idx >= self.history.len() - 1 {
+                    // Going back to user input
+                    if let Some(temp) = &self.temp_storage {
+                        let len = temp.len();
+                        self.input = Input::new(temp.clone()).with_cursor(len);
+                    }
+                    self.history_index = None;
+                    self.temp_storage = None;
+                    true
+                } else {
+                    self.history_index = Some(idx + 1);
+                    if let Some(entry) = self.history.get(idx + 1) {
+                        let len = entry.len();
+                        self.input = Input::new(entry.clone()).with_cursor(len);
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
+    }
+
+    fn get_history_index(&self) -> Option<usize> {
+        self.history_index
+    }
+
+    fn reset_history_position(&mut self) {
+        self.history_index = None;
+        self.temp_storage = None;
     }
 }
 
 /// Multi-line input manager wrapping tui_textarea::TextArea
 pub struct MultiLineInput {
     textarea: TextArea<'static>,
+    history: Vec<String>,
+    history_index: Option<usize>,
+    temp_storage: Option<String>,
 }
 
 impl MultiLineInput {
@@ -138,17 +246,32 @@ impl MultiLineInput {
         let mut textarea = TextArea::new(vec![text.clone()]);
         // Move cursor to end
         textarea.move_cursor(CursorMove::End);
-        Self { textarea }
+        Self {
+            textarea,
+            history: Vec::new(),
+            history_index: None,
+            temp_storage: None,
+        }
     }
 
     pub fn from_lines(lines: Vec<String>) -> Self {
         let mut textarea = TextArea::new(lines);
         textarea.move_cursor(CursorMove::End);
-        Self { textarea }
+        Self {
+            textarea,
+            history: Vec::new(),
+            history_index: None,
+            temp_storage: None,
+        }
     }
 
     pub fn from_textarea(textarea: TextArea<'static>) -> Self {
-        Self { textarea }
+        Self {
+            textarea,
+            history: Vec::new(),
+            history_index: None,
+            temp_storage: None,
+        }
     }
 
     pub fn as_textarea(&self) -> &TextArea<'static> {
@@ -319,7 +442,40 @@ impl InputManager for MultiLineInput {
     fn clone_box(&self) -> Box<dyn InputManager> {
         Box::new(MultiLineInput {
             textarea: self.textarea.clone(),
+            history: self.history.clone(),
+            history_index: self.history_index,
+            temp_storage: self.temp_storage.clone(),
         })
+    }
+
+    // --- History Navigation ---
+    // Note: For multi-line, we might want different behavior (e.g., only navigate when at first/last line)
+
+    fn set_history(&mut self, history: Vec<String>) {
+        self.history = history;
+        self.history_index = None;
+        self.temp_storage = None;
+    }
+
+    fn history_previous(&mut self) -> bool {
+        // In multi-line mode, we might want to only navigate history when cursor is at the first line
+        // For now, we'll keep arrow keys for text navigation and use Ctrl+P/N for history
+        false
+    }
+
+    fn history_next(&mut self) -> bool {
+        // In multi-line mode, we might want to only navigate history when cursor is at the last line
+        // For now, we'll keep arrow keys for text navigation and use Ctrl+P/N for history
+        false
+    }
+
+    fn get_history_index(&self) -> Option<usize> {
+        self.history_index
+    }
+
+    fn reset_history_position(&mut self) {
+        self.history_index = None;
+        self.temp_storage = None;
     }
 }
 

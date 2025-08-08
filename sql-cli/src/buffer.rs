@@ -270,6 +270,14 @@ pub trait BufferAPI {
     fn get_input_cursor_position(&self) -> usize;
     fn set_input_cursor_position(&mut self, position: usize);
     fn is_input_multiline(&self) -> bool;
+
+    // --- History Navigation ---
+    fn navigate_history_up(&mut self, history: &[String]) -> bool;
+    fn navigate_history_down(&mut self, history: &[String]) -> bool;
+    fn reset_history_navigation(&mut self);
+
+    // --- Results Management ---
+    fn clear_results(&mut self);
 }
 
 /// Represents a single buffer/tab with its own independent state
@@ -952,6 +960,51 @@ impl BufferAPI for Buffer {
 
     fn is_input_multiline(&self) -> bool {
         self.input_manager.is_multiline()
+    }
+
+    // --- History Navigation ---
+    fn navigate_history_up(&mut self, history: &[String]) -> bool {
+        // Set history if not already set
+        self.input_manager.set_history(history.to_vec());
+        let navigated = self.input_manager.history_previous();
+        if navigated {
+            // Sync to legacy fields
+            self.sync_from_input_manager();
+        }
+        navigated
+    }
+
+    fn navigate_history_down(&mut self, history: &[String]) -> bool {
+        // Set history if not already set
+        self.input_manager.set_history(history.to_vec());
+        let navigated = self.input_manager.history_next();
+        if navigated {
+            // Sync to legacy fields
+            self.sync_from_input_manager();
+        }
+        navigated
+    }
+
+    fn reset_history_navigation(&mut self) {
+        self.input_manager.reset_history_position();
+    }
+
+    // --- Results Management ---
+    fn clear_results(&mut self) {
+        self.results = None;
+        self.filtered_data = None;
+        self.table_state.select(None);
+        self.last_results_row = None;
+        self.scroll_offset = (0, 0);
+        self.last_scroll_offset = (0, 0);
+        self.column_widths.clear();
+        self.status_message = "Results cleared".to_string();
+        // Reset search/filter states
+        self.filter_state.active = false;
+        self.filter_state.pattern.clear();
+        self.search_state.pattern.clear();
+        self.search_state.matches.clear();
+        self.search_state.current_match = None;
     }
 }
 
