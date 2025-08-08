@@ -5259,16 +5259,26 @@ impl EnhancedTuiApp {
     fn undo(&mut self) {
         // Simple undo - restore from undo stack
         if let Some(prev_state) = self.pop_undo() {
-            let current_state = (self.input.value().to_string(), self.input.cursor());
+            let current_state = (self.get_input_text(), self.get_input_cursor());
             self.push_redo(current_state);
-            self.input = tui_input::Input::new(prev_state.0).with_cursor(prev_state.1);
+
+            // Use helper to set text through buffer
+            self.set_input_text(prev_state.0.clone());
+            // Set cursor to saved position
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(prev_state.1);
+                // Sync for rendering
+                if self.get_edit_mode() == EditMode::SingleLine {
+                    self.input = tui_input::Input::new(prev_state.0).with_cursor(prev_state.1);
+                }
+            }
         }
     }
 
     fn yank(&mut self) {
         if !self.is_kill_ring_empty() {
-            let query = self.input.value();
-            let cursor_pos = self.input.cursor();
+            let query = self.get_input_text();
+            let cursor_pos = self.get_input_cursor();
 
             // Get kill ring content and calculate new query
             let kill_ring_content = self.get_kill_ring();
@@ -5278,9 +5288,19 @@ impl EnhancedTuiApp {
             let new_cursor = cursor_pos + kill_ring_content.len();
 
             // Save to undo stack before modifying
-            self.push_undo((query.to_string(), cursor_pos));
+            self.push_undo((query.clone(), cursor_pos));
             self.clear_redo();
-            self.input = tui_input::Input::new(new_query).with_cursor(new_cursor);
+
+            // Use helper to set text through buffer
+            self.set_input_text(new_query.clone());
+            // Set cursor to new position
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(new_cursor);
+                // Sync for rendering
+                if self.get_edit_mode() == EditMode::SingleLine {
+                    self.input = tui_input::Input::new(new_query).with_cursor(new_cursor);
+                }
+            }
         }
     }
 
