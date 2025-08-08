@@ -2273,7 +2273,9 @@ impl EnhancedTuiApp {
                 self.set_mode(AppMode::Search);
                 self.clear_search_pattern();
                 // Save SQL query and use temporary input for search display
-                self.push_undo((self.get_input_text(), self.get_input_cursor()));
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.save_state_for_undo();
+                }
                 self.input = tui_input::Input::default();
             }
             // Column navigation/search functionality (backslash like vim reverse search)
@@ -2283,7 +2285,9 @@ impl EnhancedTuiApp {
                 self.column_search_state.matching_columns.clear();
                 self.column_search_state.current_match = 0;
                 // Save current SQL query before clearing input for column search
-                self.push_undo((self.get_input_text(), self.get_input_cursor()));
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.save_state_for_undo();
+                }
                 self.input = tui_input::Input::default();
             }
             KeyCode::Char('n') => {
@@ -2311,7 +2315,9 @@ impl EnhancedTuiApp {
                 self.set_mode(AppMode::Filter);
                 self.get_filter_state_mut().pattern.clear();
                 // Save SQL query and use temporary input for filter display
-                self.push_undo((self.get_input_text(), self.get_input_cursor()));
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.save_state_for_undo();
+                }
                 self.input = tui_input::Input::default();
             }
             // Fuzzy filter functionality (lowercase f)
@@ -2324,7 +2330,9 @@ impl EnhancedTuiApp {
                 self.fuzzy_filter_state.filtered_indices.clear();
                 self.fuzzy_filter_state.active = false; // Clear active state when entering mode
                                                         // Save SQL query and use temporary input for fuzzy filter display
-                self.push_undo((self.get_input_text(), self.get_input_cursor()));
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.save_state_for_undo();
+                }
                 self.input = tui_input::Input::default();
             }
             // Sort functionality (lowercase s)
@@ -5046,8 +5054,9 @@ impl EnhancedTuiApp {
         }
 
         // Save to undo stack before modifying
-        self.push_undo((query.clone(), cursor_pos));
-        self.clear_redo();
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.save_state_for_undo();
+        }
 
         // Find the start of the previous word
         let chars: Vec<char> = query.chars().collect();
@@ -5137,8 +5146,9 @@ impl EnhancedTuiApp {
         }
 
         // Save to undo stack before modifying
-        self.push_undo((query.clone(), cursor_pos));
-        self.clear_redo();
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.save_state_for_undo();
+        }
 
         // Find the end of the current/next word
         let chars: Vec<char> = query.chars().collect();
@@ -5181,8 +5191,9 @@ impl EnhancedTuiApp {
 
                 if cursor_pos < query_len {
                     // Save to undo stack before modifying
-                    self.push_undo((query_str.clone(), cursor_pos));
-                    self.clear_redo();
+                    if let Some(buffer) = self.current_buffer_mut() {
+                        buffer.save_state_for_undo();
+                    }
 
                     // Save to kill ring before deleting
                     self.set_kill_ring(query_str.chars().skip(cursor_pos).collect::<String>());
@@ -5254,8 +5265,9 @@ impl EnhancedTuiApp {
                     let new_query = query.chars().skip(cursor_pos).collect::<String>();
 
                     // Save to undo stack before modifying
-                    self.push_undo((query.clone(), cursor_pos));
-                    self.clear_redo();
+                    if let Some(buffer) = self.current_buffer_mut() {
+                        buffer.save_state_for_undo();
+                    }
 
                     // Save to kill ring before deleting
                     self.set_kill_ring(killed_text);
@@ -5299,20 +5311,23 @@ impl EnhancedTuiApp {
     }
 
     fn undo(&mut self) {
-        // Simple undo - restore from undo stack
-        if let Some(prev_state) = self.pop_undo() {
-            let current_state = (self.get_input_text(), self.get_input_cursor());
-            self.push_redo(current_state);
+        // Use buffer's high-level undo operation
+        if let Some(buffer) = self.current_buffer_mut() {
+            if buffer.perform_undo() {
+                self.set_status_message("Undo performed".to_string());
+            } else {
+                self.set_status_message("Nothing to undo".to_string());
+            }
+        }
+    }
 
-            // Use helper to set text through buffer
-            self.set_input_text(prev_state.0.clone());
-            // Set cursor to saved position
-            if let Some(buffer) = self.current_buffer_mut() {
-                buffer.set_input_cursor_position(prev_state.1);
-                // Sync for rendering
-                if self.get_edit_mode() == EditMode::SingleLine {
-                    self.input = tui_input::Input::new(prev_state.0).with_cursor(prev_state.1);
-                }
+    fn redo(&mut self) {
+        // Use buffer's high-level redo operation
+        if let Some(buffer) = self.current_buffer_mut() {
+            if buffer.perform_redo() {
+                self.set_status_message("Redo performed".to_string());
+            } else {
+                self.set_status_message("Nothing to redo".to_string());
             }
         }
     }
@@ -5330,8 +5345,9 @@ impl EnhancedTuiApp {
             let new_cursor = cursor_pos + kill_ring_content.len();
 
             // Save to undo stack before modifying
-            self.push_undo((query.clone(), cursor_pos));
-            self.clear_redo();
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.save_state_for_undo();
+            }
 
             // Use helper to set text through buffer
             self.set_input_text(new_query.clone());
