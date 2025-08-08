@@ -1518,6 +1518,20 @@ impl EnhancedTuiApp {
                         // Sync the input field with buffer (for now, until we complete migration)
                         let text = buffer.get_input_text();
 
+                        // Debug: show what we got from history
+                        let debug_msg = if text.is_empty() {
+                            "History navigation returned empty text!".to_string()
+                        } else {
+                            format!(
+                                "History: {}",
+                                if text.len() > 50 {
+                                    format!("{}...", &text[..50])
+                                } else {
+                                    text.clone()
+                                }
+                            )
+                        };
+
                         // Update the appropriate input field based on edit mode
                         match self.edit_mode {
                             EditMode::SingleLine => {
@@ -1531,7 +1545,7 @@ impl EnhancedTuiApp {
                                 self.textarea.move_cursor(tui_textarea::CursorMove::End);
                             }
                         }
-                        self.set_status_message("Previous command from history".to_string());
+                        self.set_status_message(debug_msg);
                     }
                 }
             }
