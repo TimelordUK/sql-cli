@@ -5418,13 +5418,20 @@ impl EnhancedTuiApp {
                 .map(|(i, buffer)| {
                     let marker = if i == current_index { "*" } else { " " };
                     let modified = if buffer.is_modified() { "+" } else { "" };
-                    format!(
-                        "{} [{}] Buffer {}{}",
-                        marker,
-                        i + 1,
-                        buffer.get_name(),
-                        modified
-                    )
+
+                    // Extract filename from comment if present
+                    let text = buffer.get_input_text();
+                    let file_info = if text.starts_with("-- File: ") {
+                        let first_line = text.lines().next().unwrap_or("");
+                        first_line
+                            .strip_prefix("-- File: ")
+                            .unwrap_or("")
+                            .to_string()
+                    } else {
+                        buffer.get_name()
+                    };
+
+                    format!("{} [{}] {}{}", marker, i + 1, file_info, modified)
                 })
                 .collect()
         } else {
@@ -7646,7 +7653,7 @@ impl EnhancedTuiApp {
 }
 
 pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()> {
-    let app = if !data_files.is_empty() {
+    let mut app = if !data_files.is_empty() {
         // Load the first file using existing logic
         let first_file = data_files[0];
         let extension = std::path::Path::new(first_file)
@@ -7665,13 +7672,61 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
             }
         };
 
-        // TODO: Load additional files into buffers
-        // For now, just note that we have multiple files
+        // Add filename comment to the first buffer too if we have multiple files
         if data_files.len() > 1 {
+            if let Some(buffer) = app.current_buffer_mut() {
+                let current_text = buffer.get_input_text();
+                let filename = std::path::Path::new(first_file)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy();
+                let text_with_comment = format!("-- File: {}\n{}", filename, current_text);
+                buffer.set_input_text(text_with_comment);
+            }
+        }
+
+        // Load additional files into separate buffers
+        if data_files.len() > 1 {
+            for (index, file_path) in data_files.iter().skip(1).enumerate() {
+                let extension = std::path::Path::new(file_path)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .unwrap_or("");
+
+                // Create a new buffer for each additional file
+                app.new_buffer();
+
+                // Load the file into the current buffer
+                let query = match extension.to_lowercase().as_str() {
+                    "csv" | "json" => {
+                        format!("SELECT * FROM '{}'", file_path)
+                    }
+                    _ => {
+                        app.set_status_message(format!("Skipping unsupported file: {}", file_path));
+                        continue;
+                    }
+                };
+
+                // Set the query in the current buffer
+                if let Some(buffer) = app.current_buffer_mut() {
+                    // Add a comment with the filename for easy identification
+                    let filename = std::path::Path::new(file_path)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy();
+                    let query_with_comment = format!("-- File: {}\n{}", filename, query);
+                    buffer.set_input_text(query_with_comment);
+                }
+            }
+
+            // Switch back to the first buffer
+            if let Some(manager) = app.buffer_manager.as_mut() {
+                manager.switch_to(0);
+            }
+
             app.set_status_message(format!(
-                "{} | {} more file(s) to load - buffer support coming soon",
-                app.get_status_message(),
-                data_files.len() - 1
+                "Loaded {} files into separate buffers. Use Alt+Tab to switch.",
+                data_files.len()
             ));
         }
 
