@@ -172,7 +172,6 @@ pub struct EnhancedTuiApp {
     history_state: HistoryState,
     command_history: CommandHistory,
     // filtered_data removed - now exclusively in Buffer
-    column_widths: Vec<u16>,
     scroll_offset: (usize, usize), // (row, col)
     current_column: usize,         // For column-based operations
     pinned_columns: Vec<usize>,    // Indices of pinned columns
@@ -183,19 +182,14 @@ pub struct EnhancedTuiApp {
     key_history: Vec<String>, // Track key presses for debugging
     help_scroll: u16,         // Scroll offset for help page
     input_scroll_offset: u16, // Horizontal scroll offset for input
-    case_insensitive: bool,   // Toggle for case-insensitive string comparisons
 
     // Selection and clipboard
     selection_mode: SelectionMode,         // Row or Cell mode
     yank_mode: Option<char>,               // Track multi-key yank commands (e.g., 'yy', 'yc')
     last_yanked: Option<(String, String)>, // (description, value) of last yanked item
 
-    // CSV mode
-    // CSV/cache fields removed - now exclusively in Buffer
-
     // Buffer management (new - for supporting multiple files)
     buffer_manager: BufferManager,
-    current_buffer_name: Option<String>, // Name of current buffer/table
 
     // Cache
     query_cache: Option<QueryCache>,
@@ -213,9 +207,8 @@ pub struct EnhancedTuiApp {
     last_visible_rows: usize, // Track the last calculated viewport height
 
     // Display options
-    viewport_lock: bool, // Lock viewport position for anchor scrolling
     viewport_lock_row: Option<usize>, // The row position to lock to in viewport
-    jump_to_row_input: String, // Input buffer for jump to row command
+    jump_to_row_input: String,        // Input buffer for jump to row command
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
 }
 
@@ -397,8 +390,6 @@ impl EnhancedTuiApp {
 
     fn set_case_insensitive(&mut self, case_insensitive: bool) {
         self.buffer_mut().set_case_insensitive(case_insensitive);
-        // Also update local field (will be removed later)
-        self.case_insensitive = case_insensitive;
     }
 
     // Compatibility wrapper for last_results_row
@@ -569,8 +560,6 @@ impl EnhancedTuiApp {
 
     fn set_viewport_lock(&mut self, locked: bool) {
         self.buffer_mut().set_viewport_lock(locked);
-        // Also update local field (will be removed later)
-        self.viewport_lock = locked;
     }
 
     fn get_viewport_lock_row(&self) -> Option<usize> {
@@ -589,8 +578,6 @@ impl EnhancedTuiApp {
 
     fn set_column_widths(&mut self, widths: Vec<u16>) {
         self.buffer_mut().set_column_widths(widths.clone());
-        // Also update local field (will be removed later)
-        self.column_widths = widths;
     }
 
     fn is_csv_mode(&self) -> bool {
@@ -909,8 +896,6 @@ impl EnhancedTuiApp {
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.set_fuzzy_filter_pattern(pattern.clone());
         }
-        // Also update local field during migration
-        // self.fuzzy_filter_state.pattern = pattern;
     }
 
     fn is_fuzzy_filter_active(&self) -> bool {
@@ -925,8 +910,6 @@ impl EnhancedTuiApp {
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.set_fuzzy_filter_active(active);
         }
-        // Also update local field during migration
-        // self.fuzzy_filter_state.active = active;
     }
 
     fn get_fuzzy_filter_indices(&self) -> Vec<usize> {
@@ -1084,7 +1067,6 @@ impl EnhancedTuiApp {
                 matches: Vec::new(),
                 match_index: 0,
             },
-            // column_search_state: ColumnSearchState { ... }, // MIGRATED to buffer system
             completion_state: CompletionState {
                 suggestions: Vec::new(),
                 current_index: 0,
@@ -1097,19 +1079,15 @@ impl EnhancedTuiApp {
                 selected_index: 0,
             },
             command_history: CommandHistory::new().unwrap_or_default(),
-            // filtered_data now in Buffer
-            column_widths: Vec::new(),
             scroll_offset: (0, 0),
             current_column: 0,
             pinned_columns: Vec::new(),
-            // column_stats: None, // MIGRATED to buffer system
             sql_highlighter: SqlHighlighter::new(),
             debug_text: String::new(),
             debug_scroll: 0,
             key_history: Vec::new(),
             help_scroll: 0,
             input_scroll_offset: 0,
-            case_insensitive: config.behavior.case_insensitive_default,
             selection_mode: SelectionMode::Row, // Default to row mode
             yank_mode: None,
             last_yanked: None,
@@ -1125,7 +1103,6 @@ impl EnhancedTuiApp {
                 manager.add_buffer(buffer);
                 manager
             },
-            current_buffer_name: None,
             query_cache: QueryCache::new().ok(),
             // Cache fields now in Buffer
             last_query_source: None,
@@ -1133,7 +1110,6 @@ impl EnhancedTuiApp {
             redo_stack: Vec::new(),
             kill_ring: String::new(),
             last_visible_rows: 30, // Default estimate
-            viewport_lock: false,
             viewport_lock_row: None,
             jump_to_row_input: String::new(),
             log_buffer: get_log_buffer(),
@@ -1169,7 +1145,6 @@ impl EnhancedTuiApp {
         app.set_csv_client(Some(csv_client.clone()));
         app.set_csv_mode(true);
         app.set_csv_table_name(table_name.clone());
-        app.current_buffer_name = Some(format!("{}", raw_name));
 
         // Replace the default buffer with a CSV buffer
         {
@@ -1191,11 +1166,6 @@ impl EnhancedTuiApp {
                   app.config.behavior.case_insensitive_default,
                   app.config.display.show_row_numbers);
             app.buffer_manager.add_buffer(buffer);
-
-            // Sync app-level state from the buffer to ensure status line renders correctly
-            if let Some(current_buffer) = app.buffer_manager.current() {
-                app.case_insensitive = current_buffer.is_case_insensitive();
-            }
         }
 
         // Update parser with CSV columns
@@ -1270,7 +1240,6 @@ impl EnhancedTuiApp {
         app.set_csv_client(Some(csv_client.clone()));
         app.set_csv_mode(true); // Reuse CSV mode since the data structure is the same
         app.set_csv_table_name(table_name.clone());
-        app.current_buffer_name = Some(format!("{}", raw_name));
 
         // Replace the default buffer with a JSON buffer
         {
@@ -1292,11 +1261,6 @@ impl EnhancedTuiApp {
                   app.config.behavior.case_insensitive_default,
                   app.config.display.show_row_numbers);
             app.buffer_manager.add_buffer(buffer);
-
-            // Sync app-level state from the buffer to ensure status line renders correctly
-            if let Some(current_buffer) = app.buffer_manager.current() {
-                app.case_insensitive = current_buffer.is_case_insensitive();
-            }
         }
 
         // Buffer state is now initialized
@@ -6312,11 +6276,12 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Fallback to old buffer name if no buffer manager
-        if let Some(buffer_name) = &self.current_buffer_name {
+        // Get buffer name from the current buffer
+        let buffer_name = self.buffer().get_name();
+        if !buffer_name.is_empty() && buffer_name != "[Buffer 1]" {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                buffer_name.clone(),
+                buffer_name,
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
