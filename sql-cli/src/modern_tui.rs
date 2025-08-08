@@ -413,7 +413,7 @@ impl ModernTui {
             (TuiMode::Query, _, InputMode::HistoryNav) => {
                 "History Navigation: ↑↓: Navigate | Enter: Select | Esc: Cancel | Any key: Edit".to_string()
             }
-            
+
             // Results mode help
             (TuiMode::Results, ViewMode::Normal, _) => {
                 "Results Mode: ↑↓←→: Navigate | f: Filter | /: Search | s/S: Sort | Tab: Switch to Query | Esc: Query Mode".to_string()

@@ -3140,7 +3140,34 @@ impl EnhancedTuiApp {
                     buffer.set_results(Some(response.clone()));
                     info!(target: "buffer", "Stored {} results in buffer {}", row_count, buffer_id);
                 }
-                self.set_results(Some(response)); // Keep for compatibility during migration
+                self.set_results(Some(response.clone())); // Keep for compatibility during migration
+
+                // Update parser with the FULL schema if we're in CSV/cache mode
+                // For CSV mode, get the complete schema from the CSV client, not from query results
+                if self.is_csv_mode() {
+                    let table_name = self.get_csv_table_name();
+                    if let Some(csv_client) = self.get_csv_client() {
+                        if let Some(schema) = csv_client.get_schema() {
+                            // Get the full column list from the schema
+                            if let Some(columns) = schema.get(&table_name) {
+                                info!(target: "buffer", "Query executed, updating parser with FULL schema ({} columns) for table '{}'", columns.len(), table_name);
+                                self.hybrid_parser
+                                    .update_single_table(table_name, columns.clone());
+                            }
+                        }
+                    }
+                } else if self.is_cache_mode() {
+                    // For cache mode, we still use the results columns since cached data might be filtered
+                    if let Some(first_row) = response.data.first() {
+                        if let Some(obj) = first_row.as_object() {
+                            let columns: Vec<String> = obj.keys().map(|k| k.to_string()).collect();
+                            info!(target: "buffer", "Query executed, updating parser with {} columns for cached table", columns.len());
+                            self.hybrid_parser
+                                .update_single_table("cached_data".to_string(), columns);
+                        }
+                    }
+                }
+
                 self.calculate_optimal_column_widths();
                 self.reset_table_state();
 
@@ -5643,6 +5670,17 @@ impl EnhancedTuiApp {
             let buffer_query = buffer.get_query();
             let csv_mode = buffer.is_csv_mode();
             let cache_mode = buffer.is_cache_mode();
+            let table_name = buffer.get_table_name();
+
+            // Get the full CSV schema before we start mutating self
+            let csv_schema = if csv_mode {
+                buffer
+                    .get_csv_client()
+                    .and_then(|client| client.get_schema())
+                    .and_then(|schema| schema.get(&table_name).cloned())
+            } else {
+                None
+            };
 
             // Now update self
             self.set_input_text_with_cursor(query_text.clone(), query_text.len());
@@ -5664,10 +5702,46 @@ impl EnhancedTuiApp {
                       result_count, buffer_id, buffer_name, csv_mode, cache_mode,
                       buffer_query);
 
-            // Recalculate column widths and reset table state for new results
-            if self.get_results().is_some() {
-                self.calculate_optimal_column_widths();
-                self.reset_table_state();
+            // For CSV/cache buffers without results, execute a default query to populate schema
+            if (csv_mode || cache_mode) && self.get_results().is_none() {
+                info!(target: "buffer", "Buffer has no results, executing default query to populate schema");
+                let default_query = format!("SELECT * FROM {}", table_name);
+
+                // Execute the query to populate results and schema
+                if let Err(e) = self.execute_query(&default_query) {
+                    warn!(target: "buffer", "Failed to execute default query: {}", e);
+                } else {
+                    info!(target: "buffer", "Default query executed successfully for table '{}'", table_name);
+                }
+            } else {
+                // Update parser schema for CSV/cache mode buffers that already have results
+                if let Some(columns) = csv_schema {
+                    // For CSV mode, use the FULL schema we collected earlier
+                    info!(target: "buffer", "Updating parser with FULL schema ({} columns) for table '{}'", columns.len(), table_name);
+                    self.hybrid_parser
+                        .update_single_table(table_name.clone(), columns);
+                } else if cache_mode {
+                    // For cache mode, use the results columns
+                    let columns = self
+                        .get_results()
+                        .and_then(|r| r.data.first())
+                        .and_then(|row| {
+                            row.as_object()
+                                .map(|obj| obj.keys().map(|k| k.to_string()).collect::<Vec<_>>())
+                        });
+
+                    if let Some(cols) = columns {
+                        info!(target: "buffer", "Updating parser with {} columns for cached table", cols.len());
+                        self.hybrid_parser
+                            .update_single_table(table_name.clone(), cols);
+                    }
+                }
+
+                // Recalculate column widths and reset table state for new results
+                if self.get_results().is_some() {
+                    self.calculate_optimal_column_widths();
+                    self.reset_table_state();
+                }
             }
         }
 
@@ -5695,6 +5769,17 @@ impl EnhancedTuiApp {
             let buffer_query = buffer.get_query();
             let csv_mode = buffer.is_csv_mode();
             let cache_mode = buffer.is_cache_mode();
+            let table_name = buffer.get_table_name();
+
+            // Get the full CSV schema before we start mutating self
+            let csv_schema = if csv_mode {
+                buffer
+                    .get_csv_client()
+                    .and_then(|client| client.get_schema())
+                    .and_then(|schema| schema.get(&table_name).cloned())
+            } else {
+                None
+            };
 
             // Now update self
             self.set_input_text_with_cursor(query_text.clone(), query_text.len());
@@ -5716,10 +5801,46 @@ impl EnhancedTuiApp {
                       result_count, buffer_id, buffer_name, csv_mode, cache_mode,
                       buffer_query);
 
-            // Recalculate column widths and reset table state for new results
-            if self.get_results().is_some() {
-                self.calculate_optimal_column_widths();
-                self.reset_table_state();
+            // For CSV/cache buffers without results, execute a default query to populate schema
+            if (csv_mode || cache_mode) && self.get_results().is_none() {
+                info!(target: "buffer", "Buffer has no results, executing default query to populate schema");
+                let default_query = format!("SELECT * FROM {}", table_name);
+
+                // Execute the query to populate results and schema
+                if let Err(e) = self.execute_query(&default_query) {
+                    warn!(target: "buffer", "Failed to execute default query: {}", e);
+                } else {
+                    info!(target: "buffer", "Default query executed successfully for table '{}'", table_name);
+                }
+            } else {
+                // Update parser schema for CSV/cache mode buffers that already have results
+                if let Some(columns) = csv_schema {
+                    // For CSV mode, use the FULL schema we collected earlier
+                    info!(target: "buffer", "Updating parser with FULL schema ({} columns) for table '{}'", columns.len(), table_name);
+                    self.hybrid_parser
+                        .update_single_table(table_name.clone(), columns);
+                } else if cache_mode {
+                    // For cache mode, use the results columns
+                    let columns = self
+                        .get_results()
+                        .and_then(|r| r.data.first())
+                        .and_then(|row| {
+                            row.as_object()
+                                .map(|obj| obj.keys().map(|k| k.to_string()).collect::<Vec<_>>())
+                        });
+
+                    if let Some(cols) = columns {
+                        info!(target: "buffer", "Updating parser with {} columns for cached table", cols.len());
+                        self.hybrid_parser
+                            .update_single_table(table_name.clone(), cols);
+                    }
+                }
+
+                // Recalculate column widths and reset table state for new results
+                if self.get_results().is_some() {
+                    self.calculate_optimal_column_widths();
+                    self.reset_table_state();
+                }
             }
         }
 
