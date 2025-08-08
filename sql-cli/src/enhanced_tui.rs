@@ -23,7 +23,7 @@ use ratatui::{
 use regex::Regex;
 use serde_json::Value;
 use sql_cli::api_client::{ApiClient, QueryResponse};
-use sql_cli::buffer::{BufferAPI, BufferManager};
+use sql_cli::buffer::{BufferAPI, BufferManager, ColumnStatistics, ColumnType};
 use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
@@ -114,30 +114,7 @@ struct ColumnSearchState {
     current_match: usize,                   // Index into matching_columns
 }
 
-#[derive(Clone, Debug)]
-struct ColumnStatistics {
-    column_name: String,
-    column_type: ColumnType,
-    // For all columns
-    total_count: usize,
-    null_count: usize,
-    unique_count: usize,
-    // For categorical/string columns
-    frequency_map: Option<BTreeMap<String, usize>>,
-    // For numeric columns
-    min: Option<f64>,
-    max: Option<f64>,
-    sum: Option<f64>,
-    mean: Option<f64>,
-    median: Option<f64>,
-}
-
-#[derive(Clone, Debug)]
-enum ColumnType {
-    String,
-    Numeric,
-    Mixed,
-}
+// ColumnStatistics and ColumnType moved to buffer.rs
 
 #[derive(Clone)]
 struct SearchState {
@@ -190,10 +167,10 @@ pub struct EnhancedTuiApp {
     command_history: CommandHistory,
     filtered_data: Option<Vec<Vec<String>>>,
     column_widths: Vec<u16>,
-    scroll_offset: (usize, usize),          // (row, col)
-    current_column: usize,                  // For column-based operations
-    pinned_columns: Vec<usize>,             // Indices of pinned columns
-    column_stats: Option<ColumnStatistics>, // Current column statistics
+    scroll_offset: (usize, usize), // (row, col)
+    current_column: usize,         // For column-based operations
+    pinned_columns: Vec<usize>,    // Indices of pinned columns
+    // column_stats: Option<ColumnStatistics>, // MIGRATED to buffer system
     sql_highlighter: SqlHighlighter,
     debug_text: String,
     debug_scroll: u16,
@@ -1204,8 +1181,20 @@ impl EnhancedTuiApp {
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.clear_column_search();
         }
+    }
+
+    // Wrapper methods for column_stats (uses buffer system)
+    fn get_column_stats(&self) -> Option<&ColumnStatistics> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_column_stats()
+        } else {
+            None
+        }
+    }
+
+    fn set_column_stats(&mut self, stats: Option<ColumnStatistics>) {
         if let Some(buffer) = self.current_buffer_mut() {
-            buffer.clear_column_search();
+            buffer.set_column_stats(stats);
         }
     }
 
@@ -1288,7 +1277,7 @@ impl EnhancedTuiApp {
             scroll_offset: (0, 0),
             current_column: 0,
             pinned_columns: Vec::new(),
-            column_stats: None,
+            // column_stats: None, // MIGRATED to buffer system
             sql_highlighter: SqlHighlighter::new(),
             debug_text: String::new(),
             debug_scroll: 0,
@@ -3866,7 +3855,7 @@ impl EnhancedTuiApp {
                 stats.frequency_map = Some(frequency_map);
             }
 
-            self.column_stats = Some(stats);
+            self.set_column_stats(Some(stats));
             self.set_mode(AppMode::ColumnStats);
         }
     }
@@ -7692,7 +7681,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('S') => {
-                self.column_stats = None;
+                self.set_column_stats(None);
                 self.set_mode(AppMode::Results);
             }
             _ => {}
@@ -7815,7 +7804,7 @@ impl EnhancedTuiApp {
     }
 
     fn render_column_stats(&self, f: &mut Frame, area: Rect) {
-        if let Some(ref stats) = self.column_stats {
+        if let Some(stats) = self.get_column_stats() {
             let mut lines = vec![
                 Line::from(format!("Column Statistics: {}", stats.column_name)).style(
                     Style::default()
@@ -7869,7 +7858,7 @@ impl EnhancedTuiApp {
                 );
 
                 // Sort by frequency (descending) and take top 20
-                let mut freq_vec: Vec<_> = freq_map.iter().collect();
+                let mut freq_vec: Vec<(&String, &usize)> = freq_map.iter().collect();
                 freq_vec.sort_by(|a, b| b.1.cmp(a.1));
 
                 let max_count = freq_vec.first().map(|(_, c)| **c).unwrap_or(1);

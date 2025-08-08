@@ -10,6 +10,7 @@ use ratatui::style::Color;
 use ratatui::widgets::TableState;
 use regex::Regex;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tui_input::Input;
 use tui_textarea::TextArea;
@@ -123,6 +124,31 @@ pub struct ColumnSearchState {
     pub current_match: usize,
 }
 
+#[derive(Clone, Debug)]
+pub enum ColumnType {
+    String,
+    Numeric,
+    Mixed,
+}
+
+#[derive(Clone)]
+pub struct ColumnStatistics {
+    pub column_name: String,
+    pub column_type: ColumnType,
+    // For all columns
+    pub total_count: usize,
+    pub null_count: usize,
+    pub unique_count: usize,
+    // For categorical/string columns
+    pub frequency_map: Option<BTreeMap<String, usize>>,
+    // For numeric columns
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub sum: Option<f64>,
+    pub mean: Option<f64>,
+    pub median: Option<f64>,
+}
+
 impl Default for ColumnSearchState {
     fn default() -> Self {
         Self {
@@ -133,7 +159,7 @@ impl Default for ColumnSearchState {
     }
 }
 
-pub type ColumnStatistics = std::collections::BTreeMap<String, String>;
+// pub type ColumnStatistics = std::collections::BTreeMap<String, String>; // Replaced with struct
 
 /// BufferAPI trait - defines the interface for interacting with buffer state
 /// This abstraction allows the TUI to work with buffer state without knowing
@@ -205,6 +231,10 @@ pub trait BufferAPI {
     fn get_column_search_current_match(&self) -> usize;
     fn set_column_search_current_match(&mut self, index: usize);
     fn clear_column_search(&mut self);
+
+    // --- Column Statistics ---
+    fn get_column_stats(&self) -> Option<&ColumnStatistics>;
+    fn set_column_stats(&mut self, stats: Option<ColumnStatistics>);
 
     // --- Sorting ---
     fn get_sort_column(&self) -> Option<usize>;
@@ -352,6 +382,7 @@ pub struct Buffer {
     pub fuzzy_filter_state: FuzzyFilterState,
     pub search_state: SearchState,
     pub column_search_state: ColumnSearchState,
+    pub column_stats: Option<ColumnStatistics>,
     pub filtered_data: Option<Vec<Vec<String>>>,
 
     // --- View State ---
@@ -359,7 +390,6 @@ pub struct Buffer {
     pub scroll_offset: (usize, usize),
     pub current_column: usize,
     pub pinned_columns: Vec<usize>,
-    pub column_stats: Option<ColumnStatistics>,
     pub compact_mode: bool,
     pub viewport_lock: bool,
     pub viewport_lock_row: Option<usize>,
@@ -611,6 +641,14 @@ impl BufferAPI for Buffer {
         self.column_search_state.pattern.clear();
         self.column_search_state.matching_columns.clear();
         self.column_search_state.current_match = 0;
+    }
+
+    fn get_column_stats(&self) -> Option<&ColumnStatistics> {
+        self.column_stats.as_ref()
+    }
+
+    fn set_column_stats(&mut self, stats: Option<ColumnStatistics>) {
+        self.column_stats = stats;
     }
 
     // --- Sorting ---
@@ -1200,13 +1238,13 @@ impl Buffer {
             fuzzy_filter_state: FuzzyFilterState::default(),
             search_state: SearchState::default(),
             column_search_state: ColumnSearchState::default(),
+            column_stats: None,
             filtered_data: None,
 
             column_widths: Vec::new(),
             scroll_offset: (0, 0),
             current_column: 0,
             pinned_columns: Vec::new(),
-            column_stats: None,
             compact_mode: false,
             viewport_lock: false,
             viewport_lock_row: None,

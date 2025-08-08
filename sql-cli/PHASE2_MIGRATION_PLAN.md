@@ -172,6 +172,7 @@ After each step:
 - `results` - All 38 references migrated, field removed
 - `fuzzy_filter_state` - All 42 references migrated, field removed
 - `column_search_state` - All references migrated, field removed
+- `column_stats` - All 3 references migrated, field removed
 
 ### 🔄 Migrated with Wrappers (Fields Still Present)
 Most other fields have been migrated but fields remain for compatibility:
@@ -187,12 +188,11 @@ Most other fields have been migrated but fields remain for compatibility:
 ### ❌ Not Yet Migrated
 - `input` - Partially migrated (InputManager in buffer, but TUI still uses direct field)
 - `textarea` - Partially migrated (InputManager in buffer, but TUI still uses direct field)
-- `column_stats` - Statistics for selected column
 
 ### 📊 Progress Summary
 - **Total Fields to Migrate**: ~40
-- **Fully Migrated (Field Removed)**: 4
+- **Fully Migrated (Field Removed)**: 5
 - **Migrated with Wrappers**: ~33
-- **Not Yet Migrated**: 3
+- **Not Yet Migrated**: 2
 
 The buffer system architecture is nearly complete. Most fields are using the buffer system through wrappers, and we're progressively removing the redundant fields from the TUI struct.
