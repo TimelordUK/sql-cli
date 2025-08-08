@@ -213,7 +213,7 @@ pub struct EnhancedTuiApp {
     csv_table_name: String,
 
     // Buffer management (new - for supporting multiple files)
-    buffer_manager: Option<BufferManager>,
+    buffer_manager: BufferManager,
     current_buffer_name: Option<String>, // Name of current buffer/table
 
     // Cache
@@ -264,7 +264,6 @@ impl EnhancedTuiApp {
     /// Get current buffer if available (for reading)
     fn current_buffer(&self) -> Option<&dyn sql_cli::buffer::BufferAPI> {
         self.buffer_manager
-            .as_ref()?
             .current()
             .map(|b| b as &dyn sql_cli::buffer::BufferAPI)
     }
@@ -272,7 +271,6 @@ impl EnhancedTuiApp {
     /// Get current buffer if available (for writing)  
     fn current_buffer_mut(&mut self) -> Option<&mut dyn sql_cli::buffer::BufferAPI> {
         self.buffer_manager
-            .as_mut()?
             .current_mut()
             .map(|b| b as &mut dyn sql_cli::buffer::BufferAPI)
     }
@@ -1201,8 +1199,9 @@ impl EnhancedTuiApp {
                 // Sync initial settings from config
                 buffer.set_case_insensitive(config.behavior.case_insensitive_default);
                 buffer.set_compact_mode(config.display.compact_mode);
+                buffer.set_show_row_numbers(config.display.show_row_numbers);
                 manager.add_buffer(buffer);
-                Some(manager)
+                manager
             },
             current_buffer_name: None,
             query_cache: QueryCache::new().ok(),
@@ -1254,9 +1253,9 @@ impl EnhancedTuiApp {
         app.current_buffer_name = Some(format!("{}", raw_name));
 
         // Replace the default buffer with a CSV buffer
-        if let Some(ref mut manager) = app.buffer_manager {
+        {
             // Clear all buffers and add a CSV buffer
-            manager.clear_all();
+            app.buffer_manager.clear_all();
             let mut buffer = sql_cli::buffer::Buffer::from_csv(
                 1,
                 std::path::PathBuf::from(csv_path),
@@ -1272,10 +1271,10 @@ impl EnhancedTuiApp {
                   app.config.display.compact_mode,
                   app.config.behavior.case_insensitive_default,
                   app.config.display.show_row_numbers);
-            manager.add_buffer(buffer);
+            app.buffer_manager.add_buffer(buffer);
 
             // Sync app-level state from the buffer to ensure status line renders correctly
-            if let Some(current_buffer) = manager.current() {
+            if let Some(current_buffer) = app.buffer_manager.current() {
                 app.case_insensitive = current_buffer.is_case_insensitive();
             }
         }
@@ -1355,9 +1354,9 @@ impl EnhancedTuiApp {
         app.current_buffer_name = Some(format!("{}", raw_name));
 
         // Replace the default buffer with a JSON buffer
-        if let Some(ref mut manager) = app.buffer_manager {
+        {
             // Clear all buffers and add a JSON buffer
-            manager.clear_all();
+            app.buffer_manager.clear_all();
             let mut buffer = sql_cli::buffer::Buffer::from_json(
                 1,
                 std::path::PathBuf::from(json_path),
@@ -1373,10 +1372,10 @@ impl EnhancedTuiApp {
                   app.config.display.compact_mode,
                   app.config.behavior.case_insensitive_default,
                   app.config.display.show_row_numbers);
-            manager.add_buffer(buffer);
+            app.buffer_manager.add_buffer(buffer);
 
             // Sync app-level state from the buffer to ensure status line renders correctly
-            if let Some(current_buffer) = manager.current() {
+            if let Some(current_buffer) = app.buffer_manager.current() {
                 app.case_insensitive = current_buffer.is_case_insensitive();
             }
         }
@@ -2071,44 +2070,36 @@ impl EnhancedTuiApp {
 
                 // Add buffer manager debug info
                 debug_info.push_str("\n========== BUFFER MANAGER STATE ==========\n");
-                if let Some(ref manager) = self.buffer_manager {
-                    debug_info.push_str(&format!("Buffer Manager: INITIALIZED\n"));
-                    debug_info.push_str(&format!(
-                        "Number of Buffers: {}\n",
-                        manager.all_buffers().len()
-                    ));
-                    debug_info.push_str(&format!(
-                        "Current Buffer Index: {}\n",
-                        manager.current_index()
-                    ));
-                    debug_info.push_str(&format!(
-                        "Has Multiple Buffers: {}\n",
-                        manager.has_multiple()
-                    ));
+                debug_info.push_str(&format!("Buffer Manager: INITIALIZED\n"));
+                debug_info.push_str(&format!(
+                    "Number of Buffers: {}\n",
+                    self.buffer_manager.all_buffers().len()
+                ));
+                debug_info.push_str(&format!(
+                    "Current Buffer Index: {}\n",
+                    self.buffer_manager.current_index()
+                ));
+                debug_info.push_str(&format!(
+                    "Has Multiple Buffers: {}\n",
+                    self.buffer_manager.has_multiple()
+                ));
 
-                    // Add info about all buffers
-                    for (i, buffer) in manager.all_buffers().iter().enumerate() {
-                        debug_info.push_str(&format!(
-                            "\nBuffer [{}]: {}\n",
-                            i,
-                            buffer.display_name()
-                        ));
-                        debug_info.push_str(&format!("  ID: {}\n", buffer.get_id()));
-                        debug_info.push_str(&format!("  Path: {:?}\n", buffer.file_path));
-                        debug_info.push_str(&format!("  Modified: {}\n", buffer.modified));
-                        debug_info.push_str(&format!("  CSV Mode: {}\n", buffer.is_csv_mode()));
-                    }
+                // Add info about all buffers
+                for (i, buffer) in self.buffer_manager.all_buffers().iter().enumerate() {
+                    debug_info.push_str(&format!("\nBuffer [{}]: {}\n", i, buffer.display_name()));
+                    debug_info.push_str(&format!("  ID: {}\n", buffer.get_id()));
+                    debug_info.push_str(&format!("  Path: {:?}\n", buffer.file_path));
+                    debug_info.push_str(&format!("  Modified: {}\n", buffer.modified));
+                    debug_info.push_str(&format!("  CSV Mode: {}\n", buffer.is_csv_mode()));
+                }
 
-                    // Add current buffer debug dump
-                    if let Some(buffer) = manager.current() {
-                        debug_info.push_str("\n========== CURRENT BUFFER DEBUG DUMP ==========\n");
-                        debug_info.push_str(&buffer.debug_dump());
-                        debug_info.push_str("================================================\n");
-                    } else {
-                        debug_info.push_str("\nNo current buffer available!\n");
-                    }
+                // Add current buffer debug dump
+                if let Some(buffer) = self.buffer_manager.current() {
+                    debug_info.push_str("\n========== CURRENT BUFFER DEBUG DUMP ==========\n");
+                    debug_info.push_str(&buffer.debug_dump());
+                    debug_info.push_str("================================================\n");
                 } else {
-                    debug_info.push_str("Buffer Manager: NOT INITIALIZED\n");
+                    debug_info.push_str("\nNo current buffer available!\n");
                 }
                 debug_info.push_str("============================================\n");
 
@@ -2220,23 +2211,21 @@ impl EnhancedTuiApp {
                 debug_info.push_str(&format!("  Visual Cursor: {}\n", visual_cursor));
                 debug_info.push_str("\n");
 
-                // Add buffer manager info if available
-                if let Some(ref manager) = self.buffer_manager {
-                    debug_info.push_str("=== Buffer Manager ===\n");
-                    debug_info.push_str(&format!(
-                        "  Total Buffers: {}\n",
-                        manager.all_buffers().len()
-                    ));
-                    debug_info.push_str(&format!(
-                        "  Current Buffer Index: {}\n",
-                        manager.current_index()
-                    ));
+                // Add buffer manager info
+                debug_info.push_str("=== Buffer Manager ===\n");
+                debug_info.push_str(&format!(
+                    "  Total Buffers: {}\n",
+                    self.buffer_manager.all_buffers().len()
+                ));
+                debug_info.push_str(&format!(
+                    "  Current Buffer Index: {}\n",
+                    self.buffer_manager.current_index()
+                ));
 
-                    // Add current buffer debug dump
-                    if let Some(buffer) = manager.current() {
-                        debug_info.push_str("\n=== Current Buffer State ===\n");
-                        debug_info.push_str(&buffer.debug_dump());
-                    }
+                // Add current buffer debug dump
+                if let Some(buffer) = self.buffer_manager.current() {
+                    debug_info.push_str("\n=== Current Buffer State ===\n");
+                    debug_info.push_str(&buffer.debug_dump());
                 }
 
                 self.debug_text = debug_info;
@@ -5434,162 +5423,155 @@ impl EnhancedTuiApp {
 
     // Buffer management methods
     fn next_buffer(&mut self) {
-        if let Some(manager) = self.buffer_manager.as_mut() {
-            let prev_index = manager.current_index();
-            manager.next_buffer();
-            let index = manager.current_index();
-            let total = manager.all_buffers().len();
-            debug!(target: "buffer", "Switched from buffer {} to {} (total: {})", prev_index + 1, index + 1, total);
+        let prev_index = self.buffer_manager.current_index();
+        self.buffer_manager.next_buffer();
+        let index = self.buffer_manager.current_index();
+        let total = self.buffer_manager.all_buffers().len();
+        debug!(target: "buffer", "Switched from buffer {} to {} (total: {})", prev_index + 1, index + 1, total);
 
-            // Sync results and state from the new buffer
-            if let Some(buffer) = manager.current() {
-                // Sync query text to input fields
-                let query_text = buffer.get_query();
-                self.input = Input::new(query_text.clone()).with_cursor(query_text.len());
-                self.textarea = {
-                    let mut ta = TextArea::from(
-                        query_text
-                            .lines()
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>(),
-                    );
-                    ta.move_cursor(tui_textarea::CursorMove::End);
-                    ta
-                };
+        // Sync results and state from the new buffer
+        if let Some(buffer) = self.buffer_manager.current() {
+            // Sync query text to input fields
+            let query_text = buffer.get_query();
+            self.input = Input::new(query_text.clone()).with_cursor(query_text.len());
+            self.textarea = {
+                let mut ta = TextArea::from(
+                    query_text
+                        .lines()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>(),
+                );
+                ta.move_cursor(tui_textarea::CursorMove::End);
+                ta
+            };
 
-                // Sync edit mode
-                self.edit_mode = buffer.get_edit_mode();
+            // Sync edit mode
+            self.edit_mode = match buffer.get_edit_mode() {
+                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
+                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
+            };
 
-                // Sync results and data source state
-                self.results = buffer.get_results().cloned();
-                self.csv_client = buffer.csv_client.clone();
-                self.csv_mode = buffer.csv_mode;
-                self.csv_table_name = buffer.csv_table_name.clone();
-                self.cache_mode = buffer.cache_mode;
-                self.cached_data = buffer.cached_data.clone();
+            // Sync results and data source state
+            self.results = buffer.get_results().cloned();
+            self.csv_client = buffer.csv_client.clone();
+            self.csv_mode = buffer.csv_mode;
+            self.csv_table_name = buffer.csv_table_name.clone();
+            self.cache_mode = buffer.cache_mode;
+            self.cached_data = buffer.cached_data.clone();
 
-                let result_count = self.results.as_ref().map(|r| r.data.len()).unwrap_or(0);
-                info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
+            let result_count = self.results.as_ref().map(|r| r.data.len()).unwrap_or(0);
+            info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
                       result_count, buffer.get_id(), buffer.get_name(), buffer.csv_mode, buffer.cache_mode,
                       buffer.get_query());
 
-                // Recalculate column widths and reset table state for new results
-                if self.results.is_some() {
-                    self.calculate_optimal_column_widths();
-                    self.reset_table_state();
-                }
+            // Recalculate column widths and reset table state for new results
+            if self.results.is_some() {
+                self.calculate_optimal_column_widths();
+                self.reset_table_state();
             }
-
-            self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
         }
+
+        self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
     }
 
     fn prev_buffer(&mut self) {
-        if let Some(manager) = self.buffer_manager.as_mut() {
-            let prev_index = manager.current_index();
-            manager.prev_buffer();
-            let index = manager.current_index();
-            let total = manager.all_buffers().len();
-            debug!(target: "buffer", "Switched from buffer {} to {} (total: {})", prev_index + 1, index + 1, total);
+        let prev_index = self.buffer_manager.current_index();
+        self.buffer_manager.prev_buffer();
+        let index = self.buffer_manager.current_index();
+        let total = self.buffer_manager.all_buffers().len();
+        debug!(target: "buffer", "Switched from buffer {} to {} (total: {})", prev_index + 1, index + 1, total);
 
-            // Sync results and state from the new buffer
-            if let Some(buffer) = manager.current() {
-                // Sync query text to input fields
-                let query_text = buffer.get_query();
-                self.input = Input::new(query_text.clone()).with_cursor(query_text.len());
-                self.textarea = {
-                    let mut ta = TextArea::from(
-                        query_text
-                            .lines()
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>(),
-                    );
-                    ta.move_cursor(tui_textarea::CursorMove::End);
-                    ta
-                };
+        // Sync results and state from the new buffer
+        if let Some(buffer) = self.buffer_manager.current() {
+            // Sync query text to input fields
+            let query_text = buffer.get_query();
+            self.input = Input::new(query_text.clone()).with_cursor(query_text.len());
+            self.textarea = {
+                let mut ta = TextArea::from(
+                    query_text
+                        .lines()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>(),
+                );
+                ta.move_cursor(tui_textarea::CursorMove::End);
+                ta
+            };
 
-                // Sync edit mode
-                self.edit_mode = buffer.get_edit_mode();
+            // Sync edit mode
+            self.edit_mode = match buffer.get_edit_mode() {
+                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
+                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
+            };
 
-                // Sync results and data source state
-                self.results = buffer.get_results().cloned();
-                self.csv_client = buffer.csv_client.clone();
-                self.csv_mode = buffer.csv_mode;
-                self.csv_table_name = buffer.csv_table_name.clone();
-                self.cache_mode = buffer.cache_mode;
-                self.cached_data = buffer.cached_data.clone();
+            // Sync results and data source state
+            self.results = buffer.get_results().cloned();
+            self.csv_client = buffer.csv_client.clone();
+            self.csv_mode = buffer.csv_mode;
+            self.csv_table_name = buffer.csv_table_name.clone();
+            self.cache_mode = buffer.cache_mode;
+            self.cached_data = buffer.cached_data.clone();
 
-                let result_count = self.results.as_ref().map(|r| r.data.len()).unwrap_or(0);
-                info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
+            let result_count = self.results.as_ref().map(|r| r.data.len()).unwrap_or(0);
+            info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
                       result_count, buffer.get_id(), buffer.get_name(), buffer.csv_mode, buffer.cache_mode,
                       buffer.get_query());
 
-                // Recalculate column widths and reset table state for new results
-                if self.results.is_some() {
-                    self.calculate_optimal_column_widths();
-                    self.reset_table_state();
-                }
+            // Recalculate column widths and reset table state for new results
+            if self.results.is_some() {
+                self.calculate_optimal_column_widths();
+                self.reset_table_state();
             }
-
-            self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
         }
+
+        self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
     }
 
     fn new_buffer(&mut self) {
-        if let Some(manager) = self.buffer_manager.as_mut() {
-            let mut new_buffer = sql_cli::buffer::Buffer::new(manager.all_buffers().len() + 1);
-            // Apply config settings to the new buffer
-            new_buffer.set_compact_mode(self.config.display.compact_mode);
-            new_buffer.set_case_insensitive(self.config.behavior.case_insensitive_default);
-            new_buffer.set_show_row_numbers(self.config.display.show_row_numbers);
+        let mut new_buffer =
+            sql_cli::buffer::Buffer::new(self.buffer_manager.all_buffers().len() + 1);
+        // Apply config settings to the new buffer
+        new_buffer.set_compact_mode(self.config.display.compact_mode);
+        new_buffer.set_case_insensitive(self.config.behavior.case_insensitive_default);
+        new_buffer.set_show_row_numbers(self.config.display.show_row_numbers);
 
-            info!(target: "buffer", "Creating new buffer with config: compact_mode={}, case_insensitive={}, show_row_numbers={}",
-                  self.config.display.compact_mode,
-                  self.config.behavior.case_insensitive_default,
-                  self.config.display.show_row_numbers);
+        info!(target: "buffer", "Creating new buffer with config: compact_mode={}, case_insensitive={}, show_row_numbers={}",
+              self.config.display.compact_mode,
+              self.config.behavior.case_insensitive_default,
+              self.config.display.show_row_numbers);
 
-            let index = manager.add_buffer(new_buffer);
-            self.set_status_message(format!("Created new buffer #{}", index + 1));
-        }
+        let index = self.buffer_manager.add_buffer(new_buffer);
+        self.set_status_message(format!("Created new buffer #{}", index + 1));
     }
 
     fn close_buffer(&mut self) -> bool {
-        if let Some(manager) = self.buffer_manager.as_mut() {
-            if manager.close_current() {
-                let index = manager.current_index();
-                let total = manager.all_buffers().len();
-                self.set_status_message(format!(
-                    "Buffer closed. Now at buffer {}/{}",
-                    index + 1,
-                    total
-                ));
-                true
-            } else {
-                self.set_status_message("Cannot close the last buffer".to_string());
-                false
-            }
+        if self.buffer_manager.close_current() {
+            let index = self.buffer_manager.current_index();
+            let total = self.buffer_manager.all_buffers().len();
+            self.set_status_message(format!(
+                "Buffer closed. Now at buffer {}/{}",
+                index + 1,
+                total
+            ));
+            true
         } else {
+            self.set_status_message("Cannot close the last buffer".to_string());
             false
         }
     }
 
     fn list_buffers(&self) -> Vec<String> {
-        if let Some(manager) = self.buffer_manager.as_ref() {
-            let current_index = manager.current_index();
-            manager
-                .all_buffers()
-                .iter()
-                .enumerate()
-                .map(|(i, buffer)| {
-                    let marker = if i == current_index { "*" } else { " " };
-                    let modified = if buffer.is_modified() { "+" } else { "" };
+        let current_index = self.buffer_manager.current_index();
+        self.buffer_manager
+            .all_buffers()
+            .iter()
+            .enumerate()
+            .map(|(i, buffer)| {
+                let marker = if i == current_index { "*" } else { " " };
+                let modified = if buffer.is_modified() { "+" } else { "" };
 
-                    format!("{} [{}] {}{}", marker, i + 1, buffer.get_name(), modified)
-                })
-                .collect()
-        } else {
-            vec![]
-        }
+                format!("{} [{}] {}{}", marker, i + 1, buffer.get_name(), modified)
+            })
+            .collect()
     }
 
     fn yank(&mut self) {
@@ -6234,9 +6216,9 @@ impl EnhancedTuiApp {
         ));
 
         // Show buffer information
-        if let Some(manager) = self.buffer_manager.as_ref() {
-            let index = manager.current_index();
-            let total = manager.all_buffers().len();
+        {
+            let index = self.buffer_manager.current_index();
+            let total = self.buffer_manager.all_buffers().len();
 
             // Show buffer indicator if multiple buffers
             if total > 1 {
@@ -6248,7 +6230,7 @@ impl EnhancedTuiApp {
             }
 
             // Show current buffer name
-            if let Some(buffer) = manager.current() {
+            if let Some(buffer) = self.buffer_manager.current() {
                 spans.push(Span::raw(" "));
                 let name = buffer.get_name();
                 let modified = if buffer.is_modified() { "*" } else { "" };
@@ -6259,8 +6241,10 @@ impl EnhancedTuiApp {
                         .add_modifier(Modifier::BOLD),
                 ));
             }
-        } else if let Some(buffer_name) = &self.current_buffer_name {
-            // Fallback to old buffer name
+        }
+
+        // Fallback to old buffer name if no buffer manager
+        if let Some(buffer_name) = &self.current_buffer_name {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 buffer_name.clone(),
@@ -7927,9 +7911,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
             }
 
             // Switch back to the first buffer
-            if let Some(manager) = app.buffer_manager.as_mut() {
-                manager.switch_to(0);
-            }
+            app.buffer_manager.switch_to(0);
 
             app.set_status_message(format!(
                 "Loaded {} files into separate buffers. Use Alt+Tab to switch.",
