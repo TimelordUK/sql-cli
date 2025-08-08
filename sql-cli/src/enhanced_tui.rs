@@ -195,6 +195,7 @@ pub struct EnhancedTuiApp {
     sql_highlighter: SqlHighlighter,
     debug_text: String,
     debug_scroll: u16,
+    key_history: Vec<String>, // Track key presses for debugging
     help_scroll: u16,         // Scroll offset for help page
     input_scroll_offset: u16, // Horizontal scroll offset for input
     case_insensitive: bool,   // Toggle for case-insensitive string comparisons
@@ -1054,6 +1055,7 @@ impl EnhancedTuiApp {
             sql_highlighter: SqlHighlighter::new(),
             debug_text: String::new(),
             debug_scroll: 0,
+            key_history: Vec::new(),
             help_scroll: 0,
             input_scroll_offset: 0,
             case_insensitive: config.behavior.case_insensitive_default,
@@ -1376,22 +1378,13 @@ impl EnhancedTuiApp {
         let old_cursor = self.input.cursor();
 
         // Debug: Log key presses to help diagnose input issues
-        // Uncomment the next line to see all keys in status bar
-        // self.set_status_message(format!("Key: {:?} Mods: {:?}", key.code, key.modifiers));
-
-        // Always log to debug buffer for F5 inspection
-        if self.debug_text.lines().count() > 100 {
-            // Trim old entries
-            self.debug_text = self
-                .debug_text
-                .lines()
-                .skip(50)
-                .collect::<Vec<_>>()
-                .join("\n");
+        // Keep last 50 key presses
+        if self.key_history.len() > 50 {
+            self.key_history.remove(0);
         }
-        self.debug_text.push_str(&format!(
-            "[{}] Key: {:?} Mods: {:?}\n",
-            chrono::Local::now().format("%H:%M:%S"),
+        self.key_history.push(format!(
+            "[{}] Key: {:?} Mods: {:?}",
+            Local::now().format("%H:%M:%S.%3f"),
             key.code,
             key.modifiers
         ));
@@ -1906,6 +1899,15 @@ impl EnhancedTuiApp {
                     debug_info.push_str("Buffer Manager: NOT INITIALIZED\n");
                 }
                 debug_info.push_str("============================================\n");
+
+                // Add key press history
+                debug_info.push_str("\n========== KEY PRESS HISTORY ==========\n");
+                debug_info.push_str("(Most recent at bottom, last 50 keys)\n");
+                for key_event in &self.key_history {
+                    debug_info.push_str(key_event);
+                    debug_info.push('\n');
+                }
+                debug_info.push_str("========================================\n");
 
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();
