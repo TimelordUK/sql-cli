@@ -5129,10 +5129,9 @@ impl EnhancedTuiApp {
     fn kill_line(&mut self) {
         match self.edit_mode {
             EditMode::SingleLine => {
-                let query = self.input.value();
-                let cursor_pos = self.input.cursor();
-                let query_len = query.len();
-                let query_str = query.to_string();
+                let query_str = self.get_input_text();
+                let cursor_pos = self.get_input_cursor();
+                let query_len = query_str.len();
 
                 // Debug info
                 self.set_status_message(format!(
@@ -5148,7 +5147,16 @@ impl EnhancedTuiApp {
                     // Save to kill ring before deleting
                     self.set_kill_ring(query_str.chars().skip(cursor_pos).collect::<String>());
                     let new_query = query_str.chars().take(cursor_pos).collect::<String>();
-                    self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
+                    // Use helper to set text through buffer
+                    self.set_input_text(new_query.clone());
+                    // Set cursor back to original position
+                    if let Some(buffer) = self.current_buffer_mut() {
+                        buffer.set_input_cursor_position(cursor_pos);
+                        // Sync for rendering
+                        if self.get_edit_mode() == EditMode::SingleLine {
+                            self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
+                        }
+                    }
 
                     // Update status to show what was killed
                     self.set_status_message(format!(
@@ -5196,8 +5204,8 @@ impl EnhancedTuiApp {
     fn kill_line_backward(&mut self) {
         match self.edit_mode {
             EditMode::SingleLine => {
-                let query = self.input.value();
-                let cursor_pos = self.input.cursor();
+                let query = self.get_input_text();
+                let cursor_pos = self.get_input_cursor();
 
                 if cursor_pos > 0 {
                     // Collect text that will be killed and the new query
@@ -5205,12 +5213,21 @@ impl EnhancedTuiApp {
                     let new_query = query.chars().skip(cursor_pos).collect::<String>();
 
                     // Save to undo stack before modifying
-                    self.push_undo((query.to_string(), cursor_pos));
+                    self.push_undo((query.clone(), cursor_pos));
                     self.clear_redo();
 
                     // Save to kill ring before deleting
                     self.set_kill_ring(killed_text);
-                    self.input = tui_input::Input::new(new_query).with_cursor(0);
+                    // Use helper to set text through buffer
+                    self.set_input_text(new_query.clone());
+                    // Set cursor to beginning
+                    if let Some(buffer) = self.current_buffer_mut() {
+                        buffer.set_input_cursor_position(0);
+                        // Sync for rendering
+                        if self.get_edit_mode() == EditMode::SingleLine {
+                            self.input = tui_input::Input::new(new_query).with_cursor(0);
+                        }
+                    }
                 }
             }
             EditMode::MultiLine => {
