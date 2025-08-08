@@ -87,35 +87,42 @@ impl std::io::Write for RingBufferWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         // Parse the log message and add to ring buffer
         if let Ok(message) = std::str::from_utf8(buf) {
-            // Simple parsing - in production you'd want more robust parsing
             let message = message.trim();
             if !message.is_empty() {
-                // Extract level and target from the formatted message
-                // Format is typically: "2024-01-01T12:00:00.000Z  INFO target: message"
-                let parts: Vec<&str> = message.splitn(4, ' ').collect();
-                if parts.len() >= 3 {
-                    let level_str = parts[1].trim();
-                    let level = match level_str {
-                        "TRACE" => Level::TRACE,
-                        "DEBUG" => Level::DEBUG,
-                        "INFO" => Level::INFO,
-                        "WARN" => Level::WARN,
-                        "ERROR" => Level::ERROR,
-                        _ => Level::INFO,
-                    };
-
-                    let target_and_msg = parts[2..].join(" ");
-                    let (target, msg) = if let Some(colon_pos) = target_and_msg.find(':') {
-                        let target = &target_and_msg[..colon_pos];
-                        let msg = target_and_msg[colon_pos + 1..].trim();
-                        (target, msg)
-                    } else {
-                        ("unknown", target_and_msg.as_str())
-                    };
-
+                // The compact format is: "LEVEL target: message"
+                // First, try to extract the level
+                let (level, rest) = if message.starts_with("TRACE ") {
+                    (Level::TRACE, &message[6..])
+                } else if message.starts_with("DEBUG ") {
+                    (Level::DEBUG, &message[6..])
+                } else if message.starts_with("INFO ") {
+                    (Level::INFO, &message[5..])
+                } else if message.starts_with("WARN ") {
+                    (Level::WARN, &message[5..])
+                } else if message.starts_with("ERROR ") {
+                    (Level::ERROR, &message[6..])
+                } else {
+                    // If no level prefix, just store the whole message
                     self.buffer
-                        .push(LogEntry::new(level, target, msg.to_string()));
-                }
+                        .push(LogEntry::new(Level::INFO, "general", message.to_string()));
+                    return Ok(buf.len());
+                };
+
+                // Now parse "target: message" from rest
+                let (target, msg) = if let Some(colon_pos) = rest.find(':') {
+                    let potential_target = &rest[..colon_pos];
+                    // Check if this looks like a target (no spaces)
+                    if !potential_target.contains(' ') {
+                        (potential_target, rest[colon_pos + 1..].trim())
+                    } else {
+                        ("general", rest)
+                    }
+                } else {
+                    ("general", rest)
+                };
+
+                self.buffer
+                    .push(LogEntry::new(level, target, msg.to_string()));
             }
         }
         Ok(buf.len())
@@ -164,6 +171,14 @@ pub fn init_tracing() -> LogRingBuffer {
     use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
     let buffer = init_log_buffer();
+
+    // Add a test message to verify the buffer is working
+    buffer.push(LogEntry::new(
+        Level::INFO,
+        "system",
+        "Logging system initialized".to_string(),
+    ));
+
     let writer = RingBufferWriter::new(buffer.clone());
 
     // Create a subscriber with our custom writer
@@ -174,14 +189,16 @@ pub fn init_tracing() -> LogRingBuffer {
         .with_ansi(false)
         .compact();
 
-    // Set up env filter - default to INFO, but allow override with RUST_LOG
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("sql_cli=debug,enhanced_tui=debug"));
+    // Set up env filter - default to TRACE for everything to catch all logs
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("trace"));
 
     tracing_subscriber::registry()
         .with(filter)
         .with(fmt_layer)
         .init();
+
+    // Log a test message through tracing
+    tracing::info!(target: "system", "Tracing initialized successfully");
 
     buffer
 }

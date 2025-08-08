@@ -1551,13 +1551,20 @@ impl EnhancedTuiApp {
                 // F12 - next buffer
                 self.next_buffer();
             }
-            KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Ctrl+] - next buffer
+            // Ctrl+PageDown for next buffer (more standard)
+            KeyCode::PageDown if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+PageDown - next buffer
                 self.next_buffer();
             }
-            KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Ctrl+[ - previous buffer
+            // Ctrl+PageUp for previous buffer
+            KeyCode::PageUp if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+PageUp - previous buffer
                 self.prev_buffer();
+            }
+            // Also support Ctrl+Tab-like behavior with Ctrl+6
+            KeyCode::Char('6') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+6 - toggle between last two buffers (like vim)
+                self.next_buffer();
             }
             KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Alt+N - new buffer
@@ -6898,8 +6905,9 @@ impl EnhancedTuiApp {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ),
-            Line::from("  F11/Ctrl+[    - Previous buffer"),
-            Line::from("  F12/Ctrl+]    - Next buffer"),
+            Line::from("  F11/Ctrl+PgUp - Previous buffer"),
+            Line::from("  F12/Ctrl+PgDn - Next buffer"),
+            Line::from("  Ctrl+6        - Quick switch"),
             Line::from("  Alt+N         - New buffer"),
             Line::from("  Alt+W         - Close buffer"),
             Line::from("  Alt+B         - List buffers"),
