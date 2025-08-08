@@ -1522,6 +1522,35 @@ impl EnhancedTuiApp {
                 // Expand SELECT * to all column names
                 self.expand_asterisk();
             }
+            // Buffer navigation keys
+            KeyCode::Tab if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Alt+Tab - next buffer
+                self.next_buffer();
+            }
+            KeyCode::BackTab
+                if key
+                    .modifiers
+                    .contains(KeyModifiers::ALT | KeyModifiers::SHIFT) =>
+            {
+                // Alt+Shift+Tab - previous buffer
+                self.prev_buffer();
+            }
+            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Alt+N - new buffer
+                self.new_buffer();
+            }
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Alt+W - close current buffer
+                self.close_buffer();
+            }
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Alt+B - list buffers
+                let buffer_list = self.list_buffers();
+                if !buffer_list.is_empty() {
+                    let message = format!("Buffers:\n{}", buffer_list.join("\n"));
+                    self.set_status_message(message);
+                }
+            }
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.show_help = !self.show_help;
                 self.set_mode(if self.show_help {
@@ -5332,6 +5361,77 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Buffer management methods
+    fn next_buffer(&mut self) {
+        if let Some(manager) = self.buffer_manager.as_mut() {
+            manager.next_buffer();
+            let index = manager.current_index();
+            let total = manager.all_buffers().len();
+            self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
+        }
+    }
+
+    fn prev_buffer(&mut self) {
+        if let Some(manager) = self.buffer_manager.as_mut() {
+            manager.prev_buffer();
+            let index = manager.current_index();
+            let total = manager.all_buffers().len();
+            self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
+        }
+    }
+
+    fn new_buffer(&mut self) {
+        if let Some(manager) = self.buffer_manager.as_mut() {
+            let new_buffer = sql_cli::buffer::Buffer::new(manager.all_buffers().len() + 1);
+            let index = manager.add_buffer(new_buffer);
+            self.set_status_message(format!("Created new buffer #{}", index + 1));
+        }
+    }
+
+    fn close_buffer(&mut self) -> bool {
+        if let Some(manager) = self.buffer_manager.as_mut() {
+            if manager.close_current() {
+                let index = manager.current_index();
+                let total = manager.all_buffers().len();
+                self.set_status_message(format!(
+                    "Buffer closed. Now at buffer {}/{}",
+                    index + 1,
+                    total
+                ));
+                true
+            } else {
+                self.set_status_message("Cannot close the last buffer".to_string());
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fn list_buffers(&self) -> Vec<String> {
+        if let Some(manager) = self.buffer_manager.as_ref() {
+            let current_index = manager.current_index();
+            manager
+                .all_buffers()
+                .iter()
+                .enumerate()
+                .map(|(i, buffer)| {
+                    let marker = if i == current_index { "*" } else { " " };
+                    let modified = if buffer.is_modified() { "+" } else { "" };
+                    format!(
+                        "{} [{}] Buffer {}{}",
+                        marker,
+                        i + 1,
+                        buffer.get_name(),
+                        modified
+                    )
+                })
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
     fn yank(&mut self) {
         if !self.is_kill_ring_empty() {
             let query = self.get_input_text();
@@ -5973,8 +6073,34 @@ impl EnhancedTuiApp {
             Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
         ));
 
-        // Show buffer/table name if available
-        if let Some(buffer_name) = &self.current_buffer_name {
+        // Show buffer information
+        if let Some(manager) = self.buffer_manager.as_ref() {
+            let index = manager.current_index();
+            let total = manager.all_buffers().len();
+
+            // Show buffer indicator if multiple buffers
+            if total > 1 {
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(
+                    format!("[{}/{}]", index + 1, total),
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+
+            // Show current buffer name
+            if let Some(buffer) = manager.current() {
+                spans.push(Span::raw(" "));
+                let name = buffer.get_name();
+                let modified = if buffer.is_modified() { "*" } else { "" };
+                spans.push(Span::styled(
+                    format!("{}{}", name, modified),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
+        } else if let Some(buffer_name) = &self.current_buffer_name {
+            // Fallback to old buffer name
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 buffer_name.clone(),
