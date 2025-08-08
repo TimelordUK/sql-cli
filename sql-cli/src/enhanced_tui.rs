@@ -570,14 +570,19 @@ impl EnhancedTuiApp {
 
     // Compatibility wrapper for results
     fn get_results(&self) -> Option<&QueryResponse> {
-        // For now, always use TUI field due to type conflicts
-        // TODO: Resolve QueryResponse type mismatch between crate::api_client and sql_cli::api_client
-        self.get_results()
+        // Get results from buffer system
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_results()
+        } else {
+            None
+        }
     }
 
     fn set_results(&mut self, results: Option<QueryResponse>) {
-        // Update local field
-        self.set_results(results);
+        // Update buffer's results
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_results(results);
+        }
 
         // TODO: Also update in buffer when type conflicts are resolved
     }
