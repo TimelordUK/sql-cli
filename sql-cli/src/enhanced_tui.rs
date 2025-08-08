@@ -3780,6 +3780,11 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_left(&mut self) {
+        // Update cursor_manager for table navigation (incremental step)
+        let (row, col) = self.cursor_manager.table_position();
+        self.cursor_manager.move_table_left();
+
+        // Keep existing logic for now
         self.set_current_column(self.get_current_column().saturating_sub(1));
         let mut offset = self.get_scroll_offset();
         offset.1 = offset.1.saturating_sub(1);
@@ -3792,6 +3797,11 @@ impl EnhancedTuiApp {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
+
+                    // Update cursor_manager for table navigation (incremental step)
+                    self.cursor_manager.move_table_right(max_columns);
+
+                    // Keep existing logic for now
                     if self.get_current_column() + 1 < max_columns {
                         self.set_current_column(self.get_current_column() + 1);
                         let mut offset = self.get_scroll_offset();
