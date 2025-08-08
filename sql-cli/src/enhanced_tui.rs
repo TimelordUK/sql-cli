@@ -28,6 +28,7 @@ use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::history::{CommandHistory, HistoryMatch};
+use sql_cli::logging::{get_log_buffer, LogRingBuffer};
 use sql_cli::where_ast::format_where_ast;
 use sql_cli::where_parser::WhereParser;
 use std::cmp::Ordering;
@@ -35,6 +36,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io;
 use std::io::Write;
+use tracing::{debug, error, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
 use tui_textarea::{CursorMove, TextArea};
 
@@ -231,11 +233,12 @@ pub struct EnhancedTuiApp {
     last_visible_rows: usize, // Track the last calculated viewport height
 
     // Display options
-    compact_mode: bool,               // Compact display mode with reduced padding
-    viewport_lock: bool,              // Lock viewport position for anchor scrolling
-    viewport_lock_row: Option<usize>, // The row position to lock to in viewport
-    show_row_numbers: bool,           // Show row numbers in results view
-    jump_to_row_input: String,        // Input buffer for jump to row command
+    compact_mode: bool,                // Compact display mode with reduced padding
+    viewport_lock: bool,               // Lock viewport position for anchor scrolling
+    viewport_lock_row: Option<usize>,  // The row position to lock to in viewport
+    show_row_numbers: bool,            // Show row numbers in results view
+    jump_to_row_input: String,         // Input buffer for jump to row command
+    log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
 }
 
 fn escape_csv_field(field: &str) -> String {
@@ -1215,6 +1218,7 @@ impl EnhancedTuiApp {
             viewport_lock_row: None,
             show_row_numbers: config.display.show_row_numbers,
             jump_to_row_input: String::new(),
+            log_buffer: get_log_buffer(),
         }
     }
 
@@ -1515,6 +1519,9 @@ impl EnhancedTuiApp {
             key.modifiers
         ));
 
+        // Also log to tracing
+        trace!(target: "input", "Key: {:?} Modifiers: {:?}", key.code, key.modifiers);
+
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
@@ -1628,11 +1635,17 @@ impl EnhancedTuiApp {
             }
             KeyCode::Enter => {
                 let query = match self.get_edit_mode() {
-                    EditMode::SingleLine => self.get_input_text().trim().to_string(),
+                    EditMode::SingleLine => {
+                        let q = self.get_input_text().trim().to_string();
+                        debug!(target: "action", "Executing query from single-line mode: {}", q);
+                        q
+                    }
                     EditMode::MultiLine => {
                         if key.modifiers.contains(KeyModifiers::CONTROL) {
                             // Ctrl+Enter executes the query in multi-line mode
-                            self.get_input_text().trim().to_string()
+                            let q = self.get_input_text().trim().to_string();
+                            debug!(target: "action", "Executing query from multi-line mode: {}", q);
+                            q
                         } else {
                             // Regular Enter adds a new line
                             self.textarea.input(key);
@@ -2088,6 +2101,21 @@ impl EnhancedTuiApp {
                     debug_info.push('\n');
                 }
                 debug_info.push_str("========================================\n");
+
+                // Add trace logs from ring buffer
+                debug_info.push_str("\n========== TRACE LOGS ==========\n");
+                debug_info.push_str("(Most recent at bottom, last 100 entries)\n");
+                if let Some(ref log_buffer) = self.log_buffer {
+                    let recent_logs = log_buffer.get_recent(100);
+                    for entry in recent_logs {
+                        debug_info.push_str(&entry.format_for_display());
+                        debug_info.push('\n');
+                    }
+                    debug_info.push_str(&format!("Total log entries: {}\n", log_buffer.len()));
+                } else {
+                    debug_info.push_str("Log buffer not initialized\n");
+                }
+                debug_info.push_str("================================\n");
 
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();
@@ -2838,6 +2866,7 @@ impl EnhancedTuiApp {
     }
 
     fn execute_query(&mut self, query: &str) -> Result<()> {
+        info!(target: "query", "Executing query: {}", query);
         self.set_status_message(format!("Executing query: '{}'...", query));
         let start_time = std::time::Instant::now();
 
@@ -5381,18 +5410,22 @@ impl EnhancedTuiApp {
     // Buffer management methods
     fn next_buffer(&mut self) {
         if let Some(manager) = self.buffer_manager.as_mut() {
+            let prev_index = manager.current_index();
             manager.next_buffer();
             let index = manager.current_index();
             let total = manager.all_buffers().len();
+            debug!(target: "buffer", "Switched from buffer {} to {} (total: {})", prev_index + 1, index + 1, total);
             self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
         }
     }
 
     fn prev_buffer(&mut self) {
         if let Some(manager) = self.buffer_manager.as_mut() {
+            let prev_index = manager.current_index();
             manager.prev_buffer();
             let index = manager.current_index();
             let total = manager.all_buffers().len();
+            debug!(target: "buffer", "Switched from buffer {} to {} (total: {})", prev_index + 1, index + 1, total);
             self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
         }
     }

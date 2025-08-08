@@ -145,6 +145,9 @@ fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::err
 }
 
 fn main() -> io::Result<()> {
+    // Initialize logging/tracing
+    sql_cli::logging::init_tracing();
+
     // Check if user wants TUI mode (default) or classic mode
     let args: Vec<String> = std::env::args().collect();
 

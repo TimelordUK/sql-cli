@@ -111,6 +111,8 @@ arboard = "3.2"
 sha2 = "0.10"
 tui-textarea = "0.7"
 toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "local-time"] }
 
 [dev-dependencies]
 tempfile = "3.8"
