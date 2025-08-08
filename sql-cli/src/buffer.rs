@@ -1,6 +1,10 @@
 use crate::api_client::QueryResponse;
 use crate::csv_datasource::CsvApiClient;
+use crate::input_manager::{
+    create_from_input, create_from_textarea, create_multi_line, create_single_line, InputManager,
+};
 use anyhow::Result;
+use crossterm::event::KeyEvent;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::widgets::TableState;
 use regex::Regex;
@@ -257,10 +261,18 @@ pub trait BufferAPI {
 
     // --- Debug ---
     fn debug_dump(&self) -> String;
+
+    // --- Input Management ---
+    fn get_input_text(&self) -> String;
+    fn set_input_text(&mut self, text: String);
+    fn handle_input_key(&mut self, event: KeyEvent) -> bool;
+    fn switch_input_mode(&mut self, multiline: bool);
+    fn get_input_cursor_position(&self) -> usize;
+    fn set_input_cursor_position(&mut self, position: usize);
+    fn is_input_multiline(&self) -> bool;
 }
 
 /// Represents a single buffer/tab with its own independent state
-#[derive(Clone)]
 pub struct Buffer {
     /// Unique identifier for this buffer
     pub id: usize,
@@ -285,8 +297,9 @@ pub struct Buffer {
     // --- UI State ---
     pub mode: AppMode,
     pub edit_mode: EditMode,
-    pub input: Input,
-    pub textarea: TextArea<'static>,
+    pub input: Input, // Legacy - kept for compatibility during migration
+    pub textarea: TextArea<'static>, // Legacy - kept for compatibility during migration
+    pub input_manager: Box<dyn InputManager>, // New unified input management
     pub table_state: TableState,
     pub last_results_row: Option<usize>,
     pub last_scroll_offset: (usize, usize),
@@ -327,10 +340,13 @@ pub struct Buffer {
 impl BufferAPI for Buffer {
     // --- Query and Results ---
     fn get_query(&self) -> String {
-        self.input.value().to_string()
+        // Use InputManager if available, fallback to legacy input
+        self.input_manager.get_text()
     }
 
     fn set_query(&mut self, query: String) {
+        // Update both InputManager and legacy field for compatibility
+        self.input_manager.set_text(query.clone());
         self.input = Input::new(query.clone()).with_cursor(query.len());
     }
 
@@ -875,6 +891,68 @@ impl BufferAPI for Buffer {
         output.push_str("\n=== END BUFFER DEBUG ===\n");
         output
     }
+
+    // --- Input Management ---
+    fn get_input_text(&self) -> String {
+        self.input_manager.get_text()
+    }
+
+    fn set_input_text(&mut self, text: String) {
+        self.input_manager.set_text(text.clone());
+        // Sync with legacy fields for compatibility
+        if self.edit_mode == EditMode::SingleLine {
+            self.input = Input::new(text.clone()).with_cursor(text.len());
+        } else {
+            let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+            self.textarea = TextArea::new(lines);
+        }
+    }
+
+    fn handle_input_key(&mut self, event: KeyEvent) -> bool {
+        let result = self.input_manager.handle_key_event(event);
+        // Sync with legacy fields after key handling
+        self.sync_from_input_manager();
+        result
+    }
+
+    fn switch_input_mode(&mut self, multiline: bool) {
+        let current_text = self.input_manager.get_text();
+        let cursor_pos = self.input_manager.get_cursor_position();
+
+        if multiline {
+            self.edit_mode = EditMode::MultiLine;
+            self.input_manager = create_multi_line(current_text.clone());
+            // Update legacy textarea
+            let lines: Vec<String> = current_text.lines().map(|s| s.to_string()).collect();
+            self.textarea = TextArea::new(lines);
+        } else {
+            self.edit_mode = EditMode::SingleLine;
+            self.input_manager = create_single_line(current_text.clone());
+            // Update legacy input
+            self.input =
+                Input::new(current_text.clone()).with_cursor(cursor_pos.min(current_text.len()));
+        }
+
+        // Try to restore cursor position
+        self.input_manager.set_cursor_position(cursor_pos);
+    }
+
+    fn get_input_cursor_position(&self) -> usize {
+        self.input_manager.get_cursor_position()
+    }
+
+    fn set_input_cursor_position(&mut self, position: usize) {
+        self.input_manager.set_cursor_position(position);
+        // Sync with legacy fields
+        if self.edit_mode == EditMode::SingleLine {
+            let text = self.input.value().to_string();
+            self.input = Input::new(text).with_cursor(position);
+        }
+    }
+
+    fn is_input_multiline(&self) -> bool {
+        self.input_manager.is_multiline()
+    }
 }
 
 impl Buffer {
@@ -897,6 +975,7 @@ impl Buffer {
             edit_mode: EditMode::SingleLine,
             input: Input::default(),
             textarea: TextArea::default(),
+            input_manager: create_single_line(String::new()),
             table_state: TableState::default(),
             last_results_row: None,
             last_scroll_offset: (0, 0),
@@ -1001,6 +1080,87 @@ impl Buffer {
     /// Check if buffer has a specific file open
     pub fn has_file(&self, path: &PathBuf) -> bool {
         self.file_path.as_ref() == Some(path)
+    }
+
+    /// Sync from InputManager to legacy fields (for compatibility during migration)
+    fn sync_from_input_manager(&mut self) {
+        let text = self.input_manager.get_text();
+        let cursor_pos = self.input_manager.get_cursor_position();
+
+        if self.edit_mode == EditMode::SingleLine {
+            let text_len = text.len();
+            self.input = Input::new(text).with_cursor(cursor_pos.min(text_len));
+        } else {
+            let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+            self.textarea = TextArea::new(lines);
+            // TextArea cursor positioning would need row/col conversion
+        }
+    }
+
+    /// Sync from legacy fields to InputManager (for compatibility during migration)
+    fn sync_to_input_manager(&mut self) {
+        if self.edit_mode == EditMode::SingleLine {
+            let text = self.input.value().to_string();
+            self.input_manager = create_from_input(self.input.clone());
+        } else {
+            self.input_manager = create_from_textarea(self.textarea.clone());
+        }
+    }
+}
+
+// Manual Clone implementation for Buffer due to Box<dyn InputManager>
+impl Clone for Buffer {
+    fn clone(&self) -> Self {
+        // Clone the input manager based on current edit mode
+        let input_manager = if self.edit_mode == EditMode::MultiLine {
+            create_from_textarea(self.textarea.clone())
+        } else {
+            create_from_input(self.input.clone())
+        };
+
+        Self {
+            id: self.id,
+            file_path: self.file_path.clone(),
+            name: self.name.clone(),
+            modified: self.modified,
+            csv_client: self.csv_client.clone(),
+            csv_mode: self.csv_mode,
+            csv_table_name: self.csv_table_name.clone(),
+            cache_mode: self.cache_mode,
+            results: self.results.clone(),
+            cached_data: self.cached_data.clone(),
+            mode: self.mode.clone(),
+            edit_mode: self.edit_mode.clone(),
+            input: self.input.clone(),
+            textarea: self.textarea.clone(),
+            input_manager,
+            table_state: self.table_state.clone(),
+            last_results_row: self.last_results_row,
+            last_scroll_offset: self.last_scroll_offset,
+            last_query: self.last_query.clone(),
+            status_message: self.status_message.clone(),
+            sort_state: self.sort_state.clone(),
+            filter_state: self.filter_state.clone(),
+            fuzzy_filter_state: self.fuzzy_filter_state.clone(),
+            search_state: self.search_state.clone(),
+            column_search_state: self.column_search_state.clone(),
+            filtered_data: self.filtered_data.clone(),
+            column_widths: self.column_widths.clone(),
+            scroll_offset: self.scroll_offset,
+            current_column: self.current_column,
+            pinned_columns: self.pinned_columns.clone(),
+            column_stats: self.column_stats.clone(),
+            compact_mode: self.compact_mode,
+            viewport_lock: self.viewport_lock,
+            viewport_lock_row: self.viewport_lock_row,
+            show_row_numbers: self.show_row_numbers,
+            case_insensitive: self.case_insensitive,
+            undo_stack: self.undo_stack.clone(),
+            redo_stack: self.redo_stack.clone(),
+            kill_ring: self.kill_ring.clone(),
+            last_visible_rows: self.last_visible_rows,
+            last_query_source: self.last_query_source.clone(),
+        }
     }
 }
 

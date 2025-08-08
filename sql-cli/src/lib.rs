@@ -10,6 +10,7 @@ pub mod dynamic_schema;
 pub mod global_state;
 pub mod history;
 pub mod hybrid_parser;
+pub mod input_manager;
 pub mod parser;
 pub mod recursive_parser;
 pub mod schema_config;
