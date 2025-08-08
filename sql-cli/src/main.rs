@@ -12,6 +12,7 @@ mod csv_fixes;
 mod cursor_aware_parser;
 mod enhanced_tui;
 mod hybrid_parser;
+mod modern_tui_main;
 mod parser;
 mod recursive_parser;
 mod schema_config;
@@ -105,6 +106,10 @@ fn print_help() {
     );
     println!("  {}      - Use classic CLI mode", "--classic".green());
     println!("  {}       - Use simple TUI mode", "--simple".green());
+    println!(
+        "  {}       - Use experimental modern TUI",
+        "--modern".green()
+    );
     println!();
     println!("{}", "Commands:".yellow());
     println!("  {}  - Execute query and fetch results", "Enter".green());
@@ -236,22 +241,39 @@ fn main() -> io::Result<()> {
                 );
             } else {
                 println!(
-                    "Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)"
+                    "Starting enhanced TUI mode... (use --modern for experimental TUI, --simple for basic TUI, --classic for CLI)"
                 );
             }
             let api_url = std::env::var("TRADE_API_URL")
                 .unwrap_or_else(|_| "http://localhost:5000".to_string());
 
-            // Pass all data files if we have multiple, otherwise use single file for compatibility
-            let result = if data_files.len() > 1 {
-                let file_refs: Vec<&str> = data_files.iter().map(|s| s.as_str()).collect();
-                enhanced_tui::run_enhanced_tui_multi(&api_url, file_refs)
+            // Check if user wants modern TUI (experimental)
+            let use_modern = args.contains(&"--modern".to_string());
+
+            let result = if use_modern {
+                // Use the experimental modern TUI
+                if data_files.len() > 1 {
+                    let file_refs: Vec<&str> = data_files.iter().map(|s| s.as_str()).collect();
+                    modern_tui_main::run_modern_tui_multi(&api_url, file_refs)
+                } else {
+                    modern_tui_main::run_modern_tui(&api_url, data_file.as_deref())
+                }
             } else {
-                enhanced_tui::run_enhanced_tui(&api_url, data_file.as_deref())
+                // Use the enhanced TUI by default (stable and feature-complete)
+                if data_files.len() > 1 {
+                    let file_refs: Vec<&str> = data_files.iter().map(|s| s.as_str()).collect();
+                    enhanced_tui::run_enhanced_tui_multi(&api_url, file_refs)
+                } else {
+                    enhanced_tui::run_enhanced_tui(&api_url, data_file.as_deref())
+                }
             };
 
             if let Err(e) = result {
-                eprintln!("Enhanced TUI Error: {}", e);
+                if use_modern {
+                    eprintln!("Modern TUI Error: {}", e);
+                } else {
+                    eprintln!("Enhanced TUI Error: {}", e);
+                }
                 eprintln!("Falling back to classic CLI mode...");
                 eprintln!("");
                 // Don't exit, fall through to classic mode

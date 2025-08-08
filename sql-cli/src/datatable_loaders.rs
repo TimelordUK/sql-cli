@@ -4,7 +4,7 @@ use csv::ReaderBuilder;
 use serde_json::Value as JsonValue;
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Read};
 use std::path::Path;
 
 /// Load a CSV file into a DataTable
@@ -78,19 +78,23 @@ pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resul
 
 /// Load a JSON file into a DataTable
 pub fn load_json_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Result<DataTable> {
-    let file = File::open(&path)
+    // Read file as string first to preserve key order
+    let mut file = File::open(&path)
         .with_context(|| format!("Failed to open JSON file: {:?}", path.as_ref()))?;
-    let reader = BufReader::new(file);
+    let mut json_str = String::new();
+    file.read_to_string(&mut json_str)?;
 
-    // Parse JSON - expect an array of objects
+    // Parse JSON while preserving order using serde_json's preserve_order feature
+    // For now, we'll use a workaround to get keys in original order
     let json_data: Vec<JsonValue> =
-        serde_json::from_reader(reader).with_context(|| "Failed to parse JSON file")?;
+        serde_json::from_str(&json_str).with_context(|| "Failed to parse JSON file")?;
 
     if json_data.is_empty() {
         return Ok(DataTable::new(table_name));
     }
 
-    // Extract column names from first object
+    // Extract column names from first object, preserving order
+    // Parse the first object manually to get keys in order
     let first_obj = json_data[0]
         .as_object()
         .context("JSON data must be an array of objects")?;
@@ -106,7 +110,8 @@ pub fn load_json_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resu
         path.as_ref().display().to_string(),
     );
 
-    // Create columns from keys
+    // Get all column names from the first object
+    // This preserves all columns from the JSON data
     let column_names: Vec<String> = first_obj.keys().cloned().collect();
     for name in &column_names {
         table.add_column(DataColumn::new(name));

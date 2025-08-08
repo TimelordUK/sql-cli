@@ -242,11 +242,9 @@ impl EnhancedTuiApp {
             .map(|b| b as &dyn sql_cli::buffer::BufferAPI)
     }
 
-    /// Get current buffer if available (for writing)  
-    fn current_buffer_mut(&mut self) -> Option<&mut dyn sql_cli::buffer::BufferAPI> {
-        self.buffer_manager
-            .current_mut()
-            .map(|b| b as &mut dyn sql_cli::buffer::BufferAPI)
+    /// Get current buffer if available (for writing)
+    fn current_buffer_mut(&mut self) -> Option<&mut sql_cli::buffer::Buffer> {
+        self.buffer_manager.current_mut()
     }
 
     // Compatibility wrapper for edit_mode
@@ -361,6 +359,7 @@ impl EnhancedTuiApp {
             }
             _ => {
                 // Command mode and others use the buffer exclusively
+                self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
             }
         }
     }
@@ -1474,6 +1473,8 @@ impl EnhancedTuiApp {
             }
         }
 
+        // Buffer state is now initialized
+
         // Update parser with JSON columns
         if let Some(columns) = schema.get(&table_name) {
             app.hybrid_parser
@@ -1675,6 +1676,10 @@ impl EnhancedTuiApp {
                 // Alt+N - new buffer
                 self.new_buffer();
             }
+            // KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::ALT) && key.modifiers.contains(KeyModifiers::SHIFT) => {
+            //     // Alt+Shift+D - new DataTable buffer (for testing) - disabled during revert
+            //     self.new_datatable_buffer();
+            // }
             KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Alt+W - close current buffer
                 self.close_buffer();
@@ -2064,7 +2069,9 @@ impl EnhancedTuiApp {
                 self.set_scroll_offset(self.get_last_scroll_offset());
             }
             KeyCode::F(5) => {
-                // Debug command - show detailed parser information
+                // Debug command - show buffer and parser information
+                self.debug_current_buffer();
+
                 let cursor_pos = self.get_input_cursor();
                 let visual_cursor = self.get_visual_cursor().1; // Get column position for single-line
                 let query = self.get_input_text();
@@ -2204,12 +2211,14 @@ impl EnhancedTuiApp {
                 ));
 
                 // Add info about all buffers
-                for (i, buffer) in self.buffer_manager.all_buffers().iter().enumerate() {
-                    debug_info.push_str(&format!("\nBuffer [{}]: {}\n", i, buffer.display_name()));
-                    debug_info.push_str(&format!("  ID: {}\n", buffer.get_id()));
-                    debug_info.push_str(&format!("  Path: {:?}\n", buffer.file_path));
-                    debug_info.push_str(&format!("  Modified: {}\n", buffer.modified));
-                    debug_info.push_str(&format!("  CSV Mode: {}\n", buffer.is_csv_mode()));
+                for i in 0..self.buffer_manager.all_buffers().len() {
+                    let name = self
+                        .buffer_manager
+                        .all_buffers()
+                        .get(i)
+                        .map(|b| b.name.clone())
+                        .unwrap_or("Unknown".to_string());
+                    debug_info.push_str(&format!("\nBuffer [{}]: {}\n", i, name));
                 }
 
                 // Add current buffer debug dump
@@ -3749,7 +3758,7 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_right(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
@@ -3777,7 +3786,7 @@ impl EnhancedTuiApp {
     }
 
     fn goto_last_column(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
@@ -4125,7 +4134,7 @@ impl EnhancedTuiApp {
             return;
         }
 
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             if let Ok(regex) = Regex::new(&self.get_filter_state().pattern) {
                 let mut filtered = Vec::new();
 
@@ -4195,7 +4204,7 @@ impl EnhancedTuiApp {
         let data_to_filter = if self.get_filter_state().active && self.has_filtered_data() {
             // If regex filter is active, fuzzy filter on top of that
             self.get_filtered_data()
-        } else if let Some(results) = self.get_results().cloned() {
+        } else if let Some(results) = self.get_results() {
             // Otherwise filter original results
             let mut rows = Vec::new();
             for item in &results.data {
@@ -4277,7 +4286,7 @@ impl EnhancedTuiApp {
 
     fn update_column_search(&mut self) {
         // Get column headers from the current results
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4497,8 +4506,8 @@ impl EnhancedTuiApp {
     fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
         if let Some(filtered) = self.get_filtered_data() {
             Some(filtered.clone())
-        } else if let Some(results) = self.get_results().cloned() {
-            Some(self.convert_json_to_strings(&results))
+        } else if let Some(results) = self.get_results() {
+            Some(self.convert_json_to_strings(results))
         } else {
             None
         }
@@ -4513,7 +4522,7 @@ impl EnhancedTuiApp {
         // and we have a single source of truth for visible rows
         if let Some(filtered) = self.get_filtered_data() {
             filtered.len()
-        } else if let Some(results) = self.get_results().cloned() {
+        } else if let Some(results) = self.get_results() {
             results.data.len()
         } else {
             0
@@ -4587,7 +4596,7 @@ impl EnhancedTuiApp {
 
     fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
         // Calculate column widths based only on visible rows in viewport
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4635,7 +4644,7 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_optimal_column_widths(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4699,7 +4708,7 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_csv(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     // Generate filename with timestamp
@@ -4767,7 +4776,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_cell(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             if let Some(selected_row) = self.get_table_state().selected() {
                 if let Some(row_data) = results.data.get(selected_row) {
                     if let Some(obj) = row_data.as_object() {
@@ -4816,7 +4825,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_row(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             if let Some(selected_row) = self.get_table_state().selected() {
                 if let Some(row_data) = results.data.get(selected_row) {
                     // Convert row to tab-separated values
@@ -4865,12 +4874,12 @@ impl EnhancedTuiApp {
     }
 
     fn yank_column(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
                     if self.get_current_column() < headers.len() {
-                        let header = headers[self.get_current_column()];
+                        let header = headers[self.get_current_column()].to_string();
 
                         // Collect all values from this column
                         let column_values: Vec<String> = results
@@ -4878,7 +4887,7 @@ impl EnhancedTuiApp {
                             .iter()
                             .filter_map(|row| {
                                 row.as_object().and_then(|obj| {
-                                    obj.get(header).map(|v| match v {
+                                    obj.get(&header).map(|v| match v {
                                         Value::String(s) => s.clone(),
                                         Value::Number(n) => n.to_string(),
                                         Value::Bool(b) => b.to_string(),
@@ -4920,7 +4929,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_all(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             // Get the actual data to yank (filtered or all)
             let data_to_export = if self.get_filter_state().active || self.is_fuzzy_filter_active()
             {
@@ -5072,7 +5081,7 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_json(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = self.get_results() {
             // Get the actual data to export (filtered or all)
             let data_to_export = if self.get_filter_state().active || self.is_fuzzy_filter_active()
             {
@@ -5632,8 +5641,8 @@ impl EnhancedTuiApp {
             let buffer_id = buffer.get_id();
             let buffer_name = buffer.get_name();
             let buffer_query = buffer.get_query();
-            let csv_mode = buffer.csv_mode;
-            let cache_mode = buffer.cache_mode;
+            let csv_mode = buffer.is_csv_mode();
+            let cache_mode = buffer.is_cache_mode();
 
             // Now update self
             self.set_input_text_with_cursor(query_text.clone(), query_text.len());
@@ -5684,8 +5693,8 @@ impl EnhancedTuiApp {
             let buffer_id = buffer.get_id();
             let buffer_name = buffer.get_name();
             let buffer_query = buffer.get_query();
-            let csv_mode = buffer.csv_mode;
-            let cache_mode = buffer.cache_mode;
+            let csv_mode = buffer.is_csv_mode();
+            let cache_mode = buffer.is_cache_mode();
 
             // Now update self
             self.set_input_text_with_cursor(query_text.clone(), query_text.len());
@@ -5734,6 +5743,16 @@ impl EnhancedTuiApp {
         self.set_status_message(format!("Created new buffer #{}", index + 1));
     }
 
+    // DataTable buffer creation disabled during revert
+    // fn new_datatable_buffer(&mut self) { ... }
+
+    /// Debug method to dump current buffer state (disabled to prevent TUI corruption)
+    #[allow(dead_code)]
+    fn debug_current_buffer(&self) {
+        // Debug output disabled - was corrupting TUI display
+        // Use tracing/logging instead if debugging is needed
+    }
+
     fn close_buffer(&mut self) -> bool {
         if self.buffer_manager.close_current() {
             let index = self.buffer_manager.current_index();
@@ -5752,15 +5771,16 @@ impl EnhancedTuiApp {
 
     fn list_buffers(&self) -> Vec<String> {
         let current_index = self.buffer_manager.current_index();
-        self.buffer_manager
-            .all_buffers()
-            .iter()
-            .enumerate()
-            .map(|(i, buffer)| {
+        (0..self.buffer_manager.all_buffers().len())
+            .map(|i| {
                 let marker = if i == current_index { "*" } else { " " };
-                let modified = if buffer.is_modified() { "+" } else { "" };
-
-                format!("{} [{}] {}{}", marker, i + 1, buffer.get_name(), modified)
+                let name = self
+                    .buffer_manager
+                    .all_buffers()
+                    .get(i)
+                    .map(|b| b.name.clone())
+                    .unwrap_or("Unknown".to_string());
+                format!("{} [{}] {}", marker, i + 1, name)
             })
             .collect()
     }
@@ -7627,7 +7647,10 @@ impl EnhancedTuiApp {
         match parts[1] {
             "save" => {
                 // Save last query results to cache with optional custom ID
-                if let Some(results) = self.get_results().cloned() {
+                if let Some(results) = self.get_results() {
+                    let data_to_save = results.data.clone(); // Extract the data we need
+                    drop(results); // Explicitly drop the borrow
+
                     if let Some(ref mut cache) = self.query_cache {
                         // Check if a custom ID is provided
                         let (custom_id, query) = if parts.len() > 2 {
@@ -7663,12 +7686,12 @@ impl EnhancedTuiApp {
                             return Ok(());
                         };
 
-                        match cache.save_query(&query, &results.data, custom_id) {
+                        match cache.save_query(&query, &data_to_save, custom_id) {
                             Ok(id) => {
                                 self.set_status_message(format!(
                                     "Query cached with ID: {} ({} rows)",
                                     id,
-                                    results.data.len()
+                                    data_to_save.len()
                                 ));
                             }
                             Err(e) => {
