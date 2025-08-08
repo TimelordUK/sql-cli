@@ -30,4 +30,6 @@ pub mod where_parser;
 pub mod completion_manager;
 pub mod cursor_manager;
 pub mod data_analyzer;
+pub mod help_text;
+pub mod text_navigation;
 // pub mod data_manager; // TODO: Fix QueryResponse field access
