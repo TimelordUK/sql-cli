@@ -310,6 +310,132 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Helper to get input text from buffer or fallback to direct input
+    fn get_input_text(&self) -> String {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_input_text()
+        } else {
+            // Fallback to direct input access during migration
+            match self.get_edit_mode() {
+                EditMode::SingleLine => self.input.value().to_string(),
+                EditMode::MultiLine => self.textarea.lines().join("\n"),
+            }
+        }
+    }
+
+    // Helper to get cursor position from buffer or fallback to direct input
+    fn get_input_cursor(&self) -> usize {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_input_cursor_position()
+        } else {
+            // Fallback to direct input access during migration
+            match self.get_edit_mode() {
+                EditMode::SingleLine => self.input.cursor(),
+                EditMode::MultiLine => {
+                    // For multi-line, calculate absolute position
+                    let (row, col) = self.textarea.cursor();
+                    let mut pos = 0;
+                    for (i, line) in self.textarea.lines().iter().enumerate() {
+                        if i < row {
+                            pos += line.len() + 1; // +1 for newline
+                        } else if i == row {
+                            pos += col;
+                            break;
+                        }
+                    }
+                    pos
+                }
+            }
+        }
+    }
+
+    // Helper to set input text through buffer or fallback to direct input
+    fn set_input_text(&mut self, text: String) {
+        // Check mode before getting mutable buffer
+        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_text(text.clone());
+            // Also sync cursor position to end of text
+            buffer.set_input_cursor_position(text.len());
+
+            // Sync self.input for rendering (temporary during migration)
+            if is_single_line {
+                self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
+            }
+        } else {
+            // Fallback to direct input setting during migration
+            match self.get_edit_mode() {
+                EditMode::SingleLine => {
+                    self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
+                }
+                EditMode::MultiLine => {
+                    let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+                    self.textarea = tui_textarea::TextArea::from(lines);
+                    self.textarea.move_cursor(tui_textarea::CursorMove::End);
+                }
+            }
+        }
+    }
+
+    // Helper to handle key events in the input
+    fn handle_input_key(&mut self, key: KeyEvent) -> bool {
+        // Check mode before getting mutable buffer
+        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+
+        if let Some(buffer) = self.current_buffer_mut() {
+            // Route to buffer's input handling
+            let result = buffer.handle_input_key(key);
+
+            // Sync self.input with buffer for rendering (temporary during migration)
+            if is_single_line {
+                let text = buffer.get_input_text();
+                let cursor = buffer.get_input_cursor_position();
+                self.input = tui_input::Input::new(text).with_cursor(cursor);
+            }
+
+            result
+        } else {
+            // Fallback to direct input handling during migration
+            match self.get_edit_mode() {
+                EditMode::SingleLine => {
+                    self.input.handle_event(&Event::Key(key));
+                    false
+                }
+                EditMode::MultiLine => {
+                    self.textarea.input(key);
+                    false
+                }
+            }
+        }
+    }
+
+    // Helper to get visual cursor position (for rendering)
+    fn get_visual_cursor(&self) -> (usize, usize) {
+        if let Some(buffer) = self.current_buffer() {
+            // Buffer should provide visual cursor for rendering
+            // For now, use a simple calculation
+            let text = buffer.get_input_text();
+            let cursor = buffer.get_input_cursor_position();
+            let lines: Vec<&str> = text.split('\n').collect();
+
+            let mut current_pos = 0;
+            for (row, line) in lines.iter().enumerate() {
+                if current_pos + line.len() >= cursor {
+                    return (row, cursor - current_pos);
+                }
+                current_pos += line.len() + 1; // +1 for newline
+            }
+            (0, cursor)
+        } else {
+            // Fallback to direct input access
+            match self.get_edit_mode() {
+                EditMode::SingleLine => (0, self.input.visual_cursor()),
+                EditMode::MultiLine => self.textarea.cursor(),
+            }
+        }
+    }
+
     fn set_case_insensitive(&mut self, case_insensitive: bool) {
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.set_case_insensitive(case_insensitive);
@@ -1170,7 +1296,7 @@ impl EnhancedTuiApp {
         let auto_query = format!("SELECT * FROM {}", table_name);
 
         // Populate the input field with the query for easy editing
-        app.input = tui_input::Input::new(auto_query.clone()).with_cursor(auto_query.len());
+        app.set_input_text(auto_query.clone());
 
         if app.config.behavior.auto_execute_on_load {
             if let Err(e) = app.execute_query(&auto_query) {
@@ -1264,7 +1390,7 @@ impl EnhancedTuiApp {
         let auto_query = format!("SELECT * FROM {}", table_name);
 
         // Populate the input field with the query for easy editing
-        app.input = tui_input::Input::new(auto_query.clone()).with_cursor(auto_query.len());
+        app.set_input_text(auto_query.clone());
 
         if app.config.behavior.auto_execute_on_load {
             if let Err(e) = app.execute_query(&auto_query) {
@@ -1375,7 +1501,7 @@ impl EnhancedTuiApp {
 
     fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Store old cursor position
-        let old_cursor = self.input.cursor();
+        let old_cursor = self.get_input_cursor();
 
         // Debug: Log key presses to help diagnose input issues
         // Keep last 50 key presses
@@ -1409,7 +1535,7 @@ impl EnhancedTuiApp {
                 match self.get_edit_mode() {
                     EditMode::SingleLine => {
                         self.set_edit_mode(EditMode::MultiLine);
-                        let current_text = self.input.value().to_string();
+                        let current_text = self.get_input_text();
 
                         // Pretty format the query for multi-line editing
                         let formatted_lines = if !current_text.trim().is_empty() {
@@ -1456,11 +1582,11 @@ impl EnhancedTuiApp {
             }
             KeyCode::Enter => {
                 let query = match self.get_edit_mode() {
-                    EditMode::SingleLine => self.input.value().trim().to_string(),
+                    EditMode::SingleLine => self.get_input_text().trim().to_string(),
                     EditMode::MultiLine => {
                         if key.modifiers.contains(KeyModifiers::CONTROL) {
                             // Ctrl+Enter executes the query in multi-line mode
-                            self.textarea.lines().join("\n").trim().to_string()
+                            self.get_input_text().trim().to_string()
                         } else {
                             // Regular Enter adds a new line
                             self.textarea.input(key);
@@ -1631,17 +1757,11 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Jump to beginning of line (like bash/zsh)
-                self.input.handle_event(&Event::Key(KeyEvent::new(
-                    KeyCode::Home,
-                    KeyModifiers::empty(),
-                )));
+                self.handle_input_key(KeyEvent::new(KeyCode::Home, KeyModifiers::empty()));
             }
             KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Jump to end of line (like bash/zsh)
-                self.input.handle_event(&Event::Key(KeyEvent::new(
-                    KeyCode::End,
-                    KeyModifiers::empty(),
-                )));
+                self.handle_input_key(KeyEvent::new(KeyCode::End, KeyModifiers::empty()));
             }
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
@@ -1749,12 +1869,12 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(5) => {
                 // Debug command - show detailed parser information
-                let cursor_pos = self.input.cursor();
-                let visual_cursor = self.input.visual_cursor();
-                let query = self.input.value();
+                let cursor_pos = self.get_input_cursor();
+                let visual_cursor = self.get_visual_cursor().1; // Get column position for single-line
+                let query = self.get_input_text();
                 let mut debug_info = self
                     .hybrid_parser
-                    .get_detailed_debug_info(query, cursor_pos);
+                    .get_detailed_debug_info(&query, cursor_pos);
 
                 // Add input state information
                 let input_state = format!(
@@ -1836,7 +1956,7 @@ impl EnhancedTuiApp {
 
                 // Add WHERE clause AST if query contains WHERE
                 if query.to_lowercase().contains(" where ") {
-                    let where_ast_info = match self.parse_where_clause_ast(query) {
+                    let where_ast_info = match self.parse_where_clause_ast(&query) {
                         Ok(ast_str) => ast_str,
                         Err(e) => format!("\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {}\n", e)
                     };
@@ -1945,12 +2065,12 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(6) => {
                 // Pretty print query view
-                let query = self.input.value();
+                let query = self.get_input_text();
                 if !query.trim().is_empty() {
                     self.debug_text = format!(
                         "Pretty SQL Query\n{}\n\n{}",
                         "=".repeat(50),
-                        crate::recursive_parser::format_sql_pretty_compact(query, 5).join("\n")
+                        crate::recursive_parser::format_sql_pretty_compact(&query, 5).join("\n")
                     );
                     self.debug_scroll = 0;
                     self.set_mode(AppMode::PrettyQuery);
@@ -1962,28 +2082,23 @@ impl EnhancedTuiApp {
                 }
             }
             _ => {
+                // Use the new helper to handle input keys through buffer
+                self.handle_input_key(key);
+
+                // Clear completion state when typing other characters
+                self.completion_state.suggestions.clear();
+                self.completion_state.current_index = 0;
+
+                // Handle completion based on mode
                 match self.edit_mode {
-                    EditMode::SingleLine => {
-                        self.input.handle_event(&Event::Key(key));
-                        // Clear completion state when typing other characters
-                        self.completion_state.suggestions.clear();
-                        self.completion_state.current_index = 0;
-                        self.handle_completion();
-                    }
-                    EditMode::MultiLine => {
-                        // Pass all keys to textarea
-                        self.textarea.input(key);
-                        // Clear completion state when typing other characters
-                        self.completion_state.suggestions.clear();
-                        self.completion_state.current_index = 0;
-                        self.handle_completion_multiline();
-                    }
+                    EditMode::SingleLine => self.handle_completion(),
+                    EditMode::MultiLine => self.handle_completion_multiline(),
                 }
             }
         }
 
         // Update horizontal scroll if cursor moved
-        if self.input.cursor() != old_cursor {
+        if self.get_input_cursor() != old_cursor {
             self.update_horizontal_scroll(120); // Assume reasonable terminal width, will be adjusted in render
         }
 
@@ -1997,9 +2112,9 @@ impl EnhancedTuiApp {
             KeyCode::F(5) => {
                 // Debug mode - show buffer state and parser information
                 // Build debug information similar to Command mode
-                let cursor_pos = self.input.cursor();
-                let visual_cursor = self.input.visual_cursor();
-                let query = self.input.value();
+                let cursor_pos = self.get_input_cursor();
+                let visual_cursor = self.get_visual_cursor().1; // Get column position for single-line
+                let query = self.get_input_text();
 
                 // Create debug info showing buffer state
                 let mut debug_info = String::new();
@@ -2158,7 +2273,7 @@ impl EnhancedTuiApp {
                 self.set_mode(AppMode::Search);
                 self.clear_search_pattern();
                 // Save SQL query and use temporary input for search display
-                self.push_undo((self.input.value().to_string(), self.input.cursor()));
+                self.push_undo((self.get_input_text(), self.get_input_cursor()));
                 self.input = tui_input::Input::default();
             }
             // Column navigation/search functionality (backslash like vim reverse search)
@@ -2168,7 +2283,7 @@ impl EnhancedTuiApp {
                 self.column_search_state.matching_columns.clear();
                 self.column_search_state.current_match = 0;
                 // Save current SQL query before clearing input for column search
-                self.push_undo((self.input.value().to_string(), self.input.cursor()));
+                self.push_undo((self.get_input_text(), self.get_input_cursor()));
                 self.input = tui_input::Input::default();
             }
             KeyCode::Char('n') => {
@@ -2196,7 +2311,7 @@ impl EnhancedTuiApp {
                 self.set_mode(AppMode::Filter);
                 self.get_filter_state_mut().pattern.clear();
                 // Save SQL query and use temporary input for filter display
-                self.push_undo((self.input.value().to_string(), self.input.cursor()));
+                self.push_undo((self.get_input_text(), self.get_input_cursor()));
                 self.input = tui_input::Input::default();
             }
             // Fuzzy filter functionality (lowercase f)
@@ -2209,7 +2324,7 @@ impl EnhancedTuiApp {
                 self.fuzzy_filter_state.filtered_indices.clear();
                 self.fuzzy_filter_state.active = false; // Clear active state when entering mode
                                                         // Save SQL query and use temporary input for fuzzy filter display
-                self.push_undo((self.input.value().to_string(), self.input.cursor()));
+                self.push_undo((self.get_input_text(), self.get_input_cursor()));
                 self.input = tui_input::Input::default();
             }
             // Sort functionality (lowercase s)
@@ -2576,8 +2691,8 @@ impl EnhancedTuiApp {
                         .entry
                         .command
                         .clone();
-                    let cursor_pos = selected_command.len();
-                    self.input = tui_input::Input::new(selected_command).with_cursor(cursor_pos);
+                    // Use helper to set text through buffer
+                    self.set_input_text(selected_command);
                     self.set_mode(AppMode::Command);
                     self.set_status_message("Command loaded from history".to_string());
                     // Reset scroll to show end of command
@@ -2831,8 +2946,8 @@ impl EnhancedTuiApp {
     }
 
     fn apply_completion(&mut self) {
-        let cursor_pos = self.input.cursor();
-        let query = self.input.value();
+        let cursor_pos = self.get_input_cursor();
+        let query = self.get_input_text();
 
         // Check if this is a continuation of the same completion session
         let is_same_context = query == self.completion_state.last_query
@@ -2840,7 +2955,7 @@ impl EnhancedTuiApp {
 
         if !is_same_context {
             // New completion context - get fresh suggestions
-            let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
+            let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
             if hybrid_result.suggestions.is_empty() {
                 self.set_status_message("No completions available".to_string());
                 return;
@@ -2857,9 +2972,10 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Apply the current suggestion
-        let suggestion = &self.completion_state.suggestions[self.completion_state.current_index];
-        let partial_word = self.extract_partial_word_at_cursor(query, cursor_pos);
+        // Apply the current suggestion (clone to avoid borrow issues)
+        let suggestion =
+            self.completion_state.suggestions[self.completion_state.current_index].clone();
+        let partial_word = self.extract_partial_word_at_cursor(&query, cursor_pos);
 
         if let Some(partial) = partial_word {
             // Replace the partial word with the suggestion
@@ -2871,12 +2987,12 @@ impl EnhancedTuiApp {
             let suggestion_to_use = if partial.starts_with('"') && suggestion.starts_with('"') {
                 // The partial already includes the opening quote, so use suggestion without its quote
                 if suggestion.len() > 1 {
-                    &suggestion[1..]
+                    suggestion[1..].to_string()
                 } else {
-                    suggestion
+                    suggestion.clone()
                 }
             } else {
-                suggestion
+                suggestion.clone()
             };
 
             let new_query = format!("{}{}{}", before_partial, suggestion_to_use, after_cursor);
@@ -2889,7 +3005,16 @@ impl EnhancedTuiApp {
             } else {
                 before_partial.len() + suggestion_to_use.len()
             };
-            self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos);
+            // Use helper to set text through buffer
+            self.set_input_text(new_query.clone());
+            // Set cursor to correct position
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(cursor_pos);
+                // Sync for rendering
+                if self.get_edit_mode() == EditMode::SingleLine {
+                    self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos);
+                }
+            }
 
             // Update completion state for next tab press
             self.completion_state.last_query = new_query;
@@ -2919,7 +3044,17 @@ impl EnhancedTuiApp {
             } else {
                 cursor_pos + suggestion.len()
             };
-            self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos_new);
+            // Use helper to set text through buffer
+            self.set_input_text(new_query.clone());
+            // Set cursor to correct position
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(cursor_pos_new);
+                // Sync for rendering
+                if self.get_edit_mode() == EditMode::SingleLine {
+                    self.input =
+                        tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos_new);
+                }
+            }
 
             // Update completion state
             self.completion_state.last_query = new_query;
@@ -2968,8 +3103,9 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Apply the current suggestion
-        let suggestion = &self.completion_state.suggestions[self.completion_state.current_index];
+        // Apply the current suggestion (clone to avoid borrow issues)
+        let suggestion =
+            self.completion_state.suggestions[self.completion_state.current_index].clone();
         let partial_word = self.extract_partial_word_at_cursor(&query, cursor_pos);
 
         if let Some(partial) = partial_word {
@@ -2983,12 +3119,12 @@ impl EnhancedTuiApp {
             let suggestion_to_use = if partial.starts_with('"') && suggestion.starts_with('"') {
                 // The partial already includes the opening quote, so use suggestion without its quote
                 if suggestion.len() > 1 {
-                    &suggestion[1..]
+                    suggestion[1..].to_string()
                 } else {
-                    suggestion
+                    suggestion.clone()
                 }
             } else {
-                suggestion
+                suggestion.clone()
             };
 
             let new_line = format!("{}{}{}", line_before, suggestion_to_use, line_after);
@@ -3027,10 +3163,13 @@ impl EnhancedTuiApp {
             self.set_status_message(suggestion_info);
         } else {
             // Just insert the suggestion at cursor position
+            let ends_with_parens = suggestion.ends_with("('')");
+            let suggestion_len = suggestion.len();
+            let suggestion_str = suggestion.clone();
             self.textarea.insert_str(suggestion);
 
             // Special case: if we inserted a string method like Contains(''), move cursor back inside quotes
-            if suggestion.ends_with("('')") {
+            if ends_with_parens {
                 self.textarea.move_cursor(CursorMove::Back);
                 self.textarea.move_cursor(CursorMove::Back);
             }
@@ -3038,13 +3177,13 @@ impl EnhancedTuiApp {
             // Update completion state
             let new_query = self.textarea.lines().join("\n");
             self.completion_state.last_query = new_query;
-            self.completion_state.last_cursor_pos = if suggestion.ends_with("('')") {
-                cursor_pos + suggestion.len() - 2
+            self.completion_state.last_cursor_pos = if ends_with_parens {
+                cursor_pos + suggestion_len - 2
             } else {
-                cursor_pos + suggestion.len()
+                cursor_pos + suggestion_len
             };
 
-            self.set_status_message(format!("Inserted: {}", suggestion));
+            self.set_status_message(format!("Inserted: {}", suggestion_str));
         }
     }
 
@@ -4754,7 +4893,7 @@ impl EnhancedTuiApp {
 
         // Use our lexer to tokenize the query
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         if tokens.is_empty() {
@@ -4792,7 +4931,7 @@ impl EnhancedTuiApp {
 
         // Use our lexer to tokenize the query
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         // Find the token at cursor position
@@ -4845,8 +4984,8 @@ impl EnhancedTuiApp {
     }
 
     fn move_cursor_word_backward(&mut self) {
-        let query = self.input.value();
-        let cursor_pos = self.input.cursor();
+        let query = self.get_input_text();
+        let cursor_pos = self.get_input_cursor();
 
         if cursor_pos == 0 {
             return;
@@ -4854,7 +4993,7 @@ impl EnhancedTuiApp {
 
         // Use our lexer to tokenize the query
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         // Find the token boundary before the cursor
@@ -4877,14 +5016,19 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Move cursor to new position
-        let moves = cursor_pos.saturating_sub(target_pos);
-        for _ in 0..moves {
-            self.input.handle_event(&Event::Key(KeyEvent::new(
-                KeyCode::Left,
-                KeyModifiers::empty(),
-            )));
+        // Move cursor to new position through buffer
+        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_cursor_position(target_pos);
+            // Sync for rendering
+            if is_single_line {
+                let text = buffer.get_input_text();
+                self.input = tui_input::Input::new(text).with_cursor(target_pos);
+            }
         }
+
+        // Update status message
+        self.set_status_message(format!("Moved to position {} (word boundary)", target_pos));
     }
 
     fn delete_word_backward(&mut self) {
@@ -4937,8 +5081,8 @@ impl EnhancedTuiApp {
     }
 
     fn move_cursor_word_forward(&mut self) {
-        let query = self.input.value();
-        let cursor_pos = self.input.cursor();
+        let query = self.get_input_text();
+        let cursor_pos = self.get_input_cursor();
         let query_len = query.len();
 
         if cursor_pos >= query_len {
@@ -4947,7 +5091,7 @@ impl EnhancedTuiApp {
 
         // Use our lexer to tokenize the query
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         // Find the next token boundary after the cursor
@@ -4962,14 +5106,19 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Move cursor to new position
-        let moves = target_pos.saturating_sub(cursor_pos);
-        for _ in 0..moves {
-            self.input.handle_event(&Event::Key(KeyEvent::new(
-                KeyCode::Right,
-                KeyModifiers::empty(),
-            )));
+        // Move cursor to new position through buffer
+        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_cursor_position(target_pos);
+            // Sync for rendering
+            if is_single_line {
+                let text = buffer.get_input_text();
+                self.input = tui_input::Input::new(text).with_cursor(target_pos);
+            }
         }
+
+        // Update status message
+        self.set_status_message(format!("Moved to position {} (word boundary)", target_pos));
     }
 
     fn delete_word_forward(&mut self) {
@@ -5014,10 +5163,9 @@ impl EnhancedTuiApp {
     fn kill_line(&mut self) {
         match self.edit_mode {
             EditMode::SingleLine => {
-                let query = self.input.value();
-                let cursor_pos = self.input.cursor();
-                let query_len = query.len();
-                let query_str = query.to_string();
+                let query_str = self.get_input_text();
+                let cursor_pos = self.get_input_cursor();
+                let query_len = query_str.len();
 
                 // Debug info
                 self.set_status_message(format!(
@@ -5033,7 +5181,16 @@ impl EnhancedTuiApp {
                     // Save to kill ring before deleting
                     self.set_kill_ring(query_str.chars().skip(cursor_pos).collect::<String>());
                     let new_query = query_str.chars().take(cursor_pos).collect::<String>();
-                    self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
+                    // Use helper to set text through buffer
+                    self.set_input_text(new_query.clone());
+                    // Set cursor back to original position
+                    if let Some(buffer) = self.current_buffer_mut() {
+                        buffer.set_input_cursor_position(cursor_pos);
+                        // Sync for rendering
+                        if self.get_edit_mode() == EditMode::SingleLine {
+                            self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
+                        }
+                    }
 
                     // Update status to show what was killed
                     self.set_status_message(format!(
@@ -5081,8 +5238,8 @@ impl EnhancedTuiApp {
     fn kill_line_backward(&mut self) {
         match self.edit_mode {
             EditMode::SingleLine => {
-                let query = self.input.value();
-                let cursor_pos = self.input.cursor();
+                let query = self.get_input_text();
+                let cursor_pos = self.get_input_cursor();
 
                 if cursor_pos > 0 {
                     // Collect text that will be killed and the new query
@@ -5090,12 +5247,21 @@ impl EnhancedTuiApp {
                     let new_query = query.chars().skip(cursor_pos).collect::<String>();
 
                     // Save to undo stack before modifying
-                    self.push_undo((query.to_string(), cursor_pos));
+                    self.push_undo((query.clone(), cursor_pos));
                     self.clear_redo();
 
                     // Save to kill ring before deleting
                     self.set_kill_ring(killed_text);
-                    self.input = tui_input::Input::new(new_query).with_cursor(0);
+                    // Use helper to set text through buffer
+                    self.set_input_text(new_query.clone());
+                    // Set cursor to beginning
+                    if let Some(buffer) = self.current_buffer_mut() {
+                        buffer.set_input_cursor_position(0);
+                        // Sync for rendering
+                        if self.get_edit_mode() == EditMode::SingleLine {
+                            self.input = tui_input::Input::new(new_query).with_cursor(0);
+                        }
+                    }
                 }
             }
             EditMode::MultiLine => {
@@ -5127,16 +5293,26 @@ impl EnhancedTuiApp {
     fn undo(&mut self) {
         // Simple undo - restore from undo stack
         if let Some(prev_state) = self.pop_undo() {
-            let current_state = (self.input.value().to_string(), self.input.cursor());
+            let current_state = (self.get_input_text(), self.get_input_cursor());
             self.push_redo(current_state);
-            self.input = tui_input::Input::new(prev_state.0).with_cursor(prev_state.1);
+
+            // Use helper to set text through buffer
+            self.set_input_text(prev_state.0.clone());
+            // Set cursor to saved position
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(prev_state.1);
+                // Sync for rendering
+                if self.get_edit_mode() == EditMode::SingleLine {
+                    self.input = tui_input::Input::new(prev_state.0).with_cursor(prev_state.1);
+                }
+            }
         }
     }
 
     fn yank(&mut self) {
         if !self.is_kill_ring_empty() {
-            let query = self.input.value();
-            let cursor_pos = self.input.cursor();
+            let query = self.get_input_text();
+            let cursor_pos = self.get_input_cursor();
 
             // Get kill ring content and calculate new query
             let kill_ring_content = self.get_kill_ring();
@@ -5146,22 +5322,32 @@ impl EnhancedTuiApp {
             let new_cursor = cursor_pos + kill_ring_content.len();
 
             // Save to undo stack before modifying
-            self.push_undo((query.to_string(), cursor_pos));
+            self.push_undo((query.clone(), cursor_pos));
             self.clear_redo();
-            self.input = tui_input::Input::new(new_query).with_cursor(new_cursor);
+
+            // Use helper to set text through buffer
+            self.set_input_text(new_query.clone());
+            // Set cursor to new position
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(new_cursor);
+                // Sync for rendering
+                if self.get_edit_mode() == EditMode::SingleLine {
+                    self.input = tui_input::Input::new(new_query).with_cursor(new_cursor);
+                }
+            }
         }
     }
 
     fn jump_to_prev_token(&mut self) {
-        let query = self.input.value();
-        let cursor_pos = self.input.cursor();
+        let query = self.get_input_text();
+        let cursor_pos = self.get_input_cursor();
 
         if cursor_pos == 0 {
             return;
         }
 
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         // Find current token position
@@ -5191,21 +5377,23 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Move cursor
+        // Move cursor through buffer
         if target_pos < cursor_pos {
-            let moves = cursor_pos - target_pos;
-            for _ in 0..moves {
-                self.input.handle_event(&Event::Key(KeyEvent::new(
-                    KeyCode::Left,
-                    KeyModifiers::empty(),
-                )));
+            let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(target_pos);
+                // Sync for rendering
+                if is_single_line {
+                    let text = buffer.get_input_text();
+                    self.input = tui_input::Input::new(text).with_cursor(target_pos);
+                }
             }
         }
     }
 
     fn jump_to_next_token(&mut self) {
-        let query = self.input.value();
-        let cursor_pos = self.input.cursor();
+        let query = self.get_input_text();
+        let cursor_pos = self.get_input_cursor();
         let query_len = query.len();
 
         if cursor_pos >= query_len {
@@ -5213,7 +5401,7 @@ impl EnhancedTuiApp {
         }
 
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         // Find the next token start after cursor
@@ -5233,13 +5421,15 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Move cursor
-        let moves = target_pos.saturating_sub(cursor_pos);
-        for _ in 0..moves {
-            self.input.handle_event(&Event::Key(KeyEvent::new(
-                KeyCode::Right,
-                KeyModifiers::empty(),
-            )));
+        // Move cursor through buffer
+        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_cursor_position(target_pos);
+            // Sync for rendering
+            if is_single_line {
+                let text = buffer.get_input_text();
+                self.input = tui_input::Input::new(text).with_cursor(target_pos);
+            }
         }
     }
 
@@ -5540,12 +5730,18 @@ impl EnhancedTuiApp {
 
         let input_block = Block::default().borders(Borders::ALL).title(input_title);
 
+        let input_text_string;
         let input_text = match self.get_mode() {
             AppMode::Search => self.input.value(), // Use input for rendering
             AppMode::Filter => self.input.value(), // Use input for rendering
             AppMode::FuzzyFilter => self.input.value(), // Use input for rendering
             AppMode::ColumnSearch => self.input.value(), // Column search still uses input since it saves/restores
             AppMode::History => &self.history_state.search_query,
+            AppMode::Command => {
+                // Use buffer's input text for command mode
+                input_text_string = self.get_input_text();
+                &input_text_string
+            }
             _ => self.input.value(),
         };
 
@@ -5612,7 +5808,7 @@ impl EnhancedTuiApp {
                     EditMode::SingleLine => {
                         // Calculate cursor position with horizontal scrolling
                         let inner_width = chunks[0].width.saturating_sub(2) as usize;
-                        let cursor_pos = self.input.visual_cursor();
+                        let cursor_pos = self.get_visual_cursor().1; // Get column position for single-line
                         let scroll_offset = self.get_horizontal_scroll_offset() as usize;
 
                         // Calculate visible cursor position
