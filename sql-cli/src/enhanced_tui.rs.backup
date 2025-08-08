@@ -168,7 +168,7 @@ pub struct EnhancedTuiApp {
     textarea: TextArea<'static>,
     edit_mode: EditMode,
     mode: AppMode,
-    // results: Option<QueryResponse>, // MIGRATED to buffer system
+    results: Option<QueryResponse>,
     table_state: TableState,
     last_results_row: Option<usize>, // Preserve row position when switching modes
     last_scroll_offset: (usize, usize), // Preserve scroll offset when switching modes
@@ -261,30 +261,29 @@ impl EnhancedTuiApp {
     // --- Buffer Compatibility Layer ---
     // These methods provide a gradual migration path from direct field access to BufferAPI
 
-    /// Get current buffer if available (for reading)
-    fn current_buffer(&self) -> Option<&dyn sql_cli::buffer::BufferAPI> {
+    /// Get current buffer (panics if no buffer - which should never happen)
+    fn current_buffer(&self) -> &dyn sql_cli::buffer::BufferAPI {
         self.buffer_manager
             .current()
             .map(|b| b as &dyn sql_cli::buffer::BufferAPI)
+            .expect("Buffer manager should always have a current buffer")
     }
 
-    /// Get current buffer if available (for writing)  
-    fn current_buffer_mut(&mut self) -> Option<&mut dyn sql_cli::buffer::BufferAPI> {
+    /// Get current buffer for writing (panics if no buffer - which should never happen)
+    fn current_buffer_mut(&mut self) -> &mut dyn sql_cli::buffer::BufferAPI {
         self.buffer_manager
             .current_mut()
             .map(|b| b as &mut dyn sql_cli::buffer::BufferAPI)
+            .expect("Buffer manager should always have a current buffer")
     }
 
     // Compatibility wrapper for edit_mode
     fn get_edit_mode(&self) -> EditMode {
-        if let Some(buffer) = self.current_buffer() {
-            // Convert from buffer::EditMode to local EditMode
-            match buffer.get_edit_mode() {
-                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
-                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
-            }
-        } else {
-            self.edit_mode.clone()
+        let buffer = self.current_buffer();
+        // Convert from buffer::EditMode to local EditMode
+        match buffer.get_edit_mode() {
+            sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
+            sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
         }
     }
 
@@ -571,12 +570,12 @@ impl EnhancedTuiApp {
     fn get_results(&self) -> Option<&QueryResponse> {
         // For now, always use TUI field due to type conflicts
         // TODO: Resolve QueryResponse type mismatch between crate::api_client and sql_cli::api_client
-        self.get_results()
+        self.results.as_ref()
     }
 
     fn set_results(&mut self, results: Option<QueryResponse>) {
         // Update local field
-        self.set_results(results);
+        self.results = results;
 
         // TODO: Also update in buffer when type conflicts are resolved
     }
@@ -1126,7 +1125,7 @@ impl EnhancedTuiApp {
             textarea,
             edit_mode: EditMode::SingleLine,
             mode: AppMode::Command,
-            // results: None, // MIGRATED to buffer system
+            results: None,
             table_state: TableState::default(),
             last_results_row: None,
             last_scroll_offset: (0, 0),
@@ -1935,9 +1934,7 @@ impl EnhancedTuiApp {
                 // Move forward one word (alt+f like in bash)
                 self.move_cursor_word_forward();
             }
-            KeyCode::Down
-                if self.get_results().is_some() && self.edit_mode == EditMode::SingleLine =>
-            {
+            KeyCode::Down if self.results.is_some() && self.edit_mode == EditMode::SingleLine => {
                 self.set_mode(AppMode::Results);
                 // Restore previous position or default to 0
                 let row = self.get_last_results_row().unwrap_or(0);
@@ -2012,7 +2009,7 @@ impl EnhancedTuiApp {
                     Filtered Rows: {}\n\
                     Current Column: {}\n\
                     Sort State: {}\n",
-                    self.get_results().map(|r| r.data.len()).unwrap_or(0),
+                    self.results.as_ref().map(|r| r.data.len()).unwrap_or(0),
                     self.get_filtered_data().map(|d| d.len()).unwrap_or(0),
                     self.get_current_column(),
                     match &self.sort_state {
@@ -2726,7 +2723,7 @@ impl EnhancedTuiApp {
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::F(1) => {
                 self.show_help = false;
                 self.help_scroll = 0; // Reset scroll when closing
-                self.set_mode(if self.get_results().is_some() {
+                self.set_mode(if self.results.is_some() {
                     AppMode::Results
                 } else {
                     AppMode::Command
@@ -2947,7 +2944,7 @@ impl EnhancedTuiApp {
                     buffer.set_results(Some(response.clone()));
                     info!(target: "buffer", "Stored {} results in buffer {}", row_count, buffer_id);
                 }
-                self.set_results(Some(response)); // Keep for compatibility during migration
+                self.results = Some(response); // Keep for compatibility during migration
                 self.calculate_optimal_column_widths();
                 self.reset_table_state();
 
@@ -3540,7 +3537,7 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_right(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
@@ -3568,7 +3565,7 @@ impl EnhancedTuiApp {
     }
 
     fn goto_last_column(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
@@ -3621,7 +3618,7 @@ impl EnhancedTuiApp {
 
     fn calculate_column_statistics(&mut self) {
         // Get the current column name and data
-        if let Some(results) = self.get_results() {
+        if let Some(results) = &self.results {
             if results.data.is_empty() {
                 return;
             }
@@ -3916,7 +3913,7 @@ impl EnhancedTuiApp {
             return;
         }
 
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             if let Ok(regex) = Regex::new(&self.get_filter_state().pattern) {
                 let mut filtered = Vec::new();
 
@@ -3986,7 +3983,7 @@ impl EnhancedTuiApp {
         let data_to_filter = if self.get_filter_state().active && self.has_filtered_data() {
             // If regex filter is active, fuzzy filter on top of that
             self.get_filtered_data()
-        } else if let Some(results) = self.get_results().cloned() {
+        } else if let Some(results) = &self.results {
             // Otherwise filter original results
             let mut rows = Vec::new();
             for item in &results.data {
@@ -4071,7 +4068,7 @@ impl EnhancedTuiApp {
 
     fn update_column_search(&mut self) {
         // Get column headers from the current results
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4142,7 +4139,7 @@ impl EnhancedTuiApp {
         }
 
         // Sort using original JSON values for proper type-aware comparison
-        if let Some(results) = self.get_results() {
+        if let Some(results) = &self.results {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4229,7 +4226,7 @@ impl EnhancedTuiApp {
                         // Update both the results and clear filtered_data to force regeneration
                         let mut new_results = results.clone();
                         new_results.data = sorted_data;
-                        self.set_results(Some(new_results));
+                        self.results = Some(new_results);
                         self.set_filtered_data(None); // Force regeneration of string data
                     }
                 }
@@ -4288,8 +4285,8 @@ impl EnhancedTuiApp {
     fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
         if let Some(filtered) = self.get_filtered_data() {
             Some(filtered.clone())
-        } else if let Some(results) = self.get_results().cloned() {
-            Some(self.convert_json_to_strings(&results))
+        } else if let Some(results) = &self.results {
+            Some(self.convert_json_to_strings(results))
         } else {
             None
         }
@@ -4304,7 +4301,7 @@ impl EnhancedTuiApp {
         // and we have a single source of truth for visible rows
         if let Some(filtered) = self.get_filtered_data() {
             filtered.len()
-        } else if let Some(results) = self.get_results().cloned() {
+        } else if let Some(results) = &self.results {
             results.data.len()
         } else {
             0
@@ -4312,8 +4309,8 @@ impl EnhancedTuiApp {
     }
 
     fn get_current_data_mut(&mut self) -> Option<&mut Vec<Vec<String>>> {
-        if !self.has_filtered_data() && self.get_results().is_some() {
-            let results = self.get_results().unwrap();
+        if !self.has_filtered_data() && self.results.is_some() {
+            let results = self.results.as_ref().unwrap();
             self.set_filtered_data(Some(self.convert_json_to_strings(results)));
         }
         // TODO: Add get_filtered_data_mut() wrapper method to handle mutable access
@@ -4390,7 +4387,7 @@ impl EnhancedTuiApp {
 
     fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
         // Calculate column widths based only on visible rows in viewport
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4438,7 +4435,7 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_optimal_column_widths(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4502,7 +4499,7 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_csv(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     // Generate filename with timestamp
@@ -4570,7 +4567,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_cell(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             if let Some(selected_row) = self.get_table_state().selected() {
                 if let Some(row_data) = results.data.get(selected_row) {
                     if let Some(obj) = row_data.as_object() {
@@ -4619,7 +4616,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_row(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             if let Some(selected_row) = self.get_table_state().selected() {
                 if let Some(row_data) = results.data.get(selected_row) {
                     // Convert row to tab-separated values
@@ -4668,7 +4665,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_column(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4723,7 +4720,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_all(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             // Get the actual data to yank (filtered or all)
             let data_to_export = if self.get_filter_state().active || self.fuzzy_filter_state.active
             {
@@ -4880,7 +4877,7 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_json(&mut self) {
-        if let Some(results) = self.get_results().cloned() {
+        if let Some(results) = &self.results {
             // Get the actual data to export (filtered or all)
             let data_to_export = if self.get_filter_state().active || self.fuzzy_filter_state.active
             {
@@ -4923,7 +4920,7 @@ impl EnhancedTuiApp {
     }
 
     fn get_filtered_json_data(&self) -> Vec<Value> {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = &self.results {
             if self.fuzzy_filter_state.active
                 && !self.fuzzy_filter_state.filtered_indices.is_empty()
             {
@@ -5433,23 +5430,8 @@ impl EnhancedTuiApp {
 
         // Sync results and state from the new buffer
         if let Some(buffer) = self.buffer_manager.current() {
-            // Collect all data from buffer first
+            // Sync query text to input fields
             let query_text = buffer.get_query();
-            let edit_mode = match buffer.get_edit_mode() {
-                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
-                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
-            };
-            let results = buffer.get_results().cloned();
-            let csv_client = buffer.csv_client.clone();
-            let csv_mode = buffer.csv_mode;
-            let csv_table_name = buffer.csv_table_name.clone();
-            let cache_mode = buffer.cache_mode;
-            let cached_data = buffer.cached_data.clone();
-            let buffer_id = buffer.get_id();
-            let buffer_name = buffer.get_name();
-            let buffer_query = buffer.get_query();
-
-            // Now update self
             self.input = Input::new(query_text.clone()).with_cursor(query_text.len());
             self.textarea = {
                 let mut ta = TextArea::from(
@@ -5461,21 +5443,28 @@ impl EnhancedTuiApp {
                 ta.move_cursor(tui_textarea::CursorMove::End);
                 ta
             };
-            self.edit_mode = edit_mode;
-            self.set_results(results);
-            self.csv_client = csv_client;
-            self.csv_mode = csv_mode;
-            self.csv_table_name = csv_table_name;
-            self.cache_mode = cache_mode;
-            self.cached_data = cached_data;
 
-            let result_count = self.get_results().map(|r| r.data.len()).unwrap_or(0);
+            // Sync edit mode
+            self.edit_mode = match buffer.get_edit_mode() {
+                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
+                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
+            };
+
+            // Sync results and data source state
+            self.results = buffer.get_results().cloned();
+            self.csv_client = buffer.csv_client.clone();
+            self.csv_mode = buffer.csv_mode;
+            self.csv_table_name = buffer.csv_table_name.clone();
+            self.cache_mode = buffer.cache_mode;
+            self.cached_data = buffer.cached_data.clone();
+
+            let result_count = self.results.as_ref().map(|r| r.data.len()).unwrap_or(0);
             info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
-                      result_count, buffer_id, buffer_name, csv_mode, cache_mode,
-                      buffer_query);
+                      result_count, buffer.get_id(), buffer.get_name(), buffer.csv_mode, buffer.cache_mode,
+                      buffer.get_query());
 
             // Recalculate column widths and reset table state for new results
-            if self.get_results().is_some() {
+            if self.results.is_some() {
                 self.calculate_optimal_column_widths();
                 self.reset_table_state();
             }
@@ -5493,23 +5482,8 @@ impl EnhancedTuiApp {
 
         // Sync results and state from the new buffer
         if let Some(buffer) = self.buffer_manager.current() {
-            // Collect all data from buffer first
+            // Sync query text to input fields
             let query_text = buffer.get_query();
-            let edit_mode = match buffer.get_edit_mode() {
-                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
-                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
-            };
-            let results = buffer.get_results().cloned();
-            let csv_client = buffer.csv_client.clone();
-            let csv_mode = buffer.csv_mode;
-            let csv_table_name = buffer.csv_table_name.clone();
-            let cache_mode = buffer.cache_mode;
-            let cached_data = buffer.cached_data.clone();
-            let buffer_id = buffer.get_id();
-            let buffer_name = buffer.get_name();
-            let buffer_query = buffer.get_query();
-
-            // Now update self
             self.input = Input::new(query_text.clone()).with_cursor(query_text.len());
             self.textarea = {
                 let mut ta = TextArea::from(
@@ -5521,21 +5495,28 @@ impl EnhancedTuiApp {
                 ta.move_cursor(tui_textarea::CursorMove::End);
                 ta
             };
-            self.edit_mode = edit_mode;
-            self.set_results(results);
-            self.csv_client = csv_client;
-            self.csv_mode = csv_mode;
-            self.csv_table_name = csv_table_name;
-            self.cache_mode = cache_mode;
-            self.cached_data = cached_data;
 
-            let result_count = self.get_results().map(|r| r.data.len()).unwrap_or(0);
+            // Sync edit mode
+            self.edit_mode = match buffer.get_edit_mode() {
+                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
+                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
+            };
+
+            // Sync results and data source state
+            self.results = buffer.get_results().cloned();
+            self.csv_client = buffer.csv_client.clone();
+            self.csv_mode = buffer.csv_mode;
+            self.csv_table_name = buffer.csv_table_name.clone();
+            self.cache_mode = buffer.cache_mode;
+            self.cached_data = buffer.cached_data.clone();
+
+            let result_count = self.results.as_ref().map(|r| r.data.len()).unwrap_or(0);
             info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
-                      result_count, buffer_id, buffer_name, csv_mode, cache_mode,
-                      buffer_query);
+                      result_count, buffer.get_id(), buffer.get_name(), buffer.csv_mode, buffer.cache_mode,
+                      buffer.get_query());
 
             // Recalculate column widths and reset table state for new results
-            if self.get_results().is_some() {
+            if self.results.is_some() {
                 self.calculate_optimal_column_widths();
                 self.reset_table_state();
             }
@@ -6153,10 +6134,10 @@ impl EnhancedTuiApp {
             (AppMode::PrettyQuery, false) => self.render_pretty_query(f, results_area),
             (AppMode::CacheList, false) => self.render_cache_list(f, results_area),
             (AppMode::ColumnStats, false) => self.render_column_stats(f, results_area),
-            (_, false) if self.get_results().is_some() => {
+            (_, false) if self.results.is_some() => {
                 // We need to work around the borrow checker here
                 // Calculate widths needs mutable self, but we also need to pass results
-                if let Some(results) = self.get_results() {
+                if let Some(results) = &self.results {
                     // Extract viewport info first
                     let terminal_height = results_area.height as usize;
                     let max_visible_rows = terminal_height.saturating_sub(3).max(10);
@@ -6174,7 +6155,7 @@ impl EnhancedTuiApp {
                 }
 
                 // Now render the table
-                if let Some(results) = self.get_results() {
+                if let Some(results) = &self.results {
                     self.render_table_immutable(f, results_area, results);
                 }
             }
@@ -6337,7 +6318,7 @@ impl EnhancedTuiApp {
                     ));
 
                     // Column information
-                    if let Some(results) = self.get_results() {
+                    if let Some(results) = &self.results {
                         if let Some(first_row) = results.data.first() {
                             if let Some(obj) = first_row.as_object() {
                                 let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -7458,7 +7439,7 @@ impl EnhancedTuiApp {
         match parts[1] {
             "save" => {
                 // Save last query results to cache with optional custom ID
-                if let Some(results) = self.get_results().cloned() {
+                if let Some(ref results) = self.results {
                     if let Some(ref mut cache) = self.query_cache {
                         // Check if a custom ID is provided
                         let (custom_id, query) = if parts.len() > 2 {
