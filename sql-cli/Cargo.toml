@@ -117,6 +117,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "local
 [dev-dependencies]
 tempfile = "3.8"
 
+[profile.dev]
+opt-level = 0       # No optimization for debugging
+debug = true        # Include debug symbols
+debug-assertions = true
+overflow-checks = true
+
 [profile.release]
 opt-level = "z"     # Optimize for size
 lto = true          # Enable Link Time Optimization

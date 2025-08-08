@@ -1,0 +1,95 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug SQL CLI (API mode)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=sql-cli",
+                    "--package=sql-cli"
+                ],
+                "filter": {
+                    "name": "sql-cli",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug SQL CLI with CSV",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=sql-cli",
+                    "--package=sql-cli"
+                ],
+                "filter": {
+                    "name": "sql-cli",
+                    "kind": "bin"
+                }
+            },
+            "args": ["data/small-customer.csv"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug SQL CLI with JSON",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=sql-cli",
+                    "--package=sql-cli"
+                ],
+                "filter": {
+                    "name": "sql-cli",
+                    "kind": "bin"
+                }
+            },
+            "args": ["data/trades.json"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug SQL CLI - Modern TUI",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=sql-cli",
+                    "--package=sql-cli"
+                ],
+                "filter": {
+                    "name": "sql-cli",
+                    "kind": "bin"
+                }
+            },
+            "args": ["--modern"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug SQL CLI - Simple mode",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=sql-cli",
+                    "--package=sql-cli"
+                ],
+                "filter": {
+                    "name": "sql-cli",
+                    "kind": "bin"
+                }
+            },
+            "args": ["--simple"],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

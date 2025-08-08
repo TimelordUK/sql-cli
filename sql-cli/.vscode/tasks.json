@@ -1,0 +1,65 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "cargo",
+            "command": "build",
+            "args": [
+                "--bin",
+                "sql-cli"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "label": "cargo build - sql-cli",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [
+                "$rustc"
+            ]
+        },
+        {
+            "type": "cargo",
+            "command": "build",
+            "args": [
+                "--release",
+                "--bin",
+                "sql-cli"
+            ],
+            "group": "build",
+            "label": "cargo build release - sql-cli",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [
+                "$rustc"
+            ]
+        },
+        {
+            "type": "cargo",
+            "command": "run",
+            "args": [
+                "--bin",
+                "sql-cli",
+                "--",
+                "data/small-customer.csv"
+            ],
+            "group": "test",
+            "label": "cargo run - sql-cli with CSV",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        }
+    ]
+}
