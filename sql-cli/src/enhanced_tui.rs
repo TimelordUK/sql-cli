@@ -294,7 +294,7 @@ impl EnhancedTuiApp {
         match self.get_mode() {
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 // These modes temporarily use the input field for their patterns
-                self.input.value().to_string()
+                self.input.value().to_string() // TODO: Migrate to buffer-based input
             }
             _ => {
                 // All other modes use the buffer
@@ -303,7 +303,7 @@ impl EnhancedTuiApp {
                 } else {
                     // Fallback to direct input access during migration
                     match self.get_edit_mode() {
-                        EditMode::SingleLine => self.input.value().to_string(),
+                        EditMode::SingleLine => self.input.value().to_string(), // TODO: Remove after migration
                         EditMode::MultiLine => self.textarea.lines().join("\n"),
                     }
                 }
@@ -4947,12 +4947,11 @@ impl EnhancedTuiApp {
                             // Update the appropriate filter/search state
                             match self.get_mode() {
                                 AppMode::Filter => {
-                                    self.get_filter_state_mut().pattern =
-                                        self.input.value().to_string();
+                                    self.get_filter_state_mut().pattern = self.get_input_text();
                                     self.apply_filter();
                                 }
                                 AppMode::FuzzyFilter => {
-                                    self.set_fuzzy_filter_pattern(self.input.value().to_string());
+                                    self.set_fuzzy_filter_pattern(self.get_input_text());
                                     self.apply_fuzzy_filter();
                                 }
                                 AppMode::Search => {
@@ -4961,7 +4960,7 @@ impl EnhancedTuiApp {
                                     // TODO: self.search_in_results();
                                 }
                                 AppMode::ColumnSearch => {
-                                    self.set_column_search_pattern(self.input.value().to_string());
+                                    self.set_column_search_pattern(self.get_input_text());
                                     // TODO: self.search_columns();
                                 }
                                 _ => {}
@@ -6384,7 +6383,7 @@ impl EnhancedTuiApp {
         match self.get_mode() {
             AppMode::Command => {
                 // In command mode, show editing-related info
-                if !self.input.value().trim().is_empty() {
+                if !self.get_input_text().trim().is_empty() {
                     let (token_pos, total_tokens) = self.get_cursor_token_position();
                     spans.push(Span::raw(" | "));
                     spans.push(Span::styled(
@@ -6402,7 +6401,7 @@ impl EnhancedTuiApp {
                     }
 
                     // Check for parser errors
-                    if let Some(error_msg) = self.check_parser_error(self.input.value()) {
+                    if let Some(error_msg) = self.check_parser_error(&self.get_input_text()) {
                         spans.push(Span::raw(" | "));
                         spans.push(Span::styled(
                             format!("{} {}", self.config.display.icons.warning, error_msg),
@@ -6529,7 +6528,7 @@ impl EnhancedTuiApp {
             }
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 // Show the pattern being typed - always use input for consistency
-                let pattern = self.input.value();
+                let pattern = self.get_input_text();
                 if !pattern.is_empty() {
                     spans.push(Span::raw(" | Pattern: "));
                     spans.push(Span::styled(pattern, Style::default().fg(mode_color)));
