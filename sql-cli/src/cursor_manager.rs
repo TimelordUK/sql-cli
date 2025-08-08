@@ -1,5 +1,3 @@
-use crate::buffer::BufferAPI;
-
 /// Manages all cursor and navigation operations
 /// This extracts cursor logic from the monolithic enhanced_tui.rs
 pub struct CursorManager {
@@ -7,7 +5,7 @@ pub struct CursorManager {
     input_cursor_position: usize,
 
     /// Visual cursor position for rendering (col, row)
-    visual_cursor: (usize, usize),
+    _visual_cursor: (usize, usize),
 
     /// Table navigation position (row, col)
     table_cursor: (usize, usize),
@@ -23,7 +21,7 @@ impl CursorManager {
     pub fn new() -> Self {
         Self {
             input_cursor_position: 0,
-            visual_cursor: (0, 0),
+            _visual_cursor: (0, 0),
             table_cursor: (0, 0),
             horizontal_scroll: 0,
             vertical_scroll: 0,

@@ -40,7 +40,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io;
 use std::io::Write;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
 use tui_textarea::{CursorMove, TextArea};
 
@@ -436,7 +436,7 @@ impl EnhancedTuiApp {
 
     // Compatibility wrapper for input
     fn get_input(&self) -> &tui_input::Input {
-        if let Some(buffer) = self.current_buffer() {
+        if let Some(_buffer) = self.current_buffer() {
             // TODO: Need to get input from buffer - for now use TUI field
             &self.input
         } else {
@@ -3604,7 +3604,7 @@ impl EnhancedTuiApp {
 
     fn move_column_left(&mut self) {
         // Update cursor_manager for table navigation (incremental step)
-        let (row, col) = self.cursor_manager.table_position();
+        let (_row, _col) = self.cursor_manager.table_position();
         self.cursor_manager.move_table_left();
 
         // Keep existing logic for now
@@ -7340,7 +7340,7 @@ impl EnhancedTuiApp {
                 // Save last query results to cache with optional custom ID
                 if let Some(results) = self.get_results() {
                     let data_to_save = results.data.clone(); // Extract the data we need
-                    drop(results); // Explicitly drop the borrow
+                    let _ = results; // Explicitly drop the borrow
 
                     if let Some(ref mut cache) = self.query_cache {
                         // Check if a custom ID is provided
@@ -7703,7 +7703,7 @@ impl EnhancedTuiApp {
 }
 
 pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()> {
-    let mut app = if !data_files.is_empty() {
+    let app = if !data_files.is_empty() {
         // Load the first file using existing logic
         let first_file = data_files[0];
         let extension = std::path::Path::new(first_file)
@@ -7736,7 +7736,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
 
         // Load additional files into separate buffers
         if data_files.len() > 1 {
-            for (index, file_path) in data_files.iter().skip(1).enumerate() {
+            for (_index, file_path) in data_files.iter().skip(1).enumerate() {
                 let extension = std::path::Path::new(file_path)
                     .extension()
                     .and_then(|ext| ext.to_str())

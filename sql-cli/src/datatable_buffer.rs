@@ -4,7 +4,7 @@ use crate::buffer::{
     FuzzyFilterState, SearchState, SortOrder, SortState,
 };
 use crate::csv_datasource::CsvApiClient;
-use crate::datatable::{DataTable, DataValue};
+use crate::datatable::DataTable;
 use crate::datatable_view::{DataTableView, SortOrder as ViewSortOrder};
 use crate::input_manager::{create_multi_line, create_single_line, InputManager};
 use anyhow::Result;

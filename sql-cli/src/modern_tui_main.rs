@@ -7,11 +7,11 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use sql_cli::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable};
 use sql_cli::modern_tui::ModernTui;
-use std::io::{self, stdout};
+use std::io::stdout;
 use std::path::Path;
 
 /// Run the modern TUI with a single data file
-pub fn run_modern_tui(api_url: &str, data_file: Option<&str>) -> Result<()> {
+pub fn run_modern_tui(_api_url: &str, data_file: Option<&str>) -> Result<()> {
     // For now, we'll focus on file-based data since that's what we have working
     // TODO: Integrate with API client later
 
@@ -26,7 +26,7 @@ pub fn run_modern_tui(api_url: &str, data_file: Option<&str>) -> Result<()> {
 }
 
 /// Run the modern TUI with multiple data files
-pub fn run_modern_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()> {
+pub fn run_modern_tui_multi(_api_url: &str, data_files: Vec<&str>) -> Result<()> {
     if data_files.is_empty() {
         return show_usage();
     }

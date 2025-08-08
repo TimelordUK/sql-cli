@@ -4,7 +4,7 @@ use csv::ReaderBuilder;
 use serde_json::Value as JsonValue;
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::Read;
 use std::path::Path;
 
 /// Load a CSV file into a DataTable

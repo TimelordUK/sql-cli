@@ -1,4 +1,4 @@
-use sql_cli::recursive_parser::{detect_cursor_context, CursorContext};
+use sql_cli::recursive_parser::detect_cursor_context;
 
 fn main() {
     let query = "SELECT * FROM table WHERE \"Last Name\".";

@@ -133,6 +133,7 @@ fn print_help() {
     println!();
 }
 
+#[allow(dead_code)]
 fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", format!("Executing: {}", query).cyan());
 

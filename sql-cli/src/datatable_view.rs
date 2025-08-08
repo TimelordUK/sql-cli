@@ -1,11 +1,8 @@
 use crate::datatable::{DataTable, DataValue};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::layout::Constraint;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, StatefulWidget, Table, Widget};
-use ratatui::Frame;
-use std::ops::Range;
+use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 
 /// Represents how data should be sorted
 #[derive(Debug, Clone)]
@@ -851,6 +848,7 @@ impl DataTableView {
 mod tests {
     use super::*;
     use crate::datatable::{DataColumn, DataRow, DataType, DataValue};
+    use crossterm::event::KeyModifiers;
 
     fn create_test_table() -> DataTable {
         let mut table = DataTable::new("test");
