@@ -367,10 +367,7 @@ impl EnhancedTuiApp {
     fn handle_input_key(&mut self, key: KeyEvent) -> bool {
         // For special modes that handle input directly
         match self.get_mode() {
-            AppMode::Search
-            | AppMode::Filter
-            | AppMode::FuzzyFilter
-            | AppMode::ColumnSearch => {
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 self.input.handle_event(&Event::Key(key));
                 false
             }
@@ -500,7 +497,8 @@ impl EnhancedTuiApp {
         self.mode = mode.clone();
 
         // Also update in buffer
-        self.buffer_mut().set_mode(Self::local_mode_to_buffer(&mode));
+        self.buffer_mut()
+            .set_mode(Self::local_mode_to_buffer(&mode));
     }
 
     // Compatibility wrapper for results
