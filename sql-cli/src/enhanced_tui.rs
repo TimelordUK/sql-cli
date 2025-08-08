@@ -5017,10 +5017,11 @@ impl EnhancedTuiApp {
         }
 
         // Move cursor to new position through buffer
+        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.set_input_cursor_position(target_pos);
             // Sync for rendering
-            if self.get_edit_mode() == EditMode::SingleLine {
+            if is_single_line {
                 let text = buffer.get_input_text();
                 self.input = tui_input::Input::new(text).with_cursor(target_pos);
             }
@@ -5106,10 +5107,11 @@ impl EnhancedTuiApp {
         }
 
         // Move cursor to new position through buffer
+        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.set_input_cursor_position(target_pos);
             // Sync for rendering
-            if self.get_edit_mode() == EditMode::SingleLine {
+            if is_single_line {
                 let text = buffer.get_input_text();
                 self.input = tui_input::Input::new(text).with_cursor(target_pos);
             }
@@ -5377,10 +5379,11 @@ impl EnhancedTuiApp {
 
         // Move cursor through buffer
         if target_pos < cursor_pos {
+            let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
             if let Some(buffer) = self.current_buffer_mut() {
                 buffer.set_input_cursor_position(target_pos);
                 // Sync for rendering
-                if self.get_edit_mode() == EditMode::SingleLine {
+                if is_single_line {
                     let text = buffer.get_input_text();
                     self.input = tui_input::Input::new(text).with_cursor(target_pos);
                 }
@@ -5419,10 +5422,11 @@ impl EnhancedTuiApp {
         }
 
         // Move cursor through buffer
+        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.set_input_cursor_position(target_pos);
             // Sync for rendering
-            if self.get_edit_mode() == EditMode::SingleLine {
+            if is_single_line {
                 let text = buffer.get_input_text();
                 self.input = tui_input::Input::new(text).with_cursor(target_pos);
             }
