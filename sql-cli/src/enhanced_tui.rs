@@ -349,11 +349,52 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Helper to set input text through buffer or fallback to direct input
+    fn set_input_text(&mut self, text: String) {
+        // Check mode before getting mutable buffer
+        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_text(text.clone());
+            // Also sync cursor position to end of text
+            buffer.set_input_cursor_position(text.len());
+
+            // Sync self.input for rendering (temporary during migration)
+            if is_single_line {
+                self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
+            }
+        } else {
+            // Fallback to direct input setting during migration
+            match self.get_edit_mode() {
+                EditMode::SingleLine => {
+                    self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
+                }
+                EditMode::MultiLine => {
+                    let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+                    self.textarea = tui_textarea::TextArea::from(lines);
+                    self.textarea.move_cursor(tui_textarea::CursorMove::End);
+                }
+            }
+        }
+    }
+
     // Helper to handle key events in the input
     fn handle_input_key(&mut self, key: KeyEvent) -> bool {
+        // Check mode before getting mutable buffer
+        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+
         if let Some(buffer) = self.current_buffer_mut() {
             // Route to buffer's input handling
-            buffer.handle_input_key(key)
+            let result = buffer.handle_input_key(key);
+
+            // Sync self.input with buffer for rendering (temporary during migration)
+            if is_single_line {
+                let text = buffer.get_input_text();
+                let cursor = buffer.get_input_cursor_position();
+                self.input = tui_input::Input::new(text).with_cursor(cursor);
+            }
+
+            result
         } else {
             // Fallback to direct input handling during migration
             match self.get_edit_mode() {
@@ -1255,7 +1296,7 @@ impl EnhancedTuiApp {
         let auto_query = format!("SELECT * FROM {}", table_name);
 
         // Populate the input field with the query for easy editing
-        app.input = tui_input::Input::new(auto_query.clone()).with_cursor(auto_query.len());
+        app.set_input_text(auto_query.clone());
 
         if app.config.behavior.auto_execute_on_load {
             if let Err(e) = app.execute_query(&auto_query) {
@@ -1349,7 +1390,7 @@ impl EnhancedTuiApp {
         let auto_query = format!("SELECT * FROM {}", table_name);
 
         // Populate the input field with the query for easy editing
-        app.input = tui_input::Input::new(auto_query.clone()).with_cursor(auto_query.len());
+        app.set_input_text(auto_query.clone());
 
         if app.config.behavior.auto_execute_on_load {
             if let Err(e) = app.execute_query(&auto_query) {
@@ -2656,8 +2697,8 @@ impl EnhancedTuiApp {
                         .entry
                         .command
                         .clone();
-                    let cursor_pos = selected_command.len();
-                    self.input = tui_input::Input::new(selected_command).with_cursor(cursor_pos);
+                    // Use helper to set text through buffer
+                    self.set_input_text(selected_command);
                     self.set_mode(AppMode::Command);
                     self.set_status_message("Command loaded from history".to_string());
                     // Reset scroll to show end of command
@@ -5620,12 +5661,18 @@ impl EnhancedTuiApp {
 
         let input_block = Block::default().borders(Borders::ALL).title(input_title);
 
+        let input_text_string;
         let input_text = match self.get_mode() {
             AppMode::Search => self.input.value(), // Use input for rendering
             AppMode::Filter => self.input.value(), // Use input for rendering
             AppMode::FuzzyFilter => self.input.value(), // Use input for rendering
             AppMode::ColumnSearch => self.input.value(), // Column search still uses input since it saves/restores
             AppMode::History => &self.history_state.search_query,
+            AppMode::Command => {
+                // Use buffer's input text for command mode
+                input_text_string = self.get_input_text();
+                &input_text_string
+            }
             _ => self.input.value(),
         };
 
@@ -5692,7 +5739,7 @@ impl EnhancedTuiApp {
                     EditMode::SingleLine => {
                         // Calculate cursor position with horizontal scrolling
                         let inner_width = chunks[0].width.saturating_sub(2) as usize;
-                        let cursor_pos = self.input.visual_cursor();
+                        let cursor_pos = self.get_visual_cursor().1; // Get column position for single-line
                         let scroll_offset = self.get_horizontal_scroll_offset() as usize;
 
                         // Calculate visible cursor position
