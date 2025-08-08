@@ -6,6 +6,7 @@ use crate::input_manager::{
 use anyhow::Result;
 use crossterm::event::KeyEvent;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use ratatui::style::Color;
 use ratatui::widgets::TableState;
 use regex::Regex;
 use serde_json::Value;
@@ -351,6 +352,13 @@ pub struct Buffer {
     pub kill_ring: String,
     pub last_visible_rows: usize,
     pub last_query_source: Option<String>,
+
+    // --- Syntax Highlighting ---
+    pub highlighted_text_cache: Option<Vec<(String, Color)>>, // Cache of highlighted tokens
+    pub last_highlighted_text: String, // Track what text was highlighted to detect changes
+
+    // --- Input State Stack (for search/filter modes) ---
+    pub saved_input_state: Option<(String, usize)>, // Save input when entering search/filter
 }
 
 // Implement BufferAPI for Buffer
@@ -1123,6 +1131,10 @@ impl Buffer {
             kill_ring: String::new(),
             last_visible_rows: 30,
             last_query_source: None,
+
+            highlighted_text_cache: None,
+            last_highlighted_text: String::new(),
+            saved_input_state: None,
         }
     }
 
@@ -1274,6 +1286,9 @@ impl Clone for Buffer {
             kill_ring: self.kill_ring.clone(),
             last_visible_rows: self.last_visible_rows,
             last_query_source: self.last_query_source.clone(),
+            highlighted_text_cache: self.highlighted_text_cache.clone(),
+            last_highlighted_text: self.last_highlighted_text.clone(),
+            saved_input_state: self.saved_input_state.clone(),
         }
     }
 }
