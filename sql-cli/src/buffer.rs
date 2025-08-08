@@ -224,7 +224,9 @@ pub trait BufferAPI {
     fn get_csv_client_mut(&mut self) -> Option<&mut CsvApiClient>;
     fn set_csv_client(&mut self, client: Option<CsvApiClient>);
     fn is_csv_mode(&self) -> bool;
+    fn set_csv_mode(&mut self, csv_mode: bool);
     fn get_table_name(&self) -> String;
+    fn set_table_name(&mut self, table_name: String);
     fn is_cache_mode(&self) -> bool;
     fn set_cache_mode(&mut self, cache_mode: bool);
     fn get_cached_data(&self) -> Option<&Vec<Value>>;
@@ -651,8 +653,16 @@ impl BufferAPI for Buffer {
         self.csv_mode
     }
 
+    fn set_csv_mode(&mut self, csv_mode: bool) {
+        self.csv_mode = csv_mode;
+    }
+
     fn get_table_name(&self) -> String {
         self.csv_table_name.clone()
+    }
+
+    fn set_table_name(&mut self, table_name: String) {
+        self.csv_table_name = table_name;
     }
 
     fn is_cache_mode(&self) -> bool {

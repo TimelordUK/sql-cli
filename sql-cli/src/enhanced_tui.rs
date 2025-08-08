@@ -7708,31 +7708,69 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                     .and_then(|ext| ext.to_str())
                     .unwrap_or("");
 
-                // Create a new buffer for each additional file
-                app.new_buffer();
-
-                // Load the file into the current buffer
-                let query = match extension.to_lowercase().as_str() {
+                match extension.to_lowercase().as_str() {
                     "csv" | "json" => {
-                        format!("SELECT * FROM '{}'", file_path)
+                        // Get config value before mutable borrow
+                        let case_insensitive = app.config.behavior.case_insensitive_default;
+
+                        // Create a new buffer for each additional file
+                        app.new_buffer();
+
+                        // Get the current buffer and set it up
+                        if let Some(buffer) = app.current_buffer_mut() {
+                            // Create and configure CSV client for this buffer
+                            let mut csv_client = CsvApiClient::new();
+                            csv_client.set_case_insensitive(case_insensitive);
+
+                            // Get table name from file
+                            let raw_name = std::path::Path::new(file_path)
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("data")
+                                .to_string();
+                            let table_name = EnhancedTuiApp::sanitize_table_name(&raw_name);
+
+                            // Load the data
+                            if extension.to_lowercase() == "csv" {
+                                if let Err(e) = csv_client.load_csv(file_path, &table_name) {
+                                    app.set_status_message(format!(
+                                        "Error loading {}: {}",
+                                        file_path, e
+                                    ));
+                                    continue;
+                                }
+                            } else {
+                                if let Err(e) = csv_client.load_json(file_path, &table_name) {
+                                    app.set_status_message(format!(
+                                        "Error loading {}: {}",
+                                        file_path, e
+                                    ));
+                                    continue;
+                                }
+                            }
+
+                            // Set the CSV client and metadata in the buffer
+                            buffer.set_csv_client(Some(csv_client));
+                            buffer.set_csv_mode(true);
+                            buffer.set_table_name(table_name.clone());
+
+                            // Set query
+                            let query = format!("SELECT * FROM {}", table_name);
+                            buffer.set_input_text(query);
+
+                            // Store the file path and name
+                            buffer.set_file_path(Some(file_path.to_string()));
+                            let filename = std::path::Path::new(file_path)
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy();
+                            buffer.set_name(filename.to_string());
+                        }
                     }
                     _ => {
                         app.set_status_message(format!("Skipping unsupported file: {}", file_path));
                         continue;
                     }
-                };
-
-                // Set the query in the current buffer
-                if let Some(buffer) = app.current_buffer_mut() {
-                    // Set the query without comments
-                    buffer.set_input_text(query.clone());
-                    // Store the file path and name
-                    buffer.set_file_path(Some(file_path.to_string()));
-                    let filename = std::path::Path::new(file_path)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy();
-                    buffer.set_name(filename.to_string());
                 }
             }
 
