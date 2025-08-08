@@ -127,85 +127,76 @@ pub fn format_where_ast(expr: &WhereExpr, indent: usize) -> String {
             format!("{}NOT\n{}", indent_str, format_where_ast(inner, indent + 1))
         }
         WhereExpr::Equal(col, val) => {
-            format!("{}EQUAL({}, {:?})", indent_str, col, val)
+            format!("{indent_str}EQUAL({col}, {val:?})")
         }
         WhereExpr::NotEqual(col, val) => {
-            format!("{}NOT_EQUAL({}, {:?})", indent_str, col, val)
+            format!("{indent_str}NOT_EQUAL({col}, {val:?})")
         }
         WhereExpr::GreaterThan(col, val) => {
-            format!("{}GREATER_THAN({}, {:?})", indent_str, col, val)
+            format!("{indent_str}GREATER_THAN({col}, {val:?})")
         }
         WhereExpr::GreaterThanOrEqual(col, val) => {
-            format!("{}GREATER_THAN_OR_EQUAL({}, {:?})", indent_str, col, val)
+            format!("{indent_str}GREATER_THAN_OR_EQUAL({col}, {val:?})")
         }
         WhereExpr::LessThan(col, val) => {
-            format!("{}LESS_THAN({}, {:?})", indent_str, col, val)
+            format!("{indent_str}LESS_THAN({col}, {val:?})")
         }
         WhereExpr::LessThanOrEqual(col, val) => {
-            format!("{}LESS_THAN_OR_EQUAL({}, {:?})", indent_str, col, val)
+            format!("{indent_str}LESS_THAN_OR_EQUAL({col}, {val:?})")
         }
         WhereExpr::Between(col, lower, upper) => {
-            format!("{}BETWEEN({}, {:?}, {:?})", indent_str, col, lower, upper)
+            format!("{indent_str}BETWEEN({col}, {lower:?}, {upper:?})")
         }
         WhereExpr::In(col, values) => {
-            format!("{}IN({}, {:?})", indent_str, col, values)
+            format!("{indent_str}IN({col}, {values:?})")
         }
         WhereExpr::NotIn(col, values) => {
-            format!("{}NOT_IN({}, {:?})", indent_str, col, values)
+            format!("{indent_str}NOT_IN({col}, {values:?})")
         }
         WhereExpr::InIgnoreCase(col, values) => {
-            format!("{}IN_IGNORE_CASE({}, {:?})", indent_str, col, values)
+            format!("{indent_str}IN_IGNORE_CASE({col}, {values:?})")
         }
         WhereExpr::NotInIgnoreCase(col, values) => {
-            format!("{}NOT_IN_IGNORE_CASE({}, {:?})", indent_str, col, values)
+            format!("{indent_str}NOT_IN_IGNORE_CASE({col}, {values:?})")
         }
         WhereExpr::Like(col, pattern) => {
-            format!("{}LIKE({}, \"{}\")", indent_str, col, pattern)
+            format!("{indent_str}LIKE({col}, \"{pattern}\")")
         }
         WhereExpr::IsNull(col) => {
-            format!("{}IS_NULL({})", indent_str, col)
+            format!("{indent_str}IS_NULL({col})")
         }
         WhereExpr::IsNotNull(col) => {
-            format!("{}IS_NOT_NULL({})", indent_str, col)
+            format!("{indent_str}IS_NOT_NULL({col})")
         }
         WhereExpr::Contains(col, search) => {
-            format!("{}CONTAINS({}, \"{}\")", indent_str, col, search)
+            format!("{indent_str}CONTAINS({col}, \"{search}\")")
         }
         WhereExpr::StartsWith(col, prefix) => {
-            format!("{}STARTS_WITH({}, \"{}\")", indent_str, col, prefix)
+            format!("{indent_str}STARTS_WITH({col}, \"{prefix}\")")
         }
         WhereExpr::EndsWith(col, suffix) => {
-            format!("{}ENDS_WITH({}, \"{}\")", indent_str, col, suffix)
+            format!("{indent_str}ENDS_WITH({col}, \"{suffix}\")")
         }
         WhereExpr::ContainsIgnoreCase(col, search) => {
-            format!(
-                "{}CONTAINS_IGNORE_CASE({}, \"{}\")",
-                indent_str, col, search
-            )
+            format!("{indent_str}CONTAINS_IGNORE_CASE({col}, \"{search}\")")
         }
         WhereExpr::StartsWithIgnoreCase(col, prefix) => {
-            format!(
-                "{}STARTS_WITH_IGNORE_CASE({}, \"{}\")",
-                indent_str, col, prefix
-            )
+            format!("{indent_str}STARTS_WITH_IGNORE_CASE({col}, \"{prefix}\")")
         }
         WhereExpr::EndsWithIgnoreCase(col, suffix) => {
-            format!(
-                "{}ENDS_WITH_IGNORE_CASE({}, \"{}\")",
-                indent_str, col, suffix
-            )
+            format!("{indent_str}ENDS_WITH_IGNORE_CASE({col}, \"{suffix}\")")
         }
         WhereExpr::ToLower(col, op, value) => {
-            format!("{}TO_LOWER({}, {:?}, \"{}\")", indent_str, col, op, value)
+            format!("{indent_str}TO_LOWER({col}, {op:?}, \"{value}\")")
         }
         WhereExpr::ToUpper(col, op, value) => {
-            format!("{}TO_UPPER({}, {:?}, \"{}\")", indent_str, col, op, value)
+            format!("{indent_str}TO_UPPER({col}, {op:?}, \"{value}\")")
         }
         WhereExpr::Length(col, op, value) => {
-            format!("{}LENGTH({}, {:?}, {})", indent_str, col, op, value)
+            format!("{indent_str}LENGTH({col}, {op:?}, {value})")
         }
         WhereExpr::IsNullOrEmpty(col) => {
-            format!("{}IS_NULL_OR_EMPTY({})", indent_str, col)
+            format!("{indent_str}IS_NULL_OR_EMPTY({col})")
         }
     }
 }

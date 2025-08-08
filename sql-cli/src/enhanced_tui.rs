@@ -213,10 +213,9 @@ pub struct EnhancedTuiApp {
     last_visible_rows: usize, // Track the last calculated viewport height
 
     // Display options
-    compact_mode: bool,                // Compact display mode with reduced padding
-    viewport_lock: bool,               // Lock viewport position for anchor scrolling
-    viewport_lock_row: Option<usize>,  // The row position to lock to in viewport
-    jump_to_row_input: String,         // Input buffer for jump to row command
+    viewport_lock: bool, // Lock viewport position for anchor scrolling
+    viewport_lock_row: Option<usize>, // The row position to lock to in viewport
+    jump_to_row_input: String, // Input buffer for jump to row command
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
 }
 
@@ -554,8 +553,6 @@ impl EnhancedTuiApp {
 
     fn set_compact_mode(&mut self, compact: bool) {
         self.buffer_mut().set_compact_mode(compact);
-        // Also update local field (will be removed later)
-        self.compact_mode = compact;
     }
 
     fn get_show_row_numbers(&self) -> bool {
@@ -1136,7 +1133,6 @@ impl EnhancedTuiApp {
             redo_stack: Vec::new(),
             kill_ring: String::new(),
             last_visible_rows: 30, // Default estimate
-            compact_mode: config.display.compact_mode,
             viewport_lock: false,
             viewport_lock_row: None,
             jump_to_row_input: String::new(),

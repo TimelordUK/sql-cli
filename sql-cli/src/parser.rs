@@ -69,12 +69,12 @@ impl SqlParser {
                         self.tokens.push(SqlToken::From);
                         self.current_state = ParseState::AfterFrom;
                     } else {
-                        self.tokens.push(SqlToken::Column(word.to_string()));
+                        self.tokens.push(SqlToken::Column(String::from(*word)));
                         self.current_state = ParseState::InColumnList;
                     }
                 }
                 ParseState::AfterFrom => {
-                    self.tokens.push(SqlToken::Table(word.to_string()));
+                    self.tokens.push(SqlToken::Table(String::from(*word)));
                     self.current_state = ParseState::AfterTable;
                 }
                 ParseState::AfterTable => {
@@ -95,11 +95,11 @@ impl SqlParser {
                             self.current_state = ParseState::InOrderBy;
                         }
                     } else {
-                        self.tokens.push(SqlToken::Identifier(word.to_string()));
+                        self.tokens.push(SqlToken::Identifier(String::from(*word)));
                     }
                 }
                 ParseState::InOrderBy => {
-                    self.tokens.push(SqlToken::Column(word.to_string()));
+                    self.tokens.push(SqlToken::Column(String::from(*word)));
                 }
                 _ => {}
             }
@@ -125,7 +125,7 @@ impl SqlParser {
         if trimmed.ends_with(' ') {
             None
         } else {
-            trimmed.split_whitespace().last().map(|s| s.to_string())
+            trimmed.split_whitespace().last().map(String::from)
         }
     }
 
@@ -150,20 +150,14 @@ impl SqlParser {
 
             // Check for SELECT *
             if select_clause.trim() == "*" {
-                return vec!["*".to_string()];
+                return vec![String::from("*")];
             }
 
             // Parse column list (split by commas, clean up whitespace)
             if !select_clause.is_empty() {
                 return select_clause
                     .split(',')
-                    .map(|col| {
-                        col.trim()
-                            .trim_matches('"')
-                            .trim_matches('\'')
-                            .trim()
-                            .to_string()
-                    })
+                    .map(|col| String::from(col.trim().trim_matches('"').trim_matches('\'').trim()))
                     .filter(|col| !col.is_empty())
                     .collect();
             }
@@ -185,14 +179,14 @@ pub struct CompletionContext {
 impl CompletionContext {
     pub fn get_suggestions(&self, schema: &Schema) -> Vec<String> {
         match self.state {
-            ParseState::Start => vec!["SELECT".to_string()],
+            ParseState::Start => vec![String::from("SELECT")],
             ParseState::AfterSelect => {
                 let mut suggestions: Vec<String> = schema
                     .get_columns("trade_deal")
                     .iter()
                     .map(|c| c.to_string())
                     .collect();
-                suggestions.push("*".to_string());
+                suggestions.push(String::from("*"));
                 self.filter_suggestions(suggestions)
             }
             ParseState::InColumnList => {
@@ -201,15 +195,15 @@ impl CompletionContext {
                     .iter()
                     .map(|c| c.to_string())
                     .collect();
-                suggestions.push("FROM".to_string());
+                suggestions.push(String::from("FROM"));
                 self.filter_suggestions(suggestions)
             }
             ParseState::AfterFrom => {
-                let suggestions = vec!["trade_deal".to_string(), "instrument".to_string()];
+                let suggestions = vec![String::from("trade_deal"), String::from("instrument")];
                 self.filter_suggestions(suggestions)
             }
             ParseState::AfterTable => {
-                let suggestions = vec!["WHERE".to_string(), "ORDER BY".to_string()];
+                let suggestions = vec![String::from("WHERE"), String::from("ORDER BY")];
                 self.filter_suggestions(suggestions)
             }
             ParseState::InWhere => {
@@ -219,9 +213,9 @@ impl CompletionContext {
                     .map(|c| c.to_string())
                     .collect();
                 suggestions.extend(vec![
-                    "AND".to_string(),
-                    "OR".to_string(),
-                    "ORDER BY".to_string(),
+                    String::from("AND"),
+                    String::from("OR"),
+                    String::from("ORDER BY"),
                 ]);
                 self.filter_suggestions(suggestions)
             }
@@ -230,7 +224,7 @@ impl CompletionContext {
 
                 // If we have explicitly selected columns, use those
                 if !self.selected_columns.is_empty()
-                    && !self.selected_columns.contains(&"*".to_string())
+                    && !self.selected_columns.contains(&String::from("*"))
                 {
                     suggestions.extend(self.selected_columns.clone());
                 } else {
@@ -244,7 +238,7 @@ impl CompletionContext {
                 }
 
                 // Always add ASC/DESC options
-                suggestions.extend(vec!["ASC".to_string(), "DESC".to_string()]);
+                suggestions.extend(vec![String::from("ASC"), String::from("DESC")]);
                 self.filter_suggestions(suggestions)
             }
             _ => vec![],

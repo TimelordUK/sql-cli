@@ -17,14 +17,14 @@ pub struct TableConfig {
 pub fn load_schema_config() -> SchemaConfig {
     // Check for schema.json in current directory or config directory
     let mut paths = vec![
-        "schema.json".to_string(),
-        ".sql-cli/schema.json".to_string(),
+        String::from("schema.json"),
+        String::from(".sql-cli/schema.json"),
     ];
 
     // Add config directory path if available
     if let Some(config_dir) = dirs::config_dir() {
         if let Some(path_str) = config_dir.join("sql-cli/schema.json").to_str() {
-            paths.push(path_str.to_string());
+            paths.push(String::from(path_str));
         }
     }
 
@@ -43,15 +43,15 @@ pub fn load_schema_config() -> SchemaConfig {
     SchemaConfig {
         tables: vec![
             TableConfig {
-                name: "trade_deal".to_string(),
+                name: String::from("trade_deal"),
                 columns: get_full_trade_deal_columns(),
             },
             TableConfig {
-                name: "instrument".to_string(),
+                name: String::from("instrument"),
                 columns: vec![
-                    "instrumentId".to_string(),
-                    "name".to_string(),
-                    "type".to_string(),
+                    String::from("instrumentId"),
+                    String::from("name"),
+                    String::from("type"),
                 ],
             },
         ],
@@ -176,7 +176,7 @@ pub fn get_full_trade_deal_columns() -> Vec<String> {
         // Add more columns as needed...
     ]
     .into_iter()
-    .map(|s| s.to_string())
+    .map(String::from)
     .collect()
 }
 

@@ -1134,35 +1134,35 @@ fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
     let mut result = String::new();
     let indent_str = "  ".repeat(indent);
 
-    result.push_str(&format!("{}SelectStatement {{\n", indent_str));
+    result.push_str(&format!("{indent_str}SelectStatement {{\n"));
 
     // Format columns
-    result.push_str(&format!("{}  columns: [", indent_str));
+    result.push_str(&format!("{indent_str}  columns: ["));
     if !stmt.columns.is_empty() {
         result.push('\n');
         for col in &stmt.columns {
-            result.push_str(&format!("{}    \"{}\",\n", indent_str, col));
+            result.push_str(&format!("{indent_str}    \"{col}\",\n"));
         }
-        result.push_str(&format!("{}  ],\n", indent_str));
+        result.push_str(&format!("{indent_str}  ],\n"));
     } else {
         result.push_str("],\n");
     }
 
     // Format from table
     if let Some(table) = &stmt.from_table {
-        result.push_str(&format!("{}  from_table: \"{}\",\n", indent_str, table));
+        result.push_str(&format!("{indent_str}  from_table: \"{table}\",\n"));
     }
 
     // Format where clause
     if let Some(where_clause) = &stmt.where_clause {
-        result.push_str(&format!("{}  where_clause: {{\n", indent_str));
+        result.push_str(&format!("{indent_str}  where_clause: {{\n"));
         result.push_str(&format_where_clause(where_clause, indent + 2));
-        result.push_str(&format!("{}  }},\n", indent_str));
+        result.push_str(&format!("{indent_str}  }},\n"));
     }
 
     // Format order by
     if let Some(order_by) = &stmt.order_by {
-        result.push_str(&format!("{}  order_by: [", indent_str));
+        result.push_str(&format!("{indent_str}  order_by: ["));
         if !order_by.is_empty() {
             result.push('\n');
             for col in order_by {
@@ -1170,9 +1170,12 @@ fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
                     SortDirection::Asc => "ASC",
                     SortDirection::Desc => "DESC",
                 };
-                result.push_str(&format!("{}    \"{}\" {},\n", indent_str, col.column, dir));
+                result.push_str(&format!(
+                    "{indent_str}    \"{col}\" {dir},\n",
+                    col = col.column
+                ));
             }
-            result.push_str(&format!("{}  ],\n", indent_str));
+            result.push_str(&format!("{indent_str}  ],\n"));
         } else {
             result.push_str("],\n");
         }
@@ -1180,19 +1183,19 @@ fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
 
     // Format group by
     if let Some(group_by) = &stmt.group_by {
-        result.push_str(&format!("{}  group_by: [", indent_str));
+        result.push_str(&format!("{indent_str}  group_by: ["));
         if !group_by.is_empty() {
             result.push('\n');
             for col in group_by {
-                result.push_str(&format!("{}    \"{}\",\n", indent_str, col));
+                result.push_str(&format!("{indent_str}    \"{col}\",\n"));
             }
-            result.push_str(&format!("{}  ],\n", indent_str));
+            result.push_str(&format!("{indent_str}  ],\n"));
         } else {
-            result.push_str("],\n");
+            result.push_str("]\n");
         }
     }
 
-    result.push_str(&format!("{}}}", indent_str));
+    result.push_str(&format!("{indent_str}}}"));
     result
 }
 
@@ -1200,13 +1203,12 @@ fn format_where_clause(clause: &WhereClause, indent: usize) -> String {
     let mut result = String::new();
     let indent_str = "  ".repeat(indent);
 
-    result.push_str(&format!("{}conditions: [\n", indent_str));
+    result.push_str(&format!("{indent_str}conditions: [\n"));
 
     for condition in &clause.conditions {
-        result.push_str(&format!("{}  {{\n", indent_str));
+        result.push_str(&format!("{indent_str}  {{\n"));
         result.push_str(&format!(
-            "{}    expr: {},\n",
-            indent_str,
+            "{indent_str}    expr: {},\n",
             format_expression_ast(&condition.expr)
         ));
 
@@ -1215,16 +1217,13 @@ fn format_where_clause(clause: &WhereClause, indent: usize) -> String {
                 LogicalOp::And => "AND",
                 LogicalOp::Or => "OR",
             };
-            result.push_str(&format!(
-                "{}    connector: {},\n",
-                indent_str, connector_str
-            ));
+            result.push_str(&format!("{indent_str}    connector: {connector_str},\n"));
         }
 
-        result.push_str(&format!("{}  }},\n", indent_str));
+        result.push_str(&format!("{indent_str}  }},\n"));
     }
 
-    result.push_str(&format!("{}]\n", indent_str));
+    result.push_str(&format!("{indent_str}]\n"));
     result
 }
 
