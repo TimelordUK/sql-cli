@@ -1854,6 +1854,10 @@ impl EnhancedTuiApp {
                 self.set_mode(AppMode::History);
                 self.history_state.search_query.clear();
                 self.update_history_matches();
+
+                // Debug: log how many history entries we have
+                let total_entries = self.command_history.get_all().len();
+                self.set_status_message(format!("History search: {} total entries", total_entries));
             }
             // History navigation - Ctrl+P or Alt+Up
             KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -2980,9 +2984,33 @@ impl EnhancedTuiApp {
     }
 
     fn update_history_matches(&mut self) {
-        self.history_state.matches = self
-            .command_history
-            .search(&self.history_state.search_query);
+        // Get current schema columns and data source for better matching
+        let (current_columns, current_source) = if self.is_csv_mode() {
+            if let Some(csv_client) = self.get_csv_client() {
+                if let Some(schema) = csv_client.get_schema() {
+                    // Get the first (and usually only) table's columns and name
+                    schema
+                        .iter()
+                        .next()
+                        .map(|(table_name, cols)| (cols.clone(), Some(table_name.as_str())))
+                        .unwrap_or((vec![], None))
+                } else {
+                    (vec![], None)
+                }
+            } else {
+                (vec![], None)
+            }
+        } else if self.is_cache_mode() {
+            (vec![], Some("cache"))
+        } else {
+            (vec![], Some("api"))
+        };
+
+        self.history_state.matches = self.command_history.search_with_schema(
+            &self.history_state.search_query,
+            &current_columns,
+            current_source,
+        );
         self.history_state.selected_index = 0;
     }
 
@@ -3090,10 +3118,36 @@ impl EnhancedTuiApp {
         match result {
             Ok(response) => {
                 let duration = start_time.elapsed();
-                let _ = self.command_history.add_entry(
+
+                // Get schema columns and data source for history
+                let (schema_columns, data_source) = if self.is_csv_mode() {
+                    if let Some(csv_client) = self.get_csv_client() {
+                        if let Some(schema) = csv_client.get_schema() {
+                            // Get the first (and usually only) table's columns
+                            let cols = schema
+                                .iter()
+                                .next()
+                                .map(|(table_name, cols)| (cols.clone(), Some(table_name.clone())))
+                                .unwrap_or((vec![], None));
+                            cols
+                        } else {
+                            (vec![], None)
+                        }
+                    } else {
+                        (vec![], None)
+                    }
+                } else if self.is_cache_mode() {
+                    (vec![], Some("cache".to_string()))
+                } else {
+                    (vec![], Some("api".to_string()))
+                };
+
+                let _ = self.command_history.add_entry_with_schema(
                     query.to_string(),
                     true,
                     Some(duration.as_millis() as u64),
+                    schema_columns,
+                    data_source,
                 );
 
                 // Add debug info about results
@@ -3126,10 +3180,36 @@ impl EnhancedTuiApp {
             }
             Err(e) => {
                 let duration = start_time.elapsed();
-                let _ = self.command_history.add_entry(
+
+                // Get schema columns and data source for history (even for failed queries)
+                let (schema_columns, data_source) = if self.is_csv_mode() {
+                    if let Some(csv_client) = self.get_csv_client() {
+                        if let Some(schema) = csv_client.get_schema() {
+                            // Get the first (and usually only) table's columns
+                            let cols = schema
+                                .iter()
+                                .next()
+                                .map(|(table_name, cols)| (cols.clone(), Some(table_name.clone())))
+                                .unwrap_or((vec![], None));
+                            cols
+                        } else {
+                            (vec![], None)
+                        }
+                    } else {
+                        (vec![], None)
+                    }
+                } else if self.is_cache_mode() {
+                    (vec![], Some("cache".to_string()))
+                } else {
+                    (vec![], Some("api".to_string()))
+                };
+
+                let _ = self.command_history.add_entry_with_schema(
                     query.to_string(),
                     false,
                     Some(duration.as_millis() as u64),
+                    schema_columns,
+                    data_source,
                 );
                 self.set_status_message(format!("Error: {}", e));
             }
