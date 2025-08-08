@@ -349,6 +349,26 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Helper to handle key events in the input
+    fn handle_input_key(&mut self, key: KeyEvent) -> bool {
+        if let Some(buffer) = self.current_buffer_mut() {
+            // Route to buffer's input handling
+            buffer.handle_input_key(key)
+        } else {
+            // Fallback to direct input handling during migration
+            match self.get_edit_mode() {
+                EditMode::SingleLine => {
+                    self.input.handle_event(&Event::Key(key));
+                    false
+                }
+                EditMode::MultiLine => {
+                    self.textarea.input(key);
+                    false
+                }
+            }
+        }
+    }
+
     // Helper to get visual cursor position (for rendering)
     fn get_visual_cursor(&self) -> (usize, usize) {
         if let Some(buffer) = self.current_buffer() {
@@ -2010,12 +2030,12 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(6) => {
                 // Pretty print query view
-                let query = self.input.value();
+                let query = self.get_input_text();
                 if !query.trim().is_empty() {
                     self.debug_text = format!(
                         "Pretty SQL Query\n{}\n\n{}",
                         "=".repeat(50),
-                        crate::recursive_parser::format_sql_pretty_compact(query, 5).join("\n")
+                        crate::recursive_parser::format_sql_pretty_compact(&query, 5).join("\n")
                     );
                     self.debug_scroll = 0;
                     self.set_mode(AppMode::PrettyQuery);
@@ -2027,22 +2047,17 @@ impl EnhancedTuiApp {
                 }
             }
             _ => {
+                // Use the new helper to handle input keys through buffer
+                self.handle_input_key(key);
+
+                // Clear completion state when typing other characters
+                self.completion_state.suggestions.clear();
+                self.completion_state.current_index = 0;
+
+                // Handle completion based on mode
                 match self.edit_mode {
-                    EditMode::SingleLine => {
-                        self.input.handle_event(&Event::Key(key));
-                        // Clear completion state when typing other characters
-                        self.completion_state.suggestions.clear();
-                        self.completion_state.current_index = 0;
-                        self.handle_completion();
-                    }
-                    EditMode::MultiLine => {
-                        // Pass all keys to textarea
-                        self.textarea.input(key);
-                        // Clear completion state when typing other characters
-                        self.completion_state.suggestions.clear();
-                        self.completion_state.current_index = 0;
-                        self.handle_completion_multiline();
-                    }
+                    EditMode::SingleLine => self.handle_completion(),
+                    EditMode::MultiLine => self.handle_completion_multiline(),
                 }
             }
         }
