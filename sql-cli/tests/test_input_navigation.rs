@@ -352,3 +352,95 @@ fn test_escape_clears_in_single_line() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_undo_redo_operations() -> Result<()> {
+    let mut buffer = Buffer::new(0);
+
+    // Initial text
+    buffer.set_input_text("SELECT".to_string());
+    buffer.save_state_for_undo();
+
+    // Modify text
+    buffer.set_input_text("SELECT * FROM users".to_string());
+    buffer.save_state_for_undo();
+
+    // Modify again
+    buffer.set_input_text("SELECT * FROM users WHERE id = 1".to_string());
+
+    // Test undo
+    assert!(buffer.perform_undo());
+    assert_eq!(buffer.get_input_text(), "SELECT * FROM users");
+
+    // Test another undo
+    assert!(buffer.perform_undo());
+    assert_eq!(buffer.get_input_text(), "SELECT");
+
+    // Test redo
+    assert!(buffer.perform_redo());
+    assert_eq!(buffer.get_input_text(), "SELECT * FROM users");
+
+    // Test another redo
+    assert!(buffer.perform_redo());
+    assert_eq!(buffer.get_input_text(), "SELECT * FROM users WHERE id = 1");
+
+    // No more redos available
+    assert!(!buffer.perform_redo());
+
+    Ok(())
+}
+
+#[test]
+fn test_undo_with_cursor_position() -> Result<()> {
+    let mut buffer = Buffer::new(0);
+
+    // Set initial state
+    buffer.set_input_text("Hello World".to_string());
+    buffer.set_input_cursor_position(5);
+    buffer.save_state_for_undo();
+
+    // Change text and cursor
+    buffer.set_input_text("Hello Rust World".to_string());
+    buffer.set_input_cursor_position(10);
+
+    // Undo should restore both text and cursor position
+    assert!(buffer.perform_undo());
+    assert_eq!(buffer.get_input_text(), "Hello World");
+    assert_eq!(buffer.get_input_cursor_position(), 5);
+
+    // Redo should restore the change
+    assert!(buffer.perform_redo());
+    assert_eq!(buffer.get_input_text(), "Hello Rust World");
+    assert_eq!(buffer.get_input_cursor_position(), 10);
+
+    Ok(())
+}
+
+#[test]
+fn test_undo_clears_redo_stack() -> Result<()> {
+    let mut buffer = Buffer::new(0);
+
+    // Build some history
+    buffer.set_input_text("A".to_string());
+    buffer.save_state_for_undo();
+    buffer.set_input_text("AB".to_string());
+    buffer.save_state_for_undo();
+    buffer.set_input_text("ABC".to_string());
+
+    // Undo once
+    buffer.perform_undo();
+    assert_eq!(buffer.get_input_text(), "AB");
+
+    // Now make a new change - this should clear redo stack
+    buffer.save_state_for_undo();
+    buffer.set_input_text("ABD".to_string());
+
+    // Redo should not be available (stack was cleared)
+    assert!(!buffer.perform_redo());
+
+    // But undo should work
+    assert!(buffer.perform_undo());
+    assert_eq!(buffer.get_input_text(), "AB");
+
+    Ok(())
+}

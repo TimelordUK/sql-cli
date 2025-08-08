@@ -255,6 +255,11 @@ pub trait BufferAPI {
     fn set_kill_ring(&mut self, text: String);
     fn is_kill_ring_empty(&self) -> bool;
 
+    // High-level undo/redo operations
+    fn perform_undo(&mut self) -> bool;
+    fn perform_redo(&mut self) -> bool;
+    fn save_state_for_undo(&mut self);
+
     // --- Viewport State ---
     fn get_last_visible_rows(&self) -> usize;
     fn set_last_visible_rows(&mut self, rows: usize);
@@ -754,6 +759,42 @@ impl BufferAPI for Buffer {
 
     fn clear_redo(&mut self) {
         self.redo_stack.clear();
+    }
+
+    fn perform_undo(&mut self) -> bool {
+        if let Some((prev_text, prev_cursor)) = self.pop_undo() {
+            // Save current state to redo stack
+            let current_state = (self.get_input_text(), self.get_input_cursor_position());
+            self.push_redo(current_state);
+
+            // Restore previous state
+            self.set_input_text(prev_text);
+            self.set_input_cursor_position(prev_cursor);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn perform_redo(&mut self) -> bool {
+        if let Some((next_text, next_cursor)) = self.pop_redo() {
+            // Save current state to undo stack
+            let current_state = (self.get_input_text(), self.get_input_cursor_position());
+            self.push_undo(current_state);
+
+            // Restore next state
+            self.set_input_text(next_text);
+            self.set_input_cursor_position(next_cursor);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn save_state_for_undo(&mut self) {
+        let current_state = (self.get_input_text(), self.get_input_cursor_position());
+        self.push_undo(current_state);
+        self.clear_redo();
     }
 
     fn get_kill_ring(&self) -> String {
