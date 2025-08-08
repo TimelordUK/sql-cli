@@ -368,6 +368,30 @@ impl EnhancedTuiApp {
         }
     }
 
+    // Helper to set input text with specific cursor position
+    fn set_input_text_with_cursor(&mut self, text: String, cursor_pos: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_text(text.clone());
+            buffer.set_input_cursor_position(cursor_pos);
+        }
+
+        // For special modes that use the input field directly
+        match self.get_mode() {
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
+                // These modes still need the input field updated
+                self.input = tui_input::Input::new(text).with_cursor(cursor_pos);
+            }
+            _ => {
+                // Command mode and others use the buffer exclusively
+            }
+        }
+    }
+
+    // Helper to clear input
+    fn clear_input(&mut self) {
+        self.set_input_text(String::new());
+    }
+
     // Helper to handle key events in the input
     fn handle_input_key(&mut self, key: KeyEvent) -> bool {
         if let Some(buffer) = self.current_buffer_mut() {
@@ -1704,7 +1728,6 @@ impl EnhancedTuiApp {
                 // Toggle between single-line and multi-line mode
                 match self.get_edit_mode() {
                     EditMode::SingleLine => {
-                        self.set_edit_mode(EditMode::MultiLine);
                         let current_text = self.get_input_text();
 
                         // Pretty format the query for multi-line editing
@@ -1712,30 +1735,50 @@ impl EnhancedTuiApp {
                             crate::recursive_parser::format_sql_pretty_compact(&current_text, 5)
                         // 5 columns per line for compact multi-line
                         } else {
-                            vec![current_text]
+                            vec![current_text.clone()]
                         };
 
+                        // Format the text for multi-line
+                        let formatted_text = formatted_lines.join("\n");
+
+                        // Switch mode via buffer
+                        if let Some(buffer) = self.current_buffer_mut() {
+                            buffer.switch_input_mode(true);
+                            buffer.set_input_text(formatted_text);
+                            // Move cursor to beginning
+                            buffer.set_input_cursor_position(0);
+                        }
+
+                        // Update legacy textarea for rendering (temporary during migration)
                         self.textarea = TextArea::from(formatted_lines);
                         self.textarea.set_cursor_line_style(
                             Style::default().add_modifier(Modifier::UNDERLINED),
                         );
-                        // Move cursor to the beginning
                         self.textarea.move_cursor(CursorMove::Top);
                         self.textarea.move_cursor(CursorMove::Head);
+
+                        self.set_edit_mode(EditMode::MultiLine);
                         self.set_status_message("Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string());
                     }
                     EditMode::MultiLine => {
-                        self.set_edit_mode(EditMode::SingleLine);
+                        // Get text from buffer
+                        let text = self.get_input_text();
+
                         // Join lines with single space to create compact query
-                        let text = self
-                            .textarea
+                        let compact_text = text
                             .lines()
-                            .iter()
                             .map(|line| line.trim())
                             .filter(|line| !line.is_empty())
                             .collect::<Vec<_>>()
                             .join(" ");
-                        self.input = tui_input::Input::new(text);
+
+                        // Switch mode via buffer
+                        if let Some(buffer) = self.current_buffer_mut() {
+                            buffer.switch_input_mode(false);
+                            buffer.set_input_text(compact_text);
+                        }
+
+                        self.set_edit_mode(EditMode::SingleLine);
                         self.set_status_message(
                             "Single-line mode enabled (F3 to toggle multi-line)".to_string(),
                         );
@@ -2459,7 +2502,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.current_buffer_mut() {
                     buffer.save_state_for_undo();
                 }
-                self.input = tui_input::Input::default();
+                self.clear_input();
             }
             // Column navigation/search functionality (backslash like vim reverse search)
             KeyCode::Char('\\') => {
@@ -2471,7 +2514,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.current_buffer_mut() {
                     buffer.save_state_for_undo();
                 }
-                self.input = tui_input::Input::default();
+                self.clear_input();
             }
             KeyCode::Char('n') => {
                 self.next_search_match();
@@ -2501,7 +2544,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.current_buffer_mut() {
                     buffer.save_state_for_undo();
                 }
-                self.input = tui_input::Input::default();
+                self.clear_input();
             }
             // Fuzzy filter functionality (lowercase f)
             KeyCode::Char('f')
@@ -2516,7 +2559,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.current_buffer_mut() {
                     buffer.save_state_for_undo();
                 }
-                self.input = tui_input::Input::default();
+                self.clear_input();
             }
             // Sort functionality (lowercase s)
             KeyCode::Char('s')
@@ -2616,7 +2659,7 @@ impl EnhancedTuiApp {
             KeyCode::Esc => {
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.pop_undo() {
-                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                    self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
             }
@@ -2624,21 +2667,21 @@ impl EnhancedTuiApp {
                 self.perform_search();
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.pop_undo() {
-                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                    self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
                 self.pop_search_pattern_char();
                 // Update input for rendering
-                self.input = tui_input::Input::new(self.get_search_pattern())
-                    .with_cursor(self.get_search_pattern().len());
+                let pattern = self.get_search_pattern();
+                self.set_input_text_with_cursor(pattern.clone(), pattern.len());
             }
             KeyCode::Char(c) => {
                 self.push_search_pattern_char(c);
                 // Update input for rendering
-                self.input = tui_input::Input::new(self.get_search_pattern())
-                    .with_cursor(self.get_search_pattern().len());
+                let pattern = self.get_search_pattern();
+                self.set_input_text_with_cursor(pattern.clone(), pattern.len());
             }
             _ => {}
         }
@@ -2650,7 +2693,7 @@ impl EnhancedTuiApp {
             KeyCode::Esc => {
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.pop_undo() {
-                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                    self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
             }
@@ -2658,7 +2701,7 @@ impl EnhancedTuiApp {
                 self.apply_filter();
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.pop_undo() {
-                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                    self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
             }
@@ -2666,13 +2709,13 @@ impl EnhancedTuiApp {
                 self.get_filter_state_mut().pattern.pop();
                 // Update input for rendering
                 let pattern = self.get_filter_state().pattern.clone();
-                self.input = tui_input::Input::new(pattern.clone()).with_cursor(pattern.len());
+                self.set_input_text_with_cursor(pattern.clone(), pattern.len());
             }
             KeyCode::Char(c) => {
                 self.get_filter_state_mut().pattern.push(c);
                 // Update input for rendering
                 let pattern = self.get_filter_state().pattern.clone();
-                self.input = tui_input::Input::new(pattern.clone()).with_cursor(pattern.len());
+                self.set_input_text_with_cursor(pattern.clone(), pattern.len());
             }
             _ => {}
         }
@@ -2688,7 +2731,7 @@ impl EnhancedTuiApp {
                 self.set_fuzzy_filter_indices(Vec::new());
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.pop_undo() {
-                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                    self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
                 self.set_status_message("Fuzzy filter cleared".to_string());
@@ -2701,7 +2744,7 @@ impl EnhancedTuiApp {
                 }
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.pop_undo() {
-                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                    self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
             }
@@ -2712,8 +2755,8 @@ impl EnhancedTuiApp {
                     self.set_fuzzy_filter_pattern(pattern);
                 };
                 // Update input for rendering
-                self.input = tui_input::Input::new(self.get_fuzzy_filter_pattern())
-                    .with_cursor(self.get_fuzzy_filter_pattern().len());
+                let pattern = self.get_fuzzy_filter_pattern();
+                self.set_input_text_with_cursor(pattern.clone(), pattern.len());
                 // Re-apply filter in real-time
                 if !self.get_fuzzy_filter_pattern().is_empty() {
                     self.apply_fuzzy_filter();
@@ -2729,8 +2772,8 @@ impl EnhancedTuiApp {
                     self.set_fuzzy_filter_pattern(pattern);
                 };
                 // Update input for rendering
-                self.input = tui_input::Input::new(self.get_fuzzy_filter_pattern())
-                    .with_cursor(self.get_fuzzy_filter_pattern().len());
+                let pattern = self.get_fuzzy_filter_pattern();
+                self.set_input_text_with_cursor(pattern.clone(), pattern.len());
                 // Apply filter in real-time as user types
                 self.apply_fuzzy_filter();
             }
@@ -2748,7 +2791,7 @@ impl EnhancedTuiApp {
                 self.set_column_search_matches(Vec::new());
                 // Restore original SQL query from undo stack
                 if let Some((original_query, cursor_pos)) = self.pop_undo() {
-                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                    self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_status_message("Column search cancelled".to_string());
             }
@@ -2765,7 +2808,7 @@ impl EnhancedTuiApp {
                 }
                 // Restore original SQL query from undo stack
                 if let Some((original_query, cursor_pos)) = self.pop_undo() {
-                    self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
+                    self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
             }
@@ -2817,7 +2860,7 @@ impl EnhancedTuiApp {
                 pattern.pop();
                 self.set_column_search_pattern(pattern.clone());
                 // Also update input to keep it in sync for rendering
-                self.input = tui_input::Input::new(pattern.clone()).with_cursor(pattern.len());
+                self.set_input_text_with_cursor(pattern.clone(), pattern.len());
                 self.update_column_search();
             }
             KeyCode::Char(c) => {
@@ -2825,7 +2868,7 @@ impl EnhancedTuiApp {
                 pattern.push(c);
                 self.set_column_search_pattern(pattern.clone());
                 // Also update input to keep it in sync for rendering
-                self.input = tui_input::Input::new(pattern.clone()).with_cursor(pattern.len());
+                self.set_input_text_with_cursor(pattern.clone(), pattern.len());
                 self.update_column_search();
             }
             _ => {}
@@ -3225,7 +3268,7 @@ impl EnhancedTuiApp {
                 buffer.set_input_cursor_position(cursor_pos);
                 // Sync for rendering
                 if self.get_edit_mode() == EditMode::SingleLine {
-                    self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos);
+                    self.set_input_text_with_cursor(new_query.clone(), cursor_pos);
                 }
             }
 
@@ -3444,8 +3487,7 @@ impl EnhancedTuiApp {
 
                             // Update the input
                             if self.edit_mode == EditMode::SingleLine {
-                                self.input = tui_input::Input::new(new_query.clone())
-                                    .with_cursor(new_query.len());
+                                self.set_input_text_with_cursor(new_query.clone(), new_query.len());
                                 self.update_horizontal_scroll(120);
                             } else {
                                 // For multiline, format nicely
@@ -4912,8 +4954,7 @@ impl EnhancedTuiApp {
                                 new_value.push_str(&text);
                                 new_value.push_str(&current_value[cursor_pos..]);
 
-                                self.input = tui_input::Input::new(new_value)
-                                    .with_cursor(cursor_pos + text.len());
+                                self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
 
                                 self.set_status_message(format!(
                                     "Pasted {} characters",
@@ -4941,8 +4982,7 @@ impl EnhancedTuiApp {
                             new_value.push_str(&text);
                             new_value.push_str(&current_value[cursor_pos..]);
 
-                            self.input = tui_input::Input::new(new_value)
-                                .with_cursor(cursor_pos + text.len());
+                            self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
 
                             // Update the appropriate filter/search state
                             match self.get_mode() {
@@ -5227,7 +5267,7 @@ impl EnhancedTuiApp {
             // Sync for rendering
             if is_single_line {
                 let text = buffer.get_input_text();
-                self.input = tui_input::Input::new(text).with_cursor(target_pos);
+                self.set_input_text_with_cursor(text, target_pos);
             }
         }
 
@@ -5281,7 +5321,7 @@ impl EnhancedTuiApp {
             let before = &query[..word_start];
             let after = &query[cursor_pos..];
             let new_query = format!("{}{}", before, after);
-            self.input = tui_input::Input::new(new_query).with_cursor(word_start);
+            self.set_input_text_with_cursor(new_query, word_start);
         }
     }
 
@@ -5318,7 +5358,7 @@ impl EnhancedTuiApp {
             // Sync for rendering
             if is_single_line {
                 let text = buffer.get_input_text();
-                self.input = tui_input::Input::new(text).with_cursor(target_pos);
+                self.set_input_text_with_cursor(text, target_pos);
             }
         }
 
@@ -5362,7 +5402,7 @@ impl EnhancedTuiApp {
             let before = query.chars().take(cursor_pos).collect::<String>();
             let after = query.chars().skip(word_end).collect::<String>();
             let new_query = format!("{}{}", before, after);
-            self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
+            self.set_input_text_with_cursor(new_query, cursor_pos);
         }
     }
 
@@ -5395,7 +5435,7 @@ impl EnhancedTuiApp {
                         buffer.set_input_cursor_position(cursor_pos);
                         // Sync for rendering
                         if self.get_edit_mode() == EditMode::SingleLine {
-                            self.input = tui_input::Input::new(new_query).with_cursor(cursor_pos);
+                            self.set_input_text_with_cursor(new_query, cursor_pos);
                         }
                     }
 
@@ -5468,7 +5508,7 @@ impl EnhancedTuiApp {
                         buffer.set_input_cursor_position(0);
                         // Sync for rendering
                         if self.get_edit_mode() == EditMode::SingleLine {
-                            self.input = tui_input::Input::new(new_query).with_cursor(0);
+                            self.set_input_text_with_cursor(new_query, 0);
                         }
                     }
                 }
@@ -5549,7 +5589,7 @@ impl EnhancedTuiApp {
             let buffer_query = buffer.get_query();
 
             // Now update self
-            self.input = Input::new(query_text.clone()).with_cursor(query_text.len());
+            self.set_input_text_with_cursor(query_text.clone(), query_text.len());
             self.textarea = {
                 let mut ta = TextArea::from(
                     query_text
@@ -5609,7 +5649,7 @@ impl EnhancedTuiApp {
             let buffer_query = buffer.get_query();
 
             // Now update self
-            self.input = Input::new(query_text.clone()).with_cursor(query_text.len());
+            self.set_input_text_with_cursor(query_text.clone(), query_text.len());
             self.textarea = {
                 let mut ta = TextArea::from(
                     query_text
@@ -5715,7 +5755,7 @@ impl EnhancedTuiApp {
                 buffer.set_input_cursor_position(new_cursor);
                 // Sync for rendering
                 if self.get_edit_mode() == EditMode::SingleLine {
-                    self.input = tui_input::Input::new(new_query).with_cursor(new_cursor);
+                    self.set_input_text_with_cursor(new_query, new_cursor);
                 }
             }
         }
@@ -5768,7 +5808,7 @@ impl EnhancedTuiApp {
                 // Sync for rendering
                 if is_single_line {
                     let text = buffer.get_input_text();
-                    self.input = tui_input::Input::new(text).with_cursor(target_pos);
+                    self.set_input_text_with_cursor(text, target_pos);
                 }
             }
         }
@@ -5811,7 +5851,7 @@ impl EnhancedTuiApp {
             // Sync for rendering
             if is_single_line {
                 let text = buffer.get_input_text();
-                self.input = tui_input::Input::new(text).with_cursor(target_pos);
+                self.set_input_text_with_cursor(text, target_pos);
             }
         }
     }
