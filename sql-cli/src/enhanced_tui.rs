@@ -279,11 +279,6 @@ impl EnhancedTuiApp {
         self.buffer_mut().set_edit_mode(buffer_mode);
     }
 
-    // Compatibility wrapper for case_insensitive
-    fn get_case_insensitive(&self) -> bool {
-        self.buffer().is_case_insensitive()
-    }
-
     // Helper to get input text from buffer or fallback to direct input
     fn get_input_text(&self) -> String {
         // For special modes that use the input field for their own purposes
@@ -392,11 +387,6 @@ impl EnhancedTuiApp {
         self.buffer_mut().set_case_insensitive(case_insensitive);
     }
 
-    // Compatibility wrapper for last_results_row
-    fn get_last_results_row(&self) -> Option<usize> {
-        self.buffer().get_last_results_row()
-    }
-
     fn set_last_results_row(&mut self, row: Option<usize>) {
         self.buffer_mut().set_last_results_row(row);
         // Also update local field (will be removed later)
@@ -491,11 +481,6 @@ impl EnhancedTuiApp {
             .set_mode(Self::local_mode_to_buffer(&mode));
     }
 
-    // Compatibility wrapper for results
-    fn get_results(&self) -> Option<&QueryResponse> {
-        self.buffer().get_results()
-    }
-
     fn set_results(&mut self, results: Option<QueryResponse>) {
         // Update buffer's results
         self.buffer_mut().set_results(results);
@@ -538,42 +523,22 @@ impl EnhancedTuiApp {
         self.buffer_mut().set_current_column(col);
     }
 
-    fn get_compact_mode(&self) -> bool {
-        self.buffer().is_compact_mode()
-    }
-
     fn set_compact_mode(&mut self, compact: bool) {
         self.buffer_mut().set_compact_mode(compact);
-    }
-
-    fn get_show_row_numbers(&self) -> bool {
-        self.buffer().is_show_row_numbers()
     }
 
     fn set_show_row_numbers(&mut self, show: bool) {
         self.buffer_mut().set_show_row_numbers(show);
     }
 
-    fn is_viewport_lock(&self) -> bool {
-        self.buffer().is_viewport_lock()
-    }
-
     fn set_viewport_lock(&mut self, locked: bool) {
         self.buffer_mut().set_viewport_lock(locked);
-    }
-
-    fn get_viewport_lock_row(&self) -> Option<usize> {
-        self.buffer().get_viewport_lock_row()
     }
 
     fn set_viewport_lock_row(&mut self, row: Option<usize>) {
         self.buffer_mut().set_viewport_lock_row(row);
         // Also update local field (will be removed later)
         self.viewport_lock_row = row;
-    }
-
-    fn get_column_widths(&self) -> Vec<u16> {
-        self.buffer().get_column_widths().clone()
     }
 
     fn set_column_widths(&mut self, widths: Vec<u16>) {
@@ -1021,7 +986,7 @@ impl EnhancedTuiApp {
     }
 
     pub fn has_results(&self) -> bool {
-        self.get_results().is_some()
+        self.buffer().get_results().is_some()
     }
 
     pub fn new(api_url: &str) -> Self {
@@ -1754,7 +1719,7 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
-                let current = self.get_case_insensitive();
+                let current = self.buffer().is_case_insensitive();
                 self.set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
@@ -1848,11 +1813,12 @@ impl EnhancedTuiApp {
                 self.move_cursor_word_forward();
             }
             KeyCode::Down
-                if self.get_results().is_some() && self.edit_mode == EditMode::SingleLine =>
+                if self.buffer().get_results().is_some()
+                    && self.edit_mode == EditMode::SingleLine =>
             {
                 self.set_mode(AppMode::Results);
                 // Restore previous position or default to 0
-                let row = self.get_last_results_row().unwrap_or(0);
+                let row = self.buffer().get_last_results_row().unwrap_or(0);
                 self.get_table_state_mut().select(Some(row));
 
                 // Restore the exact scroll offset from when we left
@@ -1926,7 +1892,10 @@ impl EnhancedTuiApp {
                     Filtered Rows: {}\n\
                     Current Column: {}\n\
                     Sort State: {}\n",
-                    self.get_results().map(|r| r.data.len()).unwrap_or(0),
+                    self.buffer()
+                        .get_results()
+                        .map(|r| r.data.len())
+                        .unwrap_or(0),
                     self.get_filtered_data().map(|d| d.len()).unwrap_or(0),
                     self.get_current_column(),
                     match &self.sort_state {
@@ -1968,9 +1937,9 @@ impl EnhancedTuiApp {
                     Data Source: {}\n\
                     Active Filters: {}\n",
                     self.get_mode(),
-                    self.get_case_insensitive(),
-                    self.get_compact_mode(),
-                    self.is_viewport_lock(),
+                    self.buffer().is_case_insensitive(),
+                    self.buffer().is_compact_mode(),
+                    self.buffer().is_viewport_lock(),
                     self.is_csv_mode(),
                     self.is_cache_mode(),
                     &self.get_last_query_source().unwrap_or("None".to_string()),
@@ -2153,7 +2122,7 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
-                let current = self.get_case_insensitive();
+                let current = self.buffer().is_case_insensitive();
                 self.set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
@@ -2225,9 +2194,9 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('C') => {
                 // Toggle compact mode with Shift+C
-                let current_mode = self.get_compact_mode();
+                let current_mode = self.buffer().is_compact_mode();
                 self.set_compact_mode(!current_mode);
-                self.set_status_message(if self.get_compact_mode() {
+                self.set_status_message(if self.buffer().is_compact_mode() {
                     "Compact mode: ON (reduced padding, more columns visible)".to_string()
                 } else {
                     "Compact mode: OFF (standard padding)".to_string()
@@ -2243,9 +2212,9 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char(' ') => {
                 // Toggle viewport lock with Space
-                let current_lock = self.is_viewport_lock();
+                let current_lock = self.buffer().is_viewport_lock();
                 self.set_viewport_lock(!current_lock);
-                if self.is_viewport_lock() {
+                if self.buffer().is_viewport_lock() {
                     // Lock to current position in viewport (middle of screen)
                     let visible_rows = self.get_last_visible_rows();
                     self.set_viewport_lock_row(Some(visible_rows / 2));
@@ -2299,9 +2268,9 @@ impl EnhancedTuiApp {
                     self.previous_search_match();
                 } else {
                     // Toggle row numbers display
-                    let current = self.get_show_row_numbers();
+                    let current = self.buffer().is_show_row_numbers();
                     self.set_show_row_numbers(!current);
-                    self.set_status_message(if self.get_show_row_numbers() {
+                    self.set_status_message(if self.buffer().is_show_row_numbers() {
                         "Row numbers: ON (showing line numbers)".to_string()
                     } else {
                         "Row numbers: OFF".to_string()
@@ -2656,7 +2625,7 @@ impl EnhancedTuiApp {
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::F(1) => {
                 self.show_help = false;
                 self.help_scroll = 0; // Reset scroll when closing
-                self.set_mode(if self.get_results().is_some() {
+                self.set_mode(if self.buffer().get_results().is_some() {
                     AppMode::Results
                 } else {
                     AppMode::Command
@@ -2841,7 +2810,7 @@ impl EnhancedTuiApp {
             // When in cache mode, use CSV client to query cached data
             if let Some(cached_data) = self.get_cached_data() {
                 let mut csv_client = CsvApiClient::new();
-                csv_client.set_case_insensitive(self.get_case_insensitive());
+                csv_client.set_case_insensitive(self.buffer().is_case_insensitive());
                 csv_client.load_from_json(cached_data.clone(), "cached_data")?;
 
                 csv_client.query_csv(query).map(|r| QueryResponse {
@@ -3039,7 +3008,7 @@ impl EnhancedTuiApp {
             match WhereParser::parse_with_options(
                 where_clause,
                 columns,
-                self.get_case_insensitive(),
+                self.buffer().is_case_insensitive(),
             ) {
                 Ok(ast) => {
                     let tree = format_where_ast(&ast, 0);
@@ -3515,9 +3484,9 @@ impl EnhancedTuiApp {
             self.get_table_state_mut().select(Some(new_position));
 
             // Update viewport based on lock mode
-            if self.is_viewport_lock() {
+            if self.buffer().is_viewport_lock() {
                 // In lock mode, keep cursor at fixed viewport position
-                if let Some(lock_row) = self.get_viewport_lock_row() {
+                if let Some(lock_row) = self.buffer().get_viewport_lock_row() {
                     // Adjust viewport so cursor stays at lock_row position
                     let mut offset = self.get_scroll_offset();
                     offset.0 = new_position.saturating_sub(lock_row);
@@ -3547,9 +3516,9 @@ impl EnhancedTuiApp {
         self.get_table_state_mut().select(Some(new_position));
 
         // Update viewport based on lock mode
-        if self.is_viewport_lock() {
+        if self.buffer().is_viewport_lock() {
             // In lock mode, keep cursor at fixed viewport position
-            if let Some(lock_row) = self.get_viewport_lock_row() {
+            if let Some(lock_row) = self.buffer().get_viewport_lock_row() {
                 // Adjust viewport so cursor stays at lock_row position
                 let mut offset = self.get_scroll_offset();
                 offset.0 = new_position.saturating_sub(lock_row);
@@ -3580,7 +3549,7 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_right(&mut self) {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
@@ -3613,7 +3582,7 @@ impl EnhancedTuiApp {
     }
 
     fn goto_last_column(&mut self) {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
@@ -3666,7 +3635,7 @@ impl EnhancedTuiApp {
 
     fn calculate_column_statistics(&mut self) {
         // Get the current column name and data
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if results.data.is_empty() {
                 return;
             }
@@ -3967,7 +3936,7 @@ impl EnhancedTuiApp {
             return;
         }
 
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Ok(regex) = Regex::new(&self.get_filter_state().pattern) {
                 let mut filtered = Vec::new();
 
@@ -4037,7 +4006,7 @@ impl EnhancedTuiApp {
         let data_to_filter = if self.get_filter_state().active && self.has_filtered_data() {
             // If regex filter is active, fuzzy filter on top of that
             self.get_filtered_data()
-        } else if let Some(results) = self.get_results() {
+        } else if let Some(results) = self.buffer().get_results() {
             // Otherwise filter original results
             let mut rows = Vec::new();
             for item in &results.data {
@@ -4119,7 +4088,7 @@ impl EnhancedTuiApp {
 
     fn update_column_search(&mut self) {
         // Get column headers from the current results
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4190,7 +4159,7 @@ impl EnhancedTuiApp {
         }
 
         // Sort using original JSON values for proper type-aware comparison
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4339,7 +4308,7 @@ impl EnhancedTuiApp {
     fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
         if let Some(filtered) = self.get_filtered_data() {
             Some(filtered.clone())
-        } else if let Some(results) = self.get_results() {
+        } else if let Some(results) = self.buffer().get_results() {
             Some(self.convert_json_to_strings(results))
         } else {
             None
@@ -4355,7 +4324,7 @@ impl EnhancedTuiApp {
         // and we have a single source of truth for visible rows
         if let Some(filtered) = self.get_filtered_data() {
             filtered.len()
-        } else if let Some(results) = self.get_results() {
+        } else if let Some(results) = self.buffer().get_results() {
             results.data.len()
         } else {
             0
@@ -4429,14 +4398,14 @@ impl EnhancedTuiApp {
 
     fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
         // Calculate column widths based only on visible rows in viewport
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
                     let mut widths = Vec::with_capacity(headers.len());
 
                     // Use compact mode settings
-                    let compact = self.get_compact_mode();
+                    let compact = self.buffer().is_compact_mode();
                     let min_width = if compact { 4 } else { 6 };
                     let max_width = if compact { 20 } else { 30 };
                     let padding = if compact { 1 } else { 2 };
@@ -4477,7 +4446,7 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_optimal_column_widths(&mut self) {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4541,7 +4510,7 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_csv(&mut self) {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     // Generate filename with timestamp
@@ -4609,7 +4578,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_cell(&mut self) {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Some(selected_row) = self.get_table_state().selected() {
                 if let Some(row_data) = results.data.get(selected_row) {
                     if let Some(obj) = row_data.as_object() {
@@ -4658,7 +4627,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_row(&mut self) {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Some(selected_row) = self.get_table_state().selected() {
                 if let Some(row_data) = results.data.get(selected_row) {
                     // Convert row to tab-separated values
@@ -4707,7 +4676,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_column(&mut self) {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4762,7 +4731,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_all(&mut self) {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             // Get the actual data to yank (filtered or all)
             let data_to_export = if self.get_filter_state().active || self.is_fuzzy_filter_active()
             {
@@ -4914,7 +4883,7 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_json(&mut self) {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             // Get the actual data to export (filtered or all)
             let data_to_export = if self.get_filter_state().active || self.is_fuzzy_filter_active()
             {
@@ -4957,7 +4926,7 @@ impl EnhancedTuiApp {
     }
 
     fn get_filtered_json_data(&self) -> Vec<Value> {
-        if let Some(results) = self.get_results() {
+        if let Some(results) = self.buffer().get_results() {
             if self.is_fuzzy_filter_active() && !self.get_fuzzy_filter_indices().is_empty() {
                 self.get_fuzzy_filter_indices()
                     .iter()
@@ -5423,13 +5392,17 @@ impl EnhancedTuiApp {
             self.edit_mode = edit_mode;
             self.set_results(results);
 
-            let result_count = self.get_results().map(|r| r.data.len()).unwrap_or(0);
+            let result_count = self
+                .buffer()
+                .get_results()
+                .map(|r| r.data.len())
+                .unwrap_or(0);
             info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
                       result_count, buffer_id, buffer_name, csv_mode, cache_mode,
                       buffer_query);
 
             // For CSV/cache buffers without results, execute a default query to populate schema
-            if (csv_mode || cache_mode) && self.get_results().is_none() {
+            if (csv_mode || cache_mode) && self.buffer().get_results().is_none() {
                 info!(target: "buffer", "Buffer has no results, executing default query to populate schema");
                 let default_query = format!("SELECT * FROM {}", table_name);
 
@@ -5449,6 +5422,7 @@ impl EnhancedTuiApp {
                 } else if cache_mode {
                     // For cache mode, use the results columns
                     let columns = self
+                        .buffer()
                         .get_results()
                         .and_then(|r| r.data.first())
                         .and_then(|row| {
@@ -5464,7 +5438,7 @@ impl EnhancedTuiApp {
                 }
 
                 // Recalculate column widths and reset table state for new results
-                if self.get_results().is_some() {
+                if self.buffer().get_results().is_some() {
                     self.calculate_optimal_column_widths();
                     self.reset_table_state();
                 }
@@ -5522,13 +5496,17 @@ impl EnhancedTuiApp {
             self.edit_mode = edit_mode;
             self.set_results(results);
 
-            let result_count = self.get_results().map(|r| r.data.len()).unwrap_or(0);
+            let result_count = self
+                .buffer()
+                .get_results()
+                .map(|r| r.data.len())
+                .unwrap_or(0);
             info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
                       result_count, buffer_id, buffer_name, csv_mode, cache_mode,
                       buffer_query);
 
             // For CSV/cache buffers without results, execute a default query to populate schema
-            if (csv_mode || cache_mode) && self.get_results().is_none() {
+            if (csv_mode || cache_mode) && self.buffer().get_results().is_none() {
                 info!(target: "buffer", "Buffer has no results, executing default query to populate schema");
                 let default_query = format!("SELECT * FROM {}", table_name);
 
@@ -5548,6 +5526,7 @@ impl EnhancedTuiApp {
                 } else if cache_mode {
                     // For cache mode, use the results columns
                     let columns = self
+                        .buffer()
                         .get_results()
                         .and_then(|r| r.data.first())
                         .and_then(|row| {
@@ -5563,7 +5542,7 @@ impl EnhancedTuiApp {
                 }
 
                 // Recalculate column widths and reset table state for new results
-                if self.get_results().is_some() {
+                if self.buffer().get_results().is_some() {
                     self.calculate_optimal_column_widths();
                     self.reset_table_state();
                 }
@@ -6168,10 +6147,10 @@ impl EnhancedTuiApp {
             (AppMode::PrettyQuery, false) => self.render_pretty_query(f, results_area),
             (AppMode::CacheList, false) => self.render_cache_list(f, results_area),
             (AppMode::ColumnStats, false) => self.render_column_stats(f, results_area),
-            (_, false) if self.get_results().is_some() => {
+            (_, false) if self.buffer().get_results().is_some() => {
                 // We need to work around the borrow checker here
                 // Calculate widths needs mutable self, but we also need to pass results
-                if let Some(results) = self.get_results() {
+                if let Some(results) = self.buffer().get_results() {
                     // Extract viewport info first
                     let terminal_height = results_area.height as usize;
                     let max_visible_rows = terminal_height.saturating_sub(3).max(10);
@@ -6189,7 +6168,7 @@ impl EnhancedTuiApp {
                 }
 
                 // Now render the table
-                if let Some(results) = self.get_results() {
+                if let Some(results) = self.buffer().get_results() {
                     self.render_table_immutable(f, results_area, results);
                 }
             }
@@ -6353,7 +6332,7 @@ impl EnhancedTuiApp {
                     ));
 
                     // Column information
-                    if let Some(results) = self.get_results() {
+                    if let Some(results) = self.buffer().get_results() {
                         if let Some(first_row) = results.data.first() {
                             if let Some(obj) = first_row.as_object() {
                                 let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -6502,7 +6481,7 @@ impl EnhancedTuiApp {
         }
 
         // Global indicators (shown when active)
-        let case_insensitive = self.get_case_insensitive();
+        let case_insensitive = self.buffer().is_case_insensitive();
         if case_insensitive {
             spans.push(Span::raw(" | "));
             // Use to_string() to ensure we get the actual string value
@@ -6513,12 +6492,12 @@ impl EnhancedTuiApp {
             ));
         }
 
-        if self.get_compact_mode() {
+        if self.buffer().is_compact_mode() {
             spans.push(Span::raw(" | "));
             spans.push(Span::styled("COMPACT", Style::default().fg(Color::Green)));
         }
 
-        if self.is_viewport_lock() {
+        if self.buffer().is_viewport_lock() {
             spans.push(Span::raw(" | "));
             spans.push(Span::styled(
                 &self.config.display.icons.lock,
@@ -6607,7 +6586,7 @@ impl EnhancedTuiApp {
         // Calculate space used by pinned columns
         let mut pinned_width = 0;
         for &(idx, _) in &pinned_headers {
-            let column_widths = self.get_column_widths();
+            let column_widths = self.buffer().get_column_widths().clone();
             if idx < column_widths.len() {
                 pinned_width += column_widths[idx] as usize;
             } else {
@@ -6617,7 +6596,7 @@ impl EnhancedTuiApp {
 
         // Calculate how many scrollable columns can fit in remaining space
         let remaining_width = available_width.saturating_sub(pinned_width);
-        let column_widths = self.get_column_widths();
+        let column_widths = self.buffer().get_column_widths().clone();
         let max_visible_scrollable_cols = if !column_widths.is_empty() {
             let mut width_used = 0;
             let mut cols_that_fit = 0;
@@ -6768,7 +6747,7 @@ impl EnhancedTuiApp {
         let mut header_cells: Vec<Cell> = Vec::new();
 
         // Add row number header if enabled
-        if self.get_show_row_numbers() {
+        if self.buffer().is_show_row_numbers() {
             header_cells.push(
                 Cell::from("#").style(
                     Style::default()
@@ -6834,7 +6813,7 @@ impl EnhancedTuiApp {
                 let mut cells: Vec<Cell> = Vec::new();
 
                 // Add row number if enabled
-                if self.get_show_row_numbers() {
+                if self.buffer().is_show_row_numbers() {
                     let row_num = actual_row_idx + 1; // 1-based numbering
                     cells.push(
                         Cell::from(row_num.to_string()).style(Style::default().fg(Color::Magenta)),
@@ -6918,7 +6897,7 @@ impl EnhancedTuiApp {
         let mut constraints: Vec<Constraint> = Vec::new();
 
         // Add constraint for row number column if enabled
-        if self.get_show_row_numbers() {
+        if self.buffer().is_show_row_numbers() {
             // Calculate width needed for row numbers (max row count digits + padding)
             let max_row_num = total_rows;
             let row_num_width = max_row_num.to_string().len() as u16 + 2;
@@ -6926,7 +6905,7 @@ impl EnhancedTuiApp {
         }
 
         // Add data column constraints
-        let column_widths = self.get_column_widths();
+        let column_widths = self.buffer().get_column_widths().clone();
         if !column_widths.is_empty() {
             // Use calculated optimal widths for visible columns
             constraints.extend(visible_columns.iter().map(|(col_idx, _)| {
@@ -7303,7 +7282,7 @@ impl EnhancedTuiApp {
         match parts[1] {
             "save" => {
                 // Save last query results to cache with optional custom ID
-                if let Some(results) = self.get_results() {
+                if let Some(results) = self.buffer().get_results() {
                     let data_to_save = results.data.clone(); // Extract the data we need
                     let _ = results; // Explicitly drop the borrow
 
