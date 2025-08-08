@@ -29,4 +29,5 @@ pub mod where_parser;
 // New refactored modules for enhanced_tui decomposition
 pub mod completion_manager;
 pub mod cursor_manager;
+pub mod data_analyzer;
 // pub mod data_manager; // TODO: Fix QueryResponse field access
