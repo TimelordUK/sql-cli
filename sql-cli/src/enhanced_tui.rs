@@ -1497,6 +1497,62 @@ impl EnhancedTuiApp {
                 self.history_state.search_query.clear();
                 self.update_history_matches();
             }
+            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Navigate to previous command in history
+                if let Some(buffer) = self.current_buffer_mut() {
+                    let history_entries = self.command_history.get_navigation_entries();
+                    let history_commands: Vec<String> =
+                        history_entries.iter().map(|e| e.command.clone()).collect();
+
+                    if buffer.navigate_history_up(&history_commands) {
+                        // Sync the input field with buffer (for now, until we complete migration)
+                        let text = buffer.get_input_text();
+
+                        // Update the appropriate input field based on edit mode
+                        match self.edit_mode {
+                            EditMode::SingleLine => {
+                                self.input =
+                                    tui_input::Input::new(text.clone()).with_cursor(text.len());
+                            }
+                            EditMode::MultiLine => {
+                                let lines: Vec<String> =
+                                    text.lines().map(|s| s.to_string()).collect();
+                                self.textarea = tui_textarea::TextArea::from(lines);
+                                self.textarea.move_cursor(tui_textarea::CursorMove::End);
+                            }
+                        }
+                        self.set_status_message("Previous command from history".to_string());
+                    }
+                }
+            }
+            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Navigate to next command in history
+                if let Some(buffer) = self.current_buffer_mut() {
+                    let history_entries = self.command_history.get_navigation_entries();
+                    let history_commands: Vec<String> =
+                        history_entries.iter().map(|e| e.command.clone()).collect();
+
+                    if buffer.navigate_history_down(&history_commands) {
+                        // Sync the input field with buffer (for now, until we complete migration)
+                        let text = buffer.get_input_text();
+
+                        // Update the appropriate input field based on edit mode
+                        match self.edit_mode {
+                            EditMode::SingleLine => {
+                                self.input =
+                                    tui_input::Input::new(text.clone()).with_cursor(text.len());
+                            }
+                            EditMode::MultiLine => {
+                                let lines: Vec<String> =
+                                    text.lines().map(|s| s.to_string()).collect();
+                                self.textarea = tui_textarea::TextArea::from(lines);
+                                self.textarea.move_cursor(tui_textarea::CursorMove::End);
+                            }
+                        }
+                        self.set_status_message("Next command from history".to_string());
+                    }
+                }
+            }
             KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Jump to beginning of line (like bash/zsh)
                 self.input.handle_event(&Event::Key(KeyEvent::new(
