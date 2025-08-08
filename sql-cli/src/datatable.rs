@@ -137,17 +137,6 @@ impl DataValue {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        match self {
-            DataValue::String(s) => s.clone(),
-            DataValue::Integer(i) => i.to_string(),
-            DataValue::Float(f) => f.to_string(),
-            DataValue::Boolean(b) => b.to_string(),
-            DataValue::DateTime(dt) => dt.clone(),
-            DataValue::Null => String::new(),
-        }
-    }
-
     pub fn is_null(&self) -> bool {
         matches!(self, DataValue::Null)
     }
@@ -166,7 +155,14 @@ impl DataValue {
 
 impl fmt::Display for DataValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_string())
+        match self {
+            DataValue::String(s) => write!(f, "{}", s),
+            DataValue::Integer(i) => write!(f, "{}", i),
+            DataValue::Float(fl) => write!(f, "{}", fl),
+            DataValue::Boolean(b) => write!(f, "{}", b),
+            DataValue::DateTime(dt) => write!(f, "{}", dt),
+            DataValue::Null => write!(f, ""),
+        }
     }
 }
 

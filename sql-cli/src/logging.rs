@@ -1,6 +1,6 @@
 use chrono::Local;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tracing::Level;
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -150,20 +150,18 @@ impl Clone for RingBufferWriter {
 }
 
 /// Global log buffer accessible throughout the application
-static mut LOG_BUFFER: Option<LogRingBuffer> = None;
+static LOG_BUFFER: OnceLock<LogRingBuffer> = OnceLock::new();
 
 /// Initialize the global log buffer
 pub fn init_log_buffer() -> LogRingBuffer {
     let buffer = LogRingBuffer::new();
-    unsafe {
-        LOG_BUFFER = Some(buffer.clone());
-    }
+    LOG_BUFFER.set(buffer.clone()).ok();
     buffer
 }
 
 /// Get the global log buffer
 pub fn get_log_buffer() -> Option<LogRingBuffer> {
-    unsafe { LOG_BUFFER.clone() }
+    LOG_BUFFER.get().cloned()
 }
 
 /// Initialize tracing with our custom ring buffer writer

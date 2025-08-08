@@ -687,7 +687,7 @@ impl ModernInput {
     // === Rendering ===
 
     /// Create a widget for rendering the input
-    pub fn create_widget(&self) -> Paragraph {
+    pub fn create_widget(&self) -> Paragraph<'_> {
         match &self.mode {
             InputMode::Normal | InputMode::HistoryNav => {
                 let title = if self.mode == InputMode::HistoryNav {
@@ -703,7 +703,7 @@ impl ModernInput {
         }
     }
 
-    fn create_search_widget(&self) -> Paragraph {
+    fn create_search_widget(&self) -> Paragraph<'_> {
         let mut spans = vec![
             Span::styled("(reverse-i-search)`", Style::default().fg(Color::Cyan)),
             Span::styled(&self.search_state.query, Style::default().fg(Color::Yellow)),

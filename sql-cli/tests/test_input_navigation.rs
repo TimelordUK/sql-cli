@@ -288,8 +288,8 @@ fn test_tab_completion_basics() -> Result<()> {
     // This test would need the actual completion context to work properly
     // For now, just test that tab key is handled
     let handled = buffer.handle_input_key(key(KeyCode::Tab));
-    // Tab should be handled in some way
-    assert!(handled || !handled); // This will always pass, placeholder for real test
+    // Tab should be handled (for completion)
+    assert!(handled); // Tab should trigger completion handling
 
     Ok(())
 }
