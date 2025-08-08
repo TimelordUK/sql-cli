@@ -184,7 +184,7 @@ pub struct EnhancedTuiApp {
     filter_state: FilterState,
     // fuzzy_filter_state: FuzzyFilterState, // MIGRATED to buffer system
     search_state: SearchState,
-    column_search_state: ColumnSearchState,
+    // column_search_state: ColumnSearchState, // MIGRATED to buffer system
     completion_state: CompletionState,
     history_state: HistoryState,
     command_history: CommandHistory,
@@ -1148,6 +1148,67 @@ impl EnhancedTuiApp {
         self.set_fuzzy_filter_indices(Vec::new());
     }
 
+    // Wrapper methods for column search (uses buffer system)
+    fn get_column_search_pattern(&self) -> String {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_column_search_pattern()
+        } else {
+            self.get_column_search_pattern()
+        }
+    }
+
+    fn set_column_search_pattern(&mut self, pattern: String) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_column_search_pattern(pattern.clone());
+        }
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_column_search_pattern(pattern);
+        }
+    }
+
+    fn get_column_search_matches(&self) -> Vec<(usize, String)> {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_column_search_matches().clone()
+        } else {
+            self.get_column_search_matches().clone()
+        }
+    }
+
+    fn set_column_search_matches(&mut self, matches: Vec<(usize, String)>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_column_search_matches(matches.clone());
+        }
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_column_search_matches(matches);
+        }
+    }
+
+    fn get_column_search_current_match(&self) -> usize {
+        if let Some(buffer) = self.current_buffer() {
+            buffer.get_column_search_current_match()
+        } else {
+            self.get_column_search_current_match()
+        }
+    }
+
+    fn set_column_search_current_match(&mut self, index: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_column_search_current_match(index);
+        }
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_column_search_current_match(index);
+        }
+    }
+
+    fn clear_column_search(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.clear_column_search();
+        }
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.clear_column_search();
+        }
+    }
+
     fn sanitize_table_name(name: &str) -> String {
         // Replace spaces and other problematic characters with underscores
         // to create SQL-friendly table names
@@ -1209,11 +1270,7 @@ impl EnhancedTuiApp {
                 matches: Vec::new(),
                 match_index: 0,
             },
-            column_search_state: ColumnSearchState {
-                pattern: String::new(),
-                matching_columns: Vec::new(),
-                current_match: 0,
-            },
+            // column_search_state: ColumnSearchState { ... }, // MIGRATED to buffer system
             completion_state: CompletionState {
                 suggestions: Vec::new(),
                 current_index: 0,
@@ -2418,9 +2475,9 @@ impl EnhancedTuiApp {
             // Column navigation/search functionality (backslash like vim reverse search)
             KeyCode::Char('\\') => {
                 self.set_mode(AppMode::ColumnSearch);
-                self.column_search_state.pattern.clear();
-                self.column_search_state.matching_columns.clear();
-                self.column_search_state.current_match = 0;
+                self.set_column_search_pattern(String::new());
+                self.set_column_search_matches(Vec::new());
+                self.set_column_search_current_match(0);
                 // Save current SQL query before clearing input for column search
                 if let Some(buffer) = self.current_buffer_mut() {
                     buffer.save_state_for_undo();
@@ -2698,8 +2755,8 @@ impl EnhancedTuiApp {
             KeyCode::Esc => {
                 // Cancel column search and return to results
                 self.set_mode(AppMode::Results);
-                self.column_search_state.pattern.clear();
-                self.column_search_state.matching_columns.clear();
+                self.set_column_search_pattern(String::new());
+                self.set_column_search_matches(Vec::new());
                 // Restore original SQL query from undo stack
                 if let Some((original_query, cursor_pos)) = self.pop_undo() {
                     self.input = tui_input::Input::new(original_query).with_cursor(cursor_pos);
@@ -2708,10 +2765,10 @@ impl EnhancedTuiApp {
             }
             KeyCode::Enter => {
                 // Jump to first matching column
-                if !self.column_search_state.matching_columns.is_empty() {
-                    let (column_index, column_name) = self.column_search_state.matching_columns
-                        [self.column_search_state.current_match]
-                        .clone();
+                if !self.get_column_search_matches().is_empty() {
+                    let (column_index, column_name) = self.get_column_search_matches()
+                        [self.get_column_search_current_match()]
+                    .clone();
                     self.set_current_column(column_index);
                     self.set_status_message(format!("Jumped to column: {}", column_name));
                 } else {
@@ -2725,55 +2782,61 @@ impl EnhancedTuiApp {
             }
             KeyCode::Tab => {
                 // Next match (Tab only, not 'n' to allow typing 'n' in search)
-                if !self.column_search_state.matching_columns.is_empty() {
-                    self.column_search_state.current_match =
-                        (self.column_search_state.current_match + 1)
-                            % self.column_search_state.matching_columns.len();
-                    let (column_index, column_name) = self.column_search_state.matching_columns
-                        [self.column_search_state.current_match]
-                        .clone();
+                if !self.get_column_search_matches().is_empty() {
+                    self.set_column_search_current_match(
+                        (self.get_column_search_current_match() + 1)
+                            % self.get_column_search_matches().len(),
+                    );
+                    let (column_index, column_name) = self.get_column_search_matches()
+                        [self.get_column_search_current_match()]
+                    .clone();
                     self.set_current_column(column_index);
                     self.set_status_message(format!(
                         "Column {} of {}: {}",
-                        self.column_search_state.current_match + 1,
-                        self.column_search_state.matching_columns.len(),
+                        self.get_column_search_current_match() + 1,
+                        self.get_column_search_matches().len(),
                         column_name
                     ));
                 }
             }
             KeyCode::BackTab => {
                 // Previous match (Shift+Tab only, not 'N' to allow typing 'N' in search)
-                if !self.column_search_state.matching_columns.is_empty() {
-                    if self.column_search_state.current_match == 0 {
-                        self.column_search_state.current_match =
-                            self.column_search_state.matching_columns.len() - 1;
+                if !self.get_column_search_matches().is_empty() {
+                    if self.get_column_search_current_match() == 0 {
+                        self.set_column_search_current_match(
+                            self.get_column_search_matches().len() - 1,
+                        );
                     } else {
-                        self.column_search_state.current_match -= 1;
+                        self.set_column_search_current_match(
+                            self.get_column_search_current_match() - 1,
+                        );
                     }
-                    let (column_index, column_name) = self.column_search_state.matching_columns
-                        [self.column_search_state.current_match]
-                        .clone();
+                    let (column_index, column_name) = self.get_column_search_matches()
+                        [self.get_column_search_current_match()]
+                    .clone();
                     self.set_current_column(column_index);
                     self.set_status_message(format!(
                         "Column {} of {}: {}",
-                        self.column_search_state.current_match + 1,
-                        self.column_search_state.matching_columns.len(),
+                        self.get_column_search_current_match() + 1,
+                        self.get_column_search_matches().len(),
                         column_name
                     ));
                 }
             }
             KeyCode::Backspace => {
-                self.column_search_state.pattern.pop();
+                let mut pattern = self.get_column_search_pattern();
+                pattern.pop();
+                self.set_column_search_pattern(pattern.clone());
                 // Also update input to keep it in sync for rendering
-                self.input = tui_input::Input::new(self.column_search_state.pattern.clone())
-                    .with_cursor(self.column_search_state.pattern.len());
+                self.input = tui_input::Input::new(pattern.clone()).with_cursor(pattern.len());
                 self.update_column_search();
             }
             KeyCode::Char(c) => {
-                self.column_search_state.pattern.push(c);
+                let mut pattern = self.get_column_search_pattern();
+                pattern.push(c);
+                self.set_column_search_pattern(pattern.clone());
                 // Also update input to keep it in sync for rendering
-                self.input = tui_input::Input::new(self.column_search_state.pattern.clone())
-                    .with_cursor(self.column_search_state.pattern.len());
+                self.input = tui_input::Input::new(pattern.clone()).with_cursor(pattern.len());
                 self.update_column_search();
             }
             _ => {}
@@ -4135,7 +4198,7 @@ impl EnhancedTuiApp {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
 
                     // Find matching columns (case-insensitive)
-                    let pattern = self.column_search_state.pattern.to_lowercase();
+                    let pattern = self.get_column_search_pattern().to_lowercase();
                     let mut matching_columns = Vec::new();
 
                     for (index, header) in headers.iter().enumerate() {
@@ -4144,24 +4207,24 @@ impl EnhancedTuiApp {
                         }
                     }
 
-                    self.column_search_state.matching_columns = matching_columns;
-                    self.column_search_state.current_match = 0;
+                    self.set_column_search_matches(matching_columns);
+                    self.set_column_search_current_match(0);
 
                     // Update status message
-                    if self.column_search_state.pattern.is_empty() {
+                    if self.get_column_search_pattern().is_empty() {
                         self.set_status_message("Enter column name to search".to_string());
-                    } else if self.column_search_state.matching_columns.is_empty() {
+                    } else if self.get_column_search_matches().is_empty() {
                         self.set_status_message(format!(
                             "No columns match '{}'",
-                            self.column_search_state.pattern
+                            self.get_column_search_pattern()
                         ));
                     } else {
                         let (column_index, column_name) =
-                            self.column_search_state.matching_columns[0].clone();
+                            self.get_column_search_matches()[0].clone();
                         self.set_current_column(column_index);
                         self.set_status_message(format!(
                             "Column 1 of {}: {} (Tab=next, Enter=select)",
-                            self.column_search_state.matching_columns.len(),
+                            self.get_column_search_matches().len(),
                             column_name
                         ));
                     }
@@ -4909,8 +4972,7 @@ impl EnhancedTuiApp {
                                     // TODO: self.search_in_results();
                                 }
                                 AppMode::ColumnSearch => {
-                                    self.column_search_state.pattern =
-                                        self.input.value().to_string();
+                                    self.set_column_search_pattern(self.input.value().to_string());
                                     // TODO: self.search_columns();
                                 }
                                 _ => {}

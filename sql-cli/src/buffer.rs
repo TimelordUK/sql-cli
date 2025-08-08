@@ -119,7 +119,7 @@ impl Default for SearchState {
 #[derive(Clone)]
 pub struct ColumnSearchState {
     pub pattern: String,
-    pub matching_columns: Vec<usize>,
+    pub matching_columns: Vec<(usize, String)>, // (index, column_name)
     pub current_match: usize,
 }
 
@@ -196,6 +196,15 @@ pub trait BufferAPI {
     fn get_search_match_index(&self) -> usize;
     fn set_search_match_index(&mut self, index: usize);
     fn clear_search_state(&mut self);
+
+    // --- Column Search ---
+    fn get_column_search_pattern(&self) -> String;
+    fn set_column_search_pattern(&mut self, pattern: String);
+    fn get_column_search_matches(&self) -> &Vec<(usize, String)>;
+    fn set_column_search_matches(&mut self, matches: Vec<(usize, String)>);
+    fn get_column_search_current_match(&self) -> usize;
+    fn set_column_search_current_match(&mut self, index: usize);
+    fn clear_column_search(&mut self);
 
     // --- Sorting ---
     fn get_sort_column(&self) -> Option<usize>;
@@ -571,6 +580,37 @@ impl BufferAPI for Buffer {
         self.search_state.matches.clear();
         self.search_state.current_match = None;
         self.search_state.match_index = 0;
+    }
+
+    // --- Column Search ---
+    fn get_column_search_pattern(&self) -> String {
+        self.column_search_state.pattern.clone()
+    }
+
+    fn set_column_search_pattern(&mut self, pattern: String) {
+        self.column_search_state.pattern = pattern;
+    }
+
+    fn get_column_search_matches(&self) -> &Vec<(usize, String)> {
+        &self.column_search_state.matching_columns
+    }
+
+    fn set_column_search_matches(&mut self, matches: Vec<(usize, String)>) {
+        self.column_search_state.matching_columns = matches;
+    }
+
+    fn get_column_search_current_match(&self) -> usize {
+        self.column_search_state.current_match
+    }
+
+    fn set_column_search_current_match(&mut self, index: usize) {
+        self.column_search_state.current_match = index;
+    }
+
+    fn clear_column_search(&mut self) {
+        self.column_search_state.pattern.clear();
+        self.column_search_state.matching_columns.clear();
+        self.column_search_state.current_match = 0;
     }
 
     // --- Sorting ---
