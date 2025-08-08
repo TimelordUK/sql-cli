@@ -177,6 +177,15 @@ pub trait BufferAPI {
     fn get_filtered_data(&self) -> Option<&Vec<Vec<String>>>;
     fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>);
 
+    // --- Fuzzy Filter ---
+    fn get_fuzzy_filter_pattern(&self) -> String;
+    fn set_fuzzy_filter_pattern(&mut self, pattern: String);
+    fn is_fuzzy_filter_active(&self) -> bool;
+    fn set_fuzzy_filter_active(&mut self, active: bool);
+    fn get_fuzzy_filter_indices(&self) -> &Vec<usize>;
+    fn set_fuzzy_filter_indices(&mut self, indices: Vec<usize>);
+    fn clear_fuzzy_filter(&mut self);
+
     // --- Search ---
     fn get_search_pattern(&self) -> String;
     fn set_search_pattern(&mut self, pattern: String);
@@ -491,6 +500,37 @@ impl BufferAPI for Buffer {
 
     fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>) {
         self.filtered_data = data;
+    }
+
+    // --- Fuzzy Filter ---
+    fn get_fuzzy_filter_pattern(&self) -> String {
+        self.fuzzy_filter_state.pattern.clone()
+    }
+
+    fn set_fuzzy_filter_pattern(&mut self, pattern: String) {
+        self.fuzzy_filter_state.pattern = pattern;
+    }
+
+    fn is_fuzzy_filter_active(&self) -> bool {
+        self.fuzzy_filter_state.active
+    }
+
+    fn set_fuzzy_filter_active(&mut self, active: bool) {
+        self.fuzzy_filter_state.active = active;
+    }
+
+    fn get_fuzzy_filter_indices(&self) -> &Vec<usize> {
+        &self.fuzzy_filter_state.filtered_indices
+    }
+
+    fn set_fuzzy_filter_indices(&mut self, indices: Vec<usize>) {
+        self.fuzzy_filter_state.filtered_indices = indices;
+    }
+
+    fn clear_fuzzy_filter(&mut self) {
+        self.fuzzy_filter_state.pattern.clear();
+        self.fuzzy_filter_state.active = false;
+        self.fuzzy_filter_state.filtered_indices.clear();
     }
 
     // --- Search ---
