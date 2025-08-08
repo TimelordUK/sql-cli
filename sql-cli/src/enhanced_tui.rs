@@ -2946,8 +2946,8 @@ impl EnhancedTuiApp {
     }
 
     fn apply_completion(&mut self) {
-        let cursor_pos = self.input.cursor();
-        let query = self.input.value();
+        let cursor_pos = self.get_input_cursor();
+        let query = self.get_input_text();
 
         // Check if this is a continuation of the same completion session
         let is_same_context = query == self.completion_state.last_query
@@ -2955,7 +2955,7 @@ impl EnhancedTuiApp {
 
         if !is_same_context {
             // New completion context - get fresh suggestions
-            let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
+            let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
             if hybrid_result.suggestions.is_empty() {
                 self.set_status_message("No completions available".to_string());
                 return;
@@ -2972,9 +2972,10 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Apply the current suggestion
-        let suggestion = &self.completion_state.suggestions[self.completion_state.current_index];
-        let partial_word = self.extract_partial_word_at_cursor(query, cursor_pos);
+        // Apply the current suggestion (clone to avoid borrow issues)
+        let suggestion =
+            self.completion_state.suggestions[self.completion_state.current_index].clone();
+        let partial_word = self.extract_partial_word_at_cursor(&query, cursor_pos);
 
         if let Some(partial) = partial_word {
             // Replace the partial word with the suggestion
@@ -2986,12 +2987,12 @@ impl EnhancedTuiApp {
             let suggestion_to_use = if partial.starts_with('"') && suggestion.starts_with('"') {
                 // The partial already includes the opening quote, so use suggestion without its quote
                 if suggestion.len() > 1 {
-                    &suggestion[1..]
+                    suggestion[1..].to_string()
                 } else {
-                    suggestion
+                    suggestion.clone()
                 }
             } else {
-                suggestion
+                suggestion.clone()
             };
 
             let new_query = format!("{}{}{}", before_partial, suggestion_to_use, after_cursor);
@@ -3004,7 +3005,16 @@ impl EnhancedTuiApp {
             } else {
                 before_partial.len() + suggestion_to_use.len()
             };
-            self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos);
+            // Use helper to set text through buffer
+            self.set_input_text(new_query.clone());
+            // Set cursor to correct position
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(cursor_pos);
+                // Sync for rendering
+                if self.get_edit_mode() == EditMode::SingleLine {
+                    self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos);
+                }
+            }
 
             // Update completion state for next tab press
             self.completion_state.last_query = new_query;
@@ -3034,7 +3044,17 @@ impl EnhancedTuiApp {
             } else {
                 cursor_pos + suggestion.len()
             };
-            self.input = tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos_new);
+            // Use helper to set text through buffer
+            self.set_input_text(new_query.clone());
+            // Set cursor to correct position
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(cursor_pos_new);
+                // Sync for rendering
+                if self.get_edit_mode() == EditMode::SingleLine {
+                    self.input =
+                        tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos_new);
+                }
+            }
 
             // Update completion state
             self.completion_state.last_query = new_query;
@@ -3083,8 +3103,9 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Apply the current suggestion
-        let suggestion = &self.completion_state.suggestions[self.completion_state.current_index];
+        // Apply the current suggestion (clone to avoid borrow issues)
+        let suggestion =
+            self.completion_state.suggestions[self.completion_state.current_index].clone();
         let partial_word = self.extract_partial_word_at_cursor(&query, cursor_pos);
 
         if let Some(partial) = partial_word {
@@ -3098,12 +3119,12 @@ impl EnhancedTuiApp {
             let suggestion_to_use = if partial.starts_with('"') && suggestion.starts_with('"') {
                 // The partial already includes the opening quote, so use suggestion without its quote
                 if suggestion.len() > 1 {
-                    &suggestion[1..]
+                    suggestion[1..].to_string()
                 } else {
-                    suggestion
+                    suggestion.clone()
                 }
             } else {
-                suggestion
+                suggestion.clone()
             };
 
             let new_line = format!("{}{}{}", line_before, suggestion_to_use, line_after);
@@ -3142,10 +3163,13 @@ impl EnhancedTuiApp {
             self.set_status_message(suggestion_info);
         } else {
             // Just insert the suggestion at cursor position
+            let ends_with_parens = suggestion.ends_with("('')");
+            let suggestion_len = suggestion.len();
+            let suggestion_str = suggestion.clone();
             self.textarea.insert_str(suggestion);
 
             // Special case: if we inserted a string method like Contains(''), move cursor back inside quotes
-            if suggestion.ends_with("('')") {
+            if ends_with_parens {
                 self.textarea.move_cursor(CursorMove::Back);
                 self.textarea.move_cursor(CursorMove::Back);
             }
@@ -3153,13 +3177,13 @@ impl EnhancedTuiApp {
             // Update completion state
             let new_query = self.textarea.lines().join("\n");
             self.completion_state.last_query = new_query;
-            self.completion_state.last_cursor_pos = if suggestion.ends_with("('')") {
-                cursor_pos + suggestion.len() - 2
+            self.completion_state.last_cursor_pos = if ends_with_parens {
+                cursor_pos + suggestion_len - 2
             } else {
-                cursor_pos + suggestion.len()
+                cursor_pos + suggestion_len
             };
 
-            self.set_status_message(format!("Inserted: {}", suggestion));
+            self.set_status_message(format!("Inserted: {}", suggestion_str));
         }
     }
 
