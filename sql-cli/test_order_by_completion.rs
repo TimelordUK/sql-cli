@@ -1,5 +1,5 @@
 use sql_cli::cursor_aware_parser::CursorAwareParser;
-use sql_cli::parser::{ParseState, Schema, SqlParser};
+use sql_cli::parser::{Schema, SqlParser};
 
 fn main() {
     println!("Testing ORDER BY tab completion with explicit column selection...");

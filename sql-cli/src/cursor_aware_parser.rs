@@ -1,4 +1,3 @@
-use crate::csv_fixes::quote_if_needed;
 use crate::parser::{ParseState, Schema};
 use crate::recursive_parser::{detect_cursor_context, CursorContext, LogicalOp};
 
@@ -574,7 +573,7 @@ impl CursorAwareParser {
     fn detect_method_call_context(
         &self,
         query_before_cursor: &str,
-        cursor_pos: usize,
+        _cursor_pos: usize,
     ) -> Option<(String, String)> {
         // Look for pattern: "propertyName." at the end of the query before cursor
         // This handles cases like "WHERE platformOrderId." or "SELECT COUNT(*) WHERE ticker."

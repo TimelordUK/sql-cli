@@ -78,7 +78,7 @@ impl SmartSqlParser {
         let mut chars = text.char_indices().peekable();
         let mut current_token = String::new();
 
-        while let Some((i, ch)) = chars.next() {
+        while let Some((_i, ch)) = chars.next() {
             match ch {
                 ' ' | '\t' | '\n' | '\r' => {
                     if !current_token.is_empty() {

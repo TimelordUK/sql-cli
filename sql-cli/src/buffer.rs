@@ -1351,7 +1351,7 @@ impl Buffer {
     /// Sync from legacy fields to InputManager (for compatibility during migration)
     fn sync_to_input_manager(&mut self) {
         if self.edit_mode == EditMode::SingleLine {
-            let text = self.input.value().to_string();
+            let _text = self.input.value().to_string();
             self.input_manager = create_from_input(self.input.clone());
         } else {
             self.input_manager = create_from_textarea(self.textarea.clone());

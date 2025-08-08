@@ -1,7 +1,7 @@
 use anyhow::Result;
 use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::cursor_aware_parser::CursorAwareParser;
-use sql_cli::parser::{Schema, SqlParser};
+use sql_cli::parser::Schema;
 
 fn main() -> Result<()> {
     println!("Testing real-world CSV issues...\n");
