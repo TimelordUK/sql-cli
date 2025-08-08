@@ -27,6 +27,7 @@ use sql_cli::buffer::{BufferAPI, BufferManager, ColumnStatistics, ColumnType};
 use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
+use sql_cli::cursor_manager::CursorManager;
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
 use sql_cli::where_ast::format_where_ast;
@@ -144,6 +145,7 @@ pub struct EnhancedTuiApp {
     input: Input,
     textarea: TextArea<'static>,
     edit_mode: EditMode,
+    cursor_manager: CursorManager, // New: manages cursor/navigation logic
     mode: AppMode,
     // results: Option<QueryResponse>, // MIGRATED to buffer system
     table_state: TableState,
@@ -1230,6 +1232,7 @@ impl EnhancedTuiApp {
             input: Input::default(),
             textarea,
             edit_mode: EditMode::SingleLine,
+            cursor_manager: CursorManager::new(),
             mode: AppMode::Command,
             // results: None, // MIGRATED to buffer system
             table_state: TableState::default(),
@@ -5346,6 +5349,9 @@ impl EnhancedTuiApp {
             }
         }
 
+        // Update cursor_manager (small incremental step)
+        self.cursor_manager.set_position(target_pos);
+
         // Move cursor to new position through buffer
         let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
         if let Some(buffer) = self.current_buffer_mut() {
@@ -5436,6 +5442,9 @@ impl EnhancedTuiApp {
                 break;
             }
         }
+
+        // Update cursor_manager (small incremental step)
+        self.cursor_manager.set_position(target_pos);
 
         // Move cursor to new position through buffer
         let is_single_line = self.get_edit_mode() == EditMode::SingleLine;

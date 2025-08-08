@@ -25,3 +25,7 @@ pub mod sql_highlighter;
 pub mod virtual_table;
 pub mod where_ast;
 pub mod where_parser;
+
+// New refactored modules for enhanced_tui decomposition
+pub mod cursor_manager;
+// pub mod data_manager; // TODO: Fix QueryResponse field access
