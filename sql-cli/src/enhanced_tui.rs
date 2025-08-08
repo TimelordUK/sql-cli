@@ -3,6 +3,7 @@ use crate::hybrid_parser::HybridParser;
 use crate::parser::SqlParser;
 use crate::sql_highlighter::SqlHighlighter;
 use anyhow::Result;
+use chrono::Local;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
@@ -1374,12 +1375,26 @@ impl EnhancedTuiApp {
         // Store old cursor position
         let old_cursor = self.input.cursor();
 
-        // Debug: Log all Ctrl key combinations
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            if let KeyCode::Char(c) = key.code {
-                self.set_status_message(format!("DEBUG: Ctrl+{} pressed", c));
-            }
+        // Debug: Log key presses to help diagnose input issues
+        // Uncomment the next line to see all keys in status bar
+        // self.set_status_message(format!("Key: {:?} Mods: {:?}", key.code, key.modifiers));
+
+        // Always log to debug buffer for F5 inspection
+        if self.debug_text.lines().count() > 100 {
+            // Trim old entries
+            self.debug_text = self
+                .debug_text
+                .lines()
+                .skip(50)
+                .collect::<Vec<_>>()
+                .join("\n");
         }
+        self.debug_text.push_str(&format!(
+            "[{}] Key: {:?} Mods: {:?}\n",
+            chrono::Local::now().format("%H:%M:%S"),
+            key.code,
+            key.modifiers
+        ));
 
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
@@ -1497,6 +1512,7 @@ impl EnhancedTuiApp {
                 self.history_state.search_query.clear();
                 self.update_history_matches();
             }
+            // History navigation - Ctrl+P or Alt+Up
             KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Navigate to previous command in history
                 // Get history entries first, before mutable borrow
@@ -1526,6 +1542,7 @@ impl EnhancedTuiApp {
                     }
                 }
             }
+            // History navigation - Ctrl+N or Alt+Down
             KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Navigate to next command in history
                 // Get history entries first, before mutable borrow
@@ -1552,6 +1569,56 @@ impl EnhancedTuiApp {
                             }
                         }
                         self.set_status_message("Next command from history".to_string());
+                    }
+                }
+            }
+            // Alternative: Alt+Up for history previous (in case Ctrl+P is intercepted)
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::ALT) => {
+                let history_entries = self.command_history.get_navigation_entries();
+                let history_commands: Vec<String> =
+                    history_entries.iter().map(|e| e.command.clone()).collect();
+
+                if let Some(buffer) = self.current_buffer_mut() {
+                    if buffer.navigate_history_up(&history_commands) {
+                        let text = buffer.get_input_text();
+                        match self.edit_mode {
+                            EditMode::SingleLine => {
+                                self.input =
+                                    tui_input::Input::new(text.clone()).with_cursor(text.len());
+                            }
+                            EditMode::MultiLine => {
+                                let lines: Vec<String> =
+                                    text.lines().map(|s| s.to_string()).collect();
+                                self.textarea = tui_textarea::TextArea::from(lines);
+                                self.textarea.move_cursor(tui_textarea::CursorMove::End);
+                            }
+                        }
+                        self.set_status_message("Previous command (Alt+Up)".to_string());
+                    }
+                }
+            }
+            // Alternative: Alt+Down for history next
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::ALT) => {
+                let history_entries = self.command_history.get_navigation_entries();
+                let history_commands: Vec<String> =
+                    history_entries.iter().map(|e| e.command.clone()).collect();
+
+                if let Some(buffer) = self.current_buffer_mut() {
+                    if buffer.navigate_history_down(&history_commands) {
+                        let text = buffer.get_input_text();
+                        match self.edit_mode {
+                            EditMode::SingleLine => {
+                                self.input =
+                                    tui_input::Input::new(text.clone()).with_cursor(text.len());
+                            }
+                            EditMode::MultiLine => {
+                                let lines: Vec<String> =
+                                    text.lines().map(|s| s.to_string()).collect();
+                                self.textarea = tui_textarea::TextArea::from(lines);
+                                self.textarea.move_cursor(tui_textarea::CursorMove::End);
+                            }
+                        }
+                        self.set_status_message("Next command (Alt+Down)".to_string());
                     }
                 }
             }
