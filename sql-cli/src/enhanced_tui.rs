@@ -216,7 +216,6 @@ pub struct EnhancedTuiApp {
     compact_mode: bool,                // Compact display mode with reduced padding
     viewport_lock: bool,               // Lock viewport position for anchor scrolling
     viewport_lock_row: Option<usize>,  // The row position to lock to in viewport
-    show_row_numbers: bool,            // Show row numbers in results view
     jump_to_row_input: String,         // Input buffer for jump to row command
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
 }
@@ -648,11 +647,7 @@ impl EnhancedTuiApp {
     }
 
     fn set_show_row_numbers(&mut self, show: bool) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_show_row_numbers(show);
-        } else {
-            self.show_row_numbers = show;
-        }
+        self.buffer_mut().set_show_row_numbers(show);
     }
 
     fn is_viewport_lock(&self) -> bool {
@@ -1283,7 +1278,6 @@ impl EnhancedTuiApp {
             compact_mode: config.display.compact_mode,
             viewport_lock: false,
             viewport_lock_row: None,
-            show_row_numbers: config.display.show_row_numbers,
             jump_to_row_input: String::new(),
             log_buffer: get_log_buffer(),
         }

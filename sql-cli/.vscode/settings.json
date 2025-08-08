@@ -13,6 +13,7 @@
     "rust-analyzer.lens.references": true,
     "rust-analyzer.lens.methodReferences": true,
     "rust-analyzer.lens.enumVariantReferences": true,
+    "rust-analyzer.cargo.features": "all",
     "files.watcherExclude": {
         "**/target/**": true
     },
@@ -24,5 +25,17 @@
     "[rust]": {
         "editor.defaultFormatter": "rust-lang.rust-analyzer",
         "editor.formatOnSave": true
+    },
+    "terminal.integrated.env.linux": {
+        "RUST_BACKTRACE": "1"
+    },
+    "terminal.integrated.env.osx": {
+        "RUST_BACKTRACE": "1"
+    },
+    "terminal.integrated.env.windows": {
+        "RUST_BACKTRACE": "1"
+    },
+    "rust-analyzer.server.extraEnv": {
+        "RUST_LOG": "debug"
     }
 }

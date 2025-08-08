@@ -12,12 +12,14 @@
                 "kind": "build",
                 "isDefault": true
             },
-            "label": "cargo build - sql-cli",
+            "label": "🔨 Build Debug - SQL CLI",
             "presentation": {
                 "echo": true,
                 "reveal": "always",
                 "focus": false,
-                "panel": "shared"
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
             },
             "problemMatcher": [
                 "$rustc"
@@ -32,7 +34,66 @@
                 "sql-cli"
             ],
             "group": "build",
-            "label": "cargo build release - sql-cli",
+            "label": "🚀 Build Release - SQL CLI",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": [
+                "$rustc"
+            ]
+        },
+        {
+            "type": "cargo",
+            "command": "check",
+            "args": [
+                "--bin",
+                "sql-cli"
+            ],
+            "group": "build",
+            "label": "✅ Check - SQL CLI",
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [
+                "$rustc"
+            ]
+        },
+        {
+            "type": "cargo",
+            "command": "clippy",
+            "args": [
+                "--bin",
+                "sql-cli",
+                "--",
+                "-D",
+                "warnings"
+            ],
+            "group": "build",
+            "label": "🔍 Clippy - SQL CLI",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [
+                "$rustc"
+            ]
+        },
+        {
+            "type": "cargo",
+            "command": "test",
+            "args": [],
+            "group": "test",
+            "label": "🧪 Test All",
             "presentation": {
                 "echo": true,
                 "reveal": "always",
@@ -48,18 +109,83 @@
             "command": "run",
             "args": [
                 "--bin",
+                "sql-cli"
+            ],
+            "group": "test",
+            "label": "▶️ Run - SQL CLI (API mode)",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "type": "cargo",
+            "command": "run",
+            "args": [
+                "--bin",
                 "sql-cli",
                 "--",
                 "data/small-customer.csv"
             ],
             "group": "test",
-            "label": "cargo run - sql-cli with CSV",
+            "label": "📊 Run - SQL CLI with CSV",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "type": "cargo",
+            "command": "run",
+            "args": [
+                "--release",
+                "--bin",
+                "sql-cli",
+                "--",
+                "data/small-customer.csv"
+            ],
+            "group": "test",
+            "label": "🚀📊 Run Release - SQL CLI with CSV",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "type": "shell",
+            "command": "cargo",
+            "args": ["fmt"],
+            "group": "build",
+            "label": "🎨 Format Code",
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "type": "shell",
+            "command": "./debug.sh",
+            "group": "build",
+            "label": "🐛 Setup Debug Environment",
             "presentation": {
                 "echo": true,
                 "reveal": "always",
                 "focus": false,
                 "panel": "shared"
-            }
+            },
+            "problemMatcher": []
         }
     ]
 }
