@@ -4893,7 +4893,7 @@ impl EnhancedTuiApp {
 
         // Use our lexer to tokenize the query
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         if tokens.is_empty() {
@@ -4931,7 +4931,7 @@ impl EnhancedTuiApp {
 
         // Use our lexer to tokenize the query
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         // Find the token at cursor position
@@ -4984,8 +4984,8 @@ impl EnhancedTuiApp {
     }
 
     fn move_cursor_word_backward(&mut self) {
-        let query = self.input.value();
-        let cursor_pos = self.input.cursor();
+        let query = self.get_input_text();
+        let cursor_pos = self.get_input_cursor();
 
         if cursor_pos == 0 {
             return;
@@ -4993,7 +4993,7 @@ impl EnhancedTuiApp {
 
         // Use our lexer to tokenize the query
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         // Find the token boundary before the cursor
@@ -5016,14 +5016,18 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Move cursor to new position
-        let moves = cursor_pos.saturating_sub(target_pos);
-        for _ in 0..moves {
-            self.input.handle_event(&Event::Key(KeyEvent::new(
-                KeyCode::Left,
-                KeyModifiers::empty(),
-            )));
+        // Move cursor to new position through buffer
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_cursor_position(target_pos);
+            // Sync for rendering
+            if self.get_edit_mode() == EditMode::SingleLine {
+                let text = buffer.get_input_text();
+                self.input = tui_input::Input::new(text).with_cursor(target_pos);
+            }
         }
+
+        // Update status message
+        self.set_status_message(format!("Moved to position {} (word boundary)", target_pos));
     }
 
     fn delete_word_backward(&mut self) {
@@ -5076,8 +5080,8 @@ impl EnhancedTuiApp {
     }
 
     fn move_cursor_word_forward(&mut self) {
-        let query = self.input.value();
-        let cursor_pos = self.input.cursor();
+        let query = self.get_input_text();
+        let cursor_pos = self.get_input_cursor();
         let query_len = query.len();
 
         if cursor_pos >= query_len {
@@ -5086,7 +5090,7 @@ impl EnhancedTuiApp {
 
         // Use our lexer to tokenize the query
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         // Find the next token boundary after the cursor
@@ -5101,14 +5105,18 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Move cursor to new position
-        let moves = target_pos.saturating_sub(cursor_pos);
-        for _ in 0..moves {
-            self.input.handle_event(&Event::Key(KeyEvent::new(
-                KeyCode::Right,
-                KeyModifiers::empty(),
-            )));
+        // Move cursor to new position through buffer
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_cursor_position(target_pos);
+            // Sync for rendering
+            if self.get_edit_mode() == EditMode::SingleLine {
+                let text = buffer.get_input_text();
+                self.input = tui_input::Input::new(text).with_cursor(target_pos);
+            }
         }
+
+        // Update status message
+        self.set_status_message(format!("Moved to position {} (word boundary)", target_pos));
     }
 
     fn delete_word_forward(&mut self) {
@@ -5329,15 +5337,15 @@ impl EnhancedTuiApp {
     }
 
     fn jump_to_prev_token(&mut self) {
-        let query = self.input.value();
-        let cursor_pos = self.input.cursor();
+        let query = self.get_input_text();
+        let cursor_pos = self.get_input_cursor();
 
         if cursor_pos == 0 {
             return;
         }
 
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         // Find current token position
@@ -5367,21 +5375,22 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Move cursor
+        // Move cursor through buffer
         if target_pos < cursor_pos {
-            let moves = cursor_pos - target_pos;
-            for _ in 0..moves {
-                self.input.handle_event(&Event::Key(KeyEvent::new(
-                    KeyCode::Left,
-                    KeyModifiers::empty(),
-                )));
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(target_pos);
+                // Sync for rendering
+                if self.get_edit_mode() == EditMode::SingleLine {
+                    let text = buffer.get_input_text();
+                    self.input = tui_input::Input::new(text).with_cursor(target_pos);
+                }
             }
         }
     }
 
     fn jump_to_next_token(&mut self) {
-        let query = self.input.value();
-        let cursor_pos = self.input.cursor();
+        let query = self.get_input_text();
+        let cursor_pos = self.get_input_cursor();
         let query_len = query.len();
 
         if cursor_pos >= query_len {
@@ -5389,7 +5398,7 @@ impl EnhancedTuiApp {
         }
 
         use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(query);
+        let mut lexer = Lexer::new(&query);
         let tokens = lexer.tokenize_all_with_positions();
 
         // Find the next token start after cursor
@@ -5409,13 +5418,14 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Move cursor
-        let moves = target_pos.saturating_sub(cursor_pos);
-        for _ in 0..moves {
-            self.input.handle_event(&Event::Key(KeyEvent::new(
-                KeyCode::Right,
-                KeyModifiers::empty(),
-            )));
+        // Move cursor through buffer
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_cursor_position(target_pos);
+            // Sync for rendering
+            if self.get_edit_mode() == EditMode::SingleLine {
+                let text = buffer.get_input_text();
+                self.input = tui_input::Input::new(text).with_cursor(target_pos);
+            }
         }
     }
 
