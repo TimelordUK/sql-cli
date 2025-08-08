@@ -19,6 +19,11 @@ impl TextNavigator {
             return (0, 0);
         }
 
+        // Special case: cursor at position 0 is always before the first token
+        if cursor_pos == 0 {
+            return (0, tokens.len());
+        }
+
         // Find which token the cursor is in
         let mut current_token = 0;
         for (i, (start, end, _)) in tokens.iter().enumerate() {
@@ -238,38 +243,43 @@ impl TextEditor {
         let before_cursor = &text[..cursor_pos];
         let after_cursor = &text[cursor_pos..];
 
-        // Find word boundary
-        let trimmed = before_cursor.trim_end();
-        let word_end = if trimmed.is_empty() {
-            0
-        } else {
-            // Find the last word boundary
-            let mut chars = trimmed.chars().rev();
-            let mut word_start = trimmed.len();
+        // Find word boundary, including leading whitespace before the word
+        let mut word_start = before_cursor.len();
+        let mut chars = before_cursor.chars().rev().peekable();
 
-            // Skip any non-alphanumeric chars at the end
-            while let Some(ch) = chars.next() {
-                if ch.is_alphanumeric() || ch == '_' {
-                    break;
-                }
+        // Step 1: Skip trailing whitespace (if any)
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() {
                 word_start -= ch.len_utf8();
+                chars.next();
+            } else {
+                break;
             }
+        }
 
-            // Now skip the word itself
-            while let Some(ch) = chars.next() {
-                if !ch.is_alphanumeric() && ch != '_' {
-                    break;
-                }
+        // Step 2: Skip the word itself
+        while let Some(&ch) = chars.peek() {
+            if !ch.is_alphanumeric() && ch != '_' {
+                break;
+            }
+            word_start -= ch.len_utf8();
+            chars.next();
+        }
+
+        // Step 3: Include any whitespace before the word (so deleting at a word boundary includes the space)
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() {
                 word_start -= ch.len_utf8();
+                chars.next();
+            } else {
+                break;
             }
+        }
 
-            word_start
-        };
+        let deleted_text = text[word_start..cursor_pos].to_string();
+        let remaining_text = format!("{}{}", &text[..word_start], after_cursor);
 
-        let deleted_text = text[word_end..cursor_pos].to_string();
-        let remaining_text = format!("{}{}", &text[..word_end], after_cursor);
-
-        Some((deleted_text, remaining_text, word_end))
+        Some((deleted_text, remaining_text, word_start))
     }
 
     /// Delete word forward from cursor position
