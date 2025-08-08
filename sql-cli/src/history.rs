@@ -37,6 +37,10 @@ pub struct HistoryEntry {
     pub data_source: Option<String>, // e.g., "customers.csv", "trades_api", etc.
     #[serde(default)]
     pub metadata: Option<QueryMetadata>, // Parsed query metadata
+    #[serde(default)]
+    pub is_starred: bool, // User marked as important
+    #[serde(default)]
+    pub session_id: Option<String>, // Session this was created in
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +55,8 @@ pub struct CommandHistory {
     history_file: PathBuf,
     matcher: SkimMatcherV2,
     command_counts: HashMap<String, u32>,
+    session_id: String,
+    session_entries: Vec<HistoryEntry>, // Entries from current session only
 }
 
 impl CommandHistory {
@@ -58,11 +64,16 @@ impl CommandHistory {
         let history_file = AppPaths::history_file()
             .map_err(|e| anyhow::anyhow!("Failed to get history file path: {}", e))?;
 
+        // Generate a unique session ID
+        let session_id = format!("session_{}", Utc::now().timestamp_millis());
+
         let mut history = Self {
             entries: Vec::new(),
             history_file,
             matcher: SkimMatcherV2::default(),
             command_counts: HashMap::new(),
+            session_id,
+            session_entries: Vec::new(),
         };
 
         history.load_from_file()?;
@@ -117,7 +128,12 @@ impl CommandHistory {
             schema_columns,
             data_source,
             metadata,
+            is_starred: false,
+            session_id: Some(self.session_id.clone()),
         };
+
+        // Add to session entries
+        self.session_entries.push(entry.clone());
 
         // Update command count
         *self.command_counts.entry(command.clone()).or_insert(0) += 1;
@@ -408,6 +424,58 @@ impl CommandHistory {
         self.entries.last()
     }
 
+    /// Get session-only entries (from current run)
+    pub fn get_session_entries(&self) -> &[HistoryEntry] {
+        &self.session_entries
+    }
+
+    /// Get entries for navigation (session + starred from persistent)
+    pub fn get_navigation_entries(&self) -> Vec<HistoryEntry> {
+        let mut entries = self.session_entries.clone();
+
+        // Add starred entries from persistent history that aren't in session
+        for entry in &self.entries {
+            if entry.is_starred
+                && !self
+                    .session_entries
+                    .iter()
+                    .any(|e| e.command == entry.command)
+            {
+                entries.push(entry.clone());
+            }
+        }
+
+        // Sort by timestamp, most recent first
+        entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        // Deduplicate keeping most recent
+        let mut seen = std::collections::HashSet::new();
+        entries.retain(|e| seen.insert(e.command.clone()));
+
+        entries
+    }
+
+    /// Star/unstar a command
+    pub fn toggle_star(&mut self, command: &str) -> Result<()> {
+        // Find in entries and toggle
+        for entry in &mut self.entries {
+            if entry.command == command {
+                entry.is_starred = !entry.is_starred;
+                break;
+            }
+        }
+
+        // Also update session entries
+        for entry in &mut self.session_entries {
+            if entry.command == command {
+                entry.is_starred = !entry.is_starred;
+                break;
+            }
+        }
+
+        self.save_to_file()
+    }
+
     pub fn clear(&mut self) -> Result<()> {
         self.entries.clear();
         self.command_counts.clear();
@@ -518,18 +586,23 @@ impl Clone for CommandHistory {
             history_file: self.history_file.clone(),
             matcher: SkimMatcherV2::default(), // Create new matcher
             command_counts: self.command_counts.clone(),
+            session_id: self.session_id.clone(),
+            session_entries: self.session_entries.clone(),
         }
     }
 }
 
 impl Default for CommandHistory {
     fn default() -> Self {
+        let session_id = format!("session_{}", Utc::now().timestamp_millis());
         Self::new().unwrap_or_else(|_| Self {
             entries: Vec::new(),
             history_file: AppPaths::history_file()
                 .unwrap_or_else(|_| PathBuf::from(".sql_cli_history.json")),
             matcher: SkimMatcherV2::default(),
             command_counts: HashMap::new(),
+            session_id,
+            session_entries: Vec::new(),
         })
     }
 }
