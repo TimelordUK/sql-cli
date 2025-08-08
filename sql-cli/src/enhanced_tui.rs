@@ -28,6 +28,7 @@ use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::cursor_manager::CursorManager;
+use sql_cli::data_analyzer::DataAnalyzer;
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
 use sql_cli::where_ast::format_where_ast;
@@ -146,6 +147,7 @@ pub struct EnhancedTuiApp {
     textarea: TextArea<'static>,
     edit_mode: EditMode,
     cursor_manager: CursorManager, // New: manages cursor/navigation logic
+    data_analyzer: DataAnalyzer,   // New: manages data analysis/statistics
     mode: AppMode,
     // results: Option<QueryResponse>, // MIGRATED to buffer system
     table_state: TableState,
@@ -1233,6 +1235,7 @@ impl EnhancedTuiApp {
             textarea,
             edit_mode: EditMode::SingleLine,
             cursor_manager: CursorManager::new(),
+            data_analyzer: DataAnalyzer::new(),
             mode: AppMode::Command,
             // results: None, // MIGRATED to buffer system
             table_state: TableState::default(),
@@ -3902,17 +3905,17 @@ impl EnhancedTuiApp {
             let column_name = &headers[self.get_current_column()];
 
             // Use filtered data if available, otherwise use original data
-            let data_to_analyze = if let Some(filtered) = self.get_filtered_data() {
-                // Convert filtered data back to JSON values for analysis
-                let mut json_data = Vec::new();
+            let data_to_analyze: Vec<String> = if let Some(filtered) = self.get_filtered_data() {
+                // Convert filtered data back to strings for analysis
+                let mut string_data = Vec::new();
                 for row in filtered {
                     if self.get_current_column() < row.len() {
-                        json_data.push(row[self.get_current_column()].clone());
+                        string_data.push(row[self.get_current_column()].clone());
                     }
                 }
-                json_data
+                string_data
             } else {
-                // Extract column values from JSON data
+                // Extract column values from JSON data as strings
                 results
                     .data
                     .iter()
@@ -3932,54 +3935,54 @@ impl EnhancedTuiApp {
                     .collect()
             };
 
-            // Calculate statistics
+            // Use DataAnalyzer to calculate statistics
+            let analyzer_stats = self
+                .data_analyzer
+                .calculate_column_statistics(column_name, &data_to_analyze);
+
+            // Convert from DataAnalyzer's ColumnStatistics to buffer's ColumnStatistics
             let mut stats = ColumnStatistics {
-                column_name: column_name.clone(),
-                column_type: ColumnType::Mixed,
-                total_count: data_to_analyze.len(),
-                null_count: 0,
-                unique_count: 0,
-                frequency_map: None,
+                column_name: analyzer_stats.column_name,
+                column_type: match analyzer_stats.data_type {
+                    sql_cli::data_analyzer::ColumnType::Integer
+                    | sql_cli::data_analyzer::ColumnType::Float => ColumnType::Numeric,
+                    sql_cli::data_analyzer::ColumnType::String
+                    | sql_cli::data_analyzer::ColumnType::Boolean
+                    | sql_cli::data_analyzer::ColumnType::Date => ColumnType::String,
+                    sql_cli::data_analyzer::ColumnType::Mixed => ColumnType::Mixed,
+                    sql_cli::data_analyzer::ColumnType::Unknown => ColumnType::Mixed,
+                },
+                total_count: analyzer_stats.total_values,
+                null_count: analyzer_stats.null_values,
+                unique_count: analyzer_stats.unique_values,
+                frequency_map: None, // Will be populated below
                 min: None,
                 max: None,
                 sum: None,
-                mean: None,
-                median: None,
+                mean: analyzer_stats.avg_value,
+                median: None, // DataAnalyzer doesn't compute median yet
             };
 
-            // Analyze data type and calculate appropriate statistics
-            let mut numeric_values = Vec::new();
-            let mut string_values = Vec::new();
-            let mut frequency_map: BTreeMap<String, usize> = BTreeMap::new();
-
-            for value in &data_to_analyze {
-                if value.is_empty() {
-                    stats.null_count += 1;
-                } else if let Ok(num) = value.parse::<f64>() {
-                    numeric_values.push(num);
-                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
-                } else {
-                    string_values.push(value.clone());
-                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
+            // Parse min/max values for numeric columns
+            if matches!(stats.column_type, ColumnType::Numeric) {
+                if let Some(ref min_str) = analyzer_stats.min_value {
+                    stats.min = min_str.parse::<f64>().ok();
                 }
-            }
+                if let Some(ref max_str) = analyzer_stats.max_value {
+                    stats.max = max_str.parse::<f64>().ok();
+                }
 
-            stats.unique_count = frequency_map.len();
+                // Calculate sum and median manually if we have numeric values
+                let mut numeric_values: Vec<f64> = data_to_analyze
+                    .iter()
+                    .filter_map(|v| v.parse::<f64>().ok())
+                    .collect();
 
-            // Determine column type
-            if numeric_values.len() > 0 && string_values.is_empty() {
-                stats.column_type = ColumnType::Numeric;
-
-                // Calculate numeric statistics
                 if !numeric_values.is_empty() {
-                    numeric_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
-
-                    stats.min = Some(numeric_values[0]);
-                    stats.max = Some(numeric_values[numeric_values.len() - 1]);
                     stats.sum = Some(numeric_values.iter().sum());
-                    stats.mean = Some(stats.sum.unwrap() / numeric_values.len() as f64);
 
                     // Calculate median
+                    numeric_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
                     let mid = numeric_values.len() / 2;
                     stats.median = if numeric_values.len() % 2 == 0 {
                         Some((numeric_values[mid - 1] + numeric_values[mid]) / 2.0)
@@ -3987,16 +3990,22 @@ impl EnhancedTuiApp {
                         Some(numeric_values[mid])
                     };
                 }
-
-                // Only keep frequency map for small number of unique values
-                if frequency_map.len() <= 20 {
-                    stats.frequency_map = Some(frequency_map);
-                }
-            } else if string_values.len() > 0 && numeric_values.is_empty() {
-                stats.column_type = ColumnType::String;
-                stats.frequency_map = Some(frequency_map);
             } else {
-                stats.column_type = ColumnType::Mixed;
+                // For non-numeric columns, use the string values directly
+                stats.min = analyzer_stats.min_value.clone().map(|_| 0.0); // Placeholder
+                stats.max = analyzer_stats.max_value.clone().map(|_| 0.0); // Placeholder
+            }
+
+            // Build frequency map
+            let mut frequency_map: BTreeMap<String, usize> = BTreeMap::new();
+            for value in &data_to_analyze {
+                if !value.is_empty() {
+                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
+                }
+            }
+
+            // Only keep frequency map for reasonable number of unique values
+            if frequency_map.len() <= 100 {
                 stats.frequency_map = Some(frequency_map);
             }
 
