@@ -147,14 +147,10 @@ pub struct EnhancedTuiApp {
     api_client: ApiClient,
     input: Input,
     textarea: TextArea<'static>,
-    edit_mode: EditMode,
     cursor_manager: CursorManager, // New: manages cursor/navigation logic
     data_analyzer: DataAnalyzer,   // New: manages data analysis/statistics
-    mode: AppMode,
     // results: Option<QueryResponse>, // MIGRATED to buffer system
     table_state: TableState,
-    last_results_row: Option<usize>, // Preserve row position when switching modes
-    last_scroll_offset: (usize, usize), // Preserve scroll offset when switching modes
     show_help: bool,
     sql_parser: SqlParser,
     hybrid_parser: HybridParser,
@@ -196,19 +192,16 @@ pub struct EnhancedTuiApp {
     // Cache fields removed - now exclusively in Buffer
 
     // Data source tracking
-    last_query_source: Option<String>,
 
     // Undo/redo and kill ring
     undo_stack: Vec<(String, usize)>, // (text, cursor_pos)
     redo_stack: Vec<(String, usize)>,
-    kill_ring: String,
 
     // Viewport tracking
     last_visible_rows: usize, // Track the last calculated viewport height
 
     // Display options
-    viewport_lock_row: Option<usize>, // The row position to lock to in viewport
-    jump_to_row_input: String,        // Input buffer for jump to row command
+    jump_to_row_input: String, // Input buffer for jump to row command
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
 }
 
@@ -268,10 +261,6 @@ impl EnhancedTuiApp {
     }
 
     fn set_edit_mode(&mut self, mode: EditMode) {
-        // Update local field (will be removed later)
-        self.edit_mode = mode.clone();
-
-        // Also update in buffer
         let buffer_mode = match mode {
             EditMode::SingleLine => sql_cli::buffer::EditMode::SingleLine,
             EditMode::MultiLine => sql_cli::buffer::EditMode::MultiLine,
@@ -389,8 +378,6 @@ impl EnhancedTuiApp {
 
     fn set_last_results_row(&mut self, row: Option<usize>) {
         self.buffer_mut().set_last_results_row(row);
-        // Also update local field (will be removed later)
-        self.last_results_row = row;
     }
 
     // Compatibility wrapper for last_scroll_offset
@@ -400,8 +387,6 @@ impl EnhancedTuiApp {
 
     fn set_last_scroll_offset(&mut self, offset: (usize, usize)) {
         self.buffer_mut().set_last_scroll_offset(offset);
-        // Also update local field (will be removed later)
-        self.last_scroll_offset = offset;
     }
 
     // Compatibility wrapper for last_query_source
@@ -410,9 +395,7 @@ impl EnhancedTuiApp {
     }
 
     fn set_last_query_source(&mut self, source: Option<String>) {
-        self.buffer_mut().set_last_query_source(source.clone());
-        // Also update local field (will be removed later)
-        self.last_query_source = source;
+        self.buffer_mut().set_last_query_source(source);
     }
 
     // Compatibility wrapper for input
@@ -473,10 +456,6 @@ impl EnhancedTuiApp {
     }
 
     fn set_mode(&mut self, mode: AppMode) {
-        // Update local field (will be removed later)
-        self.mode = mode.clone();
-
-        // Also update in buffer
         self.buffer_mut()
             .set_mode(Self::local_mode_to_buffer(&mode));
     }
@@ -537,8 +516,6 @@ impl EnhancedTuiApp {
 
     fn set_viewport_lock_row(&mut self, row: Option<usize>) {
         self.buffer_mut().set_viewport_lock_row(row);
-        // Also update local field (will be removed later)
-        self.viewport_lock_row = row;
     }
 
     fn set_column_widths(&mut self, widths: Vec<u16>) {
@@ -611,9 +588,7 @@ impl EnhancedTuiApp {
     }
 
     fn set_kill_ring(&mut self, text: String) {
-        self.buffer_mut().set_kill_ring(text.clone());
-        // Also update local field (will be removed later)
-        self.kill_ring = text;
+        self.buffer_mut().set_kill_ring(text);
     }
 
     fn is_kill_ring_empty(&self) -> bool {
@@ -887,10 +862,8 @@ impl EnhancedTuiApp {
 
     fn set_fuzzy_filter_indices(&mut self, indices: Vec<usize>) {
         if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_fuzzy_filter_indices(indices.clone());
+            buffer.set_fuzzy_filter_indices(indices);
         }
-        // Also update local field during migration
-        // self.fuzzy_filter_state.filtered_indices = indices;
     }
 
     fn clear_fuzzy_filter(&mut self) {
@@ -1003,14 +976,10 @@ impl EnhancedTuiApp {
             api_client: ApiClient::new(api_url),
             input: Input::default(),
             textarea,
-            edit_mode: EditMode::SingleLine,
             cursor_manager: CursorManager::new(),
             data_analyzer: DataAnalyzer::new(),
-            mode: AppMode::Command,
             // results: None, // MIGRATED to buffer system
             table_state: TableState::default(),
-            last_results_row: None,
-            last_scroll_offset: (0, 0),
             show_help: false,
             sql_parser: SqlParser::new(),
             hybrid_parser: HybridParser::new(),
@@ -1070,12 +1039,9 @@ impl EnhancedTuiApp {
             },
             query_cache: QueryCache::new().ok(),
             // Cache fields now in Buffer
-            last_query_source: None,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-            kill_ring: String::new(),
             last_visible_rows: 30, // Default estimate
-            viewport_lock_row: None,
             jump_to_row_input: String::new(),
             log_buffer: get_log_buffer(),
         }
@@ -1568,7 +1534,7 @@ impl EnhancedTuiApp {
             }
             KeyCode::Tab => {
                 // Tab completion works in both modes
-                match self.edit_mode {
+                match self.get_edit_mode() {
                     EditMode::SingleLine => self.apply_completion(),
                     EditMode::MultiLine => {
                         // In vim normal mode, Tab should also trigger completion
@@ -1613,7 +1579,7 @@ impl EnhancedTuiApp {
                         };
 
                         // Update the appropriate input field based on edit mode
-                        match self.edit_mode {
+                        match self.get_edit_mode() {
                             EditMode::SingleLine => {
                                 self.input =
                                     tui_input::Input::new(text.clone()).with_cursor(text.len());
@@ -1643,7 +1609,7 @@ impl EnhancedTuiApp {
                         let text = buffer.get_input_text();
 
                         // Update the appropriate input field based on edit mode
-                        match self.edit_mode {
+                        match self.get_edit_mode() {
                             EditMode::SingleLine => {
                                 self.input =
                                     tui_input::Input::new(text.clone()).with_cursor(text.len());
@@ -1668,7 +1634,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.current_buffer_mut() {
                     if buffer.navigate_history_up(&history_commands) {
                         let text = buffer.get_input_text();
-                        match self.edit_mode {
+                        match self.get_edit_mode() {
                             EditMode::SingleLine => {
                                 self.input =
                                     tui_input::Input::new(text.clone()).with_cursor(text.len());
@@ -1693,7 +1659,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.current_buffer_mut() {
                     if buffer.navigate_history_down(&history_commands) {
                         let text = buffer.get_input_text();
-                        match self.edit_mode {
+                        match self.get_edit_mode() {
                             EditMode::SingleLine => {
                                 self.input =
                                     tui_input::Input::new(text.clone()).with_cursor(text.len());
@@ -1814,7 +1780,7 @@ impl EnhancedTuiApp {
             }
             KeyCode::Down
                 if self.buffer().get_results().is_some()
-                    && self.edit_mode == EditMode::SingleLine =>
+                    && self.get_edit_mode() == EditMode::SingleLine =>
             {
                 self.set_mode(AppMode::Results);
                 // Restore previous position or default to 0
@@ -2061,7 +2027,7 @@ impl EnhancedTuiApp {
                 self.completion_state.current_index = 0;
 
                 // Handle completion based on mode
-                match self.edit_mode {
+                match self.get_edit_mode() {
                     EditMode::SingleLine => self.handle_completion(),
                     EditMode::MultiLine => self.handle_completion_multiline(),
                 }
@@ -2151,8 +2117,8 @@ impl EnhancedTuiApp {
             KeyCode::Up => {
                 // Save current position before switching to Command mode
                 if let Some(selected) = self.get_table_state().selected() {
-                    self.last_results_row = Some(selected);
-                    self.last_scroll_offset = self.get_scroll_offset();
+                    self.set_last_results_row(Some(selected));
+                    self.set_last_scroll_offset(self.get_scroll_offset());
                 }
                 self.set_mode(AppMode::Command);
                 self.get_table_state_mut().select(None);
@@ -3295,7 +3261,7 @@ impl EnhancedTuiApp {
 
     fn expand_asterisk(&mut self) {
         // Expand SELECT * to all column names
-        let query = if self.edit_mode == EditMode::SingleLine {
+        let query = if self.get_edit_mode() == EditMode::SingleLine {
             self.get_input_text()
         } else {
             self.get_input_text().lines().collect::<Vec<_>>().join(" ")
@@ -3335,7 +3301,7 @@ impl EnhancedTuiApp {
                             let new_query = format!("{}{}{}", before_star, columns_str, after_star);
 
                             // Update the input
-                            if self.edit_mode == EditMode::SingleLine {
+                            if self.get_edit_mode() == EditMode::SingleLine {
                                 self.set_input_text_with_cursor(new_query.clone(), new_query.len());
                                 self.update_horizontal_scroll(120);
                             } else {
@@ -4804,7 +4770,7 @@ impl EnhancedTuiApp {
                 Ok(text) => {
                     match self.get_mode() {
                         AppMode::Command => {
-                            if self.edit_mode == EditMode::SingleLine {
+                            if self.get_edit_mode() == EditMode::SingleLine {
                                 // Get current cursor position
                                 let cursor_pos = self.get_input_cursor();
                                 let current_value = self.get_input_text();
@@ -5190,7 +5156,7 @@ impl EnhancedTuiApp {
     }
 
     fn kill_line(&mut self) {
-        match self.edit_mode {
+        match self.get_edit_mode() {
             EditMode::SingleLine => {
                 let query_str = self.get_input_text();
                 let cursor_pos = self.get_input_cursor();
@@ -5267,7 +5233,7 @@ impl EnhancedTuiApp {
     }
 
     fn kill_line_backward(&mut self) {
-        match self.edit_mode {
+        match self.get_edit_mode() {
             EditMode::SingleLine => {
                 let query = self.get_input_text();
                 let cursor_pos = self.get_input_cursor();
@@ -5389,7 +5355,7 @@ impl EnhancedTuiApp {
                 ta.move_cursor(tui_textarea::CursorMove::End);
                 ta
             };
-            self.edit_mode = edit_mode;
+            self.set_edit_mode(edit_mode);
             self.set_results(results);
 
             let result_count = self
@@ -5493,7 +5459,7 @@ impl EnhancedTuiApp {
                 ta.move_cursor(tui_textarea::CursorMove::End);
                 ta
             };
-            self.edit_mode = edit_mode;
+            self.set_edit_mode(edit_mode);
             self.set_results(results);
 
             let result_count = self
@@ -5967,7 +5933,7 @@ impl EnhancedTuiApp {
 
     fn ui(&mut self, f: &mut Frame) {
         // Dynamically adjust layout based on edit mode
-        let input_height = match self.edit_mode {
+        let input_height = match self.get_edit_mode() {
             EditMode::SingleLine => 3,
             EditMode::MultiLine => {
                 // Use 1/3 of terminal height or 10 lines, whichever is larger (max 20)
@@ -6022,7 +5988,7 @@ impl EnhancedTuiApp {
 
         let input_paragraph = match self.get_mode() {
             AppMode::Command => {
-                match self.edit_mode {
+                match self.get_edit_mode() {
                     EditMode::SingleLine => {
                         // Use syntax highlighting for SQL command input with horizontal scrolling
                         let highlighted_line =
@@ -6063,7 +6029,7 @@ impl EnhancedTuiApp {
 
         // Determine the actual results area based on edit mode
         let results_area =
-            if self.get_mode() == AppMode::Command && self.edit_mode == EditMode::MultiLine {
+            if self.get_mode() == AppMode::Command && self.get_edit_mode() == EditMode::MultiLine {
                 // In multi-line mode, render textarea in the input area
                 f.render_widget(&self.textarea, chunks[0]);
 
@@ -6079,7 +6045,7 @@ impl EnhancedTuiApp {
         // Set cursor position for input modes
         match self.get_mode() {
             AppMode::Command => {
-                match self.edit_mode {
+                match self.get_edit_mode() {
                     EditMode::SingleLine => {
                         // Calculate cursor position with horizontal scrolling
                         let inner_width = chunks[0].width.saturating_sub(2) as usize;
