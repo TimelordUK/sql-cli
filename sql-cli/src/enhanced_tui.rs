@@ -335,25 +335,36 @@ impl EnhancedTuiApp {
 
     // Helper to get cursor position from buffer or fallback to direct input
     fn get_input_cursor(&self) -> usize {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_input_cursor_position()
-        } else {
-            // Fallback to direct input access during migration
-            match self.get_edit_mode() {
-                EditMode::SingleLine => self.input.cursor(),
-                EditMode::MultiLine => {
-                    // For multi-line, calculate absolute position
-                    let (row, col) = self.textarea.cursor();
-                    let mut pos = 0;
-                    for (i, line) in self.textarea.lines().iter().enumerate() {
-                        if i < row {
-                            pos += line.len() + 1; // +1 for newline
-                        } else if i == row {
-                            pos += col;
-                            break;
+        // For special modes that use the input field directly
+        match self.get_mode() {
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
+                // These modes use the input field for their patterns
+                self.input.cursor()
+            }
+            _ => {
+                // All other modes use the buffer
+                if let Some(buffer) = self.current_buffer() {
+                    buffer.get_input_cursor_position()
+                } else {
+                    // Fallback to direct input access during migration
+                    match self.get_edit_mode() {
+                        EditMode::SingleLine => self.input.cursor(),
+                        EditMode::MultiLine => {
+                            // For multi-line, calculate absolute position
+                            let (row, col) = self.textarea.cursor();
+                            let mut pos = 0;
+                            let text = self.get_input_text();
+                            for (i, line) in text.lines().enumerate() {
+                                if i < row {
+                                    pos += line.len() + 1; // +1 for newline
+                                } else if i == row {
+                                    pos += col;
+                                    break;
+                                }
+                            }
+                            pos
                         }
                     }
-                    pos
                 }
             }
         }
@@ -381,32 +392,20 @@ impl EnhancedTuiApp {
 
     // Helper to handle key events in the input
     fn handle_input_key(&mut self, key: KeyEvent) -> bool {
-        // Check mode before getting mutable buffer
-        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
-
         if let Some(buffer) = self.current_buffer_mut() {
             // Route to buffer's input handling
-            let result = buffer.handle_input_key(key);
-
-            // Sync self.input with buffer for rendering (temporary during migration)
-            if is_single_line {
-                let text = buffer.get_input_text();
-                let cursor = buffer.get_input_cursor_position();
-                self.input = tui_input::Input::new(text).with_cursor(cursor);
-            }
-
-            result
+            buffer.handle_input_key(key)
         } else {
-            // Fallback to direct input handling during migration
-            match self.get_edit_mode() {
-                EditMode::SingleLine => {
+            // For special modes that handle input directly
+            match self.get_mode() {
+                AppMode::Search
+                | AppMode::Filter
+                | AppMode::FuzzyFilter
+                | AppMode::ColumnSearch => {
                     self.input.handle_event(&Event::Key(key));
                     false
                 }
-                EditMode::MultiLine => {
-                    self.textarea.input(key);
-                    false
-                }
+                _ => false,
             }
         }
     }
@@ -2934,7 +2933,7 @@ impl EnhancedTuiApp {
     }
 
     fn handle_completion(&mut self) {
-        let cursor_pos = self.input.cursor();
+        let cursor_pos = self.get_input_cursor();
         let query_str = self.get_input_text();
         let query = query_str.as_str();
 
@@ -4700,7 +4699,7 @@ impl EnhancedTuiApp {
                         AppMode::Command => {
                             if self.edit_mode == EditMode::SingleLine {
                                 // Get current cursor position
-                                let cursor_pos = self.input.cursor();
+                                let cursor_pos = self.get_input_cursor();
                                 let current_value = self.get_input_text();
 
                                 // Insert at cursor position
@@ -4730,7 +4729,7 @@ impl EnhancedTuiApp {
                         | AppMode::Search
                         | AppMode::ColumnSearch => {
                             // For search/filter modes, append to current pattern
-                            let cursor_pos = self.input.cursor();
+                            let cursor_pos = self.get_input_cursor();
                             let current_value = self.get_input_text();
 
                             let mut new_value = String::new();
@@ -4876,7 +4875,7 @@ impl EnhancedTuiApp {
 
     fn update_horizontal_scroll(&mut self, terminal_width: u16) {
         let inner_width = terminal_width.saturating_sub(3) as usize; // Account for borders + 1 char padding
-        let cursor_pos = self.input.visual_cursor();
+        let cursor_pos = self.get_input_cursor();
 
         // If cursor is before the scroll window, scroll left
         if cursor_pos < self.input_scroll_offset as usize {
@@ -4891,7 +4890,7 @@ impl EnhancedTuiApp {
     fn get_cursor_token_position(&self) -> (usize, usize) {
         let query_str = self.get_input_text();
         let query = query_str.as_str();
-        let cursor_pos = self.input.cursor();
+        let cursor_pos = self.get_input_cursor();
 
         if query.is_empty() {
             return (0, 0);
@@ -4930,7 +4929,7 @@ impl EnhancedTuiApp {
     fn get_token_at_cursor(&self) -> Option<String> {
         let query_str = self.get_input_text();
         let query = query_str.as_str();
-        let cursor_pos = self.input.cursor();
+        let cursor_pos = self.get_input_cursor();
 
         if query.is_empty() {
             return None;
@@ -5040,7 +5039,7 @@ impl EnhancedTuiApp {
 
     fn delete_word_backward(&mut self) {
         let query = self.get_input_text();
-        let cursor_pos = self.input.cursor();
+        let cursor_pos = self.get_input_cursor();
 
         if cursor_pos == 0 {
             return;
@@ -5130,7 +5129,7 @@ impl EnhancedTuiApp {
 
     fn delete_word_forward(&mut self) {
         let query = self.get_input_text();
-        let cursor_pos = self.input.cursor();
+        let cursor_pos = self.get_input_cursor();
         let query_len = query.len();
 
         if cursor_pos >= query_len {
@@ -5833,25 +5832,25 @@ impl EnhancedTuiApp {
             }
             AppMode::Search => {
                 f.set_cursor_position((
-                    chunks[0].x + self.input.cursor() as u16 + 1,
+                    chunks[0].x + self.get_input_cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
             AppMode::Filter => {
                 f.set_cursor_position((
-                    chunks[0].x + self.input.cursor() as u16 + 1,
+                    chunks[0].x + self.get_input_cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
             AppMode::FuzzyFilter => {
                 f.set_cursor_position((
-                    chunks[0].x + self.input.cursor() as u16 + 1,
+                    chunks[0].x + self.get_input_cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
             AppMode::ColumnSearch => {
                 f.set_cursor_position((
-                    chunks[0].x + self.input.cursor() as u16 + 1,
+                    chunks[0].x + self.get_input_cursor() as u16 + 1,
                     chunks[0].y + 1,
                 ));
             }
