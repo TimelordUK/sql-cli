@@ -28,8 +28,11 @@ use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::cursor_manager::CursorManager;
+use sql_cli::data_analyzer::DataAnalyzer;
+use sql_cli::help_text::HelpText;
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
+use sql_cli::text_navigation::{TextEditor, TextNavigator};
 use sql_cli::where_ast::format_where_ast;
 use sql_cli::where_parser::WhereParser;
 use std::cmp::Ordering;
@@ -146,6 +149,7 @@ pub struct EnhancedTuiApp {
     textarea: TextArea<'static>,
     edit_mode: EditMode,
     cursor_manager: CursorManager, // New: manages cursor/navigation logic
+    data_analyzer: DataAnalyzer,   // New: manages data analysis/statistics
     mode: AppMode,
     // results: Option<QueryResponse>, // MIGRATED to buffer system
     table_state: TableState,
@@ -1233,6 +1237,7 @@ impl EnhancedTuiApp {
             textarea,
             edit_mode: EditMode::SingleLine,
             cursor_manager: CursorManager::new(),
+            data_analyzer: DataAnalyzer::new(),
             mode: AppMode::Command,
             // results: None, // MIGRATED to buffer system
             table_state: TableState::default(),
@@ -3902,17 +3907,17 @@ impl EnhancedTuiApp {
             let column_name = &headers[self.get_current_column()];
 
             // Use filtered data if available, otherwise use original data
-            let data_to_analyze = if let Some(filtered) = self.get_filtered_data() {
-                // Convert filtered data back to JSON values for analysis
-                let mut json_data = Vec::new();
+            let data_to_analyze: Vec<String> = if let Some(filtered) = self.get_filtered_data() {
+                // Convert filtered data back to strings for analysis
+                let mut string_data = Vec::new();
                 for row in filtered {
                     if self.get_current_column() < row.len() {
-                        json_data.push(row[self.get_current_column()].clone());
+                        string_data.push(row[self.get_current_column()].clone());
                     }
                 }
-                json_data
+                string_data
             } else {
-                // Extract column values from JSON data
+                // Extract column values from JSON data as strings
                 results
                     .data
                     .iter()
@@ -3932,54 +3937,54 @@ impl EnhancedTuiApp {
                     .collect()
             };
 
-            // Calculate statistics
+            // Use DataAnalyzer to calculate statistics
+            let analyzer_stats = self
+                .data_analyzer
+                .calculate_column_statistics(column_name, &data_to_analyze);
+
+            // Convert from DataAnalyzer's ColumnStatistics to buffer's ColumnStatistics
             let mut stats = ColumnStatistics {
-                column_name: column_name.clone(),
-                column_type: ColumnType::Mixed,
-                total_count: data_to_analyze.len(),
-                null_count: 0,
-                unique_count: 0,
-                frequency_map: None,
+                column_name: analyzer_stats.column_name,
+                column_type: match analyzer_stats.data_type {
+                    sql_cli::data_analyzer::ColumnType::Integer
+                    | sql_cli::data_analyzer::ColumnType::Float => ColumnType::Numeric,
+                    sql_cli::data_analyzer::ColumnType::String
+                    | sql_cli::data_analyzer::ColumnType::Boolean
+                    | sql_cli::data_analyzer::ColumnType::Date => ColumnType::String,
+                    sql_cli::data_analyzer::ColumnType::Mixed => ColumnType::Mixed,
+                    sql_cli::data_analyzer::ColumnType::Unknown => ColumnType::Mixed,
+                },
+                total_count: analyzer_stats.total_values,
+                null_count: analyzer_stats.null_values,
+                unique_count: analyzer_stats.unique_values,
+                frequency_map: None, // Will be populated below
                 min: None,
                 max: None,
                 sum: None,
-                mean: None,
-                median: None,
+                mean: analyzer_stats.avg_value,
+                median: None, // DataAnalyzer doesn't compute median yet
             };
 
-            // Analyze data type and calculate appropriate statistics
-            let mut numeric_values = Vec::new();
-            let mut string_values = Vec::new();
-            let mut frequency_map: BTreeMap<String, usize> = BTreeMap::new();
-
-            for value in &data_to_analyze {
-                if value.is_empty() {
-                    stats.null_count += 1;
-                } else if let Ok(num) = value.parse::<f64>() {
-                    numeric_values.push(num);
-                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
-                } else {
-                    string_values.push(value.clone());
-                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
+            // Parse min/max values for numeric columns
+            if matches!(stats.column_type, ColumnType::Numeric) {
+                if let Some(ref min_str) = analyzer_stats.min_value {
+                    stats.min = min_str.parse::<f64>().ok();
                 }
-            }
+                if let Some(ref max_str) = analyzer_stats.max_value {
+                    stats.max = max_str.parse::<f64>().ok();
+                }
 
-            stats.unique_count = frequency_map.len();
+                // Calculate sum and median manually if we have numeric values
+                let mut numeric_values: Vec<f64> = data_to_analyze
+                    .iter()
+                    .filter_map(|v| v.parse::<f64>().ok())
+                    .collect();
 
-            // Determine column type
-            if numeric_values.len() > 0 && string_values.is_empty() {
-                stats.column_type = ColumnType::Numeric;
-
-                // Calculate numeric statistics
                 if !numeric_values.is_empty() {
-                    numeric_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
-
-                    stats.min = Some(numeric_values[0]);
-                    stats.max = Some(numeric_values[numeric_values.len() - 1]);
                     stats.sum = Some(numeric_values.iter().sum());
-                    stats.mean = Some(stats.sum.unwrap() / numeric_values.len() as f64);
 
                     // Calculate median
+                    numeric_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
                     let mid = numeric_values.len() / 2;
                     stats.median = if numeric_values.len() % 2 == 0 {
                         Some((numeric_values[mid - 1] + numeric_values[mid]) / 2.0)
@@ -3987,16 +3992,22 @@ impl EnhancedTuiApp {
                         Some(numeric_values[mid])
                     };
                 }
-
-                // Only keep frequency map for small number of unique values
-                if frequency_map.len() <= 20 {
-                    stats.frequency_map = Some(frequency_map);
-                }
-            } else if string_values.len() > 0 && numeric_values.is_empty() {
-                stats.column_type = ColumnType::String;
-                stats.frequency_map = Some(frequency_map);
             } else {
-                stats.column_type = ColumnType::Mixed;
+                // For non-numeric columns, use the string values directly
+                stats.min = analyzer_stats.min_value.clone().map(|_| 0.0); // Placeholder
+                stats.max = analyzer_stats.max_value.clone().map(|_| 0.0); // Placeholder
+            }
+
+            // Build frequency map
+            let mut frequency_map: BTreeMap<String, usize> = BTreeMap::new();
+            for value in &data_to_analyze {
+                if !value.is_empty() {
+                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
+                }
+            }
+
+            // Only keep frequency map for reasonable number of unique values
+            if frequency_map.len() <= 100 {
                 stats.frequency_map = Some(frequency_map);
             }
 
@@ -5231,105 +5242,15 @@ impl EnhancedTuiApp {
     }
 
     fn get_cursor_token_position(&self) -> (usize, usize) {
-        let query_str = self.get_input_text();
-        let query = query_str.as_str();
+        let query = self.get_input_text();
         let cursor_pos = self.get_input_cursor();
-
-        if query.is_empty() {
-            return (0, 0);
-        }
-
-        // Use our lexer to tokenize the query
-        use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(&query);
-        let tokens = lexer.tokenize_all_with_positions();
-
-        if tokens.is_empty() {
-            return (0, 0);
-        }
-
-        // Find which token the cursor is in
-        let mut current_token = 0;
-        for (i, (start, end, _)) in tokens.iter().enumerate() {
-            if cursor_pos >= *start && cursor_pos <= *end {
-                current_token = i + 1;
-                break;
-            } else if cursor_pos < *start {
-                // Cursor is between tokens
-                current_token = i;
-                break;
-            }
-        }
-
-        // If cursor is after all tokens
-        if current_token == 0 && cursor_pos > 0 {
-            current_token = tokens.len();
-        }
-
-        (current_token, tokens.len())
+        TextNavigator::get_cursor_token_position(&query, cursor_pos)
     }
 
     fn get_token_at_cursor(&self) -> Option<String> {
-        let query_str = self.get_input_text();
-        let query = query_str.as_str();
+        let query = self.get_input_text();
         let cursor_pos = self.get_input_cursor();
-
-        if query.is_empty() {
-            return None;
-        }
-
-        // Use our lexer to tokenize the query
-        use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(&query);
-        let tokens = lexer.tokenize_all_with_positions();
-
-        // Find the token at cursor position
-        for (start, end, token) in &tokens {
-            if cursor_pos >= *start && cursor_pos <= *end {
-                // Format token nicely
-                use crate::recursive_parser::Token;
-                let token_str = match token {
-                    Token::Select => "SELECT",
-                    Token::From => "FROM",
-                    Token::Where => "WHERE",
-                    Token::GroupBy => "GROUP BY",
-                    Token::OrderBy => "ORDER BY",
-                    Token::Having => "HAVING",
-                    Token::Asc => "ASC",
-                    Token::Desc => "DESC",
-                    Token::And => "AND",
-                    Token::Or => "OR",
-                    Token::In => "IN",
-                    Token::DateTime => "DateTime",
-                    Token::Identifier(s) => s,
-                    Token::QuotedIdentifier(s) => s,
-                    Token::StringLiteral(s) => s,
-                    Token::NumberLiteral(s) => s,
-                    Token::Star => "*",
-                    Token::Comma => ",",
-                    Token::Dot => ".",
-                    Token::LeftParen => "(",
-                    Token::RightParen => ")",
-                    Token::Equal => "=",
-                    Token::GreaterThan => ">",
-                    Token::LessThan => "<",
-                    Token::GreaterThanOrEqual => ">=",
-                    Token::LessThanOrEqual => "<=",
-                    Token::NotEqual => "!=",
-                    Token::Not => "NOT",
-                    Token::Between => "BETWEEN",
-                    Token::Like => "LIKE",
-                    Token::Is => "IS",
-                    Token::Null => "NULL",
-                    Token::Limit => "LIMIT",
-                    Token::Offset => "OFFSET",
-                    Token::Eof => "EOF",
-                };
-                return Some(token_str.to_string());
-            }
-        }
-
-        None
+        TextNavigator::get_token_at_cursor(&query, cursor_pos)
     }
 
     fn move_cursor_word_backward(&mut self) {
@@ -5600,11 +5521,9 @@ impl EnhancedTuiApp {
                 let query = self.get_input_text();
                 let cursor_pos = self.get_input_cursor();
 
-                if cursor_pos > 0 {
-                    // Collect text that will be killed and the new query
-                    let killed_text = query.chars().take(cursor_pos).collect::<String>();
-                    let new_query = query.chars().skip(cursor_pos).collect::<String>();
-
+                if let Some((killed_text, new_query)) =
+                    TextEditor::kill_line_backward(&query, cursor_pos)
+                {
                     // Save to undo stack before modifying
                     if let Some(buffer) = self.current_buffer_mut() {
                         buffer.save_state_for_undo();
@@ -6017,41 +5936,16 @@ impl EnhancedTuiApp {
     fn jump_to_next_token(&mut self) {
         let query = self.get_input_text();
         let cursor_pos = self.get_input_cursor();
-        let query_len = query.len();
 
-        if cursor_pos >= query_len {
-            return;
-        }
-
-        use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(&query);
-        let tokens = lexer.tokenize_all_with_positions();
-
-        // Find the next token start after cursor
-        let mut target_pos = query_len;
-        let mut in_current_token = false;
-
-        for (start, end, _) in &tokens {
-            if cursor_pos >= *start && cursor_pos < *end {
-                in_current_token = true;
-            } else if in_current_token && *start >= *end {
-                // Move to the start of the next token after the current one
-                target_pos = *start;
-                break;
-            } else if *start > cursor_pos {
-                target_pos = *start;
-                break;
-            }
-        }
-
-        // Move cursor through buffer
-        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_input_cursor_position(target_pos);
-            // Sync for rendering
-            if is_single_line {
-                let text = buffer.get_input_text();
-                self.set_input_text_with_cursor(text, target_pos);
+        if let Some(target_pos) = TextNavigator::calculate_next_token_position(&query, cursor_pos) {
+            let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+            if let Some(buffer) = self.current_buffer_mut() {
+                buffer.set_input_cursor_position(target_pos);
+                // Sync for rendering
+                if is_single_line {
+                    let text = buffer.get_input_text();
+                    self.set_input_text_with_cursor(text, target_pos);
+                }
             }
         }
     }
@@ -7304,176 +7198,9 @@ impl EnhancedTuiApp {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(area);
 
-        // Left column content
-        let left_content = vec![
-            Line::from("SQL CLI Help - Enhanced Features 🚀").style(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from(""),
-            Line::from("COMMAND MODE").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  Enter    - Execute query"),
-            Line::from("  Tab      - Auto-complete"),
-            Line::from("  Ctrl+R   - Search history"),
-            Line::from("  Ctrl+X   - Expand SELECT * to columns"),
-            Line::from("  F3       - Toggle multi-line"),
-            Line::from(""),
-            Line::from("NAVIGATION").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  Ctrl+A   - Beginning of line"),
-            Line::from("  Ctrl+E   - End of line"),
-            Line::from("  Ctrl+←   - Move backward word"),
-            Line::from("  Ctrl+→   - Move forward word"),
-            Line::from(""),
-            Line::from("EDITING").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  Ctrl+W   - Delete word backward"),
-            Line::from("  Alt+D    - Delete word forward"),
-            Line::from("  F9       - Kill to end of line (Ctrl+K alternative)"),
-            Line::from("  F10      - Kill to beginning (Ctrl+U alternative)"),
-            Line::from("  Ctrl+Y   - Yank (paste)"),
-            Line::from("  Ctrl+Z   - Undo"),
-            Line::from(""),
-            Line::from("BUFFER MANAGEMENT").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  F11/Ctrl+PgUp - Previous buffer"),
-            Line::from("  F12/Ctrl+PgDn - Next buffer"),
-            Line::from("  Ctrl+6        - Quick switch"),
-            Line::from("  Alt+N         - New buffer"),
-            Line::from("  Alt+W         - Close buffer"),
-            Line::from("  Alt+B         - List buffers"),
-            Line::from(""),
-            Line::from("VIEW MODES").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  F1/?     - Toggle this help"),
-            Line::from("  F5       - Debug info"),
-            Line::from("  F6       - Pretty query view"),
-            Line::from("  F7       - Cache management"),
-            Line::from("  F8       - Case-insensitive"),
-            Line::from("  ↓        - Enter results mode"),
-            Line::from("  Ctrl+C/q - Exit"),
-            Line::from(""),
-            Line::from("CACHE COMMANDS").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  :cache save [id] - Save with ID"),
-            Line::from("  :cache load ID   - Load by ID"),
-            Line::from("  :cache list      - Show cached"),
-            Line::from("  :cache clear     - Disable cache"),
-            Line::from(""),
-            Line::from("🌟 FEATURES").style(
-                Style::default()
-                    .fg(Color::Magenta)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  • Column statistics (S key)"),
-            Line::from("  • Column pinning (p/P keys)"),
-            Line::from("  • Dynamic column sizing"),
-            Line::from("  • Compact mode (C key)"),
-            Line::from("  • Rainbow parentheses"),
-            Line::from("  • Auto-execute CSV/JSON"),
-            Line::from("  • Multi-source indicators"),
-            Line::from("  • LINQ-style null checking"),
-            Line::from("  • Named cache IDs"),
-            Line::from("  • Row numbers (N key)"),
-            Line::from("  • Jump to row (: key)"),
-        ];
-
-        // Right column content
-        let right_content = vec![
-            Line::from("Use ↓/↑ or j/k to scroll help").style(Style::default().fg(Color::DarkGray)),
-            Line::from(""),
-            Line::from("RESULTS NAVIGATION").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  j/↓      - Next row"),
-            Line::from("  k/↑      - Previous row"),
-            Line::from("  h/←      - Previous column"),
-            Line::from("  l/→      - Next column"),
-            Line::from("  g        - First row"),
-            Line::from("  G        - Last row"),
-            Line::from("  0/^      - First column"),
-            Line::from("  $        - Last column"),
-            Line::from("  PgDn     - Page down"),
-            Line::from("  PgUp     - Page up"),
-            Line::from(""),
-            Line::from("RESULTS FEATURES").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  C        - 🎯 Toggle compact"),
-            Line::from("  N        - 🔢 Toggle row nums"),
-            Line::from("  :        - 📍 Jump to row"),
-            Line::from("  Space    - 🔒 Viewport lock"),
-            Line::from("  p        - 📌 Pin/unpin column"),
-            Line::from("  P        - Clear all pins"),
-            Line::from("  /        - Search in results"),
-            Line::from("  \\        - Search column names"),
-            Line::from("  n/N      - Next/prev match"),
-            Line::from("  Shift+F  - Filter rows (regex)"),
-            Line::from("  f        - Fuzzy filter rows"),
-            Line::from("  'text    - Exact match filter"),
-            Line::from("             (matches highlighted)"),
-            Line::from("  v        - Toggle cell/row mode"),
-            Line::from("  s        - Sort by column"),
-            Line::from("  S        - 📊 Column statistics"),
-            Line::from("  1-9      - Sort by column #"),
-            Line::from("  y        - Yank (cell mode: yank cell)"),
-            Line::from("    yy     - Yank current row (row mode)"),
-            Line::from("    yc     - Yank current column"),
-            Line::from("    ya     - Yank all data"),
-            Line::from("  Ctrl+E   - Export to CSV"),
-            Line::from("  Ctrl+J   - Export to JSON"),
-            Line::from("  ↑/Esc    - Back to command"),
-            Line::from("  q        - Quit"),
-            Line::from(""),
-            Line::from("SEARCH/FILTER").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  Enter    - Apply"),
-            Line::from("  Esc      - Cancel"),
-            Line::from(""),
-            Line::from("💡 TIPS").style(
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::from("  • Load CSV: sql-cli data.csv"),
-            Line::from("  • Press C for compact view"),
-            Line::from("  • Press N for row numbers"),
-            Line::from("  • Press : then 200 → row 200"),
-            Line::from("  • Space locks viewport"),
-            Line::from("  • Columns auto-adjust width"),
-            Line::from("  • Named: :cache save q1"),
-            Line::from("  • f + 'ubs = exact 'ubs' match"),
-            Line::from("  • \\ + name = find column by name"),
-            Line::from(""),
-            Line::from("📦 Cache 📁 File 🌐 API 🗄️ SQL"),
-        ];
+        // Get help content from HelpText module
+        let left_content = HelpText::left_column();
+        let right_content = HelpText::right_column();
 
         // Calculate visible area for scrolling
         let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
