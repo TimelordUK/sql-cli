@@ -248,9 +248,23 @@ impl EnhancedTuiApp {
             .map(|b| b as &dyn sql_cli::buffer::BufferAPI)
     }
 
+    /// Get current buffer (panics if none exists)
+    /// Use this when we know a buffer should always exist
+    fn buffer(&self) -> &dyn sql_cli::buffer::BufferAPI {
+        self.current_buffer()
+            .expect("No buffer available - this should not happen")
+    }
+
     /// Get current buffer if available (for writing)
     fn current_buffer_mut(&mut self) -> Option<&mut sql_cli::buffer::Buffer> {
         self.buffer_manager.current_mut()
+    }
+
+    /// Get current mutable buffer (panics if none exists)
+    /// Use this when we know a buffer should always exist
+    fn buffer_mut(&mut self) -> &mut sql_cli::buffer::Buffer {
+        self.current_buffer_mut()
+            .expect("No buffer available - this should not happen")
     }
 
     // Compatibility wrapper for edit_mode
@@ -282,11 +296,7 @@ impl EnhancedTuiApp {
 
     // Compatibility wrapper for case_insensitive
     fn get_case_insensitive(&self) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.is_case_insensitive()
-        } else {
-            self.case_insensitive
-        }
+        self.buffer().is_case_insensitive()
     }
 
     // Helper to get input text from buffer or fallback to direct input
@@ -572,12 +582,7 @@ impl EnhancedTuiApp {
 
     // Compatibility wrapper for results
     fn get_results(&self) -> Option<&QueryResponse> {
-        // Get results from buffer system
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_results()
-        } else {
-            None
-        }
+        self.buffer().get_results()
     }
 
     fn set_results(&mut self, results: Option<QueryResponse>) {
@@ -601,61 +606,33 @@ impl EnhancedTuiApp {
 
     // Wrapper methods for status_message (uses buffer system)
     fn get_status_message(&self) -> String {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_status_message()
-        } else {
-            "Ready".to_string()
-        }
+        self.buffer().get_status_message()
     }
 
     fn set_status_message(&mut self, message: String) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_status_message(message);
-        }
+        self.buffer_mut().set_status_message(message);
     }
 
     // Wrapper methods for scroll_offset (uses buffer system)
     fn get_scroll_offset(&self) -> (usize, usize) {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_scroll_offset()
-        } else {
-            self.scroll_offset
-        }
+        self.buffer().get_scroll_offset()
     }
 
     fn set_scroll_offset(&mut self, offset: (usize, usize)) {
-        // Update local field (will be removed later)
-        self.scroll_offset = offset;
-
-        // Also update in buffer if available
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_scroll_offset(offset);
-        }
+        self.buffer_mut().set_scroll_offset(offset);
     }
 
     // Wrapper methods for current_column (uses buffer system)
     fn get_current_column(&self) -> usize {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_current_column()
-        } else {
-            self.current_column
-        }
+        self.buffer().get_current_column()
     }
 
     fn set_current_column(&mut self, col: usize) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_current_column(col);
-        } else {
-            self.current_column = col;
-        }
+        self.buffer_mut().set_current_column(col);
     }
 
     fn get_compact_mode(&self) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.is_compact_mode()
-        } else {
-            self.compact_mode
-        }
+        self.buffer().is_compact_mode()
     }
 
     fn set_compact_mode(&mut self, compact: bool) {
@@ -667,11 +644,7 @@ impl EnhancedTuiApp {
     }
 
     fn get_show_row_numbers(&self) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.is_show_row_numbers()
-        } else {
-            self.show_row_numbers
-        }
+        self.buffer().is_show_row_numbers()
     }
 
     fn set_show_row_numbers(&mut self, show: bool) {
@@ -1188,17 +1161,11 @@ impl EnhancedTuiApp {
 
     // Wrapper methods for column_stats (uses buffer system)
     fn get_column_stats(&self) -> Option<&ColumnStatistics> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_column_stats()
-        } else {
-            None
-        }
+        self.buffer().get_column_stats()
     }
 
     fn set_column_stats(&mut self, stats: Option<ColumnStatistics>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_column_stats(stats);
-        }
+        self.buffer_mut().set_column_stats(stats);
     }
 
     fn sanitize_table_name(name: &str) -> String {
