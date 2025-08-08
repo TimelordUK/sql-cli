@@ -1,6 +1,37 @@
 {
     "version": "0.2.0",
     "configurations": [
+
+        {
+            "type": "lldb",
+            "request": "attach",
+            "name": "🔗 Attach to Running SQL CLI",
+            "program": "${workspaceFolder}/target/debug/sql-cli",
+            "processName": "sql-cli",
+            "stopOnEntry": false,
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "🔨 Build Debug - SQL CLI"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "🖥️ Debug SQL CLI (External Terminal)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=sql-cli",
+                    "--package=sql-cli"
+                ],
+                "filter": {
+                    "name": "sql-cli",
+                    "kind": "bin"
+                }
+            },
+            "args": ["data/small-customer.csv"],
+            "cwd": "${workspaceFolder}",
+            "console": "externalTerminal"
+            // Tip: Manually maximize the external terminal window for best TUI experience.
+        },
         {
             "type": "lldb",
             "request": "launch",

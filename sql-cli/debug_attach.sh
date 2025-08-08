@@ -1,0 +1,33 @@
+#!/bin/bash
+set -e
+
+echo "🔧 Building debug version..."
+cargo build --bin sql-cli
+
+echo ""
+echo "🐛 TUI Debugging Setup"
+echo "======================"
+echo ""
+echo "TUIs need terminal control, so VS Code's integrated terminal won't work."
+echo "Here are the two recommended approaches:"
+echo ""
+echo "METHOD 1: Attach to Running Process (Recommended)"
+echo "1. In this terminal, run: ./target/debug/sql-cli data/small-customer.csv"
+echo "2. In VS Code, press F5 and choose '🔗 Attach to Running SQL CLI'"
+echo "3. Select the sql-cli process from the list"
+echo "4. Set breakpoints and debug normally"
+echo ""
+echo "METHOD 2: External Terminal"
+echo "1. In VS Code, press F5 and choose '🖥️ Debug SQL CLI (External Terminal)'"
+echo "2. This will open a new terminal window with the debugger attached"
+echo ""
+echo "METHOD 3: Manual GDB/LLDB"
+echo "1. Run: gdb ./target/debug/sql-cli"
+echo "2. In GDB: run data/small-customer.csv"
+echo "3. Use GDB commands for debugging"
+echo ""
+echo "Ready! Choose your debugging method above."
+echo ""
+echo "💡 TIP: For cursor_manager panics, set a breakpoint in:"
+echo "   src/cursor_manager.rs at the panic location"
+echo "   src/enhanced_tui.rs where cursor_manager methods are called"

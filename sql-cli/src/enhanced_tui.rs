@@ -268,14 +268,10 @@ impl EnhancedTuiApp {
 
     // Compatibility wrapper for edit_mode
     fn get_edit_mode(&self) -> EditMode {
-        if let Some(buffer) = self.current_buffer() {
-            // Convert from buffer::EditMode to local EditMode
-            match buffer.get_edit_mode() {
-                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
-                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
-            }
-        } else {
-            self.edit_mode.clone()
+        // Convert from buffer::EditMode to local EditMode
+        match self.buffer().get_edit_mode() {
+            sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
+            sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
         }
     }
 
@@ -283,14 +279,12 @@ impl EnhancedTuiApp {
         // Update local field (will be removed later)
         self.edit_mode = mode.clone();
 
-        // Also update in buffer if available
-        if let Some(buffer) = self.current_buffer_mut() {
-            let buffer_mode = match mode {
-                EditMode::SingleLine => sql_cli::buffer::EditMode::SingleLine,
-                EditMode::MultiLine => sql_cli::buffer::EditMode::MultiLine,
-            };
-            buffer.set_edit_mode(buffer_mode);
-        }
+        // Also update in buffer
+        let buffer_mode = match mode {
+            EditMode::SingleLine => sql_cli::buffer::EditMode::SingleLine,
+            EditMode::MultiLine => sql_cli::buffer::EditMode::MultiLine,
+        };
+        self.buffer_mut().set_edit_mode(buffer_mode);
     }
 
     // Compatibility wrapper for case_insensitive
@@ -308,15 +302,7 @@ impl EnhancedTuiApp {
             }
             _ => {
                 // All other modes use the buffer
-                if let Some(buffer) = self.current_buffer() {
-                    buffer.get_input_text()
-                } else {
-                    // Fallback to direct input access during migration
-                    match self.get_edit_mode() {
-                        EditMode::SingleLine => self.input.value().to_string(), // TODO: Remove after migration
-                        EditMode::MultiLine => self.textarea.lines().join("\n"),
-                    }
-                }
+                self.buffer().get_input_text()
             }
         }
     }
@@ -331,40 +317,16 @@ impl EnhancedTuiApp {
             }
             _ => {
                 // All other modes use the buffer
-                if let Some(buffer) = self.current_buffer() {
-                    buffer.get_input_cursor_position()
-                } else {
-                    // Fallback to direct input access during migration
-                    match self.get_edit_mode() {
-                        EditMode::SingleLine => self.input.cursor(),
-                        EditMode::MultiLine => {
-                            // For multi-line, calculate absolute position
-                            let (row, col) = self.textarea.cursor();
-                            let mut pos = 0;
-                            let text = self.get_input_text();
-                            for (i, line) in text.lines().enumerate() {
-                                if i < row {
-                                    pos += line.len() + 1; // +1 for newline
-                                } else if i == row {
-                                    pos += col;
-                                    break;
-                                }
-                            }
-                            pos
-                        }
-                    }
-                }
+                self.buffer().get_input_cursor_position()
             }
         }
     }
 
     // Helper to set input text through buffer or fallback to direct input
     fn set_input_text(&mut self, text: String) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_input_text(text.clone());
-            // Also sync cursor position to end of text
-            buffer.set_input_cursor_position(text.len());
-        }
+        self.buffer_mut().set_input_text(text.clone());
+        // Also sync cursor position to end of text
+        self.buffer_mut().set_input_cursor_position(text.len());
 
         // For special modes that use the input field directly
         match self.get_mode() {
@@ -381,10 +343,8 @@ impl EnhancedTuiApp {
 
     // Helper to set input text with specific cursor position
     fn set_input_text_with_cursor(&mut self, text: String, cursor_pos: usize) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_input_text(text.clone());
-            buffer.set_input_cursor_position(cursor_pos);
-        }
+        self.buffer_mut().set_input_text(text.clone());
+        self.buffer_mut().set_input_cursor_position(cursor_pos);
 
         // For special modes that use the input field directly
         match self.get_mode() {
@@ -405,107 +365,77 @@ impl EnhancedTuiApp {
 
     // Helper to handle key events in the input
     fn handle_input_key(&mut self, key: KeyEvent) -> bool {
-        if let Some(buffer) = self.current_buffer_mut() {
-            // Route to buffer's input handling
-            buffer.handle_input_key(key)
-        } else {
-            // For special modes that handle input directly
-            match self.get_mode() {
-                AppMode::Search
-                | AppMode::Filter
-                | AppMode::FuzzyFilter
-                | AppMode::ColumnSearch => {
-                    self.input.handle_event(&Event::Key(key));
-                    false
-                }
-                _ => false,
+        // For special modes that handle input directly
+        match self.get_mode() {
+            AppMode::Search
+            | AppMode::Filter
+            | AppMode::FuzzyFilter
+            | AppMode::ColumnSearch => {
+                self.input.handle_event(&Event::Key(key));
+                false
+            }
+            _ => {
+                // Route to buffer's input handling
+                self.buffer_mut().handle_input_key(key)
             }
         }
     }
 
     // Helper to get visual cursor position (for rendering)
     fn get_visual_cursor(&self) -> (usize, usize) {
-        if let Some(buffer) = self.current_buffer() {
-            // Buffer should provide visual cursor for rendering
-            // For now, use a simple calculation
-            let text = buffer.get_input_text();
-            let cursor = buffer.get_input_cursor_position();
-            let lines: Vec<&str> = text.split('\n').collect();
+        // Buffer should provide visual cursor for rendering
+        // For now, use a simple calculation
+        let text = self.buffer().get_input_text();
+        let cursor = self.buffer().get_input_cursor_position();
+        let lines: Vec<&str> = text.split('\n').collect();
 
-            let mut current_pos = 0;
-            for (row, line) in lines.iter().enumerate() {
-                if current_pos + line.len() >= cursor {
-                    return (row, cursor - current_pos);
-                }
-                current_pos += line.len() + 1; // +1 for newline
+        let mut current_pos = 0;
+        for (row, line) in lines.iter().enumerate() {
+            if current_pos + line.len() >= cursor {
+                return (row, cursor - current_pos);
             }
-            (0, cursor)
-        } else {
-            // Fallback to direct input access
-            match self.get_edit_mode() {
-                EditMode::SingleLine => (0, self.input.visual_cursor()),
-                EditMode::MultiLine => self.textarea.cursor(),
-            }
+            current_pos += line.len() + 1; // +1 for newline
         }
+        (0, cursor)
     }
 
     fn set_case_insensitive(&mut self, case_insensitive: bool) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_case_insensitive(case_insensitive);
-        } else {
-            self.case_insensitive = case_insensitive;
-        }
+        self.buffer_mut().set_case_insensitive(case_insensitive);
+        // Also update local field (will be removed later)
+        self.case_insensitive = case_insensitive;
     }
 
     // Compatibility wrapper for last_results_row
     fn get_last_results_row(&self) -> Option<usize> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_last_results_row()
-        } else {
-            self.last_results_row
-        }
+        self.buffer().get_last_results_row()
     }
 
     fn set_last_results_row(&mut self, row: Option<usize>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_last_results_row(row);
-        } else {
-            self.last_results_row = row;
-        }
+        self.buffer_mut().set_last_results_row(row);
+        // Also update local field (will be removed later)
+        self.last_results_row = row;
     }
 
     // Compatibility wrapper for last_scroll_offset
     fn get_last_scroll_offset(&self) -> (usize, usize) {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_last_scroll_offset()
-        } else {
-            self.last_scroll_offset
-        }
+        self.buffer().get_last_scroll_offset()
     }
 
     fn set_last_scroll_offset(&mut self, offset: (usize, usize)) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_last_scroll_offset(offset);
-        } else {
-            self.last_scroll_offset = offset;
-        }
+        self.buffer_mut().set_last_scroll_offset(offset);
+        // Also update local field (will be removed later)
+        self.last_scroll_offset = offset;
     }
 
     // Compatibility wrapper for last_query_source
     fn get_last_query_source(&self) -> Option<String> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_last_query_source()
-        } else {
-            self.last_query_source.clone()
-        }
+        self.buffer().get_last_query_source()
     }
 
     fn set_last_query_source(&mut self, source: Option<String>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_last_query_source(source);
-        } else {
-            self.last_query_source = source;
-        }
+        self.buffer_mut().set_last_query_source(source.clone());
+        // Also update local field (will be removed later)
+        self.last_query_source = source;
     }
 
     // Compatibility wrapper for input
@@ -562,21 +492,15 @@ impl EnhancedTuiApp {
 
     // Compatibility wrapper for mode
     fn get_mode(&self) -> AppMode {
-        if let Some(buffer) = self.current_buffer() {
-            Self::buffer_mode_to_local(buffer.get_mode())
-        } else {
-            self.mode.clone()
-        }
+        Self::buffer_mode_to_local(self.buffer().get_mode())
     }
 
     fn set_mode(&mut self, mode: AppMode) {
         // Update local field (will be removed later)
         self.mode = mode.clone();
 
-        // Also update in buffer if available
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_mode(Self::local_mode_to_buffer(&mode));
-        }
+        // Also update in buffer
+        self.buffer_mut().set_mode(Self::local_mode_to_buffer(&mode));
     }
 
     // Compatibility wrapper for results
@@ -586,11 +510,7 @@ impl EnhancedTuiApp {
 
     fn set_results(&mut self, results: Option<QueryResponse>) {
         // Update buffer's results
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_results(results);
-        }
-
-        // TODO: Also update in buffer when type conflicts are resolved
+        self.buffer_mut().set_results(results);
     }
 
     // Compatibility wrapper for table_state
@@ -635,11 +555,9 @@ impl EnhancedTuiApp {
     }
 
     fn set_compact_mode(&mut self, compact: bool) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_compact_mode(compact);
-        } else {
-            self.compact_mode = compact;
-        }
+        self.buffer_mut().set_compact_mode(compact);
+        // Also update local field (will be removed later)
+        self.compact_mode = compact;
     }
 
     fn get_show_row_numbers(&self) -> bool {
@@ -651,51 +569,33 @@ impl EnhancedTuiApp {
     }
 
     fn is_viewport_lock(&self) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.is_viewport_lock()
-        } else {
-            self.viewport_lock
-        }
+        self.buffer().is_viewport_lock()
     }
 
     fn set_viewport_lock(&mut self, locked: bool) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_viewport_lock(locked);
-        } else {
-            self.viewport_lock = locked;
-        }
+        self.buffer_mut().set_viewport_lock(locked);
+        // Also update local field (will be removed later)
+        self.viewport_lock = locked;
     }
 
     fn get_viewport_lock_row(&self) -> Option<usize> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_viewport_lock_row()
-        } else {
-            self.viewport_lock_row
-        }
+        self.buffer().get_viewport_lock_row()
     }
 
     fn set_viewport_lock_row(&mut self, row: Option<usize>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_viewport_lock_row(row);
-        } else {
-            self.viewport_lock_row = row;
-        }
+        self.buffer_mut().set_viewport_lock_row(row);
+        // Also update local field (will be removed later)
+        self.viewport_lock_row = row;
     }
 
     fn get_column_widths(&self) -> Vec<u16> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_column_widths().clone()
-        } else {
-            self.column_widths.clone()
-        }
+        self.buffer().get_column_widths().clone()
     }
 
     fn set_column_widths(&mut self, widths: Vec<u16>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_column_widths(widths.clone());
-        } else {
-            self.column_widths = widths;
-        }
+        self.buffer_mut().set_column_widths(widths.clone());
+        // Also update local field (will be removed later)
+        self.column_widths = widths;
     }
 
     fn is_csv_mode(&self) -> bool {
@@ -736,78 +636,41 @@ impl EnhancedTuiApp {
 
     // Wrapper methods for undo/redo/kill ring (uses buffer system)
     fn get_undo_stack(&self) -> &Vec<(String, usize)> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_undo_stack()
-        } else {
-            &self.undo_stack
-        }
+        self.buffer().get_undo_stack()
     }
 
     fn push_undo(&mut self, state: (String, usize)) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.push_undo(state);
-        } else {
-            self.undo_stack.push(state);
-            if self.undo_stack.len() > 100 {
-                self.undo_stack.remove(0);
-            }
-        }
+        self.buffer_mut().push_undo(state);
     }
 
     fn pop_undo(&mut self) -> Option<(String, usize)> {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.pop_undo()
-        } else {
-            self.undo_stack.pop()
-        }
+        self.buffer_mut().pop_undo()
     }
 
     fn push_redo(&mut self, state: (String, usize)) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.push_redo(state);
-        } else {
-            self.redo_stack.push(state);
-        }
+        self.buffer_mut().push_redo(state);
     }
 
     fn pop_redo(&mut self) -> Option<(String, usize)> {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.pop_redo()
-        } else {
-            self.redo_stack.pop()
-        }
+        self.buffer_mut().pop_redo()
     }
 
     fn clear_redo(&mut self) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.clear_redo();
-        } else {
-            self.redo_stack.clear();
-        }
+        self.buffer_mut().clear_redo();
     }
 
     fn get_kill_ring(&self) -> String {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_kill_ring()
-        } else {
-            self.kill_ring.clone()
-        }
+        self.buffer().get_kill_ring()
     }
 
     fn set_kill_ring(&mut self, text: String) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_kill_ring(text);
-        } else {
-            self.kill_ring = text;
-        }
+        self.buffer_mut().set_kill_ring(text.clone());
+        // Also update local field (will be removed later)
+        self.kill_ring = text;
     }
 
     fn is_kill_ring_empty(&self) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.is_kill_ring_empty()
-        } else {
-            self.kill_ring.is_empty()
-        }
+        self.buffer().is_kill_ring_empty()
     }
 
     // Wrapper methods for last_visible_rows (uses buffer system)
