@@ -5207,14 +5207,20 @@ impl EnhancedTuiApp {
     }
 
     fn get_horizontal_scroll_offset(&self) -> u16 {
-        self.input_scroll_offset
+        // Delegate to cursor_manager (incremental refactoring)
+        let (horizontal, _vertical) = self.cursor_manager.scroll_offsets();
+        horizontal
     }
 
     fn update_horizontal_scroll(&mut self, terminal_width: u16) {
         let inner_width = terminal_width.saturating_sub(3) as usize; // Account for borders + 1 char padding
         let cursor_pos = self.get_input_cursor();
 
-        // If cursor is before the scroll window, scroll left
+        // Update cursor_manager scroll (incremental refactoring)
+        self.cursor_manager
+            .update_horizontal_scroll(cursor_pos, terminal_width.saturating_sub(3));
+
+        // Keep legacy field in sync for now
         if cursor_pos < self.input_scroll_offset as usize {
             self.input_scroll_offset = cursor_pos as u16;
         }
