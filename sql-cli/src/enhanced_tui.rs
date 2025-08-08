@@ -312,13 +312,23 @@ impl EnhancedTuiApp {
 
     // Helper to get input text from buffer or fallback to direct input
     fn get_input_text(&self) -> String {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_input_text()
-        } else {
-            // Fallback to direct input access during migration
-            match self.get_edit_mode() {
-                EditMode::SingleLine => self.input.value().to_string(),
-                EditMode::MultiLine => self.textarea.lines().join("\n"),
+        // For special modes that use the input field for their own purposes
+        match self.get_mode() {
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
+                // These modes temporarily use the input field for their patterns
+                self.input.value().to_string()
+            }
+            _ => {
+                // All other modes use the buffer
+                if let Some(buffer) = self.current_buffer() {
+                    buffer.get_input_text()
+                } else {
+                    // Fallback to direct input access during migration
+                    match self.get_edit_mode() {
+                        EditMode::SingleLine => self.input.value().to_string(),
+                        EditMode::MultiLine => self.textarea.lines().join("\n"),
+                    }
+                }
             }
         }
     }
@@ -351,29 +361,20 @@ impl EnhancedTuiApp {
 
     // Helper to set input text through buffer or fallback to direct input
     fn set_input_text(&mut self, text: String) {
-        // Check mode before getting mutable buffer
-        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
-
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.set_input_text(text.clone());
             // Also sync cursor position to end of text
             buffer.set_input_cursor_position(text.len());
+        }
 
-            // Sync self.input for rendering (temporary during migration)
-            if is_single_line {
+        // For special modes that use the input field directly
+        match self.get_mode() {
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
+                // These modes still need the input field updated
                 self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
             }
-        } else {
-            // Fallback to direct input setting during migration
-            match self.get_edit_mode() {
-                EditMode::SingleLine => {
-                    self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
-                }
-                EditMode::MultiLine => {
-                    let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-                    self.textarea = tui_textarea::TextArea::from(lines);
-                    self.textarea.move_cursor(tui_textarea::CursorMove::End);
-                }
+            _ => {
+                // Command mode and others use the buffer exclusively
             }
         }
     }
@@ -2934,7 +2935,8 @@ impl EnhancedTuiApp {
 
     fn handle_completion(&mut self) {
         let cursor_pos = self.input.cursor();
-        let query = self.input.value();
+        let query_str = self.get_input_text();
+        let query = query_str.as_str();
 
         let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
         if !hybrid_result.suggestions.is_empty() {
@@ -3066,7 +3068,8 @@ impl EnhancedTuiApp {
 
     fn apply_completion_multiline(&mut self) {
         let (cursor_row, cursor_col) = self.textarea.cursor();
-        let lines = self.textarea.lines();
+        let text = self.get_input_text();
+        let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
         let query = lines.join("\n");
 
         // Calculate cursor position in the full query string
@@ -3145,7 +3148,7 @@ impl EnhancedTuiApp {
             }
 
             // Update completion state
-            let new_query = self.textarea.lines().join("\n");
+            let new_query = self.get_input_text();
             self.completion_state.last_query = new_query;
             self.completion_state.last_cursor_pos =
                 cursor_pos - partial.len() + suggestion_to_use.len();
@@ -3175,7 +3178,7 @@ impl EnhancedTuiApp {
             }
 
             // Update completion state
-            let new_query = self.textarea.lines().join("\n");
+            let new_query = self.get_input_text();
             self.completion_state.last_query = new_query;
             self.completion_state.last_cursor_pos = if ends_with_parens {
                 cursor_pos + suggestion_len - 2
@@ -3190,9 +3193,9 @@ impl EnhancedTuiApp {
     fn expand_asterisk(&mut self) {
         // Expand SELECT * to all column names
         let query = if self.edit_mode == EditMode::SingleLine {
-            self.input.value().to_string()
+            self.get_input_text()
         } else {
-            self.textarea.lines().join(" ")
+            self.get_input_text().lines().collect::<Vec<_>>().join(" ")
         };
 
         // Simple regex-like pattern to find SELECT * FROM table_name
@@ -3278,7 +3281,8 @@ impl EnhancedTuiApp {
     fn handle_completion_multiline(&mut self) {
         // Similar to handle_completion but for multiline mode
         let (cursor_row, cursor_col) = self.textarea.cursor();
-        let lines = self.textarea.lines();
+        let text = self.get_input_text();
+        let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
         let query = lines.join("\n");
 
         // Calculate cursor position in the full query string
@@ -4697,7 +4701,7 @@ impl EnhancedTuiApp {
                             if self.edit_mode == EditMode::SingleLine {
                                 // Get current cursor position
                                 let cursor_pos = self.input.cursor();
-                                let current_value = self.input.value().to_string();
+                                let current_value = self.get_input_text();
 
                                 // Insert at cursor position
                                 let mut new_value = String::new();
@@ -4727,7 +4731,7 @@ impl EnhancedTuiApp {
                         | AppMode::ColumnSearch => {
                             // For search/filter modes, append to current pattern
                             let cursor_pos = self.input.cursor();
-                            let current_value = self.input.value().to_string();
+                            let current_value = self.get_input_text();
 
                             let mut new_value = String::new();
                             new_value.push_str(&current_value[..cursor_pos]);
@@ -4750,7 +4754,8 @@ impl EnhancedTuiApp {
                                     self.apply_fuzzy_filter();
                                 }
                                 AppMode::Search => {
-                                    self.set_search_pattern(self.input.value().to_string());
+                                    let search_text = self.get_input_text();
+                                    self.set_search_pattern(search_text);
                                     // TODO: self.search_in_results();
                                 }
                                 AppMode::ColumnSearch => {
@@ -4884,7 +4889,8 @@ impl EnhancedTuiApp {
     }
 
     fn get_cursor_token_position(&self) -> (usize, usize) {
-        let query = self.input.value();
+        let query_str = self.get_input_text();
+        let query = query_str.as_str();
         let cursor_pos = self.input.cursor();
 
         if query.is_empty() {
@@ -4922,7 +4928,8 @@ impl EnhancedTuiApp {
     }
 
     fn get_token_at_cursor(&self) -> Option<String> {
-        let query = self.input.value();
+        let query_str = self.get_input_text();
+        let query = query_str.as_str();
         let cursor_pos = self.input.cursor();
 
         if query.is_empty() {
@@ -5032,7 +5039,7 @@ impl EnhancedTuiApp {
     }
 
     fn delete_word_backward(&mut self) {
-        let query = self.input.value().to_string();
+        let query = self.get_input_text();
         let cursor_pos = self.input.cursor();
 
         if cursor_pos == 0 {
@@ -5122,7 +5129,7 @@ impl EnhancedTuiApp {
     }
 
     fn delete_word_forward(&mut self) {
-        let query = self.input.value().to_string();
+        let query = self.get_input_text();
         let cursor_pos = self.input.cursor();
         let query_len = query.len();
 
@@ -5208,7 +5215,8 @@ impl EnhancedTuiApp {
             EditMode::MultiLine => {
                 // For multiline mode, kill from cursor to end of current line
                 let (row, col) = self.textarea.cursor();
-                let lines = self.textarea.lines();
+                let text = self.get_input_text();
+                let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
                 if row < lines.len() {
                     let current_line = &lines[row];
                     if col < current_line.len() {
@@ -5267,7 +5275,8 @@ impl EnhancedTuiApp {
             EditMode::MultiLine => {
                 // For multiline mode, kill from beginning of line to cursor
                 let (row, col) = self.textarea.cursor();
-                let lines = self.textarea.lines();
+                let text = self.get_input_text();
+                let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
                 if row < lines.len() && col > 0 {
                     let current_line = &lines[row];
                     // Collect text that will be killed
@@ -5556,9 +5565,13 @@ impl EnhancedTuiApp {
                     }
                     KeyCode::Char('y') => {
                         // yy - yank line
-                        let current_line = self.textarea.lines()[self.textarea.cursor().0].clone();
-                        self.vim_state.yank_buffer = current_line;
-                        self.set_status_message("Line yanked".to_string());
+                        let text = self.get_input_text();
+                        let lines: Vec<&str> = text.lines().collect();
+                        let cursor_line = self.textarea.cursor().0;
+                        if cursor_line < lines.len() {
+                            self.vim_state.yank_buffer = lines[cursor_line].to_string();
+                            self.set_status_message("Line yanked".to_string());
+                        }
                         true
                     }
                     KeyCode::Char('p') => {
@@ -5615,7 +5628,8 @@ impl EnhancedTuiApp {
                         if let Some(start) = self.vim_state.visual_start {
                             let end = self.textarea.cursor();
                             // Simple line-based yanking for now
-                            let lines = self.textarea.lines();
+                            let text = self.get_input_text();
+        let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
                             let start_row = start.0.min(end.0);
                             let end_row = start.0.max(end.0);
                             let yanked: Vec<String> = lines[start_row..=end_row]
@@ -5730,19 +5744,11 @@ impl EnhancedTuiApp {
 
         let input_block = Block::default().borders(Borders::ALL).title(input_title);
 
-        let input_text_string;
+        // Always get input text through the buffer API for consistency
+        let input_text_string = self.get_input_text();
         let input_text = match self.get_mode() {
-            AppMode::Search => self.input.value(), // Use input for rendering
-            AppMode::Filter => self.input.value(), // Use input for rendering
-            AppMode::FuzzyFilter => self.input.value(), // Use input for rendering
-            AppMode::ColumnSearch => self.input.value(), // Column search still uses input since it saves/restores
             AppMode::History => &self.history_state.search_query,
-            AppMode::Command => {
-                // Use buffer's input text for command mode
-                input_text_string = self.get_input_text();
-                &input_text_string
-            }
-            _ => self.input.value(),
+            _ => &input_text_string,
         };
 
         let input_paragraph = match self.get_mode() {
@@ -5765,7 +5771,7 @@ impl EnhancedTuiApp {
             }
             _ => {
                 // Plain text for other modes
-                Paragraph::new(input_text)
+                Paragraph::new(input_text.as_str())
                     .block(input_block)
                     .style(match self.get_mode() {
                         AppMode::Results => Style::default().fg(Color::DarkGray),
