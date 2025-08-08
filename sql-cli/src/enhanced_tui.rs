@@ -1535,6 +1535,23 @@ impl EnhancedTuiApp {
                 // Alt+Shift+Tab - previous buffer
                 self.prev_buffer();
             }
+            // Alternative buffer navigation keys (for Windows users)
+            KeyCode::F(11) => {
+                // F11 - previous buffer
+                self.prev_buffer();
+            }
+            KeyCode::F(12) => {
+                // F12 - next buffer
+                self.next_buffer();
+            }
+            KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+] - next buffer
+                self.next_buffer();
+            }
+            KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+[ - previous buffer
+                self.prev_buffer();
+            }
             KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Alt+N - new buffer
                 self.new_buffer();
@@ -5419,19 +5436,7 @@ impl EnhancedTuiApp {
                     let marker = if i == current_index { "*" } else { " " };
                     let modified = if buffer.is_modified() { "+" } else { "" };
 
-                    // Extract filename from comment if present
-                    let text = buffer.get_input_text();
-                    let file_info = if text.starts_with("-- File: ") {
-                        let first_line = text.lines().next().unwrap_or("");
-                        first_line
-                            .strip_prefix("-- File: ")
-                            .unwrap_or("")
-                            .to_string()
-                    } else {
-                        buffer.get_name()
-                    };
-
-                    format!("{} [{}] {}{}", marker, i + 1, file_info, modified)
+                    format!("{} [{}] {}{}", marker, i + 1, buffer.get_name(), modified)
                 })
                 .collect()
         } else {
@@ -6855,6 +6860,17 @@ impl EnhancedTuiApp {
             Line::from("  Ctrl+Y   - Yank (paste)"),
             Line::from("  Ctrl+Z   - Undo"),
             Line::from(""),
+            Line::from("BUFFER MANAGEMENT").style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Line::from("  F11/Ctrl+[    - Previous buffer"),
+            Line::from("  F12/Ctrl+]    - Next buffer"),
+            Line::from("  Alt+N         - New buffer"),
+            Line::from("  Alt+W         - Close buffer"),
+            Line::from("  Alt+B         - List buffers"),
+            Line::from(""),
             Line::from("VIEW MODES").style(
                 Style::default()
                     .fg(Color::Yellow)
@@ -7672,16 +7688,15 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
             }
         };
 
-        // Add filename comment to the first buffer too if we have multiple files
+        // Set the file path for the first buffer if we have multiple files
         if data_files.len() > 1 {
             if let Some(buffer) = app.current_buffer_mut() {
-                let current_text = buffer.get_input_text();
+                buffer.set_file_path(Some(first_file.to_string()));
                 let filename = std::path::Path::new(first_file)
                     .file_name()
                     .unwrap_or_default()
                     .to_string_lossy();
-                let text_with_comment = format!("-- File: {}\n{}", filename, current_text);
-                buffer.set_input_text(text_with_comment);
+                buffer.set_name(filename.to_string());
             }
         }
 
@@ -7709,13 +7724,15 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
 
                 // Set the query in the current buffer
                 if let Some(buffer) = app.current_buffer_mut() {
-                    // Add a comment with the filename for easy identification
+                    // Set the query without comments
+                    buffer.set_input_text(query.clone());
+                    // Store the file path and name
+                    buffer.set_file_path(Some(file_path.to_string()));
                     let filename = std::path::Path::new(file_path)
                         .file_name()
                         .unwrap_or_default()
                         .to_string_lossy();
-                    let query_with_comment = format!("-- File: {}\n{}", filename, query);
-                    buffer.set_input_text(query_with_comment);
+                    buffer.set_name(filename.to_string());
                 }
             }
 

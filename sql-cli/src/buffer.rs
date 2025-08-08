@@ -211,7 +211,9 @@ pub trait BufferAPI {
 
     // --- Buffer Metadata ---
     fn get_name(&self) -> String;
+    fn set_name(&mut self, name: String);
     fn get_file_path(&self) -> Option<&PathBuf>;
+    fn set_file_path(&mut self, path: Option<String>);
     fn is_modified(&self) -> bool;
     fn set_modified(&mut self, modified: bool);
     fn get_last_query_source(&self) -> Option<String>;
@@ -604,8 +606,16 @@ impl BufferAPI for Buffer {
         self.name.clone()
     }
 
+    fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
     fn get_file_path(&self) -> Option<&PathBuf> {
         self.file_path.as_ref()
+    }
+
+    fn set_file_path(&mut self, path: Option<String>) {
+        self.file_path = path.map(PathBuf::from);
     }
 
     fn is_modified(&self) -> bool {
