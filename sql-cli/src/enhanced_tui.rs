@@ -440,130 +440,13 @@ impl EnhancedTuiApp {
         self.buffer().get_current_column()
     }
 
-    fn is_csv_mode(&self) -> bool {
-        self.current_buffer()
-            .expect("No active buffer")
-            .is_csv_mode()
-    }
+    // Note: CSV and cache mode methods removed - use buffer directly
 
-    fn set_csv_mode(&mut self, csv_mode: bool) {
-        self.current_buffer_mut()
-            .expect("No active buffer")
-            .set_csv_mode(csv_mode);
-    }
+    // Note: Undo/redo and kill ring methods removed - use buffer directly
 
-    fn get_csv_table_name(&self) -> String {
-        self.current_buffer()
-            .expect("No active buffer")
-            .get_table_name()
-    }
+    // Note: last_visible_rows and cached_data methods removed - use buffer directly
 
-    fn set_csv_table_name(&mut self, table_name: String) {
-        self.current_buffer_mut()
-            .expect("No active buffer")
-            .set_table_name(table_name);
-    }
-
-    fn is_cache_mode(&self) -> bool {
-        self.current_buffer()
-            .expect("No active buffer")
-            .is_cache_mode()
-    }
-
-    fn set_cache_mode(&mut self, cache_mode: bool) {
-        self.current_buffer_mut()
-            .expect("No active buffer")
-            .set_cache_mode(cache_mode);
-    }
-
-    // Wrapper methods for undo/redo/kill ring (uses buffer system)
-    fn get_undo_stack(&self) -> &Vec<(String, usize)> {
-        self.buffer().get_undo_stack()
-    }
-
-    fn push_undo(&mut self, state: (String, usize)) {
-        self.buffer_mut().push_undo(state);
-    }
-
-    fn pop_undo(&mut self) -> Option<(String, usize)> {
-        self.buffer_mut().pop_undo()
-    }
-
-    fn push_redo(&mut self, state: (String, usize)) {
-        self.buffer_mut().push_redo(state);
-    }
-
-    fn pop_redo(&mut self) -> Option<(String, usize)> {
-        self.buffer_mut().pop_redo()
-    }
-
-    fn clear_redo(&mut self) {
-        self.buffer_mut().clear_redo();
-    }
-
-    fn get_kill_ring(&self) -> String {
-        self.buffer().get_kill_ring()
-    }
-
-    fn set_kill_ring(&mut self, text: String) {
-        self.buffer_mut().set_kill_ring(text);
-    }
-
-    fn is_kill_ring_empty(&self) -> bool {
-        self.buffer().is_kill_ring_empty()
-    }
-
-    // Wrapper methods for last_visible_rows (uses buffer system)
-    fn get_last_visible_rows(&self) -> usize {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_last_visible_rows()
-    }
-
-    fn set_last_visible_rows(&mut self, rows: usize) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_last_visible_rows(rows);
-    }
-
-    // Wrapper methods for cached_data (uses buffer system)
-    fn get_cached_data(&self) -> Option<&Vec<serde_json::Value>> {
-        self.current_buffer()
-            .expect("No active buffer")
-            .get_cached_data()
-    }
-
-    fn set_cached_data(&mut self, data: Option<Vec<serde_json::Value>>) {
-        self.current_buffer_mut()
-            .expect("No active buffer")
-            .set_cached_data(data);
-    }
-
-    fn has_cached_data(&self) -> bool {
-        self.current_buffer()
-            .expect("No active buffer")
-            .has_cached_data()
-    }
-
-    // Wrapper methods for csv_client (uses buffer system)
-    fn get_csv_client(&self) -> Option<&CsvApiClient> {
-        self.current_buffer()
-            .expect("No active buffer")
-            .get_csv_client()
-    }
-
-    fn set_csv_client(&mut self, client: Option<CsvApiClient>) {
-        self.current_buffer_mut()
-            .expect("No active buffer")
-            .set_csv_client(client);
-    }
-
-    fn set_csv_client_case_insensitive(&mut self, case_insensitive: bool) {
-        let buffer = self.current_buffer_mut().expect("No active buffer");
-        if let Some(csv_client) = buffer.get_csv_client_mut() {
-            csv_client.set_case_insensitive(case_insensitive);
-        }
-    }
+    // Note: csv_client methods removed - use buffer directly
 
     // Wrapper methods for filtered_data (uses buffer system)
     fn get_filtered_data(&self) -> Option<&Vec<Vec<String>>> {
@@ -578,12 +461,7 @@ impl EnhancedTuiApp {
             .set_filtered_data(data);
     }
 
-    fn has_filtered_data(&self) -> bool {
-        self.current_buffer()
-            .expect("No active buffer")
-            .get_filtered_data()
-            .is_some()
-    }
+    // Note: has_filtered_data removed - use buffer directly
 
     // Wrapper methods for search_state (uses buffer system)
     fn get_search_pattern(&self) -> String {
@@ -664,38 +542,7 @@ impl EnhancedTuiApp {
             .clear_search_state();
     }
 
-    // Wrapper methods for pinned_columns (uses buffer system)
-    fn get_pinned_columns(&self) -> Vec<usize> {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_pinned_columns()
-            .clone()
-    }
-
-    fn add_pinned_column(&mut self, col: usize) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .add_pinned_column(col);
-    }
-
-    fn remove_pinned_column(&mut self, col: usize) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .remove_pinned_column(col);
-    }
-
-    fn clear_pinned_columns(&mut self) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .clear_pinned_columns();
-    }
-
-    fn contains_pinned_column(&self, col: usize) -> bool {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_pinned_columns()
-            .contains(&col)
-    }
+    // Note: pinned_columns methods removed - use buffer directly
 
     fn get_filter_state(&self) -> &FilterState {
         &self.filter_state
@@ -935,11 +782,6 @@ impl EnhancedTuiApp {
             .get_schema()
             .ok_or_else(|| anyhow::anyhow!("Failed to get CSV schema"))?;
 
-        // Configure the app for CSV mode
-        app.set_csv_client(Some(csv_client.clone()));
-        app.set_csv_mode(true);
-        app.set_csv_table_name(table_name.clone());
-
         // Replace the default buffer with a CSV buffer
         {
             // Clear all buffers and add a CSV buffer
@@ -1029,11 +871,6 @@ impl EnhancedTuiApp {
         let schema = csv_client
             .get_schema()
             .ok_or_else(|| anyhow::anyhow!("Failed to get JSON schema"))?;
-
-        // Configure the app for JSON mode
-        app.set_csv_client(Some(csv_client.clone()));
-        app.set_csv_mode(true); // Reuse CSV mode since the data structure is the same
-        app.set_csv_table_name(table_name.clone());
 
         // Replace the default buffer with a JSON buffer
         {
@@ -1347,7 +1184,7 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(7) => {
                 // F7 - Toggle cache mode or show cache list
-                if self.is_cache_mode() {
+                if self.buffer().is_cache_mode() {
                     self.set_mode(AppMode::CacheList);
                 } else {
                     self.set_mode(AppMode::CacheList);
@@ -1552,7 +1389,10 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
-                self.set_csv_client_case_insensitive(!current);
+                // Update CSV client if in CSV mode
+                if let Some(csv_client) = self.buffer_mut().get_csv_client_mut() {
+                    csv_client.set_case_insensitive(!current);
+                }
 
                 self.set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
@@ -1564,8 +1404,8 @@ impl EnhancedTuiApp {
                 self.kill_line();
                 self.set_status_message(format!(
                     "Killed to end of line{}",
-                    if !self.is_kill_ring_empty() {
-                        format!(" ('{}' saved to kill ring)", self.get_kill_ring())
+                    if !self.buffer().is_kill_ring_empty() {
+                        format!(" ('{}' saved to kill ring)", self.buffer().get_kill_ring())
                     } else {
                         "".to_string()
                     }
@@ -1576,8 +1416,8 @@ impl EnhancedTuiApp {
                 self.kill_line_backward();
                 self.set_status_message(format!(
                     "Killed to beginning of line{}",
-                    if !self.is_kill_ring_empty() {
-                        format!(" ('{}' saved to kill ring)", self.get_kill_ring())
+                    if !self.buffer().is_kill_ring_empty() {
+                        format!(" ('{}' saved to kill ring)", self.buffer().get_kill_ring())
                     } else {
                         "".to_string()
                     }
@@ -1679,8 +1519,8 @@ impl EnhancedTuiApp {
                 debug_info.push_str(&input_state);
 
                 // Add dataset information
-                let dataset_info = if self.is_csv_mode() {
-                    if let Some(csv_client) = self.get_csv_client() {
+                let dataset_info = if self.buffer().is_csv_mode() {
+                    if let Some(csv_client) = self.buffer().get_csv_client() {
                         if let Some(schema) = csv_client.get_schema() {
                             let (table_name, columns) = schema
                                 .iter()
@@ -1726,7 +1566,10 @@ impl EnhancedTuiApp {
                         .get_results()
                         .map(|r| r.data.len())
                         .unwrap_or(0),
-                    self.get_filtered_data().map(|d| d.len()).unwrap_or(0),
+                    self.buffer()
+                        .get_filtered_data()
+                        .map(|d| d.len())
+                        .unwrap_or(0),
                     self.get_current_column(),
                     match &self.sort_state {
                         SortState {
@@ -1770,8 +1613,8 @@ impl EnhancedTuiApp {
                     self.buffer().is_case_insensitive(),
                     self.buffer().is_compact_mode(),
                     self.buffer().is_viewport_lock(),
-                    self.is_csv_mode(),
-                    self.is_cache_mode(),
+                    self.buffer().is_csv_mode(),
+                    self.buffer().is_cache_mode(),
                     &self
                         .buffer()
                         .get_last_query_source()
@@ -1959,7 +1802,10 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
-                self.set_csv_client_case_insensitive(!current);
+                // Update CSV client if in CSV mode
+                if let Some(csv_client) = self.buffer_mut().get_csv_client_mut() {
+                    csv_client.set_case_insensitive(!current);
+                }
 
                 self.set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
@@ -2051,7 +1897,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_viewport_lock(!current_lock);
                 if self.buffer().is_viewport_lock() {
                     // Lock to current position in viewport (middle of screen)
-                    let visible_rows = self.get_last_visible_rows();
+                    let visible_rows = self.buffer().get_last_visible_rows();
                     self.buffer_mut()
                         .set_viewport_lock_row(Some(visible_rows / 2));
                     self.set_status_message(format!(
@@ -2237,7 +2083,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Esc => {
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.pop_undo() {
+                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -2245,7 +2091,7 @@ impl EnhancedTuiApp {
             KeyCode::Enter => {
                 self.perform_search();
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.pop_undo() {
+                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -2271,7 +2117,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Esc => {
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.pop_undo() {
+                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -2279,7 +2125,7 @@ impl EnhancedTuiApp {
             KeyCode::Enter => {
                 self.apply_filter();
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.pop_undo() {
+                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -2309,7 +2155,7 @@ impl EnhancedTuiApp {
                 self.set_fuzzy_filter_pattern(String::new());
                 self.set_fuzzy_filter_indices(Vec::new());
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.pop_undo() {
+                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -2322,7 +2168,7 @@ impl EnhancedTuiApp {
                     self.set_fuzzy_filter_active(true);
                 }
                 // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.pop_undo() {
+                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -2369,7 +2215,7 @@ impl EnhancedTuiApp {
                 self.set_column_search_pattern(String::new());
                 self.set_column_search_matches(Vec::new());
                 // Restore original SQL query from undo stack
-                if let Some((original_query, cursor_pos)) = self.pop_undo() {
+                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_status_message("Column search cancelled".to_string());
@@ -2386,7 +2232,7 @@ impl EnhancedTuiApp {
                     self.set_status_message("No matching columns found".to_string());
                 }
                 // Restore original SQL query from undo stack
-                if let Some((original_query, cursor_pos)) = self.pop_undo() {
+                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
                 self.set_mode(AppMode::Results);
@@ -2555,8 +2401,8 @@ impl EnhancedTuiApp {
 
     fn update_history_matches(&mut self) {
         // Get current schema columns and data source for better matching
-        let (current_columns, current_source_str) = if self.is_csv_mode() {
-            if let Some(csv_client) = self.get_csv_client() {
+        let (current_columns, current_source_str) = if self.buffer().is_csv_mode() {
+            if let Some(csv_client) = self.buffer().get_csv_client() {
                 if let Some(schema) = csv_client.get_schema() {
                     // Get the first (and usually only) table's columns and name
                     let (cols, table_name) = schema
@@ -2571,7 +2417,7 @@ impl EnhancedTuiApp {
             } else {
                 (vec![], None)
             }
-        } else if self.is_cache_mode() {
+        } else if self.buffer().is_cache_mode() {
             (vec![], Some("cache".to_string()))
         } else {
             (vec![], Some("api".to_string()))
@@ -2642,9 +2488,9 @@ impl EnhancedTuiApp {
         self.set_status_message(format!("Executing query: '{}'...", query));
         let start_time = std::time::Instant::now();
 
-        let result = if self.is_cache_mode() {
+        let result = if self.buffer().is_cache_mode() {
             // When in cache mode, use CSV client to query cached data
-            if let Some(cached_data) = self.get_cached_data() {
+            if let Some(cached_data) = self.buffer().get_cached_data() {
                 let mut csv_client = CsvApiClient::new();
                 csv_client.set_case_insensitive(self.buffer().is_case_insensitive());
                 csv_client.load_from_json(cached_data.clone(), "cached_data")?;
@@ -2664,8 +2510,8 @@ impl EnhancedTuiApp {
             } else {
                 Err(anyhow::anyhow!("No cached data loaded"))
             }
-        } else if self.is_csv_mode() {
-            if let Some(csv_client) = self.get_csv_client() {
+        } else if self.buffer().is_csv_mode() {
+            if let Some(csv_client) = self.buffer().get_csv_client() {
                 // Convert CSV result to match the expected type
                 csv_client.query_csv(query).map(|r| QueryResponse {
                     data: r.data,
@@ -2676,7 +2522,7 @@ impl EnhancedTuiApp {
                         order_by: r.query.order_by,
                     },
                     source: Some("file".to_string()),
-                    table: Some(self.get_csv_table_name()),
+                    table: Some(self.buffer().get_table_name()),
                     cached: Some(false),
                 })
             } else {
@@ -2693,8 +2539,8 @@ impl EnhancedTuiApp {
                 let duration = start_time.elapsed();
 
                 // Get schema columns and data source for history
-                let (schema_columns, data_source) = if self.is_csv_mode() {
-                    if let Some(csv_client) = self.get_csv_client() {
+                let (schema_columns, data_source) = if self.buffer().is_csv_mode() {
+                    if let Some(csv_client) = self.buffer().get_csv_client() {
                         if let Some(schema) = csv_client.get_schema() {
                             // Get the first (and usually only) table's columns
                             let cols = schema
@@ -2709,7 +2555,7 @@ impl EnhancedTuiApp {
                     } else {
                         (vec![], None)
                     }
-                } else if self.is_cache_mode() {
+                } else if self.buffer().is_cache_mode() {
                     (vec![], Some("cache".to_string()))
                 } else {
                     (vec![], Some("api".to_string()))
@@ -2740,9 +2586,9 @@ impl EnhancedTuiApp {
 
                 // Update parser with the FULL schema if we're in CSV/cache mode
                 // For CSV mode, get the complete schema from the CSV client, not from query results
-                if self.is_csv_mode() {
-                    let table_name = self.get_csv_table_name();
-                    if let Some(csv_client) = self.get_csv_client() {
+                if self.buffer().is_csv_mode() {
+                    let table_name = self.buffer().get_table_name();
+                    if let Some(csv_client) = self.buffer().get_csv_client() {
                         if let Some(schema) = csv_client.get_schema() {
                             // Get the full column list from the schema
                             if let Some(columns) = schema.get(&table_name) {
@@ -2752,7 +2598,7 @@ impl EnhancedTuiApp {
                             }
                         }
                     }
-                } else if self.is_cache_mode() {
+                } else if self.buffer().is_cache_mode() {
                     // For cache mode, we still use the results columns since cached data might be filtered
                     if let Some(first_row) = response.data.first() {
                         if let Some(obj) = first_row.as_object() {
@@ -2783,8 +2629,8 @@ impl EnhancedTuiApp {
                 let duration = start_time.elapsed();
 
                 // Get schema columns and data source for history (even for failed queries)
-                let (schema_columns, data_source) = if self.is_csv_mode() {
-                    if let Some(csv_client) = self.get_csv_client() {
+                let (schema_columns, data_source) = if self.buffer().is_csv_mode() {
+                    if let Some(csv_client) = self.buffer().get_csv_client() {
                         if let Some(schema) = csv_client.get_schema() {
                             // Get the first (and usually only) table's columns
                             let cols = schema
@@ -2799,7 +2645,7 @@ impl EnhancedTuiApp {
                     } else {
                         (vec![], None)
                     }
-                } else if self.is_cache_mode() {
+                } else if self.buffer().is_cache_mode() {
                     (vec![], Some("cache".to_string()))
                 } else {
                     (vec![], Some("api".to_string()))
@@ -2824,8 +2670,8 @@ impl EnhancedTuiApp {
             let where_clause = &query[where_pos + 7..]; // Skip " where "
 
             // Get columns from CSV client if available
-            let columns = if self.is_csv_mode() {
-                if let Some(csv_client) = self.get_csv_client() {
+            let columns = if self.buffer().is_csv_mode() {
+                if let Some(csv_client) = self.buffer().get_csv_client() {
                     if let Some(schema) = csv_client.get_schema() {
                         schema
                             .iter()
@@ -3301,7 +3147,7 @@ impl EnhancedTuiApp {
             let max_visible_rows = available_height.saturating_sub(1).max(10); // Reserve space for header
             max_visible_rows
         } else {
-            self.get_last_visible_rows() // Fallback to stored value
+            self.buffer().get_last_visible_rows() // Fallback to stored value
         }
     }
 
@@ -3331,7 +3177,7 @@ impl EnhancedTuiApp {
                 }
             } else {
                 // Normal scrolling behavior
-                let visible_rows = self.get_last_visible_rows();
+                let visible_rows = self.buffer().get_last_visible_rows();
 
                 // Check if cursor would be below the last visible row
                 let offset = self.get_scroll_offset();
@@ -3453,14 +3299,14 @@ impl EnhancedTuiApp {
     fn toggle_column_pin(&mut self) {
         // Pin or unpin the current column
         let current_col = self.get_current_column();
-        if self.contains_pinned_column(current_col) {
+        if self.buffer().get_pinned_columns().contains(&current_col) {
             // Column is already pinned, unpin it
-            self.remove_pinned_column(current_col);
+            self.buffer_mut().remove_pinned_column(current_col);
             self.set_status_message(format!("Column {} unpinned", current_col + 1));
         } else {
             // Pin the column (max 4 pinned columns)
-            if self.get_pinned_columns().len() < 4 {
-                self.add_pinned_column(current_col);
+            if self.buffer().get_pinned_columns().clone().len() < 4 {
+                self.buffer_mut().add_pinned_column(current_col);
                 self.set_status_message(format!("Column {} pinned 📌", current_col + 1));
             } else {
                 self.set_status_message("Maximum 4 pinned columns allowed".to_string());
@@ -3469,7 +3315,7 @@ impl EnhancedTuiApp {
     }
 
     fn clear_all_pinned_columns(&mut self) {
-        self.clear_pinned_columns();
+        self.buffer_mut().clear_pinned_columns();
         self.set_status_message("All columns unpinned".to_string());
     }
 
@@ -3498,35 +3344,36 @@ impl EnhancedTuiApp {
             let column_name = &headers[self.get_current_column()];
 
             // Use filtered data if available, otherwise use original data
-            let data_to_analyze: Vec<String> = if let Some(filtered) = self.get_filtered_data() {
-                // Convert filtered data back to strings for analysis
-                let mut string_data = Vec::new();
-                for row in filtered {
-                    if self.get_current_column() < row.len() {
-                        string_data.push(row[self.get_current_column()].clone());
-                    }
-                }
-                string_data
-            } else {
-                // Extract column values from JSON data as strings
-                results
-                    .data
-                    .iter()
-                    .filter_map(|row| {
-                        if let Some(obj) = row.as_object() {
-                            obj.get(column_name).map(|v| match v {
-                                Value::String(s) => s.clone(),
-                                Value::Number(n) => n.to_string(),
-                                Value::Bool(b) => b.to_string(),
-                                Value::Null => String::new(),
-                                _ => v.to_string(),
-                            })
-                        } else {
-                            None
+            let data_to_analyze: Vec<String> =
+                if let Some(filtered) = self.buffer().get_filtered_data() {
+                    // Convert filtered data back to strings for analysis
+                    let mut string_data = Vec::new();
+                    for row in filtered {
+                        if self.get_current_column() < row.len() {
+                            string_data.push(row[self.get_current_column()].clone());
                         }
-                    })
-                    .collect()
-            };
+                    }
+                    string_data
+                } else {
+                    // Extract column values from JSON data as strings
+                    results
+                        .data
+                        .iter()
+                        .filter_map(|row| {
+                            if let Some(obj) = row.as_object() {
+                                obj.get(column_name).map(|v| match v {
+                                    Value::String(s) => s.clone(),
+                                    Value::Number(n) => n.to_string(),
+                                    Value::Bool(b) => b.to_string(),
+                                    Value::Null => String::new(),
+                                    _ => v.to_string(),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                };
 
             // Use DataAnalyzer to calculate statistics
             let analyzer_stats = self
@@ -3661,7 +3508,8 @@ impl EnhancedTuiApp {
             // - 1 row for top border
             // - 1 row for header
             // - 1 row for bottom border
-            self.set_last_visible_rows(results_area_height.saturating_sub(3).max(10));
+            self.buffer_mut()
+                .set_last_visible_rows(results_area_height.saturating_sub(3).max(10));
         }
     }
 
@@ -3671,7 +3519,7 @@ impl EnhancedTuiApp {
             let last_row = total_rows - 1;
             self.get_table_state_mut().select(Some(last_row));
             // Position viewport to show the last row at the bottom
-            let visible_rows = self.get_last_visible_rows();
+            let visible_rows = self.buffer().get_last_visible_rows();
             let mut offset = self.get_scroll_offset();
             offset.0 = last_row.saturating_sub(visible_rows - 1);
             self.buffer_mut().set_scroll_offset(offset);
@@ -3681,7 +3529,7 @@ impl EnhancedTuiApp {
     fn page_down(&mut self) {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
-            let visible_rows = self.get_last_visible_rows();
+            let visible_rows = self.buffer().get_last_visible_rows();
             let current = self.get_table_state().selected().unwrap_or(0);
             let new_position = (current + visible_rows).min(total_rows - 1);
 
@@ -3695,7 +3543,7 @@ impl EnhancedTuiApp {
     }
 
     fn page_up(&mut self) {
-        let visible_rows = self.get_last_visible_rows();
+        let visible_rows = self.buffer().get_last_visible_rows();
         let current = self.get_table_state().selected().unwrap_or(0);
         let new_position = current.saturating_sub(visible_rows);
 
@@ -3770,7 +3618,7 @@ impl EnhancedTuiApp {
 
     fn apply_filter(&mut self) {
         if self.get_filter_state().pattern.is_empty() {
-            self.set_filtered_data(None);
+            self.buffer_mut().set_filtered_data(None);
             self.get_filter_state_mut().active = false;
             self.set_status_message("Filter cleared".to_string());
             return;
@@ -3807,7 +3655,7 @@ impl EnhancedTuiApp {
                 }
 
                 let filtered_count = filtered.len();
-                self.set_filtered_data(Some(filtered));
+                self.buffer_mut().set_filtered_data(Some(filtered));
                 self.get_filter_state_mut().regex = Some(regex);
                 self.get_filter_state_mut().active = true;
 
@@ -3843,33 +3691,34 @@ impl EnhancedTuiApp {
         let mut filtered_indices = Vec::new();
 
         // Get the data to filter - either already filtered data or original results
-        let data_to_filter = if self.get_filter_state().active && self.has_filtered_data() {
-            // If regex filter is active, fuzzy filter on top of that
-            self.get_filtered_data()
-        } else if let Some(results) = self.buffer().get_results() {
-            // Otherwise filter original results
-            let mut rows = Vec::new();
-            for item in &results.data {
-                let mut row = Vec::new();
-                if let Some(obj) = item.as_object() {
-                    for (_, value) in obj {
-                        let cell_str = match value {
-                            Value::String(s) => s.clone(),
-                            Value::Number(n) => n.to_string(),
-                            Value::Bool(b) => b.to_string(),
-                            Value::Null => "".to_string(),
-                            _ => value.to_string(),
-                        };
-                        row.push(cell_str);
+        let data_to_filter =
+            if self.get_filter_state().active && self.buffer().get_filtered_data().is_some() {
+                // If regex filter is active, fuzzy filter on top of that
+                self.buffer().get_filtered_data()
+            } else if let Some(results) = self.buffer().get_results() {
+                // Otherwise filter original results
+                let mut rows = Vec::new();
+                for item in &results.data {
+                    let mut row = Vec::new();
+                    if let Some(obj) = item.as_object() {
+                        for (_, value) in obj {
+                            let cell_str = match value {
+                                Value::String(s) => s.clone(),
+                                Value::Number(n) => n.to_string(),
+                                Value::Bool(b) => b.to_string(),
+                                Value::Null => "".to_string(),
+                                _ => value.to_string(),
+                            };
+                            row.push(cell_str);
+                        }
+                        rows.push(row);
                     }
-                    rows.push(row);
                 }
-            }
-            self.set_filtered_data(Some(rows));
-            self.get_filtered_data()
-        } else {
-            return;
-        };
+                self.buffer_mut().set_filtered_data(Some(rows));
+                self.buffer().get_filtered_data()
+            } else {
+                return;
+            };
 
         if let Some(data) = data_to_filter {
             for (index, row) in data.iter().enumerate() {
@@ -4087,11 +3936,11 @@ impl EnhancedTuiApp {
                         let mut new_results = results.clone();
                         new_results.data = sorted_data;
                         self.buffer_mut().set_results(Some(new_results));
-                        self.set_filtered_data(None); // Force regeneration of string data
+                        self.buffer_mut().set_filtered_data(None); // Force regeneration of string data
                     }
                 }
             }
-        } else if let Some(data) = self.get_filtered_data() {
+        } else if let Some(data) = self.buffer().get_filtered_data() {
             // Fallback to string-based sorting if no JSON data available
             // Clone the data, sort it, and set it back
             let mut sorted_data = data.clone();
@@ -4121,7 +3970,7 @@ impl EnhancedTuiApp {
                     }
                 }
             });
-            self.set_filtered_data(Some(sorted_data));
+            self.buffer_mut().set_filtered_data(Some(sorted_data));
         }
 
         self.sort_state = SortState {
@@ -4146,7 +3995,7 @@ impl EnhancedTuiApp {
     }
 
     fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
-        if let Some(filtered) = self.get_filtered_data() {
+        if let Some(filtered) = self.buffer().get_filtered_data() {
             Some(filtered.clone())
         } else if let Some(results) = self.buffer().get_results() {
             Some(self.convert_json_to_strings(results))
@@ -4162,7 +4011,7 @@ impl EnhancedTuiApp {
         // This causes incorrect row counts in the status line (e.g., showing 1/1513 instead of 1/257)
         // This will be fixed when fuzzy_filter_state is migrated to the buffer system
         // and we have a single source of truth for visible rows
-        if let Some(filtered) = self.get_filtered_data() {
+        if let Some(filtered) = self.buffer().get_filtered_data() {
             filtered.len()
         } else if let Some(results) = self.buffer().get_results() {
             results.data.len()
@@ -4233,7 +4082,7 @@ impl EnhancedTuiApp {
         self.clear_fuzzy_filter();
 
         // Clear filtered data
-        self.set_filtered_data(None);
+        self.buffer_mut().set_filtered_data(None);
     }
 
     fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
@@ -4772,13 +4621,15 @@ impl EnhancedTuiApp {
                     .iter()
                     .filter_map(|&idx| results.data.get(idx).cloned())
                     .collect()
-            } else if self.get_filter_state().active && self.has_filtered_data() {
+            } else if self.get_filter_state().active && self.buffer().get_filtered_data().is_some()
+            {
                 // Convert filtered_data back to JSON values
                 // This is a bit inefficient but maintains consistency
                 if let Some(first_row) = results.data.first() {
                     if let Some(obj) = first_row.as_object() {
                         let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                        self.get_filtered_data()
+                        self.buffer()
+                            .get_filtered_data()
                             .unwrap()
                             .iter()
                             .map(|row| {
@@ -5049,7 +4900,8 @@ impl EnhancedTuiApp {
                     }
 
                     // Save to kill ring before deleting
-                    self.set_kill_ring(query_str.chars().skip(cursor_pos).collect::<String>());
+                    self.buffer_mut()
+                        .set_kill_ring(query_str.chars().skip(cursor_pos).collect::<String>());
                     let new_query = query_str.chars().take(cursor_pos).collect::<String>();
                     // Use helper to set text through buffer
                     self.set_input_text(new_query.clone());
@@ -5065,7 +4917,7 @@ impl EnhancedTuiApp {
                     // Update status to show what was killed
                     self.set_status_message(format!(
                         "Killed '{}' (cursor was at {})",
-                        self.get_kill_ring(),
+                        self.buffer().get_kill_ring(),
                         cursor_pos
                     ));
                 } else {
@@ -5093,7 +4945,7 @@ impl EnhancedTuiApp {
                         new_lines[row] = new_line.clone();
 
                         // Save killed text to kill ring (after releasing the borrow)
-                        self.set_kill_ring(killed_text);
+                        self.buffer_mut().set_kill_ring(killed_text);
                         self.textarea = TextArea::from(new_lines);
                         self.textarea.set_cursor_line_style(
                             Style::default().add_modifier(Modifier::UNDERLINED),
@@ -5121,7 +4973,7 @@ impl EnhancedTuiApp {
                     }
 
                     // Save to kill ring before deleting
-                    self.set_kill_ring(killed_text);
+                    self.buffer_mut().set_kill_ring(killed_text);
                     // Use helper to set text through buffer
                     self.set_input_text(new_query.clone());
                     // Set cursor to beginning
@@ -5151,7 +5003,7 @@ impl EnhancedTuiApp {
                     new_lines[row] = new_line;
 
                     // Save killed text to kill ring (after releasing the borrow)
-                    self.set_kill_ring(killed_text);
+                    self.buffer_mut().set_kill_ring(killed_text);
                     self.textarea = TextArea::from(new_lines);
                     self.textarea
                         .set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
@@ -5452,12 +5304,12 @@ impl EnhancedTuiApp {
     }
 
     fn yank(&mut self) {
-        if !self.is_kill_ring_empty() {
+        if !self.buffer().is_kill_ring_empty() {
             let query = self.get_input_text();
             let cursor_pos = self.get_input_cursor();
 
             // Get kill ring content and calculate new query
-            let kill_ring_content = self.get_kill_ring();
+            let kill_ring_content = self.buffer().get_kill_ring();
             let before = query.chars().take(cursor_pos).collect::<String>();
             let after = query.chars().skip(cursor_pos).collect::<String>();
             let new_query = format!("{}{}{}", before, kill_ring_content, after);
@@ -5994,7 +5846,7 @@ impl EnhancedTuiApp {
                     // Extract viewport info first
                     let terminal_height = results_area.height as usize;
                     let max_visible_rows = terminal_height.saturating_sub(3).max(10);
-                    let total_rows = if let Some(filtered) = self.get_filtered_data() {
+                    let total_rows = if let Some(filtered) = self.buffer().get_filtered_data() {
                         filtered.len()
                     } else {
                         results.data.len()
@@ -6105,10 +5957,10 @@ impl EnhancedTuiApp {
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ));
-        } else if self.is_csv_mode() && !self.get_csv_table_name().is_empty() {
+        } else if self.buffer().is_csv_mode() && !self.buffer().get_table_name().is_empty() {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                self.get_csv_table_name(),
+                self.buffer().get_table_name(),
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
@@ -6184,10 +6036,13 @@ impl EnhancedTuiApp {
                                     ));
 
                                     // Show pinned columns count if any
-                                    if !self.get_pinned_columns().is_empty() {
+                                    if !self.buffer().get_pinned_columns().clone().is_empty() {
                                         spans.push(Span::raw(" | "));
                                         spans.push(Span::styled(
-                                            format!("📌{}", self.get_pinned_columns().len()),
+                                            format!(
+                                                "📌{}",
+                                                self.buffer().get_pinned_columns().clone().len()
+                                            ),
                                             Style::default().fg(Color::Magenta),
                                         ));
                                     }
@@ -6305,15 +6160,15 @@ impl EnhancedTuiApp {
             };
             spans.push(Span::raw(format!("{} ", icon)));
             spans.push(Span::styled(label, Style::default().fg(color)));
-        } else if self.is_csv_mode() {
+        } else if self.buffer().is_csv_mode() {
             spans.push(Span::raw(" | "));
             spans.push(Span::raw(&self.config.display.icons.file));
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                format!("CSV: {}", self.get_csv_table_name()),
+                format!("CSV: {}", self.buffer().get_table_name()),
                 Style::default().fg(Color::Green),
             ));
-        } else if self.is_cache_mode() {
+        } else if self.buffer().is_cache_mode() {
             spans.push(Span::raw(" | "));
             spans.push(Span::raw(&self.config.display.icons.cache));
             spans.push(Span::raw(" "));
@@ -6416,7 +6271,7 @@ impl EnhancedTuiApp {
         let mut scrollable_indices: Vec<usize> = Vec::new();
 
         for (i, header) in headers.iter().enumerate() {
-            if self.contains_pinned_column(i) {
+            if self.buffer().get_pinned_columns().contains(&i) {
                 pinned_headers.push((i, header));
             } else {
                 scrollable_indices.push(i);
@@ -6504,7 +6359,7 @@ impl EnhancedTuiApp {
         let terminal_height = area.height as usize;
         let max_visible_rows = terminal_height.saturating_sub(3).max(10);
 
-        let total_rows = if let Some(filtered) = self.get_filtered_data() {
+        let total_rows = if let Some(filtered) = self.buffer().get_filtered_data() {
             if self.is_fuzzy_filter_active() && !self.get_fuzzy_filter_indices().is_empty() {
                 self.get_fuzzy_filter_indices().len()
             } else {
@@ -6519,7 +6374,7 @@ impl EnhancedTuiApp {
         let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
 
         // Prepare table data (only visible rows AND columns)
-        let data_to_display = if let Some(filtered) = self.get_filtered_data() {
+        let data_to_display = if let Some(filtered) = self.buffer().get_filtered_data() {
             // Check if fuzzy filter is active
             if self.is_fuzzy_filter_active() && !self.get_fuzzy_filter_indices().is_empty() {
                 // Apply fuzzy filter on top of existing filter
@@ -6620,7 +6475,11 @@ impl EnhancedTuiApp {
             };
 
             // Add pin indicator for pinned columns
-            let pin_indicator = if self.contains_pinned_column(*actual_col_index) {
+            let pin_indicator = if self
+                .buffer()
+                .get_pinned_columns()
+                .contains(&*actual_col_index)
+            {
                 "📌 "
             } else {
                 ""
@@ -6767,7 +6626,7 @@ impl EnhancedTuiApp {
                 .borders(Borders::ALL)
                 .title(format!("Results ({} rows) - {} pinned, {} visible of {} | Viewport rows {}-{} (selected: {}) | Use h/l to scroll",
                     total_rows,
-                    self.get_pinned_columns().len(),
+                    self.buffer().get_pinned_columns().clone().len(),
                     visible_columns.len(),
                     headers.len(),
                     row_viewport_start + 1,
@@ -7190,8 +7049,8 @@ impl EnhancedTuiApp {
                     if let Some(ref cache) = self.query_cache {
                         match cache.load_query(id) {
                             Ok((_query, data)) => {
-                                self.set_cached_data(Some(data.clone()));
-                                self.set_cache_mode(true);
+                                self.buffer_mut().set_cached_data(Some(data.clone()));
+                                self.buffer_mut().set_cache_mode(true);
                                 self.set_status_message(format!(
                                     "Loaded cache ID {} with {} rows. Cache mode enabled.",
                                     id,
@@ -7223,8 +7082,8 @@ impl EnhancedTuiApp {
                 self.set_mode(AppMode::CacheList);
             }
             "clear" => {
-                self.set_cache_mode(false);
-                self.set_cached_data(None);
+                self.buffer_mut().set_cache_mode(false);
+                self.buffer_mut().set_cached_data(None);
                 self.set_status_message("Cache mode disabled".to_string());
             }
             _ => {
@@ -7277,7 +7136,7 @@ impl EnhancedTuiApp {
                             self.get_table_state_mut().select(Some(target_row));
 
                             // Adjust viewport to center the target row
-                            let visible_rows = self.get_last_visible_rows();
+                            let visible_rows = self.buffer().get_last_visible_rows();
                             if visible_rows > 0 {
                                 let mut offset = self.get_scroll_offset();
                                 offset.0 = target_row.saturating_sub(visible_rows / 2);
