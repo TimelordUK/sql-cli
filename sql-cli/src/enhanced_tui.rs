@@ -744,53 +744,11 @@ impl EnhancedTuiApp {
         // Store old cursor position
         let old_cursor = self.get_input_cursor();
 
-        // Process key through chord handler (logs key press internally)
-        // This will be used later for chord sequences
-        let chord_result = self.key_chord_handler.process_key(key.clone());
-
         // Also log to tracing
         trace!(target: "input", "Key: {:?} Modifiers: {:?}", key.code, key.modifiers);
 
-        // Handle chord results in command mode (same as in results mode)
-        match chord_result {
-            ChordResult::CompleteChord(action) => {
-                // Handle completed chord actions
-                match action.as_str() {
-                    "yank_row" => {
-                        self.yank_row();
-                        return Ok(false);
-                    }
-                    "yank_column" => {
-                        self.yank_column();
-                        return Ok(false);
-                    }
-                    "yank_all" => {
-                        self.yank_all();
-                        return Ok(false);
-                    }
-                    "yank_cell" => {
-                        self.yank_cell();
-                        return Ok(false);
-                    }
-                    _ => {
-                        // Unknown action, continue with normal key handling
-                    }
-                }
-            }
-            ChordResult::PartialChord(description) => {
-                // Update status to show chord mode
-                self.buffer_mut().set_status_message(description);
-                return Ok(false);
-            }
-            ChordResult::Cancelled => {
-                self.buffer_mut()
-                    .set_status_message("Chord cancelled".to_string());
-                return Ok(false);
-            }
-            ChordResult::SingleKey(_) => {
-                // Continue with normal key handling
-            }
-        }
+        // DON'T process chord handler in Command mode - yanking makes no sense when editing queries!
+        // The 'y' key should just type 'y' in the query editor.
 
         // Try dispatcher first for buffer operations and other actions
         if let Some(action) = self.key_dispatcher.get_command_action(&key) {
