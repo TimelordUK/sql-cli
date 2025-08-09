@@ -31,6 +31,7 @@ pub mod where_parser;
 pub mod yank_manager;
 
 // New refactored modules for enhanced_tui decomposition
+pub mod column_manager;
 pub mod completion_manager;
 pub mod cursor_manager;
 pub mod data_analyzer;

@@ -2650,80 +2650,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn expand_asterisk(&mut self) {
-        // Expand SELECT * to all column names
-        let query = if self.buffer().get_edit_mode() == EditMode::SingleLine {
-            self.get_input_text()
-        } else {
-            self.get_input_text().lines().collect::<Vec<_>>().join(" ")
-        };
-
-        // Simple regex-like pattern to find SELECT * FROM table_name
-        let query_upper = query.to_uppercase();
-
-        // Find SELECT * pattern
-        if let Some(select_pos) = query_upper.find("SELECT") {
-            if let Some(star_pos) = query_upper[select_pos..].find("*") {
-                let star_abs_pos = select_pos + star_pos;
-
-                // Find FROM clause after the *
-                if let Some(from_rel_pos) = query_upper[star_abs_pos..].find("FROM") {
-                    let from_abs_pos = star_abs_pos + from_rel_pos;
-
-                    // Extract table name after FROM
-                    let after_from = &query[from_abs_pos + 4..].trim_start();
-                    let table_name = after_from
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or("")
-                        .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
-
-                    if !table_name.is_empty() {
-                        // Get columns from the schema
-                        let columns = self.hybrid_parser.get_table_columns(table_name);
-
-                        if !columns.is_empty() {
-                            // Build the replacement with all columns
-                            let columns_str = columns.join(", ");
-
-                            // Replace * with the column list
-                            let before_star = &query[..star_abs_pos];
-                            let after_star = &query[star_abs_pos + 1..];
-                            let new_query = format!("{}{}{}", before_star, columns_str, after_star);
-
-                            // Update the input (always single-line mode)
-                            self.set_input_text_with_cursor(new_query.clone(), new_query.len());
-                            self.update_horizontal_scroll(120);
-
-                            self.buffer_mut().set_status_message(format!(
-                                "Expanded * to {} columns",
-                                columns.len()
-                            ));
-                        } else {
-                            self.buffer_mut().set_status_message(format!(
-                                "No columns found for table '{}'",
-                                table_name
-                            ));
-                        }
-                    } else {
-                        self.buffer_mut()
-                            .set_status_message("Could not determine table name".to_string());
-                    }
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("No FROM clause found after SELECT *".to_string());
-                }
-            } else {
-                self.buffer_mut()
-                    .set_status_message("No * found in SELECT clause".to_string());
-            }
-        } else {
-            self.buffer_mut()
-                .set_status_message("No SELECT clause found".to_string());
-        }
-    }
-
-    // Note: get_table_columns removed - use hybrid_parser directly
+    // Note: expand_asterisk and get_table_columns removed - moved to Buffer and use hybrid_parser directly
 
     fn extract_partial_word_at_cursor(&self, query: &str, cursor_pos: usize) -> Option<String> {
         if cursor_pos == 0 || cursor_pos > query.len() {
@@ -3773,57 +3700,12 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_optimal_column_widths(&mut self) {
+        use sql_cli::column_manager::ColumnManager;
+
         if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                    let mut widths = Vec::new();
-
-                    // For large datasets, sample rows instead of checking all
-                    const MAX_ROWS_TO_CHECK: usize = 100;
-                    let total_rows = results.data.len();
-
-                    // Determine which rows to sample
-                    let rows_to_check: Vec<usize> = if total_rows <= MAX_ROWS_TO_CHECK {
-                        // Check all rows for small datasets
-                        (0..total_rows).collect()
-                    } else {
-                        // Sample evenly distributed rows for large datasets
-                        let step = total_rows / MAX_ROWS_TO_CHECK;
-                        (0..MAX_ROWS_TO_CHECK)
-                            .map(|i| (i * step).min(total_rows - 1))
-                            .collect()
-                    };
-
-                    for header in &headers {
-                        // Start with header width
-                        let mut max_width = header.len();
-
-                        // Check only sampled rows for this column
-                        for &row_idx in &rows_to_check {
-                            if let Some(row) = results.data.get(row_idx) {
-                                if let Some(obj) = row.as_object() {
-                                    if let Some(value) = obj.get(*header) {
-                                        let display_len = match value {
-                                            serde_json::Value::String(s) => s.len(),
-                                            serde_json::Value::Number(n) => n.to_string().len(),
-                                            serde_json::Value::Bool(b) => b.to_string().len(),
-                                            serde_json::Value::Null => 4, // "null".len()
-                                            _ => value.to_string().len(),
-                                        };
-                                        max_width = max_width.max(display_len);
-                                    }
-                                }
-                            }
-                        }
-
-                        // Add some padding and set reasonable limits
-                        let optimal_width = (max_width + 2).max(4).min(50); // 4-50 char range with 2 char padding
-                        widths.push(optimal_width as u16);
-                    }
-
-                    self.buffer_mut().set_column_widths(widths);
-                }
+            let widths = ColumnManager::calculate_optimal_widths(&results.data);
+            if !widths.is_empty() {
+                self.buffer_mut().set_column_widths(widths);
             }
         }
     }
@@ -4336,52 +4218,16 @@ impl EnhancedTuiApp {
     }
 
     fn delete_word_backward(&mut self) {
-        let query = self.get_input_text();
-        let cursor_pos = self.get_input_cursor();
-
-        if cursor_pos == 0 {
-            return;
-        }
-
-        // Save to undo stack before modifying
         if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.save_state_for_undo();
-        }
+            buffer.delete_word_backward();
 
-        // Find the start of the previous word
-        let chars: Vec<char> = query.chars().collect();
-        let mut word_start = cursor_pos;
-
-        // Skip any whitespace before cursor
-        while word_start > 0 && chars[word_start - 1].is_whitespace() {
-            word_start -= 1;
-        }
-
-        // Find the beginning of the word
-        while word_start > 0
-            && !chars[word_start - 1].is_whitespace()
-            && !is_sql_delimiter(chars[word_start - 1])
-        {
-            word_start -= 1;
-        }
-
-        // If we only moved through whitespace, try to delete at least one word
-        if word_start == cursor_pos && word_start > 0 {
-            word_start -= 1;
-            while word_start > 0
-                && !chars[word_start - 1].is_whitespace()
-                && !is_sql_delimiter(chars[word_start - 1])
-            {
-                word_start -= 1;
+            // Sync for rendering if single-line mode
+            if buffer.get_edit_mode() == EditMode::SingleLine {
+                let text = buffer.get_input_text();
+                let cursor = buffer.get_input_cursor_position();
+                self.set_input_text_with_cursor(text, cursor);
+                self.cursor_manager.set_position(cursor);
             }
-        }
-
-        // Delete from word_start to cursor_pos
-        if word_start < cursor_pos {
-            let before = &query[..word_start];
-            let after = &query[cursor_pos..];
-            let new_query = format!("{}{}", before, after);
-            self.set_input_text_with_cursor(new_query, word_start);
         }
     }
 
@@ -4431,87 +4277,30 @@ impl EnhancedTuiApp {
     }
 
     fn delete_word_forward(&mut self) {
-        let query = self.get_input_text();
-        let cursor_pos = self.get_input_cursor();
-        let query_len = query.len();
-
-        if cursor_pos >= query_len {
-            return;
-        }
-
-        // Save to undo stack before modifying
         if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.save_state_for_undo();
-        }
+            buffer.delete_word_forward();
 
-        // Find the end of the current/next word
-        let chars: Vec<char> = query.chars().collect();
-        let mut word_end = cursor_pos;
-
-        // Skip any non-word characters first
-        while word_end < chars.len() && !chars[word_end].is_alphanumeric() && chars[word_end] != '_'
-        {
-            word_end += 1;
-        }
-
-        // Then skip word characters
-        while word_end < chars.len()
-            && (chars[word_end].is_alphanumeric() || chars[word_end] == '_')
-        {
-            word_end += 1;
-        }
-
-        // Delete from cursor to word end
-        if word_end > cursor_pos {
-            let before = query.chars().take(cursor_pos).collect::<String>();
-            let after = query.chars().skip(word_end).collect::<String>();
-            let new_query = format!("{}{}", before, after);
-            self.set_input_text_with_cursor(new_query, cursor_pos);
+            // Sync for rendering if single-line mode
+            if buffer.get_edit_mode() == EditMode::SingleLine {
+                let text = buffer.get_input_text();
+                let cursor = buffer.get_input_cursor_position();
+                self.set_input_text_with_cursor(text, cursor);
+                self.cursor_manager.set_position(cursor);
+            }
         }
     }
 
     fn kill_line(&mut self) {
-        // Always use single-line mode
-        let query_str = self.get_input_text();
-        let cursor_pos = self.get_input_cursor();
-        let query_len = query_str.len();
+        if let Some(buffer) = self.buffer_manager.current_mut() {
+            buffer.kill_line();
 
-        // Debug info
-        self.buffer_mut().set_status_message(format!(
-            "kill_line: cursor={}, len={}, text='{}'",
-            cursor_pos, query_len, query_str
-        ));
-
-        if cursor_pos < query_len {
-            // Save to undo stack before modifying
-            if let Some(buffer) = self.buffer_manager.current_mut() {
-                buffer.save_state_for_undo();
+            // Sync for rendering if single-line mode
+            if buffer.get_edit_mode() == EditMode::SingleLine {
+                let text = buffer.get_input_text();
+                let cursor = buffer.get_input_cursor_position();
+                self.set_input_text_with_cursor(text, cursor);
+                self.cursor_manager.set_position(cursor);
             }
-
-            // Save to kill ring before deleting
-            self.buffer_mut()
-                .set_kill_ring(query_str.chars().skip(cursor_pos).collect::<String>());
-            let new_query = query_str.chars().take(cursor_pos).collect::<String>();
-            // Use helper to set text through buffer
-            self.set_input_text(new_query.clone());
-            // Set cursor back to original position
-            if let Some(buffer) = self.buffer_manager.current_mut() {
-                buffer.set_input_cursor_position(cursor_pos);
-                // Sync for rendering
-                self.set_input_text_with_cursor(new_query, cursor_pos);
-            }
-
-            // Update status to show what was killed
-            let kill_ring_content = self.buffer().get_kill_ring();
-            self.buffer_mut().set_status_message(format!(
-                "Killed '{}' (cursor was at {})",
-                kill_ring_content, cursor_pos
-            ));
-        } else {
-            self.buffer_mut().set_status_message(format!(
-                "Nothing to kill - cursor at end (pos={}, len={})",
-                cursor_pos, query_len
-            ));
         }
     }
 
