@@ -167,13 +167,6 @@ pub struct EnhancedTuiApp {
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
 }
 
-fn is_sql_delimiter(ch: char) -> bool {
-    matches!(
-        ch,
-        ',' | '(' | ')' | '=' | '<' | '>' | '.' | '"' | '\'' | ';'
-    )
-}
-
 impl EnhancedTuiApp {
     // --- Buffer Compatibility Layer ---
     // These methods provide a gradual migration path from direct field access to BufferAPI
@@ -2699,17 +2692,6 @@ impl EnhancedTuiApp {
     }
 
     // Helper to get estimated visible rows based on terminal size
-    fn get_visible_rows(&self) -> usize {
-        // Try to get terminal size, or use stored default
-        if let Ok((_, height)) = crossterm::terminal::size() {
-            let terminal_height = height as usize;
-            let available_height = terminal_height.saturating_sub(4); // Account for header, borders, etc.
-            let max_visible_rows = available_height.saturating_sub(1).max(10); // Reserve space for header
-            max_visible_rows
-        } else {
-            self.buffer().get_last_visible_rows() // Fallback to stored value
-        }
-    }
 
     // Navigation functions
     fn next_row(&mut self) {
@@ -3992,20 +3974,6 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn delete_word_backward(&mut self) {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.delete_word_backward();
-
-            // Sync for rendering if single-line mode
-            if buffer.get_edit_mode() == EditMode::SingleLine {
-                let text = buffer.get_input_text();
-                let cursor = buffer.get_input_cursor_position();
-                self.set_input_text_with_cursor(text, cursor);
-                self.cursor_manager.set_position(cursor);
-            }
-        }
-    }
-
     fn move_cursor_word_forward(&mut self) {
         let query = self.get_input_text();
         let cursor_pos = self.get_input_cursor();
@@ -4049,20 +4017,6 @@ impl EnhancedTuiApp {
         // Update status message
         self.buffer_mut()
             .set_status_message(format!("Moved to position {} (word boundary)", target_pos));
-    }
-
-    fn delete_word_forward(&mut self) {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.delete_word_forward();
-
-            // Sync for rendering if single-line mode
-            if buffer.get_edit_mode() == EditMode::SingleLine {
-                let text = buffer.get_input_text();
-                let cursor = buffer.get_input_cursor_position();
-                self.set_input_text_with_cursor(text, cursor);
-                self.cursor_manager.set_position(cursor);
-            }
-        }
     }
 
     fn kill_line(&mut self) {
@@ -4116,205 +4070,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn redo(&mut self) {
-        // Use buffer's high-level redo operation
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            if buffer.perform_redo() {
-                self.buffer_mut()
-                    .set_status_message("Redo performed".to_string());
-            } else {
-                self.buffer_mut()
-                    .set_status_message("Nothing to redo".to_string());
-            }
-        }
-    }
-
     // Buffer management methods
-    fn next_buffer(&mut self) {
-        let prev_index = self.buffer_manager.current_index();
-        self.buffer_manager.next_buffer();
-        let index = self.buffer_manager.current_index();
-        let total = self.buffer_manager.all_buffers().len();
-        debug!(target: "buffer", "Switched from buffer {} to {} (total: {})", prev_index + 1, index + 1, total);
-
-        // Sync results and state from the new buffer
-        if let Some(buffer) = self.buffer_manager.current() {
-            // Collect all data from buffer first
-            let query_text = buffer.get_query();
-            // Always single-line mode now
-            let edit_mode = EditMode::SingleLine;
-            let results = buffer.get_results().cloned();
-            let buffer_id = buffer.get_id();
-            let buffer_name = buffer.get_name();
-            let buffer_query = buffer.get_query();
-            let csv_mode = buffer.is_csv_mode();
-            let cache_mode = buffer.is_cache_mode();
-            let table_name = buffer.get_table_name();
-
-            // Get the full CSV schema before we start mutating self
-            let csv_schema = if csv_mode {
-                buffer
-                    .get_csv_client()
-                    .and_then(|client| client.get_schema())
-                    .and_then(|schema| schema.get(&table_name).cloned())
-            } else {
-                None
-            };
-
-            // Now update self
-            self.set_input_text_with_cursor(query_text.clone(), query_text.len());
-            self.buffer_mut().set_edit_mode(edit_mode);
-            self.buffer_mut().set_results(results);
-
-            let result_count = self
-                .buffer()
-                .get_results()
-                .map(|r| r.data.len())
-                .unwrap_or(0);
-            info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
-                      result_count, buffer_id, buffer_name, csv_mode, cache_mode,
-                      buffer_query);
-
-            // For CSV/cache buffers without results, execute a default query to populate schema
-            if (csv_mode || cache_mode) && self.buffer().get_results().is_none() {
-                info!(target: "buffer", "Buffer has no results, executing default query to populate schema");
-                let default_query = format!("SELECT * FROM {}", table_name);
-
-                // Execute the query to populate results and schema
-                if let Err(e) = self.execute_query(&default_query) {
-                    warn!(target: "buffer", "Failed to execute default query: {}", e);
-                } else {
-                    info!(target: "buffer", "Default query executed successfully for table '{}'", table_name);
-                }
-            } else {
-                // Update parser schema for CSV/cache mode buffers that already have results
-                if let Some(columns) = csv_schema {
-                    // For CSV mode, use the FULL schema we collected earlier
-                    info!(target: "buffer", "Updating parser with FULL schema ({} columns) for table '{}'", columns.len(), table_name);
-                    self.hybrid_parser
-                        .update_single_table(table_name.clone(), columns);
-                } else if cache_mode {
-                    // For cache mode, use the results columns
-                    let columns = self
-                        .buffer()
-                        .get_results()
-                        .and_then(|r| r.data.first())
-                        .and_then(|row| {
-                            row.as_object()
-                                .map(|obj| obj.keys().map(|k| k.to_string()).collect::<Vec<_>>())
-                        });
-
-                    if let Some(cols) = columns {
-                        info!(target: "buffer", "Updating parser with {} columns for cached table", cols.len());
-                        self.hybrid_parser
-                            .update_single_table(table_name.clone(), cols);
-                    }
-                }
-
-                // Recalculate column widths and reset table state for new results
-                if self.buffer().get_results().is_some() {
-                    self.calculate_optimal_column_widths();
-                    self.reset_table_state();
-                }
-            }
-        }
-
-        self.buffer_mut()
-            .set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
-    }
-
-    fn prev_buffer(&mut self) {
-        let prev_index = self.buffer_manager.current_index();
-        self.buffer_manager.prev_buffer();
-        let index = self.buffer_manager.current_index();
-        let total = self.buffer_manager.all_buffers().len();
-        debug!(target: "buffer", "Switched from buffer {} to {} (total: {})", prev_index + 1, index + 1, total);
-
-        // Sync results and state from the new buffer
-        if let Some(buffer) = self.buffer_manager.current() {
-            // Collect all data from buffer first
-            let query_text = buffer.get_query();
-            // Always single-line mode now
-            let edit_mode = EditMode::SingleLine;
-            let results = buffer.get_results().cloned();
-            let buffer_id = buffer.get_id();
-            let buffer_name = buffer.get_name();
-            let buffer_query = buffer.get_query();
-            let csv_mode = buffer.is_csv_mode();
-            let cache_mode = buffer.is_cache_mode();
-            let table_name = buffer.get_table_name();
-
-            // Get the full CSV schema before we start mutating self
-            let csv_schema = if csv_mode {
-                buffer
-                    .get_csv_client()
-                    .and_then(|client| client.get_schema())
-                    .and_then(|schema| schema.get(&table_name).cloned())
-            } else {
-                None
-            };
-
-            // Now update self
-            self.set_input_text_with_cursor(query_text.clone(), query_text.len());
-            self.buffer_mut().set_edit_mode(edit_mode);
-            self.buffer_mut().set_results(results);
-
-            let result_count = self
-                .buffer()
-                .get_results()
-                .map(|r| r.data.len())
-                .unwrap_or(0);
-            info!(target: "buffer", "Loaded {} results from buffer {} ({}, csv_mode={}, cache_mode={}), query='{}'", 
-                      result_count, buffer_id, buffer_name, csv_mode, cache_mode,
-                      buffer_query);
-
-            // For CSV/cache buffers without results, execute a default query to populate schema
-            if (csv_mode || cache_mode) && self.buffer().get_results().is_none() {
-                info!(target: "buffer", "Buffer has no results, executing default query to populate schema");
-                let default_query = format!("SELECT * FROM {}", table_name);
-
-                // Execute the query to populate results and schema
-                if let Err(e) = self.execute_query(&default_query) {
-                    warn!(target: "buffer", "Failed to execute default query: {}", e);
-                } else {
-                    info!(target: "buffer", "Default query executed successfully for table '{}'", table_name);
-                }
-            } else {
-                // Update parser schema for CSV/cache mode buffers that already have results
-                if let Some(columns) = csv_schema {
-                    // For CSV mode, use the FULL schema we collected earlier
-                    info!(target: "buffer", "Updating parser with FULL schema ({} columns) for table '{}'", columns.len(), table_name);
-                    self.hybrid_parser
-                        .update_single_table(table_name.clone(), columns);
-                } else if cache_mode {
-                    // For cache mode, use the results columns
-                    let columns = self
-                        .buffer()
-                        .get_results()
-                        .and_then(|r| r.data.first())
-                        .and_then(|row| {
-                            row.as_object()
-                                .map(|obj| obj.keys().map(|k| k.to_string()).collect::<Vec<_>>())
-                        });
-
-                    if let Some(cols) = columns {
-                        info!(target: "buffer", "Updating parser with {} columns for cached table", cols.len());
-                        self.hybrid_parser
-                            .update_single_table(table_name.clone(), cols);
-                    }
-                }
-
-                // Recalculate column widths and reset table state for new results
-                if self.buffer().get_results().is_some() {
-                    self.calculate_optimal_column_widths();
-                    self.reset_table_state();
-                }
-            }
-        }
-
-        self.buffer_mut()
-            .set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
-    }
 
     fn new_buffer(&mut self) {
         let mut new_buffer =
@@ -4342,39 +4098,6 @@ impl EnhancedTuiApp {
     fn debug_current_buffer(&self) {
         // Debug output disabled - was corrupting TUI display
         // Use tracing/logging instead if debugging is needed
-    }
-
-    fn close_buffer(&mut self) -> bool {
-        if self.buffer_manager.close_current() {
-            let index = self.buffer_manager.current_index();
-            let total = self.buffer_manager.all_buffers().len();
-            self.buffer_mut().set_status_message(format!(
-                "Buffer closed. Now at buffer {}/{}",
-                index + 1,
-                total
-            ));
-            true
-        } else {
-            self.buffer_mut()
-                .set_status_message("Cannot close the last buffer".to_string());
-            false
-        }
-    }
-
-    fn list_buffers(&self) -> Vec<String> {
-        let current_index = self.buffer_manager.current_index();
-        (0..self.buffer_manager.all_buffers().len())
-            .map(|i| {
-                let marker = if i == current_index { "*" } else { " " };
-                let name = self
-                    .buffer_manager
-                    .all_buffers()
-                    .get(i)
-                    .map(|b| b.name.clone())
-                    .unwrap_or("Unknown".to_string());
-                format!("{} [{}] {}", marker, i + 1, name)
-            })
-            .collect()
     }
 
     fn yank(&mut self) {
