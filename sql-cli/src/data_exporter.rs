@@ -249,6 +249,39 @@ impl DataExporter {
         values.join("\t")
     }
 
+    /// Convert JSON query results to a 2D vector of strings for display
+    pub fn convert_json_to_strings(data: &[Value]) -> Vec<Vec<String>> {
+        if let Some(first_row) = data.first() {
+            if let Some(obj) = first_row.as_object() {
+                let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+
+                data.iter()
+                    .map(|item| {
+                        if let Some(obj) = item.as_object() {
+                            headers
+                                .iter()
+                                .map(|&header| match obj.get(header) {
+                                    Some(Value::String(s)) => s.clone(),
+                                    Some(Value::Number(n)) => n.to_string(),
+                                    Some(Value::Bool(b)) => b.to_string(),
+                                    Some(Value::Null) => "".to_string(),
+                                    Some(other) => other.to_string(),
+                                    None => "".to_string(),
+                                })
+                                .collect()
+                        } else {
+                            vec![]
+                        }
+                    })
+                    .collect()
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        }
+    }
+
     /// Generate CSV text from JSON data for clipboard operations
     pub fn generate_csv_text(data: &[Value]) -> Option<String> {
         let first_row = data.first()?;
