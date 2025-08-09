@@ -19,6 +19,8 @@ pub mod dynamic_schema;
 pub mod editor_widget;
 pub mod global_state;
 pub mod history;
+pub mod history_protection;
+pub mod history_widget;
 pub mod hybrid_parser;
 pub mod input_manager;
 pub mod logging;
