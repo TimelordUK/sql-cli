@@ -1371,6 +1371,11 @@ impl EnhancedTuiApp {
             key, self.selection_mode
         );
 
+        // Debug uppercase G specifically
+        if matches!(key.code, KeyCode::Char('G')) {
+            debug!("Detected uppercase G key press!");
+        }
+
         // In cell mode, skip chord handler for 'y' key - handle it directly
         let should_skip_chord = matches!(self.selection_mode, SelectionMode::Cell)
             && matches!(key.code, KeyCode::Char('y'));
@@ -2787,10 +2792,16 @@ impl EnhancedTuiApp {
     }
 
     fn goto_first_row(&mut self) {
-        &mut self.table_state.select(Some(0));
+        self.table_state.select(Some(0));
         let mut offset = self.buffer().get_scroll_offset();
         offset.0 = 0; // Reset viewport to top
         self.buffer_mut().set_scroll_offset(offset);
+
+        let total_rows = self.get_row_count();
+        if total_rows > 0 {
+            self.buffer_mut()
+                .set_status_message(format!("Jumped to first row (1/{})", total_rows));
+        }
     }
 
     fn toggle_column_pin(&mut self) {
@@ -3003,12 +3014,19 @@ impl EnhancedTuiApp {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
             let last_row = total_rows - 1;
-            &mut self.table_state.select(Some(last_row));
+            self.table_state.select(Some(last_row));
             // Position viewport to show the last row at the bottom
             let visible_rows = self.buffer().get_last_visible_rows();
             let mut offset = self.buffer().get_scroll_offset();
             offset.0 = last_row.saturating_sub(visible_rows - 1);
             self.buffer_mut().set_scroll_offset(offset);
+
+            // Set status to confirm action
+            self.buffer_mut().set_status_message(format!(
+                "Jumped to last row ({}/{})",
+                last_row + 1,
+                total_rows
+            ));
         }
     }
 

@@ -3,3 +3,5 @@
 # WSL config files
 *wslconfig*.txt
 *vmoptions*.txt
+trades_*.json
+test_shift_g.rs
