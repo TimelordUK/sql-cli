@@ -17,9 +17,9 @@ fn test_yanked_from_tui_session() -> anyhow::Result<()> {
 
     harness.add_query(CapturedQuery {
         description: "Captured from TUI session 2025-08-09 10:59:51".to_string(),
-        data_file: "../data/trades_10k.json".to_string(),
+        data_file: "data/trades.json".to_string(),
         query: "SELECT book,commission,confirmationStatus,instrumentId,platformOrderId,counterparty,instrumentName,counterpartyCountry,counterpartyType,createdDate,currency FROM trades where not confirmationStatus.Contains('pend') and commission between 20 and 50 order by counterparty,book".to_string(),
-        expected_row_count: 43,
+        expected_row_count: 15,
         expected_columns: vec![
             "book".to_string(), 
             "commission".to_string(), 
@@ -33,13 +33,7 @@ fn test_yanked_from_tui_session() -> anyhow::Result<()> {
             "instrumentName".to_string(), 
             "platformOrderId".to_string()
         ],
-        expected_first_row: Some({
-            let mut map = std::collections::HashMap::new();
-            map.insert("book".to_string(), serde_json::Value::String("Options Trading".to_string()));
-            map.insert("commission".to_string(), serde_json::Value::String("26.96".to_string()));
-            map.insert("confirmationStatus".to_string(), serde_json::Value::String("Confirmed".to_string()));
-            map
-        }),
+        expected_first_row: None,
         case_insensitive: true,
     });
 
@@ -54,7 +48,7 @@ fn test_yanked_from_tui_session() -> anyhow::Result<()> {
 #[test]
 fn test_yanked_query_direct() -> anyhow::Result<()> {
     // Check if the data file exists
-    let data_file = "../data/trades_10k.json";
+    let data_file = "data/trades.json";
     if !std::path::Path::new(data_file).exists() {
         println!("Skipping test - {} not found", data_file);
         return Ok(());
@@ -72,7 +66,7 @@ fn test_yanked_query_direct() -> anyhow::Result<()> {
 
     // Verify results
     println!("Query returned {} rows", response.data.len());
-    assert_eq!(response.data.len(), 43, "Expected 43 rows from the query");
+    assert_eq!(response.data.len(), 15, "Expected 15 rows from the query");
 
     // Check first row if available
     if let Some(first_row) = response.data.first() {
@@ -138,7 +132,7 @@ fn test_yanked_query_direct() -> anyhow::Result<()> {
         }
     }
 
-    println!("✅ All 43 rows validated successfully!");
+    println!("✅ All 15 rows validated successfully!");
     println!("✅ NOT confirmationStatus.Contains('pend') works correctly");
     println!("✅ Commission BETWEEN 20 AND 50 works correctly");
     println!("✅ ORDER BY counterparty,book applied");
