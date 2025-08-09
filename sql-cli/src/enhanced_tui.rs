@@ -170,7 +170,7 @@ pub struct EnhancedTuiApp {
     // filtered_data removed - now exclusively in Buffer
     scroll_offset: (usize, usize), // (row, col)
     current_column: usize,         // For column-based operations
-    pinned_columns: Vec<usize>,    // Indices of pinned columns
+    // pinned_columns: Vec<usize>,    // MIGRATED to buffer system
     // column_stats: Option<ColumnStatistics>, // MIGRATED to buffer system
     sql_highlighter: SqlHighlighter,
     debug_text: String,
@@ -912,7 +912,6 @@ impl EnhancedTuiApp {
             command_history: CommandHistory::new().unwrap_or_default(),
             scroll_offset: (0, 0),
             current_column: 0,
-            pinned_columns: Vec::new(),
             sql_highlighter: SqlHighlighter::new(),
             debug_text: String::new(),
             debug_scroll: 0,
