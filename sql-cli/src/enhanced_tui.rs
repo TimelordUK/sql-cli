@@ -1264,8 +1264,17 @@ impl EnhancedTuiApp {
             key, self.selection_mode
         );
 
-        // Process key through chord handler first
-        let chord_result = self.key_chord_handler.process_key(key.clone());
+        // In cell mode, skip chord handler for 'y' key - handle it directly
+        let should_skip_chord = matches!(self.selection_mode, SelectionMode::Cell)
+            && matches!(key.code, KeyCode::Char('y'));
+
+        let chord_result = if should_skip_chord {
+            debug!("Skipping chord handler for 'y' in cell mode");
+            ChordResult::SingleKey(key.clone())
+        } else {
+            // Process key through chord handler
+            self.key_chord_handler.process_key(key.clone())
+        };
 
         // Handle chord results
         match chord_result {
