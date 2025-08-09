@@ -2821,6 +2821,10 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_column_statistics(&mut self) {
+        use std::time::Instant;
+
+        let start_total = Instant::now();
+
         // Collect all data first, then drop the buffer reference before calling analyzer
         let (column_name, data_to_analyze) = {
             // Get the current column name and data
@@ -2972,7 +2976,19 @@ impl EnhancedTuiApp {
 
         stats.frequency_map = frequency_map;
 
+        // Calculate total time
+        let elapsed = start_total.elapsed();
+
         self.buffer_mut().set_column_stats(Some(stats));
+
+        // Show timing in status message
+        self.buffer_mut().set_status_message(format!(
+            "Column stats: {:.1}ms for {} values ({} unique)",
+            elapsed.as_secs_f64() * 1000.0,
+            data_to_analyze.len(),
+            analyzer_stats.unique_values
+        ));
+
         self.buffer_mut().set_mode(AppMode::ColumnStats);
     }
 
