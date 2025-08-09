@@ -23,7 +23,9 @@ use ratatui::{
 use regex::Regex;
 use serde_json::Value;
 use sql_cli::api_client::{ApiClient, QueryResponse};
-use sql_cli::buffer::{BufferAPI, BufferManager, ColumnStatistics, ColumnType};
+use sql_cli::buffer::{
+    AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder, SortState,
+};
 use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
@@ -44,28 +46,7 @@ use tracing::{debug, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
 use tui_textarea::{CursorMove, TextArea};
 
-#[derive(Clone, PartialEq, Debug)]
-enum AppMode {
-    Command,
-    Results,
-    Search,
-    Filter,
-    FuzzyFilter,
-    ColumnSearch,
-    Help,
-    History,
-    Debug,
-    PrettyQuery,
-    CacheList,
-    JumpToRow,
-    ColumnStats,
-}
-
-#[derive(Clone, PartialEq)]
-enum EditMode {
-    SingleLine,
-    MultiLine,
-}
+// Using AppMode and EditMode from sql_cli::buffer module
 
 #[derive(Clone, PartialEq, Debug)]
 enum SelectionMode {
@@ -73,18 +54,7 @@ enum SelectionMode {
     Cell,
 }
 
-#[derive(Clone, PartialEq, Copy)]
-enum SortOrder {
-    Ascending,
-    Descending,
-    None,
-}
-
-#[derive(Clone)]
-struct SortState {
-    column: Option<usize>,
-    order: SortOrder,
-}
+// Using SortOrder and SortState from sql_cli::buffer module
 
 #[derive(Clone)]
 struct FilterState {
@@ -243,21 +213,13 @@ impl EnhancedTuiApp {
             .expect("No buffer available - this should not happen")
     }
 
-    // Compatibility wrapper for edit_mode
+    // Direct access to edit_mode through buffer
     fn get_edit_mode(&self) -> EditMode {
-        // Convert from buffer::EditMode to local EditMode
-        match self.buffer().get_edit_mode() {
-            sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
-            sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
-        }
+        self.buffer().get_edit_mode()
     }
 
     fn set_edit_mode(&mut self, mode: EditMode) {
-        let buffer_mode = match mode {
-            EditMode::SingleLine => sql_cli::buffer::EditMode::SingleLine,
-            EditMode::MultiLine => sql_cli::buffer::EditMode::MultiLine,
-        };
-        self.buffer_mut().set_edit_mode(buffer_mode);
+        self.buffer_mut().set_edit_mode(mode);
     }
 
     // Helper to get input text from buffer or fallback to direct input
@@ -364,51 +326,13 @@ impl EnhancedTuiApp {
         (0, cursor)
     }
 
-    // Helper functions to convert between buffer AppMode and local AppMode
-    fn buffer_mode_to_local(buffer_mode: sql_cli::buffer::AppMode) -> AppMode {
-        match buffer_mode {
-            sql_cli::buffer::AppMode::Command => AppMode::Command,
-            sql_cli::buffer::AppMode::Results => AppMode::Results,
-            sql_cli::buffer::AppMode::Search => AppMode::Search,
-            sql_cli::buffer::AppMode::Filter => AppMode::Filter,
-            sql_cli::buffer::AppMode::FuzzyFilter => AppMode::FuzzyFilter,
-            sql_cli::buffer::AppMode::ColumnSearch => AppMode::ColumnSearch,
-            sql_cli::buffer::AppMode::Help => AppMode::Help,
-            sql_cli::buffer::AppMode::History => AppMode::History,
-            sql_cli::buffer::AppMode::Debug => AppMode::Debug,
-            sql_cli::buffer::AppMode::PrettyQuery => AppMode::PrettyQuery,
-            sql_cli::buffer::AppMode::CacheList => AppMode::CacheList,
-            sql_cli::buffer::AppMode::JumpToRow => AppMode::JumpToRow,
-            sql_cli::buffer::AppMode::ColumnStats => AppMode::ColumnStats,
-        }
-    }
-
-    fn local_mode_to_buffer(local_mode: &AppMode) -> sql_cli::buffer::AppMode {
-        match local_mode {
-            AppMode::Command => sql_cli::buffer::AppMode::Command,
-            AppMode::Results => sql_cli::buffer::AppMode::Results,
-            AppMode::Search => sql_cli::buffer::AppMode::Search,
-            AppMode::Filter => sql_cli::buffer::AppMode::Filter,
-            AppMode::FuzzyFilter => sql_cli::buffer::AppMode::FuzzyFilter,
-            AppMode::ColumnSearch => sql_cli::buffer::AppMode::ColumnSearch,
-            AppMode::Help => sql_cli::buffer::AppMode::Help,
-            AppMode::History => sql_cli::buffer::AppMode::History,
-            AppMode::Debug => sql_cli::buffer::AppMode::Debug,
-            AppMode::PrettyQuery => sql_cli::buffer::AppMode::PrettyQuery,
-            AppMode::CacheList => sql_cli::buffer::AppMode::CacheList,
-            AppMode::JumpToRow => sql_cli::buffer::AppMode::JumpToRow,
-            AppMode::ColumnStats => sql_cli::buffer::AppMode::ColumnStats,
-        }
-    }
-
-    // Compatibility wrapper for mode
+    // Direct access to mode through buffer
     fn get_mode(&self) -> AppMode {
-        Self::buffer_mode_to_local(self.buffer().get_mode())
+        self.buffer().get_mode()
     }
 
     fn set_mode(&mut self, mode: AppMode) {
-        self.buffer_mut()
-            .set_mode(Self::local_mode_to_buffer(&mode));
+        self.buffer_mut().set_mode(mode);
     }
 
     // Compatibility wrapper for table_state
