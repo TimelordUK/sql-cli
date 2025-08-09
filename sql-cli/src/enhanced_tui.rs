@@ -2821,11 +2821,13 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_column_statistics(&mut self) {
-        // Get the current column name and data
-        if let Some(results) = self.buffer().get_results() {
-            if results.data.is_empty() {
-                return;
-            }
+        // Collect all data first, then drop the buffer reference before calling analyzer
+        let (column_name, data_to_analyze) = {
+            // Get the current column name and data
+            let results = match self.buffer().get_results() {
+                Some(r) if !r.data.is_empty() => r,
+                _ => return,
+            };
 
             // Get column names from first row
             let headers: Vec<String> = if let Some(first_row) = results.data.first() {
@@ -2838,151 +2840,140 @@ impl EnhancedTuiApp {
                 return;
             };
 
-            if self.buffer().get_current_column() >= headers.len() {
+            let current_column = self.buffer().get_current_column();
+            if current_column >= headers.len() {
                 return;
             }
 
-            let column_name = &headers[self.buffer().get_current_column()];
+            let column_name = headers[current_column].clone();
 
             // Extract column data more efficiently - avoid cloning strings when possible
-            let (owned_strings, borrowed_values): (Vec<String>, Vec<&str>) =
+            let data_to_analyze: Vec<String> =
                 if let Some(filtered) = self.buffer().get_filtered_data() {
                     // For filtered data, we already have strings
                     let mut string_data = Vec::new();
                     for row in filtered {
-                        if self.buffer().get_current_column() < row.len() {
-                            string_data.push(row[self.buffer().get_current_column()].clone());
+                        if current_column < row.len() {
+                            string_data.push(row[current_column].clone());
                         }
                     }
-                    (string_data, vec![])
+                    string_data
                 } else {
-                    // For JSON data, collect references to existing strings and only create new strings for non-strings
-                    let mut owned = Vec::new();
-                    let mut refs = Vec::new();
-
-                    for row in &results.data {
-                        if let Some(obj) = row.as_object() {
-                            if let Some(v) = obj.get(column_name) {
-                                match v {
-                                    Value::String(s) => {
-                                        refs.push(s.as_str());
-                                    }
-                                    Value::Number(n) => {
-                                        owned.push(n.to_string());
-                                    }
-                                    Value::Bool(b) => {
-                                        owned.push(b.to_string());
-                                    }
-                                    Value::Null => {
-                                        refs.push("");
-                                    }
-                                    _ => {
-                                        owned.push(v.to_string());
-                                    }
-                                }
+                    // For JSON data, we need to convert to owned strings
+                    results
+                        .data
+                        .iter()
+                        .filter_map(|row| {
+                            if let Some(obj) = row.as_object() {
+                                obj.get(&column_name).map(|v| match v {
+                                    Value::String(s) => s.clone(),
+                                    Value::Number(n) => n.to_string(),
+                                    Value::Bool(b) => b.to_string(),
+                                    Value::Null => String::new(),
+                                    _ => v.to_string(),
+                                })
+                            } else {
+                                None
                             }
-                        }
-                    }
-                    (owned, refs)
+                        })
+                        .collect()
                 };
 
-            // Combine owned and borrowed into a single vec of references for analysis
-            let data_to_analyze: Vec<&str> = owned_strings
-                .iter()
-                .map(|s| s.as_str())
-                .chain(borrowed_values.iter().copied())
-                .collect();
+            (column_name, data_to_analyze)
+        };
 
-            // Use DataAnalyzer to calculate statistics
-            let analyzer_stats = self
-                .data_analyzer
-                .calculate_column_statistics(column_name, &data_to_analyze);
+        // Convert to references for the analyzer
+        let data_refs: Vec<&str> = data_to_analyze.iter().map(|s| s.as_str()).collect();
 
-            // Convert from DataAnalyzer's ColumnStatistics to buffer's ColumnStatistics
-            let mut stats = ColumnStatistics {
-                column_name: analyzer_stats.column_name,
-                column_type: match analyzer_stats.data_type {
-                    sql_cli::data_analyzer::ColumnType::Integer
-                    | sql_cli::data_analyzer::ColumnType::Float => ColumnType::Numeric,
-                    sql_cli::data_analyzer::ColumnType::String
-                    | sql_cli::data_analyzer::ColumnType::Boolean
-                    | sql_cli::data_analyzer::ColumnType::Date => ColumnType::String,
-                    sql_cli::data_analyzer::ColumnType::Mixed => ColumnType::Mixed,
-                    sql_cli::data_analyzer::ColumnType::Unknown => ColumnType::Mixed,
-                },
-                total_count: analyzer_stats.total_values,
-                null_count: analyzer_stats.null_values,
-                unique_count: analyzer_stats.unique_values,
-                frequency_map: None, // Will be populated below
-                min: None,
-                max: None,
-                sum: None,
-                mean: analyzer_stats.avg_value,
-                median: None, // DataAnalyzer doesn't compute median yet
-            };
+        // Use DataAnalyzer to calculate statistics
+        let analyzer_stats = self
+            .data_analyzer
+            .calculate_column_statistics(&column_name, &data_refs);
 
-            // Parse min/max values for numeric columns
-            if matches!(stats.column_type, ColumnType::Numeric) {
-                if let Some(ref min_str) = analyzer_stats.min_value {
-                    stats.min = min_str.parse::<f64>().ok();
-                }
-                if let Some(ref max_str) = analyzer_stats.max_value {
-                    stats.max = max_str.parse::<f64>().ok();
-                }
+        // Convert from DataAnalyzer's ColumnStatistics to buffer's ColumnStatistics
+        let mut stats = ColumnStatistics {
+            column_name: analyzer_stats.column_name,
+            column_type: match analyzer_stats.data_type {
+                sql_cli::data_analyzer::ColumnType::Integer
+                | sql_cli::data_analyzer::ColumnType::Float => ColumnType::Numeric,
+                sql_cli::data_analyzer::ColumnType::String
+                | sql_cli::data_analyzer::ColumnType::Boolean
+                | sql_cli::data_analyzer::ColumnType::Date => ColumnType::String,
+                sql_cli::data_analyzer::ColumnType::Mixed => ColumnType::Mixed,
+                sql_cli::data_analyzer::ColumnType::Unknown => ColumnType::Mixed,
+            },
+            total_count: analyzer_stats.total_values,
+            null_count: analyzer_stats.null_values,
+            unique_count: analyzer_stats.unique_values,
+            frequency_map: None, // Will be populated below
+            min: None,
+            max: None,
+            sum: None,
+            mean: analyzer_stats.avg_value,
+            median: None, // DataAnalyzer doesn't compute median yet
+        };
 
-                // Calculate sum and median manually if we have numeric values
-                let mut numeric_values: Vec<f64> = data_to_analyze
-                    .iter()
-                    .filter_map(|v| v.parse::<f64>().ok())
-                    .collect();
-
-                if !numeric_values.is_empty() {
-                    stats.sum = Some(numeric_values.iter().sum());
-
-                    // Calculate median
-                    numeric_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
-                    let mid = numeric_values.len() / 2;
-                    stats.median = if numeric_values.len() % 2 == 0 {
-                        Some((numeric_values[mid - 1] + numeric_values[mid]) / 2.0)
-                    } else {
-                        Some(numeric_values[mid])
-                    };
-                }
-            } else {
-                // For non-numeric columns, use the string values directly
-                stats.min = analyzer_stats.min_value.clone().map(|_| 0.0); // Placeholder
-                stats.max = analyzer_stats.max_value.clone().map(|_| 0.0); // Placeholder
+        // Parse min/max values for numeric columns
+        if matches!(stats.column_type, ColumnType::Numeric) {
+            if let Some(ref min_str) = analyzer_stats.min_value {
+                stats.min = min_str.parse::<f64>().ok();
+            }
+            if let Some(ref max_str) = analyzer_stats.max_value {
+                stats.max = max_str.parse::<f64>().ok();
             }
 
-            // Build frequency map - but only if we don't have too many unique values
-            // Check unique count first to avoid unnecessary string cloning
-            const MAX_UNIQUE_FOR_FREQUENCY: usize = 100;
+            // Calculate sum and median manually if we have numeric values
+            let mut numeric_values: Vec<f64> = data_to_analyze
+                .iter()
+                .filter_map(|v| v.parse::<f64>().ok())
+                .collect();
 
-            let frequency_map = if stats.unique_count <= MAX_UNIQUE_FOR_FREQUENCY {
-                // Build frequency map without cloning - use references first, then convert
-                let mut freq_map: BTreeMap<&str, usize> = BTreeMap::new();
-                for value in &data_to_analyze {
-                    if !value.is_empty() {
-                        *freq_map.entry(value).or_insert(0) += 1;
-                    }
-                }
-                // Convert to owned strings only at the end
-                Some(
-                    freq_map
-                        .into_iter()
-                        .map(|(k, v)| (k.to_string(), v))
-                        .collect(),
-                )
-            } else {
-                // Skip frequency map entirely for columns with too many unique values
-                None
-            };
+            if !numeric_values.is_empty() {
+                stats.sum = Some(numeric_values.iter().sum());
 
-            stats.frequency_map = frequency_map;
-
-            self.buffer_mut().set_column_stats(Some(stats));
-            self.buffer_mut().set_mode(AppMode::ColumnStats);
+                // Calculate median
+                numeric_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                let mid = numeric_values.len() / 2;
+                stats.median = if numeric_values.len() % 2 == 0 {
+                    Some((numeric_values[mid - 1] + numeric_values[mid]) / 2.0)
+                } else {
+                    Some(numeric_values[mid])
+                };
+            }
+        } else {
+            // For non-numeric columns, use the string values directly
+            stats.min = analyzer_stats.min_value.clone().map(|_| 0.0); // Placeholder
+            stats.max = analyzer_stats.max_value.clone().map(|_| 0.0); // Placeholder
         }
+
+        // Build frequency map - but only if we don't have too many unique values
+        // Check unique count first to avoid unnecessary string cloning
+        const MAX_UNIQUE_FOR_FREQUENCY: usize = 100;
+
+        let frequency_map = if stats.unique_count <= MAX_UNIQUE_FOR_FREQUENCY {
+            // Build frequency map without cloning - use references first, then convert
+            let mut freq_map: BTreeMap<&str, usize> = BTreeMap::new();
+            for value in &data_to_analyze {
+                if !value.is_empty() {
+                    *freq_map.entry(value.as_str()).or_insert(0) += 1;
+                }
+            }
+            // Convert to owned strings only at the end
+            Some(
+                freq_map
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
+            )
+        } else {
+            // Skip frequency map entirely for columns with too many unique values
+            None
+        };
+
+        stats.frequency_map = frequency_map;
+
+        self.buffer_mut().set_column_stats(Some(stats));
+        self.buffer_mut().set_mode(AppMode::ColumnStats);
     }
 
     fn check_parser_error(&self, query: &str) -> Option<String> {
