@@ -32,6 +32,7 @@ use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::cursor_manager::CursorManager;
 use sql_cli::data_analyzer::DataAnalyzer;
 use sql_cli::data_exporter::DataExporter;
+use sql_cli::debug_info::{DebugInfo, DebugView};
 use sql_cli::help_text::HelpText;
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::hybrid_parser::HybridParser;
@@ -137,8 +138,7 @@ pub struct EnhancedTuiApp {
     scroll_offset: (usize, usize), // (row, col)
     current_column: usize,         // For column-based operations
     sql_highlighter: SqlHighlighter,
-    debug_text: String,
-    debug_scroll: u16,
+    debug_view: DebugView,
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
     help_scroll: u16,                   // Scroll offset for help page
@@ -379,8 +379,7 @@ impl EnhancedTuiApp {
             scroll_offset: (0, 0),
             current_column: 0,
             sql_highlighter: SqlHighlighter::new(),
-            debug_text: String::new(),
-            debug_scroll: 0,
+            debug_view: DebugView::new(),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             help_scroll: 0,
@@ -1324,8 +1323,8 @@ impl EnhancedTuiApp {
                 debug_info.push_str("================================\n");
 
                 // Store debug info and switch to debug mode
-                self.debug_text = debug_info.clone();
-                self.debug_scroll = 0;
+                self.debug_view.content = debug_info.clone();
+                self.debug_view.scroll_offset = 0;
                 self.buffer_mut().set_mode(AppMode::Debug);
 
                 // Try to copy to clipboard
@@ -1350,12 +1349,12 @@ impl EnhancedTuiApp {
                 // Pretty print query view
                 let query = self.get_input_text();
                 if !query.trim().is_empty() {
-                    self.debug_text = format!(
+                    let debug_text = format!(
                         "Pretty SQL Query\n{}\n\n{}",
                         "=".repeat(50),
                         crate::recursive_parser::format_sql_pretty_compact(&query, 5).join("\n")
                     );
-                    self.debug_scroll = 0;
+                    self.debug_view.set_content(debug_text);
                     self.buffer_mut().set_mode(AppMode::PrettyQuery);
                     self.buffer_mut().set_status_message(
                         "Pretty query view (press Esc or q to return)".to_string(),
@@ -1579,8 +1578,8 @@ impl EnhancedTuiApp {
                         debug_info.push_str(&buffer.debug_dump());
                     }
 
-                    self.debug_text = debug_info;
-                    self.debug_scroll = 0;
+                    self.debug_view.content = debug_info;
+                    self.debug_view.scroll_offset = 0;
                     self.buffer_mut().set_mode(AppMode::Debug);
                     self.buffer_mut()
                         .set_status_message("Debug mode - Press 'q' or ESC to return".to_string());
@@ -2209,42 +2208,42 @@ impl EnhancedTuiApp {
     // Helper methods for debug mode actions
     fn exit_debug(&mut self) {
         self.buffer_mut().set_mode(AppMode::Command);
-        self.debug_scroll = 0; // Reset scroll when exiting
+        self.debug_view.scroll_offset = 0; // Reset scroll when exiting
     }
 
     fn scroll_debug_down(&mut self) {
         // Get max scroll based on debug content
         let max_scroll = self.get_debug_max_scroll();
-        if (self.debug_scroll as usize) < max_scroll {
-            self.debug_scroll = self.debug_scroll.saturating_add(1);
+        if (self.debug_view.scroll_offset as usize) < max_scroll {
+            self.debug_view.scroll_offset = self.debug_view.scroll_offset.saturating_add(1);
         }
     }
 
     fn scroll_debug_up(&mut self) {
-        self.debug_scroll = self.debug_scroll.saturating_sub(1);
+        self.debug_view.scroll_offset = self.debug_view.scroll_offset.saturating_sub(1);
     }
 
     fn debug_page_down(&mut self) {
         let max_scroll = self.get_debug_max_scroll();
-        self.debug_scroll = (self.debug_scroll + 10).min(max_scroll as u16);
+        self.debug_view.scroll_offset = (self.debug_view.scroll_offset + 10).min(max_scroll as u16);
     }
 
     fn debug_page_up(&mut self) {
-        self.debug_scroll = self.debug_scroll.saturating_sub(10);
+        self.debug_view.scroll_offset = self.debug_view.scroll_offset.saturating_sub(10);
     }
 
     fn debug_go_to_top(&mut self) {
-        self.debug_scroll = 0;
+        self.debug_view.scroll_offset = 0;
     }
 
     fn debug_go_to_bottom(&mut self) {
         let max_scroll = self.get_debug_max_scroll();
-        self.debug_scroll = max_scroll as u16;
+        self.debug_view.scroll_offset = max_scroll as u16;
     }
 
     fn get_debug_max_scroll(&self) -> usize {
         // Calculate based on actual debug content lines
-        let total_lines = self.debug_text.lines().count();
+        let total_lines = self.debug_view.content.lines().count();
         let visible_height: usize = 30; // Approximate visible height
         total_lines.saturating_sub(visible_height)
     }
@@ -2256,18 +2255,18 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Command);
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if self.debug_scroll > 0 {
-                    self.debug_scroll = self.debug_scroll.saturating_sub(1);
+                if self.debug_view.scroll_offset > 0 {
+                    self.debug_view.scroll_up();
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.debug_scroll = self.debug_scroll.saturating_add(1);
+                self.debug_view.scroll_down();
             }
             KeyCode::PageUp => {
-                self.debug_scroll = self.debug_scroll.saturating_sub(10);
+                self.debug_view.page_up();
             }
             KeyCode::PageDown => {
-                self.debug_scroll = self.debug_scroll.saturating_add(10);
+                self.debug_view.page_down();
             }
             _ => {}
         }
@@ -3786,7 +3785,7 @@ impl EnhancedTuiApp {
 
     /// Yank current query and results as a complete test case (Ctrl+T in debug mode)
     fn yank_as_test_case(&mut self) {
-        let test_case = self.generate_test_case_string();
+        let test_case = DebugInfo::generate_test_case(self.buffer());
 
         match arboard::Clipboard::new() {
             Ok(mut clipboard) => match clipboard.set_text(&test_case) {
@@ -3819,7 +3818,7 @@ impl EnhancedTuiApp {
 
     /// Yank debug dump with context for manual test creation (Shift+Y in debug mode)
     fn yank_debug_with_context(&mut self) {
-        let debug_context = self.generate_debug_context_string();
+        let debug_context = DebugInfo::generate_debug_context(self.buffer());
 
         match arboard::Clipboard::new() {
             Ok(mut clipboard) => match clipboard.set_text(&debug_context) {
@@ -3843,228 +3842,6 @@ impl EnhancedTuiApp {
                     .set_status_message(format!("Failed to access clipboard: {}", e));
             }
         }
-    }
-
-    /// Generate a complete test case string that can be pasted into a test file
-    fn generate_test_case_string(&self) -> String {
-        let buffer = self.buffer();
-        let query = buffer.get_query();
-        let last_query = buffer.get_last_query();
-        let current_query = if !query.is_empty() {
-            &query
-        } else {
-            &last_query
-        };
-
-        let mut test_case = String::new();
-        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-
-        // Header comment with session info
-        test_case.push_str(&format!(
-            "// Test case generated from TUI session at {}\n",
-            timestamp
-        ));
-        test_case.push_str(&format!(
-            "// Buffer: {} (ID: {})\n",
-            buffer
-                .get_file_path()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "memory".to_string()),
-            buffer.get_id()
-        ));
-
-        if let Some(results) = buffer.get_results() {
-            test_case.push_str(&format!(
-                "// Results: {} rows, {} columns\n",
-                results.data.len(),
-                if !results.data.is_empty() {
-                    results.data[0].as_object().map_or(0, |obj| obj.len())
-                } else {
-                    0
-                }
-            ));
-        }
-
-        test_case.push_str("\n");
-
-        // Generate the actual test code
-        test_case.push_str("harness.add_query(CapturedQuery {\n");
-        test_case.push_str(&format!(
-            "    description: \"Captured from TUI session {}\".to_string(),\n",
-            timestamp
-        ));
-
-        // Determine data file
-        let data_file = buffer
-            .get_file_path()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| "sample_trades.json".to_string());
-        test_case.push_str(&format!("    data_file: \"{}\".to_string(),\n", data_file));
-
-        // Add the query (properly escaped)
-        let escaped_query = current_query
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n");
-        test_case.push_str(&format!("    query: \"{}\".to_string(),\n", escaped_query));
-
-        // Add expected results info
-        if let Some(results) = buffer.get_results() {
-            test_case.push_str(&format!(
-                "    expected_row_count: {},\n",
-                results.data.len()
-            ));
-
-            // Extract column names from first row
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let columns: Vec<String> = obj.keys().map(|k| format!("\"{}\"", k)).collect();
-                    test_case.push_str(&format!(
-                        "    expected_columns: vec![{}],\n",
-                        columns.join(", ")
-                    ));
-
-                    // Optionally include first row data for validation
-                    test_case.push_str("    expected_first_row: Some({\n");
-                    test_case.push_str("        let mut map = std::collections::HashMap::new();\n");
-
-                    for (key, value) in obj.iter().take(3) {
-                        // Limit to first 3 columns to keep it manageable
-                        let value_str = match value {
-                            serde_json::Value::String(s) => format!(
-                                "serde_json::Value::String(\"{}\".to_string())",
-                                s.replace("\"", "\\\"")
-                            ),
-                            serde_json::Value::Number(n) => format!(
-                                "serde_json::Value::Number(serde_json::Number::from({}))",
-                                n
-                            ),
-                            serde_json::Value::Bool(b) => format!("serde_json::Value::Bool({})", b),
-                            serde_json::Value::Null => "serde_json::Value::Null".to_string(),
-                            _ => format!("serde_json::json!({})", value),
-                        };
-                        test_case.push_str(&format!(
-                            "        map.insert(\"{}\".to_string(), {});\n",
-                            key, value_str
-                        ));
-                    }
-                    test_case.push_str("        map\n");
-                    test_case.push_str("    }),\n");
-                } else {
-                    test_case.push_str("    expected_columns: vec![],\n");
-                    test_case.push_str("    expected_first_row: None,\n");
-                }
-            } else {
-                test_case.push_str("    expected_columns: vec![],\n");
-                test_case.push_str("    expected_first_row: None,\n");
-            }
-        } else {
-            test_case.push_str("    expected_row_count: 0, // No results available\n");
-            test_case.push_str("    expected_columns: vec![],\n");
-            test_case.push_str("    expected_first_row: None,\n");
-        }
-
-        test_case.push_str(&format!(
-            "    case_insensitive: {},\n",
-            buffer.is_case_insensitive()
-        ));
-        test_case.push_str("});\n");
-
-        // Add usage instructions
-        test_case.push_str("\n// Usage:\n");
-        test_case.push_str("// 1. Add this to your QueryReplayHarness in a test function\n");
-        test_case.push_str("// 2. Run: harness.run_all_tests()?;\n");
-        test_case.push_str("// 3. Adjust expected values as needed\n");
-
-        test_case
-    }
-
-    /// Generate debug context string for manual test creation
-    fn generate_debug_context_string(&self) -> String {
-        let buffer = self.buffer();
-        let mut context = String::new();
-        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-
-        context.push_str(&format!("=== TUI Debug Context - {} ===\n\n", timestamp));
-
-        // Current query info
-        context.push_str("CURRENT QUERY:\n");
-        let query = buffer.get_query();
-        let last_query = buffer.get_last_query();
-        let current_query = if !query.is_empty() {
-            &query
-        } else {
-            &last_query
-        };
-        context.push_str(&format!("{}\n\n", current_query));
-
-        // Buffer state
-        context.push_str("BUFFER STATE:\n");
-        context.push_str(&format!("- ID: {}\n", buffer.get_id()));
-        context.push_str(&format!(
-            "- File: {}\n",
-            buffer
-                .get_file_path()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "memory".to_string())
-        ));
-        context.push_str(&format!("- Mode: {:?}\n", buffer.get_mode()));
-        context.push_str(&format!(
-            "- Case Insensitive: {}\n",
-            buffer.is_case_insensitive()
-        ));
-        context.push_str(&format!("- Compact Mode: {}\n", buffer.is_compact_mode()));
-
-        // Results summary
-        if let Some(results) = buffer.get_results() {
-            context.push_str(&format!("- Results: {} rows\n", results.data.len()));
-
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let column_names: Vec<String> = obj.keys().cloned().collect();
-                    context.push_str(&format!("- Columns: {}\n", column_names.join(", ")));
-                }
-            }
-
-            // Show first few rows as sample
-            context.push_str("\nSAMPLE DATA (first 3 rows):\n");
-            for (i, row) in results.data.iter().take(3).enumerate() {
-                context.push_str(&format!(
-                    "Row {}: {}\n",
-                    i + 1,
-                    serde_json::to_string_pretty(row)
-                        .unwrap_or_else(|_| "invalid json".to_string())
-                ));
-            }
-        } else {
-            context.push_str("- Results: No results available\n");
-        }
-
-        context.push_str("\n");
-
-        // Navigation state
-        if let Some(selected) = self.table_state.selected() {
-            context.push_str(&format!("CURRENT SELECTION: Row {}\n", selected + 1));
-        }
-
-        context.push_str(&format!(
-            "CURRENT COLUMN: {}\n",
-            buffer.get_current_column()
-        ));
-
-        // Filter state
-        if buffer.is_fuzzy_filter_active() {
-            context.push_str("FUZZY FILTER: Active\n");
-        }
-
-        let filter_state = self.get_filter_state();
-        if filter_state.active {
-            context.push_str(&format!("FILTER: {} (active)\n", filter_state.pattern));
-        }
-
-        context.push_str("\n=== End Debug Context ===\n");
-
-        context
     }
 
     fn paste_from_clipboard(&mut self) {
@@ -5749,29 +5526,20 @@ impl EnhancedTuiApp {
     }
 
     fn render_debug(&self, f: &mut Frame, area: Rect) {
-        let debug_lines: Vec<Line> = self
-            .debug_text
-            .lines()
-            .map(|line| Line::from(line.to_string()))
+        let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
+        let visible_lines_str = self.debug_view.get_visible_lines(visible_height);
+        let visible_lines: Vec<Line> = visible_lines_str
+            .iter()
+            .map(|line| Line::from(line.clone()))
             .collect();
 
-        let total_lines = debug_lines.len();
-        let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
-
-        // Calculate visible range based on scroll
-        let start = self.debug_scroll as usize;
+        let debug_text = Text::from(visible_lines);
+        let total_lines = self.debug_view.content.lines().count();
+        let start = self.debug_view.scroll_offset as usize;
         let end = (start + visible_height).min(total_lines);
 
-        let visible_lines: Vec<Line> = if start < total_lines {
-            debug_lines[start..end].to_vec()
-        } else {
-            vec![]
-        };
-
-        let debug_text = Text::from(visible_lines);
-
         // Check if there's a parse error
-        let has_parse_error = self.debug_text.contains("❌ PARSE ERROR ❌");
+        let has_parse_error = self.debug_view.content.contains("❌ PARSE ERROR ❌");
         let (border_color, title_prefix) = if has_parse_error {
             (Color::Red, "⚠️  Parser Debug Info [PARSE ERROR] ")
         } else {
@@ -5798,24 +5566,12 @@ impl EnhancedTuiApp {
     }
 
     fn render_pretty_query(&self, f: &mut Frame, area: Rect) {
-        let pretty_lines: Vec<Line> = self
-            .debug_text
-            .lines()
-            .map(|line| Line::from(line.to_string()))
-            .collect();
-
-        let total_lines = pretty_lines.len();
         let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
-
-        // Calculate visible range based on scroll
-        let start = self.debug_scroll as usize;
-        let end = (start + visible_height).min(total_lines);
-
-        let visible_lines: Vec<Line> = if start < total_lines {
-            pretty_lines[start..end].to_vec()
-        } else {
-            vec![]
-        };
+        let visible_lines_str = self.debug_view.get_visible_lines(visible_height);
+        let visible_lines: Vec<Line> = visible_lines_str
+            .iter()
+            .map(|line| Line::from(line.clone()))
+            .collect();
 
         let pretty_text = Text::from(visible_lines);
 
