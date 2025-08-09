@@ -329,8 +329,8 @@ impl EnhancedTuiApp {
 
     pub fn new(api_url: &str) -> Self {
         // Load configuration
-        let config = Config::load().unwrap_or_else(|e| {
-            eprintln!("Warning: Could not load config: {}. Using defaults.", e);
+        let config = Config::load().unwrap_or_else(|_e| {
+            // Config loading error - using defaults
             Config::default()
         });
 
