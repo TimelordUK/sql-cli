@@ -426,6 +426,31 @@ impl KeyDispatcher {
             .insert(KeyBinding::new(KeyCode::Down), "scroll_debug_down".into());
         self.debug_map
             .insert(KeyBinding::new(KeyCode::Up), "scroll_debug_up".into());
+        self.debug_map
+            .insert(KeyBinding::new(KeyCode::PageDown), "debug_page_down".into());
+        self.debug_map
+            .insert(KeyBinding::new(KeyCode::PageUp), "debug_page_up".into());
+        self.debug_map
+            .insert(KeyBinding::new(KeyCode::Home), "debug_go_to_top".into());
+        self.debug_map
+            .insert(KeyBinding::new(KeyCode::End), "debug_go_to_bottom".into());
+        // Vim-style navigation
+        self.debug_map.insert(
+            KeyBinding::new(KeyCode::Char('j')),
+            "scroll_debug_down".into(),
+        );
+        self.debug_map.insert(
+            KeyBinding::new(KeyCode::Char('k')),
+            "scroll_debug_up".into(),
+        );
+        self.debug_map.insert(
+            KeyBinding::new(KeyCode::Char('g')),
+            "debug_go_to_top".into(),
+        );
+        self.debug_map.insert(
+            KeyBinding::new(KeyCode::Char('G')),
+            "debug_go_to_bottom".into(),
+        );
     }
 
     /// Get action for a key in command mode

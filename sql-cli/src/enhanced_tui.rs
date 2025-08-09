@@ -2023,28 +2023,64 @@ impl EnhancedTuiApp {
     }
 
     fn handle_debug_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
-                self.buffer_mut().set_mode(AppMode::Command);
+        // Use dispatcher to get action
+        if let Some(action) = self.key_dispatcher.get_debug_action(&key) {
+            match action {
+                "quit" => return Ok(true),
+                "exit_debug" => self.exit_debug(),
+                "scroll_debug_down" => self.scroll_debug_down(),
+                "scroll_debug_up" => self.scroll_debug_up(),
+                "debug_page_down" => self.debug_page_down(),
+                "debug_page_up" => self.debug_page_up(),
+                "debug_go_to_top" => self.debug_go_to_top(),
+                "debug_go_to_bottom" => self.debug_go_to_bottom(),
+                _ => {}
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.debug_scroll > 0 {
-                    self.debug_scroll = self.debug_scroll.saturating_sub(1);
-                }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.debug_scroll = self.debug_scroll.saturating_add(1);
-            }
-            KeyCode::PageUp => {
-                self.debug_scroll = self.debug_scroll.saturating_sub(10);
-            }
-            KeyCode::PageDown => {
-                self.debug_scroll = self.debug_scroll.saturating_add(10);
-            }
-            _ => {}
         }
         Ok(false)
+    }
+
+    // Helper methods for debug mode actions
+    fn exit_debug(&mut self) {
+        self.buffer_mut().set_mode(AppMode::Command);
+        self.debug_scroll = 0; // Reset scroll when exiting
+    }
+
+    fn scroll_debug_down(&mut self) {
+        // Get max scroll based on debug content
+        let max_scroll = self.get_debug_max_scroll();
+        if (self.debug_scroll as usize) < max_scroll {
+            self.debug_scroll = self.debug_scroll.saturating_add(1);
+        }
+    }
+
+    fn scroll_debug_up(&mut self) {
+        self.debug_scroll = self.debug_scroll.saturating_sub(1);
+    }
+
+    fn debug_page_down(&mut self) {
+        let max_scroll = self.get_debug_max_scroll();
+        self.debug_scroll = (self.debug_scroll + 10).min(max_scroll as u16);
+    }
+
+    fn debug_page_up(&mut self) {
+        self.debug_scroll = self.debug_scroll.saturating_sub(10);
+    }
+
+    fn debug_go_to_top(&mut self) {
+        self.debug_scroll = 0;
+    }
+
+    fn debug_go_to_bottom(&mut self) {
+        let max_scroll = self.get_debug_max_scroll();
+        self.debug_scroll = max_scroll as u16;
+    }
+
+    fn get_debug_max_scroll(&self) -> usize {
+        // Calculate based on actual debug content lines
+        let total_lines = self.debug_text.lines().count();
+        let visible_height: usize = 30; // Approximate visible height
+        total_lines.saturating_sub(visible_height)
     }
 
     fn handle_pretty_query_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -5547,7 +5583,7 @@ impl EnhancedTuiApp {
                 Block::default()
                     .borders(Borders::ALL)
                     .title(format!(
-                        "{}- Lines {}-{} of {} (↑↓ to scroll, Enter/Esc to close)",
+                        "{}- Lines {}-{} of {} (↑↓/jk: scroll, PgUp/PgDn: page, Home/g: top, End/G: bottom, q/Esc: exit)",
                         title_prefix,
                         start + 1,
                         end,
