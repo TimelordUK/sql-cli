@@ -161,17 +161,12 @@ pub struct EnhancedTuiApp {
     // Enhanced features
     sort_state: SortState,
     filter_state: FilterState,
-    // fuzzy_filter_state: FuzzyFilterState, // MIGRATED to buffer system
     search_state: SearchState,
-    // column_search_state: ColumnSearchState, // MIGRATED to buffer system
     completion_state: CompletionState,
     history_state: HistoryState,
     command_history: CommandHistory,
-    // filtered_data removed - now exclusively in Buffer
     scroll_offset: (usize, usize), // (row, col)
     current_column: usize,         // For column-based operations
-    // pinned_columns: Vec<usize>,    // MIGRATED to buffer system
-    // column_stats: Option<ColumnStatistics>, // MIGRATED to buffer system
     sql_highlighter: SqlHighlighter,
     debug_text: String,
     debug_scroll: u16,
@@ -186,11 +181,8 @@ pub struct EnhancedTuiApp {
 
     // Buffer management (new - for supporting multiple files)
     buffer_manager: BufferManager,
-
     // Cache
     query_cache: Option<QueryCache>,
-    // Cache fields removed - now exclusively in Buffer
-
     // Data source tracking
 
     // Undo/redo and kill ring
@@ -370,31 +362,6 @@ impl EnhancedTuiApp {
             current_pos += line.len() + 1; // +1 for newline
         }
         (0, cursor)
-    }
-
-    // Compatibility wrapper for last_scroll_offset
-    fn get_last_scroll_offset(&self) -> (usize, usize) {
-        self.buffer().get_last_scroll_offset()
-    }
-
-    // Compatibility wrapper for last_query_source
-    fn get_last_query_source(&self) -> Option<String> {
-        self.buffer().get_last_query_source()
-    }
-
-    // Compatibility wrapper for input
-    fn get_input(&self) -> &tui_input::Input {
-        if let Some(_buffer) = self.current_buffer() {
-            // TODO: Need to get input from buffer - for now use TUI field
-            &self.input
-        } else {
-            &self.input
-        }
-    }
-
-    fn get_input_mut(&mut self) -> &mut tui_input::Input {
-        // For now, always use TUI field since Buffer input access is more complex
-        &mut self.input
     }
 
     // Helper functions to convert between buffer AppMode and local AppMode
@@ -1684,7 +1651,7 @@ impl EnhancedTuiApp {
                 self.get_table_state_mut().select(Some(row));
 
                 // Restore the exact scroll offset from when we left
-                let last_offset = self.get_last_scroll_offset();
+                let last_offset = self.buffer().get_last_scroll_offset();
                 self.buffer_mut().set_scroll_offset(last_offset);
             }
             KeyCode::F(5) => {
@@ -1805,7 +1772,10 @@ impl EnhancedTuiApp {
                     self.buffer().is_viewport_lock(),
                     self.is_csv_mode(),
                     self.is_cache_mode(),
-                    &self.get_last_query_source().unwrap_or("None".to_string()),
+                    &self
+                        .buffer()
+                        .get_last_query_source()
+                        .unwrap_or("None".to_string()),
                     if self.is_fuzzy_filter_active() {
                         format!("Fuzzy: {}", self.get_fuzzy_filter_pattern())
                     } else if self.get_filter_state().active {
@@ -6304,7 +6274,7 @@ impl EnhancedTuiApp {
         }
 
         // Data source indicator (shown in all modes)
-        if let Some(source) = self.get_last_query_source() {
+        if let Some(source) = self.buffer().get_last_query_source() {
             spans.push(Span::raw(" | "));
             let (icon, label, color) = match source.as_str() {
                 "cache" => (
