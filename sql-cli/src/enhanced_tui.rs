@@ -1,4 +1,3 @@
-use crate::hybrid_parser::HybridParser;
 use crate::parser::SqlParser;
 use crate::sql_highlighter::SqlHighlighter;
 use anyhow::Result;
@@ -35,6 +34,7 @@ use sql_cli::data_analyzer::DataAnalyzer;
 use sql_cli::data_exporter::DataExporter;
 use sql_cli::help_text::HelpText;
 use sql_cli::history::{CommandHistory, HistoryMatch};
+use sql_cli::hybrid_parser::HybridParser;
 use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
 use sql_cli::key_dispatcher::KeyDispatcher;
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
