@@ -1,5 +1,6 @@
 use crate::api_client::QueryResponse;
 use crate::csv_datasource::CsvApiClient;
+use crate::cursor_operations::CursorOperations;
 use crate::input_manager::{create_from_input, create_single_line, InputManager};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
@@ -1331,6 +1332,104 @@ impl Buffer {
         // Always sync from single-line input
         let _text = self.input.value().to_string();
         self.input_manager = create_from_input(self.input.clone());
+    }
+
+    // --- Cursor Movement Operations ---
+    // These use the CursorOperations helper to provide intelligent
+    // SQL-aware cursor movement and text manipulation
+
+    /// Move cursor to previous word boundary
+    pub fn move_cursor_word_backward(&mut self) {
+        let text = self.input_manager.get_text();
+        let cursor_pos = self.input_manager.get_cursor_position();
+        let new_pos = CursorOperations::find_word_boundary_backward(&text, cursor_pos);
+        self.input_manager.set_cursor_position(new_pos);
+        self.sync_from_input_manager();
+        self.status_message = format!("Moved to position {} (word boundary)", new_pos);
+    }
+
+    /// Move cursor to next word boundary
+    pub fn move_cursor_word_forward(&mut self) {
+        let text = self.input_manager.get_text();
+        let cursor_pos = self.input_manager.get_cursor_position();
+        let new_pos = CursorOperations::find_word_boundary_forward(&text, cursor_pos);
+        self.input_manager.set_cursor_position(new_pos);
+        self.sync_from_input_manager();
+    }
+
+    /// Delete word backward from cursor
+    pub fn delete_word_backward(&mut self) {
+        let text = self.input_manager.get_text();
+        let cursor_pos = self.input_manager.get_cursor_position();
+        let (new_text, new_cursor) = CursorOperations::delete_word_backward(&text, cursor_pos);
+
+        // Store deleted text in kill ring
+        if cursor_pos > new_cursor {
+            self.kill_ring = text[new_cursor..cursor_pos].to_string();
+        }
+
+        self.input_manager.set_text(new_text);
+        self.input_manager.set_cursor_position(new_cursor);
+        self.sync_from_input_manager();
+    }
+
+    /// Delete word forward from cursor
+    pub fn delete_word_forward(&mut self) {
+        let text = self.input_manager.get_text();
+        let cursor_pos = self.input_manager.get_cursor_position();
+        let (new_text, new_cursor) = CursorOperations::delete_word_forward(&text, cursor_pos);
+
+        // Store deleted text in kill ring
+        let word_end = CursorOperations::find_word_boundary_forward(&text, cursor_pos);
+        if word_end > cursor_pos {
+            self.kill_ring = text[cursor_pos..word_end].to_string();
+        }
+
+        self.input_manager.set_text(new_text);
+        self.input_manager.set_cursor_position(new_cursor);
+        self.sync_from_input_manager();
+    }
+
+    /// Kill line from cursor to end
+    pub fn kill_line(&mut self) {
+        let text = self.input_manager.get_text();
+        let cursor_pos = self.input_manager.get_cursor_position();
+        let (new_text, killed) = CursorOperations::kill_line(&text, cursor_pos);
+
+        self.kill_ring = killed;
+        self.input_manager.set_text(new_text);
+        self.sync_from_input_manager();
+    }
+
+    /// Kill line from start to cursor
+    pub fn kill_line_backward(&mut self) {
+        let text = self.input_manager.get_text();
+        let cursor_pos = self.input_manager.get_cursor_position();
+        let (new_text, killed, new_cursor) =
+            CursorOperations::kill_line_backward(&text, cursor_pos);
+
+        self.kill_ring = killed;
+        self.input_manager.set_text(new_text);
+        self.input_manager.set_cursor_position(new_cursor);
+        self.sync_from_input_manager();
+    }
+
+    /// Jump to previous SQL token
+    pub fn jump_to_prev_token(&mut self) {
+        let text = self.input_manager.get_text();
+        let cursor_pos = self.input_manager.get_cursor_position();
+        let new_pos = CursorOperations::jump_to_prev_token(&text, cursor_pos);
+        self.input_manager.set_cursor_position(new_pos);
+        self.sync_from_input_manager();
+    }
+
+    /// Jump to next SQL token
+    pub fn jump_to_next_token(&mut self) {
+        let text = self.input_manager.get_text();
+        let cursor_pos = self.input_manager.get_cursor_position();
+        let new_pos = CursorOperations::jump_to_next_token(&text, cursor_pos);
+        self.input_manager.set_cursor_position(new_pos);
+        self.sync_from_input_manager();
     }
 }
 

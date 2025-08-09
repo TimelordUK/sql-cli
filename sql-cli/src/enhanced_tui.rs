@@ -4235,55 +4235,17 @@ impl EnhancedTuiApp {
     }
 
     fn move_cursor_word_backward(&mut self) {
-        let query = self.get_input_text();
-        let cursor_pos = self.get_input_cursor();
-
-        if cursor_pos == 0 {
-            return;
-        }
-
-        // Use our lexer to tokenize the query
-        use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(&query);
-        let tokens = lexer.tokenize_all_with_positions();
-
-        // Find the token boundary before the cursor
-        let mut target_pos = 0;
-        for (start, end, _) in tokens.iter().rev() {
-            if *end <= cursor_pos {
-                // If we're at the start of a token, go to the previous one
-                if *end == cursor_pos && start < &cursor_pos {
-                    target_pos = *start;
-                } else {
-                    // Otherwise go to the start of this token
-                    for (s, e, _) in tokens.iter().rev() {
-                        if *e <= cursor_pos && *s < cursor_pos {
-                            target_pos = *s;
-                            break;
-                        }
-                    }
-                }
-                break;
-            }
-        }
-
-        // Update cursor_manager (small incremental step)
-        self.cursor_manager.set_position(target_pos);
-
-        // Move cursor to new position through buffer
-        let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
         if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.set_input_cursor_position(target_pos);
-            // Sync for rendering
-            if is_single_line {
+            buffer.move_cursor_word_backward();
+
+            // Sync for rendering if single-line mode
+            if buffer.get_edit_mode() == EditMode::SingleLine {
                 let text = buffer.get_input_text();
-                self.set_input_text_with_cursor(text, target_pos);
+                let cursor = buffer.get_input_cursor_position();
+                self.set_input_text_with_cursor(text, cursor);
+                self.cursor_manager.set_position(cursor);
             }
         }
-
-        // Update status message
-        self.buffer_mut()
-            .set_status_message(format!("Moved to position {} (word boundary)", target_pos));
     }
 
     fn delete_word_backward(&mut self) {
