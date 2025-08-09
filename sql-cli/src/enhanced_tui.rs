@@ -680,6 +680,49 @@ impl EnhancedTuiApp {
     }
 
     fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // NEW: Try editor widget first for high-level actions
+        let key_dispatcher = self.key_dispatcher.clone();
+        let editor_result = self
+            .editor_widget
+            .handle_key(key.clone(), &key_dispatcher)?;
+
+        match editor_result {
+            EditorAction::Quit => return Ok(true),
+            EditorAction::ExecuteQuery => {
+                // Execute the current query - delegate to existing logic for now
+                return self.handle_execute_query();
+            }
+            EditorAction::BufferAction(buffer_action) => {
+                return self.handle_buffer_action(buffer_action);
+            }
+            EditorAction::ExpandAsterisk => {
+                return self.handle_expand_asterisk();
+            }
+            EditorAction::ShowHelp => {
+                self.show_help = true;
+                return Ok(false);
+            }
+            EditorAction::ShowDebug => {
+                self.toggle_debug_mode();
+                return Ok(false);
+            }
+            EditorAction::ShowPrettyQuery => {
+                self.show_pretty_query();
+                return Ok(false);
+            }
+            EditorAction::SwitchMode(mode) => {
+                if let Some(buffer) = self.buffer_manager.current_mut() {
+                    buffer.set_mode(mode);
+                }
+                return Ok(false);
+            }
+            EditorAction::PassToMainApp(_) => {
+                // Fall through to original logic below
+            }
+            EditorAction::Continue => return Ok(false),
+        }
+
+        // ORIGINAL LOGIC: Keep all existing logic as fallback
         // Store old cursor position
         let old_cursor = self.get_input_cursor();
 
@@ -5633,6 +5676,101 @@ impl EnhancedTuiApp {
                 )
                 .style(Style::default().fg(Color::Red));
             f.render_widget(error, area);
+        }
+    }
+
+    // === Editor Widget Helper Methods ===
+    // These methods handle the actions returned by the editor widget
+
+    fn handle_execute_query(&mut self) -> Result<bool> {
+        // For now, delegate to existing logic by simulating Enter key
+        let enter_key = crossterm::event::KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        Ok(self.handle_input_key(enter_key))
+    }
+
+    fn handle_buffer_action(&mut self, action: BufferAction) -> Result<bool> {
+        match action {
+            BufferAction::NextBuffer => {
+                let message = self.buffer_handler.next_buffer(&mut self.buffer_manager);
+                debug!("{}", message);
+                Ok(false)
+            }
+            BufferAction::PreviousBuffer => {
+                let message = self
+                    .buffer_handler
+                    .previous_buffer(&mut self.buffer_manager);
+                debug!("{}", message);
+                Ok(false)
+            }
+            BufferAction::QuickSwitch => {
+                let message = self.buffer_handler.quick_switch(&mut self.buffer_manager);
+                debug!("{}", message);
+                Ok(false)
+            }
+            BufferAction::NewBuffer => {
+                let message = self
+                    .buffer_handler
+                    .new_buffer(&mut self.buffer_manager, &self.config);
+                debug!("{}", message);
+                Ok(false)
+            }
+            BufferAction::CloseBuffer => {
+                let (success, message) = self.buffer_handler.close_buffer(&mut self.buffer_manager);
+                debug!("{}", message);
+                Ok(!success) // Exit if we couldn't close (only one left)
+            }
+            BufferAction::ListBuffers => {
+                let buffer_list = self.buffer_handler.list_buffers(&self.buffer_manager);
+                // For now, just log the list - later we can show a popup
+                for line in &buffer_list {
+                    debug!("{}", line);
+                }
+                Ok(false)
+            }
+            BufferAction::SwitchToBuffer(buffer_index) => {
+                let message = self
+                    .buffer_handler
+                    .switch_to_buffer(&mut self.buffer_manager, buffer_index);
+                debug!("{}", message);
+                Ok(false)
+            }
+        }
+    }
+
+    fn handle_expand_asterisk(&mut self) -> Result<bool> {
+        if let Some(buffer) = self.buffer_manager.current_mut() {
+            if buffer.expand_asterisk(&self.hybrid_parser) {
+                // Sync for rendering if needed
+                if buffer.get_edit_mode() == EditMode::SingleLine {
+                    let text = buffer.get_input_text();
+                    let cursor = buffer.get_input_cursor_position();
+                    self.set_input_text_with_cursor(text, cursor);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    fn toggle_debug_mode(&mut self) {
+        if let Some(buffer) = self.buffer_manager.current_mut() {
+            match buffer.get_mode() {
+                AppMode::Debug => {
+                    buffer.set_mode(AppMode::Command);
+                }
+                _ => {
+                    buffer.set_mode(AppMode::Debug);
+                    // Generate debug content using existing logic
+                    self.debug_current_buffer();
+                }
+            }
+        }
+    }
+
+    fn show_pretty_query(&mut self) {
+        if let Some(buffer) = self.buffer_manager.current_mut() {
+            buffer.set_mode(AppMode::PrettyQuery);
+            let query = buffer.get_input_text();
+            self.debug_widget.generate_pretty_sql(&query);
         }
     }
 }

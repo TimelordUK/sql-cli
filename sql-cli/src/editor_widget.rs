@@ -64,9 +64,7 @@ impl EditorWidget {
     pub fn handle_key(
         &mut self,
         key: KeyEvent,
-        _buffer: &dyn BufferAPI,
         key_dispatcher: &KeyDispatcher,
-        _config: &Config,
     ) -> Result<EditorAction> {
         // Log the key event
         trace!(target: "input", "Key: {:?} Modifiers: {:?}", key.code, key.modifiers);
@@ -115,7 +113,7 @@ impl EditorWidget {
 
     /// Render the editor widget
     /// For now, this is a placeholder that the main app will override
-    pub fn render(&self, f: &mut Frame, area: Rect, _buffer: &dyn BufferAPI, _config: &Config) {
+    pub fn render(&self, f: &mut Frame, area: Rect) {
         // Simple placeholder rendering
         let placeholder = Paragraph::new("Editor Widget Placeholder")
             .block(
