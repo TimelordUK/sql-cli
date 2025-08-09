@@ -372,30 +372,14 @@ impl EnhancedTuiApp {
         (0, cursor)
     }
 
-    fn set_case_insensitive(&mut self, case_insensitive: bool) {
-        self.buffer_mut().set_case_insensitive(case_insensitive);
-    }
-
-    fn set_last_results_row(&mut self, row: Option<usize>) {
-        self.buffer_mut().set_last_results_row(row);
-    }
-
     // Compatibility wrapper for last_scroll_offset
     fn get_last_scroll_offset(&self) -> (usize, usize) {
         self.buffer().get_last_scroll_offset()
     }
 
-    fn set_last_scroll_offset(&mut self, offset: (usize, usize)) {
-        self.buffer_mut().set_last_scroll_offset(offset);
-    }
-
     // Compatibility wrapper for last_query_source
     fn get_last_query_source(&self) -> Option<String> {
         self.buffer().get_last_query_source()
-    }
-
-    fn set_last_query_source(&mut self, source: Option<String>) {
-        self.buffer_mut().set_last_query_source(source);
     }
 
     // Compatibility wrapper for input
@@ -460,11 +444,6 @@ impl EnhancedTuiApp {
             .set_mode(Self::local_mode_to_buffer(&mode));
     }
 
-    fn set_results(&mut self, results: Option<QueryResponse>) {
-        // Update buffer's results
-        self.buffer_mut().set_results(results);
-    }
-
     // Compatibility wrapper for table_state
     fn get_table_state(&self) -> &TableState {
         // For now, always use TUI field since TableState access is complex
@@ -489,37 +468,9 @@ impl EnhancedTuiApp {
         self.buffer().get_scroll_offset()
     }
 
-    fn set_scroll_offset(&mut self, offset: (usize, usize)) {
-        self.buffer_mut().set_scroll_offset(offset);
-    }
-
     // Wrapper methods for current_column (uses buffer system)
     fn get_current_column(&self) -> usize {
         self.buffer().get_current_column()
-    }
-
-    fn set_current_column(&mut self, col: usize) {
-        self.buffer_mut().set_current_column(col);
-    }
-
-    fn set_compact_mode(&mut self, compact: bool) {
-        self.buffer_mut().set_compact_mode(compact);
-    }
-
-    fn set_show_row_numbers(&mut self, show: bool) {
-        self.buffer_mut().set_show_row_numbers(show);
-    }
-
-    fn set_viewport_lock(&mut self, locked: bool) {
-        self.buffer_mut().set_viewport_lock(locked);
-    }
-
-    fn set_viewport_lock_row(&mut self, row: Option<usize>) {
-        self.buffer_mut().set_viewport_lock_row(row);
-    }
-
-    fn set_column_widths(&mut self, widths: Vec<u16>) {
-        self.buffer_mut().set_column_widths(widths.clone());
     }
 
     fn is_csv_mode(&self) -> bool {
@@ -1686,7 +1637,7 @@ impl EnhancedTuiApp {
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
                 let current = self.buffer().is_case_insensitive();
-                self.set_case_insensitive(!current);
+                self.buffer_mut().set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
                 self.set_csv_client_case_insensitive(!current);
@@ -1788,7 +1739,8 @@ impl EnhancedTuiApp {
                 self.get_table_state_mut().select(Some(row));
 
                 // Restore the exact scroll offset from when we left
-                self.set_scroll_offset(self.get_last_scroll_offset());
+                let last_offset = self.get_last_scroll_offset();
+                self.buffer_mut().set_scroll_offset(last_offset);
             }
             KeyCode::F(5) => {
                 // Debug command - show buffer and parser information
@@ -2089,7 +2041,7 @@ impl EnhancedTuiApp {
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
                 let current = self.buffer().is_case_insensitive();
-                self.set_case_insensitive(!current);
+                self.buffer_mut().set_case_insensitive(!current);
 
                 // Update CSV client if in CSV mode
                 self.set_csv_client_case_insensitive(!current);
@@ -2107,8 +2059,9 @@ impl EnhancedTuiApp {
                 } else {
                     // Save current position before switching to Command mode
                     if let Some(selected) = self.get_table_state().selected() {
-                        self.set_last_results_row(Some(selected));
-                        self.set_last_scroll_offset(self.get_scroll_offset());
+                        self.buffer_mut().set_last_results_row(Some(selected));
+                        let scroll_offset = self.get_scroll_offset();
+                        self.buffer_mut().set_last_scroll_offset(scroll_offset);
                     }
                     self.set_mode(AppMode::Command);
                     self.get_table_state_mut().select(None);
@@ -2117,8 +2070,9 @@ impl EnhancedTuiApp {
             KeyCode::Up => {
                 // Save current position before switching to Command mode
                 if let Some(selected) = self.get_table_state().selected() {
-                    self.set_last_results_row(Some(selected));
-                    self.set_last_scroll_offset(self.get_scroll_offset());
+                    self.buffer_mut().set_last_results_row(Some(selected));
+                    let scroll_offset = self.get_scroll_offset();
+                    self.buffer_mut().set_last_scroll_offset(scroll_offset);
                 }
                 self.set_mode(AppMode::Command);
                 self.get_table_state_mut().select(None);
@@ -2161,7 +2115,7 @@ impl EnhancedTuiApp {
             KeyCode::Char('C') => {
                 // Toggle compact mode with Shift+C
                 let current_mode = self.buffer().is_compact_mode();
-                self.set_compact_mode(!current_mode);
+                self.buffer_mut().set_compact_mode(!current_mode);
                 self.set_status_message(if self.buffer().is_compact_mode() {
                     "Compact mode: ON (reduced padding, more columns visible)".to_string()
                 } else {
@@ -2179,17 +2133,18 @@ impl EnhancedTuiApp {
             KeyCode::Char(' ') => {
                 // Toggle viewport lock with Space
                 let current_lock = self.buffer().is_viewport_lock();
-                self.set_viewport_lock(!current_lock);
+                self.buffer_mut().set_viewport_lock(!current_lock);
                 if self.buffer().is_viewport_lock() {
                     // Lock to current position in viewport (middle of screen)
                     let visible_rows = self.get_last_visible_rows();
-                    self.set_viewport_lock_row(Some(visible_rows / 2));
+                    self.buffer_mut()
+                        .set_viewport_lock_row(Some(visible_rows / 2));
                     self.set_status_message(format!(
                         "Viewport lock: ON (anchored at row {} of viewport)",
                         visible_rows / 2 + 1
                     ));
                 } else {
-                    self.set_viewport_lock_row(None);
+                    self.buffer_mut().set_viewport_lock_row(None);
                     self.set_status_message("Viewport lock: OFF (normal scrolling)".to_string());
                 }
             }
@@ -2235,7 +2190,7 @@ impl EnhancedTuiApp {
                 } else {
                     // Toggle row numbers display
                     let current = self.buffer().is_show_row_numbers();
-                    self.set_show_row_numbers(!current);
+                    self.buffer_mut().set_show_row_numbers(!current);
                     self.set_status_message(if self.buffer().is_show_row_numbers() {
                         "Row numbers: ON (showing line numbers)".to_string()
                     } else {
@@ -2510,7 +2465,7 @@ impl EnhancedTuiApp {
                     let (column_index, column_name) = self.get_column_search_matches()
                         [self.get_column_search_current_match()]
                     .clone();
-                    self.set_current_column(column_index);
+                    self.buffer_mut().set_current_column(column_index);
                     self.set_status_message(format!("Jumped to column: {}", column_name));
                 } else {
                     self.set_status_message("No matching columns found".to_string());
@@ -2531,7 +2486,7 @@ impl EnhancedTuiApp {
                     let (column_index, column_name) = self.get_column_search_matches()
                         [self.get_column_search_current_match()]
                     .clone();
-                    self.set_current_column(column_index);
+                    self.buffer_mut().set_current_column(column_index);
                     self.set_status_message(format!(
                         "Column {} of {}: {}",
                         self.get_column_search_current_match() + 1,
@@ -2555,7 +2510,7 @@ impl EnhancedTuiApp {
                     let (column_index, column_name) = self.get_column_search_matches()
                         [self.get_column_search_current_match()]
                     .clone();
-                    self.set_current_column(column_index);
+                    self.buffer_mut().set_current_column(column_index);
                     self.set_status_message(format!(
                         "Column {} of {}: {}",
                         self.get_column_search_current_match() + 1,
@@ -2857,7 +2812,8 @@ impl EnhancedTuiApp {
                 let row_count = response.data.len();
 
                 // Capture the source from the response
-                self.set_last_query_source(response.source.clone());
+                self.buffer_mut()
+                    .set_last_query_source(response.source.clone());
 
                 // Store results in the current buffer
                 if let Some(buffer) = self.current_buffer_mut() {
@@ -2865,7 +2821,7 @@ impl EnhancedTuiApp {
                     buffer.set_results(Some(response.clone()));
                     info!(target: "buffer", "Stored {} results in buffer {}", row_count, buffer_id);
                 }
-                self.set_results(Some(response.clone())); // Keep for compatibility during migration
+                self.buffer_mut().set_results(Some(response.clone())); // Keep for compatibility during migration
 
                 // Update parser with the FULL schema if we're in CSV/cache mode
                 // For CSV mode, get the complete schema from the CSV client, not from query results
@@ -3456,7 +3412,7 @@ impl EnhancedTuiApp {
                     // Adjust viewport so cursor stays at lock_row position
                     let mut offset = self.get_scroll_offset();
                     offset.0 = new_position.saturating_sub(lock_row);
-                    self.set_scroll_offset(offset);
+                    self.buffer_mut().set_scroll_offset(offset);
                 }
             } else {
                 // Normal scrolling behavior
@@ -3466,7 +3422,8 @@ impl EnhancedTuiApp {
                 let offset = self.get_scroll_offset();
                 if new_position > offset.0 + visible_rows - 1 {
                     // Cursor moved below viewport - scroll down by one
-                    self.set_scroll_offset((offset.0 + 1, offset.1));
+                    self.buffer_mut()
+                        .set_scroll_offset((offset.0 + 1, offset.1));
                 }
             }
         }
@@ -3488,7 +3445,7 @@ impl EnhancedTuiApp {
                 // Adjust viewport so cursor stays at lock_row position
                 let mut offset = self.get_scroll_offset();
                 offset.0 = new_position.saturating_sub(lock_row);
-                self.set_scroll_offset(offset);
+                self.buffer_mut().set_scroll_offset(offset);
             }
         } else {
             // Normal scrolling behavior
@@ -3496,7 +3453,7 @@ impl EnhancedTuiApp {
             if new_position < offset.0 {
                 // Cursor moved above viewport - scroll up
                 offset.0 = new_position;
-                self.set_scroll_offset(offset);
+                self.buffer_mut().set_scroll_offset(offset);
             }
         }
     }
@@ -3507,10 +3464,11 @@ impl EnhancedTuiApp {
         self.cursor_manager.move_table_left();
 
         // Keep existing logic for now
-        self.set_current_column(self.get_current_column().saturating_sub(1));
+        let new_column = self.get_current_column().saturating_sub(1);
+        self.buffer_mut().set_current_column(new_column);
         let mut offset = self.get_scroll_offset();
         offset.1 = offset.1.saturating_sub(1);
-        self.set_scroll_offset(offset);
+        self.buffer_mut().set_scroll_offset(offset);
         self.set_status_message(format!("Column {} selected", self.get_current_column() + 1));
     }
 
@@ -3524,11 +3482,12 @@ impl EnhancedTuiApp {
                     self.cursor_manager.move_table_right(max_columns);
 
                     // Keep existing logic for now
-                    if self.get_current_column() + 1 < max_columns {
-                        self.set_current_column(self.get_current_column() + 1);
+                    let current_column = self.get_current_column();
+                    if current_column + 1 < max_columns {
+                        self.buffer_mut().set_current_column(current_column + 1);
                         let mut offset = self.get_scroll_offset();
                         offset.1 += 1;
-                        self.set_scroll_offset(offset);
+                        self.buffer_mut().set_scroll_offset(offset);
                         self.set_status_message(format!(
                             "Column {} selected",
                             self.get_current_column() + 1
@@ -3540,10 +3499,10 @@ impl EnhancedTuiApp {
     }
 
     fn goto_first_column(&mut self) {
-        self.set_current_column(0);
+        self.buffer_mut().set_current_column(0);
         let mut offset = self.get_scroll_offset();
         offset.1 = 0;
-        self.set_scroll_offset(offset);
+        self.buffer_mut().set_scroll_offset(offset);
         self.set_status_message("First column selected".to_string());
     }
 
@@ -3553,12 +3512,12 @@ impl EnhancedTuiApp {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
                     if max_columns > 0 {
-                        self.set_current_column(max_columns - 1);
+                        self.buffer_mut().set_current_column(max_columns - 1);
                         // Update horizontal scroll to show the last column
                         // This ensures the last column is visible in the viewport
                         let mut offset = self.get_scroll_offset();
                         offset.1 = self.get_current_column().saturating_sub(5); // Keep some context
-                        self.set_scroll_offset(offset);
+                        self.buffer_mut().set_scroll_offset(offset);
                         self.set_status_message(format!(
                             "Last column selected ({})",
                             self.get_current_column() + 1
@@ -3573,7 +3532,7 @@ impl EnhancedTuiApp {
         self.get_table_state_mut().select(Some(0));
         let mut offset = self.get_scroll_offset();
         offset.0 = 0; // Reset viewport to top
-        self.set_scroll_offset(offset);
+        self.buffer_mut().set_scroll_offset(offset);
     }
 
     fn toggle_column_pin(&mut self) {
@@ -3800,7 +3759,7 @@ impl EnhancedTuiApp {
             let visible_rows = self.get_last_visible_rows();
             let mut offset = self.get_scroll_offset();
             offset.0 = last_row.saturating_sub(visible_rows - 1);
-            self.set_scroll_offset(offset);
+            self.buffer_mut().set_scroll_offset(offset);
         }
     }
 
@@ -3816,7 +3775,7 @@ impl EnhancedTuiApp {
             // Scroll viewport down by a page
             let mut offset = self.get_scroll_offset();
             offset.0 = (offset.0 + visible_rows).min(total_rows.saturating_sub(visible_rows));
-            self.set_scroll_offset(offset);
+            self.buffer_mut().set_scroll_offset(offset);
         }
     }
 
@@ -3830,7 +3789,7 @@ impl EnhancedTuiApp {
         // Scroll viewport up by a page
         let mut offset = self.get_scroll_offset();
         offset.0 = offset.0.saturating_sub(visible_rows);
-        self.set_scroll_offset(offset);
+        self.buffer_mut().set_scroll_offset(offset);
     }
 
     // Search and filter functions
@@ -3939,8 +3898,8 @@ impl EnhancedTuiApp {
 
                 // Reset table state but preserve filtered data
                 *self.get_table_state_mut() = TableState::default();
-                self.set_scroll_offset((0, 0));
-                self.set_current_column(0);
+                self.buffer_mut().set_scroll_offset((0, 0));
+                self.buffer_mut().set_current_column(0);
 
                 // Clear search state but keep filter state
                 self.search_state = SearchState {
@@ -4041,7 +4000,7 @@ impl EnhancedTuiApp {
             ));
             // Reset table state for new filtered view
             *self.get_table_state_mut() = TableState::default();
-            self.set_scroll_offset((0, 0));
+            self.buffer_mut().set_scroll_offset((0, 0));
         } else {
             let filter_type = if pattern.starts_with('\'') {
                 "exact"
@@ -4083,7 +4042,7 @@ impl EnhancedTuiApp {
                     } else {
                         let (column_index, column_name) =
                             self.get_column_search_matches()[0].clone();
-                        self.set_current_column(column_index);
+                        self.buffer_mut().set_current_column(column_index);
                         self.set_status_message(format!(
                             "Column 1 of {}: {} (Tab=next, Enter=select)",
                             self.get_column_search_matches().len(),
@@ -4212,7 +4171,7 @@ impl EnhancedTuiApp {
                         // Update both the results and clear filtered_data to force regeneration
                         let mut new_results = results.clone();
                         new_results.data = sorted_data;
-                        self.set_results(Some(new_results));
+                        self.buffer_mut().set_results(Some(new_results));
                         self.set_filtered_data(None); // Force regeneration of string data
                     }
                 }
@@ -4258,7 +4217,7 @@ impl EnhancedTuiApp {
         // Reset table state but preserve current column position
         let current_column = self.get_current_column();
         self.reset_table_state();
-        self.set_current_column(current_column);
+        self.buffer_mut().set_current_column(current_column);
 
         self.set_status_message(format!(
             "Sorted by column {} ({}) - type-aware",
@@ -4335,10 +4294,10 @@ impl EnhancedTuiApp {
 
     fn reset_table_state(&mut self) {
         *self.get_table_state_mut() = TableState::default();
-        self.set_scroll_offset((0, 0));
-        self.set_current_column(0);
-        self.set_last_results_row(None); // Reset saved position for new results
-        self.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
+        self.buffer_mut().set_scroll_offset((0, 0));
+        self.buffer_mut().set_current_column(0);
+        self.buffer_mut().set_last_results_row(None); // Reset saved position for new results
+        self.buffer_mut().set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
 
         // Clear filter state to prevent old filtered data from persisting
         *self.get_filter_state_mut() = FilterState {
@@ -4405,7 +4364,7 @@ impl EnhancedTuiApp {
                         widths.push(width);
                     }
 
-                    self.set_column_widths(widths);
+                    self.buffer_mut().set_column_widths(widths);
                 }
             }
         }
@@ -4461,7 +4420,7 @@ impl EnhancedTuiApp {
                         widths.push(optimal_width as u16);
                     }
 
-                    self.set_column_widths(widths);
+                    self.buffer_mut().set_column_widths(widths);
                 }
             }
         }
@@ -5356,7 +5315,7 @@ impl EnhancedTuiApp {
                 ta
             };
             self.set_edit_mode(edit_mode);
-            self.set_results(results);
+            self.buffer_mut().set_results(results);
 
             let result_count = self
                 .buffer()
@@ -5460,7 +5419,7 @@ impl EnhancedTuiApp {
                 ta
             };
             self.set_edit_mode(edit_mode);
-            self.set_results(results);
+            self.buffer_mut().set_results(results);
 
             let result_count = self
                 .buffer()
@@ -7407,7 +7366,7 @@ impl EnhancedTuiApp {
                             if visible_rows > 0 {
                                 let mut offset = self.get_scroll_offset();
                                 offset.0 = target_row.saturating_sub(visible_rows / 2);
-                                self.set_scroll_offset(offset);
+                                self.buffer_mut().set_scroll_offset(offset);
                             }
 
                             self.set_status_message(format!("Jumped to row {}", row_num));
