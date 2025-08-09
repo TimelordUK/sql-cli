@@ -5679,7 +5679,8 @@ impl EnhancedTuiApp {
     fn handle_execute_query(&mut self) -> Result<bool> {
         // For now, delegate to existing logic by simulating Enter key
         let enter_key = crossterm::event::KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
-        Ok(self.handle_input_key(enter_key))
+        self.handle_input_key(enter_key);
+        Ok(false) // Continue running, don't exit
     }
 
     fn handle_buffer_action(&mut self, action: BufferAction) -> Result<bool> {
