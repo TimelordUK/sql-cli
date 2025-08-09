@@ -31,6 +31,7 @@ pub mod where_parser;
 pub mod yank_manager;
 
 // New refactored modules for enhanced_tui decomposition
+pub mod action_handler;
 pub mod column_manager;
 pub mod completion_manager;
 pub mod cursor_manager;
@@ -43,5 +44,6 @@ pub mod key_chord_handler;
 pub mod key_dispatcher;
 pub mod search_filter;
 pub mod text_navigation;
+pub mod tui_renderer;
 pub mod tui_state;
 // pub mod data_manager; // TODO: Fix QueryResponse field access
