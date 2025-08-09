@@ -58,13 +58,6 @@ enum SelectionMode {
 
 // Using SortOrder and SortState from sql_cli::buffer module
 
-#[derive(Clone)]
-struct FilterState {
-    pattern: String,
-    regex: Option<Regex>,
-    active: bool,
-}
-
 struct FuzzyFilterState {
     pattern: String,
     active: bool,
@@ -84,13 +77,18 @@ impl Clone for FuzzyFilterState {
 }
 
 #[derive(Clone)]
+struct FilterState {
+    pattern: String,
+    regex: Option<Regex>,
+    active: bool,
+}
+
+#[derive(Clone)]
 struct ColumnSearchState {
     pattern: String,
     matching_columns: Vec<(usize, String)>, // (index, column_name)
     current_match: usize,                   // Index into matching_columns
 }
-
-// ColumnStatistics and ColumnType moved to buffer.rs
 
 #[derive(Clone)]
 struct SearchState {

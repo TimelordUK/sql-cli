@@ -39,5 +39,7 @@ pub mod help_text;
 pub mod key_bindings;
 pub mod key_chord_handler;
 pub mod key_dispatcher;
+pub mod search_filter;
 pub mod text_navigation;
+pub mod tui_state;
 // pub mod data_manager; // TODO: Fix QueryResponse field access

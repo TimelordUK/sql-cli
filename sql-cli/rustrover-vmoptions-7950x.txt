@@ -1,0 +1,44 @@
+# RustRover VM Options for Ryzen 9 7950X system with 64GB RAM
+# Add these to your existing vmoptions file
+
+# Heap: 16GB for large Rust projects
+-Xms4096m
+-Xmx16384m
+
+# Code cache for better JIT performance
+-XX:ReservedCodeCacheSize=1024m
+
+# G1GC is best for large heaps
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-XX:+ParallelRefProcEnabled
+-XX:ConcGCThreads=4
+
+# Better performance with many cores
+-XX:CICompilerCount=4
+-XX:ParallelGCThreads=8
+
+# Soft references (for caches)
+-XX:SoftRefLRUPolicyMSPerMB=50
+
+# For debugging if needed
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:-OmitStackTraceInFastThrow
+
+# Basic flags
+-ea
+-Dsun.io.useCanonCaches=false
+-Djdk.http.auth.tunneling.disabledSchemes=""
+-Djdk.attach.allowAttachSelf=true
+-Djdk.module.illegalAccess.silent=true
+
+# WSL2 specific optimizations
+-Dfile.encoding=UTF-8
+-Didea.max.intellisense.filesize=5000
+-Didea.max.content.load.filesize=20000
+-Didea.cycle.buffer.size=4096
+
+# Your existing Toolbox settings
+-Dide.managed.by.toolbox=C:\Users\sjame\AppData\Local\JetBrains\Toolbox\bin\jetbrains-toolbox.exe
+-Dtoolbox.notification.token=ad4daf11-616d-4299-9af1-e020cd6c1e72
+-Dtoolbox.notification.portFile=C:\Users\sjame\AppData\Local\JetBrains\Toolbox\cache\ports\15c2e2eb-e42b-41f8-af58-a59956e701db.port
