@@ -5677,9 +5677,28 @@ impl EnhancedTuiApp {
     // These methods handle the actions returned by the editor widget
 
     fn handle_execute_query(&mut self) -> Result<bool> {
-        // For now, delegate to existing logic by simulating Enter key
-        let enter_key = crossterm::event::KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
-        self.handle_input_key(enter_key);
+        // Get the current query text and execute it directly
+        let query = self.get_input_text().trim().to_string();
+        debug!(target: "action", "Executing query: {}", query);
+        if !query.is_empty() {
+            // Check for special commands
+            if query == ":help" {
+                self.show_help = true;
+                self.buffer_mut().set_mode(AppMode::Help);
+                self.buffer_mut()
+                    .set_status_message("Help Mode - Press ESC to return".to_string());
+            } else if query == ":exit" || query == ":quit" {
+                return Ok(true);
+            } else {
+                // Execute the SQL query
+                if let Err(e) = self.execute_query(&query) {
+                    self.buffer_mut()
+                        .set_status_message(format!("Error executing query: {}", e));
+                }
+                // Clear input after successful query execution
+                self.clear_input();
+            }
+        }
         Ok(false) // Continue running, don't exit
     }
 
@@ -5754,8 +5773,101 @@ impl EnhancedTuiApp {
                 }
                 _ => {
                     buffer.set_mode(AppMode::Debug);
-                    // Generate debug content using existing logic
+                    // Generate full debug information like the original F5 handler
                     self.debug_current_buffer();
+                    let cursor_pos = self.get_input_cursor();
+                    let visual_cursor = self.get_visual_cursor().1;
+                    let query = self.get_input_text();
+
+                    // Collect all needed data before mutable borrow
+                    let buffer_names: Vec<String> = self
+                        .buffer_manager
+                        .all_buffers()
+                        .iter()
+                        .map(|b| b.get_name())
+                        .collect();
+                    let buffer_count = self.buffer_manager.all_buffers().len();
+                    let buffer_index = self.buffer_manager.current_index();
+                    let api_url = self.api_client.base_url.clone();
+
+                    // Generate debug info directly without buffer reference
+                    let mut debug_info = self
+                        .hybrid_parser
+                        .get_detailed_debug_info(&query, cursor_pos);
+
+                    // Add input state
+                    debug_info.push_str(&format!(
+                        "\n========== INPUT STATE ==========\n\
+                        Input Value Length: {}\n\
+                        Cursor Position: {}\n\
+                        Visual Cursor: {}\n\
+                        Input Mode: Command\n",
+                        query.len(),
+                        cursor_pos,
+                        visual_cursor
+                    ));
+
+                    // Add buffer state info
+                    debug_info.push_str(&format!(
+                        "\n========== BUFFER MANAGER STATE ==========\n\
+                        Number of Buffers: {}\n\
+                        Current Buffer Index: {}\n\
+                        Buffer Names: {}\n",
+                        buffer_count,
+                        buffer_index,
+                        buffer_names.join(", ")
+                    ));
+
+                    // Add WHERE clause AST if needed
+                    if query.to_lowercase().contains(" where ") {
+                        let where_ast_info = match self.parse_where_clause_ast(&query) {
+                            Ok(ast_str) => ast_str,
+                            Err(e) => format!("\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {}\n", e)
+                        };
+                        debug_info.push_str(&where_ast_info);
+                    }
+
+                    // Add key chord handler debug info
+                    debug_info.push_str("\n");
+                    debug_info.push_str(&self.key_chord_handler.format_debug_info());
+                    debug_info.push_str("========================================\n");
+
+                    // Add trace logs from ring buffer
+                    debug_info.push_str("\n========== TRACE LOGS ==========\n");
+                    debug_info.push_str("(Most recent at bottom, last 100 entries)\n");
+                    if let Some(ref log_buffer) = self.log_buffer {
+                        let recent_logs = log_buffer.get_recent(100);
+                        for entry in recent_logs {
+                            debug_info.push_str(&entry.format_for_display());
+                            debug_info.push('\n');
+                        }
+                        debug_info.push_str(&format!("Total log entries: {}\n", log_buffer.len()));
+                    } else {
+                        debug_info.push_str("Log buffer not initialized\n");
+                    }
+                    debug_info.push_str("================================\n");
+
+                    // Set the final content in debug widget
+                    self.debug_widget.set_content(debug_info.clone());
+
+                    // Try to copy to clipboard
+                    match arboard::Clipboard::new() {
+                        Ok(mut clipboard) => match clipboard.set_text(&debug_info) {
+                            Ok(_) => {
+                                self.buffer_mut().set_status_message(
+                                    "DEBUG INFO copied to clipboard!".to_string(),
+                                );
+                            }
+                            Err(e) => {
+                                self.buffer_mut()
+                                    .set_status_message(format!("Clipboard error: {}", e));
+                            }
+                        },
+                        Err(e) => {
+                            self.buffer_mut()
+                                .set_status_message(format!("Can't access clipboard: {}", e));
+                        }
+                    }
                 }
             }
         }
