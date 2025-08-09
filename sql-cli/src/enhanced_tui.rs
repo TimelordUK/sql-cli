@@ -707,7 +707,7 @@ impl EnhancedTuiApp {
                 return Ok(false);
             }
             EditorAction::ShowDebug => {
-                self.toggle_debug_mode();
+                // This is now handled by passing through to original F5 handler
                 return Ok(false);
             }
             EditorAction::ShowPrettyQuery => {
@@ -5691,12 +5691,13 @@ impl EnhancedTuiApp {
                 return Ok(true);
             } else {
                 // Execute the SQL query
+                self.buffer_mut()
+                    .set_status_message(format!("Processing query: '{}'", query));
                 if let Err(e) = self.execute_query(&query) {
                     self.buffer_mut()
                         .set_status_message(format!("Error executing query: {}", e));
                 }
-                // Clear input after successful query execution
-                self.clear_input();
+                // Don't clear input - preserve query for editing
             }
         }
         Ok(false) // Continue running, don't exit

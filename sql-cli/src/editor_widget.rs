@@ -159,7 +159,10 @@ impl EditorWidget {
                 "expand_asterisk" => return Ok(EditorAction::ExpandAsterisk),
                 "execute_query" => return Ok(EditorAction::ExecuteQuery),
                 "toggle_help" => return Ok(EditorAction::ShowHelp),
-                "toggle_debug" => return Ok(EditorAction::ShowDebug),
+                "toggle_debug" => {
+                    // Pass F5 debug to main app to use original working implementation
+                    return Ok(EditorAction::PassToMainApp(key));
+                }
                 "show_pretty_query" => return Ok(EditorAction::ShowPrettyQuery),
                 "search_history" => return Ok(EditorAction::SwitchMode(AppMode::History)),
                 "enter_results_mode" => return Ok(EditorAction::SwitchMode(AppMode::Results)),
