@@ -6,6 +6,7 @@ pub mod config;
 pub mod csv_datasource;
 pub mod csv_fixes;
 pub mod cursor_aware_parser;
+pub mod data_exporter;
 pub mod datatable;
 pub mod datatable_buffer;
 pub mod datatable_loaders;

@@ -31,6 +31,7 @@ use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::cursor_manager::CursorManager;
 use sql_cli::data_analyzer::DataAnalyzer;
+use sql_cli::data_exporter::DataExporter;
 use sql_cli::help_text::HelpText;
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
@@ -163,15 +164,6 @@ pub struct EnhancedTuiApp {
     // Display options
     jump_to_row_input: String, // Input buffer for jump to row command
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
-}
-
-fn escape_csv_field(field: &str) -> String {
-    if field.contains(',') || field.contains('"') || field.contains('\n') {
-        // Escape quotes by doubling them and wrap field in quotes
-        format!("\"{}\"", field.replace('"', "\"\""))
-    } else {
-        field.to_string()
-    }
 }
 
 fn is_sql_delimiter(ch: char) -> bool {
@@ -3649,84 +3641,15 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn escape_csv_field(s: &str) -> String {
-        if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
-            format!("\"{}\"", s.replace('"', "\"\""))
-        } else {
-            s.to_string()
-        }
-    }
-
     fn export_to_csv(&mut self) {
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    // Generate filename with timestamp
-                    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-                    let filename = format!("query_results_{}.csv", timestamp);
-
-                    match File::create(&filename) {
-                        Ok(mut file) => {
-                            // Write headers
-                            let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                            let header_line = headers.join(",");
-                            if let Err(e) = writeln!(file, "{}", header_line) {
-                                self.buffer_mut()
-                                    .set_status_message(format!("Failed to write headers: {}", e));
-                                return;
-                            }
-
-                            // Write data rows
-                            let mut row_count = 0;
-                            for item in &results.data {
-                                if let Some(obj) = item.as_object() {
-                                    let row: Vec<String> = headers
-                                        .iter()
-                                        .map(|&header| match obj.get(header) {
-                                            Some(Value::String(s)) => Self::escape_csv_field(s),
-                                            Some(Value::Number(n)) => n.to_string(),
-                                            Some(Value::Bool(b)) => b.to_string(),
-                                            Some(Value::Null) => String::new(),
-                                            Some(other) => {
-                                                Self::escape_csv_field(&other.to_string())
-                                            }
-                                            None => String::new(),
-                                        })
-                                        .collect();
-
-                                    let row_line = row.join(",");
-                                    if let Err(e) = writeln!(file, "{}", row_line) {
-                                        self.buffer_mut().set_status_message(format!(
-                                            "Failed to write row: {}",
-                                            e
-                                        ));
-                                        return;
-                                    }
-                                    row_count += 1;
-                                }
-                            }
-
-                            self.buffer_mut().set_status_message(format!(
-                                "Exported {} rows to {}",
-                                row_count, filename
-                            ));
-                        }
-                        Err(e) => {
-                            self.buffer_mut()
-                                .set_status_message(format!("Failed to create file: {}", e));
-                        }
-                    }
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("No data to export".to_string());
-                }
-            } else {
-                self.buffer_mut()
-                    .set_status_message("No data to export".to_string());
+        match DataExporter::export_to_csv(self.buffer()) {
+            Ok(message) => {
+                self.buffer_mut().set_status_message(message);
             }
-        } else {
-            self.buffer_mut()
-                .set_status_message("No results to export - run a query first".to_string());
+            Err(e) => {
+                self.buffer_mut()
+                    .set_status_message(format!("Export failed: {}", e));
+            }
         }
     }
 
@@ -3901,57 +3824,32 @@ impl EnhancedTuiApp {
                     results.data.clone()
                 };
 
-            if let Some(first_row) = data_to_export.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-
-                    // Create CSV format
-                    let mut csv_text = headers.join(",") + "\n";
-
-                    for row in &data_to_export {
-                        if let Some(obj) = row.as_object() {
-                            let values: Vec<String> = headers
-                                .iter()
-                                .map(|&header| match obj.get(header) {
-                                    Some(Value::String(s)) => escape_csv_field(s),
-                                    Some(Value::Number(n)) => n.to_string(),
-                                    Some(Value::Bool(b)) => b.to_string(),
-                                    Some(Value::Null) => String::new(),
-                                    Some(other) => escape_csv_field(&other.to_string()),
-                                    None => String::new(),
-                                })
-                                .collect();
-                            csv_text.push_str(&values.join(","));
-                            csv_text.push('\n');
+            if let Some(csv_text) = DataExporter::generate_csv_text(&data_to_export) {
+                // Copy to clipboard
+                match arboard::Clipboard::new() {
+                    Ok(mut clipboard) => match clipboard.set_text(&csv_text) {
+                        Ok(_) => {
+                            let filter_info = if self.get_filter_state().active
+                                || self.buffer().is_fuzzy_filter_active()
+                            {
+                                " (filtered)"
+                            } else {
+                                ""
+                            };
+                            self.buffer_mut().set_status_message(format!(
+                                "Yanked all data{}: {} rows",
+                                filter_info,
+                                data_to_export.len()
+                            ));
                         }
-                    }
-
-                    // Copy to clipboard
-                    match arboard::Clipboard::new() {
-                        Ok(mut clipboard) => match clipboard.set_text(&csv_text) {
-                            Ok(_) => {
-                                let filter_info = if self.get_filter_state().active
-                                    || self.buffer().is_fuzzy_filter_active()
-                                {
-                                    " (filtered)"
-                                } else {
-                                    ""
-                                };
-                                self.buffer_mut().set_status_message(format!(
-                                    "Yanked all data{}: {} rows",
-                                    filter_info,
-                                    data_to_export.len()
-                                ));
-                            }
-                            Err(e) => {
-                                self.buffer_mut()
-                                    .set_status_message(format!("Clipboard error: {}", e));
-                            }
-                        },
                         Err(e) => {
                             self.buffer_mut()
-                                .set_status_message(format!("Can't access clipboard: {}", e));
+                                .set_status_message(format!("Clipboard error: {}", e));
                         }
+                    },
+                    Err(e) => {
+                        self.buffer_mut()
+                            .set_status_message(format!("Can't access clipboard: {}", e));
                     }
                 }
             }
@@ -4039,49 +3937,18 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_json(&mut self) {
-        if let Some(results) = self.buffer().get_results() {
-            // Get the actual data to export (filtered or all)
-            let data_to_export =
-                if self.get_filter_state().active || self.buffer().is_fuzzy_filter_active() {
-                    self.get_filtered_json_data()
-                } else {
-                    results.data.clone()
-                };
+        // Include filtered data if filters are active
+        let include_filtered =
+            self.get_filter_state().active || self.buffer().is_fuzzy_filter_active();
 
-            // Generate filename with timestamp
-            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-            let filename = format!("query_results_{}.json", timestamp);
-
-            match File::create(&filename) {
-                Ok(file) => match serde_json::to_writer_pretty(file, &data_to_export) {
-                    Ok(_) => {
-                        let filter_info = if self.get_filter_state().active
-                            || self.buffer().is_fuzzy_filter_active()
-                        {
-                            " (filtered)"
-                        } else {
-                            ""
-                        };
-                        self.buffer_mut().set_status_message(format!(
-                            "Exported{} {} rows to {}",
-                            filter_info,
-                            data_to_export.len(),
-                            filename
-                        ));
-                    }
-                    Err(e) => {
-                        self.buffer_mut()
-                            .set_status_message(format!("Failed to write JSON: {}", e));
-                    }
-                },
-                Err(e) => {
-                    self.buffer_mut()
-                        .set_status_message(format!("Failed to create file: {}", e));
-                }
+        match DataExporter::export_to_json(self.buffer(), include_filtered) {
+            Ok(message) => {
+                self.buffer_mut().set_status_message(message);
             }
-        } else {
-            self.buffer_mut()
-                .set_status_message("No results to export - run a query first".to_string());
+            Err(e) => {
+                self.buffer_mut()
+                    .set_status_message(format!("Export failed: {}", e));
+            }
         }
     }
 
