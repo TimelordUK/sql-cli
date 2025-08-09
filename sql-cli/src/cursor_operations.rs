@@ -203,8 +203,8 @@ mod tests {
     #[test]
     fn test_matching_bracket() {
         let text = "SELECT * FROM (SELECT id FROM users)";
-        assert_eq!(CursorOperations::find_matching_bracket(text, 14), Some(36)); // ( -> )
-        assert_eq!(CursorOperations::find_matching_bracket(text, 36), Some(14));
+        assert_eq!(CursorOperations::find_matching_bracket(text, 14), Some(35)); // ( -> )
+        assert_eq!(CursorOperations::find_matching_bracket(text, 35), Some(14));
         // ) -> (
     }
 }
