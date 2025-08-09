@@ -6,14 +6,13 @@ use crate::buffer::{
 use crate::csv_datasource::CsvApiClient;
 use crate::datatable::DataTable;
 use crate::datatable_view::{DataTableView, SortOrder as ViewSortOrder};
-use crate::input_manager::{create_multi_line, create_single_line, InputManager};
+use crate::input_manager::{create_single_line, InputManager};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
 use ratatui::style::Color;
 use ratatui::widgets::TableState;
 use std::path::PathBuf;
 use tui_input::Input;
-use tui_textarea::TextArea;
 
 /// A Buffer implementation backed by DataTable
 /// This allows us to integrate our clean DataTable architecture with the existing enhanced TUI
@@ -30,8 +29,7 @@ pub struct DataTableBuffer {
     // --- UI State (compatible with existing Buffer) ---
     mode: AppMode,
     edit_mode: EditMode,
-    input: Input,                // Legacy - kept for compatibility
-    textarea: TextArea<'static>, // Legacy - kept for compatibility
+    input: Input, // Legacy - kept for compatibility
     input_manager: Box<dyn InputManager>,
     table_state: TableState,
     last_results_row: Option<usize>,
@@ -96,7 +94,6 @@ impl DataTableBuffer {
             mode: AppMode::Command,
             edit_mode: EditMode::SingleLine,
             input: Input::default(),
-            textarea: TextArea::default(),
             input_manager: create_single_line(String::new()),
             table_state: TableState::default(),
             last_results_row: None,
@@ -810,18 +807,11 @@ impl BufferAPI for DataTableBuffer {
         self.input_manager.handle_key_event(event)
     }
 
-    fn switch_input_mode(&mut self, multiline: bool) {
-        if multiline {
-            self.edit_mode = EditMode::MultiLine;
-            // Convert single-line to multi-line if needed
-            let current_text = self.input_manager.get_text();
-            self.input_manager = create_multi_line(current_text);
-        } else {
-            self.edit_mode = EditMode::SingleLine;
-            // Convert multi-line to single-line if needed
-            let current_text = self.input_manager.get_text();
-            self.input_manager = create_single_line(current_text);
-        }
+    fn switch_input_mode(&mut self, _multiline: bool) {
+        // Always use single-line mode
+        self.edit_mode = EditMode::SingleLine;
+        let current_text = self.input_manager.get_text();
+        self.input_manager = create_single_line(current_text);
     }
 
     fn get_input_cursor_position(&self) -> usize {

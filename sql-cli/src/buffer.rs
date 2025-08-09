@@ -1,8 +1,6 @@
 use crate::api_client::QueryResponse;
 use crate::csv_datasource::CsvApiClient;
-use crate::input_manager::{
-    create_from_input, create_from_textarea, create_multi_line, create_single_line, InputManager,
-};
+use crate::input_manager::{create_from_input, create_single_line, InputManager};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -13,7 +11,6 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tui_input::Input;
-use tui_textarea::TextArea;
 
 // Re-define the types we need (these should eventually be moved to a common module)
 #[derive(Clone, Debug, PartialEq)]
@@ -366,7 +363,6 @@ pub struct Buffer {
     pub mode: AppMode,
     pub edit_mode: EditMode,
     pub input: Input, // Legacy - kept for compatibility during migration
-    pub textarea: TextArea<'static>, // Legacy - kept for compatibility during migration
     pub input_manager: Box<dyn InputManager>, // New unified input management
     pub table_state: TableState,
     pub last_results_row: Option<usize>,
@@ -1102,12 +1098,7 @@ impl BufferAPI for Buffer {
     fn set_input_text(&mut self, text: String) {
         self.input_manager.set_text(text.clone());
         // Sync with legacy fields for compatibility
-        if self.edit_mode == EditMode::SingleLine {
-            self.input = Input::new(text.clone()).with_cursor(text.len());
-        } else {
-            let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-            self.textarea = TextArea::new(lines);
-        }
+        self.input = Input::new(text.clone()).with_cursor(text.len());
     }
 
     fn handle_input_key(&mut self, event: KeyEvent) -> bool {
@@ -1117,23 +1108,16 @@ impl BufferAPI for Buffer {
         result
     }
 
-    fn switch_input_mode(&mut self, multiline: bool) {
+    fn switch_input_mode(&mut self, _multiline: bool) {
         let current_text = self.input_manager.get_text();
         let cursor_pos = self.input_manager.get_cursor_position();
 
-        if multiline {
-            self.edit_mode = EditMode::MultiLine;
-            self.input_manager = create_multi_line(current_text.clone());
-            // Update legacy textarea
-            let lines: Vec<String> = current_text.lines().map(|s| s.to_string()).collect();
-            self.textarea = TextArea::new(lines);
-        } else {
-            self.edit_mode = EditMode::SingleLine;
-            self.input_manager = create_single_line(current_text.clone());
-            // Update legacy input
-            self.input =
-                Input::new(current_text.clone()).with_cursor(cursor_pos.min(current_text.len()));
-        }
+        // Always use single-line mode
+        self.edit_mode = EditMode::SingleLine;
+        self.input_manager = create_single_line(current_text.clone());
+        // Update legacy input
+        self.input =
+            Input::new(current_text.clone()).with_cursor(cursor_pos.min(current_text.len()));
 
         // Try to restore cursor position
         self.input_manager.set_cursor_position(cursor_pos);
@@ -1221,7 +1205,6 @@ impl Buffer {
             mode: AppMode::Command,
             edit_mode: EditMode::SingleLine,
             input: Input::default(),
-            textarea: TextArea::default(),
             input_manager: create_single_line(String::new()),
             table_state: TableState::default(),
             last_results_row: None,
@@ -1338,36 +1321,24 @@ impl Buffer {
         let text = self.input_manager.get_text();
         let cursor_pos = self.input_manager.get_cursor_position();
 
-        if self.edit_mode == EditMode::SingleLine {
-            let text_len = text.len();
-            self.input = Input::new(text).with_cursor(cursor_pos.min(text_len));
-        } else {
-            let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-            self.textarea = TextArea::new(lines);
-            // TextArea cursor positioning would need row/col conversion
-        }
+        // Always sync to single-line input
+        let text_len = text.len();
+        self.input = Input::new(text).with_cursor(cursor_pos.min(text_len));
     }
 
     /// Sync from legacy fields to InputManager (for compatibility during migration)
     fn sync_to_input_manager(&mut self) {
-        if self.edit_mode == EditMode::SingleLine {
-            let _text = self.input.value().to_string();
-            self.input_manager = create_from_input(self.input.clone());
-        } else {
-            self.input_manager = create_from_textarea(self.textarea.clone());
-        }
+        // Always sync from single-line input
+        let _text = self.input.value().to_string();
+        self.input_manager = create_from_input(self.input.clone());
     }
 }
 
 // Manual Clone implementation for Buffer due to Box<dyn InputManager>
 impl Clone for Buffer {
     fn clone(&self) -> Self {
-        // Clone the input manager based on current edit mode
-        let input_manager = if self.edit_mode == EditMode::MultiLine {
-            create_from_textarea(self.textarea.clone())
-        } else {
-            create_from_input(self.input.clone())
-        };
+        // Always clone as single-line mode
+        let input_manager = create_from_input(self.input.clone());
 
         Self {
             id: self.id,
@@ -1383,7 +1354,6 @@ impl Clone for Buffer {
             mode: self.mode.clone(),
             edit_mode: self.edit_mode.clone(),
             input: self.input.clone(),
-            textarea: self.textarea.clone(),
             input_manager,
             table_state: self.table_state.clone(),
             last_results_row: self.last_results_row,

@@ -44,7 +44,6 @@ use std::io;
 use std::io::Write;
 use tracing::{debug, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
-use tui_textarea::{CursorMove, TextArea};
 
 // Using AppMode and EditMode from sql_cli::buffer module
 
@@ -116,7 +115,6 @@ struct HistoryState {
 pub struct EnhancedTuiApp {
     api_client: ApiClient,
     input: Input,
-    textarea: TextArea<'static>,
     cursor_manager: CursorManager, // New: manages cursor/navigation logic
     data_analyzer: DataAnalyzer,   // New: manages data analysis/statistics
     // results: Option<QueryResponse>, // MIGRATED to buffer system
@@ -314,38 +312,6 @@ impl EnhancedTuiApp {
 
     // Note: mode methods removed - use buffer directly
 
-    // Compatibility wrapper for table_state
-    fn get_table_state(&self) -> &TableState {
-        // For now, always use TUI field since TableState access is complex
-        &self.table_state
-    }
-
-    fn get_table_state_mut(&mut self) -> &mut TableState {
-        &mut self.table_state
-    }
-
-    // Note: status_message methods removed - use buffer directly
-
-    // Note: scroll_offset method removed - use buffer directly
-
-    // Note: current_column method removed - use buffer directly
-
-    // Note: CSV and cache mode methods removed - use buffer directly
-
-    // Note: Undo/redo and kill ring methods removed - use buffer directly
-
-    // Note: last_visible_rows and cached_data methods removed - use buffer directly
-
-    // Note: csv_client methods removed - use buffer directly
-
-    // Note: filtered_data methods removed - use buffer directly
-
-    // Note: has_filtered_data removed - use buffer directly
-
-    // Note: search methods removed - use buffer directly
-
-    // Note: pinned_columns methods removed - use buffer directly
-
     fn get_filter_state(&self) -> &FilterState {
         &self.filter_state
     }
@@ -353,12 +319,6 @@ impl EnhancedTuiApp {
     fn get_filter_state_mut(&mut self) -> &mut FilterState {
         &mut self.filter_state
     }
-
-    // Note: fuzzy filter methods removed - use buffer directly
-
-    // Note: column search methods removed - use buffer directly
-
-    // Note: column_stats methods removed - use buffer directly
 
     fn sanitize_table_name(name: &str) -> String {
         // Replace spaces and other problematic characters with underscores
@@ -376,14 +336,7 @@ impl EnhancedTuiApp {
             .collect()
     }
 
-    pub fn has_results(&self) -> bool {
-        self.buffer().get_results().is_some()
-    }
-
     pub fn new(api_url: &str) -> Self {
-        let mut textarea = TextArea::default();
-        textarea.set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
-
         // Load configuration
         let config = Config::load().unwrap_or_else(|e| {
             eprintln!("Warning: Could not load config: {}. Using defaults.", e);
@@ -393,7 +346,6 @@ impl EnhancedTuiApp {
         Self {
             api_client: ApiClient::new(api_url),
             input: Input::default(),
-            textarea,
             cursor_manager: CursorManager::new(),
             data_analyzer: DataAnalyzer::new(),
             // results: None, // MIGRATED to buffer system
@@ -830,65 +782,10 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(mode);
             }
             KeyCode::F(3) => {
-                // Toggle between single-line and multi-line mode
-                match self.buffer().get_edit_mode() {
-                    EditMode::SingleLine => {
-                        let current_text = self.get_input_text();
-
-                        // Pretty format the query for multi-line editing
-                        let formatted_lines = if !current_text.trim().is_empty() {
-                            crate::recursive_parser::format_sql_pretty_compact(&current_text, 5)
-                        // 5 columns per line for compact multi-line
-                        } else {
-                            vec![current_text.clone()]
-                        };
-
-                        // Format the text for multi-line
-                        let formatted_text = formatted_lines.join("\n");
-
-                        // Switch mode via buffer
-                        if let Some(buffer) = self.buffer_manager.current_mut() {
-                            buffer.switch_input_mode(true);
-                            buffer.set_input_text(formatted_text);
-                            // Move cursor to beginning
-                            buffer.set_input_cursor_position(0);
-                        }
-
-                        // Update legacy textarea for rendering (temporary during migration)
-                        self.textarea = TextArea::from(formatted_lines);
-                        self.textarea.set_cursor_line_style(
-                            Style::default().add_modifier(Modifier::UNDERLINED),
-                        );
-                        self.textarea.move_cursor(CursorMove::Top);
-                        self.textarea.move_cursor(CursorMove::Head);
-
-                        self.buffer_mut().set_edit_mode(EditMode::MultiLine);
-                        self.buffer_mut().set_status_message("Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string());
-                    }
-                    EditMode::MultiLine => {
-                        // Get text from buffer
-                        let text = self.get_input_text();
-
-                        // Join lines with single space to create compact query
-                        let compact_text = text
-                            .lines()
-                            .map(|line| line.trim())
-                            .filter(|line| !line.is_empty())
-                            .collect::<Vec<_>>()
-                            .join(" ");
-
-                        // Switch mode via buffer
-                        if let Some(buffer) = self.buffer_manager.current_mut() {
-                            buffer.switch_input_mode(false);
-                            buffer.set_input_text(compact_text);
-                        }
-
-                        self.buffer_mut().set_edit_mode(EditMode::SingleLine);
-                        self.buffer_mut().set_status_message(
-                            "Single-line mode enabled (F3 to toggle multi-line)".to_string(),
-                        );
-                    }
-                }
+                // F3 no longer toggles modes - always stay in single-line mode
+                self.buffer_mut().set_status_message(
+                    "Multi-line mode has been removed. Use F6 for pretty print.".to_string(),
+                );
             }
             KeyCode::F(7) => {
                 // F7 - Toggle cache mode or show cache list
@@ -899,25 +796,9 @@ impl EnhancedTuiApp {
                 }
             }
             KeyCode::Enter => {
-                let query = match self.buffer().get_edit_mode() {
-                    EditMode::SingleLine => {
-                        let q = self.get_input_text().trim().to_string();
-                        debug!(target: "action", "Executing query from single-line mode: {}", q);
-                        q
-                    }
-                    EditMode::MultiLine => {
-                        if key.modifiers.contains(KeyModifiers::CONTROL) {
-                            // Ctrl+Enter executes the query in multi-line mode
-                            let q = self.get_input_text().trim().to_string();
-                            debug!(target: "action", "Executing query from multi-line mode: {}", q);
-                            q
-                        } else {
-                            // Regular Enter adds a new line
-                            self.textarea.input(key);
-                            return Ok(false);
-                        }
-                    }
-                };
+                // Always use single-line mode handling
+                let query = self.get_input_text().trim().to_string();
+                debug!(target: "action", "Executing query: {}", query);
 
                 if !query.is_empty() {
                     // Check for special commands
@@ -946,13 +827,8 @@ impl EnhancedTuiApp {
             }
             KeyCode::Tab => {
                 // Tab completion works in both modes
-                match self.buffer().get_edit_mode() {
-                    EditMode::SingleLine => self.apply_completion(),
-                    EditMode::MultiLine => {
-                        // In vim normal mode, Tab should also trigger completion
-                        self.apply_completion_multiline();
-                    }
-                }
+                // Always use single-line completion
+                self.apply_completion()
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.buffer_mut().set_mode(AppMode::History);
@@ -992,18 +868,8 @@ impl EnhancedTuiApp {
                         };
 
                         // Update the appropriate input field based on edit mode
-                        match self.buffer().get_edit_mode() {
-                            EditMode::SingleLine => {
-                                self.input =
-                                    tui_input::Input::new(text.clone()).with_cursor(text.len());
-                            }
-                            EditMode::MultiLine => {
-                                let lines: Vec<String> =
-                                    text.lines().map(|s| s.to_string()).collect();
-                                self.textarea = tui_textarea::TextArea::from(lines);
-                                self.textarea.move_cursor(tui_textarea::CursorMove::End);
-                            }
-                        }
+                        // Always use single-line mode
+                        self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
                         self.buffer_mut().set_status_message(debug_msg);
                     }
                 }
@@ -1022,18 +888,8 @@ impl EnhancedTuiApp {
                         let text = buffer.get_input_text();
 
                         // Update the appropriate input field based on edit mode
-                        match self.buffer().get_edit_mode() {
-                            EditMode::SingleLine => {
-                                self.input =
-                                    tui_input::Input::new(text.clone()).with_cursor(text.len());
-                            }
-                            EditMode::MultiLine => {
-                                let lines: Vec<String> =
-                                    text.lines().map(|s| s.to_string()).collect();
-                                self.textarea = tui_textarea::TextArea::from(lines);
-                                self.textarea.move_cursor(tui_textarea::CursorMove::End);
-                            }
-                        }
+                        // Always use single-line mode
+                        self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
                         self.buffer_mut()
                             .set_status_message("Next command from history".to_string());
                     }
@@ -1048,18 +904,8 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     if buffer.navigate_history_up(&history_commands) {
                         let text = buffer.get_input_text();
-                        match self.buffer().get_edit_mode() {
-                            EditMode::SingleLine => {
-                                self.input =
-                                    tui_input::Input::new(text.clone()).with_cursor(text.len());
-                            }
-                            EditMode::MultiLine => {
-                                let lines: Vec<String> =
-                                    text.lines().map(|s| s.to_string()).collect();
-                                self.textarea = tui_textarea::TextArea::from(lines);
-                                self.textarea.move_cursor(tui_textarea::CursorMove::End);
-                            }
-                        }
+                        // Always use single-line mode
+                        self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
                         self.buffer_mut()
                             .set_status_message("Previous command (Alt+Up)".to_string());
                     }
@@ -1074,18 +920,8 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     if buffer.navigate_history_down(&history_commands) {
                         let text = buffer.get_input_text();
-                        match self.buffer().get_edit_mode() {
-                            EditMode::SingleLine => {
-                                self.input =
-                                    tui_input::Input::new(text.clone()).with_cursor(text.len());
-                            }
-                            EditMode::MultiLine => {
-                                let lines: Vec<String> =
-                                    text.lines().map(|s| s.to_string()).collect();
-                                self.textarea = tui_textarea::TextArea::from(lines);
-                                self.textarea.move_cursor(tui_textarea::CursorMove::End);
-                            }
-                        }
+                        // Always use single-line mode
+                        self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
                         self.buffer_mut()
                             .set_status_message("Next command (Alt+Down)".to_string());
                     }
@@ -1208,7 +1044,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Results);
                 // Restore previous position or default to 0
                 let row = self.buffer().get_last_results_row().unwrap_or(0);
-                self.get_table_state_mut().select(Some(row));
+                &mut self.table_state.select(Some(row));
 
                 // Restore the exact scroll offset from when we left
                 let last_offset = self.buffer().get_last_scroll_offset();
@@ -1460,11 +1296,8 @@ impl EnhancedTuiApp {
                 self.completion_state.suggestions.clear();
                 self.completion_state.current_index = 0;
 
-                // Handle completion based on mode
-                match self.buffer().get_edit_mode() {
-                    EditMode::SingleLine => self.handle_completion(),
-                    EditMode::MultiLine => self.handle_completion_multiline(),
-                }
+                // Always use single-line completion
+                self.handle_completion()
             }
         }
 
@@ -1545,24 +1378,24 @@ impl EnhancedTuiApp {
                         .set_status_message("Yank cancelled".to_string());
                 } else {
                     // Save current position before switching to Command mode
-                    if let Some(selected) = self.get_table_state().selected() {
+                    if let Some(selected) = self.table_state.selected() {
                         self.buffer_mut().set_last_results_row(Some(selected));
                         let scroll_offset = self.buffer().get_scroll_offset();
                         self.buffer_mut().set_last_scroll_offset(scroll_offset);
                     }
                     self.buffer_mut().set_mode(AppMode::Command);
-                    self.get_table_state_mut().select(None);
+                    &mut self.table_state.select(None);
                 }
             }
             KeyCode::Up => {
                 // Save current position before switching to Command mode
-                if let Some(selected) = self.get_table_state().selected() {
+                if let Some(selected) = self.table_state.selected() {
                     self.buffer_mut().set_last_results_row(Some(selected));
                     let scroll_offset = self.buffer().get_scroll_offset();
                     self.buffer_mut().set_last_scroll_offset(scroll_offset);
                 }
                 self.buffer_mut().set_mode(AppMode::Command);
-                self.get_table_state_mut().select(None);
+                &mut self.table_state.select(None);
             }
             // Vim-like navigation
             KeyCode::Char('j') | KeyCode::Down => {
@@ -2372,7 +2205,7 @@ impl EnhancedTuiApp {
                 }
 
                 self.buffer_mut().set_mode(AppMode::Results);
-                self.get_table_state_mut().select(Some(0));
+                &mut self.table_state.select(Some(0));
             }
             Err(e) => {
                 let duration = start_time.elapsed();
@@ -2605,133 +2438,6 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn apply_completion_multiline(&mut self) {
-        let (cursor_row, cursor_col) = self.textarea.cursor();
-        let text = self.get_input_text();
-        let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-        let query = lines.join("\n");
-
-        // Calculate cursor position in the full query string
-        let mut cursor_pos = 0;
-        for (i, line) in lines.iter().enumerate() {
-            if i < cursor_row {
-                cursor_pos += line.len() + 1; // +1 for newline
-            } else if i == cursor_row {
-                cursor_pos += cursor_col;
-                break;
-            }
-        }
-
-        // Check if this is a continuation of the same completion session
-        let is_same_context = query == self.completion_state.last_query
-            && cursor_pos == self.completion_state.last_cursor_pos;
-
-        if !is_same_context {
-            // New completion context - get fresh suggestions
-            let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
-            if hybrid_result.suggestions.is_empty() {
-                self.buffer_mut()
-                    .set_status_message("No completions available".to_string());
-                return;
-            }
-
-            self.completion_state.suggestions = hybrid_result.suggestions;
-            self.completion_state.current_index = 0;
-        } else if !self.completion_state.suggestions.is_empty() {
-            // Cycle to next suggestion
-            self.completion_state.current_index =
-                (self.completion_state.current_index + 1) % self.completion_state.suggestions.len();
-        } else {
-            self.buffer_mut()
-                .set_status_message("No completions available".to_string());
-            return;
-        }
-
-        // Apply the current suggestion (clone to avoid borrow issues)
-        let suggestion =
-            self.completion_state.suggestions[self.completion_state.current_index].clone();
-        let partial_word = self.extract_partial_word_at_cursor(&query, cursor_pos);
-
-        if let Some(partial) = partial_word {
-            // Replace the partial word with the suggestion
-            let current_line = lines[cursor_row].clone();
-            let line_before = &current_line[..cursor_col.saturating_sub(partial.len())];
-            let line_after = &current_line[cursor_col..];
-
-            // Handle quoted identifiers - if both partial and suggestion start with quotes,
-            // we need to avoid double quotes
-            let suggestion_to_use = if partial.starts_with('"') && suggestion.starts_with('"') {
-                // The partial already includes the opening quote, so use suggestion without its quote
-                if suggestion.len() > 1 {
-                    suggestion[1..].to_string()
-                } else {
-                    suggestion.clone()
-                }
-            } else {
-                suggestion.clone()
-            };
-
-            let new_line = format!("{}{}{}", line_before, suggestion_to_use, line_after);
-
-            // Update the line in textarea
-            self.textarea.delete_line_by_head();
-            self.textarea.insert_str(&new_line);
-
-            // Move cursor to after the completion
-            // Special case: if we completed a string method like Contains(''), position cursor inside quotes
-            let new_col = if suggestion_to_use.ends_with("('')") {
-                line_before.len() + suggestion_to_use.len() - 2
-            } else {
-                line_before.len() + suggestion_to_use.len()
-            };
-            for _ in 0..new_col {
-                self.textarea.move_cursor(CursorMove::Forward);
-            }
-
-            // Update completion state
-            let new_query = self.get_input_text();
-            self.completion_state.last_query = new_query;
-            self.completion_state.last_cursor_pos =
-                cursor_pos - partial.len() + suggestion_to_use.len();
-
-            let suggestion_info = if self.completion_state.suggestions.len() > 1 {
-                format!(
-                    "Completed: {} ({}/{} - Tab for next)",
-                    suggestion,
-                    self.completion_state.current_index + 1,
-                    self.completion_state.suggestions.len()
-                )
-            } else {
-                format!("Completed: {}", suggestion)
-            };
-            self.buffer_mut().set_status_message(suggestion_info);
-        } else {
-            // Just insert the suggestion at cursor position
-            let ends_with_parens = suggestion.ends_with("('')");
-            let suggestion_len = suggestion.len();
-            let suggestion_str = suggestion.clone();
-            self.textarea.insert_str(suggestion);
-
-            // Special case: if we inserted a string method like Contains(''), move cursor back inside quotes
-            if ends_with_parens {
-                self.textarea.move_cursor(CursorMove::Back);
-                self.textarea.move_cursor(CursorMove::Back);
-            }
-
-            // Update completion state
-            let new_query = self.get_input_text();
-            self.completion_state.last_query = new_query;
-            self.completion_state.last_cursor_pos = if ends_with_parens {
-                cursor_pos + suggestion_len - 2
-            } else {
-                cursor_pos + suggestion_len
-            };
-
-            self.buffer_mut()
-                .set_status_message(format!("Inserted: {}", suggestion_str));
-        }
-    }
-
     fn expand_asterisk(&mut self) {
         // Expand SELECT * to all column names
         let query = if self.buffer().get_edit_mode() == EditMode::SingleLine {
@@ -2773,21 +2479,9 @@ impl EnhancedTuiApp {
                             let after_star = &query[star_abs_pos + 1..];
                             let new_query = format!("{}{}{}", before_star, columns_str, after_star);
 
-                            // Update the input
-                            if self.buffer().get_edit_mode() == EditMode::SingleLine {
-                                self.set_input_text_with_cursor(new_query.clone(), new_query.len());
-                                self.update_horizontal_scroll(120);
-                            } else {
-                                // For multiline, format nicely
-                                let formatted_lines =
-                                    crate::recursive_parser::format_sql_pretty_compact(
-                                        &new_query, 5,
-                                    );
-                                self.textarea = TextArea::from(formatted_lines);
-                                self.textarea.set_cursor_line_style(
-                                    Style::default().add_modifier(Modifier::UNDERLINED),
-                                );
-                            }
+                            // Update the input (always single-line mode)
+                            self.set_input_text_with_cursor(new_query.clone(), new_query.len());
+                            self.update_horizontal_scroll(120);
 
                             self.buffer_mut().set_status_message(format!(
                                 "Expanded * to {} columns",
@@ -2818,32 +2512,6 @@ impl EnhancedTuiApp {
     }
 
     // Note: get_table_columns removed - use hybrid_parser directly
-
-    fn handle_completion_multiline(&mut self) {
-        // Similar to handle_completion but for multiline mode
-        let (cursor_row, cursor_col) = self.textarea.cursor();
-        let text = self.get_input_text();
-        let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-        let query = lines.join("\n");
-
-        // Calculate cursor position in the full query string
-        let mut cursor_pos = 0;
-        for (i, line) in lines.iter().enumerate() {
-            if i < cursor_row {
-                cursor_pos += line.len() + 1; // +1 for newline
-            } else if i == cursor_row {
-                cursor_pos += cursor_col;
-                break;
-            }
-        }
-
-        // Update completions based on cursor position
-        let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
-        self.completion_state.suggestions = hybrid_result.suggestions;
-        self.completion_state.current_index = 0;
-        self.completion_state.last_query = query;
-        self.completion_state.last_cursor_pos = cursor_pos;
-    }
 
     fn extract_partial_word_at_cursor(&self, query: &str, cursor_pos: usize) -> Option<String> {
         if cursor_pos == 0 || cursor_pos > query.len() {
@@ -2914,13 +2582,13 @@ impl EnhancedTuiApp {
             // Update viewport size before navigation
             self.update_viewport_size();
 
-            let current = self.get_table_state().selected().unwrap_or(0);
+            let current = self.table_state.selected().unwrap_or(0);
             if current >= total_rows - 1 {
                 return;
             } // Already at bottom
 
             let new_position = current + 1;
-            self.get_table_state_mut().select(Some(new_position));
+            &mut self.table_state.select(Some(new_position));
 
             // Update viewport based on lock mode
             if self.buffer().is_viewport_lock() {
@@ -2947,13 +2615,13 @@ impl EnhancedTuiApp {
     }
 
     fn previous_row(&mut self) {
-        let current = self.get_table_state().selected().unwrap_or(0);
+        let current = self.table_state.selected().unwrap_or(0);
         if current == 0 {
             return;
         } // Already at top
 
         let new_position = current - 1;
-        self.get_table_state_mut().select(Some(new_position));
+        &mut self.table_state.select(Some(new_position));
 
         // Update viewport based on lock mode
         if self.buffer().is_viewport_lock() {
@@ -3047,7 +2715,7 @@ impl EnhancedTuiApp {
     }
 
     fn goto_first_row(&mut self) {
-        self.get_table_state_mut().select(Some(0));
+        &mut self.table_state.select(Some(0));
         let mut offset = self.buffer().get_scroll_offset();
         offset.0 = 0; // Reset viewport to top
         self.buffer_mut().set_scroll_offset(offset);
@@ -3278,7 +2946,7 @@ impl EnhancedTuiApp {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
             let last_row = total_rows - 1;
-            self.get_table_state_mut().select(Some(last_row));
+            &mut self.table_state.select(Some(last_row));
             // Position viewport to show the last row at the bottom
             let visible_rows = self.buffer().get_last_visible_rows();
             let mut offset = self.buffer().get_scroll_offset();
@@ -3291,10 +2959,10 @@ impl EnhancedTuiApp {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
             let visible_rows = self.buffer().get_last_visible_rows();
-            let current = self.get_table_state().selected().unwrap_or(0);
+            let current = self.table_state.selected().unwrap_or(0);
             let new_position = (current + visible_rows).min(total_rows - 1);
 
-            self.get_table_state_mut().select(Some(new_position));
+            &mut self.table_state.select(Some(new_position));
 
             // Scroll viewport down by a page
             let mut offset = self.buffer().get_scroll_offset();
@@ -3305,10 +2973,10 @@ impl EnhancedTuiApp {
 
     fn page_up(&mut self) {
         let visible_rows = self.buffer().get_last_visible_rows();
-        let current = self.get_table_state().selected().unwrap_or(0);
+        let current = self.table_state.selected().unwrap_or(0);
         let new_position = current.saturating_sub(visible_rows);
 
-        self.get_table_state_mut().select(Some(new_position));
+        &mut self.table_state.select(Some(new_position));
 
         // Scroll viewport up by a page
         let mut offset = self.buffer().get_scroll_offset();
@@ -3337,7 +3005,7 @@ impl EnhancedTuiApp {
                     let matches = self.buffer().get_search_matches();
                     self.buffer_mut().set_current_match(Some(matches[0]));
                     let (row, _) = matches[0];
-                    self.get_table_state_mut().select(Some(row));
+                    &mut self.table_state.select(Some(row));
                     self.buffer_mut()
                         .set_status_message(format!("Found {} matches", matches.len()));
                 } else {
@@ -3357,7 +3025,7 @@ impl EnhancedTuiApp {
             let new_index = (self.buffer().get_search_match_index() + 1) % matches.len();
             self.buffer_mut().set_search_match_index(new_index);
             let (row, _) = matches[new_index];
-            self.get_table_state_mut().select(Some(row));
+            &mut self.table_state.select(Some(row));
             self.buffer_mut()
                 .set_current_match(Some(matches[new_index]));
             self.buffer_mut().set_status_message(format!(
@@ -3379,7 +3047,7 @@ impl EnhancedTuiApp {
             };
             self.buffer_mut().set_search_match_index(new_index);
             let (row, _) = matches[new_index];
-            self.get_table_state_mut().select(Some(row));
+            &mut self.table_state.select(Some(row));
             self.buffer_mut()
                 .set_current_match(Some(matches[new_index]));
             self.buffer_mut().set_status_message(format!(
@@ -3435,7 +3103,7 @@ impl EnhancedTuiApp {
                 self.get_filter_state_mut().active = true;
 
                 // Reset table state but preserve filtered data
-                *self.get_table_state_mut() = TableState::default();
+                self.table_state = TableState::default();
                 self.buffer_mut().set_scroll_offset((0, 0));
                 self.buffer_mut().set_current_column(0);
 
@@ -3542,7 +3210,7 @@ impl EnhancedTuiApp {
                 filter_type, match_count, pattern
             ));
             // Reset table state for new filtered view
-            *self.get_table_state_mut() = TableState::default();
+            self.table_state = TableState::default();
             self.buffer_mut().set_scroll_offset((0, 0));
         } else {
             let filter_type = if pattern.starts_with('\'') {
@@ -3842,7 +3510,7 @@ impl EnhancedTuiApp {
     }
 
     fn reset_table_state(&mut self) {
-        *self.get_table_state_mut() = TableState::default();
+        self.table_state = TableState::default();
         self.buffer_mut().set_scroll_offset((0, 0));
         self.buffer_mut().set_current_column(0);
         self.buffer_mut().set_last_results_row(None); // Reset saved position for new results
@@ -4064,7 +3732,7 @@ impl EnhancedTuiApp {
 
     fn yank_cell(&mut self) {
         if let Some(results) = self.buffer().get_results() {
-            if let Some(selected_row) = self.get_table_state().selected() {
+            if let Some(selected_row) = self.table_state.selected() {
                 if let Some(row_data) = results.data.get(selected_row) {
                     if let Some(obj) = row_data.as_object() {
                         let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -4115,7 +3783,7 @@ impl EnhancedTuiApp {
 
     fn yank_row(&mut self) {
         if let Some(results) = self.buffer().get_results() {
-            if let Some(selected_row) = self.get_table_state().selected() {
+            if let Some(selected_row) = self.table_state.selected() {
                 if let Some(row_data) = results.data.get(selected_row) {
                     // Convert row to tab-separated values
                     if let Some(obj) = row_data.as_object() {
@@ -4297,31 +3965,21 @@ impl EnhancedTuiApp {
                 Ok(text) => {
                     match self.buffer().get_mode() {
                         AppMode::Command => {
-                            if self.buffer().get_edit_mode() == EditMode::SingleLine {
-                                // Get current cursor position
-                                let cursor_pos = self.get_input_cursor();
-                                let current_value = self.get_input_text();
+                            // Always use single-line mode paste
+                            // Get current cursor position
+                            let cursor_pos = self.get_input_cursor();
+                            let current_value = self.get_input_text();
 
-                                // Insert at cursor position
-                                let mut new_value = String::new();
-                                new_value.push_str(&current_value[..cursor_pos]);
-                                new_value.push_str(&text);
-                                new_value.push_str(&current_value[cursor_pos..]);
+                            // Insert at cursor position
+                            let mut new_value = String::new();
+                            new_value.push_str(&current_value[..cursor_pos]);
+                            new_value.push_str(&text);
+                            new_value.push_str(&current_value[cursor_pos..]);
 
-                                self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
+                            self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
 
-                                self.buffer_mut().set_status_message(format!(
-                                    "Pasted {} characters",
-                                    text.len()
-                                ));
-                            } else {
-                                // Multi-line mode - insert at cursor
-                                self.textarea.insert_str(&text);
-                                self.buffer_mut().set_status_message(format!(
-                                    "Pasted {} characters",
-                                    text.len()
-                                ));
-                            }
+                            self.buffer_mut()
+                                .set_status_message(format!("Pasted {} characters", text.len()));
                         }
                         AppMode::Filter
                         | AppMode::FuzzyFilter
@@ -4700,134 +4358,70 @@ impl EnhancedTuiApp {
     }
 
     fn kill_line(&mut self) {
-        match self.buffer().get_edit_mode() {
-            EditMode::SingleLine => {
-                let query_str = self.get_input_text();
-                let cursor_pos = self.get_input_cursor();
-                let query_len = query_str.len();
+        // Always use single-line mode
+        let query_str = self.get_input_text();
+        let cursor_pos = self.get_input_cursor();
+        let query_len = query_str.len();
 
-                // Debug info
-                self.buffer_mut().set_status_message(format!(
-                    "kill_line: cursor={}, len={}, text='{}'",
-                    cursor_pos, query_len, query_str
-                ));
+        // Debug info
+        self.buffer_mut().set_status_message(format!(
+            "kill_line: cursor={}, len={}, text='{}'",
+            cursor_pos, query_len, query_str
+        ));
 
-                if cursor_pos < query_len {
-                    // Save to undo stack before modifying
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                    }
-
-                    // Save to kill ring before deleting
-                    self.buffer_mut()
-                        .set_kill_ring(query_str.chars().skip(cursor_pos).collect::<String>());
-                    let new_query = query_str.chars().take(cursor_pos).collect::<String>();
-                    // Use helper to set text through buffer
-                    self.set_input_text(new_query.clone());
-                    // Set cursor back to original position
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.set_input_cursor_position(cursor_pos);
-                        // Sync for rendering
-                        if self.buffer().get_edit_mode() == EditMode::SingleLine {
-                            self.set_input_text_with_cursor(new_query, cursor_pos);
-                        }
-                    }
-
-                    // Update status to show what was killed
-                    let kill_ring_content = self.buffer().get_kill_ring();
-                    self.buffer_mut().set_status_message(format!(
-                        "Killed '{}' (cursor was at {})",
-                        kill_ring_content, cursor_pos
-                    ));
-                } else {
-                    self.buffer_mut().set_status_message(format!(
-                        "Nothing to kill - cursor at end (pos={}, len={})",
-                        cursor_pos, query_len
-                    ));
-                }
+        if cursor_pos < query_len {
+            // Save to undo stack before modifying
+            if let Some(buffer) = self.buffer_manager.current_mut() {
+                buffer.save_state_for_undo();
             }
-            EditMode::MultiLine => {
-                // For multiline mode, kill from cursor to end of current line
-                let (row, col) = self.textarea.cursor();
-                let text = self.get_input_text();
-                let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-                if row < lines.len() {
-                    let current_line = &lines[row];
-                    if col < current_line.len() {
-                        // Collect text that will be killed
-                        let killed_text = current_line.chars().skip(col).collect::<String>();
-                        // Create new line with text up to cursor
-                        let new_line = current_line.chars().take(col).collect::<String>();
 
-                        // Update the textarea
-                        let mut new_lines: Vec<String> = lines.iter().cloned().collect();
-                        new_lines[row] = new_line.clone();
-
-                        // Save killed text to kill ring (after releasing the borrow)
-                        self.buffer_mut().set_kill_ring(killed_text);
-                        self.textarea = TextArea::from(new_lines);
-                        self.textarea.set_cursor_line_style(
-                            Style::default().add_modifier(Modifier::UNDERLINED),
-                        );
-                        self.textarea
-                            .move_cursor(CursorMove::Jump(row as u16, col as u16));
-                    }
-                }
+            // Save to kill ring before deleting
+            self.buffer_mut()
+                .set_kill_ring(query_str.chars().skip(cursor_pos).collect::<String>());
+            let new_query = query_str.chars().take(cursor_pos).collect::<String>();
+            // Use helper to set text through buffer
+            self.set_input_text(new_query.clone());
+            // Set cursor back to original position
+            if let Some(buffer) = self.buffer_manager.current_mut() {
+                buffer.set_input_cursor_position(cursor_pos);
+                // Sync for rendering
+                self.set_input_text_with_cursor(new_query, cursor_pos);
             }
+
+            // Update status to show what was killed
+            let kill_ring_content = self.buffer().get_kill_ring();
+            self.buffer_mut().set_status_message(format!(
+                "Killed '{}' (cursor was at {})",
+                kill_ring_content, cursor_pos
+            ));
+        } else {
+            self.buffer_mut().set_status_message(format!(
+                "Nothing to kill - cursor at end (pos={}, len={})",
+                cursor_pos, query_len
+            ));
         }
     }
 
     fn kill_line_backward(&mut self) {
-        match self.buffer().get_edit_mode() {
-            EditMode::SingleLine => {
-                let query = self.get_input_text();
-                let cursor_pos = self.get_input_cursor();
+        // Always use single-line mode
+        let query = self.get_input_text();
+        let cursor_pos = self.get_input_cursor();
 
-                if let Some((killed_text, new_query)) =
-                    TextEditor::kill_line_backward(&query, cursor_pos)
-                {
-                    // Save to undo stack before modifying
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                    }
-
-                    // Save to kill ring before deleting
-                    self.buffer_mut().set_kill_ring(killed_text);
-                    // Use helper to set text through buffer
-                    self.set_input_text(new_query.clone());
-                    // Set cursor to beginning
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.set_input_cursor_position(0);
-                        // Sync for rendering
-                        if self.buffer().get_edit_mode() == EditMode::SingleLine {
-                            self.set_input_text_with_cursor(new_query, 0);
-                        }
-                    }
-                }
+        if let Some((killed_text, new_query)) = TextEditor::kill_line_backward(&query, cursor_pos) {
+            // Save to undo stack before modifying
+            if let Some(buffer) = self.buffer_manager.current_mut() {
+                buffer.save_state_for_undo();
             }
-            EditMode::MultiLine => {
-                // For multiline mode, kill from beginning of line to cursor
-                let (row, col) = self.textarea.cursor();
-                let text = self.get_input_text();
-                let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-                if row < lines.len() && col > 0 {
-                    let current_line = &lines[row];
-                    // Collect text that will be killed
-                    let killed_text = current_line.chars().take(col).collect::<String>();
-                    // Create new line with text after cursor
-                    let new_line = current_line.chars().skip(col).collect::<String>();
 
-                    // Update the textarea
-                    let mut new_lines: Vec<String> = lines.iter().cloned().collect();
-                    new_lines[row] = new_line;
-
-                    // Save killed text to kill ring (after releasing the borrow)
-                    self.buffer_mut().set_kill_ring(killed_text);
-                    self.textarea = TextArea::from(new_lines);
-                    self.textarea
-                        .set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED));
-                    self.textarea.move_cursor(CursorMove::Jump(row as u16, 0));
-                }
+            // Save to kill ring before deleting
+            self.buffer_mut().set_kill_ring(killed_text);
+            // Use helper to set text through buffer
+            self.set_input_text(new_query.clone());
+            // Set cursor to beginning
+            if let Some(buffer) = self.buffer_manager.current_mut() {
+                buffer.set_input_cursor_position(0);
+                // Sync for rendering
+                self.set_input_text_with_cursor(new_query, 0);
             }
         }
     }
@@ -4870,10 +4464,8 @@ impl EnhancedTuiApp {
         if let Some(buffer) = self.buffer_manager.current() {
             // Collect all data from buffer first
             let query_text = buffer.get_query();
-            let edit_mode = match buffer.get_edit_mode() {
-                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
-                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
-            };
+            // Always single-line mode now
+            let edit_mode = EditMode::SingleLine;
             let results = buffer.get_results().cloned();
             let buffer_id = buffer.get_id();
             let buffer_name = buffer.get_name();
@@ -4894,16 +4486,6 @@ impl EnhancedTuiApp {
 
             // Now update self
             self.set_input_text_with_cursor(query_text.clone(), query_text.len());
-            self.textarea = {
-                let mut ta = TextArea::from(
-                    query_text
-                        .lines()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>(),
-                );
-                ta.move_cursor(tui_textarea::CursorMove::End);
-                ta
-            };
             self.buffer_mut().set_edit_mode(edit_mode);
             self.buffer_mut().set_results(results);
 
@@ -4975,10 +4557,8 @@ impl EnhancedTuiApp {
         if let Some(buffer) = self.buffer_manager.current() {
             // Collect all data from buffer first
             let query_text = buffer.get_query();
-            let edit_mode = match buffer.get_edit_mode() {
-                sql_cli::buffer::EditMode::SingleLine => EditMode::SingleLine,
-                sql_cli::buffer::EditMode::MultiLine => EditMode::MultiLine,
-            };
+            // Always single-line mode now
+            let edit_mode = EditMode::SingleLine;
             let results = buffer.get_results().cloned();
             let buffer_id = buffer.get_id();
             let buffer_name = buffer.get_name();
@@ -4999,16 +4579,6 @@ impl EnhancedTuiApp {
 
             // Now update self
             self.set_input_text_with_cursor(query_text.clone(), query_text.len());
-            self.textarea = {
-                let mut ta = TextArea::from(
-                    query_text
-                        .lines()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>(),
-                );
-                ta.move_cursor(tui_textarea::CursorMove::End);
-                ta
-            };
             self.buffer_mut().set_edit_mode(edit_mode);
             self.buffer_mut().set_results(results);
 
@@ -5230,270 +4800,9 @@ impl EnhancedTuiApp {
         }
     }
 
-    /*
-    fn handle_vim_mode(&mut self, key: KeyEvent) -> bool {
-        // Returns true if the key was handled by vim mode
-        match self.vim_state.mode {
-            VimMode::Normal => {
-                match key.code {
-                    // Mode switching
-                    KeyCode::Char('i') => {
-                        self.vim_state.mode = VimMode::Insert;
-                        self.update_vim_status();
-                        true
-                    }
-                    KeyCode::Char('I') => {
-                        self.vim_state.mode = VimMode::Insert;
-                        self.textarea.move_cursor(CursorMove::Head);
-                        self.update_vim_status();
-                        true
-                    }
-                    KeyCode::Char('a') => {
-                        self.vim_state.mode = VimMode::Insert;
-                        self.textarea.move_cursor(CursorMove::Forward);
-                        self.update_vim_status();
-                        true
-                    }
-                    KeyCode::Char('A') => {
-                        self.vim_state.mode = VimMode::Insert;
-                        self.textarea.move_cursor(CursorMove::End);
-                        self.update_vim_status();
-                        true
-                    }
-                    KeyCode::Char('o') => {
-                        self.vim_state.mode = VimMode::Insert;
-                        self.textarea.move_cursor(CursorMove::End);
-                        self.textarea.insert_newline();
-                        self.update_vim_status();
-                        true
-                    }
-                    KeyCode::Char('O') => {
-                        self.vim_state.mode = VimMode::Insert;
-                        self.textarea.move_cursor(CursorMove::Head);
-                        self.textarea.insert_newline();
-                        self.textarea.move_cursor(CursorMove::Up);
-                        self.update_vim_status();
-                        true
-                    }
-                    KeyCode::Char('v') => {
-                        self.vim_state.mode = VimMode::Visual;
-                        let cursor = self.textarea.cursor();
-                        self.vim_state.visual_start = Some(cursor);
-                        self.update_vim_status();
-                        true
-                    }
-
-                    // Movement
-                    KeyCode::Char('h') | KeyCode::Left => {
-                        self.textarea.move_cursor(CursorMove::Back);
-                        true
-                    }
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        self.textarea.move_cursor(CursorMove::Down);
-                        true
-                    }
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        self.textarea.move_cursor(CursorMove::Up);
-                        true
-                    }
-                    KeyCode::Char('l') | KeyCode::Right => {
-                        self.textarea.move_cursor(CursorMove::Forward);
-                        true
-                    }
-                    KeyCode::Char('0') => {
-                        self.textarea.move_cursor(CursorMove::Head);
-                        true
-                    }
-                    KeyCode::Char('$') => {
-                        self.textarea.move_cursor(CursorMove::End);
-                        true
-                    }
-                    KeyCode::Char('w') => {
-                        self.textarea.move_cursor(CursorMove::WordForward);
-                        true
-                    }
-                    KeyCode::Char('b') => {
-                        self.textarea.move_cursor(CursorMove::WordBack);
-                        true
-                    }
-                    KeyCode::Char('e') => {
-                        // Move to end of word
-                        self.textarea.move_cursor(CursorMove::WordForward);
-                        self.textarea.move_cursor(CursorMove::Back);
-                        true
-                    }
-                    KeyCode::Char('g') => {
-                        // gg - go to first line (need to handle double-g)
-                        self.textarea.move_cursor(CursorMove::Top);
-                        true
-                    }
-                    KeyCode::Char('G') => {
-                        self.textarea.move_cursor(CursorMove::Bottom);
-                        true
-                    }
-
-                    // Editing
-                    KeyCode::Char('x') => {
-                        self.textarea.delete_char();
-                        true
-                    }
-                    KeyCode::Char('d') => {
-                        if key.modifiers.contains(KeyModifiers::CONTROL) {
-                            // Ctrl-d - half page down
-                            for _ in 0..10 {
-                                self.textarea.move_cursor(CursorMove::Down);
-                            }
-                        } else {
-                            // dd - delete line
-                            self.textarea.move_cursor(CursorMove::Head);
-                            self.textarea.delete_line_by_end();
-                            self.textarea.delete_newline();
-                        }
-                        true
-                    }
-                    KeyCode::Char('y') => {
-                        // yy - yank line
-                        let text = self.get_input_text();
-                        let lines: Vec<&str> = text.lines().collect();
-                        let cursor_line = self.textarea.cursor().0;
-                        if cursor_line < lines.len() {
-                            self.vim_state.yank_buffer = lines[cursor_line].to_string();
-                            self.buffer_mut().set_status_message("Line yanked".to_string());
-                        }
-                        true
-                    }
-                    KeyCode::Char('p') => {
-                        // Paste after cursor
-                        if !self.vim_state.yank_buffer.is_empty() {
-                            self.textarea.move_cursor(CursorMove::End);
-                            self.textarea.insert_newline();
-                            self.textarea.insert_str(&self.vim_state.yank_buffer);
-                        }
-                        true
-                    }
-                    KeyCode::Char('P') => {
-                        // Paste before cursor
-                        if !self.vim_state.yank_buffer.is_empty() {
-                            self.textarea.move_cursor(CursorMove::Head);
-                            self.textarea.insert_str(&self.vim_state.yank_buffer);
-                            self.textarea.insert_newline();
-                            self.textarea.move_cursor(CursorMove::Up);
-                        }
-                        true
-                    }
-                    KeyCode::Char('u') => {
-                        self.textarea.undo();
-                        true
-                    }
-                    KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.textarea.redo();
-                        true
-                    }
-
-                    _ => false
-                }
-            }
-            VimMode::Insert => {
-                match key.code {
-                    KeyCode::Esc => {
-                        self.vim_state.mode = VimMode::Normal;
-                        self.update_vim_status();
-                        true
-                    }
-                    _ => false // Let textarea handle the input
-                }
-            }
-            VimMode::Visual => {
-                match key.code {
-                    KeyCode::Esc => {
-                        self.vim_state.mode = VimMode::Normal;
-                        self.vim_state.visual_start = None;
-                        self.update_vim_status();
-                        true
-                    }
-                    KeyCode::Char('y') => {
-                        // Yank selected text
-                        if let Some(start) = self.vim_state.visual_start {
-                            let end = self.textarea.cursor();
-                            // Simple line-based yanking for now
-                            let text = self.get_input_text();
-        let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-                            let start_row = start.0.min(end.0);
-                            let end_row = start.0.max(end.0);
-                            let yanked: Vec<String> = lines[start_row..=end_row]
-                                .iter()
-                                .map(|s| s.to_string())
-                                .collect();
-                            self.vim_state.yank_buffer = yanked.join("\n");
-                            self.buffer_mut().set_status_message(format!("{} lines yanked", yanked.len()));
-                        }
-                        self.vim_state.mode = VimMode::Normal;
-                        self.vim_state.visual_start = None;
-                        self.update_vim_status();
-                        true
-                    }
-                    // Movement in visual mode
-                    KeyCode::Char('h') | KeyCode::Left => {
-                        self.textarea.move_cursor(CursorMove::Back);
-                        true
-                    }
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        self.textarea.move_cursor(CursorMove::Down);
-                        true
-                    }
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        self.textarea.move_cursor(CursorMove::Up);
-                        true
-                    }
-                    KeyCode::Char('l') | KeyCode::Right => {
-                        self.textarea.move_cursor(CursorMove::Forward);
-                        true
-                    }
-                    _ => false
-                }
-            }
-        }
-    }
-
-    */
-
-    /*
-    fn update_vim_status(&mut self) {
-        let mode_str = match self.vim_state.mode {
-            VimMode::Normal => "NORMAL",
-            VimMode::Insert => "INSERT",
-            VimMode::Visual => "VISUAL",
-        };
-
-        // Update cursor style based on mode
-        match self.vim_state.mode {
-            VimMode::Normal => {
-                self.textarea.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
-            },
-            VimMode::Insert => {
-                self.textarea.set_cursor_style(Style::default().add_modifier(Modifier::UNDERLINED));
-            },
-            VimMode::Visual => {
-                self.textarea.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED).fg(Color::Yellow));
-            },
-        }
-
-        // Get cursor position
-        let (row, col) = self.textarea.cursor();
-        self.buffer_mut().set_status_message(format!("-- {} -- L{}:C{} (F3 single-line)", mode_str, row + 1, col + 1));
-    }
-    */
-
     fn ui(&mut self, f: &mut Frame) {
-        // Dynamically adjust layout based on edit mode
-        let input_height = match self.buffer().get_edit_mode() {
-            EditMode::SingleLine => 3,
-            EditMode::MultiLine => {
-                // Use 1/3 of terminal height or 10 lines, whichever is larger (max 20)
-                let dynamic_height = f.area().height / 3;
-                std::cmp::min(20, std::cmp::max(10, dynamic_height))
-            }
-        };
+        // Always use single-line mode input height
+        let input_height = 3;
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -5551,9 +4860,12 @@ impl EnhancedTuiApp {
                             .scroll((0, self.get_horizontal_scroll_offset()))
                     }
                     EditMode::MultiLine => {
-                        // For multiline mode, we'll render the textarea widget instead
-                        // This is a placeholder - actual textarea rendering happens below
-                        Paragraph::new("").block(input_block)
+                        // MultiLine mode is no longer supported, always use single-line
+                        let highlighted_line =
+                            self.sql_highlighter.simple_sql_highlight(input_text);
+                        Paragraph::new(Text::from(vec![highlighted_line]))
+                            .block(input_block)
+                            .scroll((0, self.get_horizontal_scroll_offset()))
                     }
                 }
             }
@@ -5580,44 +4892,23 @@ impl EnhancedTuiApp {
             }
         };
 
-        // Determine the actual results area based on edit mode
-        let results_area = if self.buffer().get_mode() == AppMode::Command
-            && self.buffer().get_edit_mode() == EditMode::MultiLine
-        {
-            // In multi-line mode, render textarea in the input area
-            f.render_widget(&self.textarea, chunks[0]);
-
-            // Use the full results area - no preview in multi-line mode anymore
-            chunks[1]
-        } else {
-            // Single-line mode - render the input
-            f.render_widget(input_paragraph, chunks[0]);
-            // Use the full results area
-            chunks[1]
-        };
+        // Always render the input paragraph (single-line mode)
+        f.render_widget(input_paragraph, chunks[0]);
+        let results_area = chunks[1];
 
         // Set cursor position for input modes
         match self.buffer().get_mode() {
             AppMode::Command => {
-                match self.buffer().get_edit_mode() {
-                    EditMode::SingleLine => {
-                        // Calculate cursor position with horizontal scrolling
-                        let inner_width = chunks[0].width.saturating_sub(2) as usize;
-                        let cursor_pos = self.get_visual_cursor().1; // Get column position for single-line
-                        let scroll_offset = self.get_horizontal_scroll_offset() as usize;
+                // Always use single-line cursor handling
+                // Calculate cursor position with horizontal scrolling
+                let inner_width = chunks[0].width.saturating_sub(2) as usize;
+                let cursor_pos = self.get_visual_cursor().1; // Get column position for single-line
+                let scroll_offset = self.get_horizontal_scroll_offset() as usize;
 
-                        // Calculate visible cursor position
-                        if cursor_pos >= scroll_offset && cursor_pos < scroll_offset + inner_width {
-                            let visible_pos = cursor_pos - scroll_offset;
-                            f.set_cursor_position((
-                                chunks[0].x + visible_pos as u16 + 1,
-                                chunks[0].y + 1,
-                            ));
-                        }
-                    }
-                    EditMode::MultiLine => {
-                        // Cursor is handled by the textarea widget
-                    }
+                // Calculate visible cursor position
+                if cursor_pos >= scroll_offset && cursor_pos < scroll_offset + inner_width {
+                    let visible_pos = cursor_pos - scroll_offset;
+                    f.set_cursor_position((chunks[0].x + visible_pos as u16 + 1, chunks[0].y + 1));
                 }
             }
             AppMode::Search => {
@@ -5833,7 +5124,7 @@ impl EnhancedTuiApp {
                 // In results mode, show navigation and data info
                 let total_rows = self.get_row_count();
                 if total_rows > 0 {
-                    let selected = self.get_table_state().selected().unwrap_or(0) + 1;
+                    let selected = self.table_state.selected().unwrap_or(0) + 1;
                     spans.push(Span::raw(" | "));
 
                     // Show selection mode
@@ -5880,9 +5171,7 @@ impl EnhancedTuiApp {
 
                                     // In cell mode, show the current cell value
                                     if self.selection_mode == SelectionMode::Cell {
-                                        if let Some(selected_row) =
-                                            self.get_table_state().selected()
-                                        {
+                                        if let Some(selected_row) = self.table_state.selected() {
                                             if let Some(row_data) = results.data.get(selected_row) {
                                                 if let Some(row_obj) = row_data.as_object() {
                                                     if let Some(value) = row_obj.get(
@@ -6341,7 +5630,7 @@ impl EnhancedTuiApp {
             Cell::from(header_text).style(style)
         }));
 
-        let selected_row = self.get_table_state().selected().unwrap_or(0);
+        let selected_row = self.table_state.selected().unwrap_or(0);
 
         // Create data rows (already filtered to visible rows and columns)
         let rows: Vec<Row> = data_to_display
@@ -6484,7 +5773,7 @@ impl EnhancedTuiApp {
             table = table.highlight_symbol("  ");
         }
 
-        let mut table_state = self.get_table_state().clone();
+        let mut table_state = self.table_state.clone();
         // Adjust table state to use relative position within the viewport
         if let Some(selected) = table_state.selected() {
             let relative_position = selected.saturating_sub(row_viewport_start);
@@ -6982,7 +6271,7 @@ impl EnhancedTuiApp {
                         let max_row = self.get_current_data().map(|d| d.len()).unwrap_or(0);
 
                         if target_row < max_row {
-                            self.get_table_state_mut().select(Some(target_row));
+                            &mut self.table_state.select(Some(target_row));
 
                             // Adjust viewport to center the target row
                             let visible_rows = self.buffer().get_last_visible_rows();
