@@ -11,7 +11,6 @@ mod completer;
 mod csv_fixes;
 mod cursor_aware_parser;
 mod enhanced_tui;
-mod hybrid_parser;
 mod modern_tui_main;
 mod parser;
 mod recursive_parser;

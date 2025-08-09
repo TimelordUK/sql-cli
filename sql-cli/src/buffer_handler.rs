@@ -1,6 +1,5 @@
 use crate::buffer::{Buffer, BufferAPI, BufferManager};
 use crate::config::Config;
-use anyhow::Result;
 use tracing::{debug, info};
 
 /// Handles all buffer-related operations

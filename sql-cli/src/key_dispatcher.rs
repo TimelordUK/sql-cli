@@ -509,8 +509,8 @@ impl KeyDispatcher {
     }
 
     /// Load custom bindings from config (future feature)
-    pub fn load_custom_bindings(&mut self, mode: &str, bindings: HashMap<String, String>) {
-        let map = match mode {
+    pub fn load_custom_bindings(&mut self, mode: &str, _bindings: HashMap<String, String>) {
+        let _map = match mode {
             "command" => &mut self.command_map,
             "results" => &mut self.results_map,
             "search" => &mut self.search_map,
