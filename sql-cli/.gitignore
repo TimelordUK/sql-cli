@@ -1,2 +1,5 @@
 /target
 .idea/
+# WSL config files
+*wslconfig*.txt
+*vmoptions*.txt
