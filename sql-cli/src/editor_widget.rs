@@ -105,6 +105,7 @@ impl EditorWidget {
                 // Backspace: Delete character before cursor
                 let current_pos = buffer.get_input_cursor_position();
                 if current_pos > 0 {
+                    buffer.save_state_for_undo();
                     let mut text = buffer.get_input_text();
                     let mut chars: Vec<char> = text.chars().collect();
                     if current_pos <= chars.len() {
@@ -120,13 +121,20 @@ impl EditorWidget {
                 // Delete: Delete character at cursor
                 let current_pos = buffer.get_input_cursor_position();
                 let mut text = buffer.get_input_text();
-                let mut chars: Vec<char> = text.chars().collect();
-                if current_pos < chars.len() {
+                let chars_len = text.chars().count();
+                if current_pos < chars_len {
+                    buffer.save_state_for_undo();
+                    let mut chars: Vec<char> = text.chars().collect();
                     chars.remove(current_pos);
                     text = chars.iter().collect();
                     buffer.set_input_text(text);
                     // Cursor position stays the same
                 }
+                return Ok(EditorAction::Continue);
+            }
+            (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
+                // Ctrl+Z: Undo last operation
+                buffer.perform_undo();
                 return Ok(EditorAction::Continue);
             }
             _ => {
