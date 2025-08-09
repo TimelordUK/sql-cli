@@ -1118,10 +1118,7 @@ impl EnhancedTuiApp {
                 // Kill line backward - delete from cursor to beginning of line
                 self.kill_line_backward();
             }
-            KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Undo
-                self.undo();
-            }
+            // Ctrl+Z (undo) now handled by editor_widget
             KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Yank - paste from kill ring
                 self.yank();
