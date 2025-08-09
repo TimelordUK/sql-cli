@@ -463,84 +463,7 @@ impl EnhancedTuiApp {
 
     // Note: has_filtered_data removed - use buffer directly
 
-    // Wrapper methods for search_state (uses buffer system)
-    fn get_search_pattern(&self) -> String {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_search_pattern()
-    }
-
-    fn set_search_pattern(&mut self, pattern: String) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_search_pattern(pattern);
-    }
-
-    fn push_search_pattern_char(&mut self, c: char) {
-        let mut pattern = self.get_search_pattern();
-        pattern.push(c);
-        self.set_search_pattern(pattern);
-    }
-
-    fn pop_search_pattern_char(&mut self) {
-        let mut pattern = self.get_search_pattern();
-        pattern.pop();
-        self.set_search_pattern(pattern);
-    }
-
-    fn clear_search_pattern(&mut self) {
-        self.set_search_pattern(String::new());
-    }
-
-    fn is_search_pattern_empty(&self) -> bool {
-        self.get_search_pattern().is_empty()
-    }
-
-    fn get_search_matches(&self) -> Vec<(usize, usize)> {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_search_matches()
-    }
-
-    fn set_search_matches(&mut self, matches: Vec<(usize, usize)>) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_search_matches(matches);
-    }
-
-    fn clear_search_matches(&mut self) {
-        self.set_search_matches(Vec::new());
-    }
-
-    fn get_search_match_index(&self) -> usize {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_search_match_index()
-    }
-
-    fn set_search_match_index(&mut self, index: usize) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_search_match_index(index);
-    }
-
-    fn get_current_search_match(&self) -> Option<(usize, usize)> {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_current_match()
-    }
-
-    fn set_current_search_match(&mut self, match_pos: Option<(usize, usize)>) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_current_match(match_pos);
-    }
-
-    fn clear_search_state(&mut self) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .clear_search_state();
-    }
+    // Note: search methods removed - use buffer directly
 
     // Note: pinned_columns methods removed - use buffer directly
 
@@ -552,97 +475,9 @@ impl EnhancedTuiApp {
         &mut self.filter_state
     }
 
-    // Wrapper methods for fuzzy filter (uses buffer system)
-    fn get_fuzzy_filter_pattern(&self) -> String {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_fuzzy_filter_pattern()
-    }
+    // Note: fuzzy filter methods removed - use buffer directly
 
-    fn set_fuzzy_filter_pattern(&mut self, pattern: String) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_fuzzy_filter_pattern(pattern);
-    }
-
-    fn is_fuzzy_filter_active(&self) -> bool {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .is_fuzzy_filter_active()
-    }
-
-    fn set_fuzzy_filter_active(&mut self, active: bool) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_fuzzy_filter_active(active);
-    }
-
-    fn get_fuzzy_filter_indices(&self) -> Vec<usize> {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_fuzzy_filter_indices()
-            .clone()
-    }
-
-    fn set_fuzzy_filter_indices(&mut self, indices: Vec<usize>) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_fuzzy_filter_indices(indices);
-    }
-
-    fn clear_fuzzy_filter(&mut self) {
-        let buffer = self
-            .current_buffer_mut()
-            .expect("Buffer should always be present");
-        buffer.clear_fuzzy_filter();
-        buffer.set_fuzzy_filter_pattern(String::new());
-        buffer.set_fuzzy_filter_active(false);
-        buffer.set_fuzzy_filter_indices(Vec::new());
-    }
-
-    // Wrapper methods for column search (uses buffer system)
-    fn get_column_search_pattern(&self) -> String {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_column_search_pattern()
-    }
-
-    fn set_column_search_pattern(&mut self, pattern: String) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_column_search_pattern(pattern);
-    }
-
-    fn get_column_search_matches(&self) -> Vec<(usize, String)> {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_column_search_matches()
-            .clone()
-    }
-
-    fn set_column_search_matches(&mut self, matches: Vec<(usize, String)>) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_column_search_matches(matches);
-    }
-
-    fn get_column_search_current_match(&self) -> usize {
-        self.current_buffer()
-            .expect("Buffer should always be present")
-            .get_column_search_current_match()
-    }
-
-    fn set_column_search_current_match(&mut self, index: usize) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .set_column_search_current_match(index);
-    }
-
-    fn clear_column_search(&mut self) {
-        self.current_buffer_mut()
-            .expect("Buffer should always be present")
-            .clear_column_search();
-    }
+    // Note: column search methods removed - use buffer directly
 
     // Wrapper methods for column_stats (uses buffer system)
     fn get_column_stats(&self) -> Option<&ColumnStatistics> {
@@ -1619,8 +1454,8 @@ impl EnhancedTuiApp {
                         .buffer()
                         .get_last_query_source()
                         .unwrap_or("None".to_string()),
-                    if self.is_fuzzy_filter_active() {
-                        format!("Fuzzy: {}", self.get_fuzzy_filter_pattern())
+                    if self.buffer().is_fuzzy_filter_active() {
+                        format!("Fuzzy: {}", self.buffer().get_fuzzy_filter_pattern())
                     } else if self.get_filter_state().active {
                         format!("Filter: {}", self.get_filter_state().pattern)
                     } else {
@@ -1922,7 +1757,7 @@ impl EnhancedTuiApp {
             // Search functionality
             KeyCode::Char('/') => {
                 self.set_mode(AppMode::Search);
-                self.clear_search_pattern();
+                self.buffer_mut().set_search_pattern(String::new());
                 // Save SQL query and use temporary input for search display
                 if let Some(buffer) = self.current_buffer_mut() {
                     buffer.save_state_for_undo();
@@ -1932,9 +1767,9 @@ impl EnhancedTuiApp {
             // Column navigation/search functionality (backslash like vim reverse search)
             KeyCode::Char('\\') => {
                 self.set_mode(AppMode::ColumnSearch);
-                self.set_column_search_pattern(String::new());
-                self.set_column_search_matches(Vec::new());
-                self.set_column_search_current_match(0);
+                self.buffer_mut().set_column_search_pattern(String::new());
+                self.buffer_mut().set_column_search_matches(Vec::new());
+                self.buffer_mut().set_column_search_current_match(0);
                 // Save current SQL query before clearing input for column search
                 if let Some(buffer) = self.current_buffer_mut() {
                     buffer.save_state_for_undo();
@@ -1946,7 +1781,7 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('N') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 // Only for search navigation when Shift is held
-                if !self.is_search_pattern_empty() {
+                if !self.buffer().get_search_pattern().is_empty() {
                     self.previous_search_match();
                 } else {
                     // Toggle row numbers display
@@ -1977,10 +1812,10 @@ impl EnhancedTuiApp {
                     && !key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
                 self.set_mode(AppMode::FuzzyFilter);
-                self.set_fuzzy_filter_pattern(String::new());
-                self.set_fuzzy_filter_indices(Vec::new());
-                self.set_fuzzy_filter_active(false); // Clear active state when entering mode
-                                                     // Save SQL query and use temporary input for fuzzy filter display
+                self.buffer_mut().set_fuzzy_filter_pattern(String::new());
+                self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
+                self.buffer_mut().set_fuzzy_filter_active(false); // Clear active state when entering mode
+                                                                  // Save SQL query and use temporary input for fuzzy filter display
                 if let Some(buffer) = self.current_buffer_mut() {
                     buffer.save_state_for_undo();
                 }
@@ -2097,15 +1932,23 @@ impl EnhancedTuiApp {
                 self.set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
-                self.pop_search_pattern_char();
+                {
+                    let mut pattern = self.buffer().get_search_pattern();
+                    pattern.pop();
+                    self.buffer_mut().set_search_pattern(pattern);
+                };
                 // Update input for rendering
-                let pattern = self.get_search_pattern();
+                let pattern = self.buffer().get_search_pattern();
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
             }
             KeyCode::Char(c) => {
-                self.push_search_pattern_char(c);
+                {
+                    let mut pattern = self.buffer().get_search_pattern();
+                    pattern.push(c);
+                    self.buffer_mut().set_search_pattern(pattern);
+                }
                 // Update input for rendering
-                let pattern = self.get_search_pattern();
+                let pattern = self.buffer().get_search_pattern();
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
             }
             _ => {}
@@ -2151,9 +1994,9 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Esc => {
                 // Clear fuzzy filter and return to results
-                self.set_fuzzy_filter_active(false);
-                self.set_fuzzy_filter_pattern(String::new());
-                self.set_fuzzy_filter_indices(Vec::new());
+                self.buffer_mut().set_fuzzy_filter_active(false);
+                self.buffer_mut().set_fuzzy_filter_pattern(String::new());
+                self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
@@ -2163,9 +2006,9 @@ impl EnhancedTuiApp {
             }
             KeyCode::Enter => {
                 // Apply fuzzy filter and return to results
-                if !self.get_fuzzy_filter_pattern().is_empty() {
+                if !self.buffer().get_fuzzy_filter_pattern().is_empty() {
                     self.apply_fuzzy_filter();
-                    self.set_fuzzy_filter_active(true);
+                    self.buffer_mut().set_fuzzy_filter_active(true);
                 }
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
@@ -2175,29 +2018,29 @@ impl EnhancedTuiApp {
             }
             KeyCode::Backspace => {
                 {
-                    let mut pattern = self.get_fuzzy_filter_pattern();
+                    let mut pattern = self.buffer().get_fuzzy_filter_pattern();
                     pattern.pop();
-                    self.set_fuzzy_filter_pattern(pattern);
+                    self.buffer_mut().set_fuzzy_filter_pattern(pattern);
                 };
                 // Update input for rendering
-                let pattern = self.get_fuzzy_filter_pattern();
+                let pattern = self.buffer().get_fuzzy_filter_pattern();
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
                 // Re-apply filter in real-time
-                if !self.get_fuzzy_filter_pattern().is_empty() {
+                if !self.buffer().get_fuzzy_filter_pattern().is_empty() {
                     self.apply_fuzzy_filter();
                 } else {
-                    self.set_fuzzy_filter_indices(Vec::new());
-                    self.set_fuzzy_filter_active(false);
+                    self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
+                    self.buffer_mut().set_fuzzy_filter_active(false);
                 }
             }
             KeyCode::Char(c) => {
                 {
-                    let mut pattern = self.get_fuzzy_filter_pattern();
+                    let mut pattern = self.buffer().get_fuzzy_filter_pattern();
                     pattern.push(c);
-                    self.set_fuzzy_filter_pattern(pattern);
+                    self.buffer_mut().set_fuzzy_filter_pattern(pattern);
                 };
                 // Update input for rendering
-                let pattern = self.get_fuzzy_filter_pattern();
+                let pattern = self.buffer().get_fuzzy_filter_pattern();
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
                 // Apply filter in real-time as user types
                 self.apply_fuzzy_filter();
@@ -2212,8 +2055,8 @@ impl EnhancedTuiApp {
             KeyCode::Esc => {
                 // Cancel column search and return to results
                 self.set_mode(AppMode::Results);
-                self.set_column_search_pattern(String::new());
-                self.set_column_search_matches(Vec::new());
+                self.buffer_mut().set_column_search_pattern(String::new());
+                self.buffer_mut().set_column_search_matches(Vec::new());
                 // Restore original SQL query from undo stack
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
@@ -2222,10 +2065,11 @@ impl EnhancedTuiApp {
             }
             KeyCode::Enter => {
                 // Jump to first matching column
-                if !self.get_column_search_matches().is_empty() {
-                    let (column_index, column_name) = self.get_column_search_matches()
-                        [self.get_column_search_current_match()]
-                    .clone();
+                if !self.buffer().get_column_search_matches().clone().is_empty() {
+                    let (column_index, column_name) =
+                        self.buffer().get_column_search_matches().clone()
+                            [self.buffer().get_column_search_current_match()]
+                        .clone();
                     self.buffer_mut().set_current_column(column_index);
                     self.set_status_message(format!("Jumped to column: {}", column_name));
                 } else {
@@ -2239,59 +2083,61 @@ impl EnhancedTuiApp {
             }
             KeyCode::Tab => {
                 // Next match (Tab only, not 'n' to allow typing 'n' in search)
-                if !self.get_column_search_matches().is_empty() {
-                    self.set_column_search_current_match(
-                        (self.get_column_search_current_match() + 1)
-                            % self.get_column_search_matches().len(),
-                    );
-                    let (column_index, column_name) = self.get_column_search_matches()
-                        [self.get_column_search_current_match()]
-                    .clone();
+                if !self.buffer().get_column_search_matches().clone().is_empty() {
+                    let matches_len = self.buffer().get_column_search_matches().clone().len();
+                    let current = self.buffer().get_column_search_current_match();
+                    self.buffer_mut()
+                        .set_column_search_current_match((current + 1) % matches_len);
+                    let (column_index, column_name) =
+                        self.buffer().get_column_search_matches().clone()
+                            [self.buffer().get_column_search_current_match()]
+                        .clone();
                     self.buffer_mut().set_current_column(column_index);
                     self.set_status_message(format!(
                         "Column {} of {}: {}",
-                        self.get_column_search_current_match() + 1,
-                        self.get_column_search_matches().len(),
+                        self.buffer().get_column_search_current_match() + 1,
+                        self.buffer().get_column_search_matches().clone().len(),
                         column_name
                     ));
                 }
             }
             KeyCode::BackTab => {
                 // Previous match (Shift+Tab only, not 'N' to allow typing 'N' in search)
-                if !self.get_column_search_matches().is_empty() {
-                    if self.get_column_search_current_match() == 0 {
-                        self.set_column_search_current_match(
-                            self.get_column_search_matches().len() - 1,
-                        );
+                if !self.buffer().get_column_search_matches().clone().is_empty() {
+                    let current = self.buffer().get_column_search_current_match();
+                    if current == 0 {
+                        let matches_len = self.buffer().get_column_search_matches().clone().len();
+                        self.buffer_mut()
+                            .set_column_search_current_match(matches_len - 1);
                     } else {
-                        self.set_column_search_current_match(
-                            self.get_column_search_current_match() - 1,
-                        );
+                        self.buffer_mut()
+                            .set_column_search_current_match(current - 1);
                     }
-                    let (column_index, column_name) = self.get_column_search_matches()
-                        [self.get_column_search_current_match()]
-                    .clone();
+                    let (column_index, column_name) =
+                        self.buffer().get_column_search_matches().clone()
+                            [self.buffer().get_column_search_current_match()]
+                        .clone();
                     self.buffer_mut().set_current_column(column_index);
                     self.set_status_message(format!(
                         "Column {} of {}: {}",
-                        self.get_column_search_current_match() + 1,
-                        self.get_column_search_matches().len(),
+                        self.buffer().get_column_search_current_match() + 1,
+                        self.buffer().get_column_search_matches().clone().len(),
                         column_name
                     ));
                 }
             }
             KeyCode::Backspace => {
-                let mut pattern = self.get_column_search_pattern();
+                let mut pattern = self.buffer().get_column_search_pattern();
                 pattern.pop();
-                self.set_column_search_pattern(pattern.clone());
+                self.buffer_mut().set_column_search_pattern(pattern.clone());
                 // Also update input to keep it in sync for rendering
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
                 self.update_column_search();
             }
             KeyCode::Char(c) => {
-                let mut pattern = self.get_column_search_pattern();
+                let mut pattern = self.buffer().get_column_search_pattern();
                 pattern.push(c);
-                self.set_column_search_pattern(pattern.clone());
+                self.buffer_mut().set_column_search_pattern(pattern.clone());
                 // Also update input to keep it in sync for rendering
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
                 self.update_column_search();
@@ -3558,23 +3404,23 @@ impl EnhancedTuiApp {
     // Search and filter functions
     fn perform_search(&mut self) {
         if let Some(data) = self.get_current_data() {
-            self.clear_search_matches();
+            self.buffer_mut().set_search_matches(Vec::new());
 
-            if let Ok(regex) = Regex::new(&self.get_search_pattern()) {
+            if let Ok(regex) = Regex::new(&self.buffer().get_search_pattern()) {
                 for (row_idx, row) in data.iter().enumerate() {
                     for (col_idx, cell) in row.iter().enumerate() {
                         if regex.is_match(cell) {
-                            let mut matches = self.get_search_matches();
+                            let mut matches = self.buffer().get_search_matches();
                             matches.push((row_idx, col_idx));
-                            self.set_search_matches(matches);
+                            self.buffer_mut().set_search_matches(matches);
                         }
                     }
                 }
 
-                if !self.get_search_matches().is_empty() {
-                    self.set_search_match_index(0);
-                    let matches = self.get_search_matches();
-                    self.set_current_search_match(Some(matches[0]));
+                if !self.buffer().get_search_matches().is_empty() {
+                    self.buffer_mut().set_search_match_index(0);
+                    let matches = self.buffer().get_search_matches();
+                    self.buffer_mut().set_current_match(Some(matches[0]));
                     let (row, _) = matches[0];
                     self.get_table_state_mut().select(Some(row));
                     self.set_status_message(format!("Found {} matches", matches.len()));
@@ -3588,30 +3434,32 @@ impl EnhancedTuiApp {
     }
 
     fn next_search_match(&mut self) {
-        if !self.get_search_matches().is_empty() {
-            let matches = self.get_search_matches();
-            let new_index = (self.get_search_match_index() + 1) % matches.len();
-            self.set_search_match_index(new_index);
+        if !self.buffer().get_search_matches().is_empty() {
+            let matches = self.buffer().get_search_matches();
+            let new_index = (self.buffer().get_search_match_index() + 1) % matches.len();
+            self.buffer_mut().set_search_match_index(new_index);
             let (row, _) = matches[new_index];
             self.get_table_state_mut().select(Some(row));
-            self.set_current_search_match(Some(matches[new_index]));
+            self.buffer_mut()
+                .set_current_match(Some(matches[new_index]));
             self.set_status_message(format!("Match {} of {}", new_index + 1, matches.len()));
         }
     }
 
     fn previous_search_match(&mut self) {
-        if !self.get_search_matches().is_empty() {
-            let matches = self.get_search_matches();
-            let current_index = self.get_search_match_index();
+        if !self.buffer().get_search_matches().is_empty() {
+            let matches = self.buffer().get_search_matches();
+            let current_index = self.buffer().get_search_match_index();
             let new_index = if current_index == 0 {
                 matches.len() - 1
             } else {
                 current_index - 1
             };
-            self.set_search_match_index(new_index);
+            self.buffer_mut().set_search_match_index(new_index);
             let (row, _) = matches[new_index];
             self.get_table_state_mut().select(Some(row));
-            self.set_current_search_match(Some(matches[new_index]));
+            self.buffer_mut()
+                .set_current_match(Some(matches[new_index]));
             self.set_status_message(format!("Match {} of {}", new_index + 1, matches.len()));
         }
     }
@@ -3680,14 +3528,14 @@ impl EnhancedTuiApp {
     }
 
     fn apply_fuzzy_filter(&mut self) {
-        if self.get_fuzzy_filter_pattern().is_empty() {
-            self.set_fuzzy_filter_indices(Vec::new());
-            self.set_fuzzy_filter_active(false);
+        if self.buffer().get_fuzzy_filter_pattern().is_empty() {
+            self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
+            self.buffer_mut().set_fuzzy_filter_active(false);
             self.set_status_message("Fuzzy filter cleared".to_string());
             return;
         }
 
-        let pattern = self.get_fuzzy_filter_pattern();
+        let pattern = self.buffer().get_fuzzy_filter_pattern();
         let mut filtered_indices = Vec::new();
 
         // Get the data to filter - either already filtered data or original results
@@ -3749,10 +3597,11 @@ impl EnhancedTuiApp {
         }
 
         let match_count = filtered_indices.len();
-        self.set_fuzzy_filter_indices(filtered_indices);
-        self.set_fuzzy_filter_active(!self.get_fuzzy_filter_indices().is_empty());
+        let is_active = !filtered_indices.is_empty();
+        self.buffer_mut().set_fuzzy_filter_indices(filtered_indices);
+        self.buffer_mut().set_fuzzy_filter_active(is_active);
 
-        if self.is_fuzzy_filter_active() {
+        if self.buffer().is_fuzzy_filter_active() {
             let filter_type = if pattern.starts_with('\'') {
                 "Exact"
             } else {
@@ -3783,7 +3632,7 @@ impl EnhancedTuiApp {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
 
                     // Find matching columns (case-insensitive)
-                    let pattern = self.get_column_search_pattern().to_lowercase();
+                    let pattern = self.buffer().get_column_search_pattern().to_lowercase();
                     let mut matching_columns = Vec::new();
 
                     for (index, header) in headers.iter().enumerate() {
@@ -3792,24 +3641,25 @@ impl EnhancedTuiApp {
                         }
                     }
 
-                    self.set_column_search_matches(matching_columns);
-                    self.set_column_search_current_match(0);
+                    self.buffer_mut()
+                        .set_column_search_matches(matching_columns);
+                    self.buffer_mut().set_column_search_current_match(0);
 
                     // Update status message
-                    if self.get_column_search_pattern().is_empty() {
+                    if self.buffer().get_column_search_pattern().is_empty() {
                         self.set_status_message("Enter column name to search".to_string());
-                    } else if self.get_column_search_matches().is_empty() {
+                    } else if self.buffer().get_column_search_matches().clone().is_empty() {
                         self.set_status_message(format!(
                             "No columns match '{}'",
-                            self.get_column_search_pattern()
+                            self.buffer().get_column_search_pattern()
                         ));
                     } else {
                         let (column_index, column_name) =
-                            self.get_column_search_matches()[0].clone();
+                            self.buffer().get_column_search_matches().clone()[0].clone();
                         self.buffer_mut().set_current_column(column_index);
                         self.set_status_message(format!(
                             "Column 1 of {}: {} (Tab=next, Enter=select)",
-                            self.get_column_search_matches().len(),
+                            self.buffer().get_column_search_matches().clone().len(),
                             column_name
                         ));
                     }
@@ -4079,7 +3929,13 @@ impl EnhancedTuiApp {
         };
 
         // Clear fuzzy filter state to prevent it from persisting across queries
-        self.clear_fuzzy_filter();
+        {
+            let buffer = self.buffer_mut();
+            buffer.clear_fuzzy_filter();
+            buffer.set_fuzzy_filter_pattern(String::new());
+            buffer.set_fuzzy_filter_active(false);
+            buffer.set_fuzzy_filter_indices(Vec::new());
+        };
 
         // Clear filtered data
         self.buffer_mut().set_filtered_data(None);
@@ -4422,14 +4278,14 @@ impl EnhancedTuiApp {
     fn yank_all(&mut self) {
         if let Some(results) = self.buffer().get_results() {
             // Get the actual data to yank (filtered or all)
-            let data_to_export = if self.get_filter_state().active || self.is_fuzzy_filter_active()
-            {
-                // Use filtered data
-                self.get_filtered_json_data()
-            } else {
-                // Use all data
-                results.data.clone()
-            };
+            let data_to_export =
+                if self.get_filter_state().active || self.buffer().is_fuzzy_filter_active() {
+                    // Use filtered data
+                    self.get_filtered_json_data()
+                } else {
+                    // Use all data
+                    results.data.clone()
+                };
 
             if let Some(first_row) = data_to_export.first() {
                 if let Some(obj) = first_row.as_object() {
@@ -4461,7 +4317,7 @@ impl EnhancedTuiApp {
                         Ok(mut clipboard) => match clipboard.set_text(&csv_text) {
                             Ok(_) => {
                                 let filter_info = if self.get_filter_state().active
-                                    || self.is_fuzzy_filter_active()
+                                    || self.buffer().is_fuzzy_filter_active()
                                 {
                                     " (filtered)"
                                 } else {
@@ -4541,16 +4397,18 @@ impl EnhancedTuiApp {
                                     self.apply_filter();
                                 }
                                 AppMode::FuzzyFilter => {
-                                    self.set_fuzzy_filter_pattern(self.get_input_text());
+                                    let input_text = self.get_input_text();
+                                    self.buffer_mut().set_fuzzy_filter_pattern(input_text);
                                     self.apply_fuzzy_filter();
                                 }
                                 AppMode::Search => {
                                     let search_text = self.get_input_text();
-                                    self.set_search_pattern(search_text);
+                                    self.buffer_mut().set_search_pattern(search_text);
                                     // TODO: self.search_in_results();
                                 }
                                 AppMode::ColumnSearch => {
-                                    self.set_column_search_pattern(self.get_input_text());
+                                    let input_text = self.get_input_text();
+                                    self.buffer_mut().set_column_search_pattern(input_text);
                                     // TODO: self.search_columns();
                                 }
                                 _ => {}
@@ -4574,12 +4432,12 @@ impl EnhancedTuiApp {
     fn export_to_json(&mut self) {
         if let Some(results) = self.buffer().get_results() {
             // Get the actual data to export (filtered or all)
-            let data_to_export = if self.get_filter_state().active || self.is_fuzzy_filter_active()
-            {
-                self.get_filtered_json_data()
-            } else {
-                results.data.clone()
-            };
+            let data_to_export =
+                if self.get_filter_state().active || self.buffer().is_fuzzy_filter_active() {
+                    self.get_filtered_json_data()
+                } else {
+                    results.data.clone()
+                };
 
             // Generate filename with timestamp
             let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
@@ -4588,12 +4446,13 @@ impl EnhancedTuiApp {
             match File::create(&filename) {
                 Ok(file) => match serde_json::to_writer_pretty(file, &data_to_export) {
                     Ok(_) => {
-                        let filter_info =
-                            if self.get_filter_state().active || self.is_fuzzy_filter_active() {
-                                " (filtered)"
-                            } else {
-                                ""
-                            };
+                        let filter_info = if self.get_filter_state().active
+                            || self.buffer().is_fuzzy_filter_active()
+                        {
+                            " (filtered)"
+                        } else {
+                            ""
+                        };
                         self.set_status_message(format!(
                             "Exported{} {} rows to {}",
                             filter_info,
@@ -4616,8 +4475,12 @@ impl EnhancedTuiApp {
 
     fn get_filtered_json_data(&self) -> Vec<Value> {
         if let Some(results) = self.buffer().get_results() {
-            if self.is_fuzzy_filter_active() && !self.get_fuzzy_filter_indices().is_empty() {
-                self.get_fuzzy_filter_indices()
+            if self.buffer().is_fuzzy_filter_active()
+                && !self.buffer().get_fuzzy_filter_indices().clone().is_empty()
+            {
+                self.buffer()
+                    .get_fuzzy_filter_indices()
+                    .clone()
                     .iter()
                     .filter_map(|&idx| results.data.get(idx).cloned())
                     .collect()
@@ -6089,10 +5952,10 @@ impl EnhancedTuiApp {
                     }
 
                     // Filter indicators
-                    if self.is_fuzzy_filter_active() {
+                    if self.buffer().is_fuzzy_filter_active() {
                         spans.push(Span::raw(" | "));
                         spans.push(Span::styled(
-                            format!("Fuzzy: {}", self.get_fuzzy_filter_pattern()),
+                            format!("Fuzzy: {}", self.buffer().get_fuzzy_filter_pattern()),
                             Style::default().fg(Color::Magenta),
                         ));
                     } else if self.get_filter_state().active {
@@ -6360,8 +6223,10 @@ impl EnhancedTuiApp {
         let max_visible_rows = terminal_height.saturating_sub(3).max(10);
 
         let total_rows = if let Some(filtered) = self.buffer().get_filtered_data() {
-            if self.is_fuzzy_filter_active() && !self.get_fuzzy_filter_indices().is_empty() {
-                self.get_fuzzy_filter_indices().len()
+            if self.buffer().is_fuzzy_filter_active()
+                && !self.buffer().get_fuzzy_filter_indices().clone().is_empty()
+            {
+                self.buffer().get_fuzzy_filter_indices().clone().len()
             } else {
                 filtered.len()
             }
@@ -6376,10 +6241,12 @@ impl EnhancedTuiApp {
         // Prepare table data (only visible rows AND columns)
         let data_to_display = if let Some(filtered) = self.buffer().get_filtered_data() {
             // Check if fuzzy filter is active
-            if self.is_fuzzy_filter_active() && !self.get_fuzzy_filter_indices().is_empty() {
+            if self.buffer().is_fuzzy_filter_active()
+                && !self.buffer().get_fuzzy_filter_indices().clone().is_empty()
+            {
                 // Apply fuzzy filter on top of existing filter
                 let mut fuzzy_filtered = Vec::new();
-                for &idx in &self.get_fuzzy_filter_indices() {
+                for &idx in &self.buffer().get_fuzzy_filter_indices().clone() {
                     if idx < filtered.len() {
                         fuzzy_filtered.push(filtered[idx].clone());
                     }
@@ -6546,7 +6413,7 @@ impl EnhancedTuiApp {
                     }
 
                     // Highlight search matches (override column highlight)
-                    if let Some((match_row, match_col)) = self.get_current_search_match() {
+                    if let Some((match_row, match_col)) = self.buffer().get_current_match() {
                         if actual_row_idx == match_row && actual_col_idx == match_col {
                             style = style.bg(Color::Yellow).fg(Color::Black);
                         }
@@ -6562,9 +6429,10 @@ impl EnhancedTuiApp {
                     }
 
                     // Highlight fuzzy/exact filter matches
-                    if self.is_fuzzy_filter_active() && !self.get_fuzzy_filter_pattern().is_empty()
+                    if self.buffer().is_fuzzy_filter_active()
+                        && !self.buffer().get_fuzzy_filter_pattern().is_empty()
                     {
-                        let pattern = &self.get_fuzzy_filter_pattern();
+                        let pattern = &self.buffer().get_fuzzy_filter_pattern();
                         let cell_matches = if pattern.starts_with('\'') && pattern.len() > 1 {
                             // Exact match highlighting
                             let exact_pattern = &pattern[1..];
