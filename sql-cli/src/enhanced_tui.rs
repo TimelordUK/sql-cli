@@ -624,11 +624,9 @@ impl EnhancedTuiApp {
 
     // Wrapper methods for search_state (uses buffer system)
     fn get_search_pattern(&self) -> String {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_search_pattern()
-        } else {
-            self.search_state.pattern.clone()
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_search_pattern()
     }
 
     fn set_search_pattern(&mut self, pattern: String) {
@@ -660,11 +658,9 @@ impl EnhancedTuiApp {
     }
 
     fn get_search_matches(&self) -> Vec<(usize, usize)> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_search_matches()
-        } else {
-            self.search_state.matches.clone()
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_search_matches()
     }
 
     fn set_search_matches(&mut self, matches: Vec<(usize, usize)>) {
@@ -680,11 +676,9 @@ impl EnhancedTuiApp {
     }
 
     fn get_search_match_index(&self) -> usize {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_search_match_index()
-        } else {
-            self.search_state.match_index
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_search_match_index()
     }
 
     fn set_search_match_index(&mut self, index: usize) {
@@ -696,11 +690,9 @@ impl EnhancedTuiApp {
     }
 
     fn get_current_search_match(&self) -> Option<(usize, usize)> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_current_match()
-        } else {
-            self.search_state.current_match
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_current_match()
     }
 
     fn set_current_search_match(&mut self, match_pos: Option<(usize, usize)>) {
@@ -724,11 +716,10 @@ impl EnhancedTuiApp {
 
     // Wrapper methods for pinned_columns (uses buffer system)
     fn get_pinned_columns(&self) -> Vec<usize> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_pinned_columns().clone()
-        } else {
-            self.pinned_columns.clone()
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_pinned_columns()
+            .clone()
     }
 
     fn add_pinned_column(&mut self, col: usize) {
@@ -759,11 +750,10 @@ impl EnhancedTuiApp {
     }
 
     fn contains_pinned_column(&self, col: usize) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_pinned_columns().contains(&col)
-        } else {
-            self.pinned_columns.contains(&col)
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_pinned_columns()
+            .contains(&col)
     }
 
     fn get_filter_state(&self) -> &FilterState {
@@ -776,11 +766,9 @@ impl EnhancedTuiApp {
 
     // Wrapper methods for fuzzy filter (uses buffer system)
     fn get_fuzzy_filter_pattern(&self) -> String {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_fuzzy_filter_pattern()
-        } else {
-            String::new()
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_fuzzy_filter_pattern()
     }
 
     fn set_fuzzy_filter_pattern(&mut self, pattern: String) {
@@ -790,11 +778,9 @@ impl EnhancedTuiApp {
     }
 
     fn is_fuzzy_filter_active(&self) -> bool {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.is_fuzzy_filter_active()
-        } else {
-            self.is_fuzzy_filter_active()
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .is_fuzzy_filter_active()
     }
 
     fn set_fuzzy_filter_active(&mut self, active: bool) {
@@ -804,11 +790,10 @@ impl EnhancedTuiApp {
     }
 
     fn get_fuzzy_filter_indices(&self) -> Vec<usize> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_fuzzy_filter_indices().clone()
-        } else {
-            Vec::new()
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_fuzzy_filter_indices()
+            .clone()
     }
 
     fn set_fuzzy_filter_indices(&mut self, indices: Vec<usize>) {
@@ -828,11 +813,9 @@ impl EnhancedTuiApp {
 
     // Wrapper methods for column search (uses buffer system)
     fn get_column_search_pattern(&self) -> String {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_column_search_pattern()
-        } else {
-            self.get_column_search_pattern()
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_column_search_pattern()
     }
 
     fn set_column_search_pattern(&mut self, pattern: String) {
@@ -845,11 +828,10 @@ impl EnhancedTuiApp {
     }
 
     fn get_column_search_matches(&self) -> Vec<(usize, String)> {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_column_search_matches().clone()
-        } else {
-            self.get_column_search_matches().clone()
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_column_search_matches()
+            .clone()
     }
 
     fn set_column_search_matches(&mut self, matches: Vec<(usize, String)>) {
@@ -862,11 +844,9 @@ impl EnhancedTuiApp {
     }
 
     fn get_column_search_current_match(&self) -> usize {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_column_search_current_match()
-        } else {
-            self.get_column_search_current_match()
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_column_search_current_match()
     }
 
     fn set_column_search_current_match(&mut self, index: usize) {
