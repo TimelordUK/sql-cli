@@ -71,29 +71,63 @@ impl DataAnalyzer {
             return stats;
         }
 
-        // Collect unique values
+        // For performance: if we have too many values (>1000), sample them
+        const MAX_VALUES_FOR_FULL_ANALYSIS: usize = 1000;
+        let should_sample = values.len() > MAX_VALUES_FOR_FULL_ANALYSIS;
+
+        // Collect unique values more efficiently - use references when possible
         let mut unique = std::collections::HashSet::new();
         let mut numeric_values = Vec::new();
-        let mut string_values = Vec::new();
+        let mut min_str: Option<&String> = None;
+        let mut max_str: Option<&String> = None;
         let mut lengths = Vec::new();
 
-        for value in values {
+        // If sampling, process every Nth value to get a representative sample
+        let step = if should_sample {
+            values.len() / MAX_VALUES_FOR_FULL_ANALYSIS
+        } else {
+            1
+        };
+
+        for (idx, value) in values.iter().enumerate() {
             if value.is_empty() {
                 stats.null_values += 1;
             } else {
                 stats.non_null_values += 1;
-                unique.insert(value.clone());
-                lengths.push(value.len());
 
-                // Try to parse as number
-                if let Ok(num) = value.parse::<f64>() {
-                    numeric_values.push(num);
+                // For unique count, sample or process all
+                if !should_sample || idx % step == 0 {
+                    unique.insert(value.as_str());
+                    lengths.push(value.len());
+
+                    // Track min/max strings without cloning
+                    match min_str {
+                        None => min_str = Some(value),
+                        Some(min) if value < min => min_str = Some(value),
+                        _ => {}
+                    }
+                    match max_str {
+                        None => max_str = Some(value),
+                        Some(max) if value > max => max_str = Some(value),
+                        _ => {}
+                    }
+
+                    // Try to parse as number
+                    if let Ok(num) = value.parse::<f64>() {
+                        numeric_values.push(num);
+                    }
                 }
-                string_values.push(value.clone());
             }
         }
 
-        stats.unique_values = unique.len();
+        // Estimate unique values if we sampled
+        stats.unique_values = if should_sample {
+            // Estimate based on sample
+            (unique.len() as f64 * values.len() as f64 / MAX_VALUES_FOR_FULL_ANALYSIS as f64)
+                as usize
+        } else {
+            unique.len()
+        };
 
         // Determine data type
         stats.data_type = self.detect_column_type(values);
@@ -115,12 +149,9 @@ impl DataAnalyzer {
                 }
             }
             _ => {
-                // String statistics
-                if !string_values.is_empty() {
-                    string_values.sort();
-                    stats.min_value = string_values.first().cloned();
-                    stats.max_value = string_values.last().cloned();
-                }
+                // String statistics - use the min/max we already found without cloning
+                stats.min_value = min_str.map(|s| s.to_string());
+                stats.max_value = max_str.map(|s| s.to_string());
             }
         }
 

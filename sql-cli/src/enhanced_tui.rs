@@ -2937,16 +2937,49 @@ impl EnhancedTuiApp {
                 stats.max = analyzer_stats.max_value.clone().map(|_| 0.0); // Placeholder
             }
 
-            // Build frequency map
+            // Build frequency map - optimize for large datasets
             let mut frequency_map: BTreeMap<String, usize> = BTreeMap::new();
-            for value in &data_to_analyze {
-                if !value.is_empty() {
-                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
+
+            // For performance: limit frequency map building for large datasets
+            const MAX_VALUES_FOR_FREQUENCY: usize = 1000;
+            const MAX_UNIQUE_FOR_FREQUENCY: usize = 100;
+
+            if data_to_analyze.len() <= MAX_VALUES_FOR_FREQUENCY {
+                // Small dataset: process all values
+                for value in &data_to_analyze {
+                    if !value.is_empty() {
+                        *frequency_map.entry(value.clone()).or_insert(0) += 1;
+                        // Stop if we have too many unique values
+                        if frequency_map.len() > MAX_UNIQUE_FOR_FREQUENCY {
+                            frequency_map.clear();
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Large dataset: sample values for frequency analysis
+                let step = data_to_analyze.len() / MAX_VALUES_FOR_FREQUENCY;
+                for (idx, value) in data_to_analyze.iter().enumerate() {
+                    if idx % step == 0 && !value.is_empty() {
+                        *frequency_map.entry(value.clone()).or_insert(0) += 1;
+                        // Stop if we have too many unique values
+                        if frequency_map.len() > MAX_UNIQUE_FOR_FREQUENCY {
+                            frequency_map.clear();
+                            break;
+                        }
+                    }
+                }
+
+                // Scale up the counts based on sampling rate
+                if !frequency_map.is_empty() {
+                    for count in frequency_map.values_mut() {
+                        *count *= step;
+                    }
                 }
             }
 
-            // Only keep frequency map for reasonable number of unique values
-            if frequency_map.len() <= 100 {
+            // Only keep frequency map if we didn't clear it due to too many unique values
+            if !frequency_map.is_empty() {
                 stats.frequency_map = Some(frequency_map);
             }
 
