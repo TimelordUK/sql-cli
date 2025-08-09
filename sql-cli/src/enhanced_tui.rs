@@ -243,23 +243,15 @@ impl EnhancedTuiApp {
         }
     }
 
-    // Helper to set input text through buffer or fallback to direct input
+    // Helper to set input text through buffer and sync input field
     fn set_input_text(&mut self, text: String) {
         self.buffer_mut().set_input_text(text.clone());
         // Also sync cursor position to end of text
         self.buffer_mut().set_input_cursor_position(text.len());
 
-        // For special modes that use the input field directly
-        match self.buffer().get_mode() {
-            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
-                // These modes still need the input field updated
-                self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
-            }
-            _ => {
-                // Command mode and others use the buffer exclusively
-                self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
-            }
-        }
+        // Always update the input field for all modes
+        // TODO: Eventually migrate special modes to use buffer input
+        self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
     }
 
     // Helper to set input text with specific cursor position
@@ -267,16 +259,9 @@ impl EnhancedTuiApp {
         self.buffer_mut().set_input_text(text.clone());
         self.buffer_mut().set_input_cursor_position(cursor_pos);
 
-        // For special modes that use the input field directly
-        match self.buffer().get_mode() {
-            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
-                // These modes still need the input field updated
-                self.input = tui_input::Input::new(text).with_cursor(cursor_pos);
-            }
-            _ => {
-                // Command mode and others use the buffer exclusively
-            }
-        }
+        // Always update the input field for consistency
+        // TODO: Eventually migrate special modes to use buffer input
+        self.input = tui_input::Input::new(text).with_cursor(cursor_pos);
     }
 
     // Helper to clear input
@@ -301,12 +286,22 @@ impl EnhancedTuiApp {
 
     // Helper to get visual cursor position (for rendering)
     fn get_visual_cursor(&self) -> (usize, usize) {
-        // Buffer should provide visual cursor for rendering
-        // For now, use a simple calculation
-        let text = self.buffer().get_input_text();
-        let cursor = self.buffer().get_input_cursor_position();
-        let lines: Vec<&str> = text.split('\n').collect();
+        // Get text and cursor from appropriate source based on mode
+        let (text, cursor) = match self.buffer().get_mode() {
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
+                // Special modes use self.input directly
+                (self.input.value().to_string(), self.input.cursor())
+            }
+            _ => {
+                // Other modes use buffer
+                (
+                    self.buffer().get_input_text(),
+                    self.buffer().get_input_cursor_position(),
+                )
+            }
+        };
 
+        let lines: Vec<&str> = text.split('\n').collect();
         let mut current_pos = 0;
         for (row, line) in lines.iter().enumerate() {
             if current_pos + line.len() >= cursor {
