@@ -46,6 +46,7 @@ impl KeyBinding {
 }
 
 /// Simple key dispatcher that maps keys to action names
+#[derive(Clone)]
 pub struct KeyDispatcher {
     // Mode-specific key maps
     command_map: HashMap<KeyBinding, String>,
