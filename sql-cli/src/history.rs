@@ -1,4 +1,5 @@
 use crate::app_paths::AppPaths;
+use crate::history_protection::HistoryProtection;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -57,12 +58,19 @@ pub struct CommandHistory {
     command_counts: HashMap<String, u32>,
     session_id: String,
     session_entries: Vec<HistoryEntry>, // Entries from current session only
+    protection: HistoryProtection,
 }
 
 impl CommandHistory {
     pub fn new() -> Result<Self> {
         let history_file = AppPaths::history_file()
             .map_err(|e| anyhow::anyhow!("Failed to get history file path: {}", e))?;
+
+        // Create backup directory
+        let backup_dir = history_file
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join("history_backups");
 
         // Generate a unique session ID
         let session_id = format!("session_{}", Utc::now().timestamp_millis());
@@ -74,6 +82,7 @@ impl CommandHistory {
             command_counts: HashMap::new(),
             session_id,
             session_entries: Vec::new(),
+            protection: HistoryProtection::new(backup_dir),
         };
 
         history.load_from_file()?;
@@ -477,6 +486,17 @@ impl CommandHistory {
     }
 
     pub fn clear(&mut self) -> Result<()> {
+        // SAFETY: Create backup before clearing
+        let current_count = self.entries.len();
+        if current_count > 0 {
+            eprintln!(
+                "[HISTORY WARNING] Clearing {} entries - creating backup",
+                current_count
+            );
+            if let Ok(content) = serde_json::to_string_pretty(&self.entries) {
+                self.protection.backup_before_write(&content, current_count);
+            }
+        }
         self.entries.clear();
         self.command_counts.clear();
         self.save_to_file()?;
@@ -534,8 +554,40 @@ impl CommandHistory {
     }
 
     fn save_to_file(&self) -> Result<()> {
-        let content = serde_json::to_string_pretty(&self.entries)?;
-        fs::write(&self.history_file, content)?;
+        // SAFETY: Validate before writing
+        let new_content = serde_json::to_string_pretty(&self.entries)?;
+        let new_count = self.entries.len();
+
+        // Get current file entry count for comparison
+        let old_count = if self.history_file.exists() {
+            if let Ok(existing) = fs::read_to_string(&self.history_file) {
+                existing.matches("\"command\":").count()
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        // Validate the write
+        if !self
+            .protection
+            .validate_write(old_count, new_count, &new_content)
+        {
+            eprintln!("[HISTORY PROTECTION] Write blocked! Attempting recovery from backup...");
+            if let Some(backup_content) = self.protection.recover_from_backup() {
+                fs::write(&self.history_file, backup_content)?;
+                return Ok(());
+            }
+            return Err(anyhow::anyhow!("History write validation failed"));
+        }
+
+        // Create backup before significant changes
+        if old_count > 0 && (old_count != new_count || old_count > 10) {
+            self.protection.backup_before_write(&new_content, new_count);
+        }
+
+        fs::write(&self.history_file, new_content)?;
         Ok(())
     }
 
@@ -588,6 +640,12 @@ impl Clone for CommandHistory {
             command_counts: self.command_counts.clone(),
             session_id: self.session_id.clone(),
             session_entries: self.session_entries.clone(),
+            protection: HistoryProtection::new(
+                self.history_file
+                    .parent()
+                    .unwrap_or(std::path::Path::new("."))
+                    .join("history_backups"),
+            ),
         }
     }
 }
@@ -595,14 +653,22 @@ impl Clone for CommandHistory {
 impl Default for CommandHistory {
     fn default() -> Self {
         let session_id = format!("session_{}", Utc::now().timestamp_millis());
-        Self::new().unwrap_or_else(|_| Self {
-            entries: Vec::new(),
-            history_file: AppPaths::history_file()
-                .unwrap_or_else(|_| PathBuf::from(".sql_cli_history.json")),
-            matcher: SkimMatcherV2::default(),
-            command_counts: HashMap::new(),
-            session_id,
-            session_entries: Vec::new(),
+        Self::new().unwrap_or_else(|_| {
+            let history_file =
+                AppPaths::history_file().unwrap_or_else(|_| PathBuf::from(".sql_cli_history.json"));
+            let backup_dir = history_file
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join("history_backups");
+            Self {
+                entries: Vec::new(),
+                history_file,
+                matcher: SkimMatcherV2::default(),
+                command_counts: HashMap::new(),
+                session_id,
+                session_entries: Vec::new(),
+                protection: HistoryProtection::new(backup_dir),
+            }
         })
     }
 }
