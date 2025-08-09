@@ -682,9 +682,13 @@ impl EnhancedTuiApp {
     fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // NEW: Try editor widget first for high-level actions
         let key_dispatcher = self.key_dispatcher.clone();
-        let editor_result = self
-            .editor_widget
-            .handle_key(key.clone(), &key_dispatcher)?;
+        // Handle editor widget actions by splitting the borrow
+        let editor_result = if let Some(buffer) = self.buffer_manager.current_mut() {
+            self.editor_widget
+                .handle_key(key.clone(), &key_dispatcher, buffer)?
+        } else {
+            EditorAction::PassToMainApp(key.clone())
+        };
 
         match editor_result {
             EditorAction::Quit => return Ok(true),
@@ -799,14 +803,7 @@ impl EnhancedTuiApp {
                     }
                     return Ok(false);
                 }
-                "move_to_line_start" => {
-                    self.handle_input_key(KeyEvent::new(KeyCode::Home, KeyModifiers::empty()));
-                    return Ok(false);
-                }
-                "move_to_line_end" => {
-                    self.handle_input_key(KeyEvent::new(KeyCode::End, KeyModifiers::empty()));
-                    return Ok(false);
-                }
+                // "move_to_line_start" and "move_to_line_end" now handled by editor_widget
                 "delete_word_backward" => {
                     if let Some(buffer) = self.buffer_manager.current_mut() {
                         buffer.save_state_for_undo();
