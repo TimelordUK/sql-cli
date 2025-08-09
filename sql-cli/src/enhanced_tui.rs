@@ -1334,10 +1334,18 @@ impl EnhancedTuiApp {
         }
 
         // In cell mode, skip chord handler for 'y' key - handle it directly
-        // Also skip 'G' as it's a single key action, not a chord
+        // Also skip uppercase single-key actions as they're not chords
         let should_skip_chord = (matches!(self.selection_mode, SelectionMode::Cell)
             && matches!(key.code, KeyCode::Char('y')))
-            || matches!(key.code, KeyCode::Char('G'));
+            || matches!(
+                key.code,
+                KeyCode::Char('G')
+                    | KeyCode::Char('C')
+                    | KeyCode::Char('F')
+                    | KeyCode::Char('S')
+                    | KeyCode::Char('N')
+                    | KeyCode::Char('P')
+            );
 
         let chord_result = if should_skip_chord {
             debug!("Skipping chord handler for key {:?}", key.code);

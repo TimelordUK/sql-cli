@@ -299,8 +299,10 @@ impl KeyDispatcher {
             KeyBinding::new(KeyCode::Char('\\')),
             "start_column_search".into(),
         );
-        self.results_map
-            .insert(KeyBinding::new(KeyCode::Char('F')), "start_filter".into());
+        self.results_map.insert(
+            KeyBinding::with_shift(KeyCode::Char('F')),
+            "start_filter".into(),
+        );
         self.results_map.insert(
             KeyBinding::new(KeyCode::Char('f')),
             "start_fuzzy_filter".into(),
@@ -308,7 +310,7 @@ impl KeyDispatcher {
         self.results_map
             .insert(KeyBinding::new(KeyCode::Char('s')), "sort_by_column".into());
         self.results_map.insert(
-            KeyBinding::new(KeyCode::Char('S')),
+            KeyBinding::with_shift(KeyCode::Char('S')),
             "show_column_stats".into(),
         );
         self.results_map.insert(
@@ -322,19 +324,21 @@ impl KeyDispatcher {
 
         // Display options
         self.results_map.insert(
-            KeyBinding::new(KeyCode::Char('C')),
+            KeyBinding::with_shift(KeyCode::Char('C')),
             "toggle_compact_mode".into(),
         );
         self.results_map.insert(
-            KeyBinding::new(KeyCode::Char('N')),
+            KeyBinding::with_shift(KeyCode::Char('1')),
             "toggle_row_numbers".into(),
         );
         self.results_map
             .insert(KeyBinding::new(KeyCode::Char(':')), "jump_to_row".into());
         self.results_map
             .insert(KeyBinding::new(KeyCode::Char('p')), "pin_column".into());
-        self.results_map
-            .insert(KeyBinding::new(KeyCode::Char('P')), "clear_pins".into());
+        self.results_map.insert(
+            KeyBinding::with_shift(KeyCode::Char('P')),
+            "clear_pins".into(),
+        );
 
         // Selection and clipboard
         self.results_map.insert(
