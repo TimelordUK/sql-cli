@@ -34,6 +34,7 @@ use sql_cli::data_analyzer::DataAnalyzer;
 use sql_cli::data_exporter::DataExporter;
 use sql_cli::help_text::HelpText;
 use sql_cli::history::{CommandHistory, HistoryMatch};
+use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
 use sql_cli::text_navigation::{TextEditor, TextNavigator};
 use sql_cli::where_ast::format_where_ast;
@@ -138,13 +139,12 @@ pub struct EnhancedTuiApp {
     sql_highlighter: SqlHighlighter,
     debug_text: String,
     debug_scroll: u16,
-    key_history: Vec<String>, // Track key presses for debugging
-    help_scroll: u16,         // Scroll offset for help page
-    input_scroll_offset: u16, // Horizontal scroll offset for input
+    key_chord_handler: KeyChordHandler, // Manages key sequences and history
+    help_scroll: u16,                   // Scroll offset for help page
+    input_scroll_offset: u16,           // Horizontal scroll offset for input
 
     // Selection and clipboard
     selection_mode: SelectionMode,         // Row or Cell mode
-    yank_mode: Option<char>,               // Track multi-key yank commands (e.g., 'yy', 'yc')
     last_yanked: Option<(String, String)>, // (description, value) of last yanked item
 
     // Buffer management (new - for supporting multiple files)
@@ -379,11 +379,10 @@ impl EnhancedTuiApp {
             sql_highlighter: SqlHighlighter::new(),
             debug_text: String::new(),
             debug_scroll: 0,
-            key_history: Vec::new(),
+            key_chord_handler: KeyChordHandler::new(),
             help_scroll: 0,
             input_scroll_offset: 0,
             selection_mode: SelectionMode::Row, // Default to row mode
-            yank_mode: None,
             last_yanked: None,
             // CSV fields now in Buffer
             buffer_manager: {
@@ -684,17 +683,9 @@ impl EnhancedTuiApp {
         // Store old cursor position
         let old_cursor = self.get_input_cursor();
 
-        // Debug: Log key presses to help diagnose input issues
-        // Keep last 50 key presses
-        if self.key_history.len() > 50 {
-            self.key_history.remove(0);
-        }
-        self.key_history.push(format!(
-            "[{}] Key: {:?} Mods: {:?}",
-            Local::now().format("%H:%M:%S.%3f"),
-            key.code,
-            key.modifiers
-        ));
+        // Process key through chord handler (logs key press internally)
+        // This will be used later for chord sequences
+        let _chord_result = self.key_chord_handler.process_key(key.clone());
 
         // Also log to tracing
         trace!(target: "input", "Key: {:?} Modifiers: {:?}", key.code, key.modifiers);
@@ -1213,13 +1204,9 @@ impl EnhancedTuiApp {
                 }
                 debug_info.push_str("============================================\n");
 
-                // Add key press history
-                debug_info.push_str("\n========== KEY PRESS HISTORY ==========\n");
-                debug_info.push_str("(Most recent at bottom, last 50 keys)\n");
-                for key_event in &self.key_history {
-                    debug_info.push_str(key_event);
-                    debug_info.push('\n');
-                }
+                // Add key chord handler debug info (includes key history)
+                debug_info.push_str("\n");
+                debug_info.push_str(&self.key_chord_handler.format_debug_info());
                 debug_info.push_str("========================================\n");
 
                 // Add trace logs from ring buffer
@@ -1301,6 +1288,46 @@ impl EnhancedTuiApp {
     }
 
     fn handle_results_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // Process key through chord handler first
+        let chord_result = self.key_chord_handler.process_key(key.clone());
+
+        // Handle chord results
+        match chord_result {
+            ChordResult::CompleteChord(action) => {
+                // Handle completed chord actions
+                match action.as_str() {
+                    "yank_row" => {
+                        self.yank_row();
+                        return Ok(false);
+                    }
+                    "yank_column" => {
+                        self.yank_column();
+                        return Ok(false);
+                    }
+                    "yank_all" => {
+                        self.yank_all();
+                        return Ok(false);
+                    }
+                    _ => {
+                        // Unknown action, continue with normal key handling
+                    }
+                }
+            }
+            ChordResult::PartialChord(description) => {
+                // Update status to show chord mode
+                self.buffer_mut().set_status_message(description);
+                return Ok(false);
+            }
+            ChordResult::Cancelled => {
+                self.buffer_mut()
+                    .set_status_message("Chord cancelled".to_string());
+                return Ok(false);
+            }
+            ChordResult::SingleKey(_) => {
+                // Continue with normal key handling
+            }
+        }
+
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('q') => return Ok(true),
@@ -1362,21 +1389,14 @@ impl EnhancedTuiApp {
                 ));
             }
             KeyCode::Esc => {
-                if self.yank_mode.is_some() {
-                    // Cancel yank mode
-                    self.yank_mode = None;
-                    self.buffer_mut()
-                        .set_status_message("Yank cancelled".to_string());
-                } else {
-                    // Save current position before switching to Command mode
-                    if let Some(selected) = self.table_state.selected() {
-                        self.buffer_mut().set_last_results_row(Some(selected));
-                        let scroll_offset = self.buffer().get_scroll_offset();
-                        self.buffer_mut().set_last_scroll_offset(scroll_offset);
-                    }
-                    self.buffer_mut().set_mode(AppMode::Command);
-                    &mut self.table_state.select(None);
+                // Save current position before switching to Command mode
+                if let Some(selected) = self.table_state.selected() {
+                    self.buffer_mut().set_last_results_row(Some(selected));
+                    let scroll_offset = self.buffer().get_scroll_offset();
+                    self.buffer_mut().set_last_scroll_offset(scroll_offset);
                 }
+                self.buffer_mut().set_mode(AppMode::Command);
+                &mut self.table_state.select(None);
             }
             KeyCode::Up => {
                 // Save current position before switching to Command mode
@@ -1574,34 +1594,15 @@ impl EnhancedTuiApp {
             KeyCode::Char('y') => {
                 match self.selection_mode {
                     SelectionMode::Cell => {
-                        // In cell mode, single 'y' yanks the cell
+                        // In cell mode, single 'y' yanks the cell directly
                         self.yank_cell();
                         // Status message will be set by yank_cell
                     }
                     SelectionMode::Row => {
-                        if self.yank_mode.is_some() {
-                            // Second 'y' for yank row
-                            self.yank_row();
-                            self.yank_mode = None;
-                        } else {
-                            // First 'y', enter yank mode
-                            self.yank_mode = Some('y');
-                            self.buffer_mut().set_status_message(
-                                "Yank mode: y=row, c=column, a=all, ESC=cancel".to_string(),
-                            );
-                        }
+                        // In row mode, 'y' is handled by chord handler (yy, yc, ya)
+                        // The chord handler will process the key sequence
                     }
                 }
-            }
-            KeyCode::Char('c') if self.yank_mode.is_some() => {
-                // 'yc' - yank column
-                self.yank_column();
-                self.yank_mode = None;
-            }
-            KeyCode::Char('a') if self.yank_mode.is_some() => {
-                // 'ya' - yank all (filtered or all data)
-                self.yank_all();
-                self.yank_mode = None;
             }
             // Export to CSV
             KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1623,12 +1624,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Help);
             }
             _ => {
-                // Any other key cancels yank mode
-                if self.yank_mode.is_some() {
-                    self.yank_mode = None;
-                    self.buffer_mut()
-                        .set_status_message("Yank cancelled".to_string());
-                }
+                // Other keys handled normally
             }
         }
         Ok(false)
