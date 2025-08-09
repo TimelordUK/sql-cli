@@ -1,0 +1,107 @@
+# SQL CLI Configuration File
+# 
+# Copy this file to your system's config directory:
+# - Linux/Mac: ~/.config/sql-cli/config.toml
+# - Windows: %APPDATA%\sql-cli\config.toml
+#
+# All settings shown here are the defaults
+
+[display]
+# Use Unicode glyphs for better visual experience
+use_glyphs = true
+
+# Show row numbers in results view (like vim)
+show_row_numbers = false
+
+# Compact mode reduces padding between columns
+compact_mode = true
+
+[display.icons]
+# Icons used throughout the UI (requires use_glyphs = true)
+pin = "📌"
+lock = "🔒"
+cache = "📦"
+file = "📁"
+database = "🗄️"
+api = "🌐"
+case_insensitive = "Ⓘ"
+warning = "⚠️"
+error = "❌"
+info = "ℹ️"
+success = "✅"
+
+[keybindings]
+# Enable vim-style navigation keys
+vim_mode = true
+
+[behavior]
+# Automatically execute queries when loading CSV/JSON files
+auto_execute_on_load = true
+
+# Default to case-insensitive searches and filters
+case_insensitive_default = true
+
+# Maximum number of rows to display in results
+max_display_rows = 10000
+
+# Enable command history
+enable_history = true
+
+# Maximum number of history entries to keep
+max_history_entries = 1000
+
+[theme]
+# Color scheme: "default", "dark", "light"
+color_scheme = "default"
+
+# Enable rainbow parentheses in SQL editor
+rainbow_parentheses = true
+
+# Enable syntax highlighting in SQL editor
+syntax_highlighting = true
+
+# Key Bindings Reference (Results View):
+# ----------------------------------------
+# Navigation:
+#   j/↓        - Next row
+#   k/↑        - Previous row
+#   h/←        - Previous column
+#   l/→        - Next column
+#   g          - Go to first row
+#   G (Shift-G)- Go to last row
+#   :123       - Jump to row 123
+#   Ctrl-d     - Page down
+#   Ctrl-u     - Page up
+#
+# Search & Filter:
+#   /          - Search in results
+#   n          - Next search match
+#   N (Shift-N)- Previous search match
+#   f          - Fuzzy filter
+#   F (Shift-F)- Column filter
+#   \          - Column search
+#   Esc        - Clear search/filter
+#
+# Display:
+#   C (Shift-C)- Toggle compact mode
+#   ! (Shift-1)- Toggle row numbers
+#   S (Shift-S)- Show column statistics
+#   Space      - Toggle viewport lock
+#
+# Selection & Copy:
+#   v          - Toggle selection mode
+#   y          - Yank (copy) selection
+#   yy         - Yank current row
+#   yc         - Yank current column
+#   ya         - Yank all results
+#
+# Columns:
+#   p          - Pin/unpin column
+#   P (Shift-P)- Clear all pins
+#   s          - Sort by column
+#
+# Modes:
+#   Tab        - Switch to Command mode
+#   Ctrl-r     - History mode
+#   ?          - Help
+#   q          - Back/Exit mode
