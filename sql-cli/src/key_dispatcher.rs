@@ -270,8 +270,11 @@ impl KeyDispatcher {
         // Jump navigation
         self.results_map
             .insert(KeyBinding::new(KeyCode::Char('g')), "goto_first_row".into());
-        self.results_map
-            .insert(KeyBinding::new(KeyCode::Char('G')), "goto_last_row".into());
+        // Uppercase G comes with SHIFT modifier in crossterm
+        self.results_map.insert(
+            KeyBinding::with_shift(KeyCode::Char('G')),
+            "goto_last_row".into(),
+        );
         self.results_map.insert(
             KeyBinding::new(KeyCode::Char('^')),
             "goto_first_column".into(),
@@ -458,8 +461,9 @@ impl KeyDispatcher {
             KeyBinding::new(KeyCode::Char('g')),
             "debug_go_to_top".into(),
         );
+        // Uppercase G comes with SHIFT modifier in crossterm
         self.debug_map.insert(
-            KeyBinding::new(KeyCode::Char('G')),
+            KeyBinding::with_shift(KeyCode::Char('G')),
             "debug_go_to_bottom".into(),
         );
 

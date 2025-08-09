@@ -28,6 +28,7 @@ pub mod parser;
 pub mod recursive_parser;
 pub mod schema_config;
 pub mod sql_highlighter;
+pub mod state_manager;
 pub mod stats_widget;
 pub mod virtual_table;
 pub mod where_ast;
