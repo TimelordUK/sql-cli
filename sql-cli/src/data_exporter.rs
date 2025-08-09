@@ -311,4 +311,40 @@ impl DataExporter {
 
         Some(csv_text)
     }
+
+    /// Generate TSV (Tab-Separated Values) text from JSON data for better Windows clipboard compatibility
+    pub fn generate_tsv_text(data: &[Value]) -> Option<String> {
+        let first_row = data.first()?;
+        let obj = first_row.as_object()?;
+        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+
+        // Create TSV format with headers
+        let mut tsv_text = headers.join("\t") + "\r\n";
+
+        for row in data {
+            if let Some(obj) = row.as_object() {
+                let values: Vec<String> = headers
+                    .iter()
+                    .map(|&header| match obj.get(header) {
+                        Some(Value::String(s)) => {
+                            s.replace('\t', "    ").replace('\n', " ").replace('\r', "")
+                        }
+                        Some(Value::Number(n)) => n.to_string(),
+                        Some(Value::Bool(b)) => b.to_string(),
+                        Some(Value::Null) => String::new(),
+                        Some(other) => other
+                            .to_string()
+                            .replace('\t', "    ")
+                            .replace('\n', " ")
+                            .replace('\r', ""),
+                        None => String::new(),
+                    })
+                    .collect();
+                tsv_text.push_str(&values.join("\t"));
+                tsv_text.push_str("\r\n");
+            }
+        }
+
+        Some(tsv_text)
+    }
 }

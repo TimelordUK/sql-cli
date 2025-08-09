@@ -716,7 +716,18 @@ impl EnhancedTuiApp {
             }
             EditorAction::SwitchMode(mode) => {
                 if let Some(buffer) = self.buffer_manager.current_mut() {
-                    buffer.set_mode(mode);
+                    buffer.set_mode(mode.clone());
+                }
+                // Special handling for History mode - initialize history search
+                if mode == AppMode::History {
+                    self.history_state.search_query.clear();
+                    self.update_history_matches();
+                    // Debug: log how many history entries we have
+                    let total_entries = self.command_history.get_all().len();
+                    self.buffer_mut().set_status_message(format!(
+                        "History search: {} total entries",
+                        total_entries
+                    ));
                 }
                 return Ok(false);
             }
@@ -1004,16 +1015,7 @@ impl EnhancedTuiApp {
                 // Always use single-line completion
                 self.apply_completion()
             }
-            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.buffer_mut().set_mode(AppMode::History);
-                self.history_state.search_query.clear();
-                self.update_history_matches();
-
-                // Debug: log how many history entries we have
-                let total_entries = self.command_history.get_all().len();
-                self.buffer_mut()
-                    .set_status_message(format!("History search: {} total entries", total_entries));
-            }
+            // Ctrl+R is now handled by the editor widget above
             // History navigation - Ctrl+P or Alt+Up
             KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Navigate to previous command in history
@@ -1288,8 +1290,29 @@ impl EnhancedTuiApp {
                 match arboard::Clipboard::new() {
                     Ok(mut clipboard) => match clipboard.set_text(&debug_info) {
                         Ok(_) => {
-                            self.buffer_mut()
-                                .set_status_message("DEBUG INFO copied to clipboard!".to_string());
+                            // Verify clipboard write by reading it back
+                            match clipboard.get_text() {
+                                Ok(clipboard_content) => {
+                                    let clipboard_len = clipboard_content.len();
+                                    if clipboard_content == debug_info {
+                                        self.buffer_mut().set_status_message(format!(
+                                            "DEBUG INFO copied to clipboard ({} chars)!",
+                                            clipboard_len
+                                        ));
+                                    } else {
+                                        self.buffer_mut().set_status_message(format!(
+                                            "Clipboard verification failed! Expected {} chars, got {} chars",
+                                            debug_info.len(), clipboard_len
+                                        ));
+                                    }
+                                }
+                                Err(e) => {
+                                    self.buffer_mut().set_status_message(format!(
+                                        "Debug info copied but verification failed: {}",
+                                        e
+                                    ));
+                                }
+                            }
                         }
                         Err(e) => {
                             self.buffer_mut()
@@ -1423,22 +1446,30 @@ impl EnhancedTuiApp {
                 "page_up" => self.page_up(),
                 "page_down" => self.page_down(),
                 "start_search" => {
-                    self.buffer_mut().set_mode(AppMode::Search);
-                    self.buffer_mut().set_search_pattern(String::new());
+                    // Save SQL query before switching modes
                     if let Some(buffer) = self.buffer_manager.current_mut() {
                         buffer.save_state_for_undo();
                     }
-                    self.clear_input();
+
+                    self.buffer_mut().set_mode(AppMode::Search);
+                    self.buffer_mut().set_search_pattern(String::new());
+
+                    // Only clear the UI input field, not the buffer's stored text
+                    self.input = tui_input::Input::default();
                 }
                 "start_column_search" => {
+                    // Save current SQL query before switching modes
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.save_state_for_undo();
+                    }
+
                     self.buffer_mut().set_mode(AppMode::ColumnSearch);
                     self.buffer_mut().set_column_search_pattern(String::new());
                     self.buffer_mut().set_column_search_matches(Vec::new());
                     self.buffer_mut().set_column_search_current_match(0);
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                    }
-                    self.clear_input();
+
+                    // Only clear the UI input field, not the buffer's stored text
+                    self.input = tui_input::Input::default();
                 }
                 "start_filter" => {
                     self.buffer_mut().set_mode(AppMode::Filter);
@@ -1609,25 +1640,31 @@ impl EnhancedTuiApp {
             }
             // Search functionality
             KeyCode::Char('/') => {
-                self.buffer_mut().set_mode(AppMode::Search);
-                self.buffer_mut().set_search_pattern(String::new());
-                // Save SQL query and use temporary input for search display
+                // Save SQL query before switching modes
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     buffer.save_state_for_undo();
                 }
-                self.clear_input();
+
+                self.buffer_mut().set_mode(AppMode::Search);
+                self.buffer_mut().set_search_pattern(String::new());
+
+                // Only clear the UI input field, not the buffer's stored text
+                self.input = tui_input::Input::default();
             }
             // Column navigation/search functionality (backslash like vim reverse search)
             KeyCode::Char('\\') => {
+                // Save current SQL query before switching modes
+                if let Some(buffer) = self.buffer_manager.current_mut() {
+                    buffer.save_state_for_undo();
+                }
+
                 self.buffer_mut().set_mode(AppMode::ColumnSearch);
                 self.buffer_mut().set_column_search_pattern(String::new());
                 self.buffer_mut().set_column_search_matches(Vec::new());
                 self.buffer_mut().set_column_search_current_match(0);
-                // Save current SQL query before clearing input for column search
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    buffer.save_state_for_undo();
-                }
-                self.clear_input();
+
+                // Only clear the UI input field, not the buffer's stored text
+                self.input = tui_input::Input::default();
             }
             KeyCode::Char('n') => {
                 self.next_search_match();
@@ -1877,14 +1914,20 @@ impl EnhancedTuiApp {
     fn handle_column_search_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Esc => {
+                // Restore original SQL query from undo stack FIRST
+                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
+                    self.set_input_text_with_cursor(original_query, cursor_pos);
+                } else {
+                    // Fallback: restore from buffer's stored text if undo fails
+                    let text = self.buffer().get_input_text();
+                    let cursor = self.buffer().get_input_cursor_position();
+                    self.input = tui_input::Input::new(text.clone()).with_cursor(cursor);
+                }
+
                 // Cancel column search and return to results
                 self.buffer_mut().set_mode(AppMode::Results);
                 self.buffer_mut().set_column_search_pattern(String::new());
                 self.buffer_mut().set_column_search_matches(Vec::new());
-                // Restore original SQL query from undo stack
-                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
-                    self.set_input_text_with_cursor(original_query, cursor_pos);
-                }
                 self.buffer_mut()
                     .set_status_message("Column search cancelled".to_string());
             }
@@ -1902,10 +1945,17 @@ impl EnhancedTuiApp {
                     self.buffer_mut()
                         .set_status_message("No matching columns found".to_string());
                 }
+
                 // Restore original SQL query from undo stack
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
+                } else {
+                    // Fallback: restore from buffer's stored text if undo fails
+                    let text = self.buffer().get_input_text();
+                    let cursor = self.buffer().get_input_cursor_position();
+                    self.input = tui_input::Input::new(text.clone()).with_cursor(cursor);
                 }
+
                 self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Tab => {
@@ -3574,6 +3624,55 @@ impl EnhancedTuiApp {
                     }
 
                     self.buffer_mut().set_column_widths(widths);
+                }
+            }
+        }
+    }
+
+    fn update_parser_for_current_buffer(&mut self) {
+        // Sync the input field with the current buffer's text
+        if let Some(buffer) = self.buffer_manager.current() {
+            let text = buffer.get_input_text();
+            let cursor_pos = buffer.get_input_cursor_position();
+            self.input = tui_input::Input::new(text.clone()).with_cursor(cursor_pos);
+            debug!(target: "buffer", "Synced input field with buffer text: '{}' (cursor: {})", text, cursor_pos);
+        }
+
+        // Update the parser's schema based on the current buffer's data source
+        if let Some(buffer) = self.buffer_manager.current() {
+            if buffer.is_csv_mode() {
+                let table_name = buffer.get_table_name();
+                if let Some(csv_client) = buffer.get_csv_client() {
+                    if let Some(schema) = csv_client.get_schema() {
+                        // Get the full column list from the schema
+                        if let Some(columns) = schema.get(&table_name) {
+                            debug!(target: "buffer", "Updating parser with {} columns for table '{}'", columns.len(), table_name);
+                            self.hybrid_parser
+                                .update_single_table(table_name, columns.clone());
+                        }
+                    }
+                }
+            } else if buffer.is_cache_mode() {
+                // For cache mode, use cached data schema if available
+                if let Some(cached_data) = buffer.get_cached_data() {
+                    if let Some(first_row) = cached_data.first() {
+                        if let Some(obj) = first_row.as_object() {
+                            let columns: Vec<String> = obj.keys().map(|k| k.to_string()).collect();
+                            debug!(target: "buffer", "Updating parser with {} columns for cached data", columns.len());
+                            self.hybrid_parser
+                                .update_single_table("cached_data".to_string(), columns);
+                        }
+                    }
+                }
+            } else if let Some(results) = buffer.get_results() {
+                // For API mode or when we have results, use the result columns
+                if let Some(first_row) = results.data.first() {
+                    if let Some(obj) = first_row.as_object() {
+                        let columns: Vec<String> = obj.keys().map(|k| k.to_string()).collect();
+                        let table_name = buffer.get_table_name();
+                        debug!(target: "buffer", "Updating parser with {} columns for table '{}'", columns.len(), table_name);
+                        self.hybrid_parser.update_single_table(table_name, columns);
+                    }
                 }
             }
         }
@@ -5749,6 +5848,8 @@ impl EnhancedTuiApp {
             BufferAction::NextBuffer => {
                 let message = self.buffer_handler.next_buffer(&mut self.buffer_manager);
                 debug!("{}", message);
+                // Update parser schema for the new buffer
+                self.update_parser_for_current_buffer();
                 Ok(false)
             }
             BufferAction::PreviousBuffer => {
@@ -5756,11 +5857,15 @@ impl EnhancedTuiApp {
                     .buffer_handler
                     .previous_buffer(&mut self.buffer_manager);
                 debug!("{}", message);
+                // Update parser schema for the new buffer
+                self.update_parser_for_current_buffer();
                 Ok(false)
             }
             BufferAction::QuickSwitch => {
                 let message = self.buffer_handler.quick_switch(&mut self.buffer_manager);
                 debug!("{}", message);
+                // Update parser schema for the new buffer
+                self.update_parser_for_current_buffer();
                 Ok(false)
             }
             BufferAction::NewBuffer => {
@@ -5788,6 +5893,10 @@ impl EnhancedTuiApp {
                     .buffer_handler
                     .switch_to_buffer(&mut self.buffer_manager, buffer_index);
                 debug!("{}", message);
+
+                // Update parser schema for the new buffer
+                self.update_parser_for_current_buffer();
+
                 Ok(false)
             }
         }
@@ -5896,9 +6005,29 @@ impl EnhancedTuiApp {
                     match arboard::Clipboard::new() {
                         Ok(mut clipboard) => match clipboard.set_text(&debug_info) {
                             Ok(_) => {
-                                self.buffer_mut().set_status_message(
-                                    "DEBUG INFO copied to clipboard!".to_string(),
-                                );
+                                // Verify clipboard write by reading it back
+                                match clipboard.get_text() {
+                                    Ok(clipboard_content) => {
+                                        let clipboard_len = clipboard_content.len();
+                                        if clipboard_content == debug_info {
+                                            self.buffer_mut().set_status_message(format!(
+                                                "DEBUG INFO copied to clipboard ({} chars)!",
+                                                clipboard_len
+                                            ));
+                                        } else {
+                                            self.buffer_mut().set_status_message(format!(
+                                                "Clipboard verification failed! Expected {} chars, got {} chars",
+                                                debug_info.len(), clipboard_len
+                                            ));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        self.buffer_mut().set_status_message(format!(
+                                            "Debug info copied but verification failed: {}",
+                                            e
+                                        ));
+                                    }
+                                }
                             }
                             Err(e) => {
                                 self.buffer_mut()

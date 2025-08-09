@@ -52,6 +52,17 @@ impl YankManager {
         let mut clipboard = Clipboard::new()?;
         clipboard.set_text(&value)?;
 
+        // Verify clipboard write by reading it back
+        let clipboard_content = clipboard.get_text().unwrap_or_default();
+        let clipboard_len = clipboard_content.len();
+        if clipboard_content != value {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                value.len(),
+                clipboard_len
+            ));
+        }
+
         // Prepare result
         let col_name = header.to_string();
         let display_value = if value.len() > 20 {
@@ -61,7 +72,7 @@ impl YankManager {
         };
 
         Ok(YankResult {
-            description: col_name,
+            description: format!("{} ({} chars)", col_name, clipboard_len),
             preview: display_value,
             full_value: value,
         })
@@ -89,11 +100,22 @@ impl YankManager {
         let mut clipboard = Clipboard::new()?;
         clipboard.set_text(&row_text)?;
 
+        // Verify clipboard write by reading it back
+        let clipboard_content = clipboard.get_text().unwrap_or_default();
+        let clipboard_len = clipboard_content.len();
+        if clipboard_content != row_text {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                row_text.len(),
+                clipboard_len
+            ));
+        }
+
         // Count values for preview
         let num_values = obj.len();
 
         Ok(YankResult {
-            description: format!("Row {}", row_index + 1),
+            description: format!("Row {} ({} chars)", row_index + 1, clipboard_len),
             preview: format!("{} values", num_values),
             full_value: row_text,
         })
@@ -125,22 +147,40 @@ impl YankManager {
         for row in &results.data {
             if let Some(obj) = row.as_object() {
                 let value = match obj.get(*header) {
-                    Some(Value::String(s)) => s.clone(),
+                    Some(Value::String(s)) => {
+                        s.replace('\t', "    ").replace('\n', " ").replace('\r', "")
+                    }
                     Some(Value::Number(n)) => n.to_string(),
                     Some(Value::Bool(b)) => b.to_string(),
                     Some(Value::Null) => "NULL".to_string(),
-                    Some(other) => other.to_string(),
+                    Some(other) => other
+                        .to_string()
+                        .replace('\t', "    ")
+                        .replace('\n', " ")
+                        .replace('\r', ""),
                     None => String::new(),
                 };
                 column_values.push(value);
             }
         }
 
-        let column_text = column_values.join("\n");
+        // Use Windows-compatible line endings (\r\n) for better clipboard compatibility
+        let column_text = column_values.join("\r\n");
 
         // Copy to clipboard
         let mut clipboard = Clipboard::new()?;
         clipboard.set_text(&column_text)?;
+
+        // Verify clipboard write by reading it back
+        let clipboard_content = clipboard.get_text().unwrap_or_default();
+        let clipboard_len = clipboard_content.len();
+        if clipboard_content != column_text {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                column_text.len(),
+                clipboard_len
+            ));
+        }
 
         let preview = if column_values.len() > 5 {
             format!("{} values", column_values.len())
@@ -149,19 +189,19 @@ impl YankManager {
         };
 
         Ok(YankResult {
-            description: format!("Column '{}'", header),
+            description: format!("Column '{}' ({} chars)", header, clipboard_len),
             preview,
             full_value: column_text,
         })
     }
 
-    /// Yank all data as CSV
+    /// Yank all data as TSV (Tab-Separated Values) for better Windows clipboard compatibility
     pub fn yank_all(buffer: &dyn BufferAPI) -> Result<YankResult> {
         // Determine what data to use
         let data = if buffer.is_filter_active() || buffer.is_fuzzy_filter_active() {
             // Use filtered data if available
             if let Some(filtered) = buffer.get_filtered_data() {
-                // Convert string data back to JSON for CSV generation
+                // Convert string data back to JSON for TSV generation
                 // This is a bit inefficient but maintains compatibility
                 Self::convert_filtered_to_json(buffer, filtered)?
             } else if let Some(results) = buffer.get_results() {
@@ -175,13 +215,24 @@ impl YankManager {
             return Err(anyhow!("No data available"));
         };
 
-        // Generate CSV text
-        let csv_text = DataExporter::generate_csv_text(&data)
-            .ok_or_else(|| anyhow!("Failed to generate CSV"))?;
+        // Generate TSV text for better Windows/Excel compatibility
+        let tsv_text = DataExporter::generate_tsv_text(&data)
+            .ok_or_else(|| anyhow!("Failed to generate TSV"))?;
 
         // Copy to clipboard
         let mut clipboard = Clipboard::new()?;
-        clipboard.set_text(&csv_text)?;
+        clipboard.set_text(&tsv_text)?;
+
+        // Verify clipboard write by reading it back
+        let clipboard_content = clipboard.get_text().unwrap_or_default();
+        let clipboard_len = clipboard_content.len();
+        if clipboard_content != tsv_text {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                tsv_text.len(),
+                clipboard_len
+            ));
+        }
 
         // Create preview
         let row_count = data.len();
@@ -202,9 +253,9 @@ impl YankManager {
         };
 
         Ok(YankResult {
-            description: format!("All data{}", filter_info),
+            description: format!("All data{} as TSV ({} chars)", filter_info, clipboard_len),
             preview: format!("{} rows × {} columns", row_count, col_count),
-            full_value: csv_text,
+            full_value: tsv_text,
         })
     }
 
