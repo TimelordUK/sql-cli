@@ -2844,37 +2844,54 @@ impl EnhancedTuiApp {
 
             let column_name = &headers[self.buffer().get_current_column()];
 
-            // Use filtered data if available, otherwise use original data
-            let data_to_analyze: Vec<String> =
+            // Extract column data more efficiently - avoid cloning strings when possible
+            let (owned_strings, borrowed_values): (Vec<String>, Vec<&str>) =
                 if let Some(filtered) = self.buffer().get_filtered_data() {
-                    // Convert filtered data back to strings for analysis
+                    // For filtered data, we already have strings
                     let mut string_data = Vec::new();
                     for row in filtered {
                         if self.buffer().get_current_column() < row.len() {
                             string_data.push(row[self.buffer().get_current_column()].clone());
                         }
                     }
-                    string_data
+                    (string_data, vec![])
                 } else {
-                    // Extract column values from JSON data as strings
-                    results
-                        .data
-                        .iter()
-                        .filter_map(|row| {
-                            if let Some(obj) = row.as_object() {
-                                obj.get(column_name).map(|v| match v {
-                                    Value::String(s) => s.clone(),
-                                    Value::Number(n) => n.to_string(),
-                                    Value::Bool(b) => b.to_string(),
-                                    Value::Null => String::new(),
-                                    _ => v.to_string(),
-                                })
-                            } else {
-                                None
+                    // For JSON data, collect references to existing strings and only create new strings for non-strings
+                    let mut owned = Vec::new();
+                    let mut refs = Vec::new();
+
+                    for row in &results.data {
+                        if let Some(obj) = row.as_object() {
+                            if let Some(v) = obj.get(column_name) {
+                                match v {
+                                    Value::String(s) => {
+                                        refs.push(s.as_str());
+                                    }
+                                    Value::Number(n) => {
+                                        owned.push(n.to_string());
+                                    }
+                                    Value::Bool(b) => {
+                                        owned.push(b.to_string());
+                                    }
+                                    Value::Null => {
+                                        refs.push("");
+                                    }
+                                    _ => {
+                                        owned.push(v.to_string());
+                                    }
+                                }
                             }
-                        })
-                        .collect()
+                        }
+                    }
+                    (owned, refs)
                 };
+
+            // Combine owned and borrowed into a single vec of references for analysis
+            let data_to_analyze: Vec<&str> = owned_strings
+                .iter()
+                .map(|s| s.as_str())
+                .chain(borrowed_values.iter().copied())
+                .collect();
 
             // Use DataAnalyzer to calculate statistics
             let analyzer_stats = self
@@ -2946,7 +2963,7 @@ impl EnhancedTuiApp {
                 let mut freq_map: BTreeMap<&str, usize> = BTreeMap::new();
                 for value in &data_to_analyze {
                     if !value.is_empty() {
-                        *freq_map.entry(value.as_str()).or_insert(0) += 1;
+                        *freq_map.entry(value).or_insert(0) += 1;
                     }
                 }
                 // Convert to owned strings only at the end

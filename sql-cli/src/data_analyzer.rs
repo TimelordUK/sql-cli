@@ -51,7 +51,7 @@ impl DataAnalyzer {
     pub fn calculate_column_statistics(
         &mut self,
         column_name: &str,
-        values: &[String],
+        values: &[&str],
     ) -> ColumnStatistics {
         let mut stats = ColumnStatistics {
             column_name: column_name.to_string(),
@@ -74,29 +74,29 @@ impl DataAnalyzer {
         // Collect unique values more efficiently - use references when possible
         let mut unique = std::collections::HashSet::new();
         let mut numeric_values = Vec::new();
-        let mut min_str: Option<&String> = None;
-        let mut max_str: Option<&String> = None;
+        let mut min_str: Option<&str> = None;
+        let mut max_str: Option<&str> = None;
         let mut lengths = Vec::new();
 
-        for value in values.iter() {
+        for value in values {
             if value.is_empty() {
                 stats.null_values += 1;
             } else {
                 stats.non_null_values += 1;
 
-                // Use string reference instead of cloning for unique count
-                unique.insert(value.as_str());
+                // Use string reference for unique count
+                unique.insert(*value);
                 lengths.push(value.len());
 
                 // Track min/max strings without cloning
                 match min_str {
                     None => min_str = Some(value),
-                    Some(min) if value < min => min_str = Some(value),
+                    Some(min) if value < &min => min_str = Some(value),
                     _ => {}
                 }
                 match max_str {
                     None => max_str = Some(value),
-                    Some(max) if value > max => max_str = Some(value),
+                    Some(max) if value > &max => max_str = Some(value),
                     _ => {}
                 }
 
@@ -149,7 +149,7 @@ impl DataAnalyzer {
     }
 
     /// Detect the type of a column based on its values
-    pub fn detect_column_type(&self, values: &[String]) -> ColumnType {
+    pub fn detect_column_type(&self, values: &[&str]) -> ColumnType {
         if values.is_empty() {
             return ColumnType::Unknown;
         }
