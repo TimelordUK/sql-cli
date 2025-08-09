@@ -25,7 +25,7 @@ fn test_key_dispatcher_basic() -> anyhow::Result<()> {
         Some("goto_first_row")
     );
 
-    let G_key = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::empty());
+    let G_key = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT);
     assert_eq!(dispatcher.get_results_action(&G_key), Some("goto_last_row"));
 
     // Test debug mode keys - the ones we just fixed!

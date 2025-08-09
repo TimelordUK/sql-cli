@@ -214,7 +214,7 @@ impl KeyChordHandler {
     }
 
     /// Log a key press to history
-    fn log_key_press(&mut self, key: &KeyEvent) {
+    pub fn log_key_press(&mut self, key: &KeyEvent) {
         if self.key_history.len() >= self.max_history {
             self.key_history.remove(0);
         }

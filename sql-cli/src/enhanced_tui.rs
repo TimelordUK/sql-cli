@@ -1335,11 +1335,15 @@ impl EnhancedTuiApp {
         }
 
         // In cell mode, skip chord handler for 'y' key - handle it directly
-        let should_skip_chord = matches!(self.selection_mode, SelectionMode::Cell)
-            && matches!(key.code, KeyCode::Char('y'));
+        // Also skip 'G' as it's a single key action, not a chord
+        let should_skip_chord = (matches!(self.selection_mode, SelectionMode::Cell)
+            && matches!(key.code, KeyCode::Char('y')))
+            || matches!(key.code, KeyCode::Char('G'));
 
         let chord_result = if should_skip_chord {
-            debug!("Skipping chord handler for 'y' in cell mode");
+            debug!("Skipping chord handler for key {:?}", key.code);
+            // Still log the key press even when skipping chord handler
+            self.key_chord_handler.log_key_press(&key);
             ChordResult::SingleKey(key.clone())
         } else {
             // Process key through chord handler
@@ -1389,6 +1393,7 @@ impl EnhancedTuiApp {
 
         // Use dispatcher to get action first
         if let Some(action) = self.key_dispatcher.get_results_action(&key) {
+            debug!("Dispatcher returned action '{}' for key {:?}", action, key);
             match action {
                 "quit" => return Ok(true),
                 "exit_results_mode" => {
@@ -1406,7 +1411,10 @@ impl EnhancedTuiApp {
                 "move_column_left" => self.move_column_left(),
                 "move_column_right" => self.move_column_right(),
                 "goto_first_row" => self.goto_first_row(),
-                "goto_last_row" => self.goto_last_row(),
+                "goto_last_row" => {
+                    debug!("Executing goto_last_row action");
+                    self.goto_last_row();
+                }
                 "goto_first_column" => self.goto_first_column(),
                 "goto_last_column" => self.goto_last_column(),
                 "page_up" => self.page_up(),
