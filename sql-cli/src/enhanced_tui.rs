@@ -26,6 +26,7 @@ use sql_cli::api_client::{ApiClient, QueryResponse};
 use sql_cli::buffer::{
     AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder, SortState,
 };
+use sql_cli::buffer_handler::BufferHandler;
 use sql_cli::cache::QueryCache;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
@@ -151,6 +152,7 @@ pub struct EnhancedTuiApp {
 
     // Buffer management (new - for supporting multiple files)
     buffer_manager: BufferManager,
+    buffer_handler: BufferHandler, // Handles buffer operations like switching
     // Cache
     query_cache: Option<QueryCache>,
     // Data source tracking
@@ -399,6 +401,7 @@ impl EnhancedTuiApp {
                 manager.add_buffer(buffer);
                 manager
             },
+            buffer_handler: BufferHandler::new(),
             query_cache: QueryCache::new().ok(),
             // Cache fields now in Buffer
             undo_stack: Vec::new(),
@@ -693,6 +696,67 @@ impl EnhancedTuiApp {
         // Also log to tracing
         trace!(target: "input", "Key: {:?} Modifiers: {:?}", key.code, key.modifiers);
 
+        // Try dispatcher first for buffer operations and other actions
+        if let Some(action) = self.key_dispatcher.get_command_action(&key) {
+            match action {
+                "quit" => return Ok(true),
+                "next_buffer" => {
+                    let message = self.buffer_handler.next_buffer(&mut self.buffer_manager);
+                    debug!("{}", message);
+                    return Ok(false);
+                }
+                "previous_buffer" => {
+                    let message = self
+                        .buffer_handler
+                        .previous_buffer(&mut self.buffer_manager);
+                    debug!("{}", message);
+                    return Ok(false);
+                }
+                "quick_switch_buffer" => {
+                    let message = self.buffer_handler.quick_switch(&mut self.buffer_manager);
+                    debug!("{}", message);
+                    return Ok(false);
+                }
+                "new_buffer" => {
+                    let message = self
+                        .buffer_handler
+                        .new_buffer(&mut self.buffer_manager, &self.config);
+                    debug!("{}", message);
+                    return Ok(false);
+                }
+                "close_buffer" => {
+                    let (success, message) =
+                        self.buffer_handler.close_buffer(&mut self.buffer_manager);
+                    debug!("{}", message);
+                    return Ok(!success); // Exit if we couldn't close (only one left)
+                }
+                "list_buffers" => {
+                    let buffer_list = self.buffer_handler.list_buffers(&self.buffer_manager);
+                    // For now, just log the list - later we can show a popup
+                    for line in &buffer_list {
+                        debug!("{}", line);
+                    }
+                    return Ok(false);
+                }
+                action if action.starts_with("switch_to_buffer_") => {
+                    if let Some(buffer_num_str) = action.strip_prefix("switch_to_buffer_") {
+                        if let Ok(buffer_num) = buffer_num_str.parse::<usize>() {
+                            let message = self
+                                .buffer_handler
+                                .switch_to_buffer(&mut self.buffer_manager, buffer_num - 1); // Convert to 0-based
+                            debug!("{}", message);
+                        }
+                    }
+                    return Ok(false);
+                }
+                "expand_asterisk" => {
+                    self.expand_asterisk();
+                    return Ok(false);
+                }
+                _ => {} // Fall through to hardcoded handling
+            }
+        }
+
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
@@ -700,63 +764,10 @@ impl EnhancedTuiApp {
                 // Expand SELECT * to all column names
                 self.expand_asterisk();
             }
-            // Buffer navigation keys
-            KeyCode::Tab if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Alt+Tab - next buffer
-                self.next_buffer();
-            }
-            KeyCode::BackTab
-                if key
-                    .modifiers
-                    .contains(KeyModifiers::ALT | KeyModifiers::SHIFT) =>
-            {
-                // Alt+Shift+Tab - previous buffer
-                self.prev_buffer();
-            }
-            // Alternative buffer navigation keys (for Windows users)
-            KeyCode::F(11) => {
-                // F11 - previous buffer
-                self.prev_buffer();
-            }
-            KeyCode::F(12) => {
-                // F12 - next buffer
-                self.next_buffer();
-            }
-            // Ctrl+PageDown for next buffer (more standard)
-            KeyCode::PageDown if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Ctrl+PageDown - next buffer
-                self.next_buffer();
-            }
-            // Ctrl+PageUp for previous buffer
-            KeyCode::PageUp if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Ctrl+PageUp - previous buffer
-                self.prev_buffer();
-            }
-            // Also support Ctrl+Tab-like behavior with Ctrl+6
-            KeyCode::Char('6') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Ctrl+6 - toggle between last two buffers (like vim)
-                self.next_buffer();
-            }
-            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Alt+N - new buffer
-                self.new_buffer();
-            }
             // KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::ALT) && key.modifiers.contains(KeyModifiers::SHIFT) => {
             //     // Alt+Shift+D - new DataTable buffer (for testing) - disabled during revert
             //     self.new_datatable_buffer();
             // }
-            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Alt+W - close current buffer
-                self.close_buffer();
-            }
-            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Alt+B - list buffers
-                let buffer_list = self.list_buffers();
-                if !buffer_list.is_empty() {
-                    let message = format!("Buffers:\n{}", buffer_list.join("\n"));
-                    self.buffer_mut().set_status_message(message);
-                }
-            }
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.show_help = !self.show_help;
                 let mode = if self.show_help {
@@ -1331,141 +1342,186 @@ impl EnhancedTuiApp {
             }
         }
 
+        // Use dispatcher to get action first
+        if let Some(action) = self.key_dispatcher.get_results_action(&key) {
+            match action {
+                "quit" => return Ok(true),
+                "exit_results_mode" => {
+                    // Save current position before switching to Command mode
+                    if let Some(selected) = self.table_state.selected() {
+                        self.buffer_mut().set_last_results_row(Some(selected));
+                        let scroll_offset = self.buffer().get_scroll_offset();
+                        self.buffer_mut().set_last_scroll_offset(scroll_offset);
+                    }
+                    self.buffer_mut().set_mode(AppMode::Command);
+                    &mut self.table_state.select(None);
+                }
+                "next_row" => self.next_row(),
+                "previous_row" => self.previous_row(),
+                "move_column_left" => self.move_column_left(),
+                "move_column_right" => self.move_column_right(),
+                "goto_first_row" => self.goto_first_row(),
+                "goto_last_row" => self.goto_last_row(),
+                "goto_first_column" => self.goto_first_column(),
+                "goto_last_column" => self.goto_last_column(),
+                "page_up" => self.page_up(),
+                "page_down" => self.page_down(),
+                "start_search" => {
+                    self.buffer_mut().set_mode(AppMode::Search);
+                    self.buffer_mut().set_search_pattern(String::new());
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.save_state_for_undo();
+                    }
+                    self.clear_input();
+                }
+                "start_column_search" => {
+                    self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                    self.buffer_mut().set_column_search_pattern(String::new());
+                    self.buffer_mut().set_column_search_matches(Vec::new());
+                    self.buffer_mut().set_column_search_current_match(0);
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.save_state_for_undo();
+                    }
+                    self.clear_input();
+                }
+                "start_filter" => {
+                    self.buffer_mut().set_mode(AppMode::Filter);
+                    self.get_filter_state_mut().pattern.clear();
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.save_state_for_undo();
+                    }
+                    self.clear_input();
+                }
+                "start_fuzzy_filter" => {
+                    self.buffer_mut().set_mode(AppMode::FuzzyFilter);
+                    self.buffer_mut().set_fuzzy_filter_pattern(String::new());
+                    self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
+                    self.buffer_mut().set_fuzzy_filter_active(false);
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.save_state_for_undo();
+                    }
+                    self.clear_input();
+                }
+                "sort_by_column" => self.sort_by_column(self.buffer().get_current_column()),
+                "show_column_stats" => self.calculate_column_statistics(),
+                "next_search_match" => self.next_search_match(),
+                "previous_search_match" => self.previous_search_match(),
+                "toggle_compact_mode" => {
+                    let current_mode = self.buffer().is_compact_mode();
+                    self.buffer_mut().set_compact_mode(!current_mode);
+                    let message = if !current_mode {
+                        "Compact mode: ON (reduced padding, more columns visible)".to_string()
+                    } else {
+                        "Compact mode: OFF (normal padding)".to_string()
+                    };
+                    self.buffer_mut().set_status_message(message);
+                }
+                "toggle_row_numbers" => {
+                    let current_mode = self.buffer().is_show_row_numbers();
+                    self.buffer_mut().set_show_row_numbers(!current_mode);
+                    let message = if !current_mode {
+                        "Row numbers: ON".to_string()
+                    } else {
+                        "Row numbers: OFF".to_string()
+                    };
+                    self.buffer_mut().set_status_message(message);
+                }
+                "jump_to_row" => {
+                    self.buffer_mut().set_mode(AppMode::JumpToRow);
+                    self.jump_to_row_input.clear();
+                    self.buffer_mut()
+                        .set_status_message("Enter row number:".to_string());
+                }
+                "pin_column" => self.toggle_column_pin(),
+                "clear_pins" => self.clear_all_pinned_columns(),
+                "toggle_selection_mode" => {
+                    self.selection_mode = match self.selection_mode {
+                        SelectionMode::Row => {
+                            self.buffer_mut().set_status_message(
+                                "Cell mode - Navigate to select individual cells".to_string(),
+                            );
+                            SelectionMode::Cell
+                        }
+                        SelectionMode::Cell => {
+                            self.buffer_mut().set_status_message(
+                                "Row mode - Navigate to select rows".to_string(),
+                            );
+                            SelectionMode::Row
+                        }
+                    };
+                }
+                "handle_yank" => self.yank_row(),
+                "export_to_csv" => self.export_to_csv(),
+                "export_to_json" => self.export_to_json(),
+                "toggle_help" => {
+                    if self.buffer().get_mode() == AppMode::Help {
+                        self.buffer_mut().set_mode(AppMode::Results);
+                    } else {
+                        self.buffer_mut().set_mode(AppMode::Help);
+                    }
+                }
+                "toggle_debug" => {
+                    // Debug mode - show buffer state and parser information
+                    let cursor_pos = self.get_input_cursor();
+                    let visual_cursor = self.get_visual_cursor().1; // Get column position for single-line
+                    let query = self.get_input_text();
+
+                    // Create debug info showing buffer state
+                    let mut debug_info = String::new();
+                    debug_info.push_str("=== Debug Information (Results Mode) ===\n\n");
+
+                    // Add current query info
+                    debug_info.push_str("Current Query:\n");
+                    debug_info.push_str(&format!("  Query: '{}'\n", query));
+                    debug_info.push_str(&format!("  Cursor Position: {}\n", cursor_pos));
+                    debug_info.push_str(&format!("  Visual Cursor: {}\n", visual_cursor));
+                    debug_info.push_str("\n");
+
+                    // Add buffer manager info
+                    debug_info.push_str("=== Buffer Manager ===\n");
+                    debug_info.push_str(&format!(
+                        "  Total Buffers: {}\n",
+                        self.buffer_manager.all_buffers().len()
+                    ));
+                    debug_info.push_str(&format!(
+                        "  Current Buffer Index: {}\n",
+                        self.buffer_manager.current_index()
+                    ));
+
+                    // Add current buffer debug dump
+                    if let Some(buffer) = self.buffer_manager.current() {
+                        debug_info.push_str("\n=== Current Buffer State ===\n");
+                        debug_info.push_str(&buffer.debug_dump());
+                    }
+
+                    self.debug_text = debug_info;
+                    self.debug_scroll = 0;
+                    self.buffer_mut().set_mode(AppMode::Debug);
+                    self.buffer_mut()
+                        .set_status_message("Debug mode - Press 'q' or ESC to return".to_string());
+                }
+                "toggle_case_insensitive" => {
+                    // Toggle case-insensitive string comparisons
+                    let current = self.buffer().is_case_insensitive();
+                    self.buffer_mut().set_case_insensitive(!current);
+
+                    // Update CSV client if in CSV mode
+                    if let Some(csv_client) = self.buffer_mut().get_csv_client_mut() {
+                        csv_client.set_case_insensitive(!current);
+                    }
+
+                    self.buffer_mut().set_status_message(format!(
+                        "Case-insensitive string comparisons: {}",
+                        if !current { "ON" } else { "OFF" }
+                    ));
+                }
+                _ => {}
+            }
+            return Ok(false);
+        }
+
+        // Fall back to direct key handling for special cases not in dispatcher
         match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::Char('q') => return Ok(true),
-            KeyCode::F(5) => {
-                // Debug mode - show buffer state and parser information
-                // Build debug information similar to Command mode
-                let cursor_pos = self.get_input_cursor();
-                let visual_cursor = self.get_visual_cursor().1; // Get column position for single-line
-                let query = self.get_input_text();
-
-                // Create debug info showing buffer state
-                let mut debug_info = String::new();
-                debug_info.push_str("=== Debug Information (Results Mode) ===\n\n");
-
-                // Add current query info
-                debug_info.push_str("Current Query:\n");
-                debug_info.push_str(&format!("  Query: '{}'\n", query));
-                debug_info.push_str(&format!("  Cursor Position: {}\n", cursor_pos));
-                debug_info.push_str(&format!("  Visual Cursor: {}\n", visual_cursor));
-                debug_info.push_str("\n");
-
-                // Add buffer manager info
-                debug_info.push_str("=== Buffer Manager ===\n");
-                debug_info.push_str(&format!(
-                    "  Total Buffers: {}\n",
-                    self.buffer_manager.all_buffers().len()
-                ));
-                debug_info.push_str(&format!(
-                    "  Current Buffer Index: {}\n",
-                    self.buffer_manager.current_index()
-                ));
-
-                // Add current buffer debug dump
-                if let Some(buffer) = self.buffer_manager.current() {
-                    debug_info.push_str("\n=== Current Buffer State ===\n");
-                    debug_info.push_str(&buffer.debug_dump());
-                }
-
-                self.debug_text = debug_info;
-                self.debug_scroll = 0;
-                self.buffer_mut().set_mode(AppMode::Debug);
-                self.buffer_mut()
-                    .set_status_message("Debug mode - Press 'q' or ESC to return".to_string());
-            }
-            KeyCode::F(8) => {
-                // Toggle case-insensitive string comparisons
-                let current = self.buffer().is_case_insensitive();
-                self.buffer_mut().set_case_insensitive(!current);
-
-                // Update CSV client if in CSV mode
-                // Update CSV client if in CSV mode
-                if let Some(csv_client) = self.buffer_mut().get_csv_client_mut() {
-                    csv_client.set_case_insensitive(!current);
-                }
-
-                self.buffer_mut().set_status_message(format!(
-                    "Case-insensitive string comparisons: {}",
-                    if !current { "ON" } else { "OFF" }
-                ));
-            }
-            KeyCode::Esc => {
-                // Save current position before switching to Command mode
-                if let Some(selected) = self.table_state.selected() {
-                    self.buffer_mut().set_last_results_row(Some(selected));
-                    let scroll_offset = self.buffer().get_scroll_offset();
-                    self.buffer_mut().set_last_scroll_offset(scroll_offset);
-                }
-                self.buffer_mut().set_mode(AppMode::Command);
-                &mut self.table_state.select(None);
-            }
-            KeyCode::Up => {
-                // Save current position before switching to Command mode
-                if let Some(selected) = self.table_state.selected() {
-                    self.buffer_mut().set_last_results_row(Some(selected));
-                    let scroll_offset = self.buffer().get_scroll_offset();
-                    self.buffer_mut().set_last_scroll_offset(scroll_offset);
-                }
-                self.buffer_mut().set_mode(AppMode::Command);
-                &mut self.table_state.select(None);
-            }
-            // Vim-like navigation
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.next_row();
-            }
-            KeyCode::Char('k') => {
-                self.previous_row();
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.move_column_left();
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                self.move_column_right();
-            }
-            KeyCode::Char('^') | KeyCode::Char('0') => {
-                // Jump to first column (vim-like)
-                self.goto_first_column();
-            }
-            KeyCode::Char('$') => {
-                // Jump to last column (vim-like)
-                self.goto_last_column();
-            }
-            KeyCode::Char('g') => {
-                self.goto_first_row();
-            }
-            KeyCode::Char('G') => {
-                self.goto_last_row();
-            }
-            KeyCode::Char('p') => {
-                // Toggle pin for current column
-                self.toggle_column_pin();
-            }
-            KeyCode::Char('P') => {
-                // Clear all pinned columns
-                self.clear_all_pinned_columns();
-            }
-            KeyCode::Char('C') => {
-                // Toggle compact mode with Shift+C
-                let current_mode = self.buffer().is_compact_mode();
-                self.buffer_mut().set_compact_mode(!current_mode);
-                let message = if !current_mode {
-                    "Compact mode: ON (reduced padding, more columns visible)".to_string()
-                } else {
-                    "Compact mode: OFF (standard padding)".to_string()
-                };
-                self.buffer_mut().set_status_message(message);
-                // Recalculate column widths with new mode
-                self.calculate_optimal_column_widths();
-            }
-            KeyCode::Char(':') => {
-                // Start jump to row command
-                self.buffer_mut().set_mode(AppMode::JumpToRow);
-                self.jump_to_row_input.clear();
-                self.buffer_mut()
-                    .set_status_message("Enter row number:".to_string());
-            }
             KeyCode::Char(' ') => {
                 // Toggle viewport lock with Space
                 let current_lock = self.buffer().is_viewport_lock();
@@ -2035,6 +2091,13 @@ impl EnhancedTuiApp {
                 "debug_go_to_top" => self.debug_go_to_top(),
                 "debug_go_to_bottom" => self.debug_go_to_bottom(),
                 _ => {}
+            }
+        } else {
+            // Fallback handling for keys that might not be properly mapped
+            if key.code == KeyCode::Char('G') && key.modifiers.contains(KeyModifiers::SHIFT) {
+                self.debug_go_to_bottom();
+            } else if key.code == KeyCode::Char('g') && key.modifiers.is_empty() {
+                self.debug_go_to_top();
             }
         }
         Ok(false)
