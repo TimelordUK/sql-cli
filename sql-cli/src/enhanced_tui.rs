@@ -548,19 +548,15 @@ impl EnhancedTuiApp {
 
     // Wrapper methods for last_visible_rows (uses buffer system)
     fn get_last_visible_rows(&self) -> usize {
-        if let Some(buffer) = self.current_buffer() {
-            buffer.get_last_visible_rows()
-        } else {
-            self.last_visible_rows
-        }
+        self.current_buffer()
+            .expect("Buffer should always be present")
+            .get_last_visible_rows()
     }
 
     fn set_last_visible_rows(&mut self, rows: usize) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_last_visible_rows(rows);
-        } else {
-            self.last_visible_rows = rows;
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_last_visible_rows(rows);
     }
 
     // Wrapper methods for cached_data (uses buffer system)
@@ -630,11 +626,9 @@ impl EnhancedTuiApp {
     }
 
     fn set_search_pattern(&mut self, pattern: String) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_search_pattern(pattern);
-        } else {
-            self.search_state.pattern = pattern;
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_search_pattern(pattern);
     }
 
     fn push_search_pattern_char(&mut self, c: char) {
@@ -664,11 +658,9 @@ impl EnhancedTuiApp {
     }
 
     fn set_search_matches(&mut self, matches: Vec<(usize, usize)>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_search_matches(matches);
-        } else {
-            self.search_state.matches = matches;
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_search_matches(matches);
     }
 
     fn clear_search_matches(&mut self) {
@@ -682,11 +674,9 @@ impl EnhancedTuiApp {
     }
 
     fn set_search_match_index(&mut self, index: usize) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_search_match_index(index);
-        } else {
-            self.search_state.match_index = index;
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_search_match_index(index);
     }
 
     fn get_current_search_match(&self) -> Option<(usize, usize)> {
@@ -696,22 +686,15 @@ impl EnhancedTuiApp {
     }
 
     fn set_current_search_match(&mut self, match_pos: Option<(usize, usize)>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_current_match(match_pos);
-        } else {
-            self.search_state.current_match = match_pos;
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_current_match(match_pos);
     }
 
     fn clear_search_state(&mut self) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.clear_search_state();
-        } else {
-            self.search_state.pattern.clear();
-            self.search_state.matches.clear();
-            self.search_state.current_match = None;
-            self.search_state.match_index = 0;
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .clear_search_state();
     }
 
     // Wrapper methods for pinned_columns (uses buffer system)
@@ -723,30 +706,21 @@ impl EnhancedTuiApp {
     }
 
     fn add_pinned_column(&mut self, col: usize) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.add_pinned_column(col);
-        } else {
-            if !self.pinned_columns.contains(&col) {
-                self.pinned_columns.push(col);
-                self.pinned_columns.sort();
-            }
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .add_pinned_column(col);
     }
 
     fn remove_pinned_column(&mut self, col: usize) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.remove_pinned_column(col);
-        } else {
-            self.pinned_columns.retain(|&c| c != col);
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .remove_pinned_column(col);
     }
 
     fn clear_pinned_columns(&mut self) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.clear_pinned_columns();
-        } else {
-            self.pinned_columns.clear();
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .clear_pinned_columns();
     }
 
     fn contains_pinned_column(&self, col: usize) -> bool {
@@ -772,9 +746,9 @@ impl EnhancedTuiApp {
     }
 
     fn set_fuzzy_filter_pattern(&mut self, pattern: String) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_fuzzy_filter_pattern(pattern.clone());
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_fuzzy_filter_pattern(pattern);
     }
 
     fn is_fuzzy_filter_active(&self) -> bool {
@@ -784,9 +758,9 @@ impl EnhancedTuiApp {
     }
 
     fn set_fuzzy_filter_active(&mut self, active: bool) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_fuzzy_filter_active(active);
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_fuzzy_filter_active(active);
     }
 
     fn get_fuzzy_filter_indices(&self) -> Vec<usize> {
@@ -797,18 +771,19 @@ impl EnhancedTuiApp {
     }
 
     fn set_fuzzy_filter_indices(&mut self, indices: Vec<usize>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_fuzzy_filter_indices(indices);
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_fuzzy_filter_indices(indices);
     }
 
     fn clear_fuzzy_filter(&mut self) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.clear_fuzzy_filter();
-        }
-        self.set_fuzzy_filter_pattern(String::new());
-        self.set_fuzzy_filter_active(false);
-        self.set_fuzzy_filter_indices(Vec::new());
+        let buffer = self
+            .current_buffer_mut()
+            .expect("Buffer should always be present");
+        buffer.clear_fuzzy_filter();
+        buffer.set_fuzzy_filter_pattern(String::new());
+        buffer.set_fuzzy_filter_active(false);
+        buffer.set_fuzzy_filter_indices(Vec::new());
     }
 
     // Wrapper methods for column search (uses buffer system)
@@ -819,12 +794,9 @@ impl EnhancedTuiApp {
     }
 
     fn set_column_search_pattern(&mut self, pattern: String) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_column_search_pattern(pattern.clone());
-        }
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_column_search_pattern(pattern);
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_column_search_pattern(pattern);
     }
 
     fn get_column_search_matches(&self) -> Vec<(usize, String)> {
@@ -835,12 +807,9 @@ impl EnhancedTuiApp {
     }
 
     fn set_column_search_matches(&mut self, matches: Vec<(usize, String)>) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_column_search_matches(matches.clone());
-        }
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_column_search_matches(matches);
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_column_search_matches(matches);
     }
 
     fn get_column_search_current_match(&self) -> usize {
@@ -850,18 +819,15 @@ impl EnhancedTuiApp {
     }
 
     fn set_column_search_current_match(&mut self, index: usize) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_column_search_current_match(index);
-        }
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_column_search_current_match(index);
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .set_column_search_current_match(index);
     }
 
     fn clear_column_search(&mut self) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.clear_column_search();
-        }
+        self.current_buffer_mut()
+            .expect("Buffer should always be present")
+            .clear_column_search();
     }
 
     // Wrapper methods for column_stats (uses buffer system)
