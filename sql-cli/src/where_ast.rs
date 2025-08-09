@@ -424,15 +424,19 @@ pub fn evaluate_where_expr_with_options(
 
         WhereExpr::Like(column, pattern) => {
             if let Some(field_value) = row.get(column) {
-                if let Some(s) = field_value.as_str() {
-                    // Simple LIKE implementation: % = any chars, _ = single char
-                    let regex_pattern = pattern.replace("%", ".*").replace("_", ".");
+                let str_value = match field_value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Null => return Ok(false),
+                    _ => field_value.to_string(),
+                };
 
-                    if let Ok(regex) = regex::Regex::new(&format!("^{}$", regex_pattern)) {
-                        Ok(regex.is_match(s))
-                    } else {
-                        Ok(false)
-                    }
+                // Simple LIKE implementation: % = any chars, _ = single char
+                let regex_pattern = pattern.replace("%", ".*").replace("_", ".");
+
+                if let Ok(regex) = regex::Regex::new(&format!("^{}$", regex_pattern)) {
+                    Ok(regex.is_match(&str_value))
                 } else {
                     Ok(false)
                 }
@@ -459,11 +463,15 @@ pub fn evaluate_where_expr_with_options(
 
         WhereExpr::Contains(column, search) => {
             if let Some(field_value) = row.get(column) {
-                if let Some(s) = field_value.as_str() {
-                    Ok(s.contains(search))
-                } else {
-                    Ok(false)
-                }
+                // Try as string first, then coerce other types to string
+                let str_value = match field_value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Null => return Ok(false),
+                    _ => field_value.to_string(), // For arrays/objects, use JSON representation
+                };
+                Ok(str_value.contains(search))
             } else {
                 Ok(false)
             }
@@ -471,11 +479,14 @@ pub fn evaluate_where_expr_with_options(
 
         WhereExpr::StartsWith(column, prefix) => {
             if let Some(field_value) = row.get(column) {
-                if let Some(s) = field_value.as_str() {
-                    Ok(s.starts_with(prefix))
-                } else {
-                    Ok(false)
-                }
+                let str_value = match field_value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Null => return Ok(false),
+                    _ => field_value.to_string(),
+                };
+                Ok(str_value.starts_with(prefix))
             } else {
                 Ok(false)
             }
@@ -483,11 +494,14 @@ pub fn evaluate_where_expr_with_options(
 
         WhereExpr::EndsWith(column, suffix) => {
             if let Some(field_value) = row.get(column) {
-                if let Some(s) = field_value.as_str() {
-                    Ok(s.ends_with(suffix))
-                } else {
-                    Ok(false)
-                }
+                let str_value = match field_value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Null => return Ok(false),
+                    _ => field_value.to_string(),
+                };
+                Ok(str_value.ends_with(suffix))
             } else {
                 Ok(false)
             }
@@ -495,11 +509,14 @@ pub fn evaluate_where_expr_with_options(
 
         WhereExpr::ContainsIgnoreCase(column, search) => {
             if let Some(field_value) = row.get(column) {
-                if let Some(s) = field_value.as_str() {
-                    Ok(s.to_lowercase().contains(&search.to_lowercase()))
-                } else {
-                    Ok(false)
-                }
+                let str_value = match field_value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Null => return Ok(false),
+                    _ => field_value.to_string(),
+                };
+                Ok(str_value.to_lowercase().contains(&search.to_lowercase()))
             } else {
                 Ok(false)
             }
@@ -507,11 +524,14 @@ pub fn evaluate_where_expr_with_options(
 
         WhereExpr::StartsWithIgnoreCase(column, prefix) => {
             if let Some(field_value) = row.get(column) {
-                if let Some(s) = field_value.as_str() {
-                    Ok(s.to_lowercase().starts_with(&prefix.to_lowercase()))
-                } else {
-                    Ok(false)
-                }
+                let str_value = match field_value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Null => return Ok(false),
+                    _ => field_value.to_string(),
+                };
+                Ok(str_value.to_lowercase().starts_with(&prefix.to_lowercase()))
             } else {
                 Ok(false)
             }
@@ -519,11 +539,14 @@ pub fn evaluate_where_expr_with_options(
 
         WhereExpr::EndsWithIgnoreCase(column, suffix) => {
             if let Some(field_value) = row.get(column) {
-                if let Some(s) = field_value.as_str() {
-                    Ok(s.to_lowercase().ends_with(&suffix.to_lowercase()))
-                } else {
-                    Ok(false)
-                }
+                let str_value = match field_value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Null => return Ok(false),
+                    _ => field_value.to_string(),
+                };
+                Ok(str_value.to_lowercase().ends_with(&suffix.to_lowercase()))
             } else {
                 Ok(false)
             }
