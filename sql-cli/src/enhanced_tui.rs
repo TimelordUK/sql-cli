@@ -213,19 +213,12 @@ impl EnhancedTuiApp {
             .expect("No buffer available - this should not happen")
     }
 
-    // Direct access to edit_mode through buffer
-    fn get_edit_mode(&self) -> EditMode {
-        self.buffer().get_edit_mode()
-    }
-
-    fn set_edit_mode(&mut self, mode: EditMode) {
-        self.buffer_mut().set_edit_mode(mode);
-    }
+    // Note: edit_mode methods removed - use buffer directly
 
     // Helper to get input text from buffer or fallback to direct input
     fn get_input_text(&self) -> String {
         // For special modes that use the input field for their own purposes
-        match self.get_mode() {
+        match self.buffer().get_mode() {
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 // These modes temporarily use the input field for their patterns
                 self.input.value().to_string() // TODO: Migrate to buffer-based input
@@ -240,7 +233,7 @@ impl EnhancedTuiApp {
     // Helper to get cursor position from buffer or fallback to direct input
     fn get_input_cursor(&self) -> usize {
         // For special modes that use the input field directly
-        match self.get_mode() {
+        match self.buffer().get_mode() {
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 // These modes use the input field for their patterns
                 self.input.cursor()
@@ -259,7 +252,7 @@ impl EnhancedTuiApp {
         self.buffer_mut().set_input_cursor_position(text.len());
 
         // For special modes that use the input field directly
-        match self.get_mode() {
+        match self.buffer().get_mode() {
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 // These modes still need the input field updated
                 self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
@@ -277,7 +270,7 @@ impl EnhancedTuiApp {
         self.buffer_mut().set_input_cursor_position(cursor_pos);
 
         // For special modes that use the input field directly
-        match self.get_mode() {
+        match self.buffer().get_mode() {
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 // These modes still need the input field updated
                 self.input = tui_input::Input::new(text).with_cursor(cursor_pos);
@@ -296,7 +289,7 @@ impl EnhancedTuiApp {
     // Helper to handle key events in the input
     fn handle_input_key(&mut self, key: KeyEvent) -> bool {
         // For special modes that handle input directly
-        match self.get_mode() {
+        match self.buffer().get_mode() {
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 self.input.handle_event(&Event::Key(key));
                 false
@@ -326,14 +319,7 @@ impl EnhancedTuiApp {
         (0, cursor)
     }
 
-    // Direct access to mode through buffer
-    fn get_mode(&self) -> AppMode {
-        self.buffer().get_mode()
-    }
-
-    fn set_mode(&mut self, mode: AppMode) {
-        self.buffer_mut().set_mode(mode);
-    }
+    // Note: mode methods removed - use buffer directly
 
     // Compatibility wrapper for table_state
     fn get_table_state(&self) -> &TableState {
@@ -345,24 +331,11 @@ impl EnhancedTuiApp {
         &mut self.table_state
     }
 
-    // Wrapper methods for status_message (uses buffer system)
-    fn get_status_message(&self) -> String {
-        self.buffer().get_status_message()
-    }
+    // Note: status_message methods removed - use buffer directly
 
-    fn set_status_message(&mut self, message: String) {
-        self.buffer_mut().set_status_message(message);
-    }
+    // Note: scroll_offset method removed - use buffer directly
 
-    // Wrapper methods for scroll_offset (uses buffer system)
-    fn get_scroll_offset(&self) -> (usize, usize) {
-        self.buffer().get_scroll_offset()
-    }
-
-    // Wrapper methods for current_column (uses buffer system)
-    fn get_current_column(&self) -> usize {
-        self.buffer().get_current_column()
-    }
+    // Note: current_column method removed - use buffer directly
 
     // Note: CSV and cache mode methods removed - use buffer directly
 
@@ -372,18 +345,7 @@ impl EnhancedTuiApp {
 
     // Note: csv_client methods removed - use buffer directly
 
-    // Wrapper methods for filtered_data (uses buffer system)
-    fn get_filtered_data(&self) -> Option<&Vec<Vec<String>>> {
-        self.current_buffer()
-            .expect("No active buffer")
-            .get_filtered_data()
-    }
-
-    fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>) {
-        self.current_buffer_mut()
-            .expect("No active buffer")
-            .set_filtered_data(data);
-    }
+    // Note: filtered_data methods removed - use buffer directly
 
     // Note: has_filtered_data removed - use buffer directly
 
@@ -403,14 +365,7 @@ impl EnhancedTuiApp {
 
     // Note: column search methods removed - use buffer directly
 
-    // Wrapper methods for column_stats (uses buffer system)
-    fn get_column_stats(&self) -> Option<&ColumnStatistics> {
-        self.buffer().get_column_stats()
-    }
-
-    fn set_column_stats(&mut self, stats: Option<ColumnStatistics>) {
-        self.buffer_mut().set_column_stats(stats);
-    }
+    // Note: column_stats methods removed - use buffer directly
 
     fn sanitize_table_name(name: &str) -> String {
         // Replace spaces and other problematic characters with underscores
@@ -582,7 +537,7 @@ impl EnhancedTuiApp {
                     columns.len()
                 )
             };
-            app.set_status_message(display_msg);
+            app.buffer_mut().set_status_message(display_msg);
         }
 
         // Auto-execute SELECT * FROM table_name to show data immediately (if configured)
@@ -594,7 +549,7 @@ impl EnhancedTuiApp {
         if app.config.behavior.auto_execute_on_load {
             if let Err(e) = app.execute_query(&auto_query) {
                 // If auto-query fails, just log it in status but don't fail the load
-                app.set_status_message(format!(
+                app.buffer_mut().set_status_message(format!(
                     "CSV loaded: table '{}' ({} columns) - Note: {}",
                     table_name,
                     schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
@@ -673,7 +628,7 @@ impl EnhancedTuiApp {
                     columns.len()
                 )
             };
-            app.set_status_message(display_msg);
+            app.buffer_mut().set_status_message(display_msg);
         }
 
         // Auto-execute SELECT * FROM table_name to show data immediately (if configured)
@@ -685,7 +640,7 @@ impl EnhancedTuiApp {
         if app.config.behavior.auto_execute_on_load {
             if let Err(e) = app.execute_query(&auto_query) {
                 // If auto-query fails, just log it in status but don't fail the load
-                app.set_status_message(format!(
+                app.buffer_mut().set_status_message(format!(
                     "JSON loaded: table '{}' ({} columns) - Note: {}",
                     table_name,
                     schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
@@ -758,7 +713,7 @@ impl EnhancedTuiApp {
                         continue;
                     }
 
-                    let should_exit = match self.get_mode() {
+                    let should_exit = match self.buffer().get_mode() {
                         AppMode::Command => self.handle_command_input(key)?,
                         AppMode::Results => self.handle_results_input(key)?,
                         AppMode::Search => self.handle_search_input(key)?,
@@ -869,20 +824,21 @@ impl EnhancedTuiApp {
                 let buffer_list = self.list_buffers();
                 if !buffer_list.is_empty() {
                     let message = format!("Buffers:\n{}", buffer_list.join("\n"));
-                    self.set_status_message(message);
+                    self.buffer_mut().set_status_message(message);
                 }
             }
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.show_help = !self.show_help;
-                self.set_mode(if self.show_help {
+                let mode = if self.show_help {
                     AppMode::Help
                 } else {
                     AppMode::Command
-                });
+                };
+                self.buffer_mut().set_mode(mode);
             }
             KeyCode::F(3) => {
                 // Toggle between single-line and multi-line mode
-                match self.get_edit_mode() {
+                match self.buffer().get_edit_mode() {
                     EditMode::SingleLine => {
                         let current_text = self.get_input_text();
 
@@ -913,8 +869,8 @@ impl EnhancedTuiApp {
                         self.textarea.move_cursor(CursorMove::Top);
                         self.textarea.move_cursor(CursorMove::Head);
 
-                        self.set_edit_mode(EditMode::MultiLine);
-                        self.set_status_message("Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string());
+                        self.buffer_mut().set_edit_mode(EditMode::MultiLine);
+                        self.buffer_mut().set_status_message("Multi-line mode (F3 to toggle, Tab for completion, Ctrl+Enter to execute)".to_string());
                     }
                     EditMode::MultiLine => {
                         // Get text from buffer
@@ -934,8 +890,8 @@ impl EnhancedTuiApp {
                             buffer.set_input_text(compact_text);
                         }
 
-                        self.set_edit_mode(EditMode::SingleLine);
-                        self.set_status_message(
+                        self.buffer_mut().set_edit_mode(EditMode::SingleLine);
+                        self.buffer_mut().set_status_message(
                             "Single-line mode enabled (F3 to toggle multi-line)".to_string(),
                         );
                     }
@@ -944,13 +900,13 @@ impl EnhancedTuiApp {
             KeyCode::F(7) => {
                 // F7 - Toggle cache mode or show cache list
                 if self.buffer().is_cache_mode() {
-                    self.set_mode(AppMode::CacheList);
+                    self.buffer_mut().set_mode(AppMode::CacheList);
                 } else {
-                    self.set_mode(AppMode::CacheList);
+                    self.buffer_mut().set_mode(AppMode::CacheList);
                 }
             }
             KeyCode::Enter => {
-                let query = match self.get_edit_mode() {
+                let query = match self.buffer().get_edit_mode() {
                     EditMode::SingleLine => {
                         let q = self.get_input_text().trim().to_string();
                         debug!(target: "action", "Executing query from single-line mode: {}", q);
@@ -974,26 +930,30 @@ impl EnhancedTuiApp {
                     // Check for special commands
                     if query == ":help" {
                         self.show_help = true;
-                        self.set_mode(AppMode::Help);
-                        self.set_status_message("Help Mode - Press ESC to return".to_string());
+                        self.buffer_mut().set_mode(AppMode::Help);
+                        self.buffer_mut()
+                            .set_status_message("Help Mode - Press ESC to return".to_string());
                     } else if query == ":exit" || query == ":quit" {
                         return Ok(true);
                     } else if query == ":tui" {
                         // Already in TUI mode
-                        self.set_status_message("Already in TUI mode".to_string());
+                        self.buffer_mut()
+                            .set_status_message("Already in TUI mode".to_string());
                     } else if query.starts_with(":cache ") {
                         self.handle_cache_command(&query)?;
                     } else {
-                        self.set_status_message(format!("Processing query: '{}'", query));
+                        self.buffer_mut()
+                            .set_status_message(format!("Processing query: '{}'", query));
                         self.execute_query(&query)?;
                     }
                 } else {
-                    self.set_status_message("Empty query - please enter a SQL command".to_string());
+                    self.buffer_mut()
+                        .set_status_message("Empty query - please enter a SQL command".to_string());
                 }
             }
             KeyCode::Tab => {
                 // Tab completion works in both modes
-                match self.get_edit_mode() {
+                match self.buffer().get_edit_mode() {
                     EditMode::SingleLine => self.apply_completion(),
                     EditMode::MultiLine => {
                         // In vim normal mode, Tab should also trigger completion
@@ -1002,13 +962,14 @@ impl EnhancedTuiApp {
                 }
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.set_mode(AppMode::History);
+                self.buffer_mut().set_mode(AppMode::History);
                 self.history_state.search_query.clear();
                 self.update_history_matches();
 
                 // Debug: log how many history entries we have
                 let total_entries = self.command_history.get_all().len();
-                self.set_status_message(format!("History search: {} total entries", total_entries));
+                self.buffer_mut()
+                    .set_status_message(format!("History search: {} total entries", total_entries));
             }
             // History navigation - Ctrl+P or Alt+Up
             KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1038,7 +999,7 @@ impl EnhancedTuiApp {
                         };
 
                         // Update the appropriate input field based on edit mode
-                        match self.get_edit_mode() {
+                        match self.buffer().get_edit_mode() {
                             EditMode::SingleLine => {
                                 self.input =
                                     tui_input::Input::new(text.clone()).with_cursor(text.len());
@@ -1050,7 +1011,7 @@ impl EnhancedTuiApp {
                                 self.textarea.move_cursor(tui_textarea::CursorMove::End);
                             }
                         }
-                        self.set_status_message(debug_msg);
+                        self.buffer_mut().set_status_message(debug_msg);
                     }
                 }
             }
@@ -1068,7 +1029,7 @@ impl EnhancedTuiApp {
                         let text = buffer.get_input_text();
 
                         // Update the appropriate input field based on edit mode
-                        match self.get_edit_mode() {
+                        match self.buffer().get_edit_mode() {
                             EditMode::SingleLine => {
                                 self.input =
                                     tui_input::Input::new(text.clone()).with_cursor(text.len());
@@ -1080,7 +1041,8 @@ impl EnhancedTuiApp {
                                 self.textarea.move_cursor(tui_textarea::CursorMove::End);
                             }
                         }
-                        self.set_status_message("Next command from history".to_string());
+                        self.buffer_mut()
+                            .set_status_message("Next command from history".to_string());
                     }
                 }
             }
@@ -1093,7 +1055,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.current_buffer_mut() {
                     if buffer.navigate_history_up(&history_commands) {
                         let text = buffer.get_input_text();
-                        match self.get_edit_mode() {
+                        match self.buffer().get_edit_mode() {
                             EditMode::SingleLine => {
                                 self.input =
                                     tui_input::Input::new(text.clone()).with_cursor(text.len());
@@ -1105,7 +1067,8 @@ impl EnhancedTuiApp {
                                 self.textarea.move_cursor(tui_textarea::CursorMove::End);
                             }
                         }
-                        self.set_status_message("Previous command (Alt+Up)".to_string());
+                        self.buffer_mut()
+                            .set_status_message("Previous command (Alt+Up)".to_string());
                     }
                 }
             }
@@ -1118,7 +1081,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.current_buffer_mut() {
                     if buffer.navigate_history_down(&history_commands) {
                         let text = buffer.get_input_text();
-                        match self.get_edit_mode() {
+                        match self.buffer().get_edit_mode() {
                             EditMode::SingleLine => {
                                 self.input =
                                     tui_input::Input::new(text.clone()).with_cursor(text.len());
@@ -1130,7 +1093,8 @@ impl EnhancedTuiApp {
                                 self.textarea.move_cursor(tui_textarea::CursorMove::End);
                             }
                         }
-                        self.set_status_message("Next command (Alt+Down)".to_string());
+                        self.buffer_mut()
+                            .set_status_message("Next command (Alt+Down)".to_string());
                     }
                 }
             }
@@ -1153,7 +1117,7 @@ impl EnhancedTuiApp {
                     csv_client.set_case_insensitive(!current);
                 }
 
-                self.set_status_message(format!(
+                self.buffer_mut().set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
                     if !current { "ON" } else { "OFF" }
                 ));
@@ -1161,26 +1125,28 @@ impl EnhancedTuiApp {
             KeyCode::F(9) => {
                 // F9 as alternative for kill line (for terminals that intercept Ctrl+K)
                 self.kill_line();
-                self.set_status_message(format!(
-                    "Killed to end of line{}",
-                    if !self.buffer().is_kill_ring_empty() {
-                        format!(" ('{}' saved to kill ring)", self.buffer().get_kill_ring())
-                    } else {
-                        "".to_string()
-                    }
-                ));
+                let message = if !self.buffer().is_kill_ring_empty() {
+                    format!(
+                        "Killed to end of line ('{}' saved to kill ring)",
+                        self.buffer().get_kill_ring()
+                    )
+                } else {
+                    "Killed to end of line".to_string()
+                };
+                self.buffer_mut().set_status_message(message);
             }
             KeyCode::F(10) => {
                 // F10 as alternative for kill line backward (for consistency with F9)
                 self.kill_line_backward();
-                self.set_status_message(format!(
-                    "Killed to beginning of line{}",
-                    if !self.buffer().is_kill_ring_empty() {
-                        format!(" ('{}' saved to kill ring)", self.buffer().get_kill_ring())
-                    } else {
-                        "".to_string()
-                    }
-                ));
+                let message = if !self.buffer().is_kill_ring_empty() {
+                    format!(
+                        "Killed to beginning of line ('{}' saved to kill ring)",
+                        self.buffer().get_kill_ring()
+                    )
+                } else {
+                    "Killed to beginning of line".to_string()
+                };
+                self.buffer_mut().set_status_message(message);
             }
             KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Delete word backward (like bash/zsh)
@@ -1192,12 +1158,14 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Kill line - delete from cursor to end of line
-                self.set_status_message("Ctrl+K pressed - killing to end of line".to_string());
+                self.buffer_mut()
+                    .set_status_message("Ctrl+K pressed - killing to end of line".to_string());
                 self.kill_line();
             }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Alternative: Alt+K for kill line (for terminals that intercept Ctrl+K)
-                self.set_status_message("Alt+K - killing to end of line".to_string());
+                self.buffer_mut()
+                    .set_status_message("Alt+K - killing to end of line".to_string());
                 self.kill_line();
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1242,9 +1210,9 @@ impl EnhancedTuiApp {
             }
             KeyCode::Down
                 if self.buffer().get_results().is_some()
-                    && self.get_edit_mode() == EditMode::SingleLine =>
+                    && self.buffer().get_edit_mode() == EditMode::SingleLine =>
             {
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
                 // Restore previous position or default to 0
                 let row = self.buffer().get_last_results_row().unwrap_or(0);
                 self.get_table_state_mut().select(Some(row));
@@ -1329,7 +1297,7 @@ impl EnhancedTuiApp {
                         .get_filtered_data()
                         .map(|d| d.len())
                         .unwrap_or(0),
-                    self.get_current_column(),
+                    self.buffer().get_current_column(),
                     match &self.sort_state {
                         SortState {
                             column: Some(col),
@@ -1368,7 +1336,7 @@ impl EnhancedTuiApp {
                     Cache Mode: {}\n\
                     Data Source: {}\n\
                     Active Filters: {}\n",
-                    self.get_mode(),
+                    self.buffer().get_mode(),
                     self.buffer().is_case_insensitive(),
                     self.buffer().is_compact_mode(),
                     self.buffer().is_viewport_lock(),
@@ -1452,20 +1420,23 @@ impl EnhancedTuiApp {
                 // Store debug info and switch to debug mode
                 self.debug_text = debug_info.clone();
                 self.debug_scroll = 0;
-                self.set_mode(AppMode::Debug);
+                self.buffer_mut().set_mode(AppMode::Debug);
 
                 // Try to copy to clipboard
                 match arboard::Clipboard::new() {
                     Ok(mut clipboard) => match clipboard.set_text(&debug_info) {
                         Ok(_) => {
-                            self.set_status_message("DEBUG INFO copied to clipboard!".to_string());
+                            self.buffer_mut()
+                                .set_status_message("DEBUG INFO copied to clipboard!".to_string());
                         }
                         Err(e) => {
-                            self.set_status_message(format!("Clipboard error: {}", e));
+                            self.buffer_mut()
+                                .set_status_message(format!("Clipboard error: {}", e));
                         }
                     },
                     Err(e) => {
-                        self.set_status_message(format!("Can't access clipboard: {}", e));
+                        self.buffer_mut()
+                            .set_status_message(format!("Can't access clipboard: {}", e));
                     }
                 }
             }
@@ -1479,12 +1450,13 @@ impl EnhancedTuiApp {
                         crate::recursive_parser::format_sql_pretty_compact(&query, 5).join("\n")
                     );
                     self.debug_scroll = 0;
-                    self.set_mode(AppMode::PrettyQuery);
-                    self.set_status_message(
+                    self.buffer_mut().set_mode(AppMode::PrettyQuery);
+                    self.buffer_mut().set_status_message(
                         "Pretty query view (press Esc or q to return)".to_string(),
                     );
                 } else {
-                    self.set_status_message("No query to format".to_string());
+                    self.buffer_mut()
+                        .set_status_message("No query to format".to_string());
                 }
             }
             _ => {
@@ -1496,7 +1468,7 @@ impl EnhancedTuiApp {
                 self.completion_state.current_index = 0;
 
                 // Handle completion based on mode
-                match self.get_edit_mode() {
+                match self.buffer().get_edit_mode() {
                     EditMode::SingleLine => self.handle_completion(),
                     EditMode::MultiLine => self.handle_completion_multiline(),
                 }
@@ -1552,8 +1524,9 @@ impl EnhancedTuiApp {
 
                 self.debug_text = debug_info;
                 self.debug_scroll = 0;
-                self.set_mode(AppMode::Debug);
-                self.set_status_message("Debug mode - Press 'q' or ESC to return".to_string());
+                self.buffer_mut().set_mode(AppMode::Debug);
+                self.buffer_mut()
+                    .set_status_message("Debug mode - Press 'q' or ESC to return".to_string());
             }
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
@@ -1566,7 +1539,7 @@ impl EnhancedTuiApp {
                     csv_client.set_case_insensitive(!current);
                 }
 
-                self.set_status_message(format!(
+                self.buffer_mut().set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
                     if !current { "ON" } else { "OFF" }
                 ));
@@ -1575,15 +1548,16 @@ impl EnhancedTuiApp {
                 if self.yank_mode.is_some() {
                     // Cancel yank mode
                     self.yank_mode = None;
-                    self.set_status_message("Yank cancelled".to_string());
+                    self.buffer_mut()
+                        .set_status_message("Yank cancelled".to_string());
                 } else {
                     // Save current position before switching to Command mode
                     if let Some(selected) = self.get_table_state().selected() {
                         self.buffer_mut().set_last_results_row(Some(selected));
-                        let scroll_offset = self.get_scroll_offset();
+                        let scroll_offset = self.buffer().get_scroll_offset();
                         self.buffer_mut().set_last_scroll_offset(scroll_offset);
                     }
-                    self.set_mode(AppMode::Command);
+                    self.buffer_mut().set_mode(AppMode::Command);
                     self.get_table_state_mut().select(None);
                 }
             }
@@ -1591,10 +1565,10 @@ impl EnhancedTuiApp {
                 // Save current position before switching to Command mode
                 if let Some(selected) = self.get_table_state().selected() {
                     self.buffer_mut().set_last_results_row(Some(selected));
-                    let scroll_offset = self.get_scroll_offset();
+                    let scroll_offset = self.buffer().get_scroll_offset();
                     self.buffer_mut().set_last_scroll_offset(scroll_offset);
                 }
-                self.set_mode(AppMode::Command);
+                self.buffer_mut().set_mode(AppMode::Command);
                 self.get_table_state_mut().select(None);
             }
             // Vim-like navigation
@@ -1636,19 +1610,21 @@ impl EnhancedTuiApp {
                 // Toggle compact mode with Shift+C
                 let current_mode = self.buffer().is_compact_mode();
                 self.buffer_mut().set_compact_mode(!current_mode);
-                self.set_status_message(if self.buffer().is_compact_mode() {
+                let message = if !current_mode {
                     "Compact mode: ON (reduced padding, more columns visible)".to_string()
                 } else {
                     "Compact mode: OFF (standard padding)".to_string()
-                });
+                };
+                self.buffer_mut().set_status_message(message);
                 // Recalculate column widths with new mode
                 self.calculate_optimal_column_widths();
             }
             KeyCode::Char(':') => {
                 // Start jump to row command
-                self.set_mode(AppMode::JumpToRow);
+                self.buffer_mut().set_mode(AppMode::JumpToRow);
                 self.jump_to_row_input.clear();
-                self.set_status_message("Enter row number:".to_string());
+                self.buffer_mut()
+                    .set_status_message("Enter row number:".to_string());
             }
             KeyCode::Char(' ') => {
                 // Toggle viewport lock with Space
@@ -1659,13 +1635,14 @@ impl EnhancedTuiApp {
                     let visible_rows = self.buffer().get_last_visible_rows();
                     self.buffer_mut()
                         .set_viewport_lock_row(Some(visible_rows / 2));
-                    self.set_status_message(format!(
+                    self.buffer_mut().set_status_message(format!(
                         "Viewport lock: ON (anchored at row {} of viewport)",
                         visible_rows / 2 + 1
                     ));
                 } else {
                     self.buffer_mut().set_viewport_lock_row(None);
-                    self.set_status_message("Viewport lock: OFF (normal scrolling)".to_string());
+                    self.buffer_mut()
+                        .set_status_message("Viewport lock: OFF (normal scrolling)".to_string());
                 }
             }
             KeyCode::PageDown | KeyCode::Char('f')
@@ -1680,7 +1657,7 @@ impl EnhancedTuiApp {
             }
             // Search functionality
             KeyCode::Char('/') => {
-                self.set_mode(AppMode::Search);
+                self.buffer_mut().set_mode(AppMode::Search);
                 self.buffer_mut().set_search_pattern(String::new());
                 // Save SQL query and use temporary input for search display
                 if let Some(buffer) = self.current_buffer_mut() {
@@ -1690,7 +1667,7 @@ impl EnhancedTuiApp {
             }
             // Column navigation/search functionality (backslash like vim reverse search)
             KeyCode::Char('\\') => {
-                self.set_mode(AppMode::ColumnSearch);
+                self.buffer_mut().set_mode(AppMode::ColumnSearch);
                 self.buffer_mut().set_column_search_pattern(String::new());
                 self.buffer_mut().set_column_search_matches(Vec::new());
                 self.buffer_mut().set_column_search_current_match(0);
@@ -1711,18 +1688,19 @@ impl EnhancedTuiApp {
                     // Toggle row numbers display
                     let current = self.buffer().is_show_row_numbers();
                     self.buffer_mut().set_show_row_numbers(!current);
-                    self.set_status_message(if self.buffer().is_show_row_numbers() {
+                    let message = if !current {
                         "Row numbers: ON (showing line numbers)".to_string()
                     } else {
                         "Row numbers: OFF".to_string()
-                    });
+                    };
+                    self.buffer_mut().set_status_message(message);
                     // Recalculate column widths with new mode
                     self.calculate_optimal_column_widths();
                 }
             }
             // Regex filter functionality (uppercase F)
             KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.set_mode(AppMode::Filter);
+                self.buffer_mut().set_mode(AppMode::Filter);
                 self.get_filter_state_mut().pattern.clear();
                 // Save SQL query and use temporary input for filter display
                 if let Some(buffer) = self.current_buffer_mut() {
@@ -1735,7 +1713,7 @@ impl EnhancedTuiApp {
                 if !key.modifiers.contains(KeyModifiers::ALT)
                     && !key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                self.set_mode(AppMode::FuzzyFilter);
+                self.buffer_mut().set_mode(AppMode::FuzzyFilter);
                 self.buffer_mut().set_fuzzy_filter_pattern(String::new());
                 self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
                 self.buffer_mut().set_fuzzy_filter_active(false); // Clear active state when entering mode
@@ -1750,7 +1728,7 @@ impl EnhancedTuiApp {
                 if !key.modifiers.contains(KeyModifiers::CONTROL)
                     && !key.modifiers.contains(KeyModifiers::SHIFT) =>
             {
-                self.sort_by_column(self.get_current_column());
+                self.sort_by_column(self.buffer().get_current_column());
             }
             // Column statistics (uppercase S)
             KeyCode::Char('S') | KeyCode::Char('s')
@@ -1762,13 +1740,13 @@ impl EnhancedTuiApp {
             KeyCode::Char('v') => {
                 self.selection_mode = match self.selection_mode {
                     SelectionMode::Row => {
-                        self.set_status_message(
+                        self.buffer_mut().set_status_message(
                             "Cell mode - Navigate to select individual cells".to_string(),
                         );
                         SelectionMode::Cell
                     }
                     SelectionMode::Cell => {
-                        self.set_status_message(
+                        self.buffer_mut().set_status_message(
                             "Row mode - Navigate to select entire rows".to_string(),
                         );
                         SelectionMode::Row
@@ -1791,7 +1769,7 @@ impl EnhancedTuiApp {
                         } else {
                             // First 'y', enter yank mode
                             self.yank_mode = Some('y');
-                            self.set_status_message(
+                            self.buffer_mut().set_status_message(
                                 "Yank mode: y=row, c=column, a=all, ESC=cancel".to_string(),
                             );
                         }
@@ -1825,13 +1803,14 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.show_help = true;
-                self.set_mode(AppMode::Help);
+                self.buffer_mut().set_mode(AppMode::Help);
             }
             _ => {
                 // Any other key cancels yank mode
                 if self.yank_mode.is_some() {
                     self.yank_mode = None;
-                    self.set_status_message("Yank cancelled".to_string());
+                    self.buffer_mut()
+                        .set_status_message("Yank cancelled".to_string());
                 }
             }
         }
@@ -1845,7 +1824,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Enter => {
                 self.perform_search();
@@ -1853,7 +1832,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
                 {
@@ -1887,7 +1866,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Enter => {
                 self.apply_filter();
@@ -1895,7 +1874,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
                 self.get_filter_state_mut().pattern.pop();
@@ -1925,8 +1904,9 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
-                self.set_mode(AppMode::Results);
-                self.set_status_message("Fuzzy filter cleared".to_string());
+                self.buffer_mut().set_mode(AppMode::Results);
+                self.buffer_mut()
+                    .set_status_message("Fuzzy filter cleared".to_string());
             }
             KeyCode::Enter => {
                 // Apply fuzzy filter and return to results
@@ -1938,7 +1918,7 @@ impl EnhancedTuiApp {
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
                 {
@@ -1978,14 +1958,15 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Esc => {
                 // Cancel column search and return to results
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
                 self.buffer_mut().set_column_search_pattern(String::new());
                 self.buffer_mut().set_column_search_matches(Vec::new());
                 // Restore original SQL query from undo stack
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
-                self.set_status_message("Column search cancelled".to_string());
+                self.buffer_mut()
+                    .set_status_message("Column search cancelled".to_string());
             }
             KeyCode::Enter => {
                 // Jump to first matching column
@@ -1995,15 +1976,17 @@ impl EnhancedTuiApp {
                             [self.buffer().get_column_search_current_match()]
                         .clone();
                     self.buffer_mut().set_current_column(column_index);
-                    self.set_status_message(format!("Jumped to column: {}", column_name));
+                    self.buffer_mut()
+                        .set_status_message(format!("Jumped to column: {}", column_name));
                 } else {
-                    self.set_status_message("No matching columns found".to_string());
+                    self.buffer_mut()
+                        .set_status_message("No matching columns found".to_string());
                 }
                 // Restore original SQL query from undo stack
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Tab => {
                 // Next match (Tab only, not 'n' to allow typing 'n' in search)
@@ -2016,12 +1999,12 @@ impl EnhancedTuiApp {
                         self.buffer().get_column_search_matches().clone()
                             [self.buffer().get_column_search_current_match()]
                         .clone();
+                    let current_match = self.buffer().get_column_search_current_match() + 1;
+                    let total_matches = self.buffer().get_column_search_matches().clone().len();
                     self.buffer_mut().set_current_column(column_index);
-                    self.set_status_message(format!(
+                    self.buffer_mut().set_status_message(format!(
                         "Column {} of {}: {}",
-                        self.buffer().get_column_search_current_match() + 1,
-                        self.buffer().get_column_search_matches().clone().len(),
-                        column_name
+                        current_match, total_matches, column_name
                     ));
                 }
             }
@@ -2041,12 +2024,12 @@ impl EnhancedTuiApp {
                         self.buffer().get_column_search_matches().clone()
                             [self.buffer().get_column_search_current_match()]
                         .clone();
+                    let current_match = self.buffer().get_column_search_current_match() + 1;
+                    let total_matches = self.buffer().get_column_search_matches().clone().len();
                     self.buffer_mut().set_current_column(column_index);
-                    self.set_status_message(format!(
+                    self.buffer_mut().set_status_message(format!(
                         "Column {} of {}: {}",
-                        self.buffer().get_column_search_current_match() + 1,
-                        self.buffer().get_column_search_matches().clone().len(),
-                        column_name
+                        current_match, total_matches, column_name
                     ));
                 }
             }
@@ -2077,11 +2060,12 @@ impl EnhancedTuiApp {
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::F(1) => {
                 self.show_help = false;
                 self.help_scroll = 0; // Reset scroll when closing
-                self.set_mode(if self.buffer().get_results().is_some() {
+                let mode = if self.buffer().get_results().is_some() {
                     AppMode::Results
                 } else {
                     AppMode::Command
-                });
+                };
+                self.buffer_mut().set_mode(mode);
             }
             // Scroll help with arrow keys or vim keys
             KeyCode::Down | KeyCode::Char('j') => {
@@ -2123,7 +2107,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Esc => {
-                self.set_mode(AppMode::Command);
+                self.buffer_mut().set_mode(AppMode::Command);
             }
             KeyCode::Enter => {
                 if !self.history_state.matches.is_empty()
@@ -2136,8 +2120,9 @@ impl EnhancedTuiApp {
                         .clone();
                     // Use helper to set text through buffer
                     self.set_input_text(selected_command);
-                    self.set_mode(AppMode::Command);
-                    self.set_status_message("Command loaded from history".to_string());
+                    self.buffer_mut().set_mode(AppMode::Command);
+                    self.buffer_mut()
+                        .set_status_message("Command loaded from history".to_string());
                     // Reset scroll to show end of command
                     self.input_scroll_offset = 0;
                     self.update_horizontal_scroll(120); // Will be properly updated on next render
@@ -2207,7 +2192,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
-                self.set_mode(AppMode::Command);
+                self.buffer_mut().set_mode(AppMode::Command);
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.debug_scroll > 0 {
@@ -2232,7 +2217,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
-                self.set_mode(AppMode::Command);
+                self.buffer_mut().set_mode(AppMode::Command);
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.debug_scroll > 0 {
@@ -2255,7 +2240,8 @@ impl EnhancedTuiApp {
 
     fn execute_query(&mut self, query: &str) -> Result<()> {
         info!(target: "query", "Executing query: {}", query);
-        self.set_status_message(format!("Executing query: '{}'...", query));
+        self.buffer_mut()
+            .set_status_message(format!("Executing query: '{}'...", query));
         let start_time = std::time::Instant::now();
 
         let result = if self.buffer().is_cache_mode() {
@@ -2384,15 +2370,15 @@ impl EnhancedTuiApp {
                 self.reset_table_state();
 
                 if row_count == 0 {
-                    self.set_status_message(format!(
+                    self.buffer_mut().set_status_message(format!(
                         "Query executed successfully but returned 0 rows ({}ms)",
                         duration.as_millis()
                     ));
                 } else {
-                    self.set_status_message(format!("Query executed successfully - {} rows returned ({}ms) - Use ↓ or j/k to navigate", row_count, duration.as_millis()));
+                    self.buffer_mut().set_status_message(format!("Query executed successfully - {} rows returned ({}ms) - Use ↓ or j/k to navigate", row_count, duration.as_millis()));
                 }
 
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
                 self.get_table_state_mut().select(Some(0));
             }
             Err(e) => {
@@ -2428,7 +2414,8 @@ impl EnhancedTuiApp {
                     schema_columns,
                     data_source,
                 );
-                self.set_status_message(format!("Error: {}", e));
+                self.buffer_mut()
+                    .set_status_message(format!("Error: {}", e));
             }
         }
         Ok(())
@@ -2496,7 +2483,7 @@ impl EnhancedTuiApp {
 
         let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
         if !hybrid_result.suggestions.is_empty() {
-            self.set_status_message(format!(
+            self.buffer_mut().set_status_message(format!(
                 "Suggestions: {}",
                 hybrid_result.suggestions.join(", ")
             ));
@@ -2515,7 +2502,8 @@ impl EnhancedTuiApp {
             // New completion context - get fresh suggestions
             let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
             if hybrid_result.suggestions.is_empty() {
-                self.set_status_message("No completions available".to_string());
+                self.buffer_mut()
+                    .set_status_message("No completions available".to_string());
                 return;
             }
 
@@ -2526,7 +2514,8 @@ impl EnhancedTuiApp {
             self.completion_state.current_index =
                 (self.completion_state.current_index + 1) % self.completion_state.suggestions.len();
         } else {
-            self.set_status_message("No completions available".to_string());
+            self.buffer_mut()
+                .set_status_message("No completions available".to_string());
             return;
         }
 
@@ -2569,7 +2558,7 @@ impl EnhancedTuiApp {
             if let Some(buffer) = self.current_buffer_mut() {
                 buffer.set_input_cursor_position(cursor_pos);
                 // Sync for rendering
-                if self.get_edit_mode() == EditMode::SingleLine {
+                if self.buffer().get_edit_mode() == EditMode::SingleLine {
                     self.set_input_text_with_cursor(new_query.clone(), cursor_pos);
                 }
             }
@@ -2588,7 +2577,7 @@ impl EnhancedTuiApp {
             } else {
                 format!("Completed: {}", suggestion)
             };
-            self.set_status_message(suggestion_info);
+            self.buffer_mut().set_status_message(suggestion_info);
         } else {
             // Just insert the suggestion at cursor position
             let before_cursor = &query[..cursor_pos];
@@ -2608,7 +2597,7 @@ impl EnhancedTuiApp {
             if let Some(buffer) = self.current_buffer_mut() {
                 buffer.set_input_cursor_position(cursor_pos_new);
                 // Sync for rendering
-                if self.get_edit_mode() == EditMode::SingleLine {
+                if self.buffer().get_edit_mode() == EditMode::SingleLine {
                     self.input =
                         tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos_new);
                 }
@@ -2618,7 +2607,8 @@ impl EnhancedTuiApp {
             self.completion_state.last_query = new_query;
             self.completion_state.last_cursor_pos = cursor_pos_new;
 
-            self.set_status_message(format!("Inserted: {}", suggestion));
+            self.buffer_mut()
+                .set_status_message(format!("Inserted: {}", suggestion));
         }
     }
 
@@ -2647,7 +2637,8 @@ impl EnhancedTuiApp {
             // New completion context - get fresh suggestions
             let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
             if hybrid_result.suggestions.is_empty() {
-                self.set_status_message("No completions available".to_string());
+                self.buffer_mut()
+                    .set_status_message("No completions available".to_string());
                 return;
             }
 
@@ -2658,7 +2649,8 @@ impl EnhancedTuiApp {
             self.completion_state.current_index =
                 (self.completion_state.current_index + 1) % self.completion_state.suggestions.len();
         } else {
-            self.set_status_message("No completions available".to_string());
+            self.buffer_mut()
+                .set_status_message("No completions available".to_string());
             return;
         }
 
@@ -2719,7 +2711,7 @@ impl EnhancedTuiApp {
             } else {
                 format!("Completed: {}", suggestion)
             };
-            self.set_status_message(suggestion_info);
+            self.buffer_mut().set_status_message(suggestion_info);
         } else {
             // Just insert the suggestion at cursor position
             let ends_with_parens = suggestion.ends_with("('')");
@@ -2742,13 +2734,14 @@ impl EnhancedTuiApp {
                 cursor_pos + suggestion_len
             };
 
-            self.set_status_message(format!("Inserted: {}", suggestion_str));
+            self.buffer_mut()
+                .set_status_message(format!("Inserted: {}", suggestion_str));
         }
     }
 
     fn expand_asterisk(&mut self) {
         // Expand SELECT * to all column names
-        let query = if self.get_edit_mode() == EditMode::SingleLine {
+        let query = if self.buffer().get_edit_mode() == EditMode::SingleLine {
             self.get_input_text()
         } else {
             self.get_input_text().lines().collect::<Vec<_>>().join(" ")
@@ -2788,7 +2781,7 @@ impl EnhancedTuiApp {
                             let new_query = format!("{}{}{}", before_star, columns_str, after_star);
 
                             // Update the input
-                            if self.get_edit_mode() == EditMode::SingleLine {
+                            if self.buffer().get_edit_mode() == EditMode::SingleLine {
                                 self.set_input_text_with_cursor(new_query.clone(), new_query.len());
                                 self.update_horizontal_scroll(120);
                             } else {
@@ -2803,27 +2796,31 @@ impl EnhancedTuiApp {
                                 );
                             }
 
-                            self.set_status_message(format!(
+                            self.buffer_mut().set_status_message(format!(
                                 "Expanded * to {} columns",
                                 columns.len()
                             ));
                         } else {
-                            self.set_status_message(format!(
+                            self.buffer_mut().set_status_message(format!(
                                 "No columns found for table '{}'",
                                 table_name
                             ));
                         }
                     } else {
-                        self.set_status_message("Could not determine table name".to_string());
+                        self.buffer_mut()
+                            .set_status_message("Could not determine table name".to_string());
                     }
                 } else {
-                    self.set_status_message("No FROM clause found after SELECT *".to_string());
+                    self.buffer_mut()
+                        .set_status_message("No FROM clause found after SELECT *".to_string());
                 }
             } else {
-                self.set_status_message("No * found in SELECT clause".to_string());
+                self.buffer_mut()
+                    .set_status_message("No * found in SELECT clause".to_string());
             }
         } else {
-            self.set_status_message("No SELECT clause found".to_string());
+            self.buffer_mut()
+                .set_status_message("No SELECT clause found".to_string());
         }
     }
 
@@ -2941,7 +2938,7 @@ impl EnhancedTuiApp {
                 // In lock mode, keep cursor at fixed viewport position
                 if let Some(lock_row) = self.buffer().get_viewport_lock_row() {
                     // Adjust viewport so cursor stays at lock_row position
-                    let mut offset = self.get_scroll_offset();
+                    let mut offset = self.buffer().get_scroll_offset();
                     offset.0 = new_position.saturating_sub(lock_row);
                     self.buffer_mut().set_scroll_offset(offset);
                 }
@@ -2950,7 +2947,7 @@ impl EnhancedTuiApp {
                 let visible_rows = self.buffer().get_last_visible_rows();
 
                 // Check if cursor would be below the last visible row
-                let offset = self.get_scroll_offset();
+                let offset = self.buffer().get_scroll_offset();
                 if new_position > offset.0 + visible_rows - 1 {
                     // Cursor moved below viewport - scroll down by one
                     self.buffer_mut()
@@ -2974,13 +2971,13 @@ impl EnhancedTuiApp {
             // In lock mode, keep cursor at fixed viewport position
             if let Some(lock_row) = self.buffer().get_viewport_lock_row() {
                 // Adjust viewport so cursor stays at lock_row position
-                let mut offset = self.get_scroll_offset();
+                let mut offset = self.buffer().get_scroll_offset();
                 offset.0 = new_position.saturating_sub(lock_row);
                 self.buffer_mut().set_scroll_offset(offset);
             }
         } else {
             // Normal scrolling behavior
-            let mut offset = self.get_scroll_offset();
+            let mut offset = self.buffer().get_scroll_offset();
             if new_position < offset.0 {
                 // Cursor moved above viewport - scroll up
                 offset.0 = new_position;
@@ -2995,12 +2992,14 @@ impl EnhancedTuiApp {
         self.cursor_manager.move_table_left();
 
         // Keep existing logic for now
-        let new_column = self.get_current_column().saturating_sub(1);
+        let new_column = self.buffer().get_current_column().saturating_sub(1);
         self.buffer_mut().set_current_column(new_column);
-        let mut offset = self.get_scroll_offset();
+        let mut offset = self.buffer().get_scroll_offset();
         offset.1 = offset.1.saturating_sub(1);
+        let column_num = self.buffer().get_current_column() + 1;
         self.buffer_mut().set_scroll_offset(offset);
-        self.set_status_message(format!("Column {} selected", self.get_current_column() + 1));
+        self.buffer_mut()
+            .set_status_message(format!("Column {} selected", column_num));
     }
 
     fn move_column_right(&mut self) {
@@ -3013,16 +3012,15 @@ impl EnhancedTuiApp {
                     self.cursor_manager.move_table_right(max_columns);
 
                     // Keep existing logic for now
-                    let current_column = self.get_current_column();
+                    let current_column = self.buffer().get_current_column();
                     if current_column + 1 < max_columns {
                         self.buffer_mut().set_current_column(current_column + 1);
-                        let mut offset = self.get_scroll_offset();
+                        let mut offset = self.buffer().get_scroll_offset();
                         offset.1 += 1;
+                        let column_num = self.buffer().get_current_column() + 1;
                         self.buffer_mut().set_scroll_offset(offset);
-                        self.set_status_message(format!(
-                            "Column {} selected",
-                            self.get_current_column() + 1
-                        ));
+                        self.buffer_mut()
+                            .set_status_message(format!("Column {} selected", column_num));
                     }
                 }
             }
@@ -3031,10 +3029,11 @@ impl EnhancedTuiApp {
 
     fn goto_first_column(&mut self) {
         self.buffer_mut().set_current_column(0);
-        let mut offset = self.get_scroll_offset();
+        let mut offset = self.buffer().get_scroll_offset();
         offset.1 = 0;
         self.buffer_mut().set_scroll_offset(offset);
-        self.set_status_message("First column selected".to_string());
+        self.buffer_mut()
+            .set_status_message("First column selected".to_string());
     }
 
     fn goto_last_column(&mut self) {
@@ -3046,13 +3045,12 @@ impl EnhancedTuiApp {
                         self.buffer_mut().set_current_column(max_columns - 1);
                         // Update horizontal scroll to show the last column
                         // This ensures the last column is visible in the viewport
-                        let mut offset = self.get_scroll_offset();
-                        offset.1 = self.get_current_column().saturating_sub(5); // Keep some context
+                        let mut offset = self.buffer().get_scroll_offset();
+                        let column = self.buffer().get_current_column();
+                        offset.1 = column.saturating_sub(5); // Keep some context
                         self.buffer_mut().set_scroll_offset(offset);
-                        self.set_status_message(format!(
-                            "Last column selected ({})",
-                            self.get_current_column() + 1
-                        ));
+                        self.buffer_mut()
+                            .set_status_message(format!("Last column selected ({})", column + 1));
                     }
                 }
             }
@@ -3061,32 +3059,36 @@ impl EnhancedTuiApp {
 
     fn goto_first_row(&mut self) {
         self.get_table_state_mut().select(Some(0));
-        let mut offset = self.get_scroll_offset();
+        let mut offset = self.buffer().get_scroll_offset();
         offset.0 = 0; // Reset viewport to top
         self.buffer_mut().set_scroll_offset(offset);
     }
 
     fn toggle_column_pin(&mut self) {
         // Pin or unpin the current column
-        let current_col = self.get_current_column();
+        let current_col = self.buffer().get_current_column();
         if self.buffer().get_pinned_columns().contains(&current_col) {
             // Column is already pinned, unpin it
             self.buffer_mut().remove_pinned_column(current_col);
-            self.set_status_message(format!("Column {} unpinned", current_col + 1));
+            self.buffer_mut()
+                .set_status_message(format!("Column {} unpinned", current_col + 1));
         } else {
             // Pin the column (max 4 pinned columns)
             if self.buffer().get_pinned_columns().clone().len() < 4 {
                 self.buffer_mut().add_pinned_column(current_col);
-                self.set_status_message(format!("Column {} pinned 📌", current_col + 1));
+                self.buffer_mut()
+                    .set_status_message(format!("Column {} pinned 📌", current_col + 1));
             } else {
-                self.set_status_message("Maximum 4 pinned columns allowed".to_string());
+                self.buffer_mut()
+                    .set_status_message("Maximum 4 pinned columns allowed".to_string());
             }
         }
     }
 
     fn clear_all_pinned_columns(&mut self) {
         self.buffer_mut().clear_pinned_columns();
-        self.set_status_message("All columns unpinned".to_string());
+        self.buffer_mut()
+            .set_status_message("All columns unpinned".to_string());
     }
 
     fn calculate_column_statistics(&mut self) {
@@ -3107,11 +3109,11 @@ impl EnhancedTuiApp {
                 return;
             };
 
-            if self.get_current_column() >= headers.len() {
+            if self.buffer().get_current_column() >= headers.len() {
                 return;
             }
 
-            let column_name = &headers[self.get_current_column()];
+            let column_name = &headers[self.buffer().get_current_column()];
 
             // Use filtered data if available, otherwise use original data
             let data_to_analyze: Vec<String> =
@@ -3119,8 +3121,8 @@ impl EnhancedTuiApp {
                     // Convert filtered data back to strings for analysis
                     let mut string_data = Vec::new();
                     for row in filtered {
-                        if self.get_current_column() < row.len() {
-                            string_data.push(row[self.get_current_column()].clone());
+                        if self.buffer().get_current_column() < row.len() {
+                            string_data.push(row[self.buffer().get_current_column()].clone());
                         }
                     }
                     string_data
@@ -3219,8 +3221,8 @@ impl EnhancedTuiApp {
                 stats.frequency_map = Some(frequency_map);
             }
 
-            self.set_column_stats(Some(stats));
-            self.set_mode(AppMode::ColumnStats);
+            self.buffer_mut().set_column_stats(Some(stats));
+            self.buffer_mut().set_mode(AppMode::ColumnStats);
         }
     }
 
@@ -3290,7 +3292,7 @@ impl EnhancedTuiApp {
             self.get_table_state_mut().select(Some(last_row));
             // Position viewport to show the last row at the bottom
             let visible_rows = self.buffer().get_last_visible_rows();
-            let mut offset = self.get_scroll_offset();
+            let mut offset = self.buffer().get_scroll_offset();
             offset.0 = last_row.saturating_sub(visible_rows - 1);
             self.buffer_mut().set_scroll_offset(offset);
         }
@@ -3306,7 +3308,7 @@ impl EnhancedTuiApp {
             self.get_table_state_mut().select(Some(new_position));
 
             // Scroll viewport down by a page
-            let mut offset = self.get_scroll_offset();
+            let mut offset = self.buffer().get_scroll_offset();
             offset.0 = (offset.0 + visible_rows).min(total_rows.saturating_sub(visible_rows));
             self.buffer_mut().set_scroll_offset(offset);
         }
@@ -3320,7 +3322,7 @@ impl EnhancedTuiApp {
         self.get_table_state_mut().select(Some(new_position));
 
         // Scroll viewport up by a page
-        let mut offset = self.get_scroll_offset();
+        let mut offset = self.buffer().get_scroll_offset();
         offset.0 = offset.0.saturating_sub(visible_rows);
         self.buffer_mut().set_scroll_offset(offset);
     }
@@ -3347,12 +3349,15 @@ impl EnhancedTuiApp {
                     self.buffer_mut().set_current_match(Some(matches[0]));
                     let (row, _) = matches[0];
                     self.get_table_state_mut().select(Some(row));
-                    self.set_status_message(format!("Found {} matches", matches.len()));
+                    self.buffer_mut()
+                        .set_status_message(format!("Found {} matches", matches.len()));
                 } else {
-                    self.set_status_message("No matches found".to_string());
+                    self.buffer_mut()
+                        .set_status_message("No matches found".to_string());
                 }
             } else {
-                self.set_status_message("Invalid regex pattern".to_string());
+                self.buffer_mut()
+                    .set_status_message("Invalid regex pattern".to_string());
             }
         }
     }
@@ -3366,7 +3371,11 @@ impl EnhancedTuiApp {
             self.get_table_state_mut().select(Some(row));
             self.buffer_mut()
                 .set_current_match(Some(matches[new_index]));
-            self.set_status_message(format!("Match {} of {}", new_index + 1, matches.len()));
+            self.buffer_mut().set_status_message(format!(
+                "Match {} of {}",
+                new_index + 1,
+                matches.len()
+            ));
         }
     }
 
@@ -3384,7 +3393,11 @@ impl EnhancedTuiApp {
             self.get_table_state_mut().select(Some(row));
             self.buffer_mut()
                 .set_current_match(Some(matches[new_index]));
-            self.set_status_message(format!("Match {} of {}", new_index + 1, matches.len()));
+            self.buffer_mut().set_status_message(format!(
+                "Match {} of {}",
+                new_index + 1,
+                matches.len()
+            ));
         }
     }
 
@@ -3392,7 +3405,8 @@ impl EnhancedTuiApp {
         if self.get_filter_state().pattern.is_empty() {
             self.buffer_mut().set_filtered_data(None);
             self.get_filter_state_mut().active = false;
-            self.set_status_message("Filter cleared".to_string());
+            self.buffer_mut()
+                .set_status_message("Filter cleared".to_string());
             return;
         }
 
@@ -3444,9 +3458,11 @@ impl EnhancedTuiApp {
                     match_index: 0,
                 };
 
-                self.set_status_message(format!("Filtered to {} rows", filtered_count));
+                self.buffer_mut()
+                    .set_status_message(format!("Filtered to {} rows", filtered_count));
             } else {
-                self.set_status_message("Invalid regex pattern".to_string());
+                self.buffer_mut()
+                    .set_status_message("Invalid regex pattern".to_string());
             }
         }
     }
@@ -3455,7 +3471,8 @@ impl EnhancedTuiApp {
         if self.buffer().get_fuzzy_filter_pattern().is_empty() {
             self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
             self.buffer_mut().set_fuzzy_filter_active(false);
-            self.set_status_message("Fuzzy filter cleared".to_string());
+            self.buffer_mut()
+                .set_status_message("Fuzzy filter cleared".to_string());
             return;
         }
 
@@ -3531,7 +3548,7 @@ impl EnhancedTuiApp {
             } else {
                 "Fuzzy"
             };
-            self.set_status_message(format!(
+            self.buffer_mut().set_status_message(format!(
                 "{} filter: {} matches for '{}' (highlighted in magenta)",
                 filter_type, match_count, pattern
             ));
@@ -3544,7 +3561,8 @@ impl EnhancedTuiApp {
             } else {
                 "fuzzy"
             };
-            self.set_status_message(format!("No {} matches for '{}'", filter_type, pattern));
+            self.buffer_mut()
+                .set_status_message(format!("No {} matches for '{}'", filter_type, pattern));
         }
     }
 
@@ -3571,30 +3589,33 @@ impl EnhancedTuiApp {
 
                     // Update status message
                     if self.buffer().get_column_search_pattern().is_empty() {
-                        self.set_status_message("Enter column name to search".to_string());
+                        self.buffer_mut()
+                            .set_status_message("Enter column name to search".to_string());
                     } else if self.buffer().get_column_search_matches().clone().is_empty() {
-                        self.set_status_message(format!(
-                            "No columns match '{}'",
-                            self.buffer().get_column_search_pattern()
-                        ));
+                        let pattern = self.buffer().get_column_search_pattern();
+                        self.buffer_mut()
+                            .set_status_message(format!("No columns match '{}'", pattern));
                     } else {
                         let (column_index, column_name) =
                             self.buffer().get_column_search_matches().clone()[0].clone();
+                        let matches_len = self.buffer().get_column_search_matches().clone().len();
                         self.buffer_mut().set_current_column(column_index);
-                        self.set_status_message(format!(
+                        self.buffer_mut().set_status_message(format!(
                             "Column 1 of {}: {} (Tab=next, Enter=select)",
-                            self.buffer().get_column_search_matches().clone().len(),
-                            column_name
+                            matches_len, column_name
                         ));
                     }
                 } else {
-                    self.set_status_message("No column data available".to_string());
+                    self.buffer_mut()
+                        .set_status_message("No column data available".to_string());
                 }
             } else {
-                self.set_status_message("No data available for column search".to_string());
+                self.buffer_mut()
+                    .set_status_message("No data available for column search".to_string());
             }
         } else {
-            self.set_status_message("No results available for column search".to_string());
+            self.buffer_mut()
+                .set_status_message("No results available for column search".to_string());
         }
     }
 
@@ -3617,7 +3638,8 @@ impl EnhancedTuiApp {
                 column: None,
                 order: SortOrder::None,
             };
-            self.set_status_message("Sort cleared".to_string());
+            self.buffer_mut()
+                .set_status_message("Sort cleared".to_string());
             return;
         }
 
@@ -3753,11 +3775,11 @@ impl EnhancedTuiApp {
         };
 
         // Reset table state but preserve current column position
-        let current_column = self.get_current_column();
+        let current_column = self.buffer().get_current_column();
         self.reset_table_state();
         self.buffer_mut().set_current_column(current_column);
 
-        self.set_status_message(format!(
+        self.buffer_mut().set_status_message(format!(
             "Sorted by column {} ({}) - type-aware",
             column_index + 1,
             match new_order {
@@ -3992,7 +4014,8 @@ impl EnhancedTuiApp {
                             let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
                             let header_line = headers.join(",");
                             if let Err(e) = writeln!(file, "{}", header_line) {
-                                self.set_status_message(format!("Failed to write headers: {}", e));
+                                self.buffer_mut()
+                                    .set_status_message(format!("Failed to write headers: {}", e));
                                 return;
                             }
 
@@ -4016,7 +4039,7 @@ impl EnhancedTuiApp {
 
                                     let row_line = row.join(",");
                                     if let Err(e) = writeln!(file, "{}", row_line) {
-                                        self.set_status_message(format!(
+                                        self.buffer_mut().set_status_message(format!(
                                             "Failed to write row: {}",
                                             e
                                         ));
@@ -4026,23 +4049,27 @@ impl EnhancedTuiApp {
                                 }
                             }
 
-                            self.set_status_message(format!(
+                            self.buffer_mut().set_status_message(format!(
                                 "Exported {} rows to {}",
                                 row_count, filename
                             ));
                         }
                         Err(e) => {
-                            self.set_status_message(format!("Failed to create file: {}", e));
+                            self.buffer_mut()
+                                .set_status_message(format!("Failed to create file: {}", e));
                         }
                     }
                 } else {
-                    self.set_status_message("No data to export".to_string());
+                    self.buffer_mut()
+                        .set_status_message("No data to export".to_string());
                 }
             } else {
-                self.set_status_message("No data to export".to_string());
+                self.buffer_mut()
+                    .set_status_message("No data to export".to_string());
             }
         } else {
-            self.set_status_message("No results to export - run a query first".to_string());
+            self.buffer_mut()
+                .set_status_message("No results to export - run a query first".to_string());
         }
     }
 
@@ -4052,8 +4079,8 @@ impl EnhancedTuiApp {
                 if let Some(row_data) = results.data.get(selected_row) {
                     if let Some(obj) = row_data.as_object() {
                         let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                        if self.get_current_column() < headers.len() {
-                            let header = headers[self.get_current_column()];
+                        if self.buffer().get_current_column() < headers.len() {
+                            let header = headers[self.buffer().get_current_column()];
                             let value = match obj.get(header) {
                                 Some(Value::String(s)) => s.clone(),
                                 Some(Value::Number(n)) => n.to_string(),
@@ -4075,14 +4102,16 @@ impl EnhancedTuiApp {
                                             value.clone()
                                         };
                                         self.last_yanked = Some((col_name, display_value));
-                                        self.set_status_message(format!("Yanked cell: {}", value));
+                                        self.buffer_mut()
+                                            .set_status_message(format!("Yanked cell: {}", value));
                                     }
                                     Err(e) => {
-                                        self.set_status_message(format!("Clipboard error: {}", e));
+                                        self.buffer_mut()
+                                            .set_status_message(format!("Clipboard error: {}", e));
                                     }
                                 },
                                 Err(e) => {
-                                    self.set_status_message(format!(
+                                    self.buffer_mut().set_status_message(format!(
                                         "Can't access clipboard: {}",
                                         e
                                     ));
@@ -4124,18 +4153,20 @@ impl EnhancedTuiApp {
                                         format!("Row {}", selected_row + 1),
                                         format!("{} columns", values.len()),
                                     ));
-                                    self.set_status_message(format!(
+                                    self.buffer_mut().set_status_message(format!(
                                         "Yanked row {} ({} columns)",
                                         selected_row + 1,
                                         values.len()
                                     ));
                                 }
                                 Err(e) => {
-                                    self.set_status_message(format!("Clipboard error: {}", e));
+                                    self.buffer_mut()
+                                        .set_status_message(format!("Clipboard error: {}", e));
                                 }
                             },
                             Err(e) => {
-                                self.set_status_message(format!("Can't access clipboard: {}", e));
+                                self.buffer_mut()
+                                    .set_status_message(format!("Can't access clipboard: {}", e));
                             }
                         }
                     }
@@ -4149,8 +4180,8 @@ impl EnhancedTuiApp {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                    if self.get_current_column() < headers.len() {
-                        let header = headers[self.get_current_column()].to_string();
+                    if self.buffer().get_current_column() < headers.len() {
+                        let header = headers[self.buffer().get_current_column()].to_string();
 
                         // Collect all values from this column
                         let column_values: Vec<String> = results
@@ -4179,18 +4210,20 @@ impl EnhancedTuiApp {
                                         format!("Column '{}'", header),
                                         format!("{} rows", column_values.len()),
                                     ));
-                                    self.set_status_message(format!(
+                                    self.buffer_mut().set_status_message(format!(
                                         "Yanked column '{}' ({} rows)",
                                         header,
                                         column_values.len()
                                     ));
                                 }
                                 Err(e) => {
-                                    self.set_status_message(format!("Clipboard error: {}", e));
+                                    self.buffer_mut()
+                                        .set_status_message(format!("Clipboard error: {}", e));
                                 }
                             },
                             Err(e) => {
-                                self.set_status_message(format!("Can't access clipboard: {}", e));
+                                self.buffer_mut()
+                                    .set_status_message(format!("Can't access clipboard: {}", e));
                             }
                         }
                     }
@@ -4247,18 +4280,20 @@ impl EnhancedTuiApp {
                                 } else {
                                     ""
                                 };
-                                self.set_status_message(format!(
+                                self.buffer_mut().set_status_message(format!(
                                     "Yanked all data{}: {} rows",
                                     filter_info,
                                     data_to_export.len()
                                 ));
                             }
                             Err(e) => {
-                                self.set_status_message(format!("Clipboard error: {}", e));
+                                self.buffer_mut()
+                                    .set_status_message(format!("Clipboard error: {}", e));
                             }
                         },
                         Err(e) => {
-                            self.set_status_message(format!("Can't access clipboard: {}", e));
+                            self.buffer_mut()
+                                .set_status_message(format!("Can't access clipboard: {}", e));
                         }
                     }
                 }
@@ -4271,9 +4306,9 @@ impl EnhancedTuiApp {
         match arboard::Clipboard::new() {
             Ok(mut clipboard) => match clipboard.get_text() {
                 Ok(text) => {
-                    match self.get_mode() {
+                    match self.buffer().get_mode() {
                         AppMode::Command => {
-                            if self.get_edit_mode() == EditMode::SingleLine {
+                            if self.buffer().get_edit_mode() == EditMode::SingleLine {
                                 // Get current cursor position
                                 let cursor_pos = self.get_input_cursor();
                                 let current_value = self.get_input_text();
@@ -4286,14 +4321,14 @@ impl EnhancedTuiApp {
 
                                 self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
 
-                                self.set_status_message(format!(
+                                self.buffer_mut().set_status_message(format!(
                                     "Pasted {} characters",
                                     text.len()
                                 ));
                             } else {
                                 // Multi-line mode - insert at cursor
                                 self.textarea.insert_str(&text);
-                                self.set_status_message(format!(
+                                self.buffer_mut().set_status_message(format!(
                                     "Pasted {} characters",
                                     text.len()
                                 ));
@@ -4315,7 +4350,7 @@ impl EnhancedTuiApp {
                             self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
 
                             // Update the appropriate filter/search state
-                            match self.get_mode() {
+                            match self.buffer().get_mode() {
                                 AppMode::Filter => {
                                     self.get_filter_state_mut().pattern = self.get_input_text();
                                     self.apply_filter();
@@ -4339,16 +4374,19 @@ impl EnhancedTuiApp {
                             }
                         }
                         _ => {
-                            self.set_status_message("Paste not available in this mode".to_string());
+                            self.buffer_mut()
+                                .set_status_message("Paste not available in this mode".to_string());
                         }
                     }
                 }
                 Err(e) => {
-                    self.set_status_message(format!("Failed to paste: {}", e));
+                    self.buffer_mut()
+                        .set_status_message(format!("Failed to paste: {}", e));
                 }
             },
             Err(e) => {
-                self.set_status_message(format!("Can't access clipboard: {}", e));
+                self.buffer_mut()
+                    .set_status_message(format!("Can't access clipboard: {}", e));
             }
         }
     }
@@ -4377,7 +4415,7 @@ impl EnhancedTuiApp {
                         } else {
                             ""
                         };
-                        self.set_status_message(format!(
+                        self.buffer_mut().set_status_message(format!(
                             "Exported{} {} rows to {}",
                             filter_info,
                             data_to_export.len(),
@@ -4385,15 +4423,18 @@ impl EnhancedTuiApp {
                         ));
                     }
                     Err(e) => {
-                        self.set_status_message(format!("Failed to write JSON: {}", e));
+                        self.buffer_mut()
+                            .set_status_message(format!("Failed to write JSON: {}", e));
                     }
                 },
                 Err(e) => {
-                    self.set_status_message(format!("Failed to create file: {}", e));
+                    self.buffer_mut()
+                        .set_status_message(format!("Failed to create file: {}", e));
                 }
             }
         } else {
-            self.set_status_message("No results to export - run a query first".to_string());
+            self.buffer_mut()
+                .set_status_message("No results to export - run a query first".to_string());
         }
     }
 
@@ -4519,7 +4560,7 @@ impl EnhancedTuiApp {
         self.cursor_manager.set_position(target_pos);
 
         // Move cursor to new position through buffer
-        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+        let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.set_input_cursor_position(target_pos);
             // Sync for rendering
@@ -4530,7 +4571,8 @@ impl EnhancedTuiApp {
         }
 
         // Update status message
-        self.set_status_message(format!("Moved to position {} (word boundary)", target_pos));
+        self.buffer_mut()
+            .set_status_message(format!("Moved to position {} (word boundary)", target_pos));
     }
 
     fn delete_word_backward(&mut self) {
@@ -4613,7 +4655,7 @@ impl EnhancedTuiApp {
         self.cursor_manager.set_position(target_pos);
 
         // Move cursor to new position through buffer
-        let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+        let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.set_input_cursor_position(target_pos);
             // Sync for rendering
@@ -4624,7 +4666,8 @@ impl EnhancedTuiApp {
         }
 
         // Update status message
-        self.set_status_message(format!("Moved to position {} (word boundary)", target_pos));
+        self.buffer_mut()
+            .set_status_message(format!("Moved to position {} (word boundary)", target_pos));
     }
 
     fn delete_word_forward(&mut self) {
@@ -4668,14 +4711,14 @@ impl EnhancedTuiApp {
     }
 
     fn kill_line(&mut self) {
-        match self.get_edit_mode() {
+        match self.buffer().get_edit_mode() {
             EditMode::SingleLine => {
                 let query_str = self.get_input_text();
                 let cursor_pos = self.get_input_cursor();
                 let query_len = query_str.len();
 
                 // Debug info
-                self.set_status_message(format!(
+                self.buffer_mut().set_status_message(format!(
                     "kill_line: cursor={}, len={}, text='{}'",
                     cursor_pos, query_len, query_str
                 ));
@@ -4696,19 +4739,19 @@ impl EnhancedTuiApp {
                     if let Some(buffer) = self.current_buffer_mut() {
                         buffer.set_input_cursor_position(cursor_pos);
                         // Sync for rendering
-                        if self.get_edit_mode() == EditMode::SingleLine {
+                        if self.buffer().get_edit_mode() == EditMode::SingleLine {
                             self.set_input_text_with_cursor(new_query, cursor_pos);
                         }
                     }
 
                     // Update status to show what was killed
-                    self.set_status_message(format!(
+                    let kill_ring_content = self.buffer().get_kill_ring();
+                    self.buffer_mut().set_status_message(format!(
                         "Killed '{}' (cursor was at {})",
-                        self.buffer().get_kill_ring(),
-                        cursor_pos
+                        kill_ring_content, cursor_pos
                     ));
                 } else {
-                    self.set_status_message(format!(
+                    self.buffer_mut().set_status_message(format!(
                         "Nothing to kill - cursor at end (pos={}, len={})",
                         cursor_pos, query_len
                     ));
@@ -4746,7 +4789,7 @@ impl EnhancedTuiApp {
     }
 
     fn kill_line_backward(&mut self) {
-        match self.get_edit_mode() {
+        match self.buffer().get_edit_mode() {
             EditMode::SingleLine => {
                 let query = self.get_input_text();
                 let cursor_pos = self.get_input_cursor();
@@ -4767,7 +4810,7 @@ impl EnhancedTuiApp {
                     if let Some(buffer) = self.current_buffer_mut() {
                         buffer.set_input_cursor_position(0);
                         // Sync for rendering
-                        if self.get_edit_mode() == EditMode::SingleLine {
+                        if self.buffer().get_edit_mode() == EditMode::SingleLine {
                             self.set_input_text_with_cursor(new_query, 0);
                         }
                     }
@@ -4804,9 +4847,11 @@ impl EnhancedTuiApp {
         // Use buffer's high-level undo operation
         if let Some(buffer) = self.current_buffer_mut() {
             if buffer.perform_undo() {
-                self.set_status_message("Undo performed".to_string());
+                self.buffer_mut()
+                    .set_status_message("Undo performed".to_string());
             } else {
-                self.set_status_message("Nothing to undo".to_string());
+                self.buffer_mut()
+                    .set_status_message("Nothing to undo".to_string());
             }
         }
     }
@@ -4815,9 +4860,11 @@ impl EnhancedTuiApp {
         // Use buffer's high-level redo operation
         if let Some(buffer) = self.current_buffer_mut() {
             if buffer.perform_redo() {
-                self.set_status_message("Redo performed".to_string());
+                self.buffer_mut()
+                    .set_status_message("Redo performed".to_string());
             } else {
-                self.set_status_message("Nothing to redo".to_string());
+                self.buffer_mut()
+                    .set_status_message("Nothing to redo".to_string());
             }
         }
     }
@@ -4868,7 +4915,7 @@ impl EnhancedTuiApp {
                 ta.move_cursor(tui_textarea::CursorMove::End);
                 ta
             };
-            self.set_edit_mode(edit_mode);
+            self.buffer_mut().set_edit_mode(edit_mode);
             self.buffer_mut().set_results(results);
 
             let result_count = self
@@ -4924,7 +4971,8 @@ impl EnhancedTuiApp {
             }
         }
 
-        self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
+        self.buffer_mut()
+            .set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
     }
 
     fn prev_buffer(&mut self) {
@@ -4972,7 +5020,7 @@ impl EnhancedTuiApp {
                 ta.move_cursor(tui_textarea::CursorMove::End);
                 ta
             };
-            self.set_edit_mode(edit_mode);
+            self.buffer_mut().set_edit_mode(edit_mode);
             self.buffer_mut().set_results(results);
 
             let result_count = self
@@ -5028,7 +5076,8 @@ impl EnhancedTuiApp {
             }
         }
 
-        self.set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
+        self.buffer_mut()
+            .set_status_message(format!("Switched to buffer {}/{}", index + 1, total));
     }
 
     fn new_buffer(&mut self) {
@@ -5045,7 +5094,8 @@ impl EnhancedTuiApp {
               self.config.display.show_row_numbers);
 
         let index = self.buffer_manager.add_buffer(new_buffer);
-        self.set_status_message(format!("Created new buffer #{}", index + 1));
+        self.buffer_mut()
+            .set_status_message(format!("Created new buffer #{}", index + 1));
     }
 
     // DataTable buffer creation disabled during revert
@@ -5062,14 +5112,15 @@ impl EnhancedTuiApp {
         if self.buffer_manager.close_current() {
             let index = self.buffer_manager.current_index();
             let total = self.buffer_manager.all_buffers().len();
-            self.set_status_message(format!(
+            self.buffer_mut().set_status_message(format!(
                 "Buffer closed. Now at buffer {}/{}",
                 index + 1,
                 total
             ));
             true
         } else {
-            self.set_status_message("Cannot close the last buffer".to_string());
+            self.buffer_mut()
+                .set_status_message("Cannot close the last buffer".to_string());
             false
         }
     }
@@ -5113,7 +5164,7 @@ impl EnhancedTuiApp {
             if let Some(buffer) = self.current_buffer_mut() {
                 buffer.set_input_cursor_position(new_cursor);
                 // Sync for rendering
-                if self.get_edit_mode() == EditMode::SingleLine {
+                if self.buffer().get_edit_mode() == EditMode::SingleLine {
                     self.set_input_text_with_cursor(new_query, new_cursor);
                 }
             }
@@ -5161,7 +5212,7 @@ impl EnhancedTuiApp {
 
         // Move cursor through buffer
         if target_pos < cursor_pos {
-            let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+            let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
             if let Some(buffer) = self.current_buffer_mut() {
                 buffer.set_input_cursor_position(target_pos);
                 // Sync for rendering
@@ -5178,7 +5229,7 @@ impl EnhancedTuiApp {
         let cursor_pos = self.get_input_cursor();
 
         if let Some(target_pos) = TextNavigator::calculate_next_token_position(&query, cursor_pos) {
-            let is_single_line = self.get_edit_mode() == EditMode::SingleLine;
+            let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
             if let Some(buffer) = self.current_buffer_mut() {
                 buffer.set_input_cursor_position(target_pos);
                 // Sync for rendering
@@ -5318,7 +5369,7 @@ impl EnhancedTuiApp {
                         let cursor_line = self.textarea.cursor().0;
                         if cursor_line < lines.len() {
                             self.vim_state.yank_buffer = lines[cursor_line].to_string();
-                            self.set_status_message("Line yanked".to_string());
+                            self.buffer_mut().set_status_message("Line yanked".to_string());
                         }
                         true
                     }
@@ -5385,7 +5436,7 @@ impl EnhancedTuiApp {
                                 .map(|s| s.to_string())
                                 .collect();
                             self.vim_state.yank_buffer = yanked.join("\n");
-                            self.set_status_message(format!("{} lines yanked", yanked.len()));
+                            self.buffer_mut().set_status_message(format!("{} lines yanked", yanked.len()));
                         }
                         self.vim_state.mode = VimMode::Normal;
                         self.vim_state.visual_start = None;
@@ -5440,13 +5491,13 @@ impl EnhancedTuiApp {
 
         // Get cursor position
         let (row, col) = self.textarea.cursor();
-        self.set_status_message(format!("-- {} -- L{}:C{} (F3 single-line)", mode_str, row + 1, col + 1));
+        self.buffer_mut().set_status_message(format!("-- {} -- L{}:C{} (F3 single-line)", mode_str, row + 1, col + 1));
     }
     */
 
     fn ui(&mut self, f: &mut Frame) {
         // Dynamically adjust layout based on edit mode
-        let input_height = match self.get_edit_mode() {
+        let input_height = match self.buffer().get_edit_mode() {
             EditMode::SingleLine => 3,
             EditMode::MultiLine => {
                 // Use 1/3 of terminal height or 10 lines, whichever is larger (max 20)
@@ -5471,7 +5522,7 @@ impl EnhancedTuiApp {
         self.update_horizontal_scroll(chunks[0].width);
 
         // Command input area
-        let input_title = match self.get_mode() {
+        let input_title = match self.buffer().get_mode() {
             AppMode::Command => "SQL Query".to_string(),
             AppMode::Results => "SQL Query (Results Mode - Press ↑ to edit)".to_string(),
             AppMode::Search => "Search Pattern".to_string(),
@@ -5494,14 +5545,14 @@ impl EnhancedTuiApp {
 
         // Always get input text through the buffer API for consistency
         let input_text_string = self.get_input_text();
-        let input_text = match self.get_mode() {
+        let input_text = match self.buffer().get_mode() {
             AppMode::History => &self.history_state.search_query,
             _ => &input_text_string,
         };
 
-        let input_paragraph = match self.get_mode() {
+        let input_paragraph = match self.buffer().get_mode() {
             AppMode::Command => {
-                match self.get_edit_mode() {
+                match self.buffer().get_edit_mode() {
                     EditMode::SingleLine => {
                         // Use syntax highlighting for SQL command input with horizontal scrolling
                         let highlighted_line =
@@ -5521,7 +5572,7 @@ impl EnhancedTuiApp {
                 // Plain text for other modes
                 Paragraph::new(input_text.as_str())
                     .block(input_block)
-                    .style(match self.get_mode() {
+                    .style(match self.buffer().get_mode() {
                         AppMode::Results => Style::default().fg(Color::DarkGray),
                         AppMode::Search => Style::default().fg(Color::Yellow),
                         AppMode::Filter => Style::default().fg(Color::Cyan),
@@ -5541,24 +5592,25 @@ impl EnhancedTuiApp {
         };
 
         // Determine the actual results area based on edit mode
-        let results_area =
-            if self.get_mode() == AppMode::Command && self.get_edit_mode() == EditMode::MultiLine {
-                // In multi-line mode, render textarea in the input area
-                f.render_widget(&self.textarea, chunks[0]);
+        let results_area = if self.buffer().get_mode() == AppMode::Command
+            && self.buffer().get_edit_mode() == EditMode::MultiLine
+        {
+            // In multi-line mode, render textarea in the input area
+            f.render_widget(&self.textarea, chunks[0]);
 
-                // Use the full results area - no preview in multi-line mode anymore
-                chunks[1]
-            } else {
-                // Single-line mode - render the input
-                f.render_widget(input_paragraph, chunks[0]);
-                // Use the full results area
-                chunks[1]
-            };
+            // Use the full results area - no preview in multi-line mode anymore
+            chunks[1]
+        } else {
+            // Single-line mode - render the input
+            f.render_widget(input_paragraph, chunks[0]);
+            // Use the full results area
+            chunks[1]
+        };
 
         // Set cursor position for input modes
-        match self.get_mode() {
+        match self.buffer().get_mode() {
             AppMode::Command => {
-                match self.get_edit_mode() {
+                match self.buffer().get_edit_mode() {
                     EditMode::SingleLine => {
                         // Calculate cursor position with horizontal scrolling
                         let inner_width = chunks[0].width.saturating_sub(2) as usize;
@@ -5619,7 +5671,7 @@ impl EnhancedTuiApp {
         }
 
         // Results area - render based on mode to reduce complexity
-        match (&self.get_mode(), self.show_help) {
+        match (&self.buffer().get_mode(), self.show_help) {
             (_, true) => self.render_help(f, results_area),
             (AppMode::History, false) => self.render_history(f, results_area),
             (AppMode::Debug, false) => self.render_debug(f, results_area),
@@ -5638,8 +5690,11 @@ impl EnhancedTuiApp {
                     } else {
                         results.data.len()
                     };
-                    let row_viewport_start =
-                        self.get_scroll_offset().0.min(total_rows.saturating_sub(1));
+                    let row_viewport_start = self
+                        .buffer()
+                        .get_scroll_offset()
+                        .0
+                        .min(total_rows.saturating_sub(1));
                     let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
 
                     // Calculate column widths based on viewport
@@ -5666,7 +5721,7 @@ impl EnhancedTuiApp {
 
     fn render_status_line(&self, f: &mut Frame, area: Rect) {
         // Determine the mode color
-        let (status_style, mode_color) = match self.get_mode() {
+        let (status_style, mode_color) = match self.buffer().get_mode() {
             AppMode::Command => (Style::default().fg(Color::Green), Color::Green),
             AppMode::Results => (Style::default().fg(Color::Blue), Color::Blue),
             AppMode::Search => (Style::default().fg(Color::Yellow), Color::Yellow),
@@ -5682,7 +5737,7 @@ impl EnhancedTuiApp {
             AppMode::ColumnStats => (Style::default().fg(Color::Cyan), Color::Cyan),
         };
 
-        let mode_indicator = match self.get_mode() {
+        let mode_indicator = match self.buffer().get_mode() {
             AppMode::Command => "CMD",
             AppMode::Results => "NAV",
             AppMode::Search => "SEARCH",
@@ -5755,7 +5810,7 @@ impl EnhancedTuiApp {
         }
 
         // Mode-specific information
-        match self.get_mode() {
+        match self.buffer().get_mode() {
             AppMode::Command => {
                 // In command mode, show editing-related info
                 if !self.get_input_text().trim().is_empty() {
@@ -5815,10 +5870,10 @@ impl EnhancedTuiApp {
                         if let Some(first_row) = results.data.first() {
                             if let Some(obj) = first_row.as_object() {
                                 let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                                if self.get_current_column() < headers.len() {
+                                if self.buffer().get_current_column() < headers.len() {
                                     spans.push(Span::raw(" | Col: "));
                                     spans.push(Span::styled(
-                                        headers[self.get_current_column()],
+                                        headers[self.buffer().get_current_column()],
                                         Style::default().fg(Color::Cyan),
                                     ));
 
@@ -5841,9 +5896,9 @@ impl EnhancedTuiApp {
                                         {
                                             if let Some(row_data) = results.data.get(selected_row) {
                                                 if let Some(row_obj) = row_data.as_object() {
-                                                    if let Some(value) = row_obj
-                                                        .get(headers[self.get_current_column()])
-                                                    {
+                                                    if let Some(value) = row_obj.get(
+                                                        headers[self.buffer().get_current_column()],
+                                                    ) {
                                                         let cell_value = match value {
                                                             Value::String(s) => s.clone(),
                                                             Value::Number(n) => n.to_string(),
@@ -5988,7 +6043,7 @@ impl EnhancedTuiApp {
         }
 
         // Help shortcuts (right side)
-        let help_text = match self.get_mode() {
+        let help_text = match self.buffer().get_mode() {
             AppMode::Command => "Enter:Run | Tab:Complete | ↓:Results | F1:Help",
             AppMode::Results => match self.selection_mode {
                 SelectionMode::Cell => "v:Row mode | y:Yank cell | ↑:Edit | F1:Help",
@@ -6109,7 +6164,7 @@ impl EnhancedTuiApp {
         // Calculate viewport for scrollable columns based on current_column
         let current_in_scrollable = scrollable_indices
             .iter()
-            .position(|&x| x == self.get_current_column());
+            .position(|&x| x == self.buffer().get_current_column());
         let viewport_start = if let Some(pos) = current_in_scrollable {
             if pos < max_visible_scrollable_cols / 2 {
                 0
@@ -6122,7 +6177,7 @@ impl EnhancedTuiApp {
             }
         } else {
             // Current column is pinned, use scroll offset
-            self.get_scroll_offset().1.min(
+            self.buffer().get_scroll_offset().1.min(
                 scrollable_indices
                     .len()
                     .saturating_sub(max_visible_scrollable_cols),
@@ -6159,7 +6214,11 @@ impl EnhancedTuiApp {
         };
 
         // Calculate row viewport
-        let row_viewport_start = self.get_scroll_offset().0.min(total_rows.saturating_sub(1));
+        let row_viewport_start = self
+            .buffer()
+            .get_scroll_offset()
+            .0
+            .min(total_rows.saturating_sub(1));
         let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
 
         // Prepare table data (only visible rows AND columns)
@@ -6179,6 +6238,7 @@ impl EnhancedTuiApp {
                 // Recalculate viewport for fuzzy filtered data
                 let fuzzy_total = fuzzy_filtered.len();
                 let fuzzy_start = self
+                    .buffer()
                     .get_scroll_offset()
                     .0
                     .min(fuzzy_total.saturating_sub(1));
@@ -6259,7 +6319,7 @@ impl EnhancedTuiApp {
                 ""
             };
 
-            let column_indicator = if *actual_col_index == self.get_current_column() {
+            let column_indicator = if *actual_col_index == self.buffer().get_current_column() {
                 " [*]"
             } else {
                 ""
@@ -6285,7 +6345,7 @@ impl EnhancedTuiApp {
                 .add_modifier(Modifier::BOLD);
 
             // Highlight the current column
-            if *actual_col_index == self.get_current_column() {
+            if *actual_col_index == self.buffer().get_current_column() {
                 style = style.bg(Color::DarkGray);
             }
 
@@ -6318,7 +6378,7 @@ impl EnhancedTuiApp {
                     // Cell mode highlighting - highlight only the selected cell
                     let is_selected_row = actual_row_idx == selected_row;
                     let is_selected_cell =
-                        is_selected_row && actual_col_idx == self.get_current_column();
+                        is_selected_row && actual_col_idx == self.buffer().get_current_column();
 
                     if self.selection_mode == SelectionMode::Cell {
                         // In cell mode, only highlight the specific cell
@@ -6331,7 +6391,7 @@ impl EnhancedTuiApp {
                         }
                     } else {
                         // In row mode, highlight the current column for all rows
-                        if actual_col_idx == self.get_current_column() {
+                        if actual_col_idx == self.buffer().get_current_column() {
                             style = style.bg(Color::DarkGray);
                         }
                     }
@@ -6764,7 +6824,7 @@ impl EnhancedTuiApp {
     fn handle_cache_command(&mut self, command: &str) -> Result<()> {
         let parts: Vec<&str> = command.split_whitespace().collect();
         if parts.len() < 2 {
-            self.set_status_message(
+            self.buffer_mut().set_status_message(
                 "Invalid cache command. Use :cache save <query> or :cache load <id>".to_string(),
             );
             return Ok(());
@@ -6797,7 +6857,8 @@ impl EnhancedTuiApp {
                                 {
                                     last_entry.command.clone()
                                 } else {
-                                    self.set_status_message("No query to cache".to_string());
+                                    self.buffer_mut()
+                                        .set_status_message("No query to cache".to_string());
                                     return Ok(());
                                 };
                                 (id, query)
@@ -6808,32 +6869,35 @@ impl EnhancedTuiApp {
                         } else if let Some(last_entry) = self.command_history.get_last_entry() {
                             (None, last_entry.command.clone())
                         } else {
-                            self.set_status_message("No query to cache".to_string());
+                            self.buffer_mut()
+                                .set_status_message("No query to cache".to_string());
                             return Ok(());
                         };
 
                         match cache.save_query(&query, &data_to_save, custom_id) {
                             Ok(id) => {
-                                self.set_status_message(format!(
+                                self.buffer_mut().set_status_message(format!(
                                     "Query cached with ID: {} ({} rows)",
                                     id,
                                     data_to_save.len()
                                 ));
                             }
                             Err(e) => {
-                                self.set_status_message(format!("Failed to cache query: {}", e));
+                                self.buffer_mut()
+                                    .set_status_message(format!("Failed to cache query: {}", e));
                             }
                         }
                     }
                 } else {
-                    self.set_status_message(
+                    self.buffer_mut().set_status_message(
                         "No results to cache. Execute a query first.".to_string(),
                     );
                 }
             }
             "load" => {
                 if parts.len() < 3 {
-                    self.set_status_message("Usage: :cache load <id>".to_string());
+                    self.buffer_mut()
+                        .set_status_message("Usage: :cache load <id>".to_string());
                     return Ok(());
                 }
 
@@ -6843,7 +6907,7 @@ impl EnhancedTuiApp {
                             Ok((_query, data)) => {
                                 self.buffer_mut().set_cached_data(Some(data.clone()));
                                 self.buffer_mut().set_cache_mode(true);
-                                self.set_status_message(format!(
+                                self.buffer_mut().set_status_message(format!(
                                     "Loaded cache ID {} with {} rows. Cache mode enabled.",
                                     id,
                                     data.len()
@@ -6862,24 +6926,27 @@ impl EnhancedTuiApp {
                                 }
                             }
                             Err(e) => {
-                                self.set_status_message(format!("Failed to load cache: {}", e));
+                                self.buffer_mut()
+                                    .set_status_message(format!("Failed to load cache: {}", e));
                             }
                         }
                     }
                 } else {
-                    self.set_status_message("Invalid cache ID".to_string());
+                    self.buffer_mut()
+                        .set_status_message("Invalid cache ID".to_string());
                 }
             }
             "list" => {
-                self.set_mode(AppMode::CacheList);
+                self.buffer_mut().set_mode(AppMode::CacheList);
             }
             "clear" => {
                 self.buffer_mut().set_cache_mode(false);
                 self.buffer_mut().set_cached_data(None);
-                self.set_status_message("Cache mode disabled".to_string());
+                self.buffer_mut()
+                    .set_status_message("Cache mode disabled".to_string());
             }
             _ => {
-                self.set_status_message(
+                self.buffer_mut().set_status_message(
                     "Unknown cache command. Use save, load, list, or clear.".to_string(),
                 );
             }
@@ -6892,7 +6959,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
-                self.set_mode(AppMode::Command);
+                self.buffer_mut().set_mode(AppMode::Command);
             }
             _ => {}
         }
@@ -6903,8 +6970,8 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('S') => {
-                self.set_column_stats(None);
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_column_stats(None);
+                self.buffer_mut().set_mode(AppMode::Results);
             }
             _ => {}
         }
@@ -6914,9 +6981,10 @@ impl EnhancedTuiApp {
     fn handle_jump_to_row_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Esc => {
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
                 self.jump_to_row_input.clear();
-                self.set_status_message("Jump cancelled".to_string());
+                self.buffer_mut()
+                    .set_status_message("Jump cancelled".to_string());
             }
             KeyCode::Enter => {
                 if let Ok(row_num) = self.jump_to_row_input.parse::<usize>() {
@@ -6930,21 +6998,22 @@ impl EnhancedTuiApp {
                             // Adjust viewport to center the target row
                             let visible_rows = self.buffer().get_last_visible_rows();
                             if visible_rows > 0 {
-                                let mut offset = self.get_scroll_offset();
+                                let mut offset = self.buffer().get_scroll_offset();
                                 offset.0 = target_row.saturating_sub(visible_rows / 2);
                                 self.buffer_mut().set_scroll_offset(offset);
                             }
 
-                            self.set_status_message(format!("Jumped to row {}", row_num));
+                            self.buffer_mut()
+                                .set_status_message(format!("Jumped to row {}", row_num));
                         } else {
-                            self.set_status_message(format!(
+                            self.buffer_mut().set_status_message(format!(
                                 "Row {} out of range (max: {})",
                                 row_num, max_row
                             ));
                         }
                     }
                 }
-                self.set_mode(AppMode::Results);
+                self.buffer_mut().set_mode(AppMode::Results);
                 self.jump_to_row_input.clear();
             }
             KeyCode::Backspace => {
@@ -7026,7 +7095,7 @@ impl EnhancedTuiApp {
     }
 
     fn render_column_stats(&self, f: &mut Frame, area: Rect) {
-        if let Some(stats) = self.get_column_stats() {
+        if let Some(stats) = self.buffer().get_column_stats() {
             let mut lines = vec![
                 Line::from(format!("Column Statistics: {}", stats.column_name)).style(
                     Style::default()
@@ -7202,7 +7271,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                             // Load the data
                             if extension.to_lowercase() == "csv" {
                                 if let Err(e) = csv_client.load_csv(file_path, &table_name) {
-                                    app.set_status_message(format!(
+                                    app.buffer_mut().set_status_message(format!(
                                         "Error loading {}: {}",
                                         file_path, e
                                     ));
@@ -7210,7 +7279,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                                 }
                             } else {
                                 if let Err(e) = csv_client.load_json(file_path, &table_name) {
-                                    app.set_status_message(format!(
+                                    app.buffer_mut().set_status_message(format!(
                                         "Error loading {}: {}",
                                         file_path, e
                                     ));
@@ -7240,7 +7309,10 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                         }
                     }
                     _ => {
-                        app.set_status_message(format!("Skipping unsupported file: {}", file_path));
+                        app.buffer_mut().set_status_message(format!(
+                            "Skipping unsupported file: {}",
+                            file_path
+                        ));
                         continue;
                     }
                 }
@@ -7249,7 +7321,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
             // Switch back to the first buffer
             app.buffer_manager.switch_to(0);
 
-            app.set_status_message(format!(
+            app.buffer_mut().set_status_message(format!(
                 "Loaded {} files into separate buffers. Use Alt+Tab to switch.",
                 data_files.len()
             ));
