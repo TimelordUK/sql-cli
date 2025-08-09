@@ -1,4 +1,5 @@
-use crate::buffer::{AppMode, BufferAPI};
+use crate::buffer::{AppMode, BufferAPI, SortOrder, SortState};
+use crate::hybrid_parser::HybridParser;
 use chrono::Local;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -7,6 +8,144 @@ use std::collections::HashMap;
 pub struct DebugInfo;
 
 impl DebugInfo {
+    /// Generate full debug information including parser state, buffer state, etc.
+    pub fn generate_full_debug_simple(
+        buffer: &dyn BufferAPI,
+        buffer_count: usize,
+        buffer_index: usize,
+        buffer_names: Vec<String>,
+        hybrid_parser: &HybridParser,
+        sort_state: &SortState,
+        input_text: &str,
+        cursor_pos: usize,
+        visual_cursor: usize,
+        api_url: &str,
+    ) -> String {
+        let mut debug_info = String::new();
+
+        // Get parser debug info
+        debug_info.push_str(&hybrid_parser.get_detailed_debug_info(input_text, cursor_pos));
+
+        // Add input state information
+        let input_state = format!(
+            "\n========== INPUT STATE ==========\n\
+            Input Value Length: {}\n\
+            Cursor Position: {}\n\
+            Visual Cursor: {}\n\
+            Input Mode: Command\n",
+            input_text.len(),
+            cursor_pos,
+            visual_cursor
+        );
+        debug_info.push_str(&input_state);
+
+        // Add dataset information
+        let dataset_info = if buffer.is_csv_mode() {
+            if let Some(csv_client) = buffer.get_csv_client() {
+                if let Some(schema) = csv_client.get_schema() {
+                    let (table_name, columns) = schema
+                        .iter()
+                        .next()
+                        .map(|(t, c)| (t.as_str(), c.clone()))
+                        .unwrap_or(("unknown", vec![]));
+                    format!(
+                        "\n========== DATASET INFO ==========\n\
+                        Mode: CSV\n\
+                        Table Name: {}\n\
+                        Columns ({}): {}\n",
+                        table_name,
+                        columns.len(),
+                        columns.join(", ")
+                    )
+                } else {
+                    "\n========== DATASET INFO ==========\nMode: CSV\nNo schema available\n"
+                        .to_string()
+                }
+            } else {
+                "\n========== DATASET INFO ==========\nMode: CSV\nNo CSV client initialized\n"
+                    .to_string()
+            }
+        } else {
+            format!(
+                "\n========== DATASET INFO ==========\n\
+                Mode: API ({})\n\
+                Table: trade_deal\n\
+                Default Columns: {}\n",
+                api_url,
+                "id, platformOrderId, tradeDate, executionSide, quantity, price, counterparty, ..."
+            )
+        };
+        debug_info.push_str(&dataset_info);
+
+        // Add current data statistics
+        let data_stats = format!(
+            "\n========== CURRENT DATA ==========\n\
+            Total Rows Loaded: {}\n\
+            Filtered Rows: {}\n\
+            Current Column: {}\n\
+            Sort State: {}\n",
+            buffer.get_results().map(|r| r.data.len()).unwrap_or(0),
+            buffer.get_filtered_data().map(|d| d.len()).unwrap_or(0),
+            buffer.get_current_column(),
+            match sort_state {
+                SortState {
+                    column: Some(col),
+                    order,
+                } => format!(
+                    "Column {} - {}",
+                    col,
+                    match order {
+                        SortOrder::Ascending => "Ascending",
+                        SortOrder::Descending => "Descending",
+                        SortOrder::None => "None",
+                    }
+                ),
+                _ => "None".to_string(),
+            }
+        );
+        debug_info.push_str(&data_stats);
+
+        // Add status line info
+        let status_line_info = format!(
+            "\n========== STATUS LINE INFO ==========\n\
+            Current Mode: {:?}\n\
+            Case Insensitive: {}\n\
+            Compact Mode: {}\n\
+            Viewport Lock: {}\n\
+            CSV Mode: {}\n\
+            Cache Mode: {}\n\
+            Data Source: {}\n",
+            buffer.get_mode(),
+            buffer.is_case_insensitive(),
+            buffer.is_compact_mode(),
+            buffer.is_viewport_lock(),
+            buffer.is_csv_mode(),
+            buffer.is_cache_mode(),
+            buffer.get_last_query_source().unwrap_or("None".to_string()),
+        );
+        debug_info.push_str(&status_line_info);
+
+        // Add buffer manager debug info
+        debug_info.push_str("\n========== BUFFER MANAGER STATE ==========\n");
+        debug_info.push_str(&format!("Buffer Manager: INITIALIZED\n"));
+        debug_info.push_str(&format!("Number of Buffers: {}\n", buffer_count));
+        debug_info.push_str(&format!("Current Buffer Index: {}\n", buffer_index));
+        debug_info.push_str(&format!("Has Multiple Buffers: {}\n", buffer_count > 1));
+
+        // Add info about all buffers
+        for (i, name) in buffer_names.iter().enumerate() {
+            let is_current = i == buffer_index;
+            debug_info.push_str(&format!(
+                "Buffer {}: {} {}\n",
+                i + 1,
+                name,
+                if is_current { "[CURRENT]" } else { "" }
+            ));
+        }
+
+        debug_info
+    }
+
     /// Generate complete debug context for current state
     pub fn generate_debug_context(buffer: &dyn BufferAPI) -> String {
         let mut context = String::new();

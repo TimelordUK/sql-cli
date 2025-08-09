@@ -337,8 +337,9 @@ impl KeyDispatcher {
             KeyBinding::new(KeyCode::Char('v')),
             "toggle_selection_mode".into(),
         );
-        self.results_map
-            .insert(KeyBinding::new(KeyCode::Char('y')), "handle_yank".into()); // Will check selection mode
+        // Note: 'y' is handled specially in enhanced_tui based on selection mode
+        // In cell mode: 'y' yanks cell directly
+        // In row mode: starts chord sequence (yy=row, yc=column, ya=all, yv=cell)
 
         // Export
         self.results_map.insert(

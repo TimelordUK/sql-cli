@@ -33,6 +33,7 @@ use sql_cli::cursor_manager::CursorManager;
 use sql_cli::data_analyzer::DataAnalyzer;
 use sql_cli::data_exporter::DataExporter;
 use sql_cli::debug_info::{DebugInfo, DebugView};
+use sql_cli::debug_widget::DebugWidget;
 use sql_cli::help_text::HelpText;
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::hybrid_parser::HybridParser;
@@ -138,7 +139,7 @@ pub struct EnhancedTuiApp {
     scroll_offset: (usize, usize), // (row, col)
     current_column: usize,         // For column-based operations
     sql_highlighter: SqlHighlighter,
-    debug_view: DebugView,
+    debug_widget: DebugWidget,
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
     help_scroll: u16,                   // Scroll offset for help page
@@ -372,7 +373,7 @@ impl EnhancedTuiApp {
             scroll_offset: (0, 0),
             current_column: 0,
             sql_highlighter: SqlHighlighter::new(),
-            debug_view: DebugView::new(),
+            debug_widget: DebugWidget::new(),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             help_scroll: 0,
@@ -1124,18 +1125,31 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_scroll_offset(last_offset);
             }
             KeyCode::F(5) => {
-                // Debug command - show buffer and parser information
+                // Generate full debug information
                 self.debug_current_buffer();
 
                 let cursor_pos = self.get_input_cursor();
-                let visual_cursor = self.get_visual_cursor().1; // Get column position for single-line
+                let visual_cursor = self.get_visual_cursor().1;
                 let query = self.get_input_text();
+
+                // Collect all needed data before mutable borrow
+                let buffer_names: Vec<String> = self
+                    .buffer_manager
+                    .all_buffers()
+                    .iter()
+                    .map(|b| b.get_name())
+                    .collect();
+                let buffer_count = self.buffer_manager.all_buffers().len();
+                let buffer_index = self.buffer_manager.current_index();
+                let api_url = self.api_client.base_url.clone();
+
+                // Generate debug info directly without buffer reference
                 let mut debug_info = self
                     .hybrid_parser
                     .get_detailed_debug_info(&query, cursor_pos);
 
-                // Add input state information
-                let input_state = format!(
+                // Add input state
+                debug_info.push_str(&format!(
                     "\n========== INPUT STATE ==========\n\
                     Input Value Length: {}\n\
                     Cursor Position: {}\n\
@@ -1144,81 +1158,20 @@ impl EnhancedTuiApp {
                     query.len(),
                     cursor_pos,
                     visual_cursor
-                );
-                debug_info.push_str(&input_state);
+                ));
 
-                // Add dataset information
-                let dataset_info = if self.buffer().is_csv_mode() {
-                    if let Some(csv_client) = self.buffer().get_csv_client() {
-                        if let Some(schema) = csv_client.get_schema() {
-                            let (table_name, columns) = schema
-                                .iter()
-                                .next()
-                                .map(|(t, c)| (t.as_str(), c.clone()))
-                                .unwrap_or(("unknown", vec![]));
-                            format!(
-                                "\n========== DATASET INFO ==========\n\
-                                Mode: CSV\n\
-                                Table Name: {}\n\
-                                Columns ({}): {}\n",
-                                table_name,
-                                columns.len(),
-                                columns.join(", ")
-                            )
-                        } else {
-                            "\n========== DATASET INFO ==========\nMode: CSV\nNo schema available\n"
-                                .to_string()
-                        }
-                    } else {
-                        "\n========== DATASET INFO ==========\nMode: CSV\nNo CSV client initialized\n".to_string()
-                    }
-                } else {
-                    format!(
-                        "\n========== DATASET INFO ==========\n\
-                        Mode: API ({})\n\
-                        Table: trade_deal\n\
-                        Default Columns: {}\n",
-                        self.api_client.base_url,
-                        "id, platformOrderId, tradeDate, executionSide, quantity, price, counterparty, ..."
-                    )
-                };
-                debug_info.push_str(&dataset_info);
+                // Add buffer state info
+                debug_info.push_str(&format!(
+                    "\n========== BUFFER MANAGER STATE ==========\n\
+                    Number of Buffers: {}\n\
+                    Current Buffer Index: {}\n\
+                    Buffer Names: {}\n",
+                    buffer_count,
+                    buffer_index,
+                    buffer_names.join(", ")
+                ));
 
-                // Add current data statistics
-                let data_stats = format!(
-                    "\n========== CURRENT DATA ==========\n\
-                    Total Rows Loaded: {}\n\
-                    Filtered Rows: {}\n\
-                    Current Column: {}\n\
-                    Sort State: {}\n",
-                    self.buffer()
-                        .get_results()
-                        .map(|r| r.data.len())
-                        .unwrap_or(0),
-                    self.buffer()
-                        .get_filtered_data()
-                        .map(|d| d.len())
-                        .unwrap_or(0),
-                    self.buffer().get_current_column(),
-                    match &self.sort_state {
-                        SortState {
-                            column: Some(col),
-                            order,
-                        } => format!(
-                            "Column {} - {}",
-                            col,
-                            match order {
-                                SortOrder::Ascending => "Ascending",
-                                SortOrder::Descending => "Descending",
-                                SortOrder::None => "None",
-                            }
-                        ),
-                        _ => "None".to_string(),
-                    }
-                );
-                debug_info.push_str(&data_stats);
-
-                // Add WHERE clause AST if query contains WHERE
+                // Add WHERE clause AST if needed
                 if query.to_lowercase().contains(" where ") {
                     let where_ast_info = match self.parse_where_clause_ast(&query) {
                         Ok(ast_str) => ast_str,
@@ -1227,75 +1180,7 @@ impl EnhancedTuiApp {
                     debug_info.push_str(&where_ast_info);
                 }
 
-                // Add status line info
-                let status_line_info = format!(
-                    "\n========== STATUS LINE INFO ==========\n\
-                    Current Mode: {:?}\n\
-                    Case Insensitive: {}\n\
-                    Compact Mode: {}\n\
-                    Viewport Lock: {}\n\
-                    CSV Mode: {}\n\
-                    Cache Mode: {}\n\
-                    Data Source: {}\n\
-                    Active Filters: {}\n",
-                    self.buffer().get_mode(),
-                    self.buffer().is_case_insensitive(),
-                    self.buffer().is_compact_mode(),
-                    self.buffer().is_viewport_lock(),
-                    self.buffer().is_csv_mode(),
-                    self.buffer().is_cache_mode(),
-                    &self
-                        .buffer()
-                        .get_last_query_source()
-                        .unwrap_or("None".to_string()),
-                    if self.buffer().is_fuzzy_filter_active() {
-                        format!("Fuzzy: {}", self.buffer().get_fuzzy_filter_pattern())
-                    } else if self.get_filter_state().active {
-                        format!("Filter: {}", self.get_filter_state().pattern)
-                    } else {
-                        "None".to_string()
-                    }
-                );
-                debug_info.push_str(&status_line_info);
-
-                // Add buffer manager debug info
-                debug_info.push_str("\n========== BUFFER MANAGER STATE ==========\n");
-                debug_info.push_str(&format!("Buffer Manager: INITIALIZED\n"));
-                debug_info.push_str(&format!(
-                    "Number of Buffers: {}\n",
-                    self.buffer_manager.all_buffers().len()
-                ));
-                debug_info.push_str(&format!(
-                    "Current Buffer Index: {}\n",
-                    self.buffer_manager.current_index()
-                ));
-                debug_info.push_str(&format!(
-                    "Has Multiple Buffers: {}\n",
-                    self.buffer_manager.has_multiple()
-                ));
-
-                // Add info about all buffers
-                for i in 0..self.buffer_manager.all_buffers().len() {
-                    let name = self
-                        .buffer_manager
-                        .all_buffers()
-                        .get(i)
-                        .map(|b| b.name.clone())
-                        .unwrap_or("Unknown".to_string());
-                    debug_info.push_str(&format!("\nBuffer [{}]: {}\n", i, name));
-                }
-
-                // Add current buffer debug dump
-                if let Some(buffer) = self.buffer_manager.current() {
-                    debug_info.push_str("\n========== CURRENT BUFFER DEBUG DUMP ==========\n");
-                    debug_info.push_str(&buffer.debug_dump());
-                    debug_info.push_str("================================================\n");
-                } else {
-                    debug_info.push_str("\nNo current buffer available!\n");
-                }
-                debug_info.push_str("============================================\n");
-
-                // Add key chord handler debug info (includes key history)
+                // Add key chord handler debug info
                 debug_info.push_str("\n");
                 debug_info.push_str(&self.key_chord_handler.format_debug_info());
                 debug_info.push_str("========================================\n");
@@ -1315,10 +1200,8 @@ impl EnhancedTuiApp {
                 }
                 debug_info.push_str("================================\n");
 
-                // Store debug info and switch to debug mode
-                self.debug_view.content = debug_info.clone();
-                self.debug_view.scroll_offset = 0;
-                self.buffer_mut().set_mode(AppMode::Debug);
+                // Set the final content in debug widget
+                self.debug_widget.set_content(debug_info.clone());
 
                 // Try to copy to clipboard
                 match arboard::Clipboard::new() {
@@ -1337,17 +1220,14 @@ impl EnhancedTuiApp {
                             .set_status_message(format!("Can't access clipboard: {}", e));
                     }
                 }
+
+                self.buffer_mut().set_mode(AppMode::Debug);
             }
             KeyCode::F(6) => {
                 // Pretty print query view
                 let query = self.get_input_text();
                 if !query.trim().is_empty() {
-                    let debug_text = format!(
-                        "Pretty SQL Query\n{}\n\n{}",
-                        "=".repeat(50),
-                        crate::recursive_parser::format_sql_pretty_compact(&query, 5).join("\n")
-                    );
-                    self.debug_view.set_content(debug_text);
+                    self.debug_widget.generate_pretty_sql(&query);
                     self.buffer_mut().set_mode(AppMode::PrettyQuery);
                     self.buffer_mut().set_status_message(
                         "Pretty query view (press Esc or q to return)".to_string(),
@@ -1379,6 +1259,11 @@ impl EnhancedTuiApp {
     }
 
     fn handle_results_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        debug!(
+            "handle_results_input: key={:?}, selection_mode={:?}",
+            key, self.selection_mode
+        );
+
         // Process key through chord handler first
         let chord_result = self.key_chord_handler.process_key(key.clone());
 
@@ -1397,6 +1282,10 @@ impl EnhancedTuiApp {
                     }
                     "yank_all" => {
                         self.yank_all();
+                        return Ok(false);
+                    }
+                    "yank_cell" => {
+                        self.yank_cell();
                         return Ok(false);
                     }
                     _ => {
@@ -1526,8 +1415,8 @@ impl EnhancedTuiApp {
                             SelectionMode::Row
                         }
                     };
+                    return Ok(false); // Return to prevent duplicate handling
                 }
-                "handle_yank" => self.yank_row(),
                 "export_to_csv" => self.export_to_csv(),
                 "export_to_json" => self.export_to_json(),
                 "toggle_help" => {
@@ -1571,8 +1460,7 @@ impl EnhancedTuiApp {
                         debug_info.push_str(&buffer.debug_dump());
                     }
 
-                    self.debug_view.content = debug_info;
-                    self.debug_view.scroll_offset = 0;
+                    self.debug_widget.set_content(debug_info);
                     self.buffer_mut().set_mode(AppMode::Debug);
                     self.buffer_mut()
                         .set_status_message("Debug mode - Press 'q' or ESC to return".to_string());
@@ -1592,9 +1480,10 @@ impl EnhancedTuiApp {
                         if !current { "ON" } else { "OFF" }
                     ));
                 }
-                _ => {}
+                _ => {
+                    // Action not recognized, continue to handle key directly
+                }
             }
-            return Ok(false);
         }
 
         // Fall back to direct key handling for special cases not in dispatcher
@@ -1709,34 +1598,26 @@ impl EnhancedTuiApp {
             {
                 self.calculate_column_statistics();
             }
-            // Toggle cell/row selection mode
-            KeyCode::Char('v') => {
-                self.selection_mode = match self.selection_mode {
-                    SelectionMode::Row => {
-                        self.buffer_mut().set_status_message(
-                            "Cell mode - Navigate to select individual cells".to_string(),
-                        );
-                        SelectionMode::Cell
-                    }
-                    SelectionMode::Cell => {
-                        self.buffer_mut().set_status_message(
-                            "Row mode - Navigate to select entire rows".to_string(),
-                        );
-                        SelectionMode::Row
-                    }
-                };
-            }
             // Clipboard operations (vim-like yank)
             KeyCode::Char('y') => {
+                debug!("'y' key pressed - selection_mode={:?}", self.selection_mode);
                 match self.selection_mode {
                     SelectionMode::Cell => {
                         // In cell mode, single 'y' yanks the cell directly
+                        debug!("Yanking cell in cell selection mode");
+                        self.buffer_mut()
+                            .set_status_message("Yanking cell...".to_string());
                         self.yank_cell();
                         // Status message will be set by yank_cell
                     }
                     SelectionMode::Row => {
                         // In row mode, 'y' is handled by chord handler (yy, yc, ya)
                         // The chord handler will process the key sequence
+                        debug!("'y' pressed in row mode - waiting for chord completion");
+                        self.buffer_mut().set_status_message(
+                            "Press second key for chord: yy=row, yc=column, ya=all, yv=cell"
+                                .to_string(),
+                        );
                     }
                 }
             }
@@ -2156,112 +2037,42 @@ impl EnhancedTuiApp {
     }
 
     fn handle_debug_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // Use dispatcher to get action
-        if let Some(action) = self.key_dispatcher.get_debug_action(&key) {
-            match action {
-                "quit" => return Ok(true),
-                "exit_debug" => self.exit_debug(),
-                "scroll_debug_down" => self.scroll_debug_down(),
-                "scroll_debug_up" => self.scroll_debug_up(),
-                "debug_page_down" => self.debug_page_down(),
-                "debug_page_up" => self.debug_page_up(),
-                "debug_go_to_top" => self.debug_go_to_top(),
-                "debug_go_to_bottom" => self.debug_go_to_bottom(),
-                "yank_as_test_case" => {
-                    self.yank_as_test_case();
-                }
-                "yank_debug_context" => {
-                    self.yank_debug_with_context();
-                }
-                _ => {}
+        // Handle special keys for test case generation
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+C to quit
+                return Ok(true);
             }
-        } else {
-            // Custom debug key handlers
-            match key.code {
-                KeyCode::Char('G') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                    self.debug_go_to_bottom();
-                }
-                KeyCode::Char('g') if key.modifiers.is_empty() => {
-                    self.debug_go_to_top();
-                }
-                KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    // Ctrl+T: "Yank as Test" - capture current session as test case
-                    self.yank_as_test_case();
-                }
-                KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                    // Shift+Y: Yank debug dump with test context
-                    self.yank_debug_with_context();
-                }
-                _ => {}
+            KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+T: "Yank as Test" - capture current session as test case
+                self.yank_as_test_case();
+                return Ok(false);
             }
+            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                // Shift+Y: Yank debug dump with test context
+                self.yank_debug_with_context();
+                return Ok(false);
+            }
+            _ => {}
+        }
+
+        // Let the widget handle navigation and exit
+        if self.debug_widget.handle_key(key) {
+            // Widget returned true - exit debug mode
+            self.buffer_mut().set_mode(AppMode::Command);
         }
         Ok(false)
     }
 
-    // Helper methods for debug mode actions
-    fn exit_debug(&mut self) {
-        self.buffer_mut().set_mode(AppMode::Command);
-        self.debug_view.scroll_offset = 0; // Reset scroll when exiting
-    }
-
-    fn scroll_debug_down(&mut self) {
-        // Get max scroll based on debug content
-        let max_scroll = self.get_debug_max_scroll();
-        if (self.debug_view.scroll_offset as usize) < max_scroll {
-            self.debug_view.scroll_offset = self.debug_view.scroll_offset.saturating_add(1);
-        }
-    }
-
-    fn scroll_debug_up(&mut self) {
-        self.debug_view.scroll_offset = self.debug_view.scroll_offset.saturating_sub(1);
-    }
-
-    fn debug_page_down(&mut self) {
-        let max_scroll = self.get_debug_max_scroll();
-        self.debug_view.scroll_offset = (self.debug_view.scroll_offset + 10).min(max_scroll as u16);
-    }
-
-    fn debug_page_up(&mut self) {
-        self.debug_view.scroll_offset = self.debug_view.scroll_offset.saturating_sub(10);
-    }
-
-    fn debug_go_to_top(&mut self) {
-        self.debug_view.scroll_offset = 0;
-    }
-
-    fn debug_go_to_bottom(&mut self) {
-        let max_scroll = self.get_debug_max_scroll();
-        self.debug_view.scroll_offset = max_scroll as u16;
-    }
-
-    fn get_debug_max_scroll(&self) -> usize {
-        // Calculate based on actual debug content lines
-        let total_lines = self.debug_view.content.lines().count();
-        let visible_height: usize = 30; // Approximate visible height
-        total_lines.saturating_sub(visible_height)
-    }
-
     fn handle_pretty_query_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
-                self.buffer_mut().set_mode(AppMode::Command);
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.debug_view.scroll_offset > 0 {
-                    self.debug_view.scroll_up();
-                }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.debug_view.scroll_down();
-            }
-            KeyCode::PageUp => {
-                self.debug_view.page_up();
-            }
-            KeyCode::PageDown => {
-                self.debug_view.page_down();
-            }
-            _ => {}
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            return Ok(true);
+        }
+
+        // Let debug widget handle the key (includes scrolling and exit)
+        if self.debug_widget.handle_key(key) {
+            // Widget returned true - exit pretty query mode
+            self.buffer_mut().set_mode(AppMode::Command);
         }
         Ok(false)
     }
@@ -3702,19 +3513,25 @@ impl EnhancedTuiApp {
     }
 
     fn yank_cell(&mut self) {
+        debug!("yank_cell called");
         if let Some(selected_row) = self.table_state.selected() {
             let column = self.buffer().get_current_column();
+            debug!("Yanking cell at row={}, column={}", selected_row, column);
             match YankManager::yank_cell(self.buffer(), selected_row, column) {
                 Ok(result) => {
                     self.last_yanked = Some((result.description.clone(), result.preview.clone()));
-                    self.buffer_mut()
-                        .set_status_message(format!("Yanked cell: {}", result.full_value));
+                    let message = format!("Yanked cell: {}", result.full_value);
+                    debug!("Yank successful: {}", message);
+                    self.buffer_mut().set_status_message(message);
                 }
                 Err(e) => {
-                    self.buffer_mut()
-                        .set_status_message(format!("Failed to yank cell: {}", e));
+                    let message = format!("Failed to yank cell: {}", e);
+                    debug!("Yank failed: {}", message);
+                    self.buffer_mut().set_status_message(message);
                 }
             }
+        } else {
+            debug!("No row selected for yank");
         }
     }
 
@@ -5249,66 +5066,11 @@ impl EnhancedTuiApp {
     }
 
     fn render_debug(&self, f: &mut Frame, area: Rect) {
-        let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
-        let visible_lines_str = self.debug_view.get_visible_lines(visible_height);
-        let visible_lines: Vec<Line> = visible_lines_str
-            .iter()
-            .map(|line| Line::from(line.clone()))
-            .collect();
-
-        let debug_text = Text::from(visible_lines);
-        let total_lines = self.debug_view.content.lines().count();
-        let start = self.debug_view.scroll_offset as usize;
-        let end = (start + visible_height).min(total_lines);
-
-        // Check if there's a parse error
-        let has_parse_error = self.debug_view.content.contains("❌ PARSE ERROR ❌");
-        let (border_color, title_prefix) = if has_parse_error {
-            (Color::Red, "⚠️  Parser Debug Info [PARSE ERROR] ")
-        } else {
-            (Color::Yellow, "Parser Debug Info ")
-        };
-
-        let debug_paragraph = Paragraph::new(debug_text)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(format!(
-                        "{}- Lines {}-{} of {} (↑↓/jk: scroll, PgUp/PgDn: page, Home/g: top, End/G: bottom, q/Esc: exit)",
-                        title_prefix,
-                        start + 1,
-                        end,
-                        total_lines
-                    ))
-                    .border_style(Style::default().fg(border_color)),
-            )
-            .style(Style::default().fg(Color::White))
-            .wrap(Wrap { trim: false });
-
-        f.render_widget(debug_paragraph, area);
+        self.debug_widget.render(f, area, AppMode::Debug);
     }
 
     fn render_pretty_query(&self, f: &mut Frame, area: Rect) {
-        let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
-        let visible_lines_str = self.debug_view.get_visible_lines(visible_height);
-        let visible_lines: Vec<Line> = visible_lines_str
-            .iter()
-            .map(|line| Line::from(line.clone()))
-            .collect();
-
-        let pretty_text = Text::from(visible_lines);
-
-        let pretty_paragraph = Paragraph::new(pretty_text)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Pretty SQL Query (F6) - ↑↓ to scroll, Esc/q to close")
-                    .border_style(Style::default().fg(Color::Green)),
-            )
-            .style(Style::default().fg(Color::White))
-            .wrap(Wrap { trim: false });
-
-        f.render_widget(pretty_paragraph, area);
+        self.debug_widget.render(f, area, AppMode::PrettyQuery);
     }
 
     fn render_history(&self, f: &mut Frame, area: Rect) {

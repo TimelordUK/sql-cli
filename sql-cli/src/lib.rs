@@ -37,6 +37,7 @@ pub mod completion_manager;
 pub mod cursor_manager;
 pub mod data_analyzer;
 pub mod debug_info;
+pub mod debug_widget;
 pub mod help_text;
 pub mod history_manager;
 pub mod key_bindings;

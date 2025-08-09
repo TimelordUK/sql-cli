@@ -1,17 +1,82 @@
 use crate::api_client::QueryResponse;
-use crate::buffer::{AppMode, BufferAPI};
+use crate::buffer::{AppMode, BufferAPI, EditMode};
+use crate::buffer::{ColumnType, SortOrder};
+use crate::config::Config;
+use crate::help_text::HelpText;
+use crate::sql_highlighter::SqlHighlighter;
+use crate::tui_state::SelectionMode;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
+use regex::Regex;
+use serde_json::Value;
+use std::collections::HashMap;
 
 /// Handles all rendering operations for the TUI
-pub struct TuiRenderer;
+pub struct TuiRenderer {
+    config: Config,
+    sql_highlighter: SqlHighlighter,
+}
+
+impl Default for TuiRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Context needed for rendering various TUI components
+pub struct RenderContext<'a> {
+    pub buffer: &'a dyn BufferAPI,
+    pub config: &'a Config,
+    pub table_state: &'a TableState,
+    pub selection_mode: SelectionMode,
+    pub last_yanked: Option<(&'a str, &'a str)>,
+    pub filter_active: bool,
+    pub filter_pattern: &'a str,
+    pub filter_regex: Option<&'a Regex>,
+    pub sort_column: Option<usize>,
+    pub sort_order: SortOrder,
+    pub help_scroll: u16,
+    pub debug_content: &'a str,
+    pub debug_scroll: u16,
+    pub history_matches: &'a [HistoryMatch],
+    pub history_selected: usize,
+    pub jump_input: &'a str,
+    pub input_text: &'a str,
+    pub cursor_token_pos: (usize, usize),
+    pub current_token: Option<&'a str>,
+    pub parser_error: Option<&'a str>,
+}
+
+#[derive(Clone)]
+pub struct HistoryMatch {
+    pub entry: HistoryEntry,
+    pub score: i64,
+    pub indices: Vec<usize>,
+}
+
+#[derive(Clone)]
+pub struct HistoryEntry {
+    pub command: String,
+    pub success: bool,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub execution_count: usize,
+    pub duration_ms: Option<u64>,
+}
 
 impl TuiRenderer {
+    pub fn new() -> Self {
+        Self {
+            config: Config::load().unwrap_or_default(),
+            sql_highlighter: SqlHighlighter::new(),
+        }
+    }
     /// Render the main status line at the bottom of the screen
     pub fn render_status_line(
         f: &mut Frame,

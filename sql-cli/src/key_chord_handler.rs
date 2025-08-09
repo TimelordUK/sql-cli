@@ -92,9 +92,10 @@ impl KeyChordHandler {
     fn setup_default_chords(&mut self) {
         // Yank chords - these are the only actual chords in use
         self.register_chord("yy", "yank_row");
+        self.register_chord("yr", "yank_row"); // Alternative for yank row
         self.register_chord("yc", "yank_column");
         self.register_chord("ya", "yank_all");
-        self.register_chord("yr", "yank_row"); // Alternative
+        self.register_chord("yv", "yank_cell"); // Yank cell value in row mode
 
         // Future chord possibilities (not currently implemented):
         // self.register_chord("gg", "go_to_top");  // Currently single 'g'
