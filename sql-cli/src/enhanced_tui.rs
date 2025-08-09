@@ -201,15 +201,13 @@ impl EnhancedTuiApp {
             .expect("No buffer available - this should not happen")
     }
 
-    /// Get current buffer if available (for writing)
-    fn current_buffer_mut(&mut self) -> Option<&mut sql_cli::buffer::Buffer> {
-        self.buffer_manager.current_mut()
-    }
+    // Note: current_buffer_mut removed - use buffer_manager.current_mut() directly
 
     /// Get current mutable buffer (panics if none exists)
     /// Use this when we know a buffer should always exist
     fn buffer_mut(&mut self) -> &mut sql_cli::buffer::Buffer {
-        self.current_buffer_mut()
+        self.buffer_manager
+            .current_mut()
             .expect("No buffer available - this should not happen")
     }
 
@@ -854,7 +852,7 @@ impl EnhancedTuiApp {
                         let formatted_text = formatted_lines.join("\n");
 
                         // Switch mode via buffer
-                        if let Some(buffer) = self.current_buffer_mut() {
+                        if let Some(buffer) = self.buffer_manager.current_mut() {
                             buffer.switch_input_mode(true);
                             buffer.set_input_text(formatted_text);
                             // Move cursor to beginning
@@ -885,7 +883,7 @@ impl EnhancedTuiApp {
                             .join(" ");
 
                         // Switch mode via buffer
-                        if let Some(buffer) = self.current_buffer_mut() {
+                        if let Some(buffer) = self.buffer_manager.current_mut() {
                             buffer.switch_input_mode(false);
                             buffer.set_input_text(compact_text);
                         }
@@ -979,7 +977,7 @@ impl EnhancedTuiApp {
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
-                if let Some(buffer) = self.current_buffer_mut() {
+                if let Some(buffer) = self.buffer_manager.current_mut() {
                     if buffer.navigate_history_up(&history_commands) {
                         // Sync the input field with buffer (for now, until we complete migration)
                         let text = buffer.get_input_text();
@@ -1023,7 +1021,7 @@ impl EnhancedTuiApp {
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
-                if let Some(buffer) = self.current_buffer_mut() {
+                if let Some(buffer) = self.buffer_manager.current_mut() {
                     if buffer.navigate_history_down(&history_commands) {
                         // Sync the input field with buffer (for now, until we complete migration)
                         let text = buffer.get_input_text();
@@ -1052,7 +1050,7 @@ impl EnhancedTuiApp {
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
-                if let Some(buffer) = self.current_buffer_mut() {
+                if let Some(buffer) = self.buffer_manager.current_mut() {
                     if buffer.navigate_history_up(&history_commands) {
                         let text = buffer.get_input_text();
                         match self.buffer().get_edit_mode() {
@@ -1078,7 +1076,7 @@ impl EnhancedTuiApp {
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
-                if let Some(buffer) = self.current_buffer_mut() {
+                if let Some(buffer) = self.buffer_manager.current_mut() {
                     if buffer.navigate_history_down(&history_commands) {
                         let text = buffer.get_input_text();
                         match self.buffer().get_edit_mode() {
@@ -1660,7 +1658,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Search);
                 self.buffer_mut().set_search_pattern(String::new());
                 // Save SQL query and use temporary input for search display
-                if let Some(buffer) = self.current_buffer_mut() {
+                if let Some(buffer) = self.buffer_manager.current_mut() {
                     buffer.save_state_for_undo();
                 }
                 self.clear_input();
@@ -1672,7 +1670,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_column_search_matches(Vec::new());
                 self.buffer_mut().set_column_search_current_match(0);
                 // Save current SQL query before clearing input for column search
-                if let Some(buffer) = self.current_buffer_mut() {
+                if let Some(buffer) = self.buffer_manager.current_mut() {
                     buffer.save_state_for_undo();
                 }
                 self.clear_input();
@@ -1703,7 +1701,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Filter);
                 self.get_filter_state_mut().pattern.clear();
                 // Save SQL query and use temporary input for filter display
-                if let Some(buffer) = self.current_buffer_mut() {
+                if let Some(buffer) = self.buffer_manager.current_mut() {
                     buffer.save_state_for_undo();
                 }
                 self.clear_input();
@@ -1718,7 +1716,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
                 self.buffer_mut().set_fuzzy_filter_active(false); // Clear active state when entering mode
                                                                   // Save SQL query and use temporary input for fuzzy filter display
-                if let Some(buffer) = self.current_buffer_mut() {
+                if let Some(buffer) = self.buffer_manager.current_mut() {
                     buffer.save_state_for_undo();
                 }
                 self.clear_input();
@@ -2333,7 +2331,7 @@ impl EnhancedTuiApp {
                     .set_last_query_source(response.source.clone());
 
                 // Store results in the current buffer
-                if let Some(buffer) = self.current_buffer_mut() {
+                if let Some(buffer) = self.buffer_manager.current_mut() {
                     let buffer_id = buffer.get_id();
                     buffer.set_results(Some(response.clone()));
                     info!(target: "buffer", "Stored {} results in buffer {}", row_count, buffer_id);
@@ -2555,7 +2553,7 @@ impl EnhancedTuiApp {
             // Use helper to set text through buffer
             self.set_input_text(new_query.clone());
             // Set cursor to correct position
-            if let Some(buffer) = self.current_buffer_mut() {
+            if let Some(buffer) = self.buffer_manager.current_mut() {
                 buffer.set_input_cursor_position(cursor_pos);
                 // Sync for rendering
                 if self.buffer().get_edit_mode() == EditMode::SingleLine {
@@ -2594,7 +2592,7 @@ impl EnhancedTuiApp {
             // Use helper to set text through buffer
             self.set_input_text(new_query.clone());
             // Set cursor to correct position
-            if let Some(buffer) = self.current_buffer_mut() {
+            if let Some(buffer) = self.buffer_manager.current_mut() {
                 buffer.set_input_cursor_position(cursor_pos_new);
                 // Sync for rendering
                 if self.buffer().get_edit_mode() == EditMode::SingleLine {
@@ -2769,7 +2767,7 @@ impl EnhancedTuiApp {
 
                     if !table_name.is_empty() {
                         // Get columns from the schema
-                        let columns = self.get_table_columns(table_name);
+                        let columns = self.hybrid_parser.get_table_columns(table_name);
 
                         if !columns.is_empty() {
                             // Build the replacement with all columns
@@ -2824,11 +2822,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn get_table_columns(&self, table_name: &str) -> Vec<String> {
-        // Try to get columns from the hybrid parser's schema
-        // This will include CSV/JSON loaded tables
-        self.hybrid_parser.get_table_columns(table_name)
-    }
+    // Note: get_table_columns removed - use hybrid_parser directly
 
     fn handle_completion_multiline(&mut self) {
         // Similar to handle_completion but for multiline mode
@@ -4561,7 +4555,7 @@ impl EnhancedTuiApp {
 
         // Move cursor to new position through buffer
         let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
-        if let Some(buffer) = self.current_buffer_mut() {
+        if let Some(buffer) = self.buffer_manager.current_mut() {
             buffer.set_input_cursor_position(target_pos);
             // Sync for rendering
             if is_single_line {
@@ -4584,7 +4578,7 @@ impl EnhancedTuiApp {
         }
 
         // Save to undo stack before modifying
-        if let Some(buffer) = self.current_buffer_mut() {
+        if let Some(buffer) = self.buffer_manager.current_mut() {
             buffer.save_state_for_undo();
         }
 
@@ -4656,7 +4650,7 @@ impl EnhancedTuiApp {
 
         // Move cursor to new position through buffer
         let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
-        if let Some(buffer) = self.current_buffer_mut() {
+        if let Some(buffer) = self.buffer_manager.current_mut() {
             buffer.set_input_cursor_position(target_pos);
             // Sync for rendering
             if is_single_line {
@@ -4680,7 +4674,7 @@ impl EnhancedTuiApp {
         }
 
         // Save to undo stack before modifying
-        if let Some(buffer) = self.current_buffer_mut() {
+        if let Some(buffer) = self.buffer_manager.current_mut() {
             buffer.save_state_for_undo();
         }
 
@@ -4725,7 +4719,7 @@ impl EnhancedTuiApp {
 
                 if cursor_pos < query_len {
                     // Save to undo stack before modifying
-                    if let Some(buffer) = self.current_buffer_mut() {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
                         buffer.save_state_for_undo();
                     }
 
@@ -4736,7 +4730,7 @@ impl EnhancedTuiApp {
                     // Use helper to set text through buffer
                     self.set_input_text(new_query.clone());
                     // Set cursor back to original position
-                    if let Some(buffer) = self.current_buffer_mut() {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
                         buffer.set_input_cursor_position(cursor_pos);
                         // Sync for rendering
                         if self.buffer().get_edit_mode() == EditMode::SingleLine {
@@ -4798,7 +4792,7 @@ impl EnhancedTuiApp {
                     TextEditor::kill_line_backward(&query, cursor_pos)
                 {
                     // Save to undo stack before modifying
-                    if let Some(buffer) = self.current_buffer_mut() {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
                         buffer.save_state_for_undo();
                     }
 
@@ -4807,7 +4801,7 @@ impl EnhancedTuiApp {
                     // Use helper to set text through buffer
                     self.set_input_text(new_query.clone());
                     // Set cursor to beginning
-                    if let Some(buffer) = self.current_buffer_mut() {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
                         buffer.set_input_cursor_position(0);
                         // Sync for rendering
                         if self.buffer().get_edit_mode() == EditMode::SingleLine {
@@ -4845,7 +4839,7 @@ impl EnhancedTuiApp {
 
     fn undo(&mut self) {
         // Use buffer's high-level undo operation
-        if let Some(buffer) = self.current_buffer_mut() {
+        if let Some(buffer) = self.buffer_manager.current_mut() {
             if buffer.perform_undo() {
                 self.buffer_mut()
                     .set_status_message("Undo performed".to_string());
@@ -4858,7 +4852,7 @@ impl EnhancedTuiApp {
 
     fn redo(&mut self) {
         // Use buffer's high-level redo operation
-        if let Some(buffer) = self.current_buffer_mut() {
+        if let Some(buffer) = self.buffer_manager.current_mut() {
             if buffer.perform_redo() {
                 self.buffer_mut()
                     .set_status_message("Redo performed".to_string());
@@ -5154,14 +5148,14 @@ impl EnhancedTuiApp {
             let new_cursor = cursor_pos + kill_ring_content.len();
 
             // Save to undo stack before modifying
-            if let Some(buffer) = self.current_buffer_mut() {
+            if let Some(buffer) = self.buffer_manager.current_mut() {
                 buffer.save_state_for_undo();
             }
 
             // Use helper to set text through buffer
             self.set_input_text(new_query.clone());
             // Set cursor to new position
-            if let Some(buffer) = self.current_buffer_mut() {
+            if let Some(buffer) = self.buffer_manager.current_mut() {
                 buffer.set_input_cursor_position(new_cursor);
                 // Sync for rendering
                 if self.buffer().get_edit_mode() == EditMode::SingleLine {
@@ -5213,7 +5207,7 @@ impl EnhancedTuiApp {
         // Move cursor through buffer
         if target_pos < cursor_pos {
             let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
-            if let Some(buffer) = self.current_buffer_mut() {
+            if let Some(buffer) = self.buffer_manager.current_mut() {
                 buffer.set_input_cursor_position(target_pos);
                 // Sync for rendering
                 if is_single_line {
@@ -5230,7 +5224,7 @@ impl EnhancedTuiApp {
 
         if let Some(target_pos) = TextNavigator::calculate_next_token_position(&query, cursor_pos) {
             let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
-            if let Some(buffer) = self.current_buffer_mut() {
+            if let Some(buffer) = self.buffer_manager.current_mut() {
                 buffer.set_input_cursor_position(target_pos);
                 // Sync for rendering
                 if is_single_line {
@@ -7228,7 +7222,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
 
         // Set the file path for the first buffer if we have multiple files
         if data_files.len() > 1 {
-            if let Some(buffer) = app.current_buffer_mut() {
+            if let Some(buffer) = app.buffer_manager.current_mut() {
                 buffer.set_file_path(Some(first_file.to_string()));
                 let filename = std::path::Path::new(first_file)
                     .file_name()
@@ -7255,7 +7249,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                         app.new_buffer();
 
                         // Get the current buffer and set it up
-                        if let Some(buffer) = app.current_buffer_mut() {
+                        if let Some(buffer) = app.buffer_manager.current_mut() {
                             // Create and configure CSV client for this buffer
                             let mut csv_client = CsvApiClient::new();
                             csv_client.set_case_insensitive(case_insensitive);
