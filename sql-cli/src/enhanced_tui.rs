@@ -34,6 +34,7 @@ use sql_cli::data_analyzer::DataAnalyzer;
 use sql_cli::data_exporter::DataExporter;
 use sql_cli::debug_info::{DebugInfo, DebugView};
 use sql_cli::debug_widget::DebugWidget;
+use sql_cli::editor_widget::{BufferAction, EditorAction, EditorWidget};
 use sql_cli::help_text::HelpText;
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::hybrid_parser::HybridParser;
@@ -140,6 +141,7 @@ pub struct EnhancedTuiApp {
     current_column: usize,         // For column-based operations
     sql_highlighter: SqlHighlighter,
     debug_widget: DebugWidget,
+    editor_widget: EditorWidget,
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
     help_scroll: u16,                   // Scroll offset for help page
@@ -374,6 +376,7 @@ impl EnhancedTuiApp {
             current_column: 0,
             sql_highlighter: SqlHighlighter::new(),
             debug_widget: DebugWidget::new(),
+            editor_widget: EditorWidget::new(),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             help_scroll: 0,
