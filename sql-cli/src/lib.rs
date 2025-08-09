@@ -26,6 +26,7 @@ pub mod sql_highlighter;
 pub mod virtual_table;
 pub mod where_ast;
 pub mod where_parser;
+pub mod yank_manager;
 
 // New refactored modules for enhanced_tui decomposition
 pub mod completion_manager;

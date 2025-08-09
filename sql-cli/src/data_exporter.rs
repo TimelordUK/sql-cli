@@ -230,7 +230,7 @@ impl DataExporter {
     }
 
     /// Export a single value to clipboard-friendly format
-    pub fn format_for_clipboard(value: &Value, header: &str) -> String {
+    pub fn format_for_clipboard(value: &Value, _header: &str) -> String {
         match value {
             Value::String(s) => s.clone(),
             Value::Number(n) => n.to_string(),

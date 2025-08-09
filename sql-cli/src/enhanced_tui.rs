@@ -38,11 +38,10 @@ use sql_cli::logging::{get_log_buffer, LogRingBuffer};
 use sql_cli::text_navigation::{TextEditor, TextNavigator};
 use sql_cli::where_ast::format_where_ast;
 use sql_cli::where_parser::WhereParser;
+use sql_cli::yank_manager::YankManager;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use std::fs::File;
 use std::io;
-use std::io::Write;
 use tracing::{debug, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
@@ -3621,204 +3620,65 @@ impl EnhancedTuiApp {
     }
 
     fn yank_cell(&mut self) {
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(selected_row) = self.table_state.selected() {
-                if let Some(row_data) = results.data.get(selected_row) {
-                    if let Some(obj) = row_data.as_object() {
-                        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                        if self.buffer().get_current_column() < headers.len() {
-                            let header = headers[self.buffer().get_current_column()];
-                            let value = match obj.get(header) {
-                                Some(Value::String(s)) => s.clone(),
-                                Some(Value::Number(n)) => n.to_string(),
-                                Some(Value::Bool(b)) => b.to_string(),
-                                Some(Value::Null) => "NULL".to_string(),
-                                Some(other) => other.to_string(),
-                                None => String::new(),
-                            };
-
-                            // Copy to clipboard
-                            match arboard::Clipboard::new() {
-                                Ok(mut clipboard) => match clipboard.set_text(&value) {
-                                    Ok(_) => {
-                                        // Store what was yanked
-                                        let col_name = header.to_string();
-                                        let display_value = if value.len() > 20 {
-                                            format!("{}...", &value[..17])
-                                        } else {
-                                            value.clone()
-                                        };
-                                        self.last_yanked = Some((col_name, display_value));
-                                        self.buffer_mut()
-                                            .set_status_message(format!("Yanked cell: {}", value));
-                                    }
-                                    Err(e) => {
-                                        self.buffer_mut()
-                                            .set_status_message(format!("Clipboard error: {}", e));
-                                    }
-                                },
-                                Err(e) => {
-                                    self.buffer_mut().set_status_message(format!(
-                                        "Can't access clipboard: {}",
-                                        e
-                                    ));
-                                }
-                            }
-                        }
-                    }
+        if let Some(selected_row) = self.table_state.selected() {
+            let column = self.buffer().get_current_column();
+            match YankManager::yank_cell(self.buffer(), selected_row, column) {
+                Ok(result) => {
+                    self.last_yanked = Some((result.description.clone(), result.preview.clone()));
+                    self.buffer_mut()
+                        .set_status_message(format!("Yanked cell: {}", result.full_value));
+                }
+                Err(e) => {
+                    self.buffer_mut()
+                        .set_status_message(format!("Failed to yank cell: {}", e));
                 }
             }
         }
     }
 
     fn yank_row(&mut self) {
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(selected_row) = self.table_state.selected() {
-                if let Some(row_data) = results.data.get(selected_row) {
-                    // Convert row to tab-separated values
-                    if let Some(obj) = row_data.as_object() {
-                        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                        let values: Vec<String> = headers
-                            .iter()
-                            .map(|&header| match obj.get(header) {
-                                Some(Value::String(s)) => s.clone(),
-                                Some(Value::Number(n)) => n.to_string(),
-                                Some(Value::Bool(b)) => b.to_string(),
-                                Some(Value::Null) => "NULL".to_string(),
-                                Some(other) => other.to_string(),
-                                None => String::new(),
-                            })
-                            .collect();
-
-                        let row_text = values.join("\t");
-
-                        // Copy to clipboard
-                        match arboard::Clipboard::new() {
-                            Ok(mut clipboard) => match clipboard.set_text(&row_text) {
-                                Ok(_) => {
-                                    self.last_yanked = Some((
-                                        format!("Row {}", selected_row + 1),
-                                        format!("{} columns", values.len()),
-                                    ));
-                                    self.buffer_mut().set_status_message(format!(
-                                        "Yanked row {} ({} columns)",
-                                        selected_row + 1,
-                                        values.len()
-                                    ));
-                                }
-                                Err(e) => {
-                                    self.buffer_mut()
-                                        .set_status_message(format!("Clipboard error: {}", e));
-                                }
-                            },
-                            Err(e) => {
-                                self.buffer_mut()
-                                    .set_status_message(format!("Can't access clipboard: {}", e));
-                            }
-                        }
-                    }
+        if let Some(selected_row) = self.table_state.selected() {
+            match YankManager::yank_row(self.buffer(), selected_row) {
+                Ok(result) => {
+                    self.last_yanked = Some((result.description.clone(), result.preview));
+                    self.buffer_mut()
+                        .set_status_message(format!("Yanked {}", result.description));
+                }
+                Err(e) => {
+                    self.buffer_mut()
+                        .set_status_message(format!("Failed to yank row: {}", e));
                 }
             }
         }
     }
 
     fn yank_column(&mut self) {
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                    if self.buffer().get_current_column() < headers.len() {
-                        let header = headers[self.buffer().get_current_column()].to_string();
-
-                        // Collect all values from this column
-                        let column_values: Vec<String> = results
-                            .data
-                            .iter()
-                            .filter_map(|row| {
-                                row.as_object().and_then(|obj| {
-                                    obj.get(&header).map(|v| match v {
-                                        Value::String(s) => s.clone(),
-                                        Value::Number(n) => n.to_string(),
-                                        Value::Bool(b) => b.to_string(),
-                                        Value::Null => "NULL".to_string(),
-                                        other => other.to_string(),
-                                    })
-                                })
-                            })
-                            .collect();
-
-                        let column_text = column_values.join("\n");
-
-                        // Copy to clipboard
-                        match arboard::Clipboard::new() {
-                            Ok(mut clipboard) => match clipboard.set_text(&column_text) {
-                                Ok(_) => {
-                                    self.last_yanked = Some((
-                                        format!("Column '{}'", header),
-                                        format!("{} rows", column_values.len()),
-                                    ));
-                                    self.buffer_mut().set_status_message(format!(
-                                        "Yanked column '{}' ({} rows)",
-                                        header,
-                                        column_values.len()
-                                    ));
-                                }
-                                Err(e) => {
-                                    self.buffer_mut()
-                                        .set_status_message(format!("Clipboard error: {}", e));
-                                }
-                            },
-                            Err(e) => {
-                                self.buffer_mut()
-                                    .set_status_message(format!("Can't access clipboard: {}", e));
-                            }
-                        }
-                    }
-                }
+        let column = self.buffer().get_current_column();
+        match YankManager::yank_column(self.buffer(), column) {
+            Ok(result) => {
+                self.last_yanked = Some((result.description.clone(), result.preview));
+                self.buffer_mut()
+                    .set_status_message(format!("Yanked {}", result.description));
+            }
+            Err(e) => {
+                self.buffer_mut()
+                    .set_status_message(format!("Failed to yank column: {}", e));
             }
         }
     }
 
     fn yank_all(&mut self) {
-        if let Some(results) = self.buffer().get_results() {
-            // Get the actual data to yank (filtered or all)
-            let data_to_export =
-                if self.get_filter_state().active || self.buffer().is_fuzzy_filter_active() {
-                    // Use filtered data
-                    self.get_filtered_json_data()
-                } else {
-                    // Use all data
-                    results.data.clone()
-                };
-
-            if let Some(csv_text) = DataExporter::generate_csv_text(&data_to_export) {
-                // Copy to clipboard
-                match arboard::Clipboard::new() {
-                    Ok(mut clipboard) => match clipboard.set_text(&csv_text) {
-                        Ok(_) => {
-                            let filter_info = if self.get_filter_state().active
-                                || self.buffer().is_fuzzy_filter_active()
-                            {
-                                " (filtered)"
-                            } else {
-                                ""
-                            };
-                            self.buffer_mut().set_status_message(format!(
-                                "Yanked all data{}: {} rows",
-                                filter_info,
-                                data_to_export.len()
-                            ));
-                        }
-                        Err(e) => {
-                            self.buffer_mut()
-                                .set_status_message(format!("Clipboard error: {}", e));
-                        }
-                    },
-                    Err(e) => {
-                        self.buffer_mut()
-                            .set_status_message(format!("Can't access clipboard: {}", e));
-                    }
-                }
+        match YankManager::yank_all(self.buffer()) {
+            Ok(result) => {
+                self.last_yanked = Some((result.description.clone(), result.preview.clone()));
+                self.buffer_mut().set_status_message(format!(
+                    "Yanked {}: {}",
+                    result.description, result.preview
+                ));
+            }
+            Err(e) => {
+                self.buffer_mut()
+                    .set_status_message(format!("Failed to yank all: {}", e));
             }
         }
     }
@@ -3919,54 +3779,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn get_filtered_json_data(&self) -> Vec<Value> {
-        if let Some(results) = self.buffer().get_results() {
-            if self.buffer().is_fuzzy_filter_active()
-                && !self.buffer().get_fuzzy_filter_indices().clone().is_empty()
-            {
-                self.buffer()
-                    .get_fuzzy_filter_indices()
-                    .clone()
-                    .iter()
-                    .filter_map(|&idx| results.data.get(idx).cloned())
-                    .collect()
-            } else if self.get_filter_state().active && self.buffer().get_filtered_data().is_some()
-            {
-                // Convert filtered_data back to JSON values
-                // This is a bit inefficient but maintains consistency
-                if let Some(first_row) = results.data.first() {
-                    if let Some(obj) = first_row.as_object() {
-                        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                        self.buffer()
-                            .get_filtered_data()
-                            .unwrap()
-                            .iter()
-                            .map(|row| {
-                                let mut json_obj = serde_json::Map::new();
-                                for (i, value) in row.iter().enumerate() {
-                                    if i < headers.len() {
-                                        json_obj.insert(
-                                            headers[i].to_string(),
-                                            Value::String(value.clone()),
-                                        );
-                                    }
-                                }
-                                Value::Object(json_obj)
-                            })
-                            .collect()
-                    } else {
-                        Vec::new()
-                    }
-                } else {
-                    Vec::new()
-                }
-            } else {
-                results.data.clone()
-            }
-        } else {
-            Vec::new()
-        }
-    }
+    // Removed get_filtered_json_data - moved to YankManager::convert_filtered_to_json
 
     fn get_horizontal_scroll_offset(&self) -> u16 {
         // Delegate to cursor_manager (incremental refactoring)
