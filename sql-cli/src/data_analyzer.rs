@@ -1,5 +1,21 @@
+use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::OnceLock;
+
+// Compile regex patterns once and reuse them
+static DATE_PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
+
+fn get_date_patterns() -> &'static Vec<Regex> {
+    DATE_PATTERNS.get_or_init(|| {
+        vec![
+            Regex::new(r"^\d{4}-\d{2}-\d{2}").unwrap(), // YYYY-MM-DD
+            Regex::new(r"^\d{2}/\d{2}/\d{4}").unwrap(), // MM/DD/YYYY
+            Regex::new(r"^\d{2}-\d{2}-\d{4}").unwrap(), // DD-MM-YYYY
+            Regex::new(r"^\d{4}/\d{2}/\d{2}").unwrap(), // YYYY/MM/DD
+        ]
+    })
+}
 
 /// Analyzes data for statistics, column widths, and other metrics
 /// Extracted from the monolithic enhanced_tui.rs
@@ -51,7 +67,7 @@ impl DataAnalyzer {
     pub fn calculate_column_statistics(
         &mut self,
         column_name: &str,
-        values: &[String],
+        values: &[&str],
     ) -> ColumnStatistics {
         let mut stats = ColumnStatistics {
             column_name: column_name.to_string(),
@@ -71,10 +87,11 @@ impl DataAnalyzer {
             return stats;
         }
 
-        // Collect unique values
+        // Collect unique values more efficiently - use references when possible
         let mut unique = std::collections::HashSet::new();
         let mut numeric_values = Vec::new();
-        let mut string_values = Vec::new();
+        let mut min_str: Option<&str> = None;
+        let mut max_str: Option<&str> = None;
         let mut lengths = Vec::new();
 
         for value in values {
@@ -82,14 +99,27 @@ impl DataAnalyzer {
                 stats.null_values += 1;
             } else {
                 stats.non_null_values += 1;
-                unique.insert(value.clone());
+
+                // Use string reference for unique count
+                unique.insert(*value);
                 lengths.push(value.len());
+
+                // Track min/max strings without cloning
+                match min_str {
+                    None => min_str = Some(value),
+                    Some(min) if value < &min => min_str = Some(value),
+                    _ => {}
+                }
+                match max_str {
+                    None => max_str = Some(value),
+                    Some(max) if value > &max => max_str = Some(value),
+                    _ => {}
+                }
 
                 // Try to parse as number
                 if let Ok(num) = value.parse::<f64>() {
                     numeric_values.push(num);
                 }
-                string_values.push(value.clone());
             }
         }
 
@@ -115,12 +145,9 @@ impl DataAnalyzer {
                 }
             }
             _ => {
-                // String statistics
-                if !string_values.is_empty() {
-                    string_values.sort();
-                    stats.min_value = string_values.first().cloned();
-                    stats.max_value = string_values.last().cloned();
-                }
+                // String statistics - use the min/max we already found without cloning
+                stats.min_value = min_str.map(|s| s.to_string());
+                stats.max_value = max_str.map(|s| s.to_string());
             }
         }
 
@@ -138,27 +165,31 @@ impl DataAnalyzer {
     }
 
     /// Detect the type of a column based on its values
-    pub fn detect_column_type(&self, values: &[String]) -> ColumnType {
+    pub fn detect_column_type(&self, values: &[&str]) -> ColumnType {
         if values.is_empty() {
             return ColumnType::Unknown;
         }
 
         let mut type_counts = HashMap::new();
 
-        for value in values.iter().filter(|v| !v.is_empty()) {
-            let detected_type = if value.parse::<i64>().is_ok() {
-                ColumnType::Integer
-            } else if value.parse::<f64>().is_ok() {
-                ColumnType::Float
-            } else if value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("false") {
-                ColumnType::Boolean
-            } else if self.looks_like_date(value) {
-                ColumnType::Date
-            } else {
-                ColumnType::String
-            };
+        // Early exit optimization: check first few values
+        // If they're all the same type, check if the rest matches
+        let first_type = self.detect_single_value_type(values[0]);
+        let mut all_same = true;
+
+        for (i, value) in values.iter().filter(|v| !v.is_empty()).enumerate() {
+            let detected_type = self.detect_single_value_type(value);
+
+            if i < 10 && detected_type != first_type {
+                all_same = false;
+            }
 
             *type_counts.entry(detected_type).or_insert(0) += 1;
+
+            // Early exit if we have enough samples and they're mixed
+            if i > 100 && type_counts.len() > 1 && !all_same {
+                break;
+            }
         }
 
         // If we have multiple types, it's mixed
@@ -176,6 +207,71 @@ impl DataAnalyzer {
         } else {
             ColumnType::Unknown
         }
+    }
+
+    /// Detect type of a single value
+    fn detect_single_value_type(&self, value: &str) -> ColumnType {
+        if value.is_empty() {
+            return ColumnType::Unknown;
+        }
+
+        // Check in order of likelihood/performance
+        if value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("false") {
+            ColumnType::Boolean
+        } else if value.parse::<i64>().is_ok() {
+            ColumnType::Integer
+        } else if value.parse::<f64>().is_ok() {
+            ColumnType::Float
+        } else if self.looks_like_date_fast(value) {
+            ColumnType::Date
+        } else {
+            ColumnType::String
+        }
+    }
+
+    /// Check if a string looks like a date using pre-compiled regex patterns
+    fn looks_like_date_fast(&self, value: &str) -> bool {
+        // Simple heuristics for date detection
+        if value.len() < 8 || value.len() > 30 {
+            return false;
+        }
+
+        // Use pre-compiled regex patterns
+        let patterns = get_date_patterns();
+        for pattern in patterns {
+            if pattern.is_match(value) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Check if a string looks like a date
+    fn looks_like_date(&self, value: &str) -> bool {
+        // Simple heuristics for date detection
+        if value.len() < 8 || value.len() > 30 {
+            return false;
+        }
+
+        // Check for common date patterns
+        let date_patterns = [
+            r"\d{4}-\d{2}-\d{2}", // YYYY-MM-DD
+            r"\d{2}/\d{2}/\d{4}", // MM/DD/YYYY
+            r"\d{2}-\d{2}-\d{4}", // DD-MM-YYYY
+            r"\d{4}/\d{2}/\d{2}", // YYYY/MM/DD
+        ];
+
+        for pattern in &date_patterns {
+            if regex::Regex::new(pattern)
+                .map(|re| re.is_match(value))
+                .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Calculate optimal column widths for display
@@ -253,33 +349,6 @@ impl DataAnalyzer {
         }
     }
 
-    /// Check if a string looks like a date
-    fn looks_like_date(&self, value: &str) -> bool {
-        // Simple heuristics for date detection
-        if value.len() < 8 || value.len() > 30 {
-            return false;
-        }
-
-        // Check for common date patterns
-        let date_patterns = [
-            r"\d{4}-\d{2}-\d{2}", // YYYY-MM-DD
-            r"\d{2}/\d{2}/\d{4}", // MM/DD/YYYY
-            r"\d{2}-\d{2}-\d{4}", // DD-MM-YYYY
-            r"\d{4}/\d{2}/\d{2}", // YYYY/MM/DD
-        ];
-
-        for pattern in &date_patterns {
-            if regex::Regex::new(pattern)
-                .map(|re| re.is_match(value))
-                .unwrap_or(false)
-            {
-                return true;
-            }
-        }
-
-        false
-    }
-
     /// Get cached column statistics
     pub fn get_column_statistics(&self, column_name: &str) -> Option<&ColumnStatistics> {
         self.column_stats.get(column_name)
@@ -307,40 +376,28 @@ mod tests {
         let analyzer = DataAnalyzer::new();
 
         // Integer column
-        let int_values = vec!["1", "2", "3", "4", "5"]
-            .into_iter()
-            .map(String::from)
-            .collect::<Vec<_>>();
+        let int_values = vec!["1", "2", "3", "4", "5"];
         assert_eq!(
             analyzer.detect_column_type(&int_values),
             ColumnType::Integer
         );
 
         // Float column
-        let float_values = vec!["1.5", "2.7", "3.14", "4.0", "5.5"]
-            .into_iter()
-            .map(String::from)
-            .collect::<Vec<_>>();
+        let float_values = vec!["1.5", "2.7", "3.14", "4.0", "5.5"];
         assert_eq!(
             analyzer.detect_column_type(&float_values),
             ColumnType::Float
         );
 
         // String column
-        let string_values = vec!["alice", "bob", "charlie", "david"]
-            .into_iter()
-            .map(String::from)
-            .collect::<Vec<_>>();
+        let string_values = vec!["alice", "bob", "charlie", "david"];
         assert_eq!(
             analyzer.detect_column_type(&string_values),
             ColumnType::String
         );
 
         // Boolean column
-        let bool_values = vec!["true", "false", "TRUE", "FALSE"]
-            .into_iter()
-            .map(String::from)
-            .collect::<Vec<_>>();
+        let bool_values = vec!["true", "false", "TRUE", "FALSE"];
         assert_eq!(
             analyzer.detect_column_type(&bool_values),
             ColumnType::Boolean
@@ -351,10 +408,7 @@ mod tests {
     fn test_column_statistics() {
         let mut analyzer = DataAnalyzer::new();
 
-        let values = vec!["10", "20", "30", "40", "50", ""]
-            .into_iter()
-            .map(String::from)
-            .collect::<Vec<_>>();
+        let values = vec!["10", "20", "30", "40", "50", ""];
 
         let stats = analyzer.calculate_column_statistics("test_column", &values);
 

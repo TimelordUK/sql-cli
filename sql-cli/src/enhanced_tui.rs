@@ -41,6 +41,7 @@ use sql_cli::hybrid_parser::HybridParser;
 use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
 use sql_cli::key_dispatcher::KeyDispatcher;
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
+use sql_cli::stats_widget::{StatsAction, StatsWidget};
 use sql_cli::text_navigation::{TextEditor, TextNavigator};
 use sql_cli::where_ast::format_where_ast;
 use sql_cli::where_parser::WhereParser;
@@ -142,6 +143,7 @@ pub struct EnhancedTuiApp {
     sql_highlighter: SqlHighlighter,
     debug_widget: DebugWidget,
     editor_widget: EditorWidget,
+    stats_widget: StatsWidget,
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
     help_scroll: u16,                   // Scroll offset for help page
@@ -327,8 +329,8 @@ impl EnhancedTuiApp {
 
     pub fn new(api_url: &str) -> Self {
         // Load configuration
-        let config = Config::load().unwrap_or_else(|e| {
-            eprintln!("Warning: Could not load config: {}. Using defaults.", e);
+        let config = Config::load().unwrap_or_else(|_e| {
+            // Config loading error - using defaults
             Config::default()
         });
 
@@ -377,6 +379,7 @@ impl EnhancedTuiApp {
             sql_highlighter: SqlHighlighter::new(),
             debug_widget: DebugWidget::new(),
             editor_widget: EditorWidget::new(),
+            stats_widget: StatsWidget::new(),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             help_scroll: 0,
@@ -2818,11 +2821,17 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_column_statistics(&mut self) {
-        // Get the current column name and data
-        if let Some(results) = self.buffer().get_results() {
-            if results.data.is_empty() {
-                return;
-            }
+        use std::time::Instant;
+
+        let start_total = Instant::now();
+
+        // Collect all data first, then drop the buffer reference before calling analyzer
+        let (column_name, data_to_analyze) = {
+            // Get the current column name and data
+            let results = match self.buffer().get_results() {
+                Some(r) if !r.data.is_empty() => r,
+                _ => return,
+            };
 
             // Get column names from first row
             let headers: Vec<String> = if let Some(first_row) = results.data.first() {
@@ -2835,31 +2844,32 @@ impl EnhancedTuiApp {
                 return;
             };
 
-            if self.buffer().get_current_column() >= headers.len() {
+            let current_column = self.buffer().get_current_column();
+            if current_column >= headers.len() {
                 return;
             }
 
-            let column_name = &headers[self.buffer().get_current_column()];
+            let column_name = headers[current_column].clone();
 
-            // Use filtered data if available, otherwise use original data
+            // Extract column data more efficiently - avoid cloning strings when possible
             let data_to_analyze: Vec<String> =
                 if let Some(filtered) = self.buffer().get_filtered_data() {
-                    // Convert filtered data back to strings for analysis
+                    // For filtered data, we already have strings
                     let mut string_data = Vec::new();
                     for row in filtered {
-                        if self.buffer().get_current_column() < row.len() {
-                            string_data.push(row[self.buffer().get_current_column()].clone());
+                        if current_column < row.len() {
+                            string_data.push(row[current_column].clone());
                         }
                     }
                     string_data
                 } else {
-                    // Extract column values from JSON data as strings
+                    // For JSON data, we need to convert to owned strings
                     results
                         .data
                         .iter()
                         .filter_map(|row| {
                             if let Some(obj) = row.as_object() {
-                                obj.get(column_name).map(|v| match v {
+                                obj.get(&column_name).map(|v| match v {
                                     Value::String(s) => s.clone(),
                                     Value::Number(n) => n.to_string(),
                                     Value::Bool(b) => b.to_string(),
@@ -2873,83 +2883,113 @@ impl EnhancedTuiApp {
                         .collect()
                 };
 
-            // Use DataAnalyzer to calculate statistics
-            let analyzer_stats = self
-                .data_analyzer
-                .calculate_column_statistics(column_name, &data_to_analyze);
+            (column_name, data_to_analyze)
+        };
 
-            // Convert from DataAnalyzer's ColumnStatistics to buffer's ColumnStatistics
-            let mut stats = ColumnStatistics {
-                column_name: analyzer_stats.column_name,
-                column_type: match analyzer_stats.data_type {
-                    sql_cli::data_analyzer::ColumnType::Integer
-                    | sql_cli::data_analyzer::ColumnType::Float => ColumnType::Numeric,
-                    sql_cli::data_analyzer::ColumnType::String
-                    | sql_cli::data_analyzer::ColumnType::Boolean
-                    | sql_cli::data_analyzer::ColumnType::Date => ColumnType::String,
-                    sql_cli::data_analyzer::ColumnType::Mixed => ColumnType::Mixed,
-                    sql_cli::data_analyzer::ColumnType::Unknown => ColumnType::Mixed,
-                },
-                total_count: analyzer_stats.total_values,
-                null_count: analyzer_stats.null_values,
-                unique_count: analyzer_stats.unique_values,
-                frequency_map: None, // Will be populated below
-                min: None,
-                max: None,
-                sum: None,
-                mean: analyzer_stats.avg_value,
-                median: None, // DataAnalyzer doesn't compute median yet
-            };
+        // Convert to references for the analyzer
+        let data_refs: Vec<&str> = data_to_analyze.iter().map(|s| s.as_str()).collect();
 
-            // Parse min/max values for numeric columns
-            if matches!(stats.column_type, ColumnType::Numeric) {
-                if let Some(ref min_str) = analyzer_stats.min_value {
-                    stats.min = min_str.parse::<f64>().ok();
-                }
-                if let Some(ref max_str) = analyzer_stats.max_value {
-                    stats.max = max_str.parse::<f64>().ok();
-                }
+        // Use DataAnalyzer to calculate statistics
+        let analyzer_stats = self
+            .data_analyzer
+            .calculate_column_statistics(&column_name, &data_refs);
 
-                // Calculate sum and median manually if we have numeric values
-                let mut numeric_values: Vec<f64> = data_to_analyze
-                    .iter()
-                    .filter_map(|v| v.parse::<f64>().ok())
-                    .collect();
+        // Convert from DataAnalyzer's ColumnStatistics to buffer's ColumnStatistics
+        let mut stats = ColumnStatistics {
+            column_name: analyzer_stats.column_name,
+            column_type: match analyzer_stats.data_type {
+                sql_cli::data_analyzer::ColumnType::Integer
+                | sql_cli::data_analyzer::ColumnType::Float => ColumnType::Numeric,
+                sql_cli::data_analyzer::ColumnType::String
+                | sql_cli::data_analyzer::ColumnType::Boolean
+                | sql_cli::data_analyzer::ColumnType::Date => ColumnType::String,
+                sql_cli::data_analyzer::ColumnType::Mixed => ColumnType::Mixed,
+                sql_cli::data_analyzer::ColumnType::Unknown => ColumnType::Mixed,
+            },
+            total_count: analyzer_stats.total_values,
+            null_count: analyzer_stats.null_values,
+            unique_count: analyzer_stats.unique_values,
+            frequency_map: None, // Will be populated below
+            min: None,
+            max: None,
+            sum: None,
+            mean: analyzer_stats.avg_value,
+            median: None, // DataAnalyzer doesn't compute median yet
+        };
 
-                if !numeric_values.is_empty() {
-                    stats.sum = Some(numeric_values.iter().sum());
-
-                    // Calculate median
-                    numeric_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
-                    let mid = numeric_values.len() / 2;
-                    stats.median = if numeric_values.len() % 2 == 0 {
-                        Some((numeric_values[mid - 1] + numeric_values[mid]) / 2.0)
-                    } else {
-                        Some(numeric_values[mid])
-                    };
-                }
-            } else {
-                // For non-numeric columns, use the string values directly
-                stats.min = analyzer_stats.min_value.clone().map(|_| 0.0); // Placeholder
-                stats.max = analyzer_stats.max_value.clone().map(|_| 0.0); // Placeholder
+        // Parse min/max values for numeric columns
+        if matches!(stats.column_type, ColumnType::Numeric) {
+            if let Some(ref min_str) = analyzer_stats.min_value {
+                stats.min = min_str.parse::<f64>().ok();
+            }
+            if let Some(ref max_str) = analyzer_stats.max_value {
+                stats.max = max_str.parse::<f64>().ok();
             }
 
-            // Build frequency map
-            let mut frequency_map: BTreeMap<String, usize> = BTreeMap::new();
+            // Calculate sum and median manually if we have numeric values
+            let mut numeric_values: Vec<f64> = data_to_analyze
+                .iter()
+                .filter_map(|v| v.parse::<f64>().ok())
+                .collect();
+
+            if !numeric_values.is_empty() {
+                stats.sum = Some(numeric_values.iter().sum());
+
+                // Calculate median
+                numeric_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                let mid = numeric_values.len() / 2;
+                stats.median = if numeric_values.len() % 2 == 0 {
+                    Some((numeric_values[mid - 1] + numeric_values[mid]) / 2.0)
+                } else {
+                    Some(numeric_values[mid])
+                };
+            }
+        } else {
+            // For non-numeric columns, use the string values directly
+            stats.min = analyzer_stats.min_value.clone().map(|_| 0.0); // Placeholder
+            stats.max = analyzer_stats.max_value.clone().map(|_| 0.0); // Placeholder
+        }
+
+        // Build frequency map - but only if we don't have too many unique values
+        // Check unique count first to avoid unnecessary string cloning
+        const MAX_UNIQUE_FOR_FREQUENCY: usize = 100;
+
+        let frequency_map = if stats.unique_count <= MAX_UNIQUE_FOR_FREQUENCY {
+            // Build frequency map without cloning - use references first, then convert
+            let mut freq_map: BTreeMap<&str, usize> = BTreeMap::new();
             for value in &data_to_analyze {
                 if !value.is_empty() {
-                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
+                    *freq_map.entry(value.as_str()).or_insert(0) += 1;
                 }
             }
+            // Convert to owned strings only at the end
+            Some(
+                freq_map
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
+            )
+        } else {
+            // Skip frequency map entirely for columns with too many unique values
+            None
+        };
 
-            // Only keep frequency map for reasonable number of unique values
-            if frequency_map.len() <= 100 {
-                stats.frequency_map = Some(frequency_map);
-            }
+        stats.frequency_map = frequency_map;
 
-            self.buffer_mut().set_column_stats(Some(stats));
-            self.buffer_mut().set_mode(AppMode::ColumnStats);
-        }
+        // Calculate total time
+        let elapsed = start_total.elapsed();
+
+        self.buffer_mut().set_column_stats(Some(stats));
+
+        // Show timing in status message
+        self.buffer_mut().set_status_message(format!(
+            "Column stats: {:.1}ms for {} values ({} unique)",
+            elapsed.as_secs_f64() * 1000.0,
+            data_to_analyze.len(),
+            analyzer_stats.unique_values
+        ));
+
+        self.buffer_mut().set_mode(AppMode::ColumnStats);
     }
 
     fn check_parser_error(&self, query: &str) -> Option<String> {
@@ -5575,13 +5615,13 @@ impl EnhancedTuiApp {
     }
 
     fn handle_column_stats_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('S') => {
+        match self.stats_widget.handle_key(key) {
+            StatsAction::Quit => return Ok(true),
+            StatsAction::Close => {
                 self.buffer_mut().set_column_stats(None);
                 self.buffer_mut().set_mode(AppMode::Results);
             }
-            _ => {}
+            StatsAction::Continue | StatsAction::PassThrough => {}
         }
         Ok(false)
     }
@@ -5703,114 +5743,8 @@ impl EnhancedTuiApp {
     }
 
     fn render_column_stats(&self, f: &mut Frame, area: Rect) {
-        if let Some(stats) = self.buffer().get_column_stats() {
-            let mut lines = vec![
-                Line::from(format!("Column Statistics: {}", stats.column_name)).style(
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Line::from(""),
-                Line::from(format!("Type: {:?}", stats.column_type))
-                    .style(Style::default().fg(Color::Yellow)),
-                Line::from(format!("Total Rows: {}", stats.total_count)),
-                Line::from(format!("Unique Values: {}", stats.unique_count)),
-                Line::from(format!("Null/Empty Count: {}", stats.null_count)),
-                Line::from(""),
-            ];
-
-            // Add numeric statistics if available
-            if matches!(stats.column_type, ColumnType::Numeric | ColumnType::Mixed) {
-                lines.push(
-                    Line::from("Numeric Statistics:").style(
-                        Style::default()
-                            .fg(Color::Green)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                );
-                if let Some(min) = stats.min {
-                    lines.push(Line::from(format!("  Min: {:.2}", min)));
-                }
-                if let Some(max) = stats.max {
-                    lines.push(Line::from(format!("  Max: {:.2}", max)));
-                }
-                if let Some(mean) = stats.mean {
-                    lines.push(Line::from(format!("  Mean: {:.2}", mean)));
-                }
-                if let Some(median) = stats.median {
-                    lines.push(Line::from(format!("  Median: {:.2}", median)));
-                }
-                if let Some(sum) = stats.sum {
-                    lines.push(Line::from(format!("  Sum: {:.2}", sum)));
-                }
-                lines.push(Line::from(""));
-            }
-
-            // Add frequency distribution if available
-            if let Some(ref freq_map) = stats.frequency_map {
-                lines.push(
-                    Line::from("Frequency Distribution:").style(
-                        Style::default()
-                            .fg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                );
-
-                // Sort by frequency (descending) and take top 20
-                let mut freq_vec: Vec<(&String, &usize)> = freq_map.iter().collect();
-                freq_vec.sort_by(|a, b| b.1.cmp(a.1));
-
-                let max_count = freq_vec.first().map(|(_, c)| **c).unwrap_or(1);
-
-                for (value, count) in freq_vec.iter().take(20) {
-                    let bar_width = ((**count as f64 / max_count as f64) * 30.0) as usize;
-                    let bar = "█".repeat(bar_width);
-                    let display_value = if value.len() > 30 {
-                        format!("{}...", &value[..27])
-                    } else {
-                        value.to_string()
-                    };
-                    lines.push(Line::from(format!(
-                        "  {:30} {} ({})",
-                        display_value, bar, count
-                    )));
-                }
-
-                if freq_vec.len() > 20 {
-                    lines.push(
-                        Line::from(format!(
-                            "  ... and {} more unique values",
-                            freq_vec.len() - 20
-                        ))
-                        .style(Style::default().fg(Color::DarkGray)),
-                    );
-                }
-            }
-
-            lines.push(Line::from(""));
-            lines.push(
-                Line::from("Press S or Esc to return to results")
-                    .style(Style::default().fg(Color::DarkGray)),
-            );
-
-            let stats_paragraph = Paragraph::new(Text::from(lines))
-                .block(Block::default().borders(Borders::ALL).title(format!(
-                    "Column Statistics - {} (S to close)",
-                    stats.column_name
-                )))
-                .wrap(Wrap { trim: false });
-
-            f.render_widget(stats_paragraph, area);
-        } else {
-            let error = Paragraph::new("No statistics available")
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title("Column Statistics"),
-                )
-                .style(Style::default().fg(Color::Red));
-            f.render_widget(error, area);
-        }
+        // Delegate to the stats widget
+        self.stats_widget.render(f, area, self.buffer());
     }
 
     // === Editor Widget Helper Methods ===

@@ -73,12 +73,12 @@ impl SchemaManager {
 
         // Fall back to cache
         if let Ok(schemas) = self.load_from_cache() {
-            eprintln!("Using cached schema (server unavailable)");
+            // Using cached schema (server unavailable)
             return Ok(schemas);
         }
 
         // Last resort: use default schema
-        eprintln!("Using default schema (no server or cache available)");
+        // Using default schema (no server or cache available)
         Ok(self.get_default_schema())
     }
 
@@ -103,7 +103,7 @@ impl SchemaManager {
         // Check if cache is less than 24 hours old
         let age = Utc::now() - cached.last_updated;
         if age.num_hours() > 24 {
-            eprintln!("Warning: Schema cache is {} hours old", age.num_hours());
+            // Warning: Schema cache is old
         }
 
         self.cached_schema = Some(cached.clone());
