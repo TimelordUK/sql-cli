@@ -2895,7 +2895,7 @@ impl EnhancedTuiApp {
             .calculate_column_statistics(&column_name, &data_refs);
 
         // Convert from DataAnalyzer's ColumnStatistics to buffer's ColumnStatistics
-        let mut stats = ColumnStatistics {
+        let stats = ColumnStatistics {
             column_name: analyzer_stats.column_name,
             column_type: match analyzer_stats.data_type {
                 sql_cli::data_analyzer::ColumnType::Integer
@@ -2909,72 +2909,20 @@ impl EnhancedTuiApp {
             total_count: analyzer_stats.total_values,
             null_count: analyzer_stats.null_values,
             unique_count: analyzer_stats.unique_values,
-            frequency_map: None, // Will be populated below
-            min: None,
-            max: None,
-            sum: None,
+            frequency_map: analyzer_stats.frequency_map.clone(),
+            // For numeric columns, parse the min/max strings to f64
+            min: analyzer_stats
+                .min_value
+                .as_ref()
+                .and_then(|s| s.parse::<f64>().ok()),
+            max: analyzer_stats
+                .max_value
+                .as_ref()
+                .and_then(|s| s.parse::<f64>().ok()),
+            sum: analyzer_stats.sum_value,
             mean: analyzer_stats.avg_value,
-            median: None, // DataAnalyzer doesn't compute median yet
+            median: analyzer_stats.median_value,
         };
-
-        // Parse min/max values for numeric columns
-        if matches!(stats.column_type, ColumnType::Numeric) {
-            if let Some(ref min_str) = analyzer_stats.min_value {
-                stats.min = min_str.parse::<f64>().ok();
-            }
-            if let Some(ref max_str) = analyzer_stats.max_value {
-                stats.max = max_str.parse::<f64>().ok();
-            }
-
-            // Calculate sum and median manually if we have numeric values
-            let mut numeric_values: Vec<f64> = data_to_analyze
-                .iter()
-                .filter_map(|v| v.parse::<f64>().ok())
-                .collect();
-
-            if !numeric_values.is_empty() {
-                stats.sum = Some(numeric_values.iter().sum());
-
-                // Calculate median
-                numeric_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
-                let mid = numeric_values.len() / 2;
-                stats.median = if numeric_values.len() % 2 == 0 {
-                    Some((numeric_values[mid - 1] + numeric_values[mid]) / 2.0)
-                } else {
-                    Some(numeric_values[mid])
-                };
-            }
-        } else {
-            // For non-numeric columns, use the string values directly
-            stats.min = analyzer_stats.min_value.clone().map(|_| 0.0); // Placeholder
-            stats.max = analyzer_stats.max_value.clone().map(|_| 0.0); // Placeholder
-        }
-
-        // Build frequency map - but only if we don't have too many unique values
-        // Check unique count first to avoid unnecessary string cloning
-        const MAX_UNIQUE_FOR_FREQUENCY: usize = 100;
-
-        let frequency_map = if stats.unique_count <= MAX_UNIQUE_FOR_FREQUENCY {
-            // Build frequency map without cloning - use references first, then convert
-            let mut freq_map: BTreeMap<&str, usize> = BTreeMap::new();
-            for value in &data_to_analyze {
-                if !value.is_empty() {
-                    *freq_map.entry(value.as_str()).or_insert(0) += 1;
-                }
-            }
-            // Convert to owned strings only at the end
-            Some(
-                freq_map
-                    .into_iter()
-                    .map(|(k, v)| (k.to_string(), v))
-                    .collect(),
-            )
-        } else {
-            // Skip frequency map entirely for columns with too many unique values
-            None
-        };
-
-        stats.frequency_map = frequency_map;
 
         // Calculate total time
         let elapsed = start_total.elapsed();

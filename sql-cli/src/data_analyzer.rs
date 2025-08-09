@@ -39,8 +39,11 @@ pub struct ColumnStatistics {
     pub min_value: Option<String>,
     pub max_value: Option<String>,
     pub avg_value: Option<f64>,
+    pub sum_value: Option<f64>,
+    pub median_value: Option<f64>,
     pub min_length: Option<usize>,
     pub max_length: Option<usize>,
+    pub frequency_map: Option<std::collections::BTreeMap<String, usize>>,
 }
 
 /// Detected column type
@@ -79,8 +82,11 @@ impl DataAnalyzer {
             min_value: None,
             max_value: None,
             avg_value: None,
+            sum_value: None,
+            median_value: None,
             min_length: None,
             max_length: None,
+            frequency_map: None,
         };
 
         if values.is_empty() {
@@ -133,7 +139,18 @@ impl DataAnalyzer {
             ColumnType::Integer | ColumnType::Float => {
                 if !numeric_values.is_empty() {
                     let sum: f64 = numeric_values.iter().sum();
+                    stats.sum_value = Some(sum);
                     stats.avg_value = Some(sum / numeric_values.len() as f64);
+
+                    // Calculate median
+                    numeric_values
+                        .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    let mid = numeric_values.len() / 2;
+                    stats.median_value = if numeric_values.len() % 2 == 0 {
+                        Some((numeric_values[mid - 1] + numeric_values[mid]) / 2.0)
+                    } else {
+                        Some(numeric_values[mid])
+                    };
 
                     let min = numeric_values.iter().cloned().fold(f64::INFINITY, f64::min);
                     let max = numeric_values
@@ -149,6 +166,18 @@ impl DataAnalyzer {
                 stats.min_value = min_str.map(|s| s.to_string());
                 stats.max_value = max_str.map(|s| s.to_string());
             }
+        }
+
+        // Build frequency map for columns with reasonable unique count
+        const MAX_UNIQUE_FOR_FREQUENCY: usize = 100;
+        if stats.unique_values <= MAX_UNIQUE_FOR_FREQUENCY && stats.unique_values > 0 {
+            let mut freq_map = std::collections::BTreeMap::new();
+            for value in values {
+                if !value.is_empty() {
+                    *freq_map.entry(value.to_string()).or_insert(0) += 1;
+                }
+            }
+            stats.frequency_map = Some(freq_map);
         }
 
         // Length statistics
@@ -418,8 +447,11 @@ mod tests {
         assert_eq!(stats.unique_values, 5);
         assert_eq!(stats.data_type, ColumnType::Integer);
         assert_eq!(stats.avg_value, Some(30.0));
+        assert_eq!(stats.sum_value, Some(150.0));
+        assert_eq!(stats.median_value, Some(30.0));
         assert_eq!(stats.min_value, Some("10".to_string()));
         assert_eq!(stats.max_value, Some("50".to_string()));
+        assert!(stats.frequency_map.is_some());
     }
 
     #[test]
