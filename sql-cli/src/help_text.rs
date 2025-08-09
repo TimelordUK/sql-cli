@@ -162,6 +162,15 @@ impl HelpText {
             Line::from("  Enter    - Apply"),
             Line::from("  Esc      - Cancel"),
             Line::from(""),
+            Line::from("DEBUG MODE (F5)")
+                .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Line::from("  g/G      - Go to top/bottom"),
+            Line::from("  j/k      - Scroll up/down"),
+            Line::from("  PgUp/Dn  - Page up/down"),
+            Line::from("  Ctrl+T   - Yank as test case ✨"),
+            Line::from("  Shift+Y  - Yank debug context ✨"),
+            Line::from("  Esc/q    - Exit debug mode"),
+            Line::from(""),
             Line::from("💡 TIPS").style(
                 Style::default()
                     .fg(Color::Green)
@@ -176,8 +185,9 @@ impl HelpText {
             Line::from("  • Named: :cache save q1"),
             Line::from("  • f + 'ubs = exact 'ubs' match"),
             Line::from("  • \\ + name = find column by name"),
+            Line::from("  • F5 + Ctrl+T = Auto-generate tests!"),
             Line::from(""),
-            Line::from("📦 Cache 📁 File 🌐 API 🗄️ SQL"),
+            Line::from("📦 Cache 📁 File 🌐 API 🗄️ SQL 🧪 Test"),
         ]
     }
 }

@@ -460,6 +460,16 @@ impl KeyDispatcher {
             KeyBinding::new(KeyCode::Char('G')),
             "debug_go_to_bottom".into(),
         );
+
+        // Yank functionality in debug mode
+        self.debug_map.insert(
+            KeyBinding::with_ctrl(KeyCode::Char('t')),
+            "yank_as_test_case".into(),
+        );
+        self.debug_map.insert(
+            KeyBinding::with_shift(KeyCode::Char('Y')),
+            "yank_debug_context".into(),
+        );
     }
 
     /// Get action for a key in command mode

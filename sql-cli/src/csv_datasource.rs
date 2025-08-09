@@ -105,132 +105,57 @@ impl CsvDataSource {
     }
 
     pub fn query_with_options(&self, sql: &str, case_insensitive: bool) -> Result<Vec<Value>> {
-        // Parse SQL using the recursive parser to extract ORDER BY
+        // Parse SQL using the recursive parser - NO FALLBACK, recursive parser only
         let mut parser = Parser::new(sql);
-        match parser.parse() {
-            Ok(stmt) => {
-                let mut results = self.data.clone();
+        let stmt = parser
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Recursive parser error: {}", e))?;
 
-                // Handle WHERE clause using the existing WhereParser
-                let sql_lower = sql.to_lowercase();
-                if let Some(where_pos) = sql_lower.find(" where ") {
-                    // Extract WHERE clause, but stop at ORDER BY, LIMIT, or OFFSET if present
-                    let where_start = where_pos + 7;
-                    let mut where_end = sql.len();
+        let mut results = self.data.clone();
 
-                    // Find the earliest of ORDER BY, LIMIT, or OFFSET to terminate WHERE clause
-                    if let Some(order_pos) = sql_lower.find(" order by ") {
-                        where_end = where_end.min(order_pos);
-                    }
-                    if let Some(limit_pos) = sql_lower.find(" limit ") {
-                        where_end = where_end.min(limit_pos);
-                    }
-                    if let Some(offset_pos) = sql_lower.find(" offset ") {
-                        where_end = where_end.min(offset_pos);
-                    }
+        // Handle WHERE clause using the existing WhereParser
+        let sql_lower = sql.to_lowercase();
+        if let Some(where_pos) = sql_lower.find(" where ") {
+            // Extract WHERE clause, but stop at ORDER BY, LIMIT, or OFFSET if present
+            let where_start = where_pos + 7;
+            let mut where_end = sql.len();
 
-                    let where_clause = sql[where_start..where_end].trim();
-                    results =
-                        self.filter_results_with_options(results, where_clause, case_insensitive)?;
-                }
-
-                // Handle specific column selection
-                if !stmt.columns.contains(&"*".to_string()) {
-                    let columns: Vec<&str> = stmt.columns.iter().map(|s| s.as_str()).collect();
-                    results = self.select_columns(results, &columns)?;
-                }
-
-                // Handle ORDER BY clause
-                if let Some(order_by_columns) = &stmt.order_by {
-                    results = self.sort_results(results, order_by_columns)?;
-                }
-
-                // Handle OFFSET and LIMIT clauses
-                if let Some(offset) = stmt.offset {
-                    results = results.into_iter().skip(offset).collect();
-                }
-
-                if let Some(limit) = stmt.limit {
-                    results = results.into_iter().take(limit).collect();
-                }
-
-                Ok(results)
+            // Find the earliest of ORDER BY, LIMIT, or OFFSET to terminate WHERE clause
+            if let Some(order_pos) = sql_lower.find(" order by ") {
+                where_end = where_end.min(order_pos);
             }
-            Err(_) => {
-                // Fallback to simple parsing for backward compatibility
-                let sql_lower = sql.to_lowercase();
-
-                if sql_lower.contains("select") {
-                    let mut results = self.data.clone();
-
-                    // Handle WHERE clause
-                    if let Some(where_pos) = sql_lower.find(" where ") {
-                        // Extract WHERE clause, but stop at ORDER BY if present
-                        let where_start = where_pos + 7;
-                        let where_end = if let Some(order_pos) = sql_lower.find(" order by ") {
-                            order_pos.min(sql.len())
-                        } else {
-                            sql.len()
-                        };
-                        let where_clause = sql[where_start..where_end].trim();
-                        results = self.filter_results_with_options(
-                            results,
-                            where_clause,
-                            case_insensitive,
-                        )?;
-                    }
-
-                    // Handle specific column selection
-                    if !sql_lower.contains("select *") {
-                        let select_start = sql_lower.find("select").unwrap() + 6;
-                        let from_pos = sql_lower.find("from").unwrap_or(sql.len());
-                        let columns_str = sql[select_start..from_pos].trim();
-
-                        if !columns_str.is_empty() && columns_str != "*" {
-                            let columns: Vec<&str> = columns_str
-                                .split(',')
-                                .map(|s| s.trim().trim_matches('"').trim_matches('\''))
-                                .collect();
-                            results = self.select_columns(results, &columns)?;
-                        }
-                    }
-
-                    // Handle ORDER BY clause
-                    if let Some(order_pos) = sql_lower.find(" order by ") {
-                        let order_start = order_pos + 10; // Skip " order by "
-                        let order_clause = sql[order_start..].trim();
-
-                        // Parse ORDER BY columns with ASC/DESC support
-                        let order_columns: Vec<OrderByColumn> = order_clause
-                            .split(',')
-                            .map(|s| {
-                                let parts: Vec<&str> = s.trim().split_whitespace().collect();
-                                let column = parts.get(0).unwrap_or(&"").to_string();
-                                let direction = if let Some(dir) = parts.get(1) {
-                                    match dir.to_uppercase().as_str() {
-                                        "DESC" => SortDirection::Desc,
-                                        _ => SortDirection::Asc,
-                                    }
-                                } else {
-                                    SortDirection::Asc
-                                };
-                                OrderByColumn { column, direction }
-                            })
-                            .collect();
-
-                        if !order_columns.is_empty() {
-                            results = self.sort_results(results, &order_columns)?;
-                        }
-                    }
-
-                    Ok(results)
-                } else {
-                    Err(anyhow::anyhow!(
-                        "Only SELECT queries are supported for CSV files"
-                    ))
-                }
+            if let Some(limit_pos) = sql_lower.find(" limit ") {
+                where_end = where_end.min(limit_pos);
             }
+            if let Some(offset_pos) = sql_lower.find(" offset ") {
+                where_end = where_end.min(offset_pos);
+            }
+
+            let where_clause = sql[where_start..where_end].trim();
+            results = self.filter_results_with_options(results, where_clause, case_insensitive)?;
         }
+
+        // Handle specific column selection
+        if !stmt.columns.contains(&"*".to_string()) {
+            let columns: Vec<&str> = stmt.columns.iter().map(|s| s.as_str()).collect();
+            results = self.select_columns(results, &columns)?;
+        }
+
+        // Handle ORDER BY clause
+        if let Some(order_by_columns) = &stmt.order_by {
+            results = self.sort_results(results, order_by_columns)?;
+        }
+
+        // Handle OFFSET and LIMIT clauses
+        if let Some(offset) = stmt.offset {
+            results = results.into_iter().skip(offset).collect();
+        }
+
+        if let Some(limit) = stmt.limit {
+            results = results.into_iter().take(limit).collect();
+        }
+
+        Ok(results)
     }
 
     fn filter_results(&self, data: Vec<Value>, where_clause: &str) -> Result<Vec<Value>> {

@@ -2090,14 +2090,32 @@ impl EnhancedTuiApp {
                 "debug_page_up" => self.debug_page_up(),
                 "debug_go_to_top" => self.debug_go_to_top(),
                 "debug_go_to_bottom" => self.debug_go_to_bottom(),
+                "yank_as_test_case" => {
+                    self.yank_as_test_case();
+                }
+                "yank_debug_context" => {
+                    self.yank_debug_with_context();
+                }
                 _ => {}
             }
         } else {
-            // Fallback handling for keys that might not be properly mapped
-            if key.code == KeyCode::Char('G') && key.modifiers.contains(KeyModifiers::SHIFT) {
-                self.debug_go_to_bottom();
-            } else if key.code == KeyCode::Char('g') && key.modifiers.is_empty() {
-                self.debug_go_to_top();
+            // Custom debug key handlers
+            match key.code {
+                KeyCode::Char('G') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    self.debug_go_to_bottom();
+                }
+                KeyCode::Char('g') if key.modifiers.is_empty() => {
+                    self.debug_go_to_top();
+                }
+                KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // Ctrl+T: "Yank as Test" - capture current session as test case
+                    self.yank_as_test_case();
+                }
+                KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    // Shift+Y: Yank debug dump with test context
+                    self.yank_debug_with_context();
+                }
+                _ => {}
             }
         }
         Ok(false)
@@ -3797,6 +3815,289 @@ impl EnhancedTuiApp {
                     .set_status_message(format!("Failed to yank all: {}", e));
             }
         }
+    }
+
+    /// Yank current query and results as a complete test case (Ctrl+T in debug mode)
+    fn yank_as_test_case(&mut self) {
+        let test_case = self.generate_test_case_string();
+
+        match arboard::Clipboard::new() {
+            Ok(mut clipboard) => match clipboard.set_text(&test_case) {
+                Ok(_) => {
+                    self.buffer_mut().set_status_message(format!(
+                        "Copied complete test case to clipboard ({} lines)",
+                        test_case.lines().count()
+                    ));
+                    self.last_yanked = Some((
+                        "Test Case".to_string(),
+                        format!(
+                            "{}...",
+                            test_case.lines().take(3).collect::<Vec<_>>().join("; ")
+                        ),
+                    ));
+                }
+                Err(e) => {
+                    self.buffer_mut().set_status_message(format!(
+                        "Failed to copy test case to clipboard: {}",
+                        e
+                    ));
+                }
+            },
+            Err(e) => {
+                self.buffer_mut()
+                    .set_status_message(format!("Failed to access clipboard: {}", e));
+            }
+        }
+    }
+
+    /// Yank debug dump with context for manual test creation (Shift+Y in debug mode)
+    fn yank_debug_with_context(&mut self) {
+        let debug_context = self.generate_debug_context_string();
+
+        match arboard::Clipboard::new() {
+            Ok(mut clipboard) => match clipboard.set_text(&debug_context) {
+                Ok(_) => {
+                    self.buffer_mut().set_status_message(format!(
+                        "Copied debug context to clipboard ({} lines)",
+                        debug_context.lines().count()
+                    ));
+                    self.last_yanked = Some((
+                        "Debug Context".to_string(),
+                        "Query context with data for test creation".to_string(),
+                    ));
+                }
+                Err(e) => {
+                    self.buffer_mut()
+                        .set_status_message(format!("Failed to copy debug context: {}", e));
+                }
+            },
+            Err(e) => {
+                self.buffer_mut()
+                    .set_status_message(format!("Failed to access clipboard: {}", e));
+            }
+        }
+    }
+
+    /// Generate a complete test case string that can be pasted into a test file
+    fn generate_test_case_string(&self) -> String {
+        let buffer = self.buffer();
+        let query = buffer.get_query();
+        let last_query = buffer.get_last_query();
+        let current_query = if !query.is_empty() {
+            &query
+        } else {
+            &last_query
+        };
+
+        let mut test_case = String::new();
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+
+        // Header comment with session info
+        test_case.push_str(&format!(
+            "// Test case generated from TUI session at {}\n",
+            timestamp
+        ));
+        test_case.push_str(&format!(
+            "// Buffer: {} (ID: {})\n",
+            buffer
+                .get_file_path()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "memory".to_string()),
+            buffer.get_id()
+        ));
+
+        if let Some(results) = buffer.get_results() {
+            test_case.push_str(&format!(
+                "// Results: {} rows, {} columns\n",
+                results.data.len(),
+                if !results.data.is_empty() {
+                    results.data[0].as_object().map_or(0, |obj| obj.len())
+                } else {
+                    0
+                }
+            ));
+        }
+
+        test_case.push_str("\n");
+
+        // Generate the actual test code
+        test_case.push_str("harness.add_query(CapturedQuery {\n");
+        test_case.push_str(&format!(
+            "    description: \"Captured from TUI session {}\".to_string(),\n",
+            timestamp
+        ));
+
+        // Determine data file
+        let data_file = buffer
+            .get_file_path()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "sample_trades.json".to_string());
+        test_case.push_str(&format!("    data_file: \"{}\".to_string(),\n", data_file));
+
+        // Add the query (properly escaped)
+        let escaped_query = current_query
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n");
+        test_case.push_str(&format!("    query: \"{}\".to_string(),\n", escaped_query));
+
+        // Add expected results info
+        if let Some(results) = buffer.get_results() {
+            test_case.push_str(&format!(
+                "    expected_row_count: {},\n",
+                results.data.len()
+            ));
+
+            // Extract column names from first row
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let columns: Vec<String> = obj.keys().map(|k| format!("\"{}\"", k)).collect();
+                    test_case.push_str(&format!(
+                        "    expected_columns: vec![{}],\n",
+                        columns.join(", ")
+                    ));
+
+                    // Optionally include first row data for validation
+                    test_case.push_str("    expected_first_row: Some({\n");
+                    test_case.push_str("        let mut map = std::collections::HashMap::new();\n");
+
+                    for (key, value) in obj.iter().take(3) {
+                        // Limit to first 3 columns to keep it manageable
+                        let value_str = match value {
+                            serde_json::Value::String(s) => format!(
+                                "serde_json::Value::String(\"{}\".to_string())",
+                                s.replace("\"", "\\\"")
+                            ),
+                            serde_json::Value::Number(n) => format!(
+                                "serde_json::Value::Number(serde_json::Number::from({}))",
+                                n
+                            ),
+                            serde_json::Value::Bool(b) => format!("serde_json::Value::Bool({})", b),
+                            serde_json::Value::Null => "serde_json::Value::Null".to_string(),
+                            _ => format!("serde_json::json!({})", value),
+                        };
+                        test_case.push_str(&format!(
+                            "        map.insert(\"{}\".to_string(), {});\n",
+                            key, value_str
+                        ));
+                    }
+                    test_case.push_str("        map\n");
+                    test_case.push_str("    }),\n");
+                } else {
+                    test_case.push_str("    expected_columns: vec![],\n");
+                    test_case.push_str("    expected_first_row: None,\n");
+                }
+            } else {
+                test_case.push_str("    expected_columns: vec![],\n");
+                test_case.push_str("    expected_first_row: None,\n");
+            }
+        } else {
+            test_case.push_str("    expected_row_count: 0, // No results available\n");
+            test_case.push_str("    expected_columns: vec![],\n");
+            test_case.push_str("    expected_first_row: None,\n");
+        }
+
+        test_case.push_str(&format!(
+            "    case_insensitive: {},\n",
+            buffer.is_case_insensitive()
+        ));
+        test_case.push_str("});\n");
+
+        // Add usage instructions
+        test_case.push_str("\n// Usage:\n");
+        test_case.push_str("// 1. Add this to your QueryReplayHarness in a test function\n");
+        test_case.push_str("// 2. Run: harness.run_all_tests()?;\n");
+        test_case.push_str("// 3. Adjust expected values as needed\n");
+
+        test_case
+    }
+
+    /// Generate debug context string for manual test creation
+    fn generate_debug_context_string(&self) -> String {
+        let buffer = self.buffer();
+        let mut context = String::new();
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+
+        context.push_str(&format!("=== TUI Debug Context - {} ===\n\n", timestamp));
+
+        // Current query info
+        context.push_str("CURRENT QUERY:\n");
+        let query = buffer.get_query();
+        let last_query = buffer.get_last_query();
+        let current_query = if !query.is_empty() {
+            &query
+        } else {
+            &last_query
+        };
+        context.push_str(&format!("{}\n\n", current_query));
+
+        // Buffer state
+        context.push_str("BUFFER STATE:\n");
+        context.push_str(&format!("- ID: {}\n", buffer.get_id()));
+        context.push_str(&format!(
+            "- File: {}\n",
+            buffer
+                .get_file_path()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "memory".to_string())
+        ));
+        context.push_str(&format!("- Mode: {:?}\n", buffer.get_mode()));
+        context.push_str(&format!(
+            "- Case Insensitive: {}\n",
+            buffer.is_case_insensitive()
+        ));
+        context.push_str(&format!("- Compact Mode: {}\n", buffer.is_compact_mode()));
+
+        // Results summary
+        if let Some(results) = buffer.get_results() {
+            context.push_str(&format!("- Results: {} rows\n", results.data.len()));
+
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let column_names: Vec<String> = obj.keys().cloned().collect();
+                    context.push_str(&format!("- Columns: {}\n", column_names.join(", ")));
+                }
+            }
+
+            // Show first few rows as sample
+            context.push_str("\nSAMPLE DATA (first 3 rows):\n");
+            for (i, row) in results.data.iter().take(3).enumerate() {
+                context.push_str(&format!(
+                    "Row {}: {}\n",
+                    i + 1,
+                    serde_json::to_string_pretty(row)
+                        .unwrap_or_else(|_| "invalid json".to_string())
+                ));
+            }
+        } else {
+            context.push_str("- Results: No results available\n");
+        }
+
+        context.push_str("\n");
+
+        // Navigation state
+        if let Some(selected) = self.table_state.selected() {
+            context.push_str(&format!("CURRENT SELECTION: Row {}\n", selected + 1));
+        }
+
+        context.push_str(&format!(
+            "CURRENT COLUMN: {}\n",
+            buffer.get_current_column()
+        ));
+
+        // Filter state
+        if buffer.is_fuzzy_filter_active() {
+            context.push_str("FUZZY FILTER: Active\n");
+        }
+
+        let filter_state = self.get_filter_state();
+        if filter_state.active {
+            context.push_str(&format!("FILTER: {} (active)\n", filter_state.pattern));
+        }
+
+        context.push_str("\n=== End Debug Context ===\n");
+
+        context
     }
 
     fn paste_from_clipboard(&mut self) {

@@ -325,6 +325,9 @@ pub enum SqlExpression {
         lower: Box<SqlExpression>,
         upper: Box<SqlExpression>,
     },
+    Not {
+        expr: Box<SqlExpression>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -747,26 +750,8 @@ impl Parser {
             };
         }
 
-        // Handle NOT IN operator
-        if matches!(self.current_token, Token::Not) {
-            // Check if next token is IN
-            self.advance();
-            if matches!(self.current_token, Token::In) {
-                self.advance();
-                self.consume(Token::LeftParen)?;
-                let values = self.parse_expression_list()?;
-                self.consume(Token::RightParen)?;
-
-                left = SqlExpression::NotInList {
-                    expr: Box::new(left),
-                    values,
-                };
-            } else {
-                return Err("Expected IN after NOT".to_string());
-            }
-        }
         // Handle IN operator
-        else if matches!(self.current_token, Token::In) {
+        if matches!(self.current_token, Token::In) {
             self.advance();
             self.consume(Token::LeftParen)?;
             let values = self.parse_expression_list()?;
@@ -1006,6 +991,32 @@ impl Parser {
 
                 self.consume(Token::RightParen)?;
                 Ok(expr)
+            }
+            Token::Not => {
+                self.advance(); // consume NOT
+
+                // Check if this is a NOT IN expression
+                if let Ok(inner_expr) = self.parse_comparison() {
+                    // After parsing the inner expression, check if we're followed by IN
+                    if matches!(self.current_token, Token::In) {
+                        self.advance(); // consume IN
+                        self.consume(Token::LeftParen)?;
+                        let values = self.parse_expression_list()?;
+                        self.consume(Token::RightParen)?;
+
+                        return Ok(SqlExpression::NotInList {
+                            expr: Box::new(inner_expr),
+                            values,
+                        });
+                    } else {
+                        // Regular NOT expression
+                        return Ok(SqlExpression::Not {
+                            expr: Box::new(inner_expr),
+                        });
+                    }
+                } else {
+                    return Err("Expected expression after NOT".to_string());
+                }
             }
             _ => Err(format!("Unexpected token: {:?}", self.current_token)),
         }
@@ -1309,6 +1320,9 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
                 format_expression_ast(lower),
                 format_expression_ast(upper)
             )
+        }
+        SqlExpression::Not { expr } => {
+            format!("Not({})", format_expression_ast(expr))
         }
     }
 }
@@ -1873,6 +1887,9 @@ fn format_expression(expr: &SqlExpression) -> String {
                 format_expression(lower),
                 format_expression(upper)
             )
+        }
+        SqlExpression::Not { expr } => {
+            format!("NOT {}", format_expression(expr))
         }
     }
 }
