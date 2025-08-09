@@ -1,0 +1,41 @@
+--- REPLACE handle_history_input method (line 2056-2107) ---
+    fn handle_history_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match self.history_widget.handle_key(key) {
+            HistoryAction::Quit => return Ok(true),
+            HistoryAction::Exit => {
+                self.buffer_mut().set_mode(AppMode::Command);
+            }
+            HistoryAction::ExecuteCommand(cmd) => {
+                self.set_input_text(cmd.clone());
+                self.execute_query(&cmd)?;
+                self.buffer_mut().set_mode(AppMode::Results);
+            }
+            HistoryAction::UseCommand(cmd) => {
+                self.set_input_text(cmd);
+                self.buffer_mut().set_mode(AppMode::Command);
+                self.buffer_mut()
+                    .set_status_message("Command loaded from history".to_string());
+                // Reset scroll to show end of command
+                self.input_scroll_offset = 0;
+                self.update_horizontal_scroll(120);
+            }
+            HistoryAction::StartSearch => {
+                // Already in history mode, this enables search within it
+                self.buffer_mut()
+                    .set_status_message("Type to search history".to_string());
+            }
+            HistoryAction::None => {}
+        }
+        Ok(false)
+    }
+
+--- DELETE update_history_matches method (lines 2109-2141) ---
+// Remove entire method
+
+--- REPLACE render_history method (around line 5168) ---
+    fn render_history(&self, f: &mut Frame, area: Rect) {
+        self.history_widget.render(f, area);
+    }
+
+--- DELETE render_history_list and render_selected_command_preview methods ---
+// Remove both methods entirely

@@ -7,7 +7,6 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
-use std::collections::BTreeMap;
 
 /// A self-contained widget for displaying column statistics
 pub struct StatsWidget {

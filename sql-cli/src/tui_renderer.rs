@@ -1,22 +1,17 @@
 use crate::api_client::QueryResponse;
-use crate::buffer::{AppMode, BufferAPI, EditMode};
-use crate::buffer::{ColumnType, SortOrder};
+use crate::buffer::SortOrder;
+use crate::buffer::{AppMode, BufferAPI};
 use crate::config::Config;
-use crate::help_text::HelpText;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::tui_state::SelectionMode;
-use fuzzy_matcher::skim::SkimMatcherV2;
-use fuzzy_matcher::FuzzyMatcher;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table, TableState, Wrap},
+    text::{Line, Text},
+    widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table, TableState},
     Frame,
 };
 use regex::Regex;
-use serde_json::Value;
-use std::collections::HashMap;
 
 /// Handles all rendering operations for the TUI
 pub struct TuiRenderer {
@@ -107,9 +102,9 @@ impl TuiRenderer {
         f: &mut Frame,
         area: Rect,
         results: &QueryResponse,
-        selected_row: Option<usize>,
-        current_column: usize,
-        pinned_columns: &[usize],
+        _selected_row: Option<usize>,
+        _current_column: usize,
+        _pinned_columns: &[usize],
     ) {
         // This will contain the table rendering logic
         // Extracted from enhanced_tui.rs render_table_immutable method

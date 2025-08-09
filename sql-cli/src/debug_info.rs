@@ -1,8 +1,7 @@
-use crate::buffer::{AppMode, BufferAPI, SortOrder, SortState};
+use crate::buffer::{BufferAPI, SortOrder, SortState};
 use crate::hybrid_parser::HybridParser;
 use chrono::Local;
 use serde_json::Value;
-use std::collections::HashMap;
 
 /// Handles debug information generation and management
 pub struct DebugInfo;

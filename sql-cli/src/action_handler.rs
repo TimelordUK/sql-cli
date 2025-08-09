@@ -1,9 +1,6 @@
-use crate::buffer::{AppMode, BufferAPI, EditMode};
-use crate::data_exporter::DataExporter;
-use crate::debug_info::DebugInfo;
-use crate::yank_manager::YankManager;
+use crate::buffer::{AppMode, EditMode};
 use anyhow::Result;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Handles the execution of actions triggered by key bindings
 pub struct ActionHandler;

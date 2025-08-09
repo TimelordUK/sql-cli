@@ -1,0 +1,93 @@
+# History Widget Integration Changes for enhanced_tui.rs
+
+## 1. Add import
+Add after line 39:
+use sql_cli::history_widget::{HistoryWidget, HistoryAction};
+
+## 2. Remove HistoryState struct (lines 114-119)
+Replace with comment:
+// HistoryState moved to history_widget.rs
+
+## 3. Replace fields in EnhancedTuiApp (around line 140)
+Remove:
+    history_state: HistoryState,
+    command_history: CommandHistory,
+    
+Add:
+    history_widget: HistoryWidget,
+
+## 4. Update initialization in new() (around line 366)
+Remove:
+            history_state: HistoryState {
+                search_query: String::new(),
+                matches: Vec::new(),
+                selected_index: 0,
+            },
+            command_history: CommandHistory::new().unwrap_or_default(),
+            
+Add:
+            history_widget: HistoryWidget::new(CommandHistory::new().unwrap_or_default()),
+
+## 5. Update History mode initialization (around line 715)
+Replace:
+                if mode == AppMode::History {
+                    self.history_state.search_query.clear();
+                    self.update_history_matches();
+                    // Debug: log how many history entries we have
+                    let total_entries = self.command_history.get_all().len();
+                    self.buffer_mut().set_status_message(format!(
+                        "History search: {} total entries",
+                        total_entries
+                    ));
+                }
+                
+With:
+                if mode == AppMode::History {
+                    self.history_widget.initialize();
+                    self.buffer_mut().set_status_message(
+                        "History mode: ↑/↓ navigate, Enter execute, Tab edit, / search".to_string()
+                    );
+                }
+
+## 6. Replace handle_history_input method (lines 2058-2141)
+Replace entire method with:
+    fn handle_history_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match self.history_widget.handle_key(key) {
+            HistoryAction::Quit => return Ok(true),
+            HistoryAction::Exit => {
+                self.buffer_mut().set_mode(AppMode::Command);
+            }
+            HistoryAction::ExecuteCommand(cmd) => {
+                self.set_input_text(cmd.clone());
+                self.execute_query(&cmd)?;
+                self.buffer_mut().set_mode(AppMode::Results);
+            }
+            HistoryAction::UseCommand(cmd) => {
+                self.set_input_text(cmd);
+                self.buffer_mut().set_mode(AppMode::Command);
+                self.buffer_mut()
+                    .set_status_message("Command loaded from history".to_string());
+                // Reset scroll to show end of command
+                self.input_scroll_offset = 0;
+                self.update_horizontal_scroll(120);
+            }
+            HistoryAction::StartSearch => {
+                // Already in history mode, this enables search within it
+                self.buffer_mut()
+                    .set_status_message("Type to search history".to_string());
+            }
+            HistoryAction::None => {}
+        }
+        Ok(false)
+    }
+
+## 7. Replace render_history method (around line 5168)
+Replace entire method with:
+    fn render_history(&self, f: &mut Frame, area: Rect) {
+        self.history_widget.render(f, area);
+    }
+
+## 8. Remove render_history_list and render_selected_command_preview methods
+Delete from line 5172 to line 5305 (both methods)
+Add comment:
+    // render_history_list and render_selected_command_preview moved to HistoryWidget

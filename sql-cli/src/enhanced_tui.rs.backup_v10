@@ -1162,7 +1162,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Results);
                 // Restore previous position or default to 0
                 let row = self.buffer().get_last_results_row().unwrap_or(0);
-                self.table_state.select(Some(row));
+                &mut self.table_state.select(Some(row));
 
                 // Restore the exact scroll offset from when we left
                 let last_offset = self.buffer().get_last_scroll_offset();
@@ -1185,6 +1185,7 @@ impl EnhancedTuiApp {
                     .collect();
                 let buffer_count = self.buffer_manager.all_buffers().len();
                 let buffer_index = self.buffer_manager.current_index();
+                let api_url = self.api_client.base_url.clone();
 
                 // Generate debug info directly without buffer reference
                 let mut debug_info = self
@@ -1403,7 +1404,7 @@ impl EnhancedTuiApp {
                         self.buffer_mut().set_last_scroll_offset(scroll_offset);
                     }
                     self.buffer_mut().set_mode(AppMode::Command);
-                    self.table_state.select(None);
+                    &mut self.table_state.select(None);
                 }
                 "next_row" => self.next_row(),
                 "previous_row" => self.previous_row(),
@@ -2331,7 +2332,7 @@ impl EnhancedTuiApp {
                 }
 
                 self.buffer_mut().set_mode(AppMode::Results);
-                self.table_state.select(Some(0));
+                &mut self.table_state.select(Some(0));
             }
             Err(e) => {
                 let duration = start_time.elapsed();
@@ -2630,7 +2631,7 @@ impl EnhancedTuiApp {
             } // Already at bottom
 
             let new_position = current + 1;
-            self.table_state.select(Some(new_position));
+            &mut self.table_state.select(Some(new_position));
 
             // Update viewport based on lock mode
             if self.buffer().is_viewport_lock() {
@@ -2663,7 +2664,7 @@ impl EnhancedTuiApp {
         } // Already at top
 
         let new_position = current - 1;
-        self.table_state.select(Some(new_position));
+        &mut self.table_state.select(Some(new_position));
 
         // Update viewport based on lock mode
         if self.buffer().is_viewport_lock() {
@@ -3002,7 +3003,7 @@ impl EnhancedTuiApp {
             let current = self.table_state.selected().unwrap_or(0);
             let new_position = (current + visible_rows).min(total_rows - 1);
 
-            self.table_state.select(Some(new_position));
+            &mut self.table_state.select(Some(new_position));
 
             // Scroll viewport down by a page
             let mut offset = self.buffer().get_scroll_offset();
@@ -3016,7 +3017,7 @@ impl EnhancedTuiApp {
         let current = self.table_state.selected().unwrap_or(0);
         let new_position = current.saturating_sub(visible_rows);
 
-        self.table_state.select(Some(new_position));
+        &mut self.table_state.select(Some(new_position));
 
         // Scroll viewport up by a page
         let mut offset = self.buffer().get_scroll_offset();
@@ -3045,7 +3046,7 @@ impl EnhancedTuiApp {
                     let matches = self.buffer().get_search_matches();
                     self.buffer_mut().set_current_match(Some(matches[0]));
                     let (row, _) = matches[0];
-                    self.table_state.select(Some(row));
+                    &mut self.table_state.select(Some(row));
                     self.buffer_mut()
                         .set_status_message(format!("Found {} matches", matches.len()));
                 } else {
@@ -3065,7 +3066,7 @@ impl EnhancedTuiApp {
             let new_index = (self.buffer().get_search_match_index() + 1) % matches.len();
             self.buffer_mut().set_search_match_index(new_index);
             let (row, _) = matches[new_index];
-            self.table_state.select(Some(row));
+            &mut self.table_state.select(Some(row));
             self.buffer_mut()
                 .set_current_match(Some(matches[new_index]));
             self.buffer_mut().set_status_message(format!(
@@ -3087,7 +3088,7 @@ impl EnhancedTuiApp {
             };
             self.buffer_mut().set_search_match_index(new_index);
             let (row, _) = matches[new_index];
-            self.table_state.select(Some(row));
+            &mut self.table_state.select(Some(row));
             self.buffer_mut()
                 .set_current_match(Some(matches[new_index]));
             self.buffer_mut().set_status_message(format!(
@@ -5572,7 +5573,7 @@ impl EnhancedTuiApp {
                         let max_row = self.get_current_data().map(|d| d.len()).unwrap_or(0);
 
                         if target_row < max_row {
-                            self.table_state.select(Some(target_row));
+                            &mut self.table_state.select(Some(target_row));
 
                             // Adjust viewport to center the target row
                             let visible_rows = self.buffer().get_last_visible_rows();
@@ -5804,6 +5805,7 @@ impl EnhancedTuiApp {
                         .collect();
                     let buffer_count = self.buffer_manager.all_buffers().len();
                     let buffer_index = self.buffer_manager.current_index();
+                    let api_url = self.api_client.base_url.clone();
 
                     // Generate debug info directly without buffer reference
                     let mut debug_info = self

@@ -1,12 +1,10 @@
 use crate::buffer::{AppMode, BufferAPI};
-use crate::config::Config;
 use crate::key_dispatcher::KeyDispatcher;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
-    text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
