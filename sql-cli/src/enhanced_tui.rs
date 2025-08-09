@@ -2937,27 +2937,31 @@ impl EnhancedTuiApp {
                 stats.max = analyzer_stats.max_value.clone().map(|_| 0.0); // Placeholder
             }
 
-            // Build frequency map - but limit to reasonable number of unique values for performance
-            let mut frequency_map: BTreeMap<String, usize> = BTreeMap::new();
-
-            // For performance: only build frequency map if we don't have too many unique values
+            // Build frequency map - but only if we don't have too many unique values
+            // Check unique count first to avoid unnecessary string cloning
             const MAX_UNIQUE_FOR_FREQUENCY: usize = 100;
 
-            for value in &data_to_analyze {
-                if !value.is_empty() {
-                    *frequency_map.entry(value.clone()).or_insert(0) += 1;
-                    // Stop if we have too many unique values (not useful for display anyway)
-                    if frequency_map.len() > MAX_UNIQUE_FOR_FREQUENCY {
-                        frequency_map.clear();
-                        break;
+            let frequency_map = if stats.unique_count <= MAX_UNIQUE_FOR_FREQUENCY {
+                // Build frequency map without cloning - use references first, then convert
+                let mut freq_map: BTreeMap<&str, usize> = BTreeMap::new();
+                for value in &data_to_analyze {
+                    if !value.is_empty() {
+                        *freq_map.entry(value.as_str()).or_insert(0) += 1;
                     }
                 }
-            }
+                // Convert to owned strings only at the end
+                Some(
+                    freq_map
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v))
+                        .collect(),
+                )
+            } else {
+                // Skip frequency map entirely for columns with too many unique values
+                None
+            };
 
-            // Only keep frequency map if we didn't clear it due to too many unique values
-            if !frequency_map.is_empty() {
-                stats.frequency_map = Some(frequency_map);
-            }
+            stats.frequency_map = frequency_map;
 
             self.buffer_mut().set_column_stats(Some(stats));
             self.buffer_mut().set_mode(AppMode::ColumnStats);
