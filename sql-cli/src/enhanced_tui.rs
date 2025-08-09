@@ -750,7 +750,114 @@ impl EnhancedTuiApp {
                     return Ok(false);
                 }
                 "expand_asterisk" => {
-                    self.expand_asterisk();
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        if buffer.expand_asterisk(&self.hybrid_parser) {
+                            // Sync for rendering if needed
+                            if buffer.get_edit_mode() == EditMode::SingleLine {
+                                let text = buffer.get_input_text();
+                                let cursor = buffer.get_input_cursor_position();
+                                self.set_input_text_with_cursor(text, cursor);
+                            }
+                        }
+                    }
+                    return Ok(false);
+                }
+                "move_to_line_start" => {
+                    self.handle_input_key(KeyEvent::new(KeyCode::Home, KeyModifiers::empty()));
+                    return Ok(false);
+                }
+                "move_to_line_end" => {
+                    self.handle_input_key(KeyEvent::new(KeyCode::End, KeyModifiers::empty()));
+                    return Ok(false);
+                }
+                "delete_word_backward" => {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.save_state_for_undo();
+                        buffer.delete_word_backward();
+                        // Sync for rendering
+                        if buffer.get_edit_mode() == EditMode::SingleLine {
+                            let text = buffer.get_input_text();
+                            let cursor = buffer.get_input_cursor_position();
+                            self.set_input_text_with_cursor(text, cursor);
+                            self.cursor_manager.set_position(cursor);
+                        }
+                    }
+                    return Ok(false);
+                }
+                "delete_word_forward" => {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.save_state_for_undo();
+                        buffer.delete_word_forward();
+                        // Sync for rendering
+                        if buffer.get_edit_mode() == EditMode::SingleLine {
+                            let text = buffer.get_input_text();
+                            let cursor = buffer.get_input_cursor_position();
+                            self.set_input_text_with_cursor(text, cursor);
+                            self.cursor_manager.set_position(cursor);
+                        }
+                    }
+                    return Ok(false);
+                }
+                "kill_line" => {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.save_state_for_undo();
+                        buffer.kill_line();
+                        // Sync for rendering
+                        if buffer.get_edit_mode() == EditMode::SingleLine {
+                            let text = buffer.get_input_text();
+                            let cursor = buffer.get_input_cursor_position();
+                            self.set_input_text_with_cursor(text, cursor);
+                            self.cursor_manager.set_position(cursor);
+                        }
+                    }
+                    return Ok(false);
+                }
+                "kill_line_backward" => {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.save_state_for_undo();
+                        buffer.kill_line_backward();
+                        // Sync for rendering
+                        if buffer.get_edit_mode() == EditMode::SingleLine {
+                            let text = buffer.get_input_text();
+                            let cursor = buffer.get_input_cursor_position();
+                            self.set_input_text_with_cursor(text, cursor);
+                            self.cursor_manager.set_position(cursor);
+                        }
+                    }
+                    return Ok(false);
+                }
+                "move_word_backward" => {
+                    self.move_cursor_word_backward();
+                    return Ok(false);
+                }
+                "move_word_forward" => {
+                    self.move_cursor_word_forward();
+                    return Ok(false);
+                }
+                "jump_to_prev_token" => {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.jump_to_prev_token();
+                        // Sync for rendering
+                        if buffer.get_edit_mode() == EditMode::SingleLine {
+                            let text = buffer.get_input_text();
+                            let cursor = buffer.get_input_cursor_position();
+                            self.set_input_text_with_cursor(text, cursor);
+                            self.cursor_manager.set_position(cursor);
+                        }
+                    }
+                    return Ok(false);
+                }
+                "jump_to_next_token" => {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        buffer.jump_to_next_token();
+                        // Sync for rendering
+                        if buffer.get_edit_mode() == EditMode::SingleLine {
+                            let text = buffer.get_input_text();
+                            let cursor = buffer.get_input_cursor_position();
+                            self.set_input_text_with_cursor(text, cursor);
+                            self.cursor_manager.set_position(cursor);
+                        }
+                    }
                     return Ok(false);
                 }
                 _ => {} // Fall through to hardcoded handling
@@ -760,10 +867,6 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Expand SELECT * to all column names
-                self.expand_asterisk();
-            }
             // KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::ALT) && key.modifiers.contains(KeyModifiers::SHIFT) => {
             //     // Alt+Shift+D - new DataTable buffer (for testing) - disabled during revert
             //     self.new_datatable_buffer();
@@ -923,14 +1026,6 @@ impl EnhancedTuiApp {
                     }
                 }
             }
-            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Jump to beginning of line (like bash/zsh)
-                self.handle_input_key(KeyEvent::new(KeyCode::Home, KeyModifiers::empty()));
-            }
-            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Jump to end of line (like bash/zsh)
-                self.handle_input_key(KeyEvent::new(KeyCode::End, KeyModifiers::empty()));
-            }
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
                 let current = self.buffer().is_case_insensitive();
@@ -972,14 +1067,6 @@ impl EnhancedTuiApp {
                     "Killed to beginning of line".to_string()
                 };
                 self.buffer_mut().set_status_message(message);
-            }
-            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Delete word backward (like bash/zsh)
-                self.delete_word_backward();
-            }
-            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Delete word forward (like bash/zsh)
-                self.delete_word_forward();
             }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Kill line - delete from cursor to end of line

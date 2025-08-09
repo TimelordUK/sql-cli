@@ -1,6 +1,7 @@
 use crate::api_client::QueryResponse;
 use crate::csv_datasource::CsvApiClient;
 use crate::cursor_operations::CursorOperations;
+use crate::hybrid_parser::HybridParser;
 use crate::input_manager::{create_from_input, create_single_line, InputManager};
 use anyhow::Result;
 use crossterm::event::KeyEvent;
@@ -1430,6 +1431,62 @@ impl Buffer {
         let new_pos = CursorOperations::jump_to_next_token(&text, cursor_pos);
         self.input_manager.set_cursor_position(new_pos);
         self.sync_from_input_manager();
+    }
+
+    /// Expand SELECT * to column names using schema information
+    pub fn expand_asterisk(&mut self, parser: &HybridParser) -> bool {
+        let query = self.input_manager.get_text();
+        let query_upper = query.to_uppercase();
+
+        // Find SELECT * pattern
+        if let Some(select_pos) = query_upper.find("SELECT") {
+            if let Some(star_pos) = query_upper[select_pos..].find("*") {
+                let star_abs_pos = select_pos + star_pos;
+
+                // Find FROM clause after the *
+                if let Some(from_rel_pos) = query_upper[star_abs_pos..].find("FROM") {
+                    let from_abs_pos = star_abs_pos + from_rel_pos;
+
+                    // Extract table name after FROM
+                    let after_from = &query[from_abs_pos + 4..].trim_start();
+                    let table_name = after_from
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
+
+                    if !table_name.is_empty() {
+                        // Get columns from the schema
+                        let columns = parser.get_table_columns(table_name);
+
+                        if !columns.is_empty() {
+                            // Build the replacement with all columns
+                            let columns_str = columns.join(", ");
+
+                            // Replace * with the column list
+                            let before_star = &query[..star_abs_pos];
+                            let after_star = &query[star_abs_pos + 1..];
+                            let new_query = format!("{}{}{}", before_star, columns_str, after_star);
+
+                            // Update the input
+                            self.input_manager.set_text(new_query.clone());
+                            self.input_manager.set_cursor_position(new_query.len());
+                            self.sync_from_input_manager();
+
+                            self.status_message =
+                                format!("Expanded * to {} columns", columns.len());
+                            return true;
+                        } else {
+                            self.status_message =
+                                format!("No columns found for table '{}'", table_name);
+                        }
+                    }
+                }
+            }
+        }
+
+        self.status_message = "No SELECT * pattern found to expand".to_string();
+        false
     }
 }
 
