@@ -307,6 +307,11 @@ pub enum SqlExpression {
         method: String,
         args: Vec<SqlExpression>,
     },
+    ChainedMethodCall {
+        base: Box<SqlExpression>,
+        method: String,
+        args: Vec<SqlExpression>,
+    },
     BinaryOp {
         left: Box<SqlExpression>,
         op: String,
@@ -769,8 +774,8 @@ impl Parser {
     fn parse_comparison(&mut self) -> Result<SqlExpression, String> {
         let mut left = self.parse_primary()?;
 
-        // Handle method calls
-        if matches!(self.current_token, Token::Dot) {
+        // Handle method calls - support chained calls
+        while matches!(self.current_token, Token::Dot) {
             self.advance();
             if let Token::Identifier(method) = &self.current_token {
                 let method_name = method.clone();
@@ -781,14 +786,37 @@ impl Parser {
                     let args = self.parse_method_args()?;
                     self.consume(Token::RightParen)?;
 
-                    if let SqlExpression::Column(obj) = left {
-                        left = SqlExpression::MethodCall {
-                            object: obj,
-                            method: method_name,
-                            args,
-                        };
+                    // Support chained method calls
+                    match left {
+                        SqlExpression::Column(obj) => {
+                            // First method call on a column
+                            left = SqlExpression::MethodCall {
+                                object: obj,
+                                method: method_name,
+                                args,
+                            };
+                        }
+                        SqlExpression::MethodCall { .. }
+                        | SqlExpression::ChainedMethodCall { .. } => {
+                            // Chained method call on a previous method call
+                            left = SqlExpression::ChainedMethodCall {
+                                base: Box::new(left),
+                                method: method_name,
+                                args,
+                            };
+                        }
+                        _ => {
+                            // Other expressions - shouldn't normally happen
+                            return Err(format!("Cannot call method on {:?}", left));
+                        }
                     }
+                } else {
+                    // No parentheses after identifier - might be column reference like table.column
+                    // Put the identifier back and break
+                    break;
                 }
+            } else {
+                break;
             }
         }
 
@@ -1284,6 +1312,19 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("MethodCall({}.{}({}))", object, method, args_str)
+        }
+        SqlExpression::ChainedMethodCall { base, method, args } => {
+            let args_str = args
+                .iter()
+                .map(|a| format_expression_ast(a))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "ChainedMethodCall({}.{}({}))",
+                format_expression_ast(base),
+                method,
+                args_str
+            )
         }
         SqlExpression::BinaryOp { left, op, right } => {
             format!(
@@ -1891,6 +1932,14 @@ fn format_expression(expr: &SqlExpression) -> String {
         SqlExpression::Not { expr } => {
             format!("NOT {}", format_expression(expr))
         }
+        SqlExpression::ChainedMethodCall { base, method, args } => {
+            let args_str = args
+                .iter()
+                .map(|arg| format_expression(arg))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}.{}({})", format_expression(base), method, args_str)
+        }
     }
 }
 
@@ -2404,6 +2453,31 @@ fn is_sql_keyword(word: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_chained_method_calls() {
+        // Test ToString().IndexOf('.') pattern
+        let query = "SELECT * FROM trades WHERE commission.ToString().IndexOf('.') = 1";
+        let mut parser = Parser::new(query);
+        let result = parser.parse();
+
+        assert!(
+            result.is_ok(),
+            "Failed to parse chained method calls: {:?}",
+            result
+        );
+
+        // Test multiple chained calls
+        let query2 = "SELECT * FROM data WHERE field.ToUpper().Replace('A', 'B').StartsWith('C')";
+        let mut parser2 = Parser::new(query2);
+        let result2 = parser2.parse();
+
+        assert!(
+            result2.is_ok(),
+            "Failed to parse multiple chained calls: {:?}",
+            result2
+        );
+    }
 
     #[test]
     fn test_tokenizer() {
