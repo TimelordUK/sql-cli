@@ -90,19 +90,16 @@ impl KeyChordHandler {
 
     /// Set up default chord mappings
     fn setup_default_chords(&mut self) {
-        // Yank chords
+        // Yank chords - these are the only actual chords in use
         self.register_chord("yy", "yank_row");
         self.register_chord("yc", "yank_column");
         self.register_chord("ya", "yank_all");
         self.register_chord("yr", "yank_row"); // Alternative
 
-        // Navigation chords (for future)
-        self.register_chord("gg", "go_to_top");
-        self.register_chord("G", "go_to_bottom");
-
-        // Delete chords (for future)
-        self.register_chord("dd", "delete_line");
-        self.register_chord("dw", "delete_word");
+        // Future chord possibilities (not currently implemented):
+        // self.register_chord("gg", "go_to_top");  // Currently single 'g'
+        // self.register_chord("dd", "delete_line"); // No line deletion in results
+        // self.register_chord("dw", "delete_word"); // Only in command mode with Alt+D
     }
 
     /// Register a chord sequence

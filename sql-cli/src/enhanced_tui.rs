@@ -35,6 +35,7 @@ use sql_cli::data_exporter::DataExporter;
 use sql_cli::help_text::HelpText;
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
+use sql_cli::key_dispatcher::KeyDispatcher;
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
 use sql_cli::text_navigation::{TextEditor, TextNavigator};
 use sql_cli::where_ast::format_where_ast;
@@ -140,6 +141,7 @@ pub struct EnhancedTuiApp {
     debug_text: String,
     debug_scroll: u16,
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
+    key_dispatcher: KeyDispatcher,      // Maps keys to actions
     help_scroll: u16,                   // Scroll offset for help page
     input_scroll_offset: u16,           // Horizontal scroll offset for input
 
@@ -380,6 +382,7 @@ impl EnhancedTuiApp {
             debug_text: String::new(),
             debug_scroll: 0,
             key_chord_handler: KeyChordHandler::new(),
+            key_dispatcher: KeyDispatcher::new(),
             help_scroll: 0,
             input_scroll_offset: 0,
             selection_mode: SelectionMode::Row, // Default to row mode
@@ -1868,52 +1871,70 @@ impl EnhancedTuiApp {
     }
 
     fn handle_help_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::Char('q') | KeyCode::Esc | KeyCode::F(1) => {
-                self.show_help = false;
-                self.help_scroll = 0; // Reset scroll when closing
-                let mode = if self.buffer().get_results().is_some() {
-                    AppMode::Results
-                } else {
-                    AppMode::Command
-                };
-                self.buffer_mut().set_mode(mode);
+        // Use dispatcher to get action
+        if let Some(action) = self.key_dispatcher.get_help_action(&key) {
+            match action {
+                "quit" => return Ok(true),
+                "exit_help" => self.exit_help(),
+                "scroll_help_down" => self.scroll_help_down(),
+                "scroll_help_up" => self.scroll_help_up(),
+                "help_page_down" => self.help_page_down(),
+                "help_page_up" => self.help_page_up(),
+                _ => {}
             }
-            // Scroll help with arrow keys or vim keys
-            KeyCode::Down | KeyCode::Char('j') => {
-                // Calculate max scroll based on help content
-                let max_lines: usize = 58; // Approximate number of lines in help
-                let visible_height: usize = 30; // Approximate visible height
-                let max_scroll = max_lines.saturating_sub(visible_height);
-                if (self.help_scroll as usize) < max_scroll {
-                    self.help_scroll += 1;
+        } else {
+            // Handle any keys not in the dispatcher (like 'j' and 'k' for vim-style)
+            match key.code {
+                KeyCode::Char('j') => self.scroll_help_down(),
+                KeyCode::Char('k') => self.scroll_help_up(),
+                KeyCode::F(1) => self.exit_help(),
+                KeyCode::Home => self.help_scroll = 0,
+                KeyCode::End => {
+                    let max_lines: usize = 58;
+                    let visible_height: usize = 30;
+                    let max_scroll = max_lines.saturating_sub(visible_height);
+                    self.help_scroll = max_scroll as u16;
                 }
+                _ => {}
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.help_scroll = self.help_scroll.saturating_sub(1);
-            }
-            KeyCode::PageDown => {
-                let max_lines: usize = 58;
-                let visible_height: usize = 30;
-                let max_scroll = max_lines.saturating_sub(visible_height);
-                self.help_scroll = (self.help_scroll + 10).min(max_scroll as u16);
-            }
-            KeyCode::PageUp => {
-                self.help_scroll = self.help_scroll.saturating_sub(10);
-            }
-            KeyCode::Home => {
-                self.help_scroll = 0;
-            }
-            KeyCode::End => {
-                let max_lines: usize = 58;
-                let visible_height: usize = 30;
-                let max_scroll = max_lines.saturating_sub(visible_height);
-                self.help_scroll = max_scroll as u16;
-            }
-            _ => {}
         }
         Ok(false)
+    }
+
+    // Helper methods for help mode actions
+    fn exit_help(&mut self) {
+        self.show_help = false;
+        self.help_scroll = 0;
+        let mode = if self.buffer().get_results().is_some() {
+            AppMode::Results
+        } else {
+            AppMode::Command
+        };
+        self.buffer_mut().set_mode(mode);
+    }
+
+    fn scroll_help_down(&mut self) {
+        let max_lines: usize = 58;
+        let visible_height: usize = 30;
+        let max_scroll = max_lines.saturating_sub(visible_height);
+        if (self.help_scroll as usize) < max_scroll {
+            self.help_scroll += 1;
+        }
+    }
+
+    fn scroll_help_up(&mut self) {
+        self.help_scroll = self.help_scroll.saturating_sub(1);
+    }
+
+    fn help_page_down(&mut self) {
+        let max_lines: usize = 58;
+        let visible_height: usize = 30;
+        let max_scroll = max_lines.saturating_sub(visible_height);
+        self.help_scroll = (self.help_scroll + 10).min(max_scroll as u16);
+    }
+
+    fn help_page_up(&mut self) {
+        self.help_scroll = self.help_scroll.saturating_sub(10);
     }
 
     fn handle_history_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
