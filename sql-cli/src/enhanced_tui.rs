@@ -1,7 +1,6 @@
 use crate::parser::SqlParser;
 use crate::sql_highlighter::SqlHighlighter;
 use anyhow::Result;
-use chrono::Local;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
@@ -16,7 +15,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
     Frame, Terminal,
 };
 use regex::Regex;
@@ -33,7 +32,7 @@ use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::cursor_manager::CursorManager;
 use sql_cli::data_analyzer::DataAnalyzer;
 use sql_cli::data_exporter::DataExporter;
-use sql_cli::debug_info::{DebugInfo, DebugView};
+use sql_cli::debug_info::DebugInfo;
 use sql_cli::debug_widget::DebugWidget;
 use sql_cli::editor_widget::{BufferAction, EditorAction, EditorWidget};
 use sql_cli::help_text::HelpText;
@@ -52,7 +51,6 @@ use sql_cli::where_parser::WhereParser;
 use sql_cli::widget_traits::DebugInfoProvider;
 use sql_cli::yank_manager::YankManager;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
 use std::io;
 use tracing::{debug, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
@@ -72,25 +70,6 @@ macro_rules! log_state_change {
                     $field,
                     $old,
                     $new,
-                    $caller
-                ),
-            );
-        }
-    };
-}
-
-/// Macro for logging state changes without old value (for new data)
-/// Usage: log_state_set!(self, "field_name", new_value, "caller_function")  
-macro_rules! log_state_set {
-    ($self:expr, $field:expr, $value:expr, $caller:expr) => {
-        if let Some(ref services) = $self.service_container {
-            services.debug_service.info(
-                "StateManager",
-                format!(
-                    "[{}] {} set to: {} (in {})",
-                    chrono::Local::now().format("%H:%M:%S%.3f"),
-                    $field,
-                    $value,
                     $caller
                 ),
             );
@@ -124,24 +103,6 @@ enum SelectionMode {
 
 // Using SortOrder and SortState from sql_cli::buffer module
 
-struct FuzzyFilterState {
-    pattern: String,
-    active: bool,
-    matcher: SkimMatcherV2,
-    filtered_indices: Vec<usize>, // Indices of rows that match
-}
-
-impl Clone for FuzzyFilterState {
-    fn clone(&self) -> Self {
-        Self {
-            pattern: self.pattern.clone(),
-            active: self.active,
-            matcher: SkimMatcherV2::default(), // Create new matcher
-            filtered_indices: self.filtered_indices.clone(),
-        }
-    }
-}
-
 #[derive(Clone)]
 struct FilterState {
     pattern: String,
@@ -154,14 +115,6 @@ struct ColumnSearchState {
     pattern: String,
     matching_columns: Vec<(usize, String)>, // (index, column_name)
     current_match: usize,                   // Index into matching_columns
-}
-
-#[derive(Clone)]
-struct SearchState {
-    pattern: String,
-    current_match: Option<(usize, usize)>, // (row, col)
-    matches: Vec<(usize, usize)>,
-    match_index: usize,
 }
 
 #[derive(Clone)]
@@ -523,7 +476,7 @@ impl EnhancedTuiApp {
         };
 
         // Initialize service container and help widget
-        let (service_container, mut help_widget) = if let Some(ref state_arc) = state_container {
+        let (service_container, help_widget) = if let Some(ref state_arc) = state_container {
             let services = ServiceContainer::new(state_arc.clone());
 
             // Inject debug service into AppStateContainer (now works with RefCell)

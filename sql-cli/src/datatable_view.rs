@@ -532,7 +532,7 @@ impl DataTableView {
     }
 
     /// Create a ratatui Table widget for rendering
-    pub fn create_table_widget(&self) -> Table {
+    pub fn create_table_widget(&self) -> Table<'_> {
         // Create header for visible columns only
         let header = Row::new(
             self.table.columns[self.visible_col_start..self.visible_col_end]
@@ -601,7 +601,7 @@ impl DataTableView {
     }
 
     /// Create input widget for filter/search modes
-    pub fn create_input_widget(&self) -> Option<Paragraph> {
+    pub fn create_input_widget(&self) -> Option<Paragraph<'_>> {
         match self.mode {
             ViewMode::Filtering => Some(
                 Paragraph::new(format!("Filter: {}", self.filter_input.text))

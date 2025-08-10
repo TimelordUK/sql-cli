@@ -736,11 +736,11 @@ impl AppStateContainer {
     }
 
     // Search/Filter state access
-    pub fn search(&self) -> std::cell::Ref<SearchState> {
+    pub fn search(&self) -> std::cell::Ref<'_, SearchState> {
         self.search.borrow()
     }
 
-    pub fn search_mut(&self) -> std::cell::RefMut<SearchState> {
+    pub fn search_mut(&self) -> std::cell::RefMut<'_, SearchState> {
         self.search.borrow_mut()
     }
 
@@ -974,19 +974,19 @@ impl AppStateContainer {
         Some((match_pos.0, match_pos.1))
     }
 
-    pub fn filter(&self) -> std::cell::Ref<FilterState> {
+    pub fn filter(&self) -> std::cell::Ref<'_, FilterState> {
         self.filter.borrow()
     }
 
-    pub fn filter_mut(&self) -> std::cell::RefMut<FilterState> {
+    pub fn filter_mut(&self) -> std::cell::RefMut<'_, FilterState> {
         self.filter.borrow_mut()
     }
 
-    pub fn column_search(&self) -> std::cell::Ref<ColumnSearchState> {
+    pub fn column_search(&self) -> std::cell::Ref<'_, ColumnSearchState> {
         self.column_search.borrow()
     }
 
-    pub fn column_search_mut(&self) -> std::cell::RefMut<ColumnSearchState> {
+    pub fn column_search_mut(&self) -> std::cell::RefMut<'_, ColumnSearchState> {
         self.column_search.borrow_mut()
     }
 
@@ -1170,7 +1170,7 @@ impl AppStateContainer {
         original
     }
 
-    pub fn history_search(&self) -> std::cell::Ref<HistorySearchState> {
+    pub fn history_search(&self) -> std::cell::Ref<'_, HistorySearchState> {
         self.history_search.borrow()
     }
 
