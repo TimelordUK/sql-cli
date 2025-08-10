@@ -59,6 +59,63 @@ use tui_input::{backend::crossterm::EventHandler, Input};
 
 // Using AppMode and EditMode from sql_cli::buffer module
 
+/// Macro for logging state changes with caller information
+/// Usage: log_state_change!(self, "field_name", old_value, new_value, "caller_function")
+macro_rules! log_state_change {
+    ($self:expr, $field:expr, $old:expr, $new:expr, $caller:expr) => {
+        if let Some(ref services) = $self.service_container {
+            services.debug_service.info(
+                "StateManager",
+                format!(
+                    "[{}] {} changed: {} -> {} (in {})",
+                    chrono::Local::now().format("%H:%M:%S%.3f"),
+                    $field,
+                    $old,
+                    $new,
+                    $caller
+                ),
+            );
+        }
+    };
+}
+
+/// Macro for logging state changes without old value (for new data)
+/// Usage: log_state_set!(self, "field_name", new_value, "caller_function")  
+macro_rules! log_state_set {
+    ($self:expr, $field:expr, $value:expr, $caller:expr) => {
+        if let Some(ref services) = $self.service_container {
+            services.debug_service.info(
+                "StateManager",
+                format!(
+                    "[{}] {} set to: {} (in {})",
+                    chrono::Local::now().format("%H:%M:%S%.3f"),
+                    $field,
+                    $value,
+                    $caller
+                ),
+            );
+        }
+    };
+}
+
+/// Macro for logging state clears/resets
+/// Usage: log_state_clear!(self, "field_name", "caller_function")
+macro_rules! log_state_clear {
+    ($self:expr, $field:expr, $caller:expr) => {
+        if let Some(ref services) = $self.service_container {
+            services.debug_service.info(
+                "StateManager",
+                format!(
+                    "[{}] {} cleared (in {})",
+                    chrono::Local::now().format("%H:%M:%S%.3f"),
+                    $field,
+                    $caller
+                ),
+            );
+        }
+    };
+}
+
 #[derive(Clone, PartialEq, Debug)]
 enum SelectionMode {
     Row,
@@ -200,16 +257,24 @@ impl EnhancedTuiApp {
 
     /// Toggle help visibility (uses state_container if available, falls back to local field)
     fn toggle_help(&mut self) {
+        let old_value = self.show_help;
         // TODO: Will need Arc<Mutex<>> or interior mutability to modify through Arc
         // For now, just use local field
         self.show_help = !self.show_help;
+
+        // Log the state change
+        log_state_change!(self, "show_help", old_value, self.show_help, "toggle_help");
     }
 
     /// Set help visibility (uses state_container if available, falls back to local field)
     fn set_help_visible(&mut self, visible: bool) {
+        let old_value = self.show_help;
         // TODO: Will need Arc<Mutex<>> or interior mutability to modify through Arc
         // For now, just use local field
         self.show_help = visible;
+
+        // Log the state change
+        log_state_change!(self, "show_help", old_value, visible, "set_help_visible");
     }
 
     /// Get jump-to-row input text (uses state_container if available, falls back to local field)
@@ -223,9 +288,19 @@ impl EnhancedTuiApp {
 
     /// Set jump-to-row input text (uses state_container if available, falls back to local field)
     fn set_jump_to_row_input(&mut self, input: String) {
+        let old_value = self.jump_to_row_input.clone();
         // TODO: Will need Arc<Mutex<>> for state_container modification
         // For now, just use local field
-        self.jump_to_row_input = input;
+        self.jump_to_row_input = input.clone();
+
+        // Log the state change
+        log_state_change!(
+            self,
+            "jump_to_row_input",
+            old_value,
+            input,
+            "set_jump_to_row_input"
+        );
     }
 
     /// Clear jump-to-row input (uses state_container if available, falls back to local field)
@@ -233,6 +308,9 @@ impl EnhancedTuiApp {
         // TODO: Will need Arc<Mutex<>> for state_container modification
         // For now, just use local field
         self.jump_to_row_input.clear();
+
+        // Log the state clear
+        log_state_clear!(self, "jump_to_row_input", "clear_jump_to_row_input");
     }
 
     // --- Buffer Compatibility Layer ---
