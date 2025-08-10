@@ -161,7 +161,7 @@ pub struct EnhancedTuiApp {
 
     // Enhanced features
     sort_state: SortState,
-    filter_state: FilterState,
+    // filter_state: FilterState, // MIGRATED to AppStateContainer
     search_state: SearchState,
     column_search_state: ColumnSearchState,
     completion_state: CompletionState,
@@ -425,12 +425,26 @@ impl EnhancedTuiApp {
 
     // Note: mode methods removed - use buffer directly
 
+    // get_filter_state methods MIGRATED - now use state_container.filter()
+    // These methods are kept temporarily for fallback compatibility
     fn get_filter_state(&self) -> &FilterState {
-        &self.filter_state
+        static FALLBACK_FILTER: FilterState = FilterState {
+            pattern: String::new(),
+            regex: None,
+            active: false,
+        };
+        // This should not be called - prefer state_container.filter()
+        &FALLBACK_FILTER
     }
 
     fn get_filter_state_mut(&mut self) -> &mut FilterState {
-        &mut self.filter_state
+        static mut FALLBACK_FILTER: FilterState = FilterState {
+            pattern: String::new(),
+            regex: None,
+            active: false,
+        };
+        // This should not be called - prefer state_container.filter_mut()
+        unsafe { &mut FALLBACK_FILTER }
     }
 
     fn sanitize_table_name(name: &str) -> String {
@@ -520,11 +534,7 @@ impl EnhancedTuiApp {
                 column: None,
                 order: SortOrder::None,
             },
-            filter_state: FilterState {
-                pattern: String::new(),
-                regex: None,
-                active: false,
-            },
+            // filter_state: FilterState { ... }, // MIGRATED to AppStateContainer
             // fuzzy_filter_state: FuzzyFilterState { ... }, // MIGRATED to buffer system
             search_state: SearchState {
                 pattern: String::new(),
@@ -1904,7 +1914,15 @@ impl EnhancedTuiApp {
                        self.buffer().is_case_insensitive(),
                        self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
                 self.buffer_mut().set_filter_pattern(pattern.clone());
-                self.filter_state.pattern = pattern;
+                if let Some(ref state_container) = self.state_container {
+                    let mut filter = state_container.filter_mut();
+                    filter.pattern = pattern.clone();
+                    filter.is_active = true;
+                } else {
+                    // Fallback when state_container not available
+                    // This shouldn't happen in normal operation
+                    eprintln!("[WARNING] FilterState migration: state_container not available");
+                }
                 self.apply_filter();
                 debug!(target: "search", "After apply_filter, app_mode={:?}, filtered_count={}", 
                        self.buffer().get_mode(),
@@ -1985,7 +2003,14 @@ impl EnhancedTuiApp {
             }
             SearchMode::Filter => {
                 self.buffer_mut().set_filter_pattern(String::new());
-                self.filter_state.pattern.clear();
+                if let Some(ref state_container) = self.state_container {
+                    state_container.filter_mut().clear();
+                } else {
+                    // Fallback when state_container not available
+                    eprintln!(
+                        "[WARNING] FilterState migration: state_container not available for clear"
+                    );
+                }
             }
             SearchMode::FuzzyFilter => {
                 self.buffer_mut().set_fuzzy_filter_pattern(String::new());
@@ -2022,7 +2047,14 @@ impl EnhancedTuiApp {
                     }
                     SearchMode::Filter => {
                         self.buffer_mut().set_filter_pattern(pattern.clone());
-                        self.filter_state.pattern = pattern;
+                        if let Some(ref state_container) = self.state_container {
+                            let mut filter = state_container.filter_mut();
+                            filter.pattern = pattern.clone();
+                            filter.is_active = true;
+                        } else {
+                            // Fallback when state_container not available
+                            eprintln!("[WARNING] FilterState migration: state_container not available in Set Filter");
+                        }
                     }
                     SearchMode::FuzzyFilter => {
                         self.buffer_mut().set_fuzzy_filter_pattern(pattern);
@@ -2052,7 +2084,14 @@ impl EnhancedTuiApp {
                     SearchMode::Filter => {
                         debug!(target: "search", "Filter Apply: Applying filter with pattern '{}'", pattern);
                         self.buffer_mut().set_filter_pattern(pattern.clone());
-                        self.filter_state.pattern = pattern;
+                        if let Some(ref state_container) = self.state_container {
+                            let mut filter = state_container.filter_mut();
+                            filter.pattern = pattern.clone();
+                            filter.is_active = true;
+                        } else {
+                            // Fallback when state_container not available
+                            eprintln!("[WARNING] FilterState migration: state_container not available in Filter Apply");
+                        }
                         self.apply_filter();
                         debug!(target: "search", "Filter Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
                     }
@@ -2139,8 +2178,12 @@ impl EnhancedTuiApp {
                     AppMode::Filter => {
                         // Clear both local and buffer filter state
                         debug!(target: "search", "Filter Cancel: Clearing filter pattern and state");
-                        self.filter_state.pattern.clear();
-                        self.filter_state.active = false;
+                        if let Some(ref state_container) = self.state_container {
+                            state_container.filter_mut().clear();
+                        } else {
+                            // Fallback when state_container not available
+                            eprintln!("[WARNING] FilterState migration: state_container not available in Filter Cancel");
+                        }
                         self.buffer_mut().set_filter_pattern(String::new());
                         self.buffer_mut().set_filter_active(false);
                         // Re-apply empty filter to restore all results
@@ -2282,15 +2325,27 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
-                self.get_filter_state_mut().pattern.pop();
+                let pattern = if let Some(ref state_container) = self.state_container {
+                    let mut filter = state_container.filter_mut();
+                    filter.pattern.pop();
+                    filter.pattern.clone()
+                } else {
+                    self.get_filter_state_mut().pattern.pop();
+                    self.get_filter_state().pattern.clone()
+                };
                 // Update input for rendering
-                let pattern = self.get_filter_state().pattern.clone();
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
             }
             KeyCode::Char(c) => {
-                self.get_filter_state_mut().pattern.push(c);
+                let pattern = if let Some(ref state_container) = self.state_container {
+                    let mut filter = state_container.filter_mut();
+                    filter.pattern.push(c);
+                    filter.pattern.clone()
+                } else {
+                    self.get_filter_state_mut().pattern.push(c);
+                    self.get_filter_state().pattern.clone()
+                };
                 // Update input for rendering
-                let pattern = self.get_filter_state().pattern.clone();
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
             }
             _ => {}
@@ -3709,14 +3764,23 @@ impl EnhancedTuiApp {
     }
 
     fn apply_filter(&mut self) {
-        let pattern = &self.get_filter_state().pattern;
+        let pattern = if let Some(ref state_container) = self.state_container {
+            state_container.filter().pattern.clone()
+        } else {
+            self.get_filter_state().pattern.clone()
+        };
+
         debug!(target: "filter", "apply_filter called with pattern: '{}', case_insensitive: {}", 
                pattern, self.buffer().is_case_insensitive());
 
         if pattern.is_empty() {
             debug!(target: "filter", "Pattern is empty, clearing filter");
             self.buffer_mut().set_filtered_data(None);
-            self.get_filter_state_mut().active = false;
+            if let Some(ref state_container) = self.state_container {
+                state_container.filter_mut().is_active = false;
+            } else {
+                self.get_filter_state_mut().active = false;
+            }
             self.buffer_mut()
                 .set_status_message("Filter cleared".to_string());
             return;
@@ -3725,14 +3789,14 @@ impl EnhancedTuiApp {
         if let Some(results) = self.buffer().get_results() {
             // Build regex with case-insensitive flag if needed
             let case_insensitive = self.buffer().is_case_insensitive();
-            let pattern = if case_insensitive {
-                format!("(?i){}", self.get_filter_state().pattern)
+            let regex_pattern = if case_insensitive {
+                format!("(?i){}", pattern)
             } else {
-                self.get_filter_state().pattern.clone()
+                pattern.clone()
             };
-            debug!(target: "filter", "Building regex pattern: '{}' (case_insensitive: {})", pattern, case_insensitive);
+            debug!(target: "filter", "Building regex pattern: '{}' (case_insensitive: {})", regex_pattern, case_insensitive);
 
-            if let Ok(regex) = Regex::new(&pattern) {
+            if let Ok(regex) = Regex::new(&regex_pattern) {
                 let mut filtered = Vec::new();
 
                 for item in &results.data {
@@ -3770,8 +3834,14 @@ impl EnhancedTuiApp {
                 debug!(target: "filter", "Filter applied: {} rows matched out of {}", 
                        filtered_count, results.data.len());
                 self.buffer_mut().set_filtered_data(Some(filtered));
-                self.get_filter_state_mut().regex = Some(regex);
-                self.get_filter_state_mut().active = true;
+                if let Some(ref state_container) = self.state_container {
+                    let mut filter = state_container.filter_mut();
+                    filter.is_active = true;
+                    // Note: regex isn't stored in AppStateContainer FilterState yet
+                } else {
+                    self.get_filter_state_mut().regex = Some(regex);
+                    self.get_filter_state_mut().active = true;
+                }
                 self.buffer_mut().set_filter_active(true);
 
                 // Reset table state but preserve filtered data
