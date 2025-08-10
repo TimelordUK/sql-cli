@@ -181,7 +181,7 @@ pub struct EnhancedTuiApp {
     last_visible_rows: usize, // Track the last calculated viewport height
 
     // Display options
-    jump_to_row_input: String, // Input buffer for jump to row command
+    jump_to_row_input: String, // TODO: Remove once fully migrated to state_container
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
 }
 
@@ -210,6 +210,29 @@ impl EnhancedTuiApp {
         // TODO: Will need Arc<Mutex<>> or interior mutability to modify through Arc
         // For now, just use local field
         self.show_help = visible;
+    }
+
+    /// Get jump-to-row input text (uses state_container if available, falls back to local field)
+    fn get_jump_to_row_input(&self) -> String {
+        if let Some(ref container_arc) = self.state_container {
+            container_arc.jump_to_row().input.clone()
+        } else {
+            self.jump_to_row_input.clone()
+        }
+    }
+
+    /// Set jump-to-row input text (uses state_container if available, falls back to local field)
+    fn set_jump_to_row_input(&mut self, input: String) {
+        // TODO: Will need Arc<Mutex<>> for state_container modification
+        // For now, just use local field
+        self.jump_to_row_input = input;
+    }
+
+    /// Clear jump-to-row input (uses state_container if available, falls back to local field)
+    fn clear_jump_to_row_input(&mut self) {
+        // TODO: Will need Arc<Mutex<>> for state_container modification
+        // For now, just use local field
+        self.jump_to_row_input.clear();
     }
 
     // --- Buffer Compatibility Layer ---
@@ -1495,7 +1518,7 @@ impl EnhancedTuiApp {
                 }
                 "jump_to_row" => {
                     self.buffer_mut().set_mode(AppMode::JumpToRow);
-                    self.jump_to_row_input.clear();
+                    self.clear_jump_to_row_input();
                     self.buffer_mut()
                         .set_status_message("Enter row number:".to_string());
                 }
@@ -4619,7 +4642,7 @@ impl EnhancedTuiApp {
             AppMode::Debug => "Parser Debug (F5)".to_string(),
             AppMode::PrettyQuery => "Pretty Query View (F6)".to_string(),
             AppMode::CacheList => "Cache Management (F7)".to_string(),
-            AppMode::JumpToRow => format!("Jump to row: {}", self.jump_to_row_input),
+            AppMode::JumpToRow => format!("Jump to row: {}", self.get_jump_to_row_input()),
             AppMode::ColumnStats => "Column Statistics (S to close)".to_string(),
         };
 
@@ -4736,7 +4759,7 @@ impl EnhancedTuiApp {
                 }
                 AppMode::JumpToRow => {
                     f.set_cursor_position((
-                        chunks[0].x + self.jump_to_row_input.len() as u16 + 1,
+                        chunks[0].x + self.get_jump_to_row_input().len() as u16 + 1,
                         chunks[0].y + 1,
                     ));
                 }
@@ -5989,12 +6012,12 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Esc => {
                 self.buffer_mut().set_mode(AppMode::Results);
-                self.jump_to_row_input.clear();
+                self.clear_jump_to_row_input();
                 self.buffer_mut()
                     .set_status_message("Jump cancelled".to_string());
             }
             KeyCode::Enter => {
-                if let Ok(row_num) = self.jump_to_row_input.parse::<usize>() {
+                if let Ok(row_num) = self.get_jump_to_row_input().parse::<usize>() {
                     if row_num > 0 {
                         let target_row = row_num - 1; // Convert to 0-based index
                         let max_row = self.get_current_data().map(|d| d.len()).unwrap_or(0);
@@ -6021,13 +6044,17 @@ impl EnhancedTuiApp {
                     }
                 }
                 self.buffer_mut().set_mode(AppMode::Results);
-                self.jump_to_row_input.clear();
+                self.clear_jump_to_row_input();
             }
             KeyCode::Backspace => {
-                self.jump_to_row_input.pop();
+                let mut input = self.get_jump_to_row_input();
+                input.pop();
+                self.set_jump_to_row_input(input);
             }
             KeyCode::Char(c) if c.is_ascii_digit() => {
-                self.jump_to_row_input.push(c);
+                let mut input = self.get_jump_to_row_input();
+                input.push(c);
+                self.set_jump_to_row_input(input);
             }
             _ => {}
         }
