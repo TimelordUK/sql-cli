@@ -42,8 +42,12 @@ impl Platform {
 pub struct KeyPressEntry {
     /// The raw key event from crossterm
     pub raw_event: KeyEvent,
-    /// Timestamp when the key was pressed
-    pub timestamp: DateTime<Local>,
+    /// First timestamp when this key was pressed
+    pub first_timestamp: DateTime<Local>,
+    /// Last timestamp when this key was pressed (for repeats)
+    pub last_timestamp: DateTime<Local>,
+    /// Number of times this key was pressed consecutively
+    pub repeat_count: usize,
     /// The platform where the key was pressed
     pub platform: Platform,
     /// The interpreted action (if any) from the key dispatcher
@@ -57,13 +61,36 @@ pub struct KeyPressEntry {
 impl KeyPressEntry {
     pub fn new(key: KeyEvent, mode: AppMode, action: Option<String>) -> Self {
         let display_string = Self::format_key(&key);
+        let now = Local::now();
         Self {
             raw_event: key,
-            timestamp: Local::now(),
+            first_timestamp: now,
+            last_timestamp: now,
+            repeat_count: 1,
             platform: Platform::detect(),
             interpreted_action: action,
             app_mode: mode,
             display_string,
+        }
+    }
+
+    /// Check if this entry represents the same key press (for coalescing)
+    pub fn is_same_key(&self, key: &KeyEvent, mode: &AppMode) -> bool {
+        self.raw_event == *key && self.app_mode == *mode
+    }
+
+    /// Add a repeat to this entry
+    pub fn add_repeat(&mut self) {
+        self.repeat_count += 1;
+        self.last_timestamp = Local::now();
+    }
+
+    /// Get display string with repeat count
+    pub fn display_with_count(&self) -> String {
+        if self.repeat_count > 1 {
+            format!("{} x{}", self.display_string, self.repeat_count)
+        } else {
+            self.display_string.clone()
         }
     }
 
@@ -120,10 +147,17 @@ impl KeyPressEntry {
             .map(|a| format!(" → {}", a))
             .unwrap_or_default();
 
+        let repeat_info = if self.repeat_count > 1 {
+            format!(" x{}", self.repeat_count)
+        } else {
+            String::new()
+        };
+
         format!(
-            "[{}] {}{} [{:?}]{}",
-            self.timestamp.format("%H:%M:%S.%3f"),
+            "[{}] {}{}{} [{:?}]{}",
+            self.last_timestamp.format("%H:%M:%S.%3f"),
             self.display_string,
+            repeat_info,
             modifiers,
             self.platform,
             action
@@ -145,7 +179,7 @@ impl KeyPressEntry {
     }
 }
 
-/// Manages key press history with a ring buffer
+/// Manages key press history with a ring buffer and smart coalescing
 #[derive(Debug, Clone)]
 pub struct KeyPressHistory {
     /// Ring buffer of key presses
@@ -162,13 +196,75 @@ impl KeyPressHistory {
         }
     }
 
-    /// Add a new key press to the history
-    pub fn add(&mut self, entry: KeyPressEntry) {
-        // Note: Logging is handled by AppStateContainer, not here
+    /// Check if a key is considered a navigation key
+    fn is_navigation_key(key: &KeyEvent) -> bool {
+        matches!(
+            key.code,
+            KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::Left
+                | KeyCode::Right
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Home
+                | KeyCode::End
+        )
+    }
 
-        if self.entries.len() >= self.max_size {
-            self.entries.pop_front();
+    /// Add a new key press to the history with smart coalescing
+    pub fn add(&mut self, entry: KeyPressEntry) {
+        // Check if we can coalesce with the last entry
+        if let Some(last_entry) = self.entries.back_mut() {
+            if last_entry.is_same_key(&entry.raw_event, &entry.app_mode) {
+                // Same key pressed again in same mode, just increment counter
+                last_entry.add_repeat();
+                // Update the action in case it changed
+                if entry.interpreted_action != last_entry.interpreted_action {
+                    last_entry.interpreted_action = entry.interpreted_action;
+                }
+                return;
+            }
         }
+
+        // Not a repeat, need to add new entry
+        // But first check if buffer is full
+        if self.entries.len() >= self.max_size {
+            // Smart removal strategy:
+            // 1. First try to remove old navigation key entries with low repeat counts
+            // 2. Then remove any old entry with low repeat count
+            // 3. Finally just remove the oldest
+
+            let mut removed = false;
+
+            // Try to remove single-press navigation keys
+            for i in 0..self.entries.len() {
+                if Self::is_navigation_key(&self.entries[i].raw_event)
+                    && self.entries[i].repeat_count == 1
+                {
+                    self.entries.remove(i);
+                    removed = true;
+                    break;
+                }
+            }
+
+            // If no single navigation keys, remove any single-press entry from first half
+            if !removed {
+                let half = self.entries.len() / 2;
+                for i in 0..half {
+                    if self.entries[i].repeat_count == 1 {
+                        self.entries.remove(i);
+                        removed = true;
+                        break;
+                    }
+                }
+            }
+
+            // Last resort: remove oldest
+            if !removed {
+                self.entries.pop_front();
+            }
+        }
+
         self.entries.push_back(entry);
     }
 
@@ -187,15 +283,23 @@ impl KeyPressHistory {
         let mut output = String::new();
         output.push_str("========== KEY PRESS HISTORY ==========\n");
         output.push_str(&format!(
-            "(Most recent at bottom, last {} keys)\n",
+            "(Most recent at bottom, {} unique entries, max {})\n",
+            self.entries.len(),
             self.max_size
+        ));
+
+        // Count total key presses including repeats
+        let total_presses: usize = self.entries.iter().map(|e| e.repeat_count).sum();
+        output.push_str(&format!(
+            "Total key presses (with repeats): {}\n",
+            total_presses
         ));
 
         for entry in &self.entries {
             output.push_str(&format!(
                 "[{}] {}",
-                entry.timestamp.format("%H:%M:%S.%3f"),
-                entry.display_string
+                entry.last_timestamp.format("%H:%M:%S.%3f"),
+                entry.display_with_count()
             ));
 
             if !entry.raw_event.modifiers.is_empty() {
