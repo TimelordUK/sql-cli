@@ -992,6 +992,11 @@ impl AppStateContainer {
 
     // History search operations (Ctrl+R)
     pub fn start_history_search(&self, original_input: String) {
+        eprintln!(
+            "[DEBUG] start_history_search called with input: '{}'",
+            original_input
+        );
+
         let mut history_search = self.history_search.borrow_mut();
         history_search.query.clear();
         history_search.matches.clear();
@@ -1001,6 +1006,11 @@ impl AppStateContainer {
 
         // Initialize with all history entries
         let all_entries = self.command_history.get_all();
+        eprintln!(
+            "[DEBUG] Got {} entries from command_history.get_all()",
+            all_entries.len()
+        );
+
         history_search.matches = all_entries
             .iter()
             .cloned()
@@ -1010,6 +1020,11 @@ impl AppStateContainer {
                 score: 0,
             })
             .collect();
+
+        eprintln!(
+            "[DEBUG] Created {} matches in history_search",
+            history_search.matches.len()
+        );
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
