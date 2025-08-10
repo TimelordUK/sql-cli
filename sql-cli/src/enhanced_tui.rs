@@ -1856,6 +1856,12 @@ impl EnhancedTuiApp {
                 debug!(target: "search", "Executing search with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
                 debug!(target: "search", "Search: current results count={}", 
                        self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
+
+                // Set search pattern in AppStateContainer if available
+                if let Some(ref state_container) = self.state_container {
+                    state_container.start_search(pattern.clone());
+                }
+
                 self.buffer_mut().set_search_pattern(pattern);
                 self.perform_search();
                 debug!(target: "search", "After perform_search, app_mode={:?}, matches_found={}", 
@@ -1941,6 +1947,10 @@ impl EnhancedTuiApp {
         // Clear patterns
         match mode {
             SearchMode::Search => {
+                // Clear search in AppStateContainer if available
+                if let Some(ref state_container) = self.state_container {
+                    state_container.clear_search();
+                }
                 self.buffer_mut().set_search_pattern(String::new());
             }
             SearchMode::Filter => {
@@ -3453,75 +3463,146 @@ impl EnhancedTuiApp {
 
     // Search and filter functions
     fn perform_search(&mut self) {
-        if let Some(data) = self.get_current_data() {
-            self.buffer_mut().set_search_matches(Vec::new());
+        // Use AppStateContainer for search if available
+        if let Some(ref state_container) = self.state_container {
+            if let Some(data) = self.get_current_data() {
+                // Perform search using AppStateContainer
+                let matches = state_container.perform_search(&data);
 
-            if let Ok(regex) = Regex::new(&self.buffer().get_search_pattern()) {
-                for (row_idx, row) in data.iter().enumerate() {
-                    for (col_idx, cell) in row.iter().enumerate() {
-                        if regex.is_match(cell) {
-                            let mut matches = self.buffer().get_search_matches();
-                            matches.push((row_idx, col_idx));
-                            self.buffer_mut().set_search_matches(matches);
-                        }
-                    }
-                }
+                // Update buffer with matches for now (until we fully migrate)
+                let buffer_matches: Vec<(usize, usize)> = matches
+                    .iter()
+                    .map(|(row, col, _, _)| (*row, *col))
+                    .collect();
 
-                if !self.buffer().get_search_matches().is_empty() {
+                self.buffer_mut().set_search_matches(buffer_matches.clone());
+
+                if !buffer_matches.is_empty() {
                     self.buffer_mut().set_search_match_index(0);
-                    let matches = self.buffer().get_search_matches();
-                    self.buffer_mut().set_current_match(Some(matches[0]));
-                    let (row, _) = matches[0];
+                    self.buffer_mut().set_current_match(Some(buffer_matches[0]));
+                    let (row, _) = buffer_matches[0];
                     self.table_state.select(Some(row));
                     self.buffer_mut()
-                        .set_status_message(format!("Found {} matches", matches.len()));
+                        .set_status_message(format!("Found {} matches", buffer_matches.len()));
                 } else {
                     self.buffer_mut()
                         .set_status_message("No matches found".to_string());
                 }
-            } else {
-                self.buffer_mut()
-                    .set_status_message("Invalid regex pattern".to_string());
+            }
+        } else {
+            // Fallback to old implementation
+            if let Some(data) = self.get_current_data() {
+                self.buffer_mut().set_search_matches(Vec::new());
+
+                if let Ok(regex) = Regex::new(&self.buffer().get_search_pattern()) {
+                    for (row_idx, row) in data.iter().enumerate() {
+                        for (col_idx, cell) in row.iter().enumerate() {
+                            if regex.is_match(cell) {
+                                let mut matches = self.buffer().get_search_matches();
+                                matches.push((row_idx, col_idx));
+                                self.buffer_mut().set_search_matches(matches);
+                            }
+                        }
+                    }
+
+                    if !self.buffer().get_search_matches().is_empty() {
+                        self.buffer_mut().set_search_match_index(0);
+                        let matches = self.buffer().get_search_matches();
+                        self.buffer_mut().set_current_match(Some(matches[0]));
+                        let (row, _) = matches[0];
+                        self.table_state.select(Some(row));
+                        self.buffer_mut()
+                            .set_status_message(format!("Found {} matches", matches.len()));
+                    } else {
+                        self.buffer_mut()
+                            .set_status_message("No matches found".to_string());
+                    }
+                } else {
+                    self.buffer_mut()
+                        .set_status_message("Invalid regex pattern".to_string());
+                }
             }
         }
     }
 
     fn next_search_match(&mut self) {
-        if !self.buffer().get_search_matches().is_empty() {
-            let matches = self.buffer().get_search_matches();
-            let new_index = (self.buffer().get_search_match_index() + 1) % matches.len();
-            self.buffer_mut().set_search_match_index(new_index);
-            let (row, _) = matches[new_index];
-            self.table_state.select(Some(row));
-            self.buffer_mut()
-                .set_current_match(Some(matches[new_index]));
-            self.buffer_mut().set_status_message(format!(
-                "Match {} of {}",
-                new_index + 1,
-                matches.len()
-            ));
+        // Use AppStateContainer for search navigation if available
+        if let Some(ref state_container) = self.state_container {
+            if let Some((row, col)) = state_container.next_search_match() {
+                // Extract values before mutable borrows
+                let current_idx = state_container.search().current_match + 1;
+                let total = state_container.search().matches.len();
+                let search_match_index = state_container.search().current_match;
+
+                // Now do mutable operations
+                self.table_state.select(Some(row));
+                self.buffer_mut().set_current_match(Some((row, col)));
+                self.buffer_mut()
+                    .set_status_message(format!("Match {} of {}", current_idx, total));
+                self.buffer_mut().set_search_match_index(search_match_index);
+            } else {
+                self.buffer_mut()
+                    .set_status_message("No search matches".to_string());
+            }
+        } else {
+            // Fallback to old implementation
+            if !self.buffer().get_search_matches().is_empty() {
+                let matches = self.buffer().get_search_matches();
+                let new_index = (self.buffer().get_search_match_index() + 1) % matches.len();
+                self.buffer_mut().set_search_match_index(new_index);
+                let (row, _) = matches[new_index];
+                self.table_state.select(Some(row));
+                self.buffer_mut()
+                    .set_current_match(Some(matches[new_index]));
+                self.buffer_mut().set_status_message(format!(
+                    "Match {} of {}",
+                    new_index + 1,
+                    matches.len()
+                ));
+            }
         }
     }
 
     fn previous_search_match(&mut self) {
-        if !self.buffer().get_search_matches().is_empty() {
-            let matches = self.buffer().get_search_matches();
-            let current_index = self.buffer().get_search_match_index();
-            let new_index = if current_index == 0 {
-                matches.len() - 1
+        // Use AppStateContainer for search navigation if available
+        if let Some(ref state_container) = self.state_container {
+            if let Some((row, col)) = state_container.previous_search_match() {
+                // Extract values before mutable borrows
+                let current_idx = state_container.search().current_match + 1;
+                let total = state_container.search().matches.len();
+                let search_match_index = state_container.search().current_match;
+
+                // Now do mutable operations
+                self.table_state.select(Some(row));
+                self.buffer_mut().set_current_match(Some((row, col)));
+                self.buffer_mut()
+                    .set_status_message(format!("Match {} of {}", current_idx, total));
+                self.buffer_mut().set_search_match_index(search_match_index);
             } else {
-                current_index - 1
-            };
-            self.buffer_mut().set_search_match_index(new_index);
-            let (row, _) = matches[new_index];
-            self.table_state.select(Some(row));
-            self.buffer_mut()
-                .set_current_match(Some(matches[new_index]));
-            self.buffer_mut().set_status_message(format!(
-                "Match {} of {}",
-                new_index + 1,
-                matches.len()
-            ));
+                self.buffer_mut()
+                    .set_status_message("No search matches".to_string());
+            }
+        } else {
+            // Fallback to old implementation
+            if !self.buffer().get_search_matches().is_empty() {
+                let matches = self.buffer().get_search_matches();
+                let current_index = self.buffer().get_search_match_index();
+                let new_index = if current_index == 0 {
+                    matches.len() - 1
+                } else {
+                    current_index - 1
+                };
+                self.buffer_mut().set_search_match_index(new_index);
+                let (row, _) = matches[new_index];
+                self.table_state.select(Some(row));
+                self.buffer_mut()
+                    .set_current_match(Some(matches[new_index]));
+                self.buffer_mut().set_status_message(format!(
+                    "Match {} of {}",
+                    new_index + 1,
+                    matches.len()
+                ));
+            }
         }
     }
 
