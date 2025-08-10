@@ -13,79 +13,79 @@ path = "src/main.rs"
 
 [[bin]]
 name = "test-csv"
-path = "test_csv.rs"
+path = "integration_tests/test_csv.rs"
 
 [[bin]]
 name = "test-csv-queries"
-path = "test_csv_queries.rs"
+path = "integration_tests/test_csv_queries.rs"
 
 [[bin]]
 name = "test-linq-methods"
-path = "test_linq_methods.rs"
+path = "integration_tests/test_linq_methods.rs"
 
 [[bin]]
 name = "test-cache"
-path = "test_cache.rs"
+path = "integration_tests/test_cache.rs"
 
 [[bin]]
 name = "test-json-cli"
-path = "test_json_cli.rs"
+path = "integration_tests/test_json_cli.rs"
 
 [[bin]]
 name = "test-order-by"
-path = "test_order_by.rs"
+path = "integration_tests/test_order_by.rs"
 
 [[bin]]
 name = "test-order-by-csv"
-path = "test_order_by_csv.rs"
+path = "integration_tests/test_order_by_csv.rs"
 
 [[bin]]
 name = "test-order-by-completion"
-path = "test_order_by_completion.rs"
+path = "integration_tests/test_order_by_completion.rs"
 
 [[bin]]
 name = "test-csv-issues"
-path = "test_csv_issues.rs"
+path = "integration_tests/test_csv_issues.rs"
 
 [[bin]]
 name = "test-where-order-by-issue"
-path = "test_where_order_by_issue.rs"
+path = "integration_tests/test_where_order_by_issue.rs"
 
 [[bin]]
 name = "test-not-contains"
-path = "test_not_contains.rs"
+path = "integration_tests/test_not_contains.rs"
 
 [[bin]]
 name = "test-null-handling"
-path = "test_null_handling.rs"
+path = "integration_tests/test_null_handling.rs"
 
 [[bin]]
 name = "test-large-dataset-perf"
-path = "test_large_dataset_perf.rs"
+path = "integration_tests/test_large_dataset_perf.rs"
 
 [[bin]]
 name = "test-case-insensitive-csv"
-path = "test_case_insensitive_csv.rs"
+path = "integration_tests/test_case_insensitive_csv.rs"
 
 [[bin]]
 name = "test-quoted-method-completion"
-path = "test_quoted_method_completion.rs"
+path = "integration_tests/test_quoted_method_completion.rs"
 
 [[bin]]
 name = "test-quoted-debug"
-path = "test_quoted_debug.rs"
+path = "integration_tests/test_quoted_debug.rs"
 
 [[bin]]
 name = "test-paren-method-completion"
-path = "test_paren_method_completion.rs"
+path = "integration_tests/test_paren_method_completion.rs"
 
 [[bin]]
 name = "test-column-pinning"
-path = "test_column_pinning.rs"
+path = "integration_tests/test_column_pinning.rs"
 
 [[bin]]
 name = "test-trades-equality"
-path = "test_trades_equality.rs"
+path = "integration_tests/test_trades_equality.rs"
 
 
 
