@@ -620,9 +620,9 @@ pub struct AppStateContainer {
     command_input: InputState,
 
     // Search/Filter states
-    search: SearchState,
-    filter: FilterState,
-    column_search: ColumnSearchState,
+    search: RefCell<SearchState>,
+    filter: RefCell<FilterState>,
+    column_search: RefCell<ColumnSearchState>,
 
     // Widget states
     widgets: WidgetStates,
@@ -660,9 +660,9 @@ impl AppStateContainer {
             buffers,
             current_buffer_id: 0,
             command_input: InputState::new(),
-            search: SearchState::new(),
-            filter: FilterState::new(),
-            column_search: ColumnSearchState::new(),
+            search: RefCell::new(SearchState::new()),
+            filter: RefCell::new(FilterState::new()),
+            column_search: RefCell::new(ColumnSearchState::new()),
             widgets,
             cache_list: CacheListState::new(),
             column_stats: ColumnStatsState::new(),
@@ -704,24 +704,25 @@ impl AppStateContainer {
     }
 
     // Search/Filter state access
-    pub fn search(&self) -> &SearchState {
-        &self.search
+    pub fn search(&self) -> std::cell::Ref<SearchState> {
+        self.search.borrow()
     }
 
-    pub fn search_mut(&mut self) -> &mut SearchState {
-        &mut self.search
+    pub fn search_mut(&self) -> std::cell::RefMut<SearchState> {
+        self.search.borrow_mut()
     }
 
     // Search operations with logging
 
     /// Start a new search with the given pattern
-    pub fn start_search(&mut self, pattern: String) -> usize {
-        let old_pattern = self.search.pattern.clone();
-        let old_active = self.search.is_active;
+    pub fn start_search(&self, pattern: String) -> usize {
+        let mut search = self.search.borrow_mut();
+        let old_pattern = search.pattern.clone();
+        let old_active = search.is_active;
 
-        self.search.pattern = pattern.clone();
-        self.search.is_active = true;
-        self.search.last_search_time = Some(std::time::Instant::now());
+        search.pattern = pattern.clone();
+        search.is_active = true;
+        search.last_search_time = Some(std::time::Instant::now());
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
@@ -738,50 +739,52 @@ impl AppStateContainer {
     }
 
     /// Update search matches
-    pub fn update_search_matches(&mut self, matches: Vec<(usize, usize, usize, usize)>) {
+    pub fn update_search_matches(&self, matches: Vec<(usize, usize, usize, usize)>) {
         let match_count = matches.len();
-        self.search.matches = matches;
-        self.search.current_match = if match_count > 0 { 0 } else { 0 };
+        let mut search = self.search.borrow_mut();
+        let pattern = search.pattern.clone();
+        search.matches = matches;
+        search.current_match = if match_count > 0 { 0 } else { 0 };
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
                 "Search",
                 format!(
                     "Search found {} matches for pattern '{}'",
-                    match_count, self.search.pattern
+                    match_count, pattern
                 ),
             );
         }
 
         // Record in history if this completes a search
-        if !self.search.pattern.is_empty() {
-            let duration_ms = self
-                .search
+        if !pattern.is_empty() {
+            let duration_ms = search
                 .last_search_time
                 .map(|t| t.elapsed().as_millis() as u64);
 
             let entry = SearchHistoryEntry {
-                pattern: self.search.pattern.clone(),
+                pattern: pattern.clone(),
                 match_count,
                 timestamp: Local::now(),
                 duration_ms,
             };
 
-            if self.search.history.len() >= 20 {
-                self.search.history.pop_front();
+            if search.history.len() >= 20 {
+                search.history.pop_front();
             }
-            self.search.history.push_back(entry);
+            search.history.push_back(entry);
         }
     }
 
     /// Navigate to next search match
-    pub fn next_search_match(&mut self) -> Option<(usize, usize)> {
-        if self.search.matches.is_empty() {
+    pub fn next_search_match(&self) -> Option<(usize, usize)> {
+        let mut search = self.search.borrow_mut();
+        if search.matches.is_empty() {
             return None;
         }
 
-        let old_match = self.search.current_match;
-        self.search.current_match = (self.search.current_match + 1) % self.search.matches.len();
+        let old_match = search.current_match;
+        search.current_match = (search.current_match + 1) % search.matches.len();
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
@@ -789,27 +792,28 @@ impl AppStateContainer {
                 format!(
                     "Navigate to next match: {} -> {} (of {})",
                     old_match,
-                    self.search.current_match,
-                    self.search.matches.len()
+                    search.current_match,
+                    search.matches.len()
                 ),
             );
         }
 
-        let match_pos = self.search.matches[self.search.current_match];
+        let match_pos = search.matches[search.current_match];
         Some((match_pos.0, match_pos.1))
     }
 
     /// Navigate to previous search match
-    pub fn previous_search_match(&mut self) -> Option<(usize, usize)> {
-        if self.search.matches.is_empty() {
+    pub fn previous_search_match(&self) -> Option<(usize, usize)> {
+        let mut search = self.search.borrow_mut();
+        if search.matches.is_empty() {
             return None;
         }
 
-        let old_match = self.search.current_match;
-        self.search.current_match = if self.search.current_match == 0 {
-            self.search.matches.len() - 1
+        let old_match = search.current_match;
+        search.current_match = if search.current_match == 0 {
+            search.matches.len() - 1
         } else {
-            self.search.current_match - 1
+            search.current_match - 1
         };
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
@@ -818,22 +822,23 @@ impl AppStateContainer {
                 format!(
                     "Navigate to previous match: {} -> {} (of {})",
                     old_match,
-                    self.search.current_match,
-                    self.search.matches.len()
+                    search.current_match,
+                    search.matches.len()
                 ),
             );
         }
 
-        let match_pos = self.search.matches[self.search.current_match];
+        let match_pos = search.matches[search.current_match];
         Some((match_pos.0, match_pos.1))
     }
 
     /// Clear current search
-    pub fn clear_search(&mut self) {
-        let had_matches = self.search.matches.len();
-        let had_pattern = self.search.pattern.clone();
+    pub fn clear_search(&self) {
+        let mut search = self.search.borrow_mut();
+        let had_matches = search.matches.len();
+        let had_pattern = search.pattern.clone();
 
-        self.search.clear();
+        search.clear();
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
@@ -848,13 +853,14 @@ impl AppStateContainer {
 
     /// Perform search on provided data
     /// Returns the search matches as a vector of (row, col, row_end, col_end) tuples
-    pub fn perform_search(&mut self, data: &[Vec<String>]) -> Vec<(usize, usize, usize, usize)> {
+    pub fn perform_search(&self, data: &[Vec<String>]) -> Vec<(usize, usize, usize, usize)> {
         use regex::Regex;
 
-        let pattern = self.search.pattern.clone();
+        let pattern = self.search.borrow().pattern.clone();
         if pattern.is_empty() {
-            self.search.matches.clear();
-            self.search.current_match = 0;
+            let mut search = self.search.borrow_mut();
+            search.matches.clear();
+            search.current_match = 0;
             return Vec::new();
         }
 
@@ -905,7 +911,7 @@ impl AppStateContainer {
         }
 
         let elapsed = start_time.elapsed();
-        self.search.last_search_time = Some(start_time);
+        self.search.borrow_mut().last_search_time = Some(start_time);
 
         // Update search state with matches
         self.update_search_matches(matches.clone());
@@ -927,28 +933,29 @@ impl AppStateContainer {
 
     /// Get current search match position (for highlighting)
     pub fn get_current_match(&self) -> Option<(usize, usize)> {
-        if self.search.matches.is_empty() || !self.search.is_active {
+        let search = self.search.borrow();
+        if search.matches.is_empty() || !search.is_active {
             return None;
         }
 
-        let match_pos = self.search.matches[self.search.current_match];
+        let match_pos = search.matches[search.current_match];
         Some((match_pos.0, match_pos.1))
     }
 
-    pub fn filter(&self) -> &FilterState {
-        &self.filter
+    pub fn filter(&self) -> std::cell::Ref<FilterState> {
+        self.filter.borrow()
     }
 
-    pub fn filter_mut(&mut self) -> &mut FilterState {
-        &mut self.filter
+    pub fn filter_mut(&self) -> std::cell::RefMut<FilterState> {
+        self.filter.borrow_mut()
     }
 
-    pub fn column_search(&self) -> &ColumnSearchState {
-        &self.column_search
+    pub fn column_search(&self) -> std::cell::Ref<ColumnSearchState> {
+        self.column_search.borrow()
     }
 
-    pub fn column_search_mut(&mut self) -> &mut ColumnSearchState {
-        &mut self.column_search
+    pub fn column_search_mut(&self) -> std::cell::RefMut<ColumnSearchState> {
+        self.column_search.borrow_mut()
     }
 
     // Widget access
@@ -1232,19 +1239,20 @@ impl AppStateContainer {
 
         // Search state
         dump.push_str("SEARCH STATE:\n");
-        if self.search.is_active {
-            dump.push_str(&format!("  Pattern: '{}'\n", self.search.pattern));
-            dump.push_str(&format!("  Matches: {} found\n", self.search.matches.len()));
+        let search = self.search.borrow();
+        if search.is_active {
+            dump.push_str(&format!("  Pattern: '{}'\n", search.pattern));
+            dump.push_str(&format!("  Matches: {} found\n", search.matches.len()));
             dump.push_str(&format!(
                 "  Current: {} of {}\n",
-                if self.search.matches.is_empty() {
+                if search.matches.is_empty() {
                     0
                 } else {
-                    self.search.current_match + 1
+                    search.current_match + 1
                 },
-                self.search.matches.len()
+                search.matches.len()
             ));
-            if let Some(ref last_time) = self.search.last_search_time {
+            if let Some(ref last_time) = search.last_search_time {
                 dump.push_str(&format!("  Search time: {:?}\n", last_time.elapsed()));
             }
         } else {
@@ -1252,9 +1260,9 @@ impl AppStateContainer {
         }
 
         // Search history
-        if !self.search.history.is_empty() {
+        if !search.history.is_empty() {
             dump.push_str("  Recent searches:\n");
-            for (i, entry) in self.search.history.iter().rev().take(5).enumerate() {
+            for (i, entry) in search.history.iter().rev().take(5).enumerate() {
                 dump.push_str(&format!(
                     "    {}. '{}' → {} matches",
                     i + 1,
@@ -1274,39 +1282,35 @@ impl AppStateContainer {
         dump.push_str("\n");
 
         // Filter state
-        if self.filter.is_active {
+        let filter = self.filter.borrow();
+        if filter.is_active {
             dump.push_str("FILTER STATE (ACTIVE):\n");
-            dump.push_str(&format!("  Pattern: '{}'\n", self.filter.pattern));
+            dump.push_str(&format!("  Pattern: '{}'\n", filter.pattern));
             dump.push_str(&format!(
                 "  Filtered Rows: {}\n",
-                self.filter.filtered_indices.len()
+                filter.filtered_indices.len()
             ));
             dump.push_str(&format!(
                 "  Case Insensitive: {}\n",
-                self.filter.case_insensitive
+                filter.case_insensitive
             ));
             dump.push_str("\n");
         }
 
         // Column search state
-        if self.column_search.is_active {
+        let column_search = self.column_search.borrow();
+        if column_search.is_active {
             dump.push_str("COLUMN SEARCH STATE (ACTIVE):\n");
-            dump.push_str(&format!("  Pattern: '{}'\n", self.column_search.pattern));
+            dump.push_str(&format!("  Pattern: '{}'\n", column_search.pattern));
             dump.push_str(&format!(
                 "  Matching Columns: {}\n",
-                self.column_search.matching_columns.len()
+                column_search.matching_columns.len()
             ));
-            if !self.column_search.matching_columns.is_empty() {
-                for (i, (idx, name)) in self
-                    .column_search
-                    .matching_columns
-                    .iter()
-                    .take(5)
-                    .enumerate()
-                {
+            if !column_search.matching_columns.is_empty() {
+                for (i, (idx, name)) in column_search.matching_columns.iter().take(5).enumerate() {
                     dump.push_str(&format!(
                         "    [{}] {}: '{}'\n",
-                        if i == self.column_search.current_match {
+                        if i == column_search.current_match {
                             "*"
                         } else {
                             " "
@@ -1412,9 +1416,12 @@ impl fmt::Debug for AppStateContainer {
             // .field("buffer_count", &self.buffers.count())
             .field("current_buffer_id", &self.current_buffer_id)
             .field("command_input", &self.command_input)
-            .field("search_active", &self.search.is_active)
-            .field("filter_active", &self.filter.is_active)
-            .field("column_search_active", &self.column_search.is_active)
+            .field("search_active", &self.search.borrow().is_active)
+            .field("filter_active", &self.filter.borrow().is_active)
+            .field(
+                "column_search_active",
+                &self.column_search.borrow().is_active,
+            )
             .field("debug_enabled", &self.debug_enabled)
             .field("show_help", &self.show_help)
             .field("cached_results", &self.results_cache.cache.len())

@@ -1858,7 +1858,7 @@ impl EnhancedTuiApp {
                        self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
 
                 // Set search pattern in AppStateContainer if available
-                if let Some(ref mut state_container) = self.state_container {
+                if let Some(ref state_container) = self.state_container {
                     state_container.start_search(pattern.clone());
                 }
 
@@ -1948,7 +1948,7 @@ impl EnhancedTuiApp {
         match mode {
             SearchMode::Search => {
                 // Clear search in AppStateContainer if available
-                if let Some(ref mut state_container) = self.state_container {
+                if let Some(ref state_container) = self.state_container {
                     state_container.clear_search();
                 }
                 self.buffer_mut().set_search_pattern(String::new());
@@ -3464,7 +3464,7 @@ impl EnhancedTuiApp {
     // Search and filter functions
     fn perform_search(&mut self) {
         // Use AppStateContainer for search if available
-        if let Some(ref mut state_container) = self.state_container {
+        if let Some(ref state_container) = self.state_container {
             if let Some(data) = self.get_current_data() {
                 // Perform search using AppStateContainer
                 let matches = state_container.perform_search(&data);
@@ -3527,7 +3527,7 @@ impl EnhancedTuiApp {
 
     fn next_search_match(&mut self) {
         // Use AppStateContainer for search navigation if available
-        if let Some(ref mut state_container) = self.state_container {
+        if let Some(ref state_container) = self.state_container {
             if let Some((row, col)) = state_container.next_search_match() {
                 // Extract values before mutable borrows
                 let current_idx = state_container.search().current_match + 1;
@@ -3565,7 +3565,7 @@ impl EnhancedTuiApp {
 
     fn previous_search_match(&mut self) {
         // Use AppStateContainer for search navigation if available
-        if let Some(ref mut state_container) = self.state_container {
+        if let Some(ref state_container) = self.state_container {
             if let Some((row, col)) = state_container.previous_search_match() {
                 // Extract values before mutable borrows
                 let current_idx = state_container.search().current_match + 1;
