@@ -1727,6 +1727,33 @@ impl EnhancedTuiApp {
                         if !current { "ON" } else { "OFF" }
                     ));
                 }
+                "start_history_search" => {
+                    // Switch to Command mode first
+                    let last_query = self.buffer().get_last_query();
+
+                    if !last_query.is_empty() {
+                        self.buffer_mut().set_input_text(last_query.clone());
+                        self.buffer_mut()
+                            .set_input_cursor_position(last_query.len());
+                        self.input =
+                            tui_input::Input::new(last_query.clone()).with_cursor(last_query.len());
+                    }
+
+                    self.buffer_mut().set_mode(AppMode::Command);
+                    self.table_state.select(None);
+
+                    // Start history search
+                    if let Some(ref state_container) = self.state_container {
+                        let current_input = self.get_input_text();
+                        state_container.start_history_search(current_input);
+                        let match_count = state_container.history_search().matches.len();
+                        self.buffer_mut()
+                            .set_status_message(format!("History search: {} matches", match_count));
+
+                        // Switch to History mode to show the search interface
+                        self.buffer_mut().set_mode(AppMode::History);
+                    }
+                }
                 _ => {
                     // Action not recognized, continue to handle key directly
                 }
