@@ -118,6 +118,14 @@ struct ColumnSearchState {
 }
 
 #[derive(Clone)]
+struct SearchState {
+    pattern: String,
+    current_match: Option<(usize, usize)>, // (row, col)
+    matches: Vec<(usize, usize)>,
+    match_index: usize,
+}
+
+#[derive(Clone)]
 struct CompletionState {
     suggestions: Vec<String>,
     current_index: usize,
@@ -955,10 +963,25 @@ impl EnhancedTuiApp {
                 if let Some(ref state_container) = self.state_container {
                     // Start history search mode
                     let current_input = self.get_input_text();
+                    eprintln!(
+                        "[DEBUG] Starting history search with input: '{}'",
+                        current_input
+                    );
                     state_container.start_history_search(current_input);
+
+                    // Check if history search is active
+                    let is_active = state_container.is_history_search_active();
+                    let match_count = state_container.history_search().matches.len();
+                    eprintln!(
+                        "[DEBUG] History search active: {}, matches: {}",
+                        is_active, match_count
+                    );
+
                     self.buffer_mut().set_mode(AppMode::History);
-                    self.buffer_mut()
-                        .set_status_message("History search started (Ctrl+R)".to_string());
+                    self.buffer_mut().set_status_message(format!(
+                        "History search started (Ctrl+R) - {} matches",
+                        match_count
+                    ));
                     return Ok(false);
                 }
             }

@@ -505,15 +505,22 @@ impl CommandHistory {
 
     fn load_from_file(&mut self) -> Result<()> {
         if !self.history_file.exists() {
+            eprintln!("[History] No history file found at {:?}", self.history_file);
             return Ok(());
         }
 
+        eprintln!("[History] Loading history from {:?}", self.history_file);
         let content = fs::read_to_string(&self.history_file)?;
         if content.trim().is_empty() {
+            eprintln!("[History] History file is empty");
             return Ok(());
         }
 
         let entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
+        eprintln!(
+            "[History] Loaded {} entries from history file",
+            entries.len()
+        );
         let original_count = entries.len();
 
         // Deduplicate entries, keeping only the most recent of each command
@@ -550,6 +557,10 @@ impl CommandHistory {
         }
 
         self.entries = deduplicated;
+        eprintln!(
+            "[History] Final history contains {} unique entries",
+            self.entries.len()
+        );
         Ok(())
     }
 
