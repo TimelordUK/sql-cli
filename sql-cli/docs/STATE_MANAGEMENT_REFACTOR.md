@@ -122,7 +122,7 @@ pub struct FilterState {
 - Added comprehensive logging for all history search operations
 - Tested with existing history data
 
-### Phase 4: Navigation State (v16) 🚧
+### Phase 4: Navigation State (v16) ✅
 **Goal**: Consolidate all table navigation and viewport management
 
 #### Current State (Scattered):
@@ -161,23 +161,48 @@ pub struct Viewport {
 - `jump_to_row(row: usize)`
 - `jump_to_column(col: usize)`
 
-### Phase 5: Buffer/Results State (v17) 📋
+### Phase 5: Buffer/Results State (v17) ✅
 **Goal**: Move all query results data into AppStateContainer
 
-#### Target State:
+**Completed**:
+- Created comprehensive ResultsState structure with performance tracking
+- Implemented LRU cache with memory management and statistics
+- Added CachedResult and QueryPerformance tracking structures
+- Integrated results state with comprehensive debug logging
+- Updated enhanced_tui to use AppStateContainer for results and caching
+- Added performance metrics tracking (execution time, cache hit rate, memory usage)
+- Implemented smart cache eviction based on memory limits and LRU policy
+
+#### Implemented State:
 ```rust
 pub struct ResultsState {
-    current_results: Option<QueryResults>,
-    results_cache: LruCache<String, QueryResults>,
-    memory_usage: usize,
+    current_results: Option<QueryResponse>,
+    results_cache: HashMap<String, CachedResult>,
+    max_cache_size: usize,
+    total_memory_usage: usize,
+    memory_limit: usize,
     last_query: String,
     last_execution_time: Duration,
+    query_performance_history: VecDeque<QueryPerformance>,
+    from_cache: bool,
+    last_modified: Instant,
 }
 
-pub struct QueryResults {
-    columns: Vec<Column>,
-    rows: Vec<Row>,
-    metadata: ResultsMetadata,
+pub struct CachedResult {
+    response: QueryResponse,
+    cached_at: Instant,
+    access_count: u32,
+    last_access: Instant,
+    memory_size: usize,
+}
+
+pub struct QueryPerformance {
+    query: String,
+    execution_time: Duration,
+    row_count: usize,
+    from_cache: bool,
+    memory_usage: usize,
+    executed_at: Instant,
 }
 ```
 

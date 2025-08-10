@@ -1,4 +1,6 @@
+use crate::api_client::QueryResponse;
 use crate::buffer::{AppMode, BufferManager};
+use crate::debug_service::DebugLevel;
 use crate::help_widget::HelpWidget;
 use crate::history::CommandHistory;
 use crate::history_widget::HistoryWidget;
@@ -13,6 +15,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
+use std::time::{Duration, Instant};
 
 /// Platform type for key handling
 #[derive(Debug, Clone, PartialEq)]
@@ -704,6 +707,298 @@ impl WidgetStates {
     }
 }
 
+/// Centralized query results state management
+#[derive(Debug, Clone)]
+pub struct ResultsState {
+    /// Current query results for active buffer
+    pub current_results: Option<QueryResponse>,
+
+    /// Results cache with LRU behavior
+    pub results_cache: HashMap<String, CachedResult>,
+
+    /// Maximum cache size (number of queries)
+    pub max_cache_size: usize,
+
+    /// Memory usage tracking
+    pub total_memory_usage: usize,
+
+    /// Memory limit in bytes
+    pub memory_limit: usize,
+
+    /// Last query executed
+    pub last_query: String,
+
+    /// Last query execution time
+    pub last_execution_time: Duration,
+
+    /// Query history for performance analysis
+    pub query_performance_history: VecDeque<QueryPerformance>,
+
+    /// Whether results are from cache
+    pub from_cache: bool,
+
+    /// Last modification timestamp
+    pub last_modified: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedResult {
+    /// The actual query response
+    pub response: QueryResponse,
+
+    /// When this result was cached
+    pub cached_at: Instant,
+
+    /// How often this result was accessed (for LRU)
+    pub access_count: u32,
+
+    /// Last access time (for LRU)
+    pub last_access: Instant,
+
+    /// Memory size of this result
+    pub memory_size: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueryPerformance {
+    /// The query that was executed
+    pub query: String,
+
+    /// Execution time
+    pub execution_time: Duration,
+
+    /// Number of rows returned
+    pub row_count: usize,
+
+    /// Whether result came from cache
+    pub from_cache: bool,
+
+    /// Memory usage
+    pub memory_usage: usize,
+
+    /// Timestamp of execution
+    pub executed_at: Instant,
+}
+
+impl Default for ResultsState {
+    fn default() -> Self {
+        Self {
+            current_results: None,
+            results_cache: HashMap::new(),
+            max_cache_size: 100, // Cache up to 100 queries
+            total_memory_usage: 0,
+            memory_limit: 512 * 1024 * 1024, // 512MB limit
+            last_query: String::new(),
+            last_execution_time: Duration::from_millis(0),
+            query_performance_history: VecDeque::with_capacity(1000),
+            from_cache: false,
+            last_modified: Instant::now(),
+        }
+    }
+}
+
+impl ResultsState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set current query results with performance tracking
+    pub fn set_results(
+        &mut self,
+        results: QueryResponse,
+        execution_time: Duration,
+        from_cache: bool,
+    ) -> Result<()> {
+        let row_count = results.count;
+        let memory_usage = self.estimate_memory_usage(&results);
+
+        // Record performance metrics
+        let performance = QueryPerformance {
+            query: results.query.select.join(", "),
+            execution_time,
+            row_count,
+            from_cache,
+            memory_usage,
+            executed_at: Instant::now(),
+        };
+
+        // Add to performance history (keep last 1000)
+        self.query_performance_history.push_back(performance);
+        if self.query_performance_history.len() > 1000 {
+            self.query_performance_history.pop_front();
+        }
+
+        // Update state
+        self.current_results = Some(results);
+        self.last_execution_time = execution_time;
+        self.from_cache = from_cache;
+        self.last_modified = Instant::now();
+
+        Ok(())
+    }
+
+    /// Get current results
+    pub fn get_results(&self) -> Option<&QueryResponse> {
+        self.current_results.as_ref()
+    }
+
+    /// Cache query results with LRU management
+    pub fn cache_results(&mut self, query_key: String, results: QueryResponse) -> Result<()> {
+        let memory_usage = self.estimate_memory_usage(&results);
+
+        // Check memory limit
+        if self.total_memory_usage + memory_usage > self.memory_limit {
+            self.evict_to_fit(memory_usage)?;
+        }
+
+        // Create cached result
+        let cached_result = CachedResult {
+            response: results,
+            cached_at: Instant::now(),
+            access_count: 1,
+            last_access: Instant::now(),
+            memory_size: memory_usage,
+        };
+
+        // Remove oldest if at capacity
+        if self.results_cache.len() >= self.max_cache_size {
+            self.evict_oldest()?;
+        }
+
+        self.results_cache.insert(query_key, cached_result);
+        self.total_memory_usage += memory_usage;
+
+        Ok(())
+    }
+
+    /// Get cached results
+    pub fn get_cached_results(&mut self, query_key: &str) -> Option<&QueryResponse> {
+        if let Some(cached) = self.results_cache.get_mut(query_key) {
+            cached.access_count += 1;
+            cached.last_access = Instant::now();
+            Some(&cached.response)
+        } else {
+            None
+        }
+    }
+
+    /// Clear all cached results
+    pub fn clear_cache(&mut self) {
+        self.results_cache.clear();
+        self.total_memory_usage = 0;
+    }
+
+    /// Get cache statistics
+    pub fn get_cache_stats(&self) -> CacheStats {
+        CacheStats {
+            entry_count: self.results_cache.len(),
+            memory_usage: self.total_memory_usage,
+            memory_limit: self.memory_limit,
+            hit_rate: self.calculate_hit_rate(),
+        }
+    }
+
+    /// Get performance statistics
+    pub fn get_performance_stats(&self) -> PerformanceStats {
+        let total_queries = self.query_performance_history.len();
+        let cached_queries = self
+            .query_performance_history
+            .iter()
+            .filter(|q| q.from_cache)
+            .count();
+        let avg_execution_time = if total_queries > 0 {
+            self.query_performance_history
+                .iter()
+                .map(|q| q.execution_time.as_millis() as f64)
+                .sum::<f64>()
+                / total_queries as f64
+        } else {
+            0.0
+        };
+
+        PerformanceStats {
+            total_queries,
+            cached_queries,
+            cache_hit_rate: if total_queries > 0 {
+                cached_queries as f64 / total_queries as f64
+            } else {
+                0.0
+            },
+            average_execution_time_ms: avg_execution_time,
+            last_execution_time: self.last_execution_time,
+        }
+    }
+
+    // Private helper methods
+
+    fn estimate_memory_usage(&self, results: &QueryResponse) -> usize {
+        // Rough estimation of memory usage
+        let data_size = results
+            .data
+            .iter()
+            .map(|row| serde_json::to_string(row).unwrap_or_default().len())
+            .sum::<usize>();
+
+        // Add overhead for structure
+        data_size + std::mem::size_of::<QueryResponse>() + 1024 // Extra overhead
+    }
+
+    fn evict_to_fit(&mut self, needed_space: usize) -> Result<()> {
+        // Evict least recently used items until we have enough space
+        while self.total_memory_usage + needed_space > self.memory_limit
+            && !self.results_cache.is_empty()
+        {
+            self.evict_oldest()?;
+        }
+        Ok(())
+    }
+
+    fn evict_oldest(&mut self) -> Result<()> {
+        if let Some((key, cached)) = self
+            .results_cache
+            .iter()
+            .min_by_key(|(_, cached)| cached.last_access)
+            .map(|(k, v)| (k.clone(), v.memory_size))
+        {
+            self.results_cache.remove(&key);
+            self.total_memory_usage = self.total_memory_usage.saturating_sub(cached);
+        }
+        Ok(())
+    }
+
+    fn calculate_hit_rate(&self) -> f64 {
+        // Simple hit rate based on recent performance history
+        let total = self.query_performance_history.len();
+        if total == 0 {
+            return 0.0;
+        }
+
+        let hits = self
+            .query_performance_history
+            .iter()
+            .filter(|q| q.from_cache)
+            .count();
+        hits as f64 / total as f64
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheStats {
+    pub entry_count: usize,
+    pub memory_usage: usize,
+    pub memory_limit: usize,
+    pub hit_rate: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct PerformanceStats {
+    pub total_queries: usize,
+    pub cached_queries: usize,
+    pub cache_hit_rate: f64,
+    pub average_execution_time_ms: f64,
+    pub last_execution_time: Duration,
+}
+
 /// Results cache for storing query results
 #[derive(Debug, Clone)]
 pub struct ResultsCache {
@@ -762,7 +1057,10 @@ pub struct AppStateContainer {
     command_history: CommandHistory,
     key_press_history: RefCell<KeyPressHistory>,
 
-    // Results cache
+    // Results state (centralized query results management)
+    results: RefCell<ResultsState>,
+
+    // Legacy results cache (to be deprecated)
     results_cache: ResultsCache,
 
     // Mode stack for nested modes
@@ -797,6 +1095,7 @@ impl AppStateContainer {
             navigation: RefCell::new(NavigationState::new()),
             command_history,
             key_press_history: RefCell::new(KeyPressHistory::new(50)), // Keep last 50 key presses
+            results: RefCell::new(ResultsState::new()),
             results_cache: ResultsCache::new(100),
             mode_stack: vec![AppMode::Command],
             debug_enabled: false,
@@ -1445,6 +1744,165 @@ impl AppStateContainer {
 
     pub fn is_viewport_locked(&self) -> bool {
         self.navigation.borrow().viewport_lock
+    }
+
+    // Results state methods
+    /// Set query results with comprehensive logging and performance tracking
+    pub fn set_results(
+        &self,
+        results: QueryResponse,
+        execution_time: Duration,
+        from_cache: bool,
+    ) -> Result<()> {
+        let query_text = results.query.select.join(", ");
+        let row_count = results.count;
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.log(
+                "ResultsState",
+                DebugLevel::Info,
+                format!(
+                    "[RESULTS] Setting results: query='{}', rows={}, time={}ms, cached={}",
+                    query_text.chars().take(50).collect::<String>(),
+                    row_count,
+                    execution_time.as_millis(),
+                    from_cache
+                ),
+                Some("set_results".to_string()),
+            );
+        }
+
+        self.results
+            .borrow_mut()
+            .set_results(results, execution_time, from_cache)?;
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            let stats = self.results.borrow().get_performance_stats();
+            debug_service.log(
+                "ResultsState",
+                DebugLevel::Info,
+                format!(
+                    "[RESULTS] Performance stats: total_queries={}, cache_hit_rate={:.2}%, avg_time={:.2}ms",
+                    stats.total_queries,
+                    stats.cache_hit_rate * 100.0,
+                    stats.average_execution_time_ms
+                ),
+                Some("performance_stats".to_string()),
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Get current query results
+    pub fn get_results(&self) -> Option<QueryResponse> {
+        self.results.borrow().get_results().cloned()
+    }
+
+    /// Cache query results with logging
+    pub fn cache_results(&self, query_key: String, results: QueryResponse) -> Result<()> {
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.log(
+                "ResultsCache",
+                DebugLevel::Info,
+                format!(
+                    "[RESULTS] Caching results: key='{}', rows={}",
+                    query_key.chars().take(30).collect::<String>(),
+                    results.count
+                ),
+                Some("cache_results".to_string()),
+            );
+        }
+
+        let result = self
+            .results
+            .borrow_mut()
+            .cache_results(query_key.clone(), results);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            let cache_stats = self.results.borrow().get_cache_stats();
+            debug_service.log(
+                "ResultsCache",
+                DebugLevel::Info,
+                format!(
+                    "[RESULTS] Cache stats: entries={}, memory={}MB, hit_rate={:.2}%",
+                    cache_stats.entry_count,
+                    cache_stats.memory_usage / (1024 * 1024),
+                    cache_stats.hit_rate * 100.0
+                ),
+                Some("cache_stats".to_string()),
+            );
+        }
+
+        result
+    }
+
+    /// Get cached results with access tracking
+    pub fn get_cached_results(&self, query_key: &str) -> Option<QueryResponse> {
+        if let Some(result) = self.results.borrow_mut().get_cached_results(query_key) {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.log(
+                    "ResultsCache",
+                    DebugLevel::Trace,
+                    format!(
+                        "[RESULTS] Cache HIT for key: '{}'",
+                        query_key.chars().take(30).collect::<String>()
+                    ),
+                    Some("cache_hit".to_string()),
+                );
+            }
+            Some(result.clone())
+        } else {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.log(
+                    "ResultsCache",
+                    DebugLevel::Trace,
+                    format!(
+                        "[RESULTS] Cache MISS for key: '{}'",
+                        query_key.chars().take(30).collect::<String>()
+                    ),
+                    Some("cache_miss".to_string()),
+                );
+            }
+            None
+        }
+    }
+
+    /// Clear results cache
+    pub fn clear_results_cache(&self) {
+        let before_count = self.results.borrow().get_cache_stats().entry_count;
+        self.results.borrow_mut().clear_cache();
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.log(
+                "ResultsCache",
+                DebugLevel::Info,
+                format!("[RESULTS] Cache cleared: removed {} entries", before_count),
+                Some("clear_cache".to_string()),
+            );
+        }
+    }
+
+    /// Get comprehensive results statistics
+    pub fn get_results_stats(&self) -> (CacheStats, PerformanceStats) {
+        let results = self.results.borrow();
+        (results.get_cache_stats(), results.get_performance_stats())
+    }
+
+    /// Check if current results are from cache
+    pub fn is_results_from_cache(&self) -> bool {
+        self.results.borrow().from_cache
+    }
+
+    /// Get last query execution time
+    pub fn get_last_execution_time(&self) -> Duration {
+        self.results.borrow().last_execution_time
+    }
+
+    /// Get memory usage information
+    pub fn get_results_memory_usage(&self) -> (usize, usize) {
+        let cache_stats = self.results.borrow().get_cache_stats();
+        (cache_stats.memory_usage, cache_stats.memory_limit)
     }
 
     // Widget access

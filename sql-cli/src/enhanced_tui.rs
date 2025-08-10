@@ -2770,7 +2770,7 @@ impl EnhancedTuiApp {
                     true,
                     Some(duration.as_millis() as u64),
                     schema_columns,
-                    data_source,
+                    data_source.clone(),
                 );
 
                 // Add debug info about results
@@ -2787,6 +2787,22 @@ impl EnhancedTuiApp {
                     info!(target: "buffer", "Stored {} results in buffer {}", row_count, buffer_id);
                 }
                 self.buffer_mut().set_results(Some(response.clone())); // Keep for compatibility during migration
+
+                // Also update AppStateContainer with results and performance metrics
+                if let Some(ref state_container) = self.state_container {
+                    let from_cache = data_source.as_deref() == Some("cache");
+                    if let Err(e) =
+                        state_container.set_results(response.clone(), duration, from_cache)
+                    {
+                        warn!(target: "results", "Failed to update results in AppStateContainer: {}", e);
+                    }
+
+                    // Also cache results for future use
+                    let query_key = format!("{}:{}", query, self.buffer().get_table_name());
+                    if let Err(e) = state_container.cache_results(query_key, response.clone()) {
+                        warn!(target: "results", "Failed to cache results in AppStateContainer: {}", e);
+                    }
+                }
 
                 // Update parser with the FULL schema if we're in CSV/cache mode
                 // For CSV mode, get the complete schema from the CSV client, not from query results
@@ -4151,8 +4167,22 @@ impl EnhancedTuiApp {
                         // Update both the results and clear filtered_data to force regeneration
                         let mut new_results = results.clone();
                         new_results.data = sorted_data;
-                        self.buffer_mut().set_results(Some(new_results));
+                        self.buffer_mut().set_results(Some(new_results.clone()));
                         self.buffer_mut().set_filtered_data(None); // Force regeneration of string data
+
+                        // Also update AppStateContainer with sorted results
+                        if let Some(ref state_container) = self.state_container {
+                            // Sorting doesn't change execution time or cache status, so use existing values
+                            let last_execution_time = state_container.get_last_execution_time();
+                            let from_cache = state_container.is_results_from_cache();
+                            if let Err(e) = state_container.set_results(
+                                new_results,
+                                last_execution_time,
+                                from_cache,
+                            ) {
+                                warn!(target: "results", "Failed to update sorted results in AppStateContainer: {}", e);
+                            }
+                        }
                     }
                 }
             }
