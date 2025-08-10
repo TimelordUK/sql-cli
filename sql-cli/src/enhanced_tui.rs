@@ -2394,10 +2394,9 @@ impl EnhancedTuiApp {
                 // Update input for rendering
                 let pattern = self.buffer().get_fuzzy_filter_pattern();
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
-                // Re-apply filter in real-time
-                if !self.buffer().get_fuzzy_filter_pattern().is_empty() {
-                    self.apply_fuzzy_filter();
-                } else {
+                // Don't apply filter here - let the debouncer handle it
+                // Only clear if pattern is empty
+                if self.buffer().get_fuzzy_filter_pattern().is_empty() {
                     self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
                     self.buffer_mut().set_fuzzy_filter_active(false);
                 }
@@ -2411,8 +2410,8 @@ impl EnhancedTuiApp {
                 // Update input for rendering
                 let pattern = self.buffer().get_fuzzy_filter_pattern();
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
-                // Apply filter in real-time as user types
-                self.apply_fuzzy_filter();
+                // Don't apply filter here - let the debouncer handle it
+                // The search widget's debounced execute_search will call apply_fuzzy_filter()
             }
             _ => {}
         }
