@@ -8,9 +8,226 @@ use crate::stats_widget::StatsWidget;
 // use crate::debug_widget::DebugWidget;
 use crate::widget_traits::DebugInfoProvider;
 use anyhow::Result;
+use chrono::{DateTime, Local};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
+
+/// Platform type for key handling
+#[derive(Debug, Clone, PartialEq)]
+pub enum Platform {
+    Windows,
+    Linux,
+    MacOS,
+    Unknown,
+}
+
+impl Platform {
+    pub fn detect() -> Self {
+        if cfg!(target_os = "windows") {
+            Platform::Windows
+        } else if cfg!(target_os = "linux") {
+            Platform::Linux
+        } else if cfg!(target_os = "macos") {
+            Platform::MacOS
+        } else {
+            Platform::Unknown
+        }
+    }
+}
+
+/// Represents a single key press with all metadata
+#[derive(Debug, Clone)]
+pub struct KeyPressEntry {
+    /// The raw key event from crossterm
+    pub raw_event: KeyEvent,
+    /// Timestamp when the key was pressed
+    pub timestamp: DateTime<Local>,
+    /// The platform where the key was pressed
+    pub platform: Platform,
+    /// The interpreted action (if any) from the key dispatcher
+    pub interpreted_action: Option<String>,
+    /// The mode the app was in when the key was pressed
+    pub app_mode: AppMode,
+    /// Formatted display string for the key
+    pub display_string: String,
+}
+
+impl KeyPressEntry {
+    pub fn new(key: KeyEvent, mode: AppMode, action: Option<String>) -> Self {
+        let display_string = Self::format_key(&key);
+        Self {
+            raw_event: key,
+            timestamp: Local::now(),
+            platform: Platform::detect(),
+            interpreted_action: action,
+            app_mode: mode,
+            display_string,
+        }
+    }
+
+    /// Format a key event for display
+    fn format_key(key: &KeyEvent) -> String {
+        let mut result = String::new();
+
+        // Add modifiers
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            result.push_str("Ctrl+");
+        }
+        if key.modifiers.contains(KeyModifiers::ALT) {
+            result.push_str("Alt+");
+        }
+        if key.modifiers.contains(KeyModifiers::SHIFT) {
+            result.push_str("Shift+");
+        }
+
+        // Add key code
+        match key.code {
+            KeyCode::Char(c) => result.push(c),
+            KeyCode::Enter => result.push_str("Enter"),
+            KeyCode::Esc => result.push_str("Esc"),
+            KeyCode::Backspace => result.push_str("Backspace"),
+            KeyCode::Tab => result.push_str("Tab"),
+            KeyCode::Delete => result.push_str("Del"),
+            KeyCode::Insert => result.push_str("Ins"),
+            KeyCode::F(n) => result.push_str(&format!("F{}", n)),
+            KeyCode::Left => result.push_str("←"),
+            KeyCode::Right => result.push_str("→"),
+            KeyCode::Up => result.push_str("↑"),
+            KeyCode::Down => result.push_str("↓"),
+            KeyCode::Home => result.push_str("Home"),
+            KeyCode::End => result.push_str("End"),
+            KeyCode::PageUp => result.push_str("PgUp"),
+            KeyCode::PageDown => result.push_str("PgDn"),
+            _ => result.push_str("?"),
+        }
+
+        result
+    }
+
+    /// Get a detailed debug string for this key press
+    pub fn debug_string(&self) -> String {
+        let modifiers = if self.raw_event.modifiers.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", self.format_modifiers())
+        };
+
+        let action = self
+            .interpreted_action
+            .as_ref()
+            .map(|a| format!(" → {}", a))
+            .unwrap_or_default();
+
+        format!(
+            "[{}] {}{} [{:?}]{}",
+            self.timestamp.format("%H:%M:%S.%3f"),
+            self.display_string,
+            modifiers,
+            self.platform,
+            action
+        )
+    }
+
+    fn format_modifiers(&self) -> String {
+        let mut parts = Vec::new();
+        if self.raw_event.modifiers.contains(KeyModifiers::CONTROL) {
+            parts.push("Ctrl");
+        }
+        if self.raw_event.modifiers.contains(KeyModifiers::ALT) {
+            parts.push("Alt");
+        }
+        if self.raw_event.modifiers.contains(KeyModifiers::SHIFT) {
+            parts.push("Shift");
+        }
+        parts.join("+")
+    }
+}
+
+/// Manages key press history with a ring buffer
+#[derive(Debug, Clone)]
+pub struct KeyPressHistory {
+    /// Ring buffer of key presses
+    entries: VecDeque<KeyPressEntry>,
+    /// Maximum number of entries to keep
+    max_size: usize,
+}
+
+impl KeyPressHistory {
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            entries: VecDeque::with_capacity(max_size),
+            max_size,
+        }
+    }
+
+    /// Add a new key press to the history
+    pub fn add(&mut self, entry: KeyPressEntry) {
+        // Note: Logging is handled by AppStateContainer, not here
+
+        if self.entries.len() >= self.max_size {
+            self.entries.pop_front();
+        }
+        self.entries.push_back(entry);
+    }
+
+    /// Get all entries
+    pub fn entries(&self) -> &VecDeque<KeyPressEntry> {
+        &self.entries
+    }
+
+    /// Clear the history
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// Get formatted history for display
+    pub fn format_history(&self) -> String {
+        let mut output = String::new();
+        output.push_str("========== KEY PRESS HISTORY ==========\n");
+        output.push_str(&format!(
+            "(Most recent at bottom, last {} keys)\n",
+            self.max_size
+        ));
+
+        for entry in &self.entries {
+            output.push_str(&format!(
+                "[{}] {}",
+                entry.timestamp.format("%H:%M:%S.%3f"),
+                entry.display_string
+            ));
+
+            if !entry.raw_event.modifiers.is_empty() {
+                output.push_str(&format!(" ({})", entry.format_modifiers()));
+            }
+
+            output.push('\n');
+        }
+
+        output.push_str("========================================\n");
+        output
+    }
+
+    /// Get detailed debug history with platform info and actions
+    pub fn format_debug_history(&self) -> String {
+        let mut output = String::new();
+        output.push_str("========== DETAILED KEY HISTORY ==========\n");
+        output.push_str(&format!("Platform: {:?}\n", Platform::detect()));
+        output.push_str(&format!(
+            "(Most recent at bottom, last {} keys)\n",
+            self.max_size
+        ));
+
+        for entry in &self.entries {
+            output.push_str(&entry.debug_string());
+            output.push('\n');
+        }
+
+        output.push_str("==========================================\n");
+        output
+    }
+}
 
 /// Represents input state for command editing
 #[derive(Debug, Clone)]
@@ -30,7 +247,7 @@ impl InputState {
     }
 
     pub fn clear(&mut self) {
-        let old_text = self.text.clone();
+        let _old_text = self.text.clone();
         self.text.clear();
         self.cursor_position = 0;
         // Note: This is on InputState, so we don't have access to debug_service here
@@ -272,6 +489,7 @@ pub struct AppStateContainer {
 
     // History
     command_history: CommandHistory,
+    key_press_history: RefCell<KeyPressHistory>,
 
     // Results cache
     results_cache: ResultsCache,
@@ -305,6 +523,7 @@ impl AppStateContainer {
             column_stats: ColumnStatsState::new(),
             jump_to_row: JumpToRowState::new(),
             command_history,
+            key_press_history: RefCell::new(KeyPressHistory::new(50)), // Keep last 50 key presses
             results_cache: ResultsCache::new(100),
             mode_stack: vec![AppMode::Command],
             debug_enabled: false,
@@ -529,6 +748,85 @@ impl AppStateContainer {
         }
     }
 
+    // Key press management - uses interior mutability so it can be called through Arc
+    pub fn log_key_press(&self, key: KeyEvent, action: Option<String>) {
+        let mode = self.current_mode();
+        let entry = KeyPressEntry::new(key, mode.clone(), action.clone());
+
+        // Log to debug service with platform info
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            let platform_info = if entry.platform == Platform::Windows
+                && (key.code == KeyCode::Char('$') || key.code == KeyCode::Char('^'))
+                && key.modifiers.contains(KeyModifiers::SHIFT)
+            {
+                " [Windows: SHIFT modifier present]"
+            } else {
+                ""
+            };
+
+            debug_service.info(
+                "KeyPress",
+                format!(
+                    "Key: {:?}, Mode: {:?}, Action: {:?}, Platform: {:?}{}",
+                    key, mode, action, entry.platform, platform_info
+                ),
+            );
+        }
+
+        self.key_press_history.borrow_mut().add(entry);
+    }
+
+    pub fn clear_key_history(&self) {
+        self.key_press_history.borrow_mut().clear();
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info("AppStateContainer", "Key press history cleared".to_string());
+        }
+    }
+
+    /// Normalize a key event for platform-specific differences
+    /// This handles cases like Windows sending Shift+$ instead of just $
+    pub fn normalize_key(&self, key: KeyEvent) -> KeyEvent {
+        let platform = Platform::detect();
+
+        // On Windows, special characters like $ and ^ come with SHIFT modifier
+        // but the key dispatcher expects them without SHIFT
+        if platform == Platform::Windows {
+            match key.code {
+                KeyCode::Char('$')
+                | KeyCode::Char('^')
+                | KeyCode::Char('!')
+                | KeyCode::Char('@')
+                | KeyCode::Char('#')
+                | KeyCode::Char('%')
+                | KeyCode::Char('&')
+                | KeyCode::Char('*')
+                | KeyCode::Char('(')
+                | KeyCode::Char(')') => {
+                    // Remove SHIFT modifier for these characters on Windows
+                    let mut normalized_modifiers = key.modifiers;
+                    normalized_modifiers.remove(KeyModifiers::SHIFT);
+
+                    if let Some(ref debug_service) = *self.debug_service.borrow() {
+                        if normalized_modifiers != key.modifiers {
+                            debug_service.info(
+                                "KeyNormalize",
+                                format!(
+                                    "Windows key normalization: {:?} with {:?} -> {:?}",
+                                    key.code, key.modifiers, normalized_modifiers
+                                ),
+                            );
+                        }
+                    }
+
+                    KeyEvent::new(key.code, normalized_modifiers)
+                }
+                _ => key,
+            }
+        } else {
+            key
+        }
+    }
+
     /// Generate comprehensive debug dump for F5
     pub fn debug_dump(&self) -> String {
         let mut dump = String::new();
@@ -642,7 +940,7 @@ impl AppStateContainer {
         ));
         // TODO: Add buffer count when method is available
         // dump.push_str(&format!("  Total Buffers: {}\n", self.buffers.count()));
-        if let Some(buffer) = self.current_buffer() {
+        if let Some(_buffer) = self.current_buffer() {
             // TODO: Add buffer mode and results when methods are available
             // dump.push_str(&format!("  Buffer Mode: {:?}\n", buffer.get_mode()));
             // if let Some(results) = buffer.get_results() {
@@ -675,6 +973,21 @@ impl AppStateContainer {
             "  Total Commands: {}\n",
             self.command_history.get_all().len()
         ));
+        dump.push_str("\n");
+
+        // Key press history
+        dump.push_str(&self.key_press_history.borrow().format_history());
+        dump.push_str("\n");
+
+        // Platform-specific key information
+        dump.push_str("PLATFORM INFO:\n");
+        dump.push_str(&format!("  Platform: {:?}\n", Platform::detect()));
+        dump.push_str("  Key Normalization: ");
+        if Platform::detect() == Platform::Windows {
+            dump.push_str("ACTIVE (Windows special chars)\n");
+        } else {
+            dump.push_str("INACTIVE\n");
+        }
         dump.push_str("\n");
 
         dump.push_str("=== END DEBUG DUMP ===\n");
