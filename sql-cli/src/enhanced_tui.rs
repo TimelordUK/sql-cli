@@ -44,6 +44,7 @@ use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
 use sql_cli::key_dispatcher::KeyDispatcher;
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
 use sql_cli::search_modes_widget::{SearchMode, SearchModesAction, SearchModesWidget};
+use sql_cli::service_container::ServiceContainer;
 use sql_cli::stats_widget::{StatsAction, StatsWidget};
 use sql_cli::text_navigation::{TextEditor, TextNavigator};
 use sql_cli::where_ast::format_where_ast;
@@ -123,7 +124,9 @@ struct HistoryState {
 
 pub struct EnhancedTuiApp {
     // State container - will gradually take over all state management
-    state_container: Option<AppStateContainer>,
+    state_container: Option<std::sync::Arc<AppStateContainer>>,
+    // Service container for dependency injection
+    service_container: Option<ServiceContainer>,
 
     api_client: ApiClient,
     input: Input,
@@ -188,8 +191,8 @@ impl EnhancedTuiApp {
 
     /// Check if help is visible (uses state_container if available, falls back to local field)
     fn is_help_visible(&self) -> bool {
-        if let Some(ref container) = self.state_container {
-            container.is_help_visible()
+        if let Some(ref container_arc) = self.state_container {
+            container_arc.is_help_visible()
         } else {
             self.show_help
         }
@@ -197,20 +200,16 @@ impl EnhancedTuiApp {
 
     /// Toggle help visibility (uses state_container if available, falls back to local field)
     fn toggle_help(&mut self) {
-        if let Some(ref mut container) = self.state_container {
-            container.toggle_help();
-        } else {
-            self.show_help = !self.show_help;
-        }
+        // TODO: Will need Arc<Mutex<>> or interior mutability to modify through Arc
+        // For now, just use local field
+        self.show_help = !self.show_help;
     }
 
     /// Set help visibility (uses state_container if available, falls back to local field)
     fn set_help_visible(&mut self, visible: bool) {
-        if let Some(ref mut container) = self.state_container {
-            container.set_help_visible(visible);
-        } else {
-            self.show_help = visible;
-        }
+        // TODO: Will need Arc<Mutex<>> or interior mutability to modify through Arc
+        // For now, just use local field
+        self.show_help = visible;
     }
 
     // --- Buffer Compatibility Layer ---
@@ -412,11 +411,27 @@ impl EnhancedTuiApp {
         container_buffer.set_show_row_numbers(config.display.show_row_numbers);
         container_buffer_manager.add_buffer(container_buffer);
 
-        // Initialize state container
-        let state_container = AppStateContainer::new(container_buffer_manager).ok();
+        // Initialize state container as Arc
+        let state_container = AppStateContainer::new(container_buffer_manager)
+            .ok()
+            .map(std::sync::Arc::new);
+
+        // Initialize service container and help widget
+        let (service_container, mut help_widget) = if let Some(ref state_arc) = state_container {
+            let services = ServiceContainer::new(state_arc.clone());
+
+            // Create help widget and set services
+            let mut widget = HelpWidget::new();
+            widget.set_services(services.clone_for_widget());
+
+            (Some(services), widget)
+        } else {
+            (None, HelpWidget::new())
+        };
 
         Self {
             state_container,
+            service_container,
             api_client: ApiClient::new(api_url),
             input: Input::default(),
             cursor_manager: CursorManager::new(),
@@ -467,7 +482,7 @@ impl EnhancedTuiApp {
             debug_widget: DebugWidget::new(),
             editor_widget: EditorWidget::new(),
             stats_widget: StatsWidget::new(),
-            help_widget: HelpWidget::new(),
+            help_widget,
             search_modes_widget: SearchModesWidget::new(),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
@@ -1278,8 +1293,11 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_scroll_offset(last_offset);
             }
             KeyCode::F(5) => {
-                // Use the unified debug handler
-                self.toggle_debug_mode();
+                // Don't handle F5 here if we're in Help mode - let the help widget handle it
+                if self.buffer().get_mode() != AppMode::Help {
+                    // Use the unified debug handler
+                    self.toggle_debug_mode();
+                }
             }
             KeyCode::F(6) => {
                 // Pretty print query view
