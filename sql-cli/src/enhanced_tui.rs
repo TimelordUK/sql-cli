@@ -910,14 +910,40 @@ impl EnhancedTuiApp {
     }
 
     fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // Normalize the key for platform differences
+        let normalized_key = if let Some(ref state_container) = self.state_container {
+            // First normalize the key for platform differences
+            let normalized = state_container.normalize_key(key);
+
+            // Get the action that will be performed (if any)
+            let action = self
+                .key_dispatcher
+                .get_command_action(&normalized)
+                .map(|s| s.to_string());
+
+            // Log the key press (mutable borrow needed)
+            if let Some(ref mut state_container) = self.state_container {
+                // Log both the original and normalized key if different
+                if normalized != key {
+                    state_container
+                        .log_key_press(key, Some(format!("normalized to {:?}", normalized)));
+                }
+                state_container.log_key_press(normalized, action);
+            }
+
+            normalized
+        } else {
+            key
+        };
+
         // NEW: Try editor widget first for high-level actions
         let key_dispatcher = self.key_dispatcher.clone();
         // Handle editor widget actions by splitting the borrow
         let editor_result = if let Some(buffer) = self.buffer_manager.current_mut() {
             self.editor_widget
-                .handle_key(key.clone(), &key_dispatcher, buffer)?
+                .handle_key(normalized_key.clone(), &key_dispatcher, buffer)?
         } else {
-            EditorAction::PassToMainApp(key.clone())
+            EditorAction::PassToMainApp(normalized_key.clone())
         };
 
         match editor_result {
@@ -1460,6 +1486,32 @@ impl EnhancedTuiApp {
             key, self.selection_mode
         );
 
+        // Normalize the key for platform differences
+        let normalized_key = if let Some(ref state_container) = self.state_container {
+            // First normalize the key for platform differences
+            let normalized = state_container.normalize_key(key);
+
+            // Get the action that will be performed (if any)
+            let action = self
+                .key_dispatcher
+                .get_results_action(&normalized)
+                .map(|s| s.to_string());
+
+            // Log the key press (mutable borrow needed)
+            if let Some(ref mut state_container) = self.state_container {
+                // Log both the original and normalized key if different
+                if normalized != key {
+                    state_container
+                        .log_key_press(key, Some(format!("normalized to {:?}", normalized)));
+                }
+                state_container.log_key_press(normalized, action.clone());
+            }
+
+            normalized
+        } else {
+            key
+        };
+
         // Debug uppercase G specifically
         if matches!(key.code, KeyCode::Char('G')) {
             debug!("Detected uppercase G key press!");
@@ -1468,9 +1520,9 @@ impl EnhancedTuiApp {
         // In cell mode, skip chord handler for 'y' key - handle it directly
         // Also skip uppercase single-key actions as they're not chords
         let should_skip_chord = (matches!(self.selection_mode, SelectionMode::Cell)
-            && matches!(key.code, KeyCode::Char('y')))
+            && matches!(normalized_key.code, KeyCode::Char('y')))
             || matches!(
-                key.code,
+                normalized_key.code,
                 KeyCode::Char('G')
                     | KeyCode::Char('C')
                     | KeyCode::Char('F')
@@ -1480,13 +1532,13 @@ impl EnhancedTuiApp {
             );
 
         let chord_result = if should_skip_chord {
-            debug!("Skipping chord handler for key {:?}", key.code);
+            debug!("Skipping chord handler for key {:?}", normalized_key.code);
             // Still log the key press even when skipping chord handler
-            self.key_chord_handler.log_key_press(&key);
-            ChordResult::SingleKey(key.clone())
+            self.key_chord_handler.log_key_press(&normalized_key);
+            ChordResult::SingleKey(normalized_key.clone())
         } else {
             // Process key through chord handler
-            self.key_chord_handler.process_key(key.clone())
+            self.key_chord_handler.process_key(normalized_key.clone())
         };
 
         // Handle chord results
@@ -1531,8 +1583,11 @@ impl EnhancedTuiApp {
         }
 
         // Use dispatcher to get action first
-        if let Some(action) = self.key_dispatcher.get_results_action(&key) {
-            debug!("Dispatcher returned action '{}' for key {:?}", action, key);
+        if let Some(action) = self.key_dispatcher.get_results_action(&normalized_key) {
+            debug!(
+                "Dispatcher returned action '{}' for key {:?}",
+                action, normalized_key
+            );
             match action {
                 "quit" => return Ok(true),
                 "exit_results_mode" => {
