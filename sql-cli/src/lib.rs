@@ -13,6 +13,7 @@ pub mod datatable;
 pub mod datatable_buffer;
 pub mod datatable_loaders;
 pub mod datatable_view;
+pub mod debouncer;
 pub mod debug_info;
 pub mod debug_widget;
 pub mod dynamic_schema;
@@ -29,12 +30,14 @@ pub mod modern_tui;
 pub mod parser;
 pub mod recursive_parser;
 pub mod schema_config;
+pub mod search_modes_widget;
 pub mod sql_highlighter;
 pub mod state_manager;
 pub mod stats_widget;
 pub mod virtual_table;
 pub mod where_ast;
 pub mod where_parser;
+pub mod widget_traits;
 pub mod yank_manager;
 
 // New refactored modules for enhanced_tui decomposition

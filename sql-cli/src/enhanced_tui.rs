@@ -41,10 +41,12 @@ use sql_cli::hybrid_parser::HybridParser;
 use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
 use sql_cli::key_dispatcher::KeyDispatcher;
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
+use sql_cli::search_modes_widget::{SearchMode, SearchModesAction, SearchModesWidget};
 use sql_cli::stats_widget::{StatsAction, StatsWidget};
 use sql_cli::text_navigation::{TextEditor, TextNavigator};
 use sql_cli::where_ast::format_where_ast;
 use sql_cli::where_parser::WhereParser;
+use sql_cli::widget_traits::DebugInfoProvider;
 use sql_cli::yank_manager::YankManager;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -135,6 +137,7 @@ pub struct EnhancedTuiApp {
     sort_state: SortState,
     filter_state: FilterState,
     search_state: SearchState,
+    column_search_state: ColumnSearchState,
     completion_state: CompletionState,
     history_state: HistoryState,
     command_history: CommandHistory,
@@ -144,6 +147,7 @@ pub struct EnhancedTuiApp {
     debug_widget: DebugWidget,
     editor_widget: EditorWidget,
     stats_widget: StatsWidget,
+    search_modes_widget: SearchModesWidget,
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
     help_scroll: u16,                   // Scroll offset for help page
@@ -234,6 +238,15 @@ impl EnhancedTuiApp {
 
     // Helper to set input text through buffer and sync input field
     fn set_input_text(&mut self, text: String) {
+        let old_text = self.buffer().get_input_text();
+        let mode = self.buffer().get_mode();
+
+        // Log every input text change with context
+        info!(target: "input", "SET_INPUT_TEXT: '{}' -> '{}' (mode: {:?})", 
+              if old_text.len() > 50 { format!("{}...", &old_text[..50]) } else { old_text.clone() },
+              if text.len() > 50 { format!("{}...", &text[..50]) } else { text.clone() },
+              mode);
+
         self.buffer_mut().set_input_text(text.clone());
         // Also sync cursor position to end of text
         self.buffer_mut().set_input_cursor_position(text.len());
@@ -245,6 +258,18 @@ impl EnhancedTuiApp {
 
     // Helper to set input text with specific cursor position
     fn set_input_text_with_cursor(&mut self, text: String, cursor_pos: usize) {
+        let old_text = self.buffer().get_input_text();
+        let old_cursor = self.buffer().get_input_cursor_position();
+        let mode = self.buffer().get_mode();
+
+        // Log every input text change with cursor position
+        info!(target: "input", "SET_INPUT_TEXT_WITH_CURSOR: '{}' (cursor {}) -> '{}' (cursor {}) (mode: {:?})", 
+              if old_text.len() > 50 { format!("{}...", &old_text[..50]) } else { old_text.clone() },
+              old_cursor,
+              if text.len() > 50 { format!("{}...", &text[..50]) } else { text.clone() },
+              cursor_pos,
+              mode);
+
         self.buffer_mut().set_input_text(text.clone());
         self.buffer_mut().set_input_cursor_position(cursor_pos);
 
@@ -362,6 +387,11 @@ impl EnhancedTuiApp {
                 matches: Vec::new(),
                 match_index: 0,
             },
+            column_search_state: ColumnSearchState {
+                pattern: String::new(),
+                matching_columns: Vec::new(),
+                current_match: 0,
+            },
             completion_state: CompletionState {
                 suggestions: Vec::new(),
                 current_index: 0,
@@ -380,6 +410,7 @@ impl EnhancedTuiApp {
             debug_widget: DebugWidget::new(),
             editor_widget: EditorWidget::new(),
             stats_widget: StatsWidget::new(),
+            search_modes_widget: SearchModesWidget::new(),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             help_scroll: 0,
@@ -642,40 +673,61 @@ impl EnhancedTuiApp {
         terminal.draw(|f| self.ui(f))?;
 
         loop {
-            // Use blocking read for better performance - only process when there's an actual event
-            match event::read()? {
-                Event::Key(key) => {
-                    // On Windows, filter out key release events - only handle key press
-                    // This prevents double-triggering of toggles
-                    if key.kind != crossterm::event::KeyEventKind::Press {
-                        continue;
+            // Check for debounced actions from search modes widget
+            if self.search_modes_widget.is_active() {
+                if let Some(action) = self.search_modes_widget.check_debounce() {
+                    match action {
+                        SearchModesAction::ExecuteDebounced(mode, pattern) => {
+                            debug!(target: "search", "Processing ExecuteDebounced action, current_mode={:?}", self.buffer().get_mode());
+                            self.execute_search_action(mode, pattern);
+                            debug!(target: "search", "After execute_search_action, current_mode={:?}", self.buffer().get_mode());
+                        }
+                        _ => {}
                     }
-
-                    let should_exit = match self.buffer().get_mode() {
-                        AppMode::Command => self.handle_command_input(key)?,
-                        AppMode::Results => self.handle_results_input(key)?,
-                        AppMode::Search => self.handle_search_input(key)?,
-                        AppMode::Filter => self.handle_filter_input(key)?,
-                        AppMode::FuzzyFilter => self.handle_fuzzy_filter_input(key)?,
-                        AppMode::ColumnSearch => self.handle_column_search_input(key)?,
-                        AppMode::Help => self.handle_help_input(key)?,
-                        AppMode::History => self.handle_history_input(key)?,
-                        AppMode::Debug => self.handle_debug_input(key)?,
-                        AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
-                        AppMode::CacheList => self.handle_cache_list_input(key)?,
-                        AppMode::JumpToRow => self.handle_jump_to_row_input(key)?,
-                        AppMode::ColumnStats => self.handle_column_stats_input(key)?,
-                    };
-
-                    if should_exit {
-                        break;
-                    }
-
-                    // Only redraw after handling a key event
-                    terminal.draw(|f| self.ui(f))?;
                 }
-                _ => {
-                    // Ignore other events (mouse, resize, etc.) to reduce CPU
+            }
+
+            // Use poll with timeout to allow checking for debounced actions
+            if event::poll(std::time::Duration::from_millis(50))? {
+                match event::read()? {
+                    Event::Key(key) => {
+                        // On Windows, filter out key release events - only handle key press
+                        // This prevents double-triggering of toggles
+                        if key.kind != crossterm::event::KeyEventKind::Press {
+                            continue;
+                        }
+
+                        let should_exit = match self.buffer().get_mode() {
+                            AppMode::Command => self.handle_command_input(key)?,
+                            AppMode::Results => self.handle_results_input(key)?,
+                            AppMode::Search
+                            | AppMode::Filter
+                            | AppMode::FuzzyFilter
+                            | AppMode::ColumnSearch => self.handle_search_modes_input(key)?,
+                            AppMode::Help => self.handle_help_input(key)?,
+                            AppMode::History => self.handle_history_input(key)?,
+                            AppMode::Debug => self.handle_debug_input(key)?,
+                            AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
+                            AppMode::CacheList => self.handle_cache_list_input(key)?,
+                            AppMode::JumpToRow => self.handle_jump_to_row_input(key)?,
+                            AppMode::ColumnStats => self.handle_column_stats_input(key)?,
+                        };
+
+                        if should_exit {
+                            break;
+                        }
+
+                        // Only redraw after handling a key event
+                        terminal.draw(|f| self.ui(f))?;
+                    }
+                    _ => {
+                        // Ignore other events (mouse, resize, etc.) to reduce CPU
+                    }
+                }
+            } else {
+                // No event available, but still redraw if we have pending debounced actions
+                if self.search_modes_widget.is_active() {
+                    terminal.draw(|f| self.ui(f))?;
                 }
             }
         }
@@ -1169,123 +1221,8 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_scroll_offset(last_offset);
             }
             KeyCode::F(5) => {
-                // Generate full debug information
-                self.debug_current_buffer();
-
-                let cursor_pos = self.get_input_cursor();
-                let visual_cursor = self.get_visual_cursor().1;
-                let query = self.get_input_text();
-
-                // Collect all needed data before mutable borrow
-                let buffer_names: Vec<String> = self
-                    .buffer_manager
-                    .all_buffers()
-                    .iter()
-                    .map(|b| b.get_name())
-                    .collect();
-                let buffer_count = self.buffer_manager.all_buffers().len();
-                let buffer_index = self.buffer_manager.current_index();
-
-                // Generate debug info directly without buffer reference
-                let mut debug_info = self
-                    .hybrid_parser
-                    .get_detailed_debug_info(&query, cursor_pos);
-
-                // Add input state
-                debug_info.push_str(&format!(
-                    "\n========== INPUT STATE ==========\n\
-                    Input Value Length: {}\n\
-                    Cursor Position: {}\n\
-                    Visual Cursor: {}\n\
-                    Input Mode: Command\n",
-                    query.len(),
-                    cursor_pos,
-                    visual_cursor
-                ));
-
-                // Add buffer state info
-                debug_info.push_str(&format!(
-                    "\n========== BUFFER MANAGER STATE ==========\n\
-                    Number of Buffers: {}\n\
-                    Current Buffer Index: {}\n\
-                    Buffer Names: {}\n",
-                    buffer_count,
-                    buffer_index,
-                    buffer_names.join(", ")
-                ));
-
-                // Add WHERE clause AST if needed
-                if query.to_lowercase().contains(" where ") {
-                    let where_ast_info = match self.parse_where_clause_ast(&query) {
-                        Ok(ast_str) => ast_str,
-                        Err(e) => format!("\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {}\n", e)
-                    };
-                    debug_info.push_str(&where_ast_info);
-                }
-
-                // Add key chord handler debug info
-                debug_info.push_str("\n");
-                debug_info.push_str(&self.key_chord_handler.format_debug_info());
-                debug_info.push_str("========================================\n");
-
-                // Add trace logs from ring buffer
-                debug_info.push_str("\n========== TRACE LOGS ==========\n");
-                debug_info.push_str("(Most recent at bottom, last 100 entries)\n");
-                if let Some(ref log_buffer) = self.log_buffer {
-                    let recent_logs = log_buffer.get_recent(100);
-                    for entry in recent_logs {
-                        debug_info.push_str(&entry.format_for_display());
-                        debug_info.push('\n');
-                    }
-                    debug_info.push_str(&format!("Total log entries: {}\n", log_buffer.len()));
-                } else {
-                    debug_info.push_str("Log buffer not initialized\n");
-                }
-                debug_info.push_str("================================\n");
-
-                // Set the final content in debug widget
-                self.debug_widget.set_content(debug_info.clone());
-
-                // Try to copy to clipboard
-                match arboard::Clipboard::new() {
-                    Ok(mut clipboard) => match clipboard.set_text(&debug_info) {
-                        Ok(_) => {
-                            // Verify clipboard write by reading it back
-                            match clipboard.get_text() {
-                                Ok(clipboard_content) => {
-                                    let clipboard_len = clipboard_content.len();
-                                    if clipboard_content == debug_info {
-                                        self.buffer_mut().set_status_message(format!(
-                                            "DEBUG INFO copied to clipboard ({} chars)!",
-                                            clipboard_len
-                                        ));
-                                    } else {
-                                        self.buffer_mut().set_status_message(format!(
-                                            "Clipboard verification failed! Expected {} chars, got {} chars",
-                                            debug_info.len(), clipboard_len
-                                        ));
-                                    }
-                                }
-                                Err(e) => {
-                                    self.buffer_mut().set_status_message(format!(
-                                        "Debug info copied but verification failed: {}",
-                                        e
-                                    ));
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            self.buffer_mut()
-                                .set_status_message(format!("Clipboard error: {}", e));
-                        }
-                    },
-                    Err(e) => {
-                        self.buffer_mut()
-                            .set_status_message(format!("Can't access clipboard: {}", e));
-                    }
-                }
-
-                self.buffer_mut().set_mode(AppMode::Debug);
+                // Use the unified debug handler
+                self.toggle_debug_mode();
             }
             KeyCode::F(6) => {
                 // Pretty print query view
@@ -1410,6 +1347,26 @@ impl EnhancedTuiApp {
                         let scroll_offset = self.buffer().get_scroll_offset();
                         self.buffer_mut().set_last_scroll_offset(scroll_offset);
                     }
+
+                    // Restore the last executed query to input_text for editing
+                    let last_query = self.buffer().get_last_query();
+                    let current_input = self.buffer().get_input_text();
+                    debug!(target: "mode", "Exiting Results mode: current input_text='{}', last_query='{}'", current_input, last_query);
+
+                    if !last_query.is_empty() {
+                        debug!(target: "buffer", "Restoring last_query to input_text: '{}'", last_query);
+                        self.buffer_mut().set_input_text(last_query.clone());
+                        self.buffer_mut()
+                            .set_input_cursor_position(last_query.len());
+                        self.input =
+                            tui_input::Input::new(last_query.clone()).with_cursor(last_query.len());
+                    } else if !current_input.is_empty() {
+                        debug!(target: "buffer", "No last_query but input_text has content, keeping: '{}'", current_input);
+                    } else {
+                        debug!(target: "buffer", "No last_query to restore when exiting Results mode");
+                    }
+
+                    debug!(target: "mode", "Switching from Results to Command mode");
                     self.buffer_mut().set_mode(AppMode::Command);
                     self.table_state.select(None);
                 }
@@ -1427,48 +1384,16 @@ impl EnhancedTuiApp {
                 "page_up" => self.page_up(),
                 "page_down" => self.page_down(),
                 "start_search" => {
-                    // Save SQL query before switching modes
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                    }
-
-                    self.buffer_mut().set_mode(AppMode::Search);
-                    self.buffer_mut().set_search_pattern(String::new());
-
-                    // Only clear the UI input field, not the buffer's stored text
-                    self.input = tui_input::Input::default();
+                    self.enter_search_mode(SearchMode::Search);
                 }
                 "start_column_search" => {
-                    // Save current SQL query before switching modes
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                    }
-
-                    self.buffer_mut().set_mode(AppMode::ColumnSearch);
-                    self.buffer_mut().set_column_search_pattern(String::new());
-                    self.buffer_mut().set_column_search_matches(Vec::new());
-                    self.buffer_mut().set_column_search_current_match(0);
-
-                    // Only clear the UI input field, not the buffer's stored text
-                    self.input = tui_input::Input::default();
+                    self.enter_search_mode(SearchMode::ColumnSearch);
                 }
                 "start_filter" => {
-                    self.buffer_mut().set_mode(AppMode::Filter);
-                    self.get_filter_state_mut().pattern.clear();
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                    }
-                    self.clear_input();
+                    self.enter_search_mode(SearchMode::Filter);
                 }
                 "start_fuzzy_filter" => {
-                    self.buffer_mut().set_mode(AppMode::FuzzyFilter);
-                    self.buffer_mut().set_fuzzy_filter_pattern(String::new());
-                    self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
-                    self.buffer_mut().set_fuzzy_filter_active(false);
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                    }
-                    self.clear_input();
+                    self.enter_search_mode(SearchMode::FuzzyFilter);
                 }
                 "sort_by_column" => self.sort_by_column(self.buffer().get_current_column()),
                 "show_column_stats" => self.calculate_column_statistics(),
@@ -1529,43 +1454,8 @@ impl EnhancedTuiApp {
                     }
                 }
                 "toggle_debug" => {
-                    // Debug mode - show buffer state and parser information
-                    let cursor_pos = self.get_input_cursor();
-                    let visual_cursor = self.get_visual_cursor().1; // Get column position for single-line
-                    let query = self.get_input_text();
-
-                    // Create debug info showing buffer state
-                    let mut debug_info = String::new();
-                    debug_info.push_str("=== Debug Information (Results Mode) ===\n\n");
-
-                    // Add current query info
-                    debug_info.push_str("Current Query:\n");
-                    debug_info.push_str(&format!("  Query: '{}'\n", query));
-                    debug_info.push_str(&format!("  Cursor Position: {}\n", cursor_pos));
-                    debug_info.push_str(&format!("  Visual Cursor: {}\n", visual_cursor));
-                    debug_info.push_str("\n");
-
-                    // Add buffer manager info
-                    debug_info.push_str("=== Buffer Manager ===\n");
-                    debug_info.push_str(&format!(
-                        "  Total Buffers: {}\n",
-                        self.buffer_manager.all_buffers().len()
-                    ));
-                    debug_info.push_str(&format!(
-                        "  Current Buffer Index: {}\n",
-                        self.buffer_manager.current_index()
-                    ));
-
-                    // Add current buffer debug dump
-                    if let Some(buffer) = self.buffer_manager.current() {
-                        debug_info.push_str("\n=== Current Buffer State ===\n");
-                        debug_info.push_str(&buffer.debug_dump());
-                    }
-
-                    self.debug_widget.set_content(debug_info);
-                    self.buffer_mut().set_mode(AppMode::Debug);
-                    self.buffer_mut()
-                        .set_status_message("Debug mode - Press 'q' or ESC to return".to_string());
+                    // Use the unified debug handler
+                    self.toggle_debug_mode();
                 }
                 "toggle_case_insensitive" => {
                     // Toggle case-insensitive string comparisons
@@ -1619,34 +1509,8 @@ impl EnhancedTuiApp {
             {
                 self.page_up();
             }
-            // Search functionality
-            KeyCode::Char('/') => {
-                // Save SQL query before switching modes
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    buffer.save_state_for_undo();
-                }
-
-                self.buffer_mut().set_mode(AppMode::Search);
-                self.buffer_mut().set_search_pattern(String::new());
-
-                // Only clear the UI input field, not the buffer's stored text
-                self.input = tui_input::Input::default();
-            }
-            // Column navigation/search functionality (backslash like vim reverse search)
-            KeyCode::Char('\\') => {
-                // Save current SQL query before switching modes
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    buffer.save_state_for_undo();
-                }
-
-                self.buffer_mut().set_mode(AppMode::ColumnSearch);
-                self.buffer_mut().set_column_search_pattern(String::new());
-                self.buffer_mut().set_column_search_matches(Vec::new());
-                self.buffer_mut().set_column_search_current_match(0);
-
-                // Only clear the UI input field, not the buffer's stored text
-                self.input = tui_input::Input::default();
-            }
+            // Search functionality is handled by dispatcher above
+            // Removed duplicate handlers for search keys (/, \)
             KeyCode::Char('n') => {
                 self.next_search_match();
             }
@@ -1668,31 +1532,8 @@ impl EnhancedTuiApp {
                     self.calculate_optimal_column_widths();
                 }
             }
-            // Regex filter functionality (uppercase F)
-            KeyCode::Char('F') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.buffer_mut().set_mode(AppMode::Filter);
-                self.get_filter_state_mut().pattern.clear();
-                // Save SQL query and use temporary input for filter display
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    buffer.save_state_for_undo();
-                }
-                self.clear_input();
-            }
-            // Fuzzy filter functionality (lowercase f)
-            KeyCode::Char('f')
-                if !key.modifiers.contains(KeyModifiers::ALT)
-                    && !key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                self.buffer_mut().set_mode(AppMode::FuzzyFilter);
-                self.buffer_mut().set_fuzzy_filter_pattern(String::new());
-                self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
-                self.buffer_mut().set_fuzzy_filter_active(false); // Clear active state when entering mode
-                                                                  // Save SQL query and use temporary input for fuzzy filter display
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    buffer.save_state_for_undo();
-                }
-                self.clear_input();
-            }
+            // Filter functionality is handled by dispatcher above
+            // Removed duplicate handlers for filter keys (F, f)
             // Sort functionality (lowercase s)
             KeyCode::Char('s')
                 if !key.modifiers.contains(KeyModifiers::CONTROL)
@@ -1752,6 +1593,339 @@ impl EnhancedTuiApp {
                 // Other keys handled normally
             }
         }
+        Ok(false)
+    }
+
+    fn execute_search_action(&mut self, mode: SearchMode, pattern: String) {
+        debug!(target: "search", "execute_search_action called: mode={:?}, pattern='{}', current_app_mode={:?}", mode, pattern, self.buffer().get_mode());
+        match mode {
+            SearchMode::Search => {
+                debug!(target: "search", "Executing search with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
+                debug!(target: "search", "Search: current results count={}", 
+                       self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
+                self.buffer_mut().set_search_pattern(pattern);
+                self.perform_search();
+                debug!(target: "search", "After perform_search, app_mode={:?}, matches_found={}", 
+                       self.buffer().get_mode(),
+                       self.search_state.matches.len());
+            }
+            SearchMode::Filter => {
+                debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
+                debug!(target: "search", "Filter: case_insensitive={}, current results count={}", 
+                       self.buffer().is_case_insensitive(),
+                       self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
+                self.buffer_mut().set_filter_pattern(pattern.clone());
+                self.filter_state.pattern = pattern;
+                self.apply_filter();
+                debug!(target: "search", "After apply_filter, app_mode={:?}, filtered_count={}", 
+                       self.buffer().get_mode(),
+                       self.buffer().get_filtered_data().map(|d| d.len()).unwrap_or(0));
+            }
+            SearchMode::FuzzyFilter => {
+                debug!(target: "search", "Executing fuzzy filter with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
+                debug!(target: "search", "FuzzyFilter: current results count={}", 
+                       self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
+                self.buffer_mut().set_fuzzy_filter_pattern(pattern);
+                self.apply_fuzzy_filter();
+                let indices_count = self.buffer().get_fuzzy_filter_indices().len();
+                debug!(target: "search", "After apply_fuzzy_filter, app_mode={:?}, matched_indices={}", 
+                       self.buffer().get_mode(), indices_count);
+            }
+            SearchMode::ColumnSearch => {
+                debug!(target: "search", "Executing column search with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
+                self.buffer_mut().set_column_search_pattern(pattern.clone());
+                self.column_search_state.pattern = pattern;
+                self.search_columns();
+
+                // IMPORTANT: Ensure we stay in ColumnSearch mode after search
+                if self.buffer().get_mode() != AppMode::ColumnSearch {
+                    debug!(target: "search", "WARNING: Mode changed after search_columns, restoring to ColumnSearch");
+                    self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                }
+                debug!(target: "search", "After search_columns, app_mode={:?}", self.buffer().get_mode());
+            }
+        }
+    }
+
+    fn enter_search_mode(&mut self, mode: SearchMode) {
+        debug!(target: "search", "enter_search_mode called for {:?}, current_mode={:?}, input_text='{}'", 
+               mode, self.buffer().get_mode(), self.buffer().get_input_text());
+
+        // Get the SQL text based on the current mode
+        let current_sql = if self.buffer().get_mode() == AppMode::Results {
+            // In Results mode, use the last executed query
+            let last_query = self.buffer().get_last_query();
+            if !last_query.is_empty() {
+                debug!("Using last_query for search mode: '{}'", last_query);
+                last_query
+            } else {
+                // This shouldn't happen if we're properly saving queries
+                warn!("No last_query found when entering search mode from Results!");
+                String::new()
+            }
+        } else {
+            // In Command mode, use the current input text
+            self.get_input_text()
+        };
+
+        let cursor_pos = current_sql.len();
+
+        debug!(
+            "Entering {} mode, saving SQL: '{}', cursor: {}",
+            mode.title(),
+            current_sql,
+            cursor_pos
+        );
+
+        // Initialize the widget with saved state
+        self.search_modes_widget
+            .enter_mode(mode.clone(), current_sql, cursor_pos);
+
+        // Set the app mode
+        debug!(target: "mode", "Setting app mode from {:?} to {:?}", self.buffer().get_mode(), mode.to_app_mode());
+        self.buffer_mut().set_mode(mode.to_app_mode());
+
+        // Clear patterns
+        match mode {
+            SearchMode::Search => {
+                self.buffer_mut().set_search_pattern(String::new());
+            }
+            SearchMode::Filter => {
+                self.buffer_mut().set_filter_pattern(String::new());
+                self.filter_state.pattern.clear();
+            }
+            SearchMode::FuzzyFilter => {
+                self.buffer_mut().set_fuzzy_filter_pattern(String::new());
+                self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
+                self.buffer_mut().set_fuzzy_filter_active(false);
+            }
+            SearchMode::ColumnSearch => {
+                self.buffer_mut().set_column_search_pattern(String::new());
+                self.buffer_mut().set_column_search_matches(Vec::new());
+                self.buffer_mut().set_column_search_current_match(0);
+                self.column_search_state.pattern.clear();
+            }
+        }
+
+        // Clear input field for search mode use
+        self.input = tui_input::Input::default();
+    }
+
+    fn handle_search_modes_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        let action = self.search_modes_widget.handle_key(key);
+
+        match action {
+            SearchModesAction::Continue => {
+                // No pattern change, nothing to do
+            }
+            SearchModesAction::InputChanged(mode, pattern) => {
+                // Pattern changed, update UI but don't apply filter yet (will be debounced)
+                self.set_input_text_with_cursor(pattern.clone(), pattern.len());
+
+                // Update the stored pattern
+                match mode {
+                    SearchMode::Search => {
+                        self.buffer_mut().set_search_pattern(pattern);
+                    }
+                    SearchMode::Filter => {
+                        self.buffer_mut().set_filter_pattern(pattern.clone());
+                        self.filter_state.pattern = pattern;
+                    }
+                    SearchMode::FuzzyFilter => {
+                        self.buffer_mut().set_fuzzy_filter_pattern(pattern);
+                    }
+                    SearchMode::ColumnSearch => {
+                        self.buffer_mut().set_column_search_pattern(pattern.clone());
+                        self.column_search_state.pattern = pattern;
+                    }
+                }
+            }
+            SearchModesAction::ExecuteDebounced(mode, pattern) => {
+                // Execute the search but DON'T exit the mode - stay in search mode
+                // This is for debounced typing updates
+                self.execute_search_action(mode, pattern);
+                // Don't exit! User is still typing/searching
+            }
+            SearchModesAction::Apply(mode, pattern) => {
+                debug!(target: "search", "Apply action triggered for {:?} with pattern '{}'", mode, pattern);
+                // Apply the filter/search with the pattern
+                match mode {
+                    SearchMode::Search => {
+                        debug!(target: "search", "Search Apply: Applying search with pattern '{}'", pattern);
+                        self.buffer_mut().set_search_pattern(pattern);
+                        self.perform_search();
+                        debug!(target: "search", "Search Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                    }
+                    SearchMode::Filter => {
+                        debug!(target: "search", "Filter Apply: Applying filter with pattern '{}'", pattern);
+                        self.buffer_mut().set_filter_pattern(pattern.clone());
+                        self.filter_state.pattern = pattern;
+                        self.apply_filter();
+                        debug!(target: "search", "Filter Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                    }
+                    SearchMode::FuzzyFilter => {
+                        debug!(target: "search", "FuzzyFilter Apply: Applying filter with pattern '{}'", pattern);
+                        self.buffer_mut().set_fuzzy_filter_pattern(pattern);
+                        self.apply_fuzzy_filter();
+                        debug!(target: "search", "FuzzyFilter Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                    }
+                    SearchMode::ColumnSearch => {
+                        // For column search, Apply (Enter key) jumps to the current match and exits
+                        if !self.column_search_state.matching_columns.is_empty() {
+                            let current_match = self.column_search_state.current_match;
+                            let (col_idx, col_name) =
+                                self.column_search_state.matching_columns[current_match].clone();
+                            self.current_column = col_idx;
+                            self.buffer_mut().set_current_column(col_idx);
+                            self.buffer_mut()
+                                .set_status_message(format!("Jumped to column: {}", col_name));
+                        }
+
+                        // IMPORTANT: Don't modify input_text when exiting column search!
+                        // The widget will restore the original SQL that was saved when entering the mode
+                        debug!(target: "search", "ColumnSearch Apply: Exiting without modifying input_text");
+                        debug!(target: "search", "ColumnSearch Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                        // Note: We'll exit the mode below and the widget will restore the saved SQL
+                    }
+                }
+
+                // Exit search mode and return to Results (except for certain cases)
+                // For ColumnSearch, we DO want to exit on Apply (Enter key)
+                if let Some((sql, cursor)) = self.search_modes_widget.exit_mode() {
+                    debug!(target: "search", "Exiting search mode. Original SQL was: '{}', cursor: {}", sql, cursor);
+                    debug!(target: "buffer", "Returning to Results mode, preserving last_query: '{}'", 
+                           self.buffer().get_last_query());
+
+                    // IMPORTANT: Restore the saved SQL to input_text!
+                    // This is the SQL that was saved when we entered the search mode
+                    if !sql.is_empty() {
+                        debug!(target: "search", "Restoring saved SQL to input_text: '{}'", sql);
+                        self.buffer_mut().set_input_text(sql.clone());
+                        self.buffer_mut().set_input_cursor_position(cursor);
+                        self.input = tui_input::Input::new(sql).with_cursor(cursor);
+                    } else {
+                        debug!(target: "search", "No saved SQL to restore, keeping input_text as is");
+                    }
+
+                    // Switch back to Results mode
+                    self.buffer_mut().set_mode(AppMode::Results);
+
+                    // Show status message
+                    let filter_msg = match mode {
+                        SearchMode::FuzzyFilter => {
+                            let query = self.buffer().get_last_query();
+                            format!(
+                                "Fuzzy filter applied. Query: '{}'. Press 'f' again to modify.",
+                                if query.len() > 30 {
+                                    format!("{}...", &query[..30])
+                                } else {
+                                    query
+                                }
+                            )
+                        }
+                        SearchMode::Filter => {
+                            "Filter applied. Press 'F' again to modify.".to_string()
+                        }
+                        SearchMode::Search => "Search applied.".to_string(),
+                        SearchMode::ColumnSearch => "Column search complete.".to_string(),
+                    };
+                    self.buffer_mut().set_status_message(filter_msg);
+                } else {
+                    self.buffer_mut().set_mode(AppMode::Results);
+                }
+            }
+            SearchModesAction::Cancel => {
+                // Clear the filter and restore original SQL
+                match self.buffer().get_mode() {
+                    AppMode::FuzzyFilter => {
+                        // Clear fuzzy filter
+                        self.buffer_mut().set_fuzzy_filter_pattern(String::new());
+                        self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
+                        self.buffer_mut().set_fuzzy_filter_active(false);
+                    }
+                    AppMode::Filter => {
+                        // Clear both local and buffer filter state
+                        debug!(target: "search", "Filter Cancel: Clearing filter pattern and state");
+                        self.filter_state.pattern.clear();
+                        self.filter_state.active = false;
+                        self.buffer_mut().set_filter_pattern(String::new());
+                        self.buffer_mut().set_filter_active(false);
+                        // Re-apply empty filter to restore all results
+                        self.apply_filter();
+                    }
+                    AppMode::ColumnSearch => {
+                        // Clear column search state
+                        self.buffer_mut().set_column_search_pattern(String::new());
+                        self.buffer_mut().set_column_search_matches(Vec::new());
+                        self.buffer_mut().set_column_search_current_match(0);
+                        self.column_search_state.pattern.clear();
+                        self.column_search_state.matching_columns.clear();
+                        self.column_search_state.current_match = 0;
+
+                        // IMPORTANT: Don't modify input_text when cancelling column search!
+                        // The widget will restore the original SQL that was saved when entering the mode
+                        debug!(target: "search", "ColumnSearch Cancel: Exiting without modifying input_text");
+                        debug!(target: "search", "ColumnSearch Cancel: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                    }
+                    _ => {}
+                }
+
+                // Exit mode and restore the saved SQL
+                if let Some((sql, cursor)) = self.search_modes_widget.exit_mode() {
+                    debug!(target: "search", "Cancel: Restoring saved SQL: '{}', cursor: {}", sql, cursor);
+                    if !sql.is_empty() {
+                        self.buffer_mut().set_input_text(sql.clone());
+                        self.buffer_mut().set_input_cursor_position(cursor);
+                        self.input = tui_input::Input::new(sql).with_cursor(cursor);
+                    }
+                } else {
+                    debug!(target: "search", "Cancel: No saved SQL from widget");
+                }
+
+                // Switch back to Results mode
+                self.buffer_mut().set_mode(AppMode::Results);
+            }
+            SearchModesAction::NextMatch => {
+                debug!(target: "search", "NextMatch action, current_mode={:?}, widget_mode={:?}", 
+                       self.buffer().get_mode(), self.search_modes_widget.current_mode());
+
+                // Check both buffer mode and widget mode for consistency
+                if self.buffer().get_mode() == AppMode::ColumnSearch
+                    || self.search_modes_widget.current_mode() == Some(SearchMode::ColumnSearch)
+                {
+                    debug!(target: "search", "Calling next_column_match");
+                    // Ensure mode is correctly set
+                    if self.buffer().get_mode() != AppMode::ColumnSearch {
+                        debug!(target: "search", "WARNING: Mode mismatch - fixing");
+                        self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                    }
+                    self.next_column_match();
+                } else {
+                    debug!(target: "search", "Not in ColumnSearch mode, skipping next_column_match");
+                }
+            }
+            SearchModesAction::PreviousMatch => {
+                debug!(target: "search", "PreviousMatch action, current_mode={:?}, widget_mode={:?}", 
+                       self.buffer().get_mode(), self.search_modes_widget.current_mode());
+
+                // Check both buffer mode and widget mode for consistency
+                if self.buffer().get_mode() == AppMode::ColumnSearch
+                    || self.search_modes_widget.current_mode() == Some(SearchMode::ColumnSearch)
+                {
+                    debug!(target: "search", "Calling previous_column_match");
+                    // Ensure mode is correctly set
+                    if self.buffer().get_mode() != AppMode::ColumnSearch {
+                        debug!(target: "search", "WARNING: Mode mismatch - fixing");
+                        self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                    }
+                    self.previous_column_match();
+                } else {
+                    debug!(target: "search", "Not in ColumnSearch mode, skipping previous_column_match");
+                }
+            }
+            SearchModesAction::PassThrough => {}
+        }
+
         Ok(false)
     }
 
@@ -2200,6 +2374,12 @@ impl EnhancedTuiApp {
 
     fn execute_query(&mut self, query: &str) -> Result<()> {
         info!(target: "query", "Executing query: {}", query);
+
+        // Save the query being executed to last_query BEFORE execution
+        // This ensures we preserve the actual query that was run
+        self.buffer_mut().set_last_query(query.to_string());
+        debug!(target: "buffer", "Saved query to last_query: '{}'", query);
+
         self.buffer_mut()
             .set_status_message(format!("Executing query: '{}'...", query));
         let start_time = std::time::Instant::now();
@@ -3107,7 +3287,12 @@ impl EnhancedTuiApp {
     }
 
     fn apply_filter(&mut self) {
-        if self.get_filter_state().pattern.is_empty() {
+        let pattern = &self.get_filter_state().pattern;
+        debug!(target: "filter", "apply_filter called with pattern: '{}', case_insensitive: {}", 
+               pattern, self.buffer().is_case_insensitive());
+
+        if pattern.is_empty() {
+            debug!(target: "filter", "Pattern is empty, clearing filter");
             self.buffer_mut().set_filtered_data(None);
             self.get_filter_state_mut().active = false;
             self.buffer_mut()
@@ -3116,7 +3301,16 @@ impl EnhancedTuiApp {
         }
 
         if let Some(results) = self.buffer().get_results() {
-            if let Ok(regex) = Regex::new(&self.get_filter_state().pattern) {
+            // Build regex with case-insensitive flag if needed
+            let case_insensitive = self.buffer().is_case_insensitive();
+            let pattern = if case_insensitive {
+                format!("(?i){}", self.get_filter_state().pattern)
+            } else {
+                self.get_filter_state().pattern.clone()
+            };
+            debug!(target: "filter", "Building regex pattern: '{}' (case_insensitive: {})", pattern, case_insensitive);
+
+            if let Ok(regex) = Regex::new(&pattern) {
                 let mut filtered = Vec::new();
 
                 for item in &results.data {
@@ -3135,6 +3329,11 @@ impl EnhancedTuiApp {
 
                             if regex.is_match(&cell_str) {
                                 matches = true;
+                                // Debug first few matches
+                                if filtered.len() < 3 {
+                                    debug!(target: "filter", "  Match found in cell: '{}'", 
+                                           if cell_str.len() > 50 { format!("{}...", &cell_str[..50]) } else { cell_str.clone() });
+                                }
                             }
                             row.push(cell_str);
                         }
@@ -3146,9 +3345,12 @@ impl EnhancedTuiApp {
                 }
 
                 let filtered_count = filtered.len();
+                debug!(target: "filter", "Filter applied: {} rows matched out of {}", 
+                       filtered_count, results.data.len());
                 self.buffer_mut().set_filtered_data(Some(filtered));
                 self.get_filter_state_mut().regex = Some(regex);
                 self.get_filter_state_mut().active = true;
+                self.buffer_mut().set_filter_active(true);
 
                 // Reset table state but preserve filtered data
                 self.table_state = TableState::default();
@@ -3170,6 +3372,140 @@ impl EnhancedTuiApp {
                     .set_status_message("Invalid regex pattern".to_string());
             }
         }
+    }
+
+    fn search_columns(&mut self) {
+        let pattern = self.column_search_state.pattern.clone();
+        debug!(target: "search", "search_columns called with pattern: '{}'", pattern);
+        if pattern.is_empty() {
+            debug!(target: "search", "Pattern is empty, skipping column search");
+            return;
+        }
+
+        // Find matching columns
+        let mut matching_columns = Vec::new();
+
+        // Get columns from results
+        if let Some(results) = self.buffer().get_results() {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    for (index, col_name) in obj.keys().enumerate() {
+                        if col_name.to_lowercase().contains(&pattern.to_lowercase()) {
+                            matching_columns.push((index, col_name.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+
+        debug!(target: "search", "Found {} matching columns", matching_columns.len());
+        if !matching_columns.is_empty() {
+            for (idx, (col_idx, col_name)) in matching_columns.iter().enumerate() {
+                debug!(target: "search", "  Match {}: '{}' at index {}", idx + 1, col_name, col_idx);
+            }
+        }
+
+        if !matching_columns.is_empty() {
+            // Move to first match
+            self.current_column = matching_columns[0].0;
+            self.column_search_state.current_match = 0;
+            debug!(target: "search", "Setting current column to index {} ('{}')", 
+                   matching_columns[0].0, matching_columns[0].1);
+            let status_msg = format!(
+                "Found {} columns matching '{}'. Tab/Shift-Tab to navigate.",
+                matching_columns.len(),
+                pattern
+            );
+            debug!(target: "search", "Setting status: {}", status_msg);
+            self.buffer_mut().set_status_message(status_msg);
+
+            // Also update buffer's column search matches
+            self.buffer_mut()
+                .set_column_search_matches(matching_columns.clone());
+            self.buffer_mut().set_column_search_current_match(0);
+            self.buffer_mut().set_current_column(matching_columns[0].0);
+        } else {
+            let status_msg = format!("No columns matching '{}'", pattern);
+            debug!(target: "search", "Setting status: {}", status_msg);
+            self.buffer_mut().set_status_message(status_msg);
+            self.buffer_mut().set_column_search_matches(Vec::new());
+        }
+
+        self.column_search_state.matching_columns = matching_columns;
+    }
+
+    fn next_column_match(&mut self) {
+        if self.column_search_state.matching_columns.is_empty() {
+            debug!(target: "search", "next_column_match: No matching columns");
+            return;
+        }
+
+        self.column_search_state.current_match = (self.column_search_state.current_match + 1)
+            % self.column_search_state.matching_columns.len();
+
+        let col_index =
+            self.column_search_state.matching_columns[self.column_search_state.current_match].0;
+        let col_name = self.column_search_state.matching_columns
+            [self.column_search_state.current_match]
+            .1
+            .clone();
+        self.current_column = col_index;
+
+        let current_match_idx = self.column_search_state.current_match;
+        let current_match = current_match_idx + 1;
+        let total_matches = self.column_search_state.matching_columns.len();
+
+        debug!(target: "search", "next_column_match: Moving to column {}/{}: {} (index {})", 
+               current_match, total_matches, col_name, col_index);
+
+        self.buffer_mut().set_current_column(col_index);
+        self.buffer_mut().set_status_message(format!(
+            "Column {}/{}: {} - Tab/Shift-Tab to navigate",
+            current_match, total_matches, col_name
+        ));
+
+        // Update buffer's column search state
+        self.buffer_mut()
+            .set_column_search_current_match(current_match_idx);
+    }
+
+    fn previous_column_match(&mut self) {
+        if self.column_search_state.matching_columns.is_empty() {
+            debug!(target: "search", "previous_column_match: No matching columns");
+            return;
+        }
+
+        if self.column_search_state.current_match == 0 {
+            self.column_search_state.current_match =
+                self.column_search_state.matching_columns.len() - 1;
+        } else {
+            self.column_search_state.current_match -= 1;
+        }
+
+        let col_index =
+            self.column_search_state.matching_columns[self.column_search_state.current_match].0;
+        let col_name = self.column_search_state.matching_columns
+            [self.column_search_state.current_match]
+            .1
+            .clone();
+        self.current_column = col_index;
+
+        let current_match_idx = self.column_search_state.current_match;
+        let current_match = current_match_idx + 1;
+        let total_matches = self.column_search_state.matching_columns.len();
+
+        debug!(target: "search", "previous_column_match: Moving to column {}/{}: {} (index {})", 
+               current_match, total_matches, col_name, col_index);
+
+        self.buffer_mut().set_current_column(col_index);
+        self.buffer_mut().set_status_message(format!(
+            "Column {}/{}: {} - Tab/Shift-Tab to navigate",
+            current_match, total_matches, col_name
+        ));
+
+        // Update buffer's column search state
+        self.buffer_mut()
+            .set_column_search_current_match(current_match_idx);
     }
 
     fn apply_fuzzy_filter(&mut self) {
@@ -4226,113 +4562,129 @@ impl EnhancedTuiApp {
 
         let input_block = Block::default().borders(Borders::ALL).title(input_title);
 
-        // Always get input text through the buffer API for consistency
-        let input_text_string = self.get_input_text();
-        let input_text = match self.buffer().get_mode() {
-            AppMode::History => &self.history_state.search_query,
-            _ => &input_text_string,
-        };
+        // Check if we should use the search modes widget for rendering
+        let use_search_widget = matches!(
+            self.buffer().get_mode(),
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch
+        ) && self.search_modes_widget.is_active();
 
-        let input_paragraph = match self.buffer().get_mode() {
-            AppMode::Command => {
-                match self.buffer().get_edit_mode() {
-                    EditMode::SingleLine => {
-                        // Use syntax highlighting for SQL command input with horizontal scrolling
-                        let highlighted_line =
-                            self.sql_highlighter.simple_sql_highlight(input_text);
-                        Paragraph::new(Text::from(vec![highlighted_line]))
-                            .block(input_block)
-                            .scroll((0, self.get_horizontal_scroll_offset()))
-                    }
-                    EditMode::MultiLine => {
-                        // MultiLine mode is no longer supported, always use single-line
-                        let highlighted_line =
-                            self.sql_highlighter.simple_sql_highlight(input_text);
-                        Paragraph::new(Text::from(vec![highlighted_line]))
-                            .block(input_block)
-                            .scroll((0, self.get_horizontal_scroll_offset()))
+        if use_search_widget {
+            // Let the search modes widget render the input field with debounce indicator
+            self.search_modes_widget.render(f, chunks[0]);
+        } else {
+            // Always get input text through the buffer API for consistency
+            let input_text_string = self.get_input_text();
+            let input_text = match self.buffer().get_mode() {
+                AppMode::History => &self.history_state.search_query,
+                _ => &input_text_string,
+            };
+
+            let input_paragraph = match self.buffer().get_mode() {
+                AppMode::Command => {
+                    match self.buffer().get_edit_mode() {
+                        EditMode::SingleLine => {
+                            // Use syntax highlighting for SQL command input with horizontal scrolling
+                            let highlighted_line =
+                                self.sql_highlighter.simple_sql_highlight(input_text);
+                            Paragraph::new(Text::from(vec![highlighted_line]))
+                                .block(input_block)
+                                .scroll((0, self.get_horizontal_scroll_offset()))
+                        }
+                        EditMode::MultiLine => {
+                            // MultiLine mode is no longer supported, always use single-line
+                            let highlighted_line =
+                                self.sql_highlighter.simple_sql_highlight(input_text);
+                            Paragraph::new(Text::from(vec![highlighted_line]))
+                                .block(input_block)
+                                .scroll((0, self.get_horizontal_scroll_offset()))
+                        }
                     }
                 }
-            }
-            _ => {
-                // Plain text for other modes
-                Paragraph::new(input_text.as_str())
-                    .block(input_block)
-                    .style(match self.buffer().get_mode() {
-                        AppMode::Results => Style::default().fg(Color::DarkGray),
-                        AppMode::Search => Style::default().fg(Color::Yellow),
-                        AppMode::Filter => Style::default().fg(Color::Cyan),
-                        AppMode::FuzzyFilter => Style::default().fg(Color::Magenta),
-                        AppMode::ColumnSearch => Style::default().fg(Color::Green),
-                        AppMode::Help => Style::default().fg(Color::DarkGray),
-                        AppMode::History => Style::default().fg(Color::Magenta),
-                        AppMode::Debug => Style::default().fg(Color::Yellow),
-                        AppMode::PrettyQuery => Style::default().fg(Color::Green),
-                        AppMode::CacheList => Style::default().fg(Color::Cyan),
-                        AppMode::JumpToRow => Style::default().fg(Color::Magenta),
-                        AppMode::ColumnStats => Style::default().fg(Color::Cyan),
-                        _ => Style::default(),
-                    })
-                    .scroll((0, self.get_horizontal_scroll_offset()))
-            }
-        };
+                _ => {
+                    // Plain text for other modes
+                    Paragraph::new(input_text.as_str())
+                        .block(input_block)
+                        .style(match self.buffer().get_mode() {
+                            AppMode::Results => Style::default().fg(Color::DarkGray),
+                            AppMode::Search => Style::default().fg(Color::Yellow),
+                            AppMode::Filter => Style::default().fg(Color::Cyan),
+                            AppMode::FuzzyFilter => Style::default().fg(Color::Magenta),
+                            AppMode::ColumnSearch => Style::default().fg(Color::Green),
+                            AppMode::Help => Style::default().fg(Color::DarkGray),
+                            AppMode::History => Style::default().fg(Color::Magenta),
+                            AppMode::Debug => Style::default().fg(Color::Yellow),
+                            AppMode::PrettyQuery => Style::default().fg(Color::Green),
+                            AppMode::CacheList => Style::default().fg(Color::Cyan),
+                            AppMode::JumpToRow => Style::default().fg(Color::Magenta),
+                            AppMode::ColumnStats => Style::default().fg(Color::Cyan),
+                            _ => Style::default(),
+                        })
+                        .scroll((0, self.get_horizontal_scroll_offset()))
+                }
+            };
 
-        // Always render the input paragraph (single-line mode)
-        f.render_widget(input_paragraph, chunks[0]);
+            // Render the input paragraph (single-line mode)
+            f.render_widget(input_paragraph, chunks[0]);
+        }
         let results_area = chunks[1];
 
-        // Set cursor position for input modes
-        match self.buffer().get_mode() {
-            AppMode::Command => {
-                // Always use single-line cursor handling
-                // Calculate cursor position with horizontal scrolling
-                let inner_width = chunks[0].width.saturating_sub(2) as usize;
-                let cursor_pos = self.get_visual_cursor().1; // Get column position for single-line
-                let scroll_offset = self.get_horizontal_scroll_offset() as usize;
+        // Set cursor position for input modes (skip if search widget is handling it)
+        if !use_search_widget {
+            match self.buffer().get_mode() {
+                AppMode::Command => {
+                    // Always use single-line cursor handling
+                    // Calculate cursor position with horizontal scrolling
+                    let inner_width = chunks[0].width.saturating_sub(2) as usize;
+                    let cursor_pos = self.get_visual_cursor().1; // Get column position for single-line
+                    let scroll_offset = self.get_horizontal_scroll_offset() as usize;
 
-                // Calculate visible cursor position
-                if cursor_pos >= scroll_offset && cursor_pos < scroll_offset + inner_width {
-                    let visible_pos = cursor_pos - scroll_offset;
-                    f.set_cursor_position((chunks[0].x + visible_pos as u16 + 1, chunks[0].y + 1));
+                    // Calculate visible cursor position
+                    if cursor_pos >= scroll_offset && cursor_pos < scroll_offset + inner_width {
+                        let visible_pos = cursor_pos - scroll_offset;
+                        f.set_cursor_position((
+                            chunks[0].x + visible_pos as u16 + 1,
+                            chunks[0].y + 1,
+                        ));
+                    }
                 }
+                AppMode::Search => {
+                    f.set_cursor_position((
+                        chunks[0].x + self.get_input_cursor() as u16 + 1,
+                        chunks[0].y + 1,
+                    ));
+                }
+                AppMode::Filter => {
+                    f.set_cursor_position((
+                        chunks[0].x + self.get_input_cursor() as u16 + 1,
+                        chunks[0].y + 1,
+                    ));
+                }
+                AppMode::FuzzyFilter => {
+                    f.set_cursor_position((
+                        chunks[0].x + self.get_input_cursor() as u16 + 1,
+                        chunks[0].y + 1,
+                    ));
+                }
+                AppMode::ColumnSearch => {
+                    f.set_cursor_position((
+                        chunks[0].x + self.get_input_cursor() as u16 + 1,
+                        chunks[0].y + 1,
+                    ));
+                }
+                AppMode::JumpToRow => {
+                    f.set_cursor_position((
+                        chunks[0].x + self.jump_to_row_input.len() as u16 + 1,
+                        chunks[0].y + 1,
+                    ));
+                }
+                AppMode::History => {
+                    f.set_cursor_position((
+                        chunks[0].x + self.history_state.search_query.len() as u16 + 1,
+                        chunks[0].y + 1,
+                    ));
+                }
+                _ => {}
             }
-            AppMode::Search => {
-                f.set_cursor_position((
-                    chunks[0].x + self.get_input_cursor() as u16 + 1,
-                    chunks[0].y + 1,
-                ));
-            }
-            AppMode::Filter => {
-                f.set_cursor_position((
-                    chunks[0].x + self.get_input_cursor() as u16 + 1,
-                    chunks[0].y + 1,
-                ));
-            }
-            AppMode::FuzzyFilter => {
-                f.set_cursor_position((
-                    chunks[0].x + self.get_input_cursor() as u16 + 1,
-                    chunks[0].y + 1,
-                ));
-            }
-            AppMode::ColumnSearch => {
-                f.set_cursor_position((
-                    chunks[0].x + self.get_input_cursor() as u16 + 1,
-                    chunks[0].y + 1,
-                ));
-            }
-            AppMode::JumpToRow => {
-                f.set_cursor_position((
-                    chunks[0].x + self.jump_to_row_input.len() as u16 + 1,
-                    chunks[0].y + 1,
-                ));
-            }
-            AppMode::History => {
-                f.set_cursor_position((
-                    chunks[0].x + self.history_state.search_query.len() as u16 + 1,
-                    chunks[0].y + 1,
-                ));
-            }
-            _ => {}
         }
 
         // Results area - render based on mode to reduce complexity
@@ -5790,126 +6142,228 @@ impl EnhancedTuiApp {
     }
 
     fn toggle_debug_mode(&mut self) {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            match buffer.get_mode() {
-                AppMode::Debug => {
-                    buffer.set_mode(AppMode::Command);
+        // First, collect all the data we need without any mutable borrows
+        let (
+            should_exit_debug,
+            previous_mode,
+            last_query,
+            input_text,
+            selected_row,
+            current_column,
+            results_count,
+            filtered_count,
+        ) = {
+            if let Some(buffer) = self.buffer_manager.current() {
+                let mode = buffer.get_mode();
+                if mode == AppMode::Debug {
+                    (true, mode, String::new(), String::new(), None, 0, 0, 0)
+                } else {
+                    (
+                        false,
+                        mode,
+                        buffer.get_last_query(),
+                        buffer.get_input_text(),
+                        buffer.get_selected_row(),
+                        buffer.get_current_column(),
+                        buffer.get_results().map(|r| r.data.len()).unwrap_or(0),
+                        buffer.get_filtered_data().map(|d| d.len()).unwrap_or(0),
+                    )
                 }
-                _ => {
-                    buffer.set_mode(AppMode::Debug);
-                    // Generate full debug information like the original F5 handler
-                    self.debug_current_buffer();
-                    let cursor_pos = self.get_input_cursor();
-                    let visual_cursor = self.get_visual_cursor().1;
-                    let query = self.get_input_text();
+            } else {
+                return;
+            }
+        };
 
-                    // Collect all needed data before mutable borrow
-                    let buffer_names: Vec<String> = self
-                        .buffer_manager
-                        .all_buffers()
-                        .iter()
-                        .map(|b| b.get_name())
-                        .collect();
-                    let buffer_count = self.buffer_manager.all_buffers().len();
-                    let buffer_index = self.buffer_manager.current_index();
+        // Collect buffer manager info without mutable borrow
+        let buffer_names: Vec<String> = self
+            .buffer_manager
+            .all_buffers()
+            .iter()
+            .map(|b| b.get_name())
+            .collect();
+        let buffer_count = self.buffer_manager.all_buffers().len();
+        let buffer_index = self.buffer_manager.current_index();
 
-                    // Generate debug info directly without buffer reference
-                    let mut debug_info = self
-                        .hybrid_parser
-                        .get_detailed_debug_info(&query, cursor_pos);
+        // Now handle the mode transition with mutable borrow
+        if let Some(buffer) = self.buffer_manager.current_mut() {
+            if should_exit_debug {
+                buffer.set_mode(AppMode::Command);
+            } else {
+                buffer.set_mode(AppMode::Debug);
+                // Generate full debug information like the original F5 handler
+                self.debug_current_buffer();
+                let cursor_pos = self.get_input_cursor();
+                let visual_cursor = self.get_visual_cursor().1;
+                let query = self.get_input_text();
 
-                    // Add input state
+                // Use the appropriate query for parser debug based on mode
+                let query_for_parser =
+                    if previous_mode == AppMode::Results && !last_query.is_empty() {
+                        // In Results mode, show parser info for the executed query
+                        last_query.clone()
+                    } else if !query.is_empty() {
+                        // In Command mode, show parser info for current input
+                        query.clone()
+                    } else if !last_query.is_empty() {
+                        // Fallback to last query if input is empty
+                        last_query.clone()
+                    } else {
+                        query.clone()
+                    };
+
+                // Generate debug info directly without buffer reference
+                let mut debug_info = self
+                    .hybrid_parser
+                    .get_detailed_debug_info(&query_for_parser, query_for_parser.len());
+
+                // Add comprehensive buffer state
+                debug_info.push_str(&format!(
+                    "\n========== BUFFER STATE ==========\n\
+                    Current Mode: {:?}\n\
+                    Last Executed Query: '{}'\n\
+                    Input Text: '{}'\n\
+                    Input Cursor: {}\n\
+                    Visual Cursor: {}\n",
+                    previous_mode, last_query, input_text, cursor_pos, visual_cursor
+                ));
+
+                // Add results state if in Results mode
+                if results_count > 0 {
                     debug_info.push_str(&format!(
-                        "\n========== INPUT STATE ==========\n\
-                        Input Value Length: {}\n\
-                        Cursor Position: {}\n\
-                        Visual Cursor: {}\n\
-                        Input Mode: Command\n",
-                        query.len(),
-                        cursor_pos,
-                        visual_cursor
+                        "\n========== RESULTS STATE ==========\n\
+                            Total Rows: {}\n\
+                            Filtered Rows: {}\n\
+                            Selected Row: {:?}\n\
+                            Current Column: {}\n",
+                        results_count, filtered_count, selected_row, current_column
                     ));
+                }
 
-                    // Add buffer state info
-                    debug_info.push_str(&format!(
-                        "\n========== BUFFER MANAGER STATE ==========\n\
+                // Add buffer state info
+                debug_info.push_str(&format!(
+                    "\n========== BUFFER MANAGER STATE ==========\n\
                         Number of Buffers: {}\n\
                         Current Buffer Index: {}\n\
                         Buffer Names: {}\n",
-                        buffer_count,
-                        buffer_index,
-                        buffer_names.join(", ")
-                    ));
+                    buffer_count,
+                    buffer_index,
+                    buffer_names.join(", ")
+                ));
 
-                    // Add WHERE clause AST if needed
-                    if query.to_lowercase().contains(" where ") {
-                        let where_ast_info = match self.parse_where_clause_ast(&query) {
+                // Add WHERE clause AST if needed
+                if query.to_lowercase().contains(" where ") {
+                    let where_ast_info = match self.parse_where_clause_ast(&query) {
                             Ok(ast_str) => ast_str,
                             Err(e) => format!("\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {}\n", e)
                         };
-                        debug_info.push_str(&where_ast_info);
-                    }
+                    debug_info.push_str(&where_ast_info);
+                }
 
-                    // Add key chord handler debug info
-                    debug_info.push_str("\n");
-                    debug_info.push_str(&self.key_chord_handler.format_debug_info());
-                    debug_info.push_str("========================================\n");
+                // Add key chord handler debug info
+                debug_info.push_str("\n");
+                debug_info.push_str(&self.key_chord_handler.format_debug_info());
+                debug_info.push_str("========================================\n");
 
-                    // Add trace logs from ring buffer
-                    debug_info.push_str("\n========== TRACE LOGS ==========\n");
-                    debug_info.push_str("(Most recent at bottom, last 100 entries)\n");
-                    if let Some(ref log_buffer) = self.log_buffer {
-                        let recent_logs = log_buffer.get_recent(100);
-                        for entry in recent_logs {
-                            debug_info.push_str(&entry.format_for_display());
-                            debug_info.push('\n');
+                // Add search modes widget debug info
+                debug_info.push_str("\n");
+                debug_info.push_str(&self.search_modes_widget.debug_info());
+
+                // Add column search state if active
+                if self.buffer().get_mode() == AppMode::ColumnSearch
+                    || !self.column_search_state.pattern.is_empty()
+                {
+                    debug_info.push_str("\n========== COLUMN SEARCH STATE ==========\n");
+                    debug_info.push_str(&format!(
+                        "Pattern: '{}'\n",
+                        self.column_search_state.pattern
+                    ));
+                    debug_info.push_str(&format!(
+                        "Buffer Pattern: '{}'\n",
+                        self.buffer().get_column_search_pattern()
+                    ));
+                    debug_info.push_str(&format!(
+                        "Matching Columns: {} found\n",
+                        self.column_search_state.matching_columns.len()
+                    ));
+                    if !self.column_search_state.matching_columns.is_empty() {
+                        debug_info.push_str("Matches:\n");
+                        for (idx, (col_idx, col_name)) in
+                            self.column_search_state.matching_columns.iter().enumerate()
+                        {
+                            let marker = if idx == self.column_search_state.current_match {
+                                " <--"
+                            } else {
+                                ""
+                            };
+                            debug_info.push_str(&format!(
+                                "  [{}] {} (index {}){}
+",
+                                idx, col_name, col_idx, marker
+                            ));
                         }
-                        debug_info.push_str(&format!("Total log entries: {}\n", log_buffer.len()));
-                    } else {
-                        debug_info.push_str("Log buffer not initialized\n");
                     }
-                    debug_info.push_str("================================\n");
+                    debug_info.push_str(&format!(
+                        "Current Match Index: {}\n",
+                        self.column_search_state.current_match
+                    ));
+                    debug_info.push_str(&format!("Current Column: {}\n", self.current_column));
+                    debug_info.push_str("==========================================\n");
+                }
 
-                    // Set the final content in debug widget
-                    self.debug_widget.set_content(debug_info.clone());
+                // Add trace logs from ring buffer
+                debug_info.push_str("\n========== TRACE LOGS ==========\n");
+                debug_info.push_str("(Most recent at bottom, last 100 entries)\n");
+                if let Some(ref log_buffer) = self.log_buffer {
+                    let recent_logs = log_buffer.get_recent(100);
+                    for entry in recent_logs {
+                        debug_info.push_str(&entry.format_for_display());
+                        debug_info.push('\n');
+                    }
+                    debug_info.push_str(&format!("Total log entries: {}\n", log_buffer.len()));
+                } else {
+                    debug_info.push_str("Log buffer not initialized\n");
+                }
+                debug_info.push_str("================================\n");
 
-                    // Try to copy to clipboard
-                    match arboard::Clipboard::new() {
-                        Ok(mut clipboard) => match clipboard.set_text(&debug_info) {
-                            Ok(_) => {
-                                // Verify clipboard write by reading it back
-                                match clipboard.get_text() {
-                                    Ok(clipboard_content) => {
-                                        let clipboard_len = clipboard_content.len();
-                                        if clipboard_content == debug_info {
-                                            self.buffer_mut().set_status_message(format!(
-                                                "DEBUG INFO copied to clipboard ({} chars)!",
-                                                clipboard_len
-                                            ));
-                                        } else {
-                                            self.buffer_mut().set_status_message(format!(
+                // Set the final content in debug widget
+                self.debug_widget.set_content(debug_info.clone());
+
+                // Try to copy to clipboard
+                match arboard::Clipboard::new() {
+                    Ok(mut clipboard) => match clipboard.set_text(&debug_info) {
+                        Ok(_) => {
+                            // Verify clipboard write by reading it back
+                            match clipboard.get_text() {
+                                Ok(clipboard_content) => {
+                                    let clipboard_len = clipboard_content.len();
+                                    if clipboard_content == debug_info {
+                                        self.buffer_mut().set_status_message(format!(
+                                            "DEBUG INFO copied to clipboard ({} chars)!",
+                                            clipboard_len
+                                        ));
+                                    } else {
+                                        self.buffer_mut().set_status_message(format!(
                                                 "Clipboard verification failed! Expected {} chars, got {} chars",
                                                 debug_info.len(), clipboard_len
                                             ));
-                                        }
-                                    }
-                                    Err(e) => {
-                                        self.buffer_mut().set_status_message(format!(
-                                            "Debug info copied but verification failed: {}",
-                                            e
-                                        ));
                                     }
                                 }
+                                Err(e) => {
+                                    self.buffer_mut().set_status_message(format!(
+                                        "Debug info copied but verification failed: {}",
+                                        e
+                                    ));
+                                }
                             }
-                            Err(e) => {
-                                self.buffer_mut()
-                                    .set_status_message(format!("Clipboard error: {}", e));
-                            }
-                        },
+                        }
                         Err(e) => {
                             self.buffer_mut()
-                                .set_status_message(format!("Can't access clipboard: {}", e));
+                                .set_status_message(format!("Clipboard error: {}", e));
                         }
+                    },
+                    Err(e) => {
+                        self.buffer_mut()
+                            .set_status_message(format!("Can't access clipboard: {}", e));
                     }
                 }
             }

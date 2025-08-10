@@ -1,4 +1,5 @@
 use crate::buffer::{BufferAPI, ColumnStatistics, ColumnType};
+use crate::widget_traits::DebugInfoProvider;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::Rect,
@@ -172,5 +173,21 @@ pub enum StatsAction {
 impl Default for StatsWidget {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl DebugInfoProvider for StatsWidget {
+    fn debug_info(&self) -> String {
+        let mut info = String::from("=== STATS WIDGET ===\n");
+        info.push_str(&format!("State: Active\n"));
+        info.push_str(&format!("Handle Keys: {}\n", self.handle_keys));
+        info
+    }
+
+    fn debug_summary(&self) -> String {
+        format!(
+            "StatsWidget: keys={}",
+            if self.handle_keys { "on" } else { "off" }
+        )
     }
 }

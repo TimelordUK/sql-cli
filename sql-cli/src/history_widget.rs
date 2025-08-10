@@ -1,4 +1,5 @@
 use crate::history::{CommandHistory, HistoryMatch};
+use crate::widget_traits::DebugInfoProvider;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
@@ -340,4 +341,43 @@ pub enum HistoryAction {
     ExecuteCommand(String),
     UseCommand(String),
     StartSearch,
+}
+
+impl DebugInfoProvider for HistoryWidget {
+    fn debug_info(&self) -> String {
+        let mut info = String::from("=== HISTORY WIDGET ===\n");
+        info.push_str(&format!("Search Query: '{}'\n", self.state.search_query));
+        info.push_str(&format!("Total Matches: {}\n", self.state.matches.len()));
+        info.push_str(&format!("Selected Index: {}\n", self.state.selected_index));
+
+        if !self.state.matches.is_empty() && self.state.selected_index < self.state.matches.len() {
+            info.push_str(&format!("\nCurrent Selection:\n"));
+            let current = &self.state.matches[self.state.selected_index];
+            info.push_str(&format!(
+                "  Command: '{}'\n",
+                if current.entry.command.len() > 50 {
+                    format!("{}...", &current.entry.command[..50])
+                } else {
+                    current.entry.command.clone()
+                }
+            ));
+            info.push_str(&format!("  Score: {:?}\n", current.score));
+        }
+
+        info.push_str(&format!("\nHistory Stats:\n"));
+        info.push_str(&format!(
+            "  Total Entries: {}\n",
+            self.command_history.get_all().len()
+        ));
+
+        info
+    }
+
+    fn debug_summary(&self) -> String {
+        format!(
+            "HistoryWidget: {} matches, idx={}",
+            self.state.matches.len(),
+            self.state.selected_index
+        )
+    }
 }
