@@ -804,6 +804,7 @@ impl EnhancedTuiApp {
             }
             EditorAction::ShowHelp => {
                 self.set_help_visible(true);
+                self.buffer_mut().set_mode(AppMode::Help);
                 return Ok(false);
             }
             EditorAction::ShowDebug => {
@@ -1016,13 +1017,21 @@ impl EnhancedTuiApp {
             //     self.new_datatable_buffer();
             // }
             KeyCode::F(1) | KeyCode::Char('?') => {
-                self.toggle_help();
-                let mode = if self.is_help_visible() {
-                    AppMode::Help
+                // Toggle between Help mode and previous mode
+                if self.buffer().get_mode() == AppMode::Help {
+                    // Exit help mode
+                    let mode = if self.buffer().get_results().is_some() {
+                        AppMode::Results
+                    } else {
+                        AppMode::Command
+                    };
+                    self.buffer_mut().set_mode(mode);
+                    self.set_help_visible(false); // Keep state_container in sync
                 } else {
-                    AppMode::Command
-                };
-                self.buffer_mut().set_mode(mode);
+                    // Enter help mode
+                    self.buffer_mut().set_mode(AppMode::Help);
+                    self.set_help_visible(true); // Keep state_container in sync
+                }
             }
             KeyCode::F(3) => {
                 // F3 no longer toggles modes - always stay in single-line mode
@@ -1494,8 +1503,10 @@ impl EnhancedTuiApp {
                 "toggle_help" => {
                     if self.buffer().get_mode() == AppMode::Help {
                         self.buffer_mut().set_mode(AppMode::Results);
+                        self.set_help_visible(false); // Keep state_container in sync
                     } else {
                         self.buffer_mut().set_mode(AppMode::Help);
+                        self.set_help_visible(true); // Keep state_container in sync
                     }
                 }
                 "toggle_debug" => {
@@ -2257,7 +2268,7 @@ impl EnhancedTuiApp {
 
     // Helper methods for help mode actions
     fn exit_help(&mut self) {
-        self.set_help_visible(false);
+        self.set_help_visible(false); // Keep state_container in sync
         self.help_scroll = 0;
         let mode = if self.buffer().get_results().is_some() {
             AppMode::Results
@@ -4733,14 +4744,14 @@ impl EnhancedTuiApp {
         }
 
         // Results area - render based on mode to reduce complexity
-        match (&self.buffer().get_mode(), self.show_help) {
-            (_, true) => self.render_help(f, results_area),
-            (AppMode::History, false) => self.render_history(f, results_area),
-            (AppMode::Debug, false) => self.render_debug(f, results_area),
-            (AppMode::PrettyQuery, false) => self.render_pretty_query(f, results_area),
-            (AppMode::CacheList, false) => self.render_cache_list(f, results_area),
-            (AppMode::ColumnStats, false) => self.render_column_stats(f, results_area),
-            (_, false) if self.buffer().get_results().is_some() => {
+        match self.buffer().get_mode() {
+            AppMode::Help => self.render_help(f, results_area),
+            AppMode::History => self.render_history(f, results_area),
+            AppMode::Debug => self.render_debug(f, results_area),
+            AppMode::PrettyQuery => self.render_pretty_query(f, results_area),
+            AppMode::CacheList => self.render_cache_list(f, results_area),
+            AppMode::ColumnStats => self.render_column_stats(f, results_area),
+            _ if self.buffer().get_results().is_some() => {
                 // We need to work around the borrow checker here
                 // Calculate widths needs mutable self, but we also need to pass results
                 if let Some(results) = self.buffer().get_results() {
