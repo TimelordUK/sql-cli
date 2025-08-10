@@ -47,9 +47,6 @@ pub struct HelpState {
     /// All search match positions
     pub search_matches: Vec<usize>,
 
-    /// Whether debug overlay is shown
-    pub show_debug_overlay: bool,
-
     /// Selected help section
     pub selected_section: HelpSection,
 }
@@ -73,7 +70,6 @@ impl Default for HelpState {
             search_active: false,
             search_match_index: 0,
             search_matches: Vec::new(),
-            show_debug_overlay: false,
             selected_section: HelpSection::General,
         }
     }
@@ -112,21 +108,10 @@ impl HelpWidget {
     pub fn handle_key(&mut self, key: KeyEvent) -> HelpAction {
         self.log_debug(&format!("Handling key: {:?}", key));
 
-        // Check for debug toggle first (F5)
+        // F5 should exit help and show debug - let main app handle it
         if key.code == KeyCode::F(5) {
-            self.state.show_debug_overlay = !self.state.show_debug_overlay;
-            self.log_debug(&format!(
-                "Debug overlay toggled: {}",
-                self.state.show_debug_overlay
-            ));
-
-            if self.state.show_debug_overlay {
-                // Enable debug service when showing overlay
-                if let Some(ref services) = self.services {
-                    services.enable_debug();
-                }
-            }
-            return HelpAction::None;
+            self.log_debug("F5 pressed - exiting help to show debug");
+            return HelpAction::Exit;
         }
 
         // Handle search mode
@@ -281,18 +266,14 @@ impl HelpWidget {
 
     /// Render the help widget
     pub fn render(&mut self, f: &mut Frame, area: Rect) {
-        // If debug overlay is shown, split the screen
-        if self.state.show_debug_overlay {
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-                .split(area);
+        // Log that we're rendering help
+        self.log_debug(&format!(
+            "Rendering help - section: {:?}, scroll: {}/{}",
+            self.state.selected_section, self.state.scroll_offset, self.state.max_scroll
+        ));
 
-            self.render_help_content(f, chunks[0]);
-            self.render_debug_overlay(f, chunks[1]);
-        } else {
-            self.render_help_content(f, area);
-        }
+        // Simple rendering - no split screen
+        self.render_help_content(f, area);
     }
 
     /// Render the main help content
@@ -564,7 +545,7 @@ Debug Information Available:
             spans.push(Span::raw(&self.state.search_query));
             spans.push(Span::raw(" (Enter to search, Esc to cancel)"));
         } else {
-            spans.push(Span::raw("F5:Debug | /:Search | "));
+            spans.push(Span::raw("/:Search | "));
             let scroll_info = format!(
                 "{}/{} ",
                 self.state.scroll_offset + 1,
@@ -583,27 +564,6 @@ Debug Information Available:
         f.render_widget(status, area);
     }
 
-    /// Render debug overlay
-    fn render_debug_overlay(&self, f: &mut Frame, area: Rect) {
-        let debug_content = if let Some(ref services) = self.services {
-            services.generate_debug_dump()
-        } else {
-            "Debug service not available".to_string()
-        };
-
-        let paragraph = Paragraph::new(debug_content)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Debug Info (F5 to toggle)")
-                    .border_style(Style::default().fg(Color::Yellow)),
-            )
-            .wrap(Wrap { trim: false })
-            .scroll((0, 0));
-
-        f.render_widget(paragraph, area);
-    }
-
     /// Get current state for external use
     pub fn get_state(&self) -> &HelpState {
         &self.state
@@ -614,6 +574,19 @@ Debug Information Available:
         self.state = HelpState::default();
         self.log_debug("HelpWidget state reset");
     }
+
+    /// Called when help mode is entered
+    pub fn on_enter(&mut self) {
+        self.log_debug("Help mode entered");
+        // Reset to general section when entering
+        self.state.selected_section = HelpSection::General;
+        self.state.scroll_offset = 0;
+    }
+
+    /// Called when help mode is exited
+    pub fn on_exit(&mut self) {
+        self.log_debug("Help mode exited");
+    }
 }
 
 impl DebugProvider for HelpWidget {
@@ -623,12 +596,11 @@ impl DebugProvider for HelpWidget {
 
     fn debug_info(&self) -> String {
         format!(
-            "HelpWidget: section={:?}, scroll={}/{}, search_active={}, debug_overlay={}",
+            "HelpWidget: section={:?}, scroll={}/{}, search_active={}",
             self.state.selected_section,
             self.state.scroll_offset,
             self.state.max_scroll,
-            self.state.search_active,
-            self.state.show_debug_overlay
+            self.state.search_active
         )
     }
 
@@ -650,10 +622,6 @@ impl DebugInfoProvider for HelpWidget {
             info.push_str(&format!("Search Query: '{}'\n", self.state.search_query));
             info.push_str(&format!("Matches: {}\n", self.state.search_matches.len()));
         }
-        info.push_str(&format!(
-            "Debug Overlay: {}\n",
-            self.state.show_debug_overlay
-        ));
         info
     }
 

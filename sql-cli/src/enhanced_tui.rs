@@ -1045,10 +1045,12 @@ impl EnhancedTuiApp {
                     };
                     self.buffer_mut().set_mode(mode);
                     self.set_help_visible(false); // Keep state_container in sync
+                    self.help_widget.on_exit();
                 } else {
                     // Enter help mode
                     self.buffer_mut().set_mode(AppMode::Help);
                     self.set_help_visible(true); // Keep state_container in sync
+                    self.help_widget.on_enter();
                 }
             }
             KeyCode::F(3) => {
@@ -1293,11 +1295,8 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_scroll_offset(last_offset);
             }
             KeyCode::F(5) => {
-                // Don't handle F5 here if we're in Help mode - let the help widget handle it
-                if self.buffer().get_mode() != AppMode::Help {
-                    // Use the unified debug handler
-                    self.toggle_debug_mode();
-                }
+                // Use the unified debug handler
+                self.toggle_debug_mode();
             }
             KeyCode::F(6) => {
                 // Pretty print query view
@@ -1665,6 +1664,7 @@ impl EnhancedTuiApp {
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
+                self.help_widget.on_enter();
             }
             _ => {
                 // Other keys handled normally
@@ -2274,6 +2274,7 @@ impl EnhancedTuiApp {
 
     // Helper methods for help mode actions
     fn exit_help(&mut self) {
+        self.help_widget.on_exit();
         self.set_help_visible(false); // Keep state_container in sync
         self.help_scroll = 0;
         let mode = if self.buffer().get_results().is_some() {
