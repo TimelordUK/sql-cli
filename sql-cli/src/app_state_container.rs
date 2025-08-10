@@ -276,6 +276,9 @@ pub struct AppStateContainer {
 
     // Debug/logging
     debug_enabled: bool,
+
+    // UI visibility flags
+    show_help: bool,
 }
 
 impl AppStateContainer {
@@ -301,6 +304,7 @@ impl AppStateContainer {
             results_cache: ResultsCache::new(100),
             mode_stack: vec![AppMode::Command],
             debug_enabled: false,
+            show_help: false,
         })
     }
 
@@ -455,6 +459,21 @@ impl AppStateContainer {
         self.debug_enabled
     }
 
+    // Help control
+    pub fn toggle_help(&mut self) {
+        self.show_help = !self.show_help;
+        // TODO: Add logging when log crate is available
+        // info!(target: "state", "Help mode: {}", self.show_help);
+    }
+
+    pub fn is_help_visible(&self) -> bool {
+        self.show_help
+    }
+
+    pub fn set_help_visible(&mut self, visible: bool) {
+        self.show_help = visible;
+    }
+
     /// Generate comprehensive debug dump for F5
     pub fn debug_dump(&self) -> String {
         let mut dump = String::new();
@@ -465,6 +484,12 @@ impl AppStateContainer {
         dump.push_str("MODE INFORMATION:\n");
         dump.push_str(&format!("  Current Mode: {:?}\n", self.current_mode()));
         dump.push_str(&format!("  Mode Stack: {:?}\n", self.mode_stack));
+        dump.push_str("\n");
+
+        // UI Flags
+        dump.push_str("UI FLAGS:\n");
+        dump.push_str(&format!("  Help Visible: {}\n", self.show_help));
+        dump.push_str(&format!("  Debug Enabled: {}\n", self.debug_enabled));
         dump.push_str("\n");
 
         // Input state
@@ -619,6 +644,7 @@ impl fmt::Debug for AppStateContainer {
             .field("filter_active", &self.filter.is_active)
             .field("column_search_active", &self.column_search.is_active)
             .field("debug_enabled", &self.debug_enabled)
+            .field("show_help", &self.show_help)
             .field("cached_results", &self.results_cache.cache.len())
             .field("history_count", &self.command_history.get_all().len())
             .finish()

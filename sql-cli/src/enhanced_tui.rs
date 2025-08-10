@@ -22,6 +22,7 @@ use ratatui::{
 use regex::Regex;
 use serde_json::Value;
 use sql_cli::api_client::{ApiClient, QueryResponse};
+use sql_cli::app_state_container::AppStateContainer;
 use sql_cli::buffer::{
     AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder, SortState,
 };
@@ -120,13 +121,16 @@ struct HistoryState {
 }
 
 pub struct EnhancedTuiApp {
+    // State container - will gradually take over all state management
+    state_container: Option<AppStateContainer>,
+
     api_client: ApiClient,
     input: Input,
     cursor_manager: CursorManager, // New: manages cursor/navigation logic
     data_analyzer: DataAnalyzer,   // New: manages data analysis/statistics
     // results: Option<QueryResponse>, // MIGRATED to buffer system
     table_state: TableState,
-    show_help: bool,
+    show_help: bool, // TODO: Remove once fully migrated to state_container
     sql_parser: SqlParser,
     hybrid_parser: HybridParser,
 
@@ -177,6 +181,36 @@ pub struct EnhancedTuiApp {
 }
 
 impl EnhancedTuiApp {
+    // --- State Container Access ---
+    // Helper methods for accessing the state container during migration
+
+    /// Check if help is visible (uses state_container if available, falls back to local field)
+    fn is_help_visible(&self) -> bool {
+        if let Some(ref container) = self.state_container {
+            container.is_help_visible()
+        } else {
+            self.show_help
+        }
+    }
+
+    /// Toggle help visibility (uses state_container if available, falls back to local field)
+    fn toggle_help(&mut self) {
+        if let Some(ref mut container) = self.state_container {
+            container.toggle_help();
+        } else {
+            self.show_help = !self.show_help;
+        }
+    }
+
+    /// Set help visibility (uses state_container if available, falls back to local field)
+    fn set_help_visible(&mut self, visible: bool) {
+        if let Some(ref mut container) = self.state_container {
+            container.set_help_visible(visible);
+        } else {
+            self.show_help = visible;
+        }
+    }
+
     // --- Buffer Compatibility Layer ---
     // These methods provide a gradual migration path from direct field access to BufferAPI
 
@@ -359,7 +393,28 @@ impl EnhancedTuiApp {
             Config::default()
         });
 
+        // Create buffer manager first
+        let mut buffer_manager = BufferManager::new();
+        let mut buffer = sql_cli::buffer::Buffer::new(1);
+        // Sync initial settings from config
+        buffer.set_case_insensitive(config.behavior.case_insensitive_default);
+        buffer.set_compact_mode(config.display.compact_mode);
+        buffer.set_show_row_numbers(config.display.show_row_numbers);
+        buffer_manager.add_buffer(buffer);
+
+        // Create a second buffer manager for the state container (temporary during migration)
+        let mut container_buffer_manager = BufferManager::new();
+        let mut container_buffer = sql_cli::buffer::Buffer::new(1);
+        container_buffer.set_case_insensitive(config.behavior.case_insensitive_default);
+        container_buffer.set_compact_mode(config.display.compact_mode);
+        container_buffer.set_show_row_numbers(config.display.show_row_numbers);
+        container_buffer_manager.add_buffer(container_buffer);
+
+        // Initialize state container
+        let state_container = AppStateContainer::new(container_buffer_manager).ok();
+
         Self {
+            state_container,
             api_client: ApiClient::new(api_url),
             input: Input::default(),
             cursor_manager: CursorManager::new(),
@@ -418,17 +473,7 @@ impl EnhancedTuiApp {
             selection_mode: SelectionMode::Row, // Default to row mode
             last_yanked: None,
             // CSV fields now in Buffer
-            buffer_manager: {
-                // Initialize buffer manager with a default buffer
-                let mut manager = BufferManager::new();
-                let mut buffer = sql_cli::buffer::Buffer::new(1);
-                // Sync initial settings from config
-                buffer.set_case_insensitive(config.behavior.case_insensitive_default);
-                buffer.set_compact_mode(config.display.compact_mode);
-                buffer.set_show_row_numbers(config.display.show_row_numbers);
-                manager.add_buffer(buffer);
-                manager
-            },
+            buffer_manager,
             buffer_handler: BufferHandler::new(),
             query_cache: QueryCache::new().ok(),
             // Cache fields now in Buffer
@@ -758,7 +803,7 @@ impl EnhancedTuiApp {
                 return self.handle_expand_asterisk();
             }
             EditorAction::ShowHelp => {
-                self.show_help = true;
+                self.set_help_visible(true);
                 return Ok(false);
             }
             EditorAction::ShowDebug => {
@@ -971,8 +1016,8 @@ impl EnhancedTuiApp {
             //     self.new_datatable_buffer();
             // }
             KeyCode::F(1) | KeyCode::Char('?') => {
-                self.show_help = !self.show_help;
-                let mode = if self.show_help {
+                self.toggle_help();
+                let mode = if self.is_help_visible() {
                     AppMode::Help
                 } else {
                     AppMode::Command
@@ -1001,7 +1046,7 @@ impl EnhancedTuiApp {
                 if !query.is_empty() {
                     // Check for special commands
                     if query == ":help" {
-                        self.show_help = true;
+                        self.set_help_visible(true);
                         self.buffer_mut().set_mode(AppMode::Help);
                         self.buffer_mut()
                             .set_status_message("Help Mode - Press ESC to return".to_string());
@@ -1586,7 +1631,7 @@ impl EnhancedTuiApp {
                 }
             }
             KeyCode::F(1) | KeyCode::Char('?') => {
-                self.show_help = true;
+                self.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
             }
             _ => {
@@ -2212,7 +2257,7 @@ impl EnhancedTuiApp {
 
     // Helper methods for help mode actions
     fn exit_help(&mut self) {
-        self.show_help = false;
+        self.set_help_visible(false);
         self.help_scroll = 0;
         let mode = if self.buffer().get_results().is_some() {
             AppMode::Results
@@ -6048,7 +6093,7 @@ impl EnhancedTuiApp {
         if !query.is_empty() {
             // Check for special commands
             if query == ":help" {
-                self.show_help = true;
+                self.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
                 self.buffer_mut()
                     .set_status_message("Help Mode - Press ESC to return".to_string());
@@ -6324,6 +6369,13 @@ impl EnhancedTuiApp {
                     debug_info.push_str("Log buffer not initialized\n");
                 }
                 debug_info.push_str("================================\n");
+
+                // Add AppStateContainer debug dump if available
+                if let Some(ref container) = self.state_container {
+                    debug_info.push_str("\n");
+                    debug_info.push_str(&container.debug_dump());
+                    debug_info.push_str("\n");
+                }
 
                 // Set the final content in debug widget
                 self.debug_widget.set_content(debug_info.clone());
