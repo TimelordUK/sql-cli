@@ -1588,7 +1588,7 @@ impl AppStateContainer {
         self.history_search.borrow().is_active
     }
 
-    // Navigation operations with logging
+    // Navigation operations with logging (V16 implementation)
     pub fn navigate_to(&self, row: usize, col: usize) {
         let mut navigation = self.navigation.borrow_mut();
         let old_row = navigation.selected_row;
@@ -1611,12 +1611,14 @@ impl AppStateContainer {
         drop(navigation);
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
-            debug_service.info(
+            debug_service.log(
                 "Navigation",
+                DebugLevel::Info,
                 format!(
                     "Navigate: ({}, {}) -> ({}, {}), scroll: {:?}",
                     old_row, old_col, new_row, new_col, scroll_offset
                 ),
+                Some("navigate_to".to_string()),
             );
         }
     }
@@ -1648,7 +1650,12 @@ impl AppStateContainer {
         drop(navigation);
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
-            debug_service.info("Navigation", format!("Jump to row: {}", row));
+            debug_service.log(
+                "Navigation",
+                DebugLevel::Info,
+                format!("Jump to row: {}", row),
+                Some("navigate_to_row".to_string()),
+            );
         }
 
         self.navigate_to(row, current_col);
@@ -1660,7 +1667,12 @@ impl AppStateContainer {
         drop(navigation);
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
-            debug_service.info("Navigation", format!("Jump to column: {}", col));
+            debug_service.log(
+                "Navigation",
+                DebugLevel::Info,
+                format!("Jump to column: {}", col),
+                Some("navigate_to_column".to_string()),
+            );
         }
 
         self.navigate_to(current_row, col);
@@ -1672,12 +1684,14 @@ impl AppStateContainer {
         navigation.update_totals(rows, columns);
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
-            debug_service.info(
+            debug_service.log(
                 "Navigation",
+                DebugLevel::Info,
                 format!(
                     "Data size updated: {:?} -> ({}, {}), position: ({}, {})",
                     old_totals, rows, columns, navigation.selected_row, navigation.selected_column
                 ),
+                Some("update_data_size".to_string()),
             );
         }
     }
@@ -1697,12 +1711,14 @@ impl AppStateContainer {
         drop(navigation);
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
-            debug_service.info(
+            debug_service.log(
                 "Navigation",
+                DebugLevel::Info,
                 format!(
                     "Viewport size updated: {:?} -> ({}, {}), scroll adjusted: {:?}",
                     old_viewport, rows, columns, scroll_offset
                 ),
+                Some("set_viewport_size".to_string()),
             );
         }
     }
@@ -1718,12 +1734,14 @@ impl AppStateContainer {
         }
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
-            debug_service.info(
+            debug_service.log(
                 "Navigation",
+                DebugLevel::Info,
                 format!(
                     "Viewport lock: {} at row {:?}",
                     navigation.viewport_lock, navigation.viewport_lock_row
                 ),
+                Some("toggle_viewport_lock".to_string()),
             );
         }
     }
@@ -1746,7 +1764,7 @@ impl AppStateContainer {
         self.navigation.borrow().viewport_lock
     }
 
-    // Results state methods
+    // Results state methods (V17 implementation)
     /// Set query results with comprehensive logging and performance tracking
     pub fn set_results(
         &self,
@@ -1904,7 +1922,6 @@ impl AppStateContainer {
         let cache_stats = self.results.borrow().get_cache_stats();
         (cache_stats.memory_usage, cache_stats.memory_limit)
     }
-
     // Widget access
     pub fn widgets(&self) -> &WidgetStates {
         &self.widgets
