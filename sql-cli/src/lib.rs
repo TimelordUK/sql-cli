@@ -42,6 +42,7 @@ pub mod yank_manager;
 
 // New refactored modules for enhanced_tui decomposition
 pub mod action_handler;
+pub mod app_state_container;
 pub mod column_manager;
 pub mod completion_manager;
 pub mod cursor_manager;
