@@ -162,7 +162,7 @@ pub struct EnhancedTuiApp {
     // Enhanced features
     sort_state: SortState,
     // filter_state: FilterState, // MIGRATED to AppStateContainer
-    search_state: SearchState,
+    // search_state: SearchState, // MIGRATED to AppStateContainer
     column_search_state: ColumnSearchState,
     completion_state: CompletionState,
     history_state: HistoryState,
@@ -536,12 +536,12 @@ impl EnhancedTuiApp {
             },
             // filter_state: FilterState { ... }, // MIGRATED to AppStateContainer
             // fuzzy_filter_state: FuzzyFilterState { ... }, // MIGRATED to buffer system
-            search_state: SearchState {
-                pattern: String::new(),
-                current_match: None,
-                matches: Vec::new(),
-                match_index: 0,
-            },
+            // search_state: SearchState { // MIGRATED to AppStateContainer
+            //     pattern: String::new(),
+            //     current_match: None,
+            //     matches: Vec::new(),
+            //     match_index: 0,
+            // },
             column_search_state: ColumnSearchState {
                 pattern: String::new(),
                 matching_columns: Vec::new(),
@@ -1904,9 +1904,14 @@ impl EnhancedTuiApp {
 
                 self.buffer_mut().set_search_pattern(pattern);
                 self.perform_search();
+                let matches_count = if let Some(ref state_container) = self.state_container {
+                    state_container.search().matches.len()
+                } else {
+                    0 // Fallback when state_container not available
+                };
                 debug!(target: "search", "After perform_search, app_mode={:?}, matches_found={}", 
                        self.buffer().get_mode(),
-                       self.search_state.matches.len());
+                       matches_count);
             }
             SearchMode::Filter => {
                 debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
@@ -3850,12 +3855,16 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_current_column(0);
 
                 // Clear search state but keep filter state
-                self.search_state = SearchState {
-                    pattern: String::new(),
-                    current_match: None,
-                    matches: Vec::new(),
-                    match_index: 0,
-                };
+                if let Some(ref state_container) = self.state_container {
+                    let mut search = state_container.search_mut();
+                    search.pattern = String::new();
+                    search.current_match = 0;
+                    search.matches = Vec::new();
+                    search.is_active = false;
+                } else {
+                    // Fallback when state_container not available
+                    eprintln!("[WARNING] SearchState migration: state_container not available for search reset");
+                }
 
                 self.buffer_mut()
                     .set_status_message(format!("Filtered to {} rows", filtered_count));
@@ -4381,12 +4390,18 @@ impl EnhancedTuiApp {
         };
 
         // Clear search state
-        self.search_state = SearchState {
-            pattern: String::new(),
-            current_match: None,
-            matches: Vec::new(),
-            match_index: 0,
-        };
+        if let Some(ref state_container) = self.state_container {
+            let mut search = state_container.search_mut();
+            search.pattern = String::new();
+            search.current_match = 0;
+            search.matches = Vec::new();
+            search.is_active = false;
+        } else {
+            // Fallback when state_container not available
+            eprintln!(
+                "[WARNING] SearchState migration: state_container not available for search clear"
+            );
+        }
 
         // Clear fuzzy filter state to prevent it from persisting across queries
         {
