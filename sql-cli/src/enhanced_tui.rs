@@ -938,14 +938,25 @@ impl EnhancedTuiApp {
                 }
                 // Special handling for History mode - initialize history search
                 if mode == AppMode::History {
-                    self.history_state.search_query.clear();
-                    self.update_history_matches();
-                    // Debug: log how many history entries we have
-                    let total_entries = self.command_history.get_all().len();
-                    self.buffer_mut().set_status_message(format!(
-                        "History search: {} total entries",
-                        total_entries
-                    ));
+                    // Use AppStateContainer if available, otherwise fall back to legacy
+                    if let Some(ref state_container) = self.state_container {
+                        eprintln!("[DEBUG] Using AppStateContainer for history search");
+                        let current_input = self.get_input_text();
+                        state_container.start_history_search(current_input);
+                        let match_count = state_container.history_search().matches.len();
+                        self.buffer_mut()
+                            .set_status_message(format!("History search: {} matches", match_count));
+                    } else {
+                        eprintln!("[DEBUG] Using legacy history search");
+                        self.history_state.search_query.clear();
+                        self.update_history_matches();
+                        // Debug: log how many history entries we have
+                        let total_entries = self.command_history.get_all().len();
+                        self.buffer_mut().set_status_message(format!(
+                            "History search: {} total entries",
+                            total_entries
+                        ));
+                    }
                 }
                 return Ok(false);
             }
