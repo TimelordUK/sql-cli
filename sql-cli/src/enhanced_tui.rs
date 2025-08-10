@@ -995,6 +995,22 @@ impl EnhancedTuiApp {
         }
 
         // ORIGINAL LOGIC: Keep all existing logic as fallback
+
+        // Handle Ctrl+R for history search
+        if let KeyCode::Char('r') = normalized_key.code {
+            if normalized_key.modifiers.contains(KeyModifiers::CONTROL) {
+                if let Some(ref state_container) = self.state_container {
+                    // Start history search mode
+                    let current_input = self.get_input_text();
+                    state_container.start_history_search(current_input);
+                    self.buffer_mut().set_mode(AppMode::History);
+                    self.buffer_mut()
+                        .set_status_message("History search started (Ctrl+R)".to_string());
+                    return Ok(false);
+                }
+            }
+        }
+
         // Store old cursor position
         let old_cursor = self.get_input_cursor();
 
@@ -2496,52 +2512,108 @@ impl EnhancedTuiApp {
     }
 
     fn handle_history_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::Esc => {
-                self.buffer_mut().set_mode(AppMode::Command);
-            }
-            KeyCode::Enter => {
-                if !self.history_state.matches.is_empty()
-                    && self.history_state.selected_index < self.history_state.matches.len()
-                {
-                    let selected_command = self.history_state.matches
-                        [self.history_state.selected_index]
-                        .entry
-                        .command
-                        .clone();
-                    // Use helper to set text through buffer
-                    self.set_input_text(selected_command);
+        if let Some(ref state_container) = self.state_container {
+            match key.code {
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    return Ok(true)
+                }
+                KeyCode::Esc => {
+                    // Cancel history search and restore original input
+                    let original_input = state_container.cancel_history_search();
+                    self.set_input_text(original_input);
                     self.buffer_mut().set_mode(AppMode::Command);
                     self.buffer_mut()
-                        .set_status_message("Command loaded from history".to_string());
-                    // Reset scroll to show end of command
-                    self.input_scroll_offset = 0;
-                    self.update_horizontal_scroll(120); // Will be properly updated on next render
+                        .set_status_message("History search cancelled".to_string());
                 }
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if !self.history_state.matches.is_empty() {
-                    self.history_state.selected_index =
-                        self.history_state.selected_index.saturating_sub(1);
+                KeyCode::Enter => {
+                    // Accept the selected history command
+                    if let Some(command) = state_container.accept_history_search() {
+                        self.set_input_text(command);
+                        self.buffer_mut().set_mode(AppMode::Command);
+                        self.buffer_mut()
+                            .set_status_message("Command loaded from history".to_string());
+                        // Reset scroll to show end of command
+                        self.input_scroll_offset = 0;
+                        self.update_horizontal_scroll(120); // Will be properly updated on next render
+                    }
                 }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if !self.history_state.matches.is_empty()
-                    && self.history_state.selected_index + 1 < self.history_state.matches.len()
-                {
-                    self.history_state.selected_index += 1;
+                KeyCode::Up | KeyCode::Char('k') => {
+                    state_container.history_search_previous();
                 }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    state_container.history_search_next();
+                }
+                KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // Ctrl+R cycles through matches
+                    state_container.history_search_next();
+                }
+                KeyCode::Backspace => {
+                    let history_search = state_container.history_search();
+                    let mut query = history_search.query.clone();
+                    drop(history_search); // Release the borrow
+                    query.pop();
+                    state_container.update_history_search(query);
+                }
+                KeyCode::Char(c) => {
+                    let history_search = state_container.history_search();
+                    let mut query = history_search.query.clone();
+                    drop(history_search); // Release the borrow
+                    query.push(c);
+                    state_container.update_history_search(query);
+                }
+                _ => {}
             }
-            KeyCode::Backspace => {
-                self.history_state.search_query.pop();
-                self.update_history_matches();
+        } else {
+            // Fallback to old behavior if no state container
+            match key.code {
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    return Ok(true)
+                }
+                KeyCode::Esc => {
+                    self.buffer_mut().set_mode(AppMode::Command);
+                }
+                KeyCode::Enter => {
+                    if !self.history_state.matches.is_empty()
+                        && self.history_state.selected_index < self.history_state.matches.len()
+                    {
+                        let selected_command = self.history_state.matches
+                            [self.history_state.selected_index]
+                            .entry
+                            .command
+                            .clone();
+                        // Use helper to set text through buffer
+                        self.set_input_text(selected_command);
+                        self.buffer_mut().set_mode(AppMode::Command);
+                        self.buffer_mut()
+                            .set_status_message("Command loaded from history".to_string());
+                        // Reset scroll to show end of command
+                        self.input_scroll_offset = 0;
+                        self.update_horizontal_scroll(120); // Will be properly updated on next render
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if !self.history_state.matches.is_empty() {
+                        self.history_state.selected_index =
+                            self.history_state.selected_index.saturating_sub(1);
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if !self.history_state.matches.is_empty()
+                        && self.history_state.selected_index + 1 < self.history_state.matches.len()
+                    {
+                        self.history_state.selected_index += 1;
+                    }
+                }
+                KeyCode::Backspace => {
+                    self.history_state.search_query.pop();
+                    self.update_history_matches();
+                }
+                KeyCode::Char(c) => {
+                    self.history_state.search_query.push(c);
+                    self.update_history_matches();
+                }
+                _ => {}
             }
-            KeyCode::Char(c) => {
-                self.history_state.search_query.push(c);
-                self.update_history_matches();
-            }
-            _ => {}
         }
         Ok(false)
     }
@@ -4869,10 +4941,14 @@ impl EnhancedTuiApp {
             AppMode::FuzzyFilter => "Fuzzy Filter".to_string(),
             AppMode::ColumnSearch => "Column Search".to_string(),
             AppMode::Help => "Help".to_string(),
-            AppMode::History => format!(
-                "History Search: '{}' (Esc to cancel)",
-                self.history_state.search_query
-            ),
+            AppMode::History => {
+                let query = if let Some(ref state_container) = self.state_container {
+                    state_container.history_search().query.clone()
+                } else {
+                    self.history_state.search_query.clone()
+                };
+                format!("History Search: '{}' (Esc to cancel)", query)
+            }
             AppMode::Debug => "Parser Debug (F5)".to_string(),
             AppMode::PrettyQuery => "Pretty Query View (F6)".to_string(),
             AppMode::CacheList => "Cache Management (F7)".to_string(),
@@ -4894,8 +4970,20 @@ impl EnhancedTuiApp {
         } else {
             // Always get input text through the buffer API for consistency
             let input_text_string = self.get_input_text();
+
+            // Get history search query if in history mode
+            let history_query_string = if self.buffer().get_mode() == AppMode::History {
+                if let Some(ref state_container) = self.state_container {
+                    state_container.history_search().query.clone()
+                } else {
+                    self.history_state.search_query.clone()
+                }
+            } else {
+                String::new()
+            };
+
             let input_text = match self.buffer().get_mode() {
-                AppMode::History => &self.history_state.search_query,
+                AppMode::History => &history_query_string,
                 _ => &input_text_string,
             };
 
@@ -4998,10 +5086,12 @@ impl EnhancedTuiApp {
                     ));
                 }
                 AppMode::History => {
-                    f.set_cursor_position((
-                        chunks[0].x + self.history_state.search_query.len() as u16 + 1,
-                        chunks[0].y + 1,
-                    ));
+                    let query_len = if let Some(ref state_container) = self.state_container {
+                        state_container.history_search().query.len()
+                    } else {
+                        self.history_state.search_query.len()
+                    };
+                    f.set_cursor_position((chunks[0].x + query_len as u16 + 1, chunks[0].y + 1));
                 }
                 _ => {}
             }
@@ -5919,8 +6009,23 @@ impl EnhancedTuiApp {
     }
 
     fn render_history(&self, f: &mut Frame, area: Rect) {
-        if self.history_state.matches.is_empty() {
-            let no_history = if self.history_state.search_query.is_empty() {
+        // Get history state from AppStateContainer if available
+        let (matches_empty, search_query_empty) =
+            if let Some(ref state_container) = self.state_container {
+                let history_search = state_container.history_search();
+                (
+                    history_search.matches.is_empty(),
+                    history_search.query.is_empty(),
+                )
+            } else {
+                (
+                    self.history_state.matches.is_empty(),
+                    self.history_state.search_query.is_empty(),
+                )
+            };
+
+        if matches_empty {
+            let no_history = if search_query_empty {
                 "No command history found.\nExecute some queries to build history."
             } else {
                 "No matches found for your search.\nTry a different search term."
@@ -5951,15 +6056,29 @@ impl EnhancedTuiApp {
     }
 
     fn render_history_list(&self, f: &mut Frame, area: Rect) {
+        // Get history data from AppStateContainer if available, otherwise use local state
+        let (matches, selected_index, match_count) =
+            if let Some(ref state_container) = self.state_container {
+                let history_search = state_container.history_search();
+                let matches = history_search.matches.clone();
+                let selected_index = history_search.selected_index;
+                let match_count = matches.len();
+                (matches, selected_index, match_count)
+            } else {
+                (
+                    self.history_state.matches.clone(),
+                    self.history_state.selected_index,
+                    self.history_state.matches.len(),
+                )
+            };
+
         // Create more compact history list - just show essential info
-        let history_items: Vec<Line> = self
-            .history_state
-            .matches
+        let history_items: Vec<Line> = matches
             .iter()
             .enumerate()
             .map(|(i, history_match)| {
                 let entry = &history_match.entry;
-                let is_selected = i == self.history_state.selected_index;
+                let is_selected = i == selected_index;
 
                 let success_indicator = if entry.success { "✓" } else { "✗" };
                 let time_ago = {
@@ -6018,7 +6137,7 @@ impl EnhancedTuiApp {
         let history_paragraph = Paragraph::new(history_items)
             .block(Block::default().borders(Borders::ALL).title(format!(
                 "History ({} matches) - j/k to navigate, Enter to select",
-                self.history_state.matches.len()
+                match_count
             )))
             .wrap(ratatui::widgets::Wrap { trim: false });
 
@@ -6026,11 +6145,21 @@ impl EnhancedTuiApp {
     }
 
     fn render_selected_command_preview(&self, f: &mut Frame, area: Rect) {
-        if let Some(selected_match) = self
-            .history_state
-            .matches
-            .get(self.history_state.selected_index)
-        {
+        // Get the selected match from AppStateContainer if available
+        let selected_match = if let Some(ref state_container) = self.state_container {
+            let history_search = state_container.history_search();
+            history_search
+                .matches
+                .get(history_search.selected_index)
+                .cloned()
+        } else {
+            self.history_state
+                .matches
+                .get(self.history_state.selected_index)
+                .cloned()
+        };
+
+        if let Some(selected_match) = selected_match {
             let entry = &selected_match.entry;
 
             // Pretty format the SQL command - adjust compactness based on available space

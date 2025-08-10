@@ -555,6 +555,36 @@ impl JumpToRowState {
     }
 }
 
+/// History search state (for Ctrl+R functionality)
+#[derive(Debug, Clone)]
+pub struct HistorySearchState {
+    pub query: String,
+    pub matches: Vec<crate::history::HistoryMatch>,
+    pub selected_index: usize,
+    pub is_active: bool,
+    pub original_input: String,
+}
+
+impl HistorySearchState {
+    pub fn new() -> Self {
+        Self {
+            query: String::new(),
+            matches: Vec::new(),
+            selected_index: 0,
+            is_active: false,
+            original_input: String::new(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.query.clear();
+        self.matches.clear();
+        self.selected_index = 0;
+        self.is_active = false;
+        self.original_input.clear();
+    }
+}
+
 /// Container for all widget states
 pub struct WidgetStates {
     pub search_modes: SearchModesWidget,
@@ -623,6 +653,7 @@ pub struct AppStateContainer {
     search: RefCell<SearchState>,
     filter: RefCell<FilterState>,
     column_search: RefCell<ColumnSearchState>,
+    history_search: RefCell<HistorySearchState>,
 
     // Widget states
     widgets: WidgetStates,
@@ -663,6 +694,7 @@ impl AppStateContainer {
             search: RefCell::new(SearchState::new()),
             filter: RefCell::new(FilterState::new()),
             column_search: RefCell::new(ColumnSearchState::new()),
+            history_search: RefCell::new(HistorySearchState::new()),
             widgets,
             cache_list: CacheListState::new(),
             column_stats: ColumnStatsState::new(),
@@ -956,6 +988,194 @@ impl AppStateContainer {
 
     pub fn column_search_mut(&self) -> std::cell::RefMut<ColumnSearchState> {
         self.column_search.borrow_mut()
+    }
+
+    // History search operations (Ctrl+R)
+    pub fn start_history_search(&self, original_input: String) {
+        let mut history_search = self.history_search.borrow_mut();
+        history_search.query.clear();
+        history_search.matches.clear();
+        history_search.selected_index = 0;
+        history_search.is_active = true;
+        history_search.original_input = original_input;
+
+        // Initialize with all history entries
+        let all_entries = self.command_history.get_all();
+        history_search.matches = all_entries
+            .iter()
+            .cloned()
+            .map(|entry| crate::history::HistoryMatch {
+                entry,
+                indices: Vec::new(),
+                score: 0,
+            })
+            .collect();
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "HistorySearch",
+                format!(
+                    "Started history search with {} entries",
+                    history_search.matches.len()
+                ),
+            );
+        }
+    }
+
+    pub fn update_history_search(&self, query: String) {
+        let mut history_search = self.history_search.borrow_mut();
+        let old_query = history_search.query.clone();
+        history_search.query = query.clone();
+
+        if query.is_empty() {
+            // Show all history when no search
+            let all_entries = self.command_history.get_all();
+            history_search.matches = all_entries
+                .iter()
+                .cloned()
+                .map(|entry| crate::history::HistoryMatch {
+                    entry,
+                    indices: Vec::new(),
+                    score: 0,
+                })
+                .collect();
+        } else {
+            // Use fuzzy search
+            use fuzzy_matcher::skim::SkimMatcherV2;
+            use fuzzy_matcher::FuzzyMatcher;
+
+            let matcher = SkimMatcherV2::default();
+            let mut matches: Vec<crate::history::HistoryMatch> = self
+                .command_history
+                .get_all()
+                .iter()
+                .cloned()
+                .filter_map(|entry| {
+                    matcher
+                        .fuzzy_indices(&entry.command, &query)
+                        .map(|(score, indices)| crate::history::HistoryMatch {
+                            entry,
+                            indices,
+                            score,
+                        })
+                })
+                .collect();
+
+            // Sort by score (highest first)
+            matches.sort_by(|a, b| b.score.cmp(&a.score));
+            history_search.matches = matches;
+        }
+
+        // Reset selected index if it's out of bounds
+        if history_search.selected_index >= history_search.matches.len() {
+            history_search.selected_index = 0;
+        }
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "HistorySearch",
+                format!(
+                    "Updated history search: '{}' -> '{}', {} matches",
+                    old_query,
+                    query,
+                    history_search.matches.len()
+                ),
+            );
+        }
+    }
+
+    pub fn history_search_next(&self) {
+        let mut history_search = self.history_search.borrow_mut();
+        if !history_search.matches.is_empty() {
+            let old_index = history_search.selected_index;
+            history_search.selected_index =
+                (history_search.selected_index + 1) % history_search.matches.len();
+
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "HistorySearch",
+                    format!(
+                        "Navigate next: {} -> {}",
+                        old_index, history_search.selected_index
+                    ),
+                );
+            }
+        }
+    }
+
+    pub fn history_search_previous(&self) {
+        let mut history_search = self.history_search.borrow_mut();
+        if !history_search.matches.is_empty() {
+            let old_index = history_search.selected_index;
+            history_search.selected_index = if history_search.selected_index == 0 {
+                history_search.matches.len() - 1
+            } else {
+                history_search.selected_index - 1
+            };
+
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "HistorySearch",
+                    format!(
+                        "Navigate previous: {} -> {}",
+                        old_index, history_search.selected_index
+                    ),
+                );
+            }
+        }
+    }
+
+    pub fn get_selected_history_command(&self) -> Option<String> {
+        let history_search = self.history_search.borrow();
+        history_search
+            .matches
+            .get(history_search.selected_index)
+            .map(|m| m.entry.command.clone())
+    }
+
+    pub fn accept_history_search(&self) -> Option<String> {
+        let mut history_search = self.history_search.borrow_mut();
+        if history_search.is_active {
+            let command = history_search
+                .matches
+                .get(history_search.selected_index)
+                .map(|m| m.entry.command.clone());
+
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "HistorySearch",
+                    format!("Accepted history command: {:?}", command),
+                );
+            }
+
+            history_search.clear();
+            command
+        } else {
+            None
+        }
+    }
+
+    pub fn cancel_history_search(&self) -> String {
+        let mut history_search = self.history_search.borrow_mut();
+        let original = history_search.original_input.clone();
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "HistorySearch",
+                format!("Cancelled history search, restoring: '{}'", original),
+            );
+        }
+
+        history_search.clear();
+        original
+    }
+
+    pub fn history_search(&self) -> std::cell::Ref<HistorySearchState> {
+        self.history_search.borrow()
+    }
+
+    pub fn is_history_search_active(&self) -> bool {
+        self.history_search.borrow().is_active
     }
 
     // Widget access
@@ -1317,6 +1537,39 @@ impl AppStateContainer {
                         },
                         idx,
                         name
+                    ));
+                }
+            }
+            dump.push_str("\n");
+        }
+
+        // History search state (Ctrl+R)
+        let history_search = self.history_search.borrow();
+        if history_search.is_active {
+            dump.push_str("HISTORY SEARCH STATE (ACTIVE):\n");
+            dump.push_str(&format!("  Query: '{}'\n", history_search.query));
+            dump.push_str(&format!("  Matches: {}\n", history_search.matches.len()));
+            dump.push_str(&format!("  Selected: {}\n", history_search.selected_index));
+            dump.push_str(&format!(
+                "  Original Input: '{}'\n",
+                history_search.original_input
+            ));
+            if !history_search.matches.is_empty() {
+                dump.push_str("  Top matches:\n");
+                for (i, m) in history_search.matches.iter().take(5).enumerate() {
+                    dump.push_str(&format!(
+                        "    [{}] Score: {}, '{}'\n",
+                        if i == history_search.selected_index {
+                            "*"
+                        } else {
+                            " "
+                        },
+                        m.score,
+                        if m.entry.command.len() > 50 {
+                            format!("{}...", &m.entry.command[..50])
+                        } else {
+                            m.entry.command.clone()
+                        }
                     ));
                 }
             }

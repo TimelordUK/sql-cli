@@ -111,7 +111,18 @@ pub struct FilterState {
 - Filter application/removal
 - Performance metrics (search time, rows filtered)
 
-### Phase 3: Navigation State (v15) 📋
+### Phase 3: History Search State (v15) ✅
+**Goal**: Migrate Ctrl+R history search to AppStateContainer
+
+**Completed**:
+- Added HistorySearchState to AppStateContainer
+- Implemented history search operations (start, update, navigate, accept, cancel)
+- Integrated with fuzzy matching using SkimMatcherV2
+- Updated enhanced_tui to use AppStateContainer for history search
+- Added comprehensive logging for all history search operations
+- Tested with existing history data
+
+### Phase 4: Navigation State (v16) 📋
 **Goal**: Consolidate all table navigation and viewport management
 
 #### Current State (Scattered):
@@ -150,7 +161,7 @@ pub struct Viewport {
 - `jump_to_row(row: usize)`
 - `jump_to_column(col: usize)`
 
-### Phase 4: Buffer/Results State (v16) 📋
+### Phase 5: Buffer/Results State (v17) 📋
 **Goal**: Move all query results data into AppStateContainer
 
 #### Target State:
@@ -170,7 +181,7 @@ pub struct QueryResults {
 }
 ```
 
-### Phase 5: Input State Completion (v17) 📋
+### Phase 6: Input State Completion (v18) 📋
 **Goal**: Complete input management migration with undo/redo
 
 #### Target State:
@@ -185,7 +196,7 @@ pub struct InputState {
 }
 ```
 
-### Phase 6: Subscription System (v18) 📋
+### Phase 7: Subscription System (v19) 📋
 **Goal**: Implement component subscription to state slices
 
 #### Concept:
@@ -208,7 +219,7 @@ impl AppStateContainer {
 }
 ```
 
-### Phase 7: Widget State Binding (v19) 📋
+### Phase 8: Widget State Binding (v20) 📋
 **Goal**: Widgets automatically update from state changes
 
 ```rust
