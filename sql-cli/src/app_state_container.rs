@@ -8,6 +8,7 @@ use crate::stats_widget::StatsWidget;
 // use crate::debug_widget::DebugWidget;
 use crate::widget_traits::DebugInfoProvider;
 use anyhow::Result;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -29,10 +30,11 @@ impl InputState {
     }
 
     pub fn clear(&mut self) {
-        // TODO: Add logging when log crate is available
-        // info!(target: "state", "InputState::clear() - was: '{}'", self.text);
+        let old_text = self.text.clone();
         self.text.clear();
         self.cursor_position = 0;
+        // Note: This is on InputState, so we don't have access to debug_service here
+        // Logging will need to be done at the AppStateContainer level
     }
 
     pub fn set_text(&mut self, text: String) {
@@ -279,6 +281,7 @@ pub struct AppStateContainer {
 
     // Debug/logging
     debug_enabled: bool,
+    debug_service: RefCell<Option<crate::debug_service::DebugService>>,
 
     // UI visibility flags
     show_help: bool,
@@ -286,8 +289,6 @@ pub struct AppStateContainer {
 
 impl AppStateContainer {
     pub fn new(buffers: BufferManager) -> Result<Self> {
-        // TODO: Add logging when log crate is available
-        // info!(target: "state", "Creating new AppStateContainer");
         let command_history = CommandHistory::new()?;
         let mut widgets = WidgetStates::new();
         widgets.set_history(HistoryWidget::new(command_history.clone()));
@@ -307,6 +308,7 @@ impl AppStateContainer {
             results_cache: ResultsCache::new(100),
             mode_stack: vec![AppMode::Command],
             debug_enabled: false,
+            debug_service: RefCell::new(None), // Will be set later via set_debug_service
             show_help: false,
         })
     }
@@ -420,12 +422,16 @@ impl AppStateContainer {
     }
 
     pub fn enter_mode(&mut self, mode: AppMode) -> Result<()> {
-        let _current = self.current_mode();
-        // TODO: Add logging when log crate is available
-        // info!(target: "state", "MODE TRANSITION: {:?} -> {:?}", current, mode);
+        let current = self.current_mode();
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "AppStateContainer",
+                format!("MODE TRANSITION: {:?} -> {:?}", current, mode),
+            );
+        }
 
         // Validate transition
-        match (_current, mode.clone()) {
+        match (current, mode.clone()) {
             // Add validation rules here
             _ => {
                 // debug!(target: "state", "Mode transition allowed");
@@ -433,17 +439,29 @@ impl AppStateContainer {
         }
 
         self.mode_stack.push(mode);
-        // trace!(target: "state", "Mode stack: {:?}", self.mode_stack);
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "AppStateContainer",
+                format!("Mode stack: {:?}", self.mode_stack),
+            );
+        }
         Ok(())
     }
 
     pub fn exit_mode(&mut self) -> Result<AppMode> {
         if self.mode_stack.len() > 1 {
-            let _exited = self.mode_stack.pop().unwrap();
+            let exited = self.mode_stack.pop().unwrap();
             let new_mode = self.current_mode();
-            // TODO: Add logging when log crate is available
-            // info!(target: "state", "MODE EXIT: {:?} -> {:?}", exited, new_mode);
-            // trace!(target: "state", "Mode stack after exit: {:?}", self.mode_stack);
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "AppStateContainer",
+                    format!("MODE EXIT: {:?} -> {:?}", exited, new_mode),
+                );
+                debug_service.info(
+                    "AppStateContainer",
+                    format!("Mode stack after exit: {:?}", self.mode_stack),
+                );
+            }
             Ok(new_mode)
         } else {
             // debug!(target: "state", "Cannot exit base mode");
@@ -454,8 +472,24 @@ impl AppStateContainer {
     // Debug control
     pub fn toggle_debug(&mut self) {
         self.debug_enabled = !self.debug_enabled;
-        // TODO: Add logging when log crate is available
-        // info!(target: "state", "Debug mode: {}", self.debug_enabled);
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "AppStateContainer",
+                format!("Debug mode: {}", self.debug_enabled),
+            );
+        }
+    }
+
+    /// Set the debug service for logging (can be called through Arc due to RefCell)
+    pub fn set_debug_service(&self, debug_service: crate::debug_service::DebugService) {
+        *self.debug_service.borrow_mut() = Some(debug_service);
+        if let Some(ref service) = *self.debug_service.borrow() {
+            service.info("AppStateContainer", "Debug service connected".to_string());
+            service.info(
+                "AppStateContainer",
+                "AppStateContainer constructed with debug logging".to_string(),
+            );
+        }
     }
 
     pub fn is_debug_enabled(&self) -> bool {
@@ -464,9 +498,17 @@ impl AppStateContainer {
 
     // Help control
     pub fn toggle_help(&mut self) {
+        let old_value = self.show_help;
         self.show_help = !self.show_help;
-        // TODO: Add logging when log crate is available
-        // info!(target: "state", "Help mode: {}", self.show_help);
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "AppStateContainer",
+                format!(
+                    "Help mode changed: {} -> {} (in toggle_help)",
+                    old_value, self.show_help
+                ),
+            );
+        }
     }
 
     pub fn is_help_visible(&self) -> bool {
@@ -474,7 +516,17 @@ impl AppStateContainer {
     }
 
     pub fn set_help_visible(&mut self, visible: bool) {
+        let old_value = self.show_help;
         self.show_help = visible;
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "AppStateContainer",
+                format!(
+                    "Help visibility changed: {} -> {} (in set_help_visible)",
+                    old_value, visible
+                ),
+            );
+        }
     }
 
     /// Generate comprehensive debug dump for F5

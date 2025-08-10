@@ -513,13 +513,24 @@ impl EnhancedTuiApp {
         container_buffer_manager.add_buffer(container_buffer);
 
         // Initialize state container as Arc
-        let state_container = AppStateContainer::new(container_buffer_manager)
-            .ok()
-            .map(std::sync::Arc::new);
+        let state_container = match AppStateContainer::new(container_buffer_manager) {
+            Ok(container) => Some(std::sync::Arc::new(container)),
+            Err(e) => {
+                eprintln!("WARNING: Failed to initialize AppStateContainer: {}", e);
+                eprintln!("Falling back to legacy initialization without state container");
+                None
+            }
+        };
 
         // Initialize service container and help widget
         let (service_container, mut help_widget) = if let Some(ref state_arc) = state_container {
             let services = ServiceContainer::new(state_arc.clone());
+
+            // Inject debug service into AppStateContainer (now works with RefCell)
+            state_arc.set_debug_service(services.debug_service.clone_service());
+
+            // IMPORTANT: Enable the debug service so it actually logs!
+            services.enable_debug();
 
             // Create help widget and set services
             let mut widget = HelpWidget::new();
@@ -1149,6 +1160,15 @@ impl EnhancedTuiApp {
                     self.help_widget.on_exit();
                 } else {
                     // Enter help mode
+                    eprintln!("DEBUG: F1 pressed - entering help mode");
+                    eprintln!(
+                        "DEBUG: service_container is: {}",
+                        if self.service_container.is_some() {
+                            "Some"
+                        } else {
+                            "None"
+                        }
+                    );
                     self.buffer_mut().set_mode(AppMode::Help);
                     self.set_help_visible(true); // Keep state_container in sync
                     self.help_widget.on_enter();
@@ -6497,6 +6517,29 @@ impl EnhancedTuiApp {
                     debug_info.push_str("Log buffer not initialized\n");
                 }
                 debug_info.push_str("================================\n");
+
+                // Add DebugService logs (our StateManager logs!)
+                if let Some(ref services) = self.service_container {
+                    debug_info.push_str("\n========== STATE CHANGE LOGS ==========\n");
+                    debug_info.push_str("(Most recent at bottom, from DebugService)\n");
+                    let debug_entries = services.debug_service.get_entries();
+                    let recent = debug_entries.iter().rev().take(50).rev(); // Last 50 entries
+                    for entry in recent {
+                        debug_info.push_str(&format!(
+                            "[{}] {:?} [{}]: {}\n",
+                            entry.timestamp, entry.level, entry.component, entry.message
+                        ));
+                    }
+                    debug_info.push_str(&format!(
+                        "Total state change entries: {}\n",
+                        debug_entries.len()
+                    ));
+                    debug_info.push_str("================================\n");
+                } else {
+                    debug_info.push_str("\n========== STATE CHANGE LOGS ==========\n");
+                    debug_info.push_str("DebugService not available (service_container is None)\n");
+                    debug_info.push_str("================================\n");
+                }
 
                 // Add AppStateContainer debug dump if available
                 if let Some(ref container) = self.state_container {
