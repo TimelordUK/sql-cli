@@ -546,6 +546,100 @@ pub struct JumpToRowState {
     pub is_active: bool,
 }
 
+/// Navigation and viewport state
+#[derive(Debug, Clone)]
+pub struct NavigationState {
+    pub selected_row: usize,
+    pub selected_column: usize,
+    pub scroll_offset: (usize, usize), // (row, col)
+    pub viewport_rows: usize,
+    pub viewport_columns: usize,
+    pub total_rows: usize,
+    pub total_columns: usize,
+    pub last_visible_rows: usize,
+    pub viewport_lock: bool,
+    pub viewport_lock_row: Option<usize>,
+    pub selection_history: VecDeque<(usize, usize)>, // Track navigation history
+}
+
+impl NavigationState {
+    pub fn new() -> Self {
+        Self {
+            selected_row: 0,
+            selected_column: 0,
+            scroll_offset: (0, 0),
+            viewport_rows: 30,
+            viewport_columns: 10,
+            total_rows: 0,
+            total_columns: 0,
+            last_visible_rows: 0,
+            viewport_lock: false,
+            viewport_lock_row: None,
+            selection_history: VecDeque::with_capacity(50), // Keep last 50 positions
+        }
+    }
+
+    pub fn update_totals(&mut self, rows: usize, columns: usize) {
+        self.total_rows = rows;
+        self.total_columns = columns;
+
+        // Adjust selected position if it's out of bounds
+        if self.selected_row >= rows && rows > 0 {
+            self.selected_row = rows - 1;
+        }
+        if self.selected_column >= columns && columns > 0 {
+            self.selected_column = columns - 1;
+        }
+    }
+
+    pub fn set_viewport_size(&mut self, rows: usize, columns: usize) {
+        self.viewport_rows = rows;
+        self.viewport_columns = columns;
+    }
+
+    pub fn is_position_visible(&self, row: usize, col: usize) -> bool {
+        let (scroll_row, scroll_col) = self.scroll_offset;
+        row >= scroll_row
+            && row < scroll_row + self.viewport_rows
+            && col >= scroll_col
+            && col < scroll_col + self.viewport_columns
+    }
+
+    pub fn ensure_visible(&mut self, row: usize, col: usize) {
+        let (mut scroll_row, mut scroll_col) = self.scroll_offset;
+
+        // Adjust row scrolling
+        if row < scroll_row {
+            scroll_row = row;
+        } else if row >= scroll_row + self.viewport_rows {
+            scroll_row = row.saturating_sub(self.viewport_rows - 1);
+        }
+
+        // Adjust column scrolling
+        if col < scroll_col {
+            scroll_col = col;
+        } else if col >= scroll_col + self.viewport_columns {
+            scroll_col = col.saturating_sub(self.viewport_columns - 1);
+        }
+
+        self.scroll_offset = (scroll_row, scroll_col);
+    }
+
+    pub fn add_to_history(&mut self, row: usize, col: usize) {
+        // Don't add if it's the same as the last position
+        if let Some(&(last_row, last_col)) = self.selection_history.back() {
+            if last_row == row && last_col == col {
+                return;
+            }
+        }
+
+        if self.selection_history.len() >= 50 {
+            self.selection_history.pop_front();
+        }
+        self.selection_history.push_back((row, col));
+    }
+}
+
 impl JumpToRowState {
     pub fn new() -> Self {
         Self {
@@ -662,6 +756,7 @@ pub struct AppStateContainer {
     cache_list: CacheListState,
     column_stats: ColumnStatsState,
     jump_to_row: JumpToRowState,
+    navigation: RefCell<NavigationState>,
 
     // History
     command_history: CommandHistory,
@@ -699,6 +794,7 @@ impl AppStateContainer {
             cache_list: CacheListState::new(),
             column_stats: ColumnStatsState::new(),
             jump_to_row: JumpToRowState::new(),
+            navigation: RefCell::new(NavigationState::new()),
             command_history,
             key_press_history: RefCell::new(KeyPressHistory::new(50)), // Keep last 50 key presses
             results_cache: ResultsCache::new(100),
@@ -1193,6 +1289,164 @@ impl AppStateContainer {
         self.history_search.borrow().is_active
     }
 
+    // Navigation operations with logging
+    pub fn navigate_to(&self, row: usize, col: usize) {
+        let mut navigation = self.navigation.borrow_mut();
+        let old_row = navigation.selected_row;
+        let old_col = navigation.selected_column;
+
+        // Update position
+        navigation.selected_row = row.min(navigation.total_rows.saturating_sub(1));
+        navigation.selected_column = col.min(navigation.total_columns.saturating_sub(1));
+
+        let new_row = navigation.selected_row;
+        let new_col = navigation.selected_column;
+
+        // Add to history
+        navigation.add_to_history(new_row, new_col);
+
+        // Ensure position is visible
+        navigation.ensure_visible(new_row, new_col);
+
+        let scroll_offset = navigation.scroll_offset;
+        drop(navigation);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Navigation",
+                format!(
+                    "Navigate: ({}, {}) -> ({}, {}), scroll: {:?}",
+                    old_row, old_col, new_row, new_col, scroll_offset
+                ),
+            );
+        }
+    }
+
+    pub fn navigate_relative(&self, delta_row: i32, delta_col: i32) {
+        let navigation = self.navigation.borrow();
+        let current_row = navigation.selected_row;
+        let current_col = navigation.selected_column;
+        drop(navigation);
+
+        let new_row = if delta_row >= 0 {
+            current_row.saturating_add(delta_row as usize)
+        } else {
+            current_row.saturating_sub(delta_row.abs() as usize)
+        };
+
+        let new_col = if delta_col >= 0 {
+            current_col.saturating_add(delta_col as usize)
+        } else {
+            current_col.saturating_sub(delta_col.abs() as usize)
+        };
+
+        self.navigate_to(new_row, new_col);
+    }
+
+    pub fn navigate_to_row(&self, row: usize) {
+        let navigation = self.navigation.borrow();
+        let current_col = navigation.selected_column;
+        drop(navigation);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info("Navigation", format!("Jump to row: {}", row));
+        }
+
+        self.navigate_to(row, current_col);
+    }
+
+    pub fn navigate_to_column(&self, col: usize) {
+        let navigation = self.navigation.borrow();
+        let current_row = navigation.selected_row;
+        drop(navigation);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info("Navigation", format!("Jump to column: {}", col));
+        }
+
+        self.navigate_to(current_row, col);
+    }
+
+    pub fn update_data_size(&self, rows: usize, columns: usize) {
+        let mut navigation = self.navigation.borrow_mut();
+        let old_totals = (navigation.total_rows, navigation.total_columns);
+        navigation.update_totals(rows, columns);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Navigation",
+                format!(
+                    "Data size updated: {:?} -> ({}, {}), position: ({}, {})",
+                    old_totals, rows, columns, navigation.selected_row, navigation.selected_column
+                ),
+            );
+        }
+    }
+
+    pub fn set_viewport_size(&self, rows: usize, columns: usize) {
+        let mut navigation = self.navigation.borrow_mut();
+        let old_viewport = (navigation.viewport_rows, navigation.viewport_columns);
+        let selected_row = navigation.selected_row;
+        let selected_column = navigation.selected_column;
+
+        navigation.set_viewport_size(rows, columns);
+
+        // Ensure current position is still visible with new viewport
+        navigation.ensure_visible(selected_row, selected_column);
+
+        let scroll_offset = navigation.scroll_offset;
+        drop(navigation);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Navigation",
+                format!(
+                    "Viewport size updated: {:?} -> ({}, {}), scroll adjusted: {:?}",
+                    old_viewport, rows, columns, scroll_offset
+                ),
+            );
+        }
+    }
+
+    pub fn toggle_viewport_lock(&self) {
+        let mut navigation = self.navigation.borrow_mut();
+        navigation.viewport_lock = !navigation.viewport_lock;
+
+        if navigation.viewport_lock {
+            navigation.viewport_lock_row = Some(navigation.selected_row);
+        } else {
+            navigation.viewport_lock_row = None;
+        }
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Navigation",
+                format!(
+                    "Viewport lock: {} at row {:?}",
+                    navigation.viewport_lock, navigation.viewport_lock_row
+                ),
+            );
+        }
+    }
+
+    // Navigation state access
+    pub fn navigation(&self) -> std::cell::Ref<'_, NavigationState> {
+        self.navigation.borrow()
+    }
+
+    pub fn get_current_position(&self) -> (usize, usize) {
+        let navigation = self.navigation.borrow();
+        (navigation.selected_row, navigation.selected_column)
+    }
+
+    pub fn get_scroll_offset(&self) -> (usize, usize) {
+        self.navigation.borrow().scroll_offset
+    }
+
+    pub fn is_viewport_locked(&self) -> bool {
+        self.navigation.borrow().viewport_lock
+    }
+
     // Widget access
     pub fn widgets(&self) -> &WidgetStates {
         &self.widgets
@@ -1590,6 +1844,43 @@ impl AppStateContainer {
             }
             dump.push_str("\n");
         }
+
+        // Navigation state
+        let navigation = self.navigation.borrow();
+        dump.push_str("NAVIGATION STATE:\n");
+        dump.push_str(&format!(
+            "  Position: ({}, {})\n",
+            navigation.selected_row, navigation.selected_column
+        ));
+        dump.push_str(&format!(
+            "  Scroll Offset: {:?}\n",
+            navigation.scroll_offset
+        ));
+        dump.push_str(&format!(
+            "  Viewport: {}x{} rows x cols\n",
+            navigation.viewport_rows, navigation.viewport_columns
+        ));
+        dump.push_str(&format!(
+            "  Data Size: {}x{} rows x cols\n",
+            navigation.total_rows, navigation.total_columns
+        ));
+        dump.push_str(&format!(
+            "  Viewport Lock: {} at row {:?}\n",
+            navigation.viewport_lock, navigation.viewport_lock_row
+        ));
+        if !navigation.selection_history.is_empty() {
+            dump.push_str("  Recent positions:\n");
+            for (i, &(row, col)) in navigation
+                .selection_history
+                .iter()
+                .rev()
+                .take(5)
+                .enumerate()
+            {
+                dump.push_str(&format!("    {}. ({}, {})\n", i + 1, row, col));
+            }
+        }
+        dump.push_str("\n");
 
         // Widget states using DebugInfoProvider trait
         dump.push_str(&self.widgets.search_modes.debug_info());
