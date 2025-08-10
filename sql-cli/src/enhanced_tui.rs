@@ -37,6 +37,7 @@ use sql_cli::debug_info::{DebugInfo, DebugView};
 use sql_cli::debug_widget::DebugWidget;
 use sql_cli::editor_widget::{BufferAction, EditorAction, EditorWidget};
 use sql_cli::help_text::HelpText;
+use sql_cli::help_widget::{HelpAction, HelpWidget};
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::hybrid_parser::HybridParser;
 use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
@@ -151,6 +152,7 @@ pub struct EnhancedTuiApp {
     debug_widget: DebugWidget,
     editor_widget: EditorWidget,
     stats_widget: StatsWidget,
+    help_widget: HelpWidget,
     search_modes_widget: SearchModesWidget,
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
@@ -465,6 +467,7 @@ impl EnhancedTuiApp {
             debug_widget: DebugWidget::new(),
             editor_widget: EditorWidget::new(),
             stats_widget: StatsWidget::new(),
+            help_widget: HelpWidget::new(),
             search_modes_widget: SearchModesWidget::new(),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
@@ -2236,31 +2239,16 @@ impl EnhancedTuiApp {
     }
 
     fn handle_help_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // Use dispatcher to get action
-        if let Some(action) = self.key_dispatcher.get_help_action(&key) {
-            match action {
-                "quit" => return Ok(true),
-                "exit_help" => self.exit_help(),
-                "scroll_help_down" => self.scroll_help_down(),
-                "scroll_help_up" => self.scroll_help_up(),
-                "help_page_down" => self.help_page_down(),
-                "help_page_up" => self.help_page_up(),
-                _ => {}
+        // Use the new HelpWidget
+        match self.help_widget.handle_key(key) {
+            HelpAction::Exit => {
+                self.exit_help();
             }
-        } else {
-            // Handle any keys not in the dispatcher (like 'j' and 'k' for vim-style)
-            match key.code {
-                KeyCode::Char('j') => self.scroll_help_down(),
-                KeyCode::Char('k') => self.scroll_help_up(),
-                KeyCode::F(1) => self.exit_help(),
-                KeyCode::Home => self.help_scroll = 0,
-                KeyCode::End => {
-                    let max_lines: usize = 58;
-                    let visible_height: usize = 30;
-                    let max_scroll = max_lines.saturating_sub(visible_height);
-                    self.help_scroll = max_scroll as u16;
-                }
-                _ => {}
+            HelpAction::ShowDebug => {
+                // F5 was pressed in help - this is handled by the widget itself
+            }
+            _ => {
+                // Other actions are handled internally by the widget
             }
         }
         Ok(false)
@@ -5575,7 +5563,12 @@ impl EnhancedTuiApp {
         f.render_stateful_widget(table, area, &mut table_state);
     }
 
-    fn render_help(&self, f: &mut Frame, area: Rect) {
+    fn render_help(&mut self, f: &mut Frame, area: Rect) {
+        // Use the new HelpWidget for rendering
+        self.help_widget.render(f, area);
+    }
+
+    fn render_help_old(&self, f: &mut Frame, area: Rect) {
         // Create two-column layout
         let chunks = Layout::default()
             .direction(Direction::Horizontal)

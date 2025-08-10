@@ -1,4 +1,5 @@
 use crate::buffer::{AppMode, BufferManager};
+use crate::help_widget::HelpWidget;
 use crate::history::CommandHistory;
 use crate::history_widget::HistoryWidget;
 use crate::search_modes_widget::SearchModesWidget;
@@ -194,6 +195,7 @@ impl JumpToRowState {
 pub struct WidgetStates {
     pub search_modes: SearchModesWidget,
     pub history: Option<HistoryWidget>, // Will be initialized with CommandHistory later
+    pub help: HelpWidget,
     pub stats: StatsWidget,
     // pub debug: DebugWidget, // TODO: Add when DebugInfoProvider is implemented
 }
@@ -203,6 +205,7 @@ impl WidgetStates {
         Self {
             search_modes: SearchModesWidget::new(),
             history: None, // Will be set when CommandHistory is available
+            help: HelpWidget::new(),
             stats: StatsWidget::new(),
             // debug: DebugWidget::new(), // TODO: Add when available
         }
@@ -571,6 +574,8 @@ impl AppStateContainer {
             dump.push_str(&history.debug_info());
             dump.push_str("\n");
         }
+        dump.push_str(&self.widgets.help.debug_info());
+        dump.push_str("\n");
         dump.push_str(&self.widgets.stats.debug_info());
         dump.push_str("\n");
         // TODO: Add debug widget info when available
@@ -656,6 +661,7 @@ impl fmt::Debug for WidgetStates {
         f.debug_struct("WidgetStates")
             .field("search_modes_active", &self.search_modes.is_active())
             .field("history", &self.history.is_some())
+            .field("help", &"HelpWidget")
             .field("stats", &"StatsWidget")
             // .field("debug", &"DebugWidget") // TODO: Add when available
             .finish()
