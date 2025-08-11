@@ -1832,9 +1832,13 @@ impl EnhancedTuiApp {
                     state_container.toggle_viewport_lock();
 
                     // Extract values we need before mutable borrows
-                    let (is_locked, lock_row) = {
+                    let (is_locked, lock_row, position_status) = {
                         let navigation = state_container.navigation();
-                        (navigation.viewport_lock, navigation.viewport_lock_row)
+                        (
+                            navigation.viewport_lock,
+                            navigation.viewport_lock_row,
+                            navigation.get_position_status(),
+                        )
                     };
 
                     // Update buffer state to match NavigationState
@@ -1843,8 +1847,9 @@ impl EnhancedTuiApp {
 
                     if is_locked {
                         self.buffer_mut().set_status_message(format!(
-                            "Viewport lock: ON (locked at row {})",
-                            lock_row.map_or(0, |r| r + 1)
+                            "Viewport lock: ON (locked at row {}){}",
+                            lock_row.map_or(0, |r| r + 1),
+                            position_status
                         ));
                     } else {
                         self.buffer_mut().set_status_message(
@@ -5952,13 +5957,17 @@ impl EnhancedTuiApp {
         if let Some(ref state_container) = self.state_container {
             let navigation = state_container.navigation();
 
-            // Viewport lock indicator
+            // Viewport lock indicator with boundary status
             if navigation.viewport_lock {
                 spans.push(Span::raw(" | "));
-                spans.push(Span::styled(
-                    format!("{}V", &self.config.display.icons.lock),
-                    Style::default().fg(Color::Magenta),
-                ));
+                let lock_text = if navigation.is_at_viewport_top() {
+                    format!("{}V↑", &self.config.display.icons.lock)
+                } else if navigation.is_at_viewport_bottom() {
+                    format!("{}V↓", &self.config.display.icons.lock)
+                } else {
+                    format!("{}V", &self.config.display.icons.lock)
+                };
+                spans.push(Span::styled(lock_text, Style::default().fg(Color::Magenta)));
             }
 
             // Cursor lock indicator

@@ -829,7 +829,17 @@ impl NavigationState {
             }
         }
 
-        // Normal navigation when not locked
+        // Check viewport lock boundaries
+        if self.viewport_lock {
+            // In viewport lock mode, don't allow cursor to leave visible area
+            let viewport_bottom = self.scroll_offset.0 + self.viewport_rows - 1;
+            if self.selected_row >= viewport_bottom {
+                info!(target: "navigation", "NavigationState::next_row - at viewport bottom (row {}), viewport locked", self.selected_row);
+                return false; // Already at bottom of viewport
+            }
+        }
+
+        // Normal navigation (with viewport lock boundary check)
         if self.selected_row < self.total_rows.saturating_sub(1) {
             self.selected_row += 1;
             self.add_to_history(self.selected_row, self.selected_column);
@@ -861,7 +871,17 @@ impl NavigationState {
             }
         }
 
-        // Normal navigation when not locked
+        // Check viewport lock boundaries
+        if self.viewport_lock {
+            // In viewport lock mode, don't allow cursor to leave visible area
+            let viewport_top = self.scroll_offset.0;
+            if self.selected_row <= viewport_top {
+                info!(target: "navigation", "NavigationState::previous_row - at viewport top (row {}), viewport locked", self.selected_row);
+                return false; // Already at top of viewport
+            }
+        }
+
+        // Normal navigation (with viewport lock boundary check)
         if self.selected_row > 0 {
             self.selected_row -= 1;
             self.add_to_history(self.selected_row, self.selected_column);
@@ -1074,6 +1094,31 @@ impl NavigationState {
             info!(target: "navigation", "NavigationState::ensure_visible - scroll_offset: {:?} -> {:?}", 
                   self.scroll_offset, (scroll_row, scroll_col));
             self.scroll_offset = (scroll_row, scroll_col);
+        }
+    }
+
+    /// Check if cursor is at top of viewport
+    pub fn is_at_viewport_top(&self) -> bool {
+        self.selected_row == self.scroll_offset.0
+    }
+
+    /// Check if cursor is at bottom of viewport
+    pub fn is_at_viewport_bottom(&self) -> bool {
+        self.selected_row == self.scroll_offset.0 + self.viewport_rows - 1
+    }
+
+    /// Get position description for status
+    pub fn get_position_status(&self) -> String {
+        if self.viewport_lock {
+            if self.is_at_viewport_top() {
+                " (at viewport top)".to_string()
+            } else if self.is_at_viewport_bottom() {
+                " (at viewport bottom)".to_string()
+            } else {
+                "".to_string()
+            }
+        } else {
+            "".to_string()
         }
     }
 
