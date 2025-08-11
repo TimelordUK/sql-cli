@@ -964,6 +964,12 @@ impl NavigationState {
     }
 
     pub fn ensure_visible(&mut self, row: usize, col: usize) {
+        // If viewport is locked, don't adjust scroll offset
+        if self.viewport_lock {
+            info!(target: "navigation", "NavigationState::ensure_visible - viewport locked, not adjusting scroll");
+            return;
+        }
+
         let (mut scroll_row, mut scroll_col) = self.scroll_offset;
 
         // Adjust row scrolling

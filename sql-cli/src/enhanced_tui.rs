@@ -1827,22 +1827,48 @@ impl EnhancedTuiApp {
         // Fall back to direct key handling for special cases not in dispatcher
         match key.code {
             KeyCode::Char(' ') => {
-                // Toggle viewport lock with Space
-                let current_lock = self.buffer().is_viewport_lock();
-                self.buffer_mut().set_viewport_lock(!current_lock);
-                if self.buffer().is_viewport_lock() {
-                    // Lock to current position in viewport (middle of screen)
-                    let visible_rows = self.buffer().get_last_visible_rows();
-                    self.buffer_mut()
-                        .set_viewport_lock_row(Some(visible_rows / 2));
-                    self.buffer_mut().set_status_message(format!(
-                        "Viewport lock: ON (anchored at row {} of viewport)",
-                        visible_rows / 2 + 1
-                    ));
+                // Toggle viewport lock with Space - using AppStateContainer
+                if let Some(ref state_container) = self.state_container {
+                    state_container.toggle_viewport_lock();
+
+                    // Extract values we need before mutable borrows
+                    let (is_locked, lock_row) = {
+                        let navigation = state_container.navigation();
+                        (navigation.viewport_lock, navigation.viewport_lock_row)
+                    };
+
+                    // Update buffer state to match NavigationState
+                    self.buffer_mut().set_viewport_lock(is_locked);
+                    self.buffer_mut().set_viewport_lock_row(lock_row);
+
+                    if is_locked {
+                        self.buffer_mut().set_status_message(format!(
+                            "Viewport lock: ON (locked at row {})",
+                            lock_row.map_or(0, |r| r + 1)
+                        ));
+                    } else {
+                        self.buffer_mut().set_status_message(
+                            "Viewport lock: OFF (normal scrolling)".to_string(),
+                        );
+                    }
                 } else {
-                    self.buffer_mut().set_viewport_lock_row(None);
-                    self.buffer_mut()
-                        .set_status_message("Viewport lock: OFF (normal scrolling)".to_string());
+                    // Fallback to buffer-based lock for compatibility
+                    let current_lock = self.buffer().is_viewport_lock();
+                    self.buffer_mut().set_viewport_lock(!current_lock);
+                    if self.buffer().is_viewport_lock() {
+                        let visible_rows = self.buffer().get_last_visible_rows();
+                        self.buffer_mut()
+                            .set_viewport_lock_row(Some(visible_rows / 2));
+                        self.buffer_mut().set_status_message(format!(
+                            "Viewport lock: ON (anchored at row {} of viewport)",
+                            visible_rows / 2 + 1
+                        ));
+                    } else {
+                        self.buffer_mut().set_viewport_lock_row(None);
+                        self.buffer_mut().set_status_message(
+                            "Viewport lock: OFF (normal scrolling)".to_string(),
+                        );
+                    }
                 }
             }
             KeyCode::PageDown | KeyCode::Char('f')
@@ -3413,9 +3439,19 @@ impl EnhancedTuiApp {
                 self.table_state.select(Some(new_position));
 
                 // Update viewport based on lock mode
-                if self.buffer().is_viewport_lock() {
+                let is_locked = if let Some(ref state_container) = self.state_container {
+                    state_container.is_viewport_locked()
+                } else {
+                    self.buffer().is_viewport_lock()
+                };
+                if is_locked {
                     // In lock mode, keep cursor at fixed viewport position
-                    if let Some(lock_row) = self.buffer().get_viewport_lock_row() {
+                    let lock_row = if let Some(ref state_container) = self.state_container {
+                        state_container.navigation().viewport_lock_row
+                    } else {
+                        self.buffer().get_viewport_lock_row()
+                    };
+                    if let Some(lock_row) = lock_row {
                         // Adjust viewport so cursor stays at lock_row position
                         let mut offset = self.buffer().get_scroll_offset();
                         offset.0 = new_position.saturating_sub(lock_row);
@@ -3476,9 +3512,19 @@ impl EnhancedTuiApp {
             self.table_state.select(Some(new_position));
 
             // Update viewport based on lock mode
-            if self.buffer().is_viewport_lock() {
+            let is_locked = if let Some(ref state_container) = self.state_container {
+                state_container.is_viewport_locked()
+            } else {
+                self.buffer().is_viewport_lock()
+            };
+            if is_locked {
                 // In lock mode, keep cursor at fixed viewport position
-                if let Some(lock_row) = self.buffer().get_viewport_lock_row() {
+                let lock_row = if let Some(ref state_container) = self.state_container {
+                    state_container.navigation().viewport_lock_row
+                } else {
+                    self.buffer().get_viewport_lock_row()
+                };
+                if let Some(lock_row) = lock_row {
                     // Adjust viewport so cursor stays at lock_row position
                     let mut offset = self.buffer().get_scroll_offset();
                     offset.0 = new_position.saturating_sub(lock_row);
@@ -5877,7 +5923,14 @@ impl EnhancedTuiApp {
             spans.push(Span::styled("COMPACT", Style::default().fg(Color::Green)));
         }
 
-        if self.buffer().is_viewport_lock() {
+        // Use NavigationState for viewport lock status
+        let is_locked = if let Some(ref state_container) = self.state_container {
+            state_container.is_viewport_locked()
+        } else {
+            self.buffer().is_viewport_lock()
+        };
+
+        if is_locked {
             spans.push(Span::raw(" | "));
             spans.push(Span::styled(
                 &self.config.display.icons.lock,
