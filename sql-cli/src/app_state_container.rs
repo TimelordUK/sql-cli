@@ -600,6 +600,85 @@ pub struct ColumnSearchHistoryEntry {
     pub duration_ms: Option<u64>,
 }
 
+/// State for tab completion functionality
+#[derive(Clone, Debug)]
+pub struct CompletionState {
+    pub suggestions: Vec<String>,
+    pub current_index: usize,
+    pub last_query: String,
+    pub last_cursor_pos: usize,
+    pub is_active: bool,
+    // Statistics
+    pub total_completions: usize,
+    pub last_completion_time: Option<std::time::Instant>,
+}
+
+impl Default for CompletionState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CompletionState {
+    pub fn new() -> Self {
+        Self {
+            suggestions: Vec::new(),
+            current_index: 0,
+            last_query: String::new(),
+            last_cursor_pos: 0,
+            is_active: false,
+            total_completions: 0,
+            last_completion_time: None,
+        }
+    }
+
+    /// Clear the completion state
+    pub fn clear(&mut self) {
+        self.suggestions.clear();
+        self.current_index = 0;
+        self.is_active = false;
+        // Keep last_query and last_cursor_pos for context
+    }
+
+    /// Set new suggestions
+    pub fn set_suggestions(&mut self, suggestions: Vec<String>) {
+        self.is_active = !suggestions.is_empty();
+        self.suggestions = suggestions;
+        self.current_index = 0;
+        if self.is_active {
+            self.last_completion_time = Some(std::time::Instant::now());
+            self.total_completions += 1;
+        }
+    }
+
+    /// Cycle to next suggestion
+    pub fn next_suggestion(&mut self) {
+        if !self.suggestions.is_empty() {
+            self.current_index = (self.current_index + 1) % self.suggestions.len();
+        }
+    }
+
+    /// Get current suggestion
+    pub fn current_suggestion(&self) -> Option<&String> {
+        if self.is_active && !self.suggestions.is_empty() {
+            self.suggestions.get(self.current_index)
+        } else {
+            None
+        }
+    }
+
+    /// Check if we're in the same completion context
+    pub fn is_same_context(&self, query: &str, cursor_pos: usize) -> bool {
+        query == self.last_query && cursor_pos == self.last_cursor_pos
+    }
+
+    /// Update context for next completion
+    pub fn update_context(&mut self, query: String, cursor_pos: usize) {
+        self.last_query = query;
+        self.last_cursor_pos = cursor_pos;
+    }
+}
+
 impl Default for ColumnSearchState {
     fn default() -> Self {
         Self::new()
@@ -1982,6 +2061,8 @@ pub struct AppStateContainer {
     history_search: RefCell<HistorySearchState>,
     sort: RefCell<SortState>,
     selection: RefCell<SelectionState>,
+    // Completion state
+    completion: RefCell<CompletionState>,
 
     // Widget states
     widgets: WidgetStates,
@@ -2032,6 +2113,7 @@ impl AppStateContainer {
             history_search: RefCell::new(HistorySearchState::new()),
             sort: RefCell::new(SortState::new()),
             selection: RefCell::new(SelectionState::new()),
+            completion: RefCell::new(CompletionState::new()),
             widgets,
             cache_list: CacheListState::new(),
             column_stats: ColumnStatsState::new(),
@@ -2789,6 +2871,84 @@ impl AppStateContainer {
     /// Get selected column
     pub fn get_selected_column(&self) -> usize {
         self.selection.borrow().selected_column
+    }
+
+    // Tab completion operations
+    pub fn completion(&self) -> std::cell::Ref<'_, CompletionState> {
+        self.completion.borrow()
+    }
+
+    pub fn completion_mut(&self) -> std::cell::RefMut<'_, CompletionState> {
+        self.completion.borrow_mut()
+    }
+
+    pub fn clear_completion(&self) {
+        let mut completion = self.completion.borrow_mut();
+        let had_suggestions = completion.suggestions.len();
+        completion.clear();
+
+        if had_suggestions > 0 {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "Completion",
+                    format!("Cleared {} suggestions", had_suggestions),
+                );
+            }
+        }
+    }
+
+    pub fn set_completion_suggestions(&self, suggestions: Vec<String>) {
+        let mut completion = self.completion.borrow_mut();
+        let count = suggestions.len();
+        completion.set_suggestions(suggestions);
+
+        if count > 0 {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "Completion",
+                    format!("Set {} completion suggestions", count),
+                );
+            }
+        }
+    }
+
+    pub fn next_completion(&self) {
+        let mut completion = self.completion.borrow_mut();
+        if !completion.suggestions.is_empty() {
+            completion.next_suggestion();
+
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                if let Some(current) = completion.current_suggestion() {
+                    debug_service.info(
+                        "Completion",
+                        format!(
+                            "Cycling to suggestion {}/{}: {}",
+                            completion.current_index + 1,
+                            completion.suggestions.len(),
+                            current
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    pub fn get_current_completion(&self) -> Option<String> {
+        self.completion.borrow().current_suggestion().cloned()
+    }
+
+    pub fn is_completion_active(&self) -> bool {
+        self.completion.borrow().is_active
+    }
+
+    pub fn update_completion_context(&self, query: String, cursor_pos: usize) {
+        self.completion
+            .borrow_mut()
+            .update_context(query, cursor_pos);
+    }
+
+    pub fn is_same_completion_context(&self, query: &str, cursor_pos: usize) -> bool {
+        self.completion.borrow().is_same_context(query, cursor_pos)
     }
 
     // History search operations (Ctrl+R)

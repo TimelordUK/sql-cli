@@ -1514,8 +1514,12 @@ impl EnhancedTuiApp {
                 self.handle_input_key(key);
 
                 // Clear completion state when typing other characters
-                self.completion_state.suggestions.clear();
-                self.completion_state.current_index = 0;
+                if let Some(ref state_container) = self.state_container {
+                    state_container.clear_completion();
+                } else {
+                    self.completion_state.suggestions.clear();
+                    self.completion_state.current_index = 0;
+                }
 
                 // Always use single-line completion
                 self.handle_completion()
@@ -3266,34 +3270,67 @@ impl EnhancedTuiApp {
         let cursor_pos = self.get_input_cursor();
         let query = self.get_input_text();
 
-        // Check if this is a continuation of the same completion session
-        let is_same_context = query == self.completion_state.last_query
-            && cursor_pos == self.completion_state.last_cursor_pos;
+        // Get the suggestion based on whether we have AppStateContainer
+        let suggestion = if let Some(ref state_container) = self.state_container {
+            // Use AppStateContainer for completion
+            let is_same_context = state_container.is_same_completion_context(&query, cursor_pos);
 
-        if !is_same_context {
-            // New completion context - get fresh suggestions
-            let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
-            if hybrid_result.suggestions.is_empty() {
+            if !is_same_context {
+                // New completion context - get fresh suggestions
+                let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
+                if hybrid_result.suggestions.is_empty() {
+                    self.buffer_mut()
+                        .set_status_message("No completions available".to_string());
+                    return;
+                }
+
+                state_container.set_completion_suggestions(hybrid_result.suggestions);
+            } else if state_container.is_completion_active() {
+                // Cycle to next suggestion
+                state_container.next_completion();
+            } else {
                 self.buffer_mut()
                     .set_status_message("No completions available".to_string());
                 return;
             }
 
-            self.completion_state.suggestions = hybrid_result.suggestions;
-            self.completion_state.current_index = 0;
-        } else if !self.completion_state.suggestions.is_empty() {
-            // Cycle to next suggestion
-            self.completion_state.current_index =
-                (self.completion_state.current_index + 1) % self.completion_state.suggestions.len();
+            // Get the current suggestion from AppStateContainer
+            if let Some(sugg) = state_container.get_current_completion() {
+                sugg
+            } else {
+                self.buffer_mut()
+                    .set_status_message("No completion selected".to_string());
+                return;
+            }
         } else {
-            self.buffer_mut()
-                .set_status_message("No completions available".to_string());
-            return;
-        }
+            // Fallback to local completion_state
+            let is_same_context = query == self.completion_state.last_query
+                && cursor_pos == self.completion_state.last_cursor_pos;
 
-        // Apply the current suggestion (clone to avoid borrow issues)
-        let suggestion =
-            self.completion_state.suggestions[self.completion_state.current_index].clone();
+            if !is_same_context {
+                // New completion context - get fresh suggestions
+                let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
+                if hybrid_result.suggestions.is_empty() {
+                    self.buffer_mut()
+                        .set_status_message("No completions available".to_string());
+                    return;
+                }
+
+                self.completion_state.suggestions = hybrid_result.suggestions;
+                self.completion_state.current_index = 0;
+            } else if !self.completion_state.suggestions.is_empty() {
+                // Cycle to next suggestion
+                self.completion_state.current_index = (self.completion_state.current_index + 1)
+                    % self.completion_state.suggestions.len();
+            } else {
+                self.buffer_mut()
+                    .set_status_message("No completions available".to_string());
+                return;
+            }
+
+            // Apply the current suggestion (clone to avoid borrow issues)
+            self.completion_state.suggestions[self.completion_state.current_index].clone()
+        };
         let partial_word = self.extract_partial_word_at_cursor(&query, cursor_pos);
 
         if let Some(partial) = partial_word {
@@ -3336,20 +3373,39 @@ impl EnhancedTuiApp {
             }
 
             // Update completion state for next tab press
-            self.completion_state.last_query = new_query;
-            self.completion_state.last_cursor_pos = cursor_pos;
+            if let Some(ref state_container) = self.state_container {
+                state_container.update_completion_context(new_query.clone(), cursor_pos);
 
-            let suggestion_info = if self.completion_state.suggestions.len() > 1 {
-                format!(
-                    "Completed: {} ({}/{} - Tab for next)",
-                    suggestion,
-                    self.completion_state.current_index + 1,
-                    self.completion_state.suggestions.len()
-                )
+                let completion = state_container.completion();
+                let suggestion_info = if completion.suggestions.len() > 1 {
+                    format!(
+                        "Completed: {} ({}/{} - Tab for next)",
+                        suggestion,
+                        completion.current_index + 1,
+                        completion.suggestions.len()
+                    )
+                } else {
+                    format!("Completed: {}", suggestion)
+                };
+                drop(completion);
+                self.buffer_mut().set_status_message(suggestion_info);
             } else {
-                format!("Completed: {}", suggestion)
-            };
-            self.buffer_mut().set_status_message(suggestion_info);
+                // Fallback to local state
+                self.completion_state.last_query = new_query;
+                self.completion_state.last_cursor_pos = cursor_pos;
+
+                let suggestion_info = if self.completion_state.suggestions.len() > 1 {
+                    format!(
+                        "Completed: {} ({}/{} - Tab for next)",
+                        suggestion,
+                        self.completion_state.current_index + 1,
+                        self.completion_state.suggestions.len()
+                    )
+                } else {
+                    format!("Completed: {}", suggestion)
+                };
+                self.buffer_mut().set_status_message(suggestion_info);
+            }
         } else {
             // Just insert the suggestion at cursor position
             let before_cursor = &query[..cursor_pos];
@@ -3376,8 +3432,12 @@ impl EnhancedTuiApp {
             }
 
             // Update completion state
-            self.completion_state.last_query = new_query;
-            self.completion_state.last_cursor_pos = cursor_pos_new;
+            if let Some(ref state_container) = self.state_container {
+                state_container.update_completion_context(new_query, cursor_pos_new);
+            } else {
+                self.completion_state.last_query = new_query;
+                self.completion_state.last_cursor_pos = cursor_pos_new;
+            }
 
             self.buffer_mut()
                 .set_status_message(format!("Inserted: {}", suggestion));
