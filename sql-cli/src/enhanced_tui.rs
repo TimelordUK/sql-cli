@@ -45,7 +45,7 @@ use sql_cli::logging::{get_log_buffer, LogRingBuffer};
 use sql_cli::search_modes_widget::{SearchMode, SearchModesAction, SearchModesWidget};
 use sql_cli::service_container::ServiceContainer;
 use sql_cli::stats_widget::{StatsAction, StatsWidget};
-use sql_cli::text_navigation::{TextEditor, TextNavigator};
+use sql_cli::text_navigation::TextNavigator;
 use sql_cli::where_ast::format_where_ast;
 use sql_cli::where_parser::WhereParser;
 use sql_cli::widget_traits::DebugInfoProvider;
@@ -1419,11 +1419,29 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Jump to previous SQL token
-                self.jump_to_prev_token();
+                if let Some(buffer) = self.buffer_manager.current_mut() {
+                    buffer.jump_to_prev_token();
+                    // Sync for rendering
+                    if buffer.get_edit_mode() == EditMode::SingleLine {
+                        let text = buffer.get_input_text();
+                        let cursor = buffer.get_input_cursor_position();
+                        self.set_input_text_with_cursor(text, cursor);
+                        self.cursor_manager.set_position(cursor);
+                    }
+                }
             }
             KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Jump to next SQL token
-                self.jump_to_next_token();
+                if let Some(buffer) = self.buffer_manager.current_mut() {
+                    buffer.jump_to_next_token();
+                    // Sync for rendering
+                    if buffer.get_edit_mode() == EditMode::SingleLine {
+                        let text = buffer.get_input_text();
+                        let cursor = buffer.get_input_cursor_position();
+                        self.set_input_text_with_cursor(text, cursor);
+                        self.cursor_manager.set_position(cursor);
+                    }
+                }
             }
             KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Move backward one word
@@ -4816,48 +4834,17 @@ impl EnhancedTuiApp {
     }
 
     fn move_cursor_word_forward(&mut self) {
-        let query = self.get_input_text();
-        let cursor_pos = self.get_input_cursor();
-        let query_len = query.len();
-
-        if cursor_pos >= query_len {
-            return;
-        }
-
-        // Use our lexer to tokenize the query
-        use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(&query);
-        let tokens = lexer.tokenize_all_with_positions();
-
-        // Find the next token boundary after the cursor
-        let mut target_pos = query_len;
-        for (start, end, _) in &tokens {
-            if *start > cursor_pos {
-                target_pos = *start;
-                break;
-            } else if *end > cursor_pos {
-                target_pos = *end;
-                break;
-            }
-        }
-
-        // Update cursor_manager (small incremental step)
-        self.cursor_manager.set_position(target_pos);
-
-        // Move cursor to new position through buffer
-        let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
         if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.set_input_cursor_position(target_pos);
-            // Sync for rendering
-            if is_single_line {
+            buffer.move_cursor_word_forward();
+
+            // Sync for rendering if single-line mode
+            if buffer.get_edit_mode() == EditMode::SingleLine {
                 let text = buffer.get_input_text();
-                self.set_input_text_with_cursor(text, target_pos);
+                let cursor = buffer.get_input_cursor_position();
+                self.set_input_text_with_cursor(text, cursor);
+                self.cursor_manager.set_position(cursor);
             }
         }
-
-        // Update status message
-        self.buffer_mut()
-            .set_status_message(format!("Moved to position {} (word boundary)", target_pos));
     }
 
     fn kill_line(&mut self) {
@@ -4875,25 +4862,15 @@ impl EnhancedTuiApp {
     }
 
     fn kill_line_backward(&mut self) {
-        // Always use single-line mode
-        let query = self.get_input_text();
-        let cursor_pos = self.get_input_cursor();
+        if let Some(buffer) = self.buffer_manager.current_mut() {
+            buffer.kill_line_backward();
 
-        if let Some((killed_text, new_query)) = TextEditor::kill_line_backward(&query, cursor_pos) {
-            // Save to undo stack before modifying
-            if let Some(buffer) = self.buffer_manager.current_mut() {
-                buffer.save_state_for_undo();
-            }
-
-            // Save to kill ring before deleting
-            self.buffer_mut().set_kill_ring(killed_text);
-            // Use helper to set text through buffer
-            self.set_input_text(new_query.clone());
-            // Set cursor to beginning
-            if let Some(buffer) = self.buffer_manager.current_mut() {
-                buffer.set_input_cursor_position(0);
-                // Sync for rendering
-                self.set_input_text_with_cursor(new_query, 0);
+            // Sync for rendering if single-line mode
+            if buffer.get_edit_mode() == EditMode::SingleLine {
+                let text = buffer.get_input_text();
+                let cursor = buffer.get_input_cursor_position();
+                self.set_input_text_with_cursor(text, cursor);
+                self.cursor_manager.set_position(cursor);
             }
         }
     }
@@ -4942,101 +4919,15 @@ impl EnhancedTuiApp {
     }
 
     fn yank(&mut self) {
-        if !self.buffer().is_kill_ring_empty() {
-            let query = self.get_input_text();
-            let cursor_pos = self.get_input_cursor();
+        if let Some(buffer) = self.buffer_manager.current_mut() {
+            buffer.yank();
 
-            // Get kill ring content and calculate new query
-            let kill_ring_content = self.buffer().get_kill_ring();
-            let before = query.chars().take(cursor_pos).collect::<String>();
-            let after = query.chars().skip(cursor_pos).collect::<String>();
-            let new_query = format!("{}{}{}", before, kill_ring_content, after);
-            let new_cursor = cursor_pos + kill_ring_content.len();
-
-            // Save to undo stack before modifying
-            if let Some(buffer) = self.buffer_manager.current_mut() {
-                buffer.save_state_for_undo();
-            }
-
-            // Use helper to set text through buffer
-            self.set_input_text(new_query.clone());
-            // Set cursor to new position
-            if let Some(buffer) = self.buffer_manager.current_mut() {
-                buffer.set_input_cursor_position(new_cursor);
-                // Sync for rendering
-                if self.buffer().get_edit_mode() == EditMode::SingleLine {
-                    self.set_input_text_with_cursor(new_query, new_cursor);
-                }
-            }
-        }
-    }
-
-    fn jump_to_prev_token(&mut self) {
-        let query = self.get_input_text();
-        let cursor_pos = self.get_input_cursor();
-
-        if cursor_pos == 0 {
-            return;
-        }
-
-        use crate::recursive_parser::Lexer;
-        let mut lexer = Lexer::new(&query);
-        let tokens = lexer.tokenize_all_with_positions();
-
-        // Find current token position
-        let mut in_token = false;
-        let mut current_token_start = 0;
-        for (start, end, _) in &tokens {
-            if cursor_pos > *start && cursor_pos <= *end {
-                in_token = true;
-                current_token_start = *start;
-                break;
-            }
-        }
-
-        // Find the previous token start
-        let mut target_pos = 0;
-
-        if in_token && cursor_pos > current_token_start {
-            // If we're in the middle of a token, go to its start
-            target_pos = current_token_start;
-        } else {
-            // Otherwise, find the previous token
-            for (start, _, _) in tokens.iter().rev() {
-                if *start < cursor_pos {
-                    target_pos = *start;
-                    break;
-                }
-            }
-        }
-
-        // Move cursor through buffer
-        if target_pos < cursor_pos {
-            let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
-            if let Some(buffer) = self.buffer_manager.current_mut() {
-                buffer.set_input_cursor_position(target_pos);
-                // Sync for rendering
-                if is_single_line {
-                    let text = buffer.get_input_text();
-                    self.set_input_text_with_cursor(text, target_pos);
-                }
-            }
-        }
-    }
-
-    fn jump_to_next_token(&mut self) {
-        let query = self.get_input_text();
-        let cursor_pos = self.get_input_cursor();
-
-        if let Some(target_pos) = TextNavigator::calculate_next_token_position(&query, cursor_pos) {
-            let is_single_line = self.buffer().get_edit_mode() == EditMode::SingleLine;
-            if let Some(buffer) = self.buffer_manager.current_mut() {
-                buffer.set_input_cursor_position(target_pos);
-                // Sync for rendering
-                if is_single_line {
-                    let text = buffer.get_input_text();
-                    self.set_input_text_with_cursor(text, target_pos);
-                }
+            // Sync for rendering if single-line mode
+            if buffer.get_edit_mode() == EditMode::SingleLine {
+                let text = buffer.get_input_text();
+                let cursor = buffer.get_input_cursor_position();
+                self.set_input_text_with_cursor(text, cursor);
+                self.cursor_manager.set_position(cursor);
             }
         }
     }

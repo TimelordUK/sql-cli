@@ -1433,6 +1433,26 @@ impl Buffer {
         self.sync_from_input_manager();
     }
 
+    /// Yank (paste) from kill ring
+    pub fn yank(&mut self) {
+        if !self.kill_ring.is_empty() {
+            self.save_state_for_undo();
+
+            let text = self.input_manager.get_text();
+            let cursor_pos = self.input_manager.get_cursor_position();
+
+            // Insert kill ring content at cursor position
+            let before = text.chars().take(cursor_pos).collect::<String>();
+            let after = text.chars().skip(cursor_pos).collect::<String>();
+            let new_text = format!("{}{}{}", before, &self.kill_ring, after);
+            let new_cursor = cursor_pos + self.kill_ring.len();
+
+            self.input_manager.set_text(new_text);
+            self.input_manager.set_cursor_position(new_cursor);
+            self.sync_from_input_manager();
+        }
+    }
+
     /// Expand SELECT * to column names using schema information
     pub fn expand_asterisk(&mut self, parser: &HybridParser) -> bool {
         let query = self.input_manager.get_text();
