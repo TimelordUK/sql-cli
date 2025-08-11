@@ -904,6 +904,156 @@ impl SortState {
     }
 }
 
+/// Selection mode for results view
+#[derive(Debug, Clone, PartialEq)]
+pub enum SelectionMode {
+    Row,
+    Cell,
+    Column,
+}
+
+/// Selection state for managing row/cell/column selections
+#[derive(Debug, Clone)]
+pub struct SelectionState {
+    /// Current selection mode
+    pub mode: SelectionMode,
+    /// Currently selected row (for table navigation)
+    pub selected_row: Option<usize>,
+    /// Currently selected column (always tracked)
+    pub selected_column: usize,
+    /// Selected cells for multi-cell operations
+    pub selected_cells: Vec<(usize, usize)>,
+    /// Selection anchor for range selections
+    pub selection_anchor: Option<(usize, usize)>,
+    /// Selection history for undo
+    pub history: VecDeque<SelectionHistoryEntry>,
+    /// Maximum history size
+    pub max_history: usize,
+    /// Total selections made
+    pub total_selections: usize,
+    /// Last selection time
+    pub last_selection_time: Option<Instant>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SelectionHistoryEntry {
+    pub mode: SelectionMode,
+    pub row: Option<usize>,
+    pub column: usize,
+    pub cells: Vec<(usize, usize)>,
+    pub timestamp: chrono::DateTime<chrono::Local>,
+}
+
+impl SelectionState {
+    pub fn new() -> Self {
+        Self {
+            mode: SelectionMode::Row,
+            selected_row: None,
+            selected_column: 0,
+            selected_cells: Vec::new(),
+            selection_anchor: None,
+            history: VecDeque::new(),
+            max_history: 50,
+            total_selections: 0,
+            last_selection_time: None,
+        }
+    }
+
+    /// Set selection mode
+    pub fn set_mode(&mut self, mode: SelectionMode) {
+        if self.mode != mode {
+            // Save to history before changing
+            self.save_to_history();
+            self.mode = mode;
+            // Clear multi-cell selections when changing modes
+            self.selected_cells.clear();
+            self.selection_anchor = None;
+        }
+    }
+
+    /// Select a row
+    pub fn select_row(&mut self, row: Option<usize>) {
+        if self.selected_row != row {
+            self.save_to_history();
+            self.selected_row = row;
+            self.total_selections += 1;
+            self.last_selection_time = Some(Instant::now());
+        }
+    }
+
+    /// Select a column
+    pub fn select_column(&mut self, column: usize) {
+        if self.selected_column != column {
+            self.save_to_history();
+            self.selected_column = column;
+            self.total_selections += 1;
+            self.last_selection_time = Some(Instant::now());
+        }
+    }
+
+    /// Select a cell
+    pub fn select_cell(&mut self, row: usize, column: usize) {
+        self.save_to_history();
+        self.selected_row = Some(row);
+        self.selected_column = column;
+        self.total_selections += 1;
+        self.last_selection_time = Some(Instant::now());
+    }
+
+    /// Add cell to multi-selection
+    pub fn add_cell_to_selection(&mut self, row: usize, column: usize) {
+        let cell = (row, column);
+        if !self.selected_cells.contains(&cell) {
+            self.selected_cells.push(cell);
+            self.total_selections += 1;
+            self.last_selection_time = Some(Instant::now());
+        }
+    }
+
+    /// Clear all selections
+    pub fn clear_selections(&mut self) {
+        self.save_to_history();
+        self.selected_cells.clear();
+        self.selection_anchor = None;
+    }
+
+    /// Save current state to history
+    fn save_to_history(&mut self) {
+        let entry = SelectionHistoryEntry {
+            mode: self.mode.clone(),
+            row: self.selected_row,
+            column: self.selected_column,
+            cells: self.selected_cells.clone(),
+            timestamp: chrono::Local::now(),
+        };
+
+        if self.history.len() >= self.max_history {
+            self.history.pop_front();
+        }
+        self.history.push_back(entry);
+    }
+
+    /// Get selection statistics
+    pub fn get_stats(&self) -> String {
+        let mode_str = match self.mode {
+            SelectionMode::Row => "Row",
+            SelectionMode::Cell => "Cell",
+            SelectionMode::Column => "Column",
+        };
+
+        let selection_str = match (self.selected_row, self.selected_cells.len()) {
+            (Some(row), 0) => format!("Row {}, Col {}", row, self.selected_column),
+            (_, n) if n > 0 => format!("{} cells selected", n),
+            _ => format!("Col {}", self.selected_column),
+        };
+
+        format!(
+            "Mode: {}, Selection: {}, Total: {}",
+            mode_str, selection_str, self.total_selections
+        )
+    }
+}
+
 /// History search state (for Ctrl+R functionality)
 #[derive(Debug, Clone)]
 pub struct HistorySearchState {
@@ -1417,6 +1567,7 @@ pub struct AppStateContainer {
     column_search: RefCell<ColumnSearchState>,
     history_search: RefCell<HistorySearchState>,
     sort: RefCell<SortState>,
+    selection: RefCell<SelectionState>,
 
     // Widget states
     widgets: WidgetStates,
@@ -1466,6 +1617,7 @@ impl AppStateContainer {
             column_search: RefCell::new(ColumnSearchState::new()),
             history_search: RefCell::new(HistorySearchState::new()),
             sort: RefCell::new(SortState::new()),
+            selection: RefCell::new(SelectionState::new()),
             widgets,
             cache_list: CacheListState::new(),
             column_stats: ColumnStatsState::new(),
@@ -1997,6 +2149,122 @@ impl AppStateContainer {
     /// Get next sort order for a column
     pub fn get_next_sort_order(&self, column_index: usize) -> SortOrder {
         self.sort.borrow().get_next_order(column_index)
+    }
+
+    // Selection operations with logging
+
+    /// Get current selection state (read-only)
+    pub fn selection(&self) -> std::cell::Ref<SelectionState> {
+        self.selection.borrow()
+    }
+
+    /// Get current selection state (mutable)
+    pub fn selection_mut(&self) -> std::cell::RefMut<SelectionState> {
+        self.selection.borrow_mut()
+    }
+
+    /// Set selection mode
+    pub fn set_selection_mode(&self, mode: SelectionMode) {
+        let mut selection = self.selection.borrow_mut();
+        let old_mode = selection.mode.clone();
+        selection.set_mode(mode.clone());
+
+        if old_mode != mode {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "Selection",
+                    format!("Mode changed: {:?} → {:?}", old_mode, mode),
+                );
+            }
+        }
+    }
+
+    /// Select a row
+    pub fn select_row(&self, row: Option<usize>) {
+        let mut selection = self.selection.borrow_mut();
+        let old_row = selection.selected_row;
+        selection.select_row(row);
+
+        if old_row != row {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "Selection",
+                    format!("Row selection: {:?} → {:?}", old_row, row),
+                );
+            }
+        }
+    }
+
+    /// Select a column
+    pub fn select_column(&self, column: usize) {
+        let mut selection = self.selection.borrow_mut();
+        let old_column = selection.selected_column;
+        selection.select_column(column);
+
+        if old_column != column {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "Selection",
+                    format!("Column selection: {} → {}", old_column, column),
+                );
+            }
+        }
+    }
+
+    /// Select a cell
+    pub fn select_cell(&self, row: usize, column: usize) {
+        self.selection.borrow_mut().select_cell(row, column);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info("Selection", format!("Cell selected: [{}, {}]", row, column));
+        }
+    }
+
+    /// Toggle selection mode between Row/Cell/Column
+    pub fn toggle_selection_mode(&self) {
+        let mut selection = self.selection.borrow_mut();
+        let new_mode = match selection.mode {
+            SelectionMode::Row => SelectionMode::Cell,
+            SelectionMode::Cell => SelectionMode::Column,
+            SelectionMode::Column => SelectionMode::Row,
+        };
+        let old_mode = selection.mode.clone();
+        selection.set_mode(new_mode.clone());
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Selection",
+                format!("Mode toggled: {:?} → {:?}", old_mode, new_mode),
+            );
+        }
+    }
+
+    /// Clear all selections
+    pub fn clear_selections(&self) {
+        let mut selection = self.selection.borrow_mut();
+        let had_selections = !selection.selected_cells.is_empty();
+        selection.clear_selections();
+
+        if had_selections {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info("Selection", "Cleared all selections".to_string());
+            }
+        }
+    }
+
+    /// Get current selection mode
+    pub fn get_selection_mode(&self) -> SelectionMode {
+        self.selection.borrow().mode.clone()
+    }
+
+    /// Get selected row
+    pub fn get_selected_row(&self) -> Option<usize> {
+        self.selection.borrow().selected_row
+    }
+
+    /// Get selected column
+    pub fn get_selected_column(&self) -> usize {
+        self.selection.borrow().selected_column
     }
 
     // History search operations (Ctrl+R)

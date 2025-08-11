@@ -21,7 +21,7 @@ use ratatui::{
 use regex::Regex;
 use serde_json::Value;
 use sql_cli::api_client::{ApiClient, QueryResponse};
-use sql_cli::app_state_container::AppStateContainer;
+use sql_cli::app_state_container::{AppStateContainer, SelectionMode};
 use sql_cli::buffer::{
     AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder, SortState,
 };
@@ -93,12 +93,6 @@ macro_rules! log_state_clear {
             );
         }
     };
-}
-
-#[derive(Clone, PartialEq, Debug)]
-enum SelectionMode {
-    Row,
-    Cell,
 }
 
 // Using SortOrder and SortState from sql_cli::buffer module
@@ -181,7 +175,6 @@ pub struct EnhancedTuiApp {
     input_scroll_offset: u16,           // Horizontal scroll offset for input
 
     // Selection and clipboard
-    selection_mode: SelectionMode,         // Row or Cell mode
     last_yanked: Option<(String, String)>, // (description, value) of last yanked item
 
     // Buffer management (new - for supporting multiple files)
@@ -463,6 +456,15 @@ impl EnhancedTuiApp {
         unsafe { &mut FALLBACK_FILTER }
     }
 
+    fn get_selection_mode(&self) -> SelectionMode {
+        // Helper for compatibility during migration
+        if let Some(ref state_container) = self.state_container {
+            state_container.get_selection_mode()
+        } else {
+            SelectionMode::Row
+        }
+    }
+
     fn sanitize_table_name(name: &str) -> String {
         // Replace spaces and other problematic characters with underscores
         // to create SQL-friendly table names
@@ -587,7 +589,6 @@ impl EnhancedTuiApp {
             key_dispatcher: KeyDispatcher::new(),
             help_scroll: 0,
             input_scroll_offset: 0,
-            selection_mode: SelectionMode::Row, // Default to row mode
             last_yanked: None,
             // CSV fields now in Buffer
             buffer_manager,
@@ -1528,9 +1529,15 @@ impl EnhancedTuiApp {
     }
 
     fn handle_results_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        let selection_mode = if let Some(ref state_container) = self.state_container {
+            state_container.get_selection_mode()
+        } else {
+            SelectionMode::Row
+        };
+
         debug!(
             "handle_results_input: key={:?}, selection_mode={:?}",
-            key, self.selection_mode
+            key, selection_mode
         );
 
         // Normalize the key for platform differences
@@ -1566,7 +1573,7 @@ impl EnhancedTuiApp {
 
         // In cell mode, skip chord handler for 'y' key - handle it directly
         // Also skip uppercase single-key actions as they're not chords
-        let should_skip_chord = (matches!(self.selection_mode, SelectionMode::Cell)
+        let should_skip_chord = (matches!(self.get_selection_mode(), SelectionMode::Cell)
             && matches!(normalized_key.code, KeyCode::Char('y')))
             || matches!(
                 normalized_key.code,
@@ -1725,20 +1732,18 @@ impl EnhancedTuiApp {
                 "pin_column" => self.toggle_column_pin(),
                 "clear_pins" => self.clear_all_pinned_columns(),
                 "toggle_selection_mode" => {
-                    self.selection_mode = match self.selection_mode {
-                        SelectionMode::Row => {
-                            self.buffer_mut().set_status_message(
-                                "Cell mode - Navigate to select individual cells".to_string(),
-                            );
-                            SelectionMode::Cell
-                        }
-                        SelectionMode::Cell => {
-                            self.buffer_mut().set_status_message(
-                                "Row mode - Navigate to select rows".to_string(),
-                            );
-                            SelectionMode::Row
-                        }
-                    };
+                    if let Some(ref state_container) = self.state_container {
+                        state_container.toggle_selection_mode();
+                        let new_mode = state_container.get_selection_mode();
+                        let msg = match new_mode {
+                            SelectionMode::Cell => {
+                                "Cell mode - Navigate to select individual cells"
+                            }
+                            SelectionMode::Row => "Row mode - Navigate to select rows",
+                            SelectionMode::Column => "Column mode - Navigate to select columns",
+                        };
+                        self.buffer_mut().set_status_message(msg.to_string());
+                    }
                     return Ok(false); // Return to prevent duplicate handling
                 }
                 "export_to_csv" => self.export_to_csv(),
@@ -1875,8 +1880,9 @@ impl EnhancedTuiApp {
             }
             // Clipboard operations (vim-like yank)
             KeyCode::Char('y') => {
-                debug!("'y' key pressed - selection_mode={:?}", self.selection_mode);
-                match self.selection_mode {
+                let selection_mode = self.get_selection_mode();
+                debug!("'y' key pressed - selection_mode={:?}", selection_mode);
+                match selection_mode {
                     SelectionMode::Cell => {
                         // In cell mode, single 'y' yanks the cell directly
                         debug!("Yanking cell in cell selection mode");
@@ -1893,6 +1899,13 @@ impl EnhancedTuiApp {
                             "Press second key for chord: yy=row, yc=column, ya=all, yv=cell"
                                 .to_string(),
                         );
+                    }
+                    SelectionMode::Column => {
+                        // In column mode, 'y' yanks the current column
+                        debug!("Yanking column in column selection mode");
+                        self.buffer_mut()
+                            .set_status_message("Yanking column...".to_string());
+                        self.yank_column();
                     }
                 }
             }
@@ -5466,9 +5479,11 @@ impl EnhancedTuiApp {
                     spans.push(Span::raw(" | "));
 
                     // Show selection mode
-                    let mode_text = match self.selection_mode {
+                    let selection_mode = self.get_selection_mode();
+                    let mode_text = match selection_mode {
                         SelectionMode::Cell => "CELL",
                         SelectionMode::Row => "ROW",
+                        SelectionMode::Column => "COL",
                     };
                     spans.push(Span::styled(
                         format!("[{}]", mode_text),
@@ -5508,7 +5523,7 @@ impl EnhancedTuiApp {
                                     }
 
                                     // In cell mode, show the current cell value
-                                    if self.selection_mode == SelectionMode::Cell {
+                                    if self.get_selection_mode() == SelectionMode::Cell {
                                         if let Some(selected_row) = self.table_state.selected() {
                                             if let Some(row_data) = results.data.get(selected_row) {
                                                 if let Some(row_obj) = row_data.as_object() {
@@ -5674,9 +5689,10 @@ impl EnhancedTuiApp {
         // Help shortcuts (right side)
         let help_text = match self.buffer().get_mode() {
             AppMode::Command => "Enter:Run | Tab:Complete | ↓:Results | F1:Help",
-            AppMode::Results => match self.selection_mode {
+            AppMode::Results => match self.get_selection_mode() {
                 SelectionMode::Cell => "v:Row mode | y:Yank cell | ↑:Edit | F1:Help",
                 SelectionMode::Row => "v:Cell mode | y:Yank | f:Filter | ↑:Edit | F1:Help",
+                SelectionMode::Column => "v:Cell mode | y:Yank col | ↑:Edit | F1:Help",
             },
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 "Enter:Apply | Esc:Cancel"
@@ -6029,7 +6045,7 @@ impl EnhancedTuiApp {
                     let is_selected_cell =
                         is_selected_row && actual_col_idx == self.buffer().get_current_column();
 
-                    if self.selection_mode == SelectionMode::Cell {
+                    if self.get_selection_mode() == SelectionMode::Cell {
                         // In cell mode, only highlight the specific cell
                         if is_selected_cell {
                             // Use a highlighted foreground instead of changing background
@@ -6135,7 +6151,7 @@ impl EnhancedTuiApp {
                     selected_row + 1)));
 
         // Only apply row highlighting in row mode
-        if self.selection_mode == SelectionMode::Row {
+        if self.get_selection_mode() == SelectionMode::Row {
             table = table
                 .row_highlight_style(Style::default().bg(Color::DarkGray))
                 .highlight_symbol("► ");
