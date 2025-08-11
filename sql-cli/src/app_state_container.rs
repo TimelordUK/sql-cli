@@ -2670,10 +2670,8 @@ impl AppStateContainer {
         let mut sorted_results = original_results.clone();
         sorted_results.data = sorted_data;
 
-        // Update sort state
-        let row_count = sorted_results.data.len();
-        self.sort_by_column(column_index, column_name.to_string(), row_count);
-
+        // Return the sorted results
+        // Note: sort state is managed by the caller (enhanced_tui.rs)
         Some(sorted_results)
     }
 

@@ -160,6 +160,8 @@ pub struct EnhancedTuiApp {
     completion_state: CompletionState,
     history_state: HistoryState,
     command_history: CommandHistory,
+    // SAFETY FIX: Temporary fallback filter state to replace dangerous static
+    fallback_filter_state: FilterState,
     scroll_offset: (usize, usize), // (row, col)
     current_column: usize,         // For column-based operations
     sql_highlighter: SqlHighlighter,
@@ -459,13 +461,9 @@ impl EnhancedTuiApp {
     }
 
     fn get_filter_state_mut(&mut self) -> &mut FilterState {
-        static mut FALLBACK_FILTER: FilterState = FilterState {
-            pattern: String::new(),
-            regex: None,
-            active: false,
-        };
-        // This should not be called - prefer state_container.filter_mut()
-        unsafe { &mut FALLBACK_FILTER }
+        // SAFETY FIX: Use struct field instead of dangerous mutable static
+        // This is safe - no more undefined behavior from mutable statics
+        &mut self.fallback_filter_state
     }
 
     fn get_selection_mode(&self) -> SelectionMode {
@@ -571,6 +569,12 @@ impl EnhancedTuiApp {
                 selected_index: 0,
             },
             command_history: CommandHistory::new().unwrap_or_default(),
+            // SAFETY FIX: Initialize fallback filter state to replace dangerous static
+            fallback_filter_state: FilterState {
+                pattern: String::new(),
+                regex: None,
+                active: false,
+            },
             scroll_offset: (0, 0),
             current_column: 0,
             sql_highlighter: SqlHighlighter::new(),
@@ -1705,7 +1709,7 @@ impl EnhancedTuiApp {
                 }
                 "sort_by_column" => {
                     self.sort_by_column(self.buffer().get_current_column());
-                    return Ok(false); // Return early to prevent double handling
+                    return Ok(false); // Event handled, continue running
                 }
                 "show_column_stats" => self.calculate_column_statistics(),
                 "next_search_match" => self.next_search_match(),
@@ -1964,10 +1968,8 @@ impl EnhancedTuiApp {
             // Removed duplicate handlers for filter keys (F, f)
             // Sort functionality (lowercase s) - handled by dispatcher above
             // Removed to prevent double handling
-            // Column statistics (uppercase S)
-            KeyCode::Char('S') | KeyCode::Char('s')
-                if key.modifiers.contains(KeyModifiers::SHIFT) =>
-            {
+            // Column statistics (uppercase S only)
+            KeyCode::Char('S') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.calculate_column_statistics();
             }
             // Clipboard operations (vim-like yank)
@@ -4571,6 +4573,7 @@ impl EnhancedTuiApp {
 
     fn sort_by_column(&mut self, column_index: usize) {
         // Get column name for proper tracking from results
+        // Use a fallback column name if extraction fails to ensure state tracking works
         let column_name = if let Some(results) = self.buffer().get_results() {
             if let Some(first_row) = results.data.first() {
                 if let Some(obj) = first_row.as_object() {
@@ -4578,31 +4581,25 @@ impl EnhancedTuiApp {
                     if column_index < headers.len() {
                         Some(headers[column_index].to_string())
                     } else {
-                        None
+                        // Fallback for out of bounds
+                        Some(format!("Column_{}", column_index))
                     }
                 } else {
-                    None
+                    // Fallback for non-object row
+                    Some(format!("Column_{}", column_index))
                 }
             } else {
-                None
+                // Fallback for empty results
+                Some(format!("Column_{}", column_index))
             }
         } else {
-            None
+            // Fallback for no results
+            Some(format!("Column_{}", column_index))
         };
 
         // Delegate sorting entirely to AppStateContainer
-        // Extract all values from state_container first
-        let (current_state, new_order) = if let Some(ref state_container) = self.state_container {
-            let current_state = {
-                let sort_state = state_container.sort();
-                format!(
-                    "Column {:?} Order {:?}",
-                    sort_state.column, sort_state.order
-                )
-            }; // sort_state borrow dropped here
-            let new_order = state_container.get_next_sort_order(column_index);
-            // Debug removed to avoid TUI corruption
-            (current_state, new_order)
+        let new_order = if let Some(ref state_container) = self.state_container {
+            state_container.get_next_sort_order(column_index)
         } else {
             // Fallback if no AppStateContainer (shouldn't happen in normal operation)
             self.buffer_mut()
@@ -4620,16 +4617,27 @@ impl EnhancedTuiApp {
                     column_name.clone(),
                     new_order.clone(),
                 );
-                let after_state = state_container.sort();
-                // Debug: After advance to None
             }
 
-            // Clear sort state in buffer
-            self.buffer_mut().set_sort_column(None);
-            self.buffer_mut().set_sort_order(SortOrder::None);
-
-            self.buffer_mut()
-                .set_status_message("Sort cleared - showing current data unsorted".to_string());
+            // Restore original unsorted data by re-executing the query
+            let last_query = self.buffer().get_last_query();
+            if !last_query.is_empty() {
+                // Re-execute the original query to get unsorted data
+                if let Err(e) = self.execute_query(&last_query) {
+                    self.buffer_mut()
+                        .set_status_message(format!("Failed to restore unsorted data: {}", e));
+                } else {
+                    self.buffer_mut().set_status_message(
+                        "Sort cleared - showing original unsorted data".to_string(),
+                    );
+                }
+            } else {
+                // Fallback: just clear sort indicators
+                self.buffer_mut().set_sort_column(None);
+                self.buffer_mut().set_sort_order(SortOrder::None);
+                self.buffer_mut()
+                    .set_status_message("Sort cleared".to_string());
+            }
             return;
         }
 
@@ -4641,8 +4649,6 @@ impl EnhancedTuiApp {
                 column_name.clone(),
                 new_order.clone(),
             );
-            let after_state = state_container.sort();
-            // Debug: After advance for sort
         }
 
         // For Ascending/Descending, get sorted data from AppStateContainer
