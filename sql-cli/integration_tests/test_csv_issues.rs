@@ -39,7 +39,7 @@ fn test_table_with_hyphen() -> Result<()> {
 
     // Test tab completion
     let mut parser = CursorAwareParser::new();
-    let schema = Schema::new();
+    let _schema = Schema::new();
     parser.update_single_table(
         "customers-10000".to_string(),
         vec![
