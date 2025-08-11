@@ -3326,19 +3326,29 @@ impl EnhancedTuiApp {
 
             // Use AppStateContainer for navigation
             if let Some(ref state_container) = self.state_container {
-                let mut nav = state_container.navigation_mut();
+                // Extract values we need before mutable borrows
+                let (new_row, new_scroll_offset) = {
+                    let mut nav = state_container.navigation_mut();
 
-                // Update totals if needed
-                let total_cols = self.get_column_count();
-                nav.update_totals(total_rows, total_cols);
+                    // Update totals if needed
+                    let total_cols = self.get_column_count();
+                    nav.update_totals(total_rows, total_cols);
 
-                // Move to next row
-                if nav.next_row() {
+                    // Move to next row
+                    if nav.next_row() {
+                        (Some(nav.selected_row), nav.scroll_offset)
+                    } else {
+                        (None, nav.scroll_offset)
+                    }
+                };
+
+                // Now we can use mutable self since we've dropped the nav borrow
+                if let Some(row) = new_row {
                     // Sync with local table_state for rendering
-                    self.table_state.select(Some(nav.selected_row));
+                    self.table_state.select(Some(row));
 
                     // Sync scroll offset with buffer
-                    self.buffer_mut().set_scroll_offset(nav.scroll_offset);
+                    self.buffer_mut().set_scroll_offset(new_scroll_offset);
                 }
             } else {
                 // Fallback to old implementation
@@ -3378,20 +3388,30 @@ impl EnhancedTuiApp {
     fn previous_row(&mut self) {
         // Use AppStateContainer for navigation
         if let Some(ref state_container) = self.state_container {
-            let mut nav = state_container.navigation_mut();
+            // Extract values we need before mutable borrows
+            let (new_row, new_scroll_offset) = {
+                let mut nav = state_container.navigation_mut();
 
-            // Update totals if needed
-            let total_rows = self.get_row_count();
-            let total_cols = self.get_column_count();
-            nav.update_totals(total_rows, total_cols);
+                // Update totals if needed
+                let total_rows = self.get_row_count();
+                let total_cols = self.get_column_count();
+                nav.update_totals(total_rows, total_cols);
 
-            // Move to previous row
-            if nav.previous_row() {
+                // Move to previous row
+                if nav.previous_row() {
+                    (Some(nav.selected_row), nav.scroll_offset)
+                } else {
+                    (None, nav.scroll_offset)
+                }
+            };
+
+            // Now we can use mutable self since we've dropped the nav borrow
+            if let Some(row) = new_row {
                 // Sync with local table_state for rendering
-                self.table_state.select(Some(nav.selected_row));
+                self.table_state.select(Some(row));
 
                 // Sync scroll offset with buffer
-                self.buffer_mut().set_scroll_offset(nav.scroll_offset);
+                self.buffer_mut().set_scroll_offset(new_scroll_offset);
             }
         } else {
             // Fallback to old implementation
