@@ -16,6 +16,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::time::{Duration, Instant};
+use tracing::info;
 
 /// Platform type for key handling
 #[derive(Debug, Clone, PartialEq)]
@@ -456,8 +457,21 @@ impl SearchState {
 pub struct FilterState {
     pub pattern: String,
     pub filtered_indices: Vec<usize>,
+    pub filtered_data: Option<Vec<Vec<String>>>,
     pub is_active: bool,
     pub case_insensitive: bool,
+    pub total_filters: usize,
+    pub last_filter_time: Option<Instant>,
+    pub history: VecDeque<FilterHistoryEntry>,
+    pub max_history: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct FilterHistoryEntry {
+    pub pattern: String,
+    pub match_count: usize,
+    pub timestamp: chrono::DateTime<chrono::Local>,
+    pub duration_ms: Option<u64>,
 }
 
 impl FilterState {
@@ -465,18 +479,80 @@ impl FilterState {
         Self {
             pattern: String::new(),
             filtered_indices: Vec::new(),
+            filtered_data: None,
             is_active: false,
             case_insensitive: true,
+            total_filters: 0,
+            last_filter_time: None,
+            history: VecDeque::with_capacity(20),
+            max_history: 20,
         }
     }
 
     pub fn clear(&mut self) {
-        // TODO: Add logging when log crate is available
-        // info!(target: "state", "FilterState::clear() - had {} filtered rows for pattern '{}'",
-        //       self.filtered_indices.len(), self.pattern);
+        info!(target: "filter", "FilterState::clear() - had {} filtered rows for pattern '{}'",
+              self.filtered_indices.len(), self.pattern);
+
+        // Add to history before clearing
+        if !self.pattern.is_empty() && self.is_active {
+            let duration_ms = self
+                .last_filter_time
+                .as_ref()
+                .map(|t| t.elapsed().as_millis() as u64);
+            let entry = FilterHistoryEntry {
+                pattern: self.pattern.clone(),
+                match_count: self.filtered_indices.len(),
+                timestamp: chrono::Local::now(),
+                duration_ms,
+            };
+            self.history.push_front(entry);
+            if self.history.len() > self.max_history {
+                self.history.pop_back();
+            }
+        }
+
         self.pattern.clear();
         self.filtered_indices.clear();
+        self.filtered_data = None;
         self.is_active = false;
+        self.last_filter_time = None;
+    }
+
+    /// Set filter pattern and mark as active
+    pub fn set_pattern(&mut self, pattern: String) {
+        info!(target: "filter", "FilterState::set_pattern('{}') - was '{}'", pattern, self.pattern);
+        self.pattern = pattern;
+        if !self.pattern.is_empty() {
+            self.is_active = true;
+            self.total_filters += 1;
+            self.last_filter_time = Some(Instant::now());
+        } else {
+            self.is_active = false;
+        }
+    }
+
+    /// Set filtered indices from filter operation
+    pub fn set_filtered_indices(&mut self, indices: Vec<usize>) {
+        info!(target: "filter", "FilterState::set_filtered_indices - {} rows match pattern '{}'", 
+              indices.len(), self.pattern);
+        self.filtered_indices = indices;
+    }
+
+    /// Set filtered data from filter operation
+    pub fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>) {
+        let count = data.as_ref().map(|d| d.len()).unwrap_or(0);
+        info!(target: "filter", "FilterState::set_filtered_data - {} rows", count);
+        self.filtered_data = data;
+    }
+
+    /// Get filter statistics
+    pub fn get_stats(&self) -> String {
+        format!(
+            "Total filters: {}, History items: {}, Current matches: {}",
+            self.total_filters,
+            self.history.len(),
+            self.filtered_indices.len()
+        )
     }
 }
 
@@ -3334,9 +3410,9 @@ impl AppStateContainer {
         dump.push_str("\n");
 
         // Filter state
+        dump.push_str("FILTER STATE:\n");
         let filter = self.filter.borrow();
         if filter.is_active {
-            dump.push_str("FILTER STATE (ACTIVE):\n");
             dump.push_str(&format!("  Pattern: '{}'\n", filter.pattern));
             dump.push_str(&format!(
                 "  Filtered Rows: {}\n",
@@ -3346,8 +3422,31 @@ impl AppStateContainer {
                 "  Case Insensitive: {}\n",
                 filter.case_insensitive
             ));
-            dump.push_str("\n");
+            if let Some(ref last_time) = filter.last_filter_time {
+                dump.push_str(&format!("  Last Filter: {:?} ago\n", last_time.elapsed()));
+            }
+        } else {
+            dump.push_str("  [Inactive]\n");
         }
+        dump.push_str(&format!("  Total Filters: {}\n", filter.total_filters));
+        dump.push_str(&format!("  History Items: {}\n", filter.history.len()));
+        if !filter.history.is_empty() {
+            dump.push_str("  Recent filters:\n");
+            for (i, entry) in filter.history.iter().take(5).enumerate() {
+                dump.push_str(&format!(
+                    "    {}. '{}' ({} matches) at {}\n",
+                    i + 1,
+                    if entry.pattern.len() > 30 {
+                        format!("{}...", &entry.pattern[..30])
+                    } else {
+                        entry.pattern.clone()
+                    },
+                    entry.match_count,
+                    entry.timestamp.format("%H:%M:%S")
+                ));
+            }
+        }
+        dump.push_str("\n");
 
         // Column search state
         let column_search = self.column_search.borrow();
