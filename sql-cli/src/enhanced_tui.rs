@@ -4565,6 +4565,16 @@ impl EnhancedTuiApp {
             debug!("Yanking cell at row={}, column={}", selected_row, column);
             match YankManager::yank_cell(self.buffer(), selected_row, column) {
                 Ok(result) => {
+                    // Use AppStateContainer for clipboard management
+                    if let Some(ref state_container) = self.state_container {
+                        state_container.yank_cell(
+                            selected_row,
+                            column,
+                            result.full_value.clone(),
+                            result.preview.clone(),
+                        );
+                    }
+                    // Keep local copy for backward compatibility (will be removed later)
                     self.last_yanked = Some((result.description.clone(), result.preview.clone()));
                     let message = format!("Yanked cell: {}", result.full_value);
                     debug!("Yank successful: {}", message);
@@ -4585,6 +4595,15 @@ impl EnhancedTuiApp {
         if let Some(selected_row) = self.table_state.selected() {
             match YankManager::yank_row(self.buffer(), selected_row) {
                 Ok(result) => {
+                    // Use AppStateContainer for clipboard management
+                    if let Some(ref state_container) = self.state_container {
+                        state_container.yank_row(
+                            selected_row,
+                            result.full_value.clone(),
+                            result.preview.clone(),
+                        );
+                    }
+                    // Keep local copy for backward compatibility
                     self.last_yanked = Some((result.description.clone(), result.preview));
                     self.buffer_mut()
                         .set_status_message(format!("Yanked {}", result.description));
@@ -4601,6 +4620,22 @@ impl EnhancedTuiApp {
         let column = self.buffer().get_current_column();
         match YankManager::yank_column(self.buffer(), column) {
             Ok(result) => {
+                // Use AppStateContainer for clipboard management
+                if let Some(ref state_container) = self.state_container {
+                    // Extract column name from description (format: "column 'name'")
+                    let column_name = result
+                        .description
+                        .trim_start_matches("column '")
+                        .trim_end_matches("'")
+                        .to_string();
+                    state_container.yank_column(
+                        column_name,
+                        column,
+                        result.full_value.clone(),
+                        result.preview.clone(),
+                    );
+                }
+                // Keep local copy for backward compatibility
                 self.last_yanked = Some((result.description.clone(), result.preview));
                 self.buffer_mut()
                     .set_status_message(format!("Yanked {}", result.description));
@@ -4615,6 +4650,11 @@ impl EnhancedTuiApp {
     fn yank_all(&mut self) {
         match YankManager::yank_all(self.buffer()) {
             Ok(result) => {
+                // Use AppStateContainer for clipboard management
+                if let Some(ref state_container) = self.state_container {
+                    state_container.yank_all(result.full_value.clone(), result.preview.clone());
+                }
+                // Keep local copy for backward compatibility
                 self.last_yanked = Some((result.description.clone(), result.preview.clone()));
                 self.buffer_mut().set_status_message(format!(
                     "Yanked {}: {}",
@@ -4664,6 +4704,11 @@ impl EnhancedTuiApp {
     /// Yank debug dump with context for manual test creation (Shift+Y in debug mode)
     fn yank_debug_with_context(&mut self) {
         let debug_context = DebugInfo::generate_debug_context(self.buffer());
+
+        // Use AppStateContainer for clipboard management
+        if let Some(ref state_container) = self.state_container {
+            state_container.yank_debug_context(debug_context.clone());
+        }
 
         match arboard::Clipboard::new() {
             Ok(mut clipboard) => match clipboard.set_text(&debug_context) {
@@ -5393,8 +5438,21 @@ impl EnhancedTuiApp {
                         ));
                     }
 
-                    // Show last yanked value
-                    if let Some((col, val)) = &self.last_yanked {
+                    // Show last yanked value from AppStateContainer
+                    if let Some(ref state_container) = self.state_container {
+                        if let Some(ref yanked) = state_container.clipboard().last_yanked {
+                            spans.push(Span::raw(" | "));
+                            spans.push(Span::styled(
+                                "Yanked: ",
+                                Style::default().fg(Color::DarkGray),
+                            ));
+                            spans.push(Span::styled(
+                                format!("{}={}", yanked.description, yanked.preview),
+                                Style::default().fg(Color::Green),
+                            ));
+                        }
+                    } else if let Some((col, val)) = &self.last_yanked {
+                        // Fallback to local state if no container
                         spans.push(Span::raw(" | "));
                         spans.push(Span::styled(
                             "Yanked: ",
