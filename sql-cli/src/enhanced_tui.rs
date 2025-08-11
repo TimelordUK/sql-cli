@@ -1871,6 +1871,31 @@ impl EnhancedTuiApp {
                     }
                 }
             }
+            KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                // Toggle cursor lock with Shift+Space - using AppStateContainer
+                if let Some(ref state_container) = self.state_container {
+                    state_container.toggle_cursor_lock();
+
+                    // Extract values we need before mutable borrows
+                    let (is_locked, lock_position) = {
+                        let navigation = state_container.navigation();
+                        (navigation.cursor_lock, navigation.cursor_lock_position)
+                    };
+
+                    // Update buffer state (we might need separate buffer fields for this)
+                    // For now, we'll just show status message
+                    if is_locked {
+                        self.buffer_mut().set_status_message(format!(
+                            "Cursor lock: ON (locked at visual position {})",
+                            lock_position.map_or(0, |p| p + 1)
+                        ));
+                    } else {
+                        self.buffer_mut().set_status_message(
+                            "Cursor lock: OFF (cursor moves normally)".to_string(),
+                        );
+                    }
+                }
+            }
             KeyCode::PageDown | KeyCode::Char('f')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
@@ -5923,19 +5948,36 @@ impl EnhancedTuiApp {
             spans.push(Span::styled("COMPACT", Style::default().fg(Color::Green)));
         }
 
-        // Use NavigationState for viewport lock status
-        let is_locked = if let Some(ref state_container) = self.state_container {
-            state_container.is_viewport_locked()
-        } else {
-            self.buffer().is_viewport_lock()
-        };
+        // Show lock status indicators
+        if let Some(ref state_container) = self.state_container {
+            let navigation = state_container.navigation();
 
-        if is_locked {
-            spans.push(Span::raw(" | "));
-            spans.push(Span::styled(
-                &self.config.display.icons.lock,
-                Style::default().fg(Color::Magenta),
-            ));
+            // Viewport lock indicator
+            if navigation.viewport_lock {
+                spans.push(Span::raw(" | "));
+                spans.push(Span::styled(
+                    format!("{}V", &self.config.display.icons.lock),
+                    Style::default().fg(Color::Magenta),
+                ));
+            }
+
+            // Cursor lock indicator
+            if navigation.cursor_lock {
+                spans.push(Span::raw(" | "));
+                spans.push(Span::styled(
+                    format!("{}C", &self.config.display.icons.lock),
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+        } else {
+            // Fallback for buffer-based lock
+            if self.buffer().is_viewport_lock() {
+                spans.push(Span::raw(" | "));
+                spans.push(Span::styled(
+                    &self.config.display.icons.lock,
+                    Style::default().fg(Color::Magenta),
+                ));
+            }
         }
 
         // Help shortcuts (right side)

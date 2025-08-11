@@ -753,8 +753,10 @@ pub struct NavigationState {
     pub total_rows: usize,
     pub total_columns: usize,
     pub last_visible_rows: usize,
-    pub viewport_lock: bool,
+    pub viewport_lock: bool, // Lock viewport position (cursor moves within)
     pub viewport_lock_row: Option<usize>,
+    pub cursor_lock: bool, // Lock cursor at visual position (data scrolls)
+    pub cursor_lock_position: Option<usize>, // Visual position to lock cursor at
     pub selection_history: VecDeque<(usize, usize)>, // Track navigation history
 }
 
@@ -771,6 +773,8 @@ impl NavigationState {
             last_visible_rows: 0,
             viewport_lock: false,
             viewport_lock_row: None,
+            cursor_lock: false,
+            cursor_lock_position: None,
             selection_history: VecDeque::with_capacity(50), // Keep last 50 positions
         }
     }
@@ -804,6 +808,28 @@ impl NavigationState {
 
     /// Move to next row
     pub fn next_row(&mut self) -> bool {
+        if self.cursor_lock {
+            // In cursor lock mode, scroll the data instead of moving cursor
+            if let Some(lock_position) = self.cursor_lock_position {
+                // Check if we can scroll down
+                let max_scroll = self.total_rows.saturating_sub(self.viewport_rows);
+                if self.scroll_offset.0 < max_scroll {
+                    self.scroll_offset.0 += 1;
+                    // Keep cursor at the locked visual position
+                    let new_data_row = self.scroll_offset.0 + lock_position;
+                    if new_data_row < self.total_rows {
+                        self.selected_row = new_data_row;
+                        self.add_to_history(self.selected_row, self.selected_column);
+                        info!(target: "navigation", "NavigationState::next_row (cursor locked) - scrolled to offset {}, cursor at row {}", 
+                              self.scroll_offset.0, self.selected_row);
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+
+        // Normal navigation when not locked
         if self.selected_row < self.total_rows.saturating_sub(1) {
             self.selected_row += 1;
             self.add_to_history(self.selected_row, self.selected_column);
@@ -817,6 +843,25 @@ impl NavigationState {
 
     /// Move to previous row
     pub fn previous_row(&mut self) -> bool {
+        if self.cursor_lock {
+            // In cursor lock mode, scroll the data instead of moving cursor
+            if let Some(lock_position) = self.cursor_lock_position {
+                // Check if we can scroll up
+                if self.scroll_offset.0 > 0 {
+                    self.scroll_offset.0 -= 1;
+                    // Keep cursor at the locked visual position
+                    let new_data_row = self.scroll_offset.0 + lock_position;
+                    self.selected_row = new_data_row;
+                    self.add_to_history(self.selected_row, self.selected_column);
+                    info!(target: "navigation", "NavigationState::previous_row (cursor locked) - scrolled to offset {}, cursor at row {}", 
+                          self.scroll_offset.0, self.selected_row);
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        // Normal navigation when not locked
         if self.selected_row > 0 {
             self.selected_row -= 1;
             self.add_to_history(self.selected_row, self.selected_column);
@@ -892,6 +937,27 @@ impl NavigationState {
 
     /// Page down
     pub fn page_down(&mut self) {
+        if self.cursor_lock {
+            // In cursor lock mode, scroll the data by a page
+            if let Some(lock_position) = self.cursor_lock_position {
+                let max_scroll = self.total_rows.saturating_sub(self.viewport_rows);
+                let new_scroll = (self.scroll_offset.0 + self.viewport_rows).min(max_scroll);
+                if new_scroll != self.scroll_offset.0 {
+                    self.scroll_offset.0 = new_scroll;
+                    // Keep cursor at the locked visual position
+                    let new_data_row = self.scroll_offset.0 + lock_position;
+                    if new_data_row < self.total_rows {
+                        self.selected_row = new_data_row;
+                        self.add_to_history(self.selected_row, self.selected_column);
+                        info!(target: "navigation", "NavigationState::page_down (cursor locked) - scrolled to offset {}, cursor at row {}", 
+                              self.scroll_offset.0, self.selected_row);
+                    }
+                }
+                return;
+            }
+        }
+
+        // Normal page down when not locked
         let old_row = self.selected_row;
         self.selected_row =
             (self.selected_row + self.viewport_rows).min(self.total_rows.saturating_sub(1));
@@ -904,6 +970,24 @@ impl NavigationState {
 
     /// Page up
     pub fn page_up(&mut self) {
+        if self.cursor_lock {
+            // In cursor lock mode, scroll the data by a page
+            if let Some(lock_position) = self.cursor_lock_position {
+                let new_scroll = self.scroll_offset.0.saturating_sub(self.viewport_rows);
+                if new_scroll != self.scroll_offset.0 {
+                    self.scroll_offset.0 = new_scroll;
+                    // Keep cursor at the locked visual position
+                    let new_data_row = self.scroll_offset.0 + lock_position;
+                    self.selected_row = new_data_row;
+                    self.add_to_history(self.selected_row, self.selected_column);
+                    info!(target: "navigation", "NavigationState::page_up (cursor locked) - scrolled to offset {}, cursor at row {}", 
+                          self.scroll_offset.0, self.selected_row);
+                }
+                return;
+            }
+        }
+
+        // Normal page up when not locked
         let old_row = self.selected_row;
         self.selected_row = self.selected_row.saturating_sub(self.viewport_rows);
         if self.selected_row != old_row {
@@ -2876,6 +2960,37 @@ impl AppStateContainer {
         }
     }
 
+    pub fn toggle_cursor_lock(&self) {
+        let mut navigation = self.navigation.borrow_mut();
+        navigation.cursor_lock = !navigation.cursor_lock;
+
+        if navigation.cursor_lock {
+            // Calculate visual position (position within viewport)
+            let visual_position = navigation
+                .selected_row
+                .saturating_sub(navigation.scroll_offset.0);
+            navigation.cursor_lock_position = Some(visual_position);
+        } else {
+            navigation.cursor_lock_position = None;
+        }
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.log(
+                "Navigation",
+                DebugLevel::Info,
+                format!(
+                    "Cursor lock: {} at visual position {:?}",
+                    navigation.cursor_lock, navigation.cursor_lock_position
+                ),
+                Some("toggle_cursor_lock".to_string()),
+            );
+        }
+    }
+
+    pub fn is_cursor_locked(&self) -> bool {
+        self.navigation.borrow().cursor_lock
+    }
+
     // Navigation state access
     pub fn navigation(&self) -> std::cell::Ref<'_, NavigationState> {
         self.navigation.borrow()
@@ -3753,6 +3868,10 @@ impl AppStateContainer {
         dump.push_str(&format!(
             "\n  Viewport Lock: {} at row {:?}\n",
             navigation.viewport_lock, navigation.viewport_lock_row
+        ));
+        dump.push_str(&format!(
+            "  Cursor Lock: {} at visual position {:?}\n",
+            navigation.cursor_lock, navigation.cursor_lock_position
         ));
 
         if !navigation.selection_history.is_empty() {
