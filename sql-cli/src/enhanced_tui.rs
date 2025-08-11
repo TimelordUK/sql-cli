@@ -4625,7 +4625,8 @@ impl EnhancedTuiApp {
         // For Ascending/Descending, get sorted data from AppStateContainer
         let (sorted_results_opt, last_execution_time, from_cache) =
             if let Some(ref state_container) = self.state_container {
-                let sorted_results = state_container.sort_results_data(column_index);
+                let sorted_results =
+                    state_container.sort_results_data(column_index, new_order.clone());
                 let last_execution_time = state_container.get_last_execution_time();
                 let from_cache = false; // Sort operations are not cached queries
                 (sorted_results, last_execution_time, from_cache)

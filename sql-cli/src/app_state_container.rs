@@ -2567,22 +2567,13 @@ impl AppStateContainer {
     }
 
     /// Perform sorting on the results data and return sorted results
-    pub fn sort_results_data(&self, column_index: usize) -> Option<QueryResponse> {
+    pub fn sort_results_data(
+        &self,
+        column_index: usize,
+        sort_order: SortOrder,
+    ) -> Option<QueryResponse> {
         let results = self.results.borrow();
         let original_results = results.current_results.as_ref()?;
-
-        // Get the current sort state (don't advance it)
-        let sort_order = if let Some(col) = self.sort.borrow().column {
-            if col == column_index {
-                self.sort.borrow().order.clone()
-            } else {
-                // Different column, would start with ascending
-                SortOrder::Ascending
-            }
-        } else {
-            // No current sort, would start with ascending
-            SortOrder::Ascending
-        };
 
         if sort_order == SortOrder::None {
             // Return original unsorted data
