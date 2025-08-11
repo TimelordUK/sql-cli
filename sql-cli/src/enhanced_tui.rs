@@ -1876,8 +1876,10 @@ impl EnhancedTuiApp {
                     }
                 }
             }
-            KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                // Toggle cursor lock with Shift+Space - using AppStateContainer
+            // Note: Many terminals can't distinguish Shift+Space from Space
+            // So we support 'x' as an alternative for cursor lock
+            KeyCode::Char('x') | KeyCode::Char('X') => {
+                // Toggle cursor lock with 'x' key - using AppStateContainer
                 if let Some(ref state_container) = self.state_container {
                     state_container.toggle_cursor_lock();
 
@@ -1889,6 +1891,29 @@ impl EnhancedTuiApp {
 
                     // Update buffer state (we might need separate buffer fields for this)
                     // For now, we'll just show status message
+                    if is_locked {
+                        self.buffer_mut().set_status_message(format!(
+                            "Cursor lock: ON (locked at visual position {})",
+                            lock_position.map_or(0, |p| p + 1)
+                        ));
+                    } else {
+                        self.buffer_mut().set_status_message(
+                            "Cursor lock: OFF (cursor moves normally)".to_string(),
+                        );
+                    }
+                }
+            }
+            KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Also support Ctrl+Space for cursor lock
+                if let Some(ref state_container) = self.state_container {
+                    state_container.toggle_cursor_lock();
+
+                    // Extract values we need before mutable borrows
+                    let (is_locked, lock_position) = {
+                        let navigation = state_container.navigation();
+                        (navigation.cursor_lock, navigation.cursor_lock_position)
+                    };
+
                     if is_locked {
                         self.buffer_mut().set_status_message(format!(
                             "Cursor lock: ON (locked at visual position {})",
