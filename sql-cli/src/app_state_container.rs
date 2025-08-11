@@ -1255,8 +1255,7 @@ impl SortState {
             SortOrder::Ascending
         };
 
-        eprintln!("🔍 GET_NEXT_ORDER: Current column {:?} order {:?}, requested column {}, next order {:?}", 
-                  self.column, self.order, column_index, next_order);
+        // Debug: GET_NEXT_ORDER calculation
         next_order
     }
 

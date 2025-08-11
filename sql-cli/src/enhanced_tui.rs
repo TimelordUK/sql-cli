@@ -4601,10 +4601,7 @@ impl EnhancedTuiApp {
                 )
             }; // sort_state borrow dropped here
             let new_order = state_container.get_next_sort_order(column_index);
-            eprintln!(
-                "🔍 SORT DEBUG: Current state: {}, Next order: {:?}",
-                current_state, new_order
-            );
+            // Debug removed to avoid TUI corruption
             (current_state, new_order)
         } else {
             // Fallback if no AppStateContainer (shouldn't happen in normal operation)
@@ -4615,7 +4612,7 @@ impl EnhancedTuiApp {
 
         // Handle the three cases: Ascending, Descending, None
         if new_order == SortOrder::None {
-            eprintln!("🔍 SORT DEBUG: Clearing sort (None case)");
+            // Debug: Clearing sort (None case)
             // Advance state to None BEFORE clearing
             if let Some(ref state_container) = self.state_container {
                 state_container.advance_sort_state(
@@ -4624,10 +4621,7 @@ impl EnhancedTuiApp {
                     new_order.clone(),
                 );
                 let after_state = state_container.sort();
-                eprintln!(
-                    "🔍 SORT DEBUG: After advance to None: Column {:?} Order {:?}",
-                    after_state.column, after_state.order
-                );
+                // Debug: After advance to None
             }
 
             // Clear sort state in buffer
@@ -4639,7 +4633,7 @@ impl EnhancedTuiApp {
             return;
         }
 
-        eprintln!("🔍 SORT DEBUG: Sorting with order: {:?}", new_order);
+        // Debug: Sorting with order
         // For Ascending/Descending, advance state AFTER determining new_order but BEFORE sorting
         if let Some(ref state_container) = self.state_container {
             state_container.advance_sort_state(
@@ -4648,10 +4642,7 @@ impl EnhancedTuiApp {
                 new_order.clone(),
             );
             let after_state = state_container.sort();
-            eprintln!(
-                "🔍 SORT DEBUG: After advance for sort: Column {:?} Order {:?}",
-                after_state.column, after_state.order
-            );
+            // Debug: After advance for sort
         }
 
         // For Ascending/Descending, get sorted data from AppStateContainer
