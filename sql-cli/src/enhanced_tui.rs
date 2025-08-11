@@ -6561,8 +6561,8 @@ impl EnhancedTuiApp {
     }
 
     fn render_help(&mut self, f: &mut Frame, area: Rect) {
-        // Use the HelpWidget for tabbed interface
-        self.help_widget.render(f, area);
+        // Use simple two-column layout - shows everything at once
+        self.render_help_two_column(f, area);
     }
 
     fn render_help_two_column(&self, f: &mut Frame, area: Rect) {
