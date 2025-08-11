@@ -4572,63 +4572,43 @@ impl EnhancedTuiApp {
     fn sort_by_column(&mut self, column_index: usize) {
         // Delegate sorting entirely to AppStateContainer
         // Extract all values from state_container first
-        let (new_order, sorted_results_opt, last_execution_time, from_cache) =
+        let new_order = if let Some(ref state_container) = self.state_container {
+            state_container.get_next_sort_order(column_index)
+        } else {
+            // Fallback if no AppStateContainer (shouldn't happen in normal operation)
+            self.buffer_mut()
+                .set_status_message("Cannot sort - state container not available".to_string());
+            return;
+        };
+
+        // Handle the three cases: Ascending, Descending, None
+        if new_order == SortOrder::None {
+            // Clear sort - just reset to show we're unsorted, but keep current data
             if let Some(ref state_container) = self.state_container {
-                // Get the next sort order
-                let new_order = state_container.get_next_sort_order(column_index);
+                state_container.clear_sort();
+            }
 
-                if new_order == SortOrder::None {
-                    // Clear sort - restore original order
-                    state_container.clear_sort();
-                }
+            // Clear sort state in buffer
+            self.buffer_mut().set_sort_column(None);
+            self.buffer_mut().set_sort_order(SortOrder::None);
 
-                // Perform the sort in AppStateContainer and get sorted results
-                let sorted_results_opt = state_container.sort_results_data(column_index);
+            self.buffer_mut()
+                .set_status_message("Sort cleared - showing current data unsorted".to_string());
+            return;
+        }
+
+        // For Ascending/Descending, get sorted data from AppStateContainer
+        let (sorted_results_opt, last_execution_time, from_cache) =
+            if let Some(ref state_container) = self.state_container {
+                let sorted_results = state_container.sort_results_data(column_index);
                 let last_execution_time = state_container.get_last_execution_time();
-                let from_cache = state_container.is_results_from_cache();
-
-                (
-                    new_order,
-                    sorted_results_opt,
-                    last_execution_time,
-                    from_cache,
-                )
+                let from_cache = false; // Sort operations are not cached queries
+                (sorted_results, last_execution_time, from_cache)
             } else {
-                // Fallback if no AppStateContainer (shouldn't happen in normal operation)
                 self.buffer_mut()
                     .set_status_message("Cannot sort - state container not available".to_string());
                 return;
             };
-
-        // Now we can freely use self.buffer_mut() since state_container is no longer borrowed
-        if new_order == SortOrder::None {
-            // Re-execute the last query to restore original order
-            let last_query = self.buffer().get_last_query();
-            if !last_query.is_empty() {
-                // Clear sort state in buffer first
-                self.buffer_mut().set_sort_column(None);
-                self.buffer_mut().set_sort_order(SortOrder::None);
-
-                // Re-execute the query (it's cached so it will be fast)
-                self.execute_query(&last_query.clone());
-
-                self.buffer_mut()
-                    .set_status_message("Sort cleared - restored original order".to_string());
-            } else {
-                // Fallback to clearing filtered data if no query to re-execute
-                self.buffer_mut().set_filtered_data(None);
-                self.buffer_mut().set_sort_column(None);
-                self.buffer_mut().set_sort_order(SortOrder::None);
-
-                let current_column = self.buffer().get_current_column();
-                self.reset_table_state();
-                self.buffer_mut().set_current_column(current_column);
-
-                self.buffer_mut()
-                    .set_status_message("Sort cleared - returned to original order".to_string());
-            }
-            return;
-        }
 
         if let Some(sorted_results) = sorted_results_opt {
             // Update buffer with sorted results
