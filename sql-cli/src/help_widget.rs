@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
@@ -351,8 +351,12 @@ impl HelpWidget {
             String::new()
         };
 
+        // Convert Vec<Line> to Text for proper rendering
+        let left_text = Text::from(left_visible);
+        let right_text = Text::from(right_visible);
+
         // Render left column
-        let left_paragraph = Paragraph::new(left_visible)
+        let left_paragraph = Paragraph::new(left_text)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -361,7 +365,7 @@ impl HelpWidget {
             .style(Style::default());
 
         // Render right column
-        let right_paragraph = Paragraph::new(right_visible)
+        let right_paragraph = Paragraph::new(right_text)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
