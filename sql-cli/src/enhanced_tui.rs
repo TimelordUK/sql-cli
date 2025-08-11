@@ -1703,7 +1703,10 @@ impl EnhancedTuiApp {
                 "start_fuzzy_filter" => {
                     self.enter_search_mode(SearchMode::FuzzyFilter);
                 }
-                "sort_by_column" => self.sort_by_column(self.buffer().get_current_column()),
+                "sort_by_column" => {
+                    self.sort_by_column(self.buffer().get_current_column());
+                    return Ok(false); // Return early to prevent double handling
+                }
                 "show_column_stats" => self.calculate_column_statistics(),
                 "next_search_match" => self.next_search_match(),
                 "previous_search_match" => self.previous_search_match(),
@@ -1959,13 +1962,8 @@ impl EnhancedTuiApp {
             }
             // Filter functionality is handled by dispatcher above
             // Removed duplicate handlers for filter keys (F, f)
-            // Sort functionality (lowercase s)
-            KeyCode::Char('s')
-                if !key.modifiers.contains(KeyModifiers::CONTROL)
-                    && !key.modifiers.contains(KeyModifiers::SHIFT) =>
-            {
-                self.sort_by_column(self.buffer().get_current_column());
-            }
+            // Sort functionality (lowercase s) - handled by dispatcher above
+            // Removed to prevent double handling
             // Column statistics (uppercase S)
             KeyCode::Char('S') | KeyCode::Char('s')
                 if key.modifiers.contains(KeyModifiers::SHIFT) =>
