@@ -1564,6 +1564,9 @@ impl EnhancedTuiApp {
             || matches!(
                 normalized_key.code,
                 KeyCode::Char('G')
+                    | KeyCode::Char('H')
+                    | KeyCode::Char('M')
+                    | KeyCode::Char('L')
                     | KeyCode::Char('C')
                     | KeyCode::Char('F')
                     | KeyCode::Char('S')
@@ -1669,6 +1672,9 @@ impl EnhancedTuiApp {
                     debug!("Executing goto_last_row action");
                     self.goto_last_row();
                 }
+                "goto_viewport_top" => self.goto_viewport_top(),
+                "goto_viewport_middle" => self.goto_viewport_middle(),
+                "goto_viewport_bottom" => self.goto_viewport_bottom(),
                 "goto_first_column" => self.goto_first_column(),
                 "goto_last_column" => self.goto_last_column(),
                 "page_up" => self.page_up(),
@@ -3548,6 +3554,63 @@ impl EnhancedTuiApp {
         if total_rows > 0 {
             self.buffer_mut()
                 .set_status_message(format!("Jumped to first row (1/{})", total_rows));
+        }
+    }
+
+    fn goto_viewport_top(&mut self) {
+        // Jump to top of current viewport (H in vim)
+        if let Some(ref state_container) = self.state_container {
+            let (new_row, status_msg) = {
+                let mut nav = state_container.navigation_mut();
+                nav.jump_to_viewport_top();
+                let row = nav.selected_row;
+                let total = nav.total_rows;
+                (
+                    row,
+                    format!("Jumped to viewport top (row {}/{})", row + 1, total),
+                )
+            };
+
+            self.table_state.select(Some(new_row));
+            self.buffer_mut().set_status_message(status_msg);
+        }
+    }
+
+    fn goto_viewport_middle(&mut self) {
+        // Jump to middle of current viewport (M in vim)
+        if let Some(ref state_container) = self.state_container {
+            let (new_row, status_msg) = {
+                let mut nav = state_container.navigation_mut();
+                nav.jump_to_viewport_middle();
+                let row = nav.selected_row;
+                let total = nav.total_rows;
+                (
+                    row,
+                    format!("Jumped to viewport middle (row {}/{})", row + 1, total),
+                )
+            };
+
+            self.table_state.select(Some(new_row));
+            self.buffer_mut().set_status_message(status_msg);
+        }
+    }
+
+    fn goto_viewport_bottom(&mut self) {
+        // Jump to bottom of current viewport (L in vim)
+        if let Some(ref state_container) = self.state_container {
+            let (new_row, status_msg) = {
+                let mut nav = state_container.navigation_mut();
+                nav.jump_to_viewport_bottom();
+                let row = nav.selected_row;
+                let total = nav.total_rows;
+                (
+                    row,
+                    format!("Jumped to viewport bottom (row {}/{})", row + 1, total),
+                )
+            };
+
+            self.table_state.select(Some(new_row));
+            self.buffer_mut().set_status_message(status_msg);
         }
     }
 

@@ -275,6 +275,21 @@ impl KeyDispatcher {
             KeyBinding::with_shift(KeyCode::Char('G')),
             "goto_last_row".into(),
         );
+
+        // Viewport navigation (vim-style H/M/L)
+        self.results_map.insert(
+            KeyBinding::with_shift(KeyCode::Char('H')),
+            "goto_viewport_top".into(),
+        );
+        self.results_map.insert(
+            KeyBinding::with_shift(KeyCode::Char('M')),
+            "goto_viewport_middle".into(),
+        );
+        self.results_map.insert(
+            KeyBinding::with_shift(KeyCode::Char('L')),
+            "goto_viewport_bottom".into(),
+        );
+
         self.results_map.insert(
             KeyBinding::new(KeyCode::Char('^')),
             "goto_first_column".into(),

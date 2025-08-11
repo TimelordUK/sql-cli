@@ -913,6 +913,48 @@ impl NavigationState {
         }
     }
 
+    /// Jump to top of viewport (H in vim)
+    pub fn jump_to_viewport_top(&mut self) {
+        let target_row = self.scroll_offset.0;
+        if target_row != self.selected_row && target_row < self.total_rows {
+            info!(target: "navigation", "NavigationState::jump_to_viewport_top - from {} to {} (viewport top)", 
+                  self.selected_row, target_row);
+            self.selected_row = target_row;
+            self.add_to_history(self.selected_row, self.selected_column);
+            // No need to ensure_visible since we're jumping to a visible position
+        }
+    }
+
+    /// Jump to middle of viewport (M in vim)
+    pub fn jump_to_viewport_middle(&mut self) {
+        let viewport_start = self.scroll_offset.0;
+        let viewport_end = (viewport_start + self.viewport_rows).min(self.total_rows);
+        let target_row = viewport_start + (viewport_end - viewport_start) / 2;
+
+        if target_row != self.selected_row && target_row < self.total_rows {
+            info!(target: "navigation", "NavigationState::jump_to_viewport_middle - from {} to {} (viewport middle)", 
+                  self.selected_row, target_row);
+            self.selected_row = target_row;
+            self.add_to_history(self.selected_row, self.selected_column);
+            // No need to ensure_visible since we're jumping to a visible position
+        }
+    }
+
+    /// Jump to bottom of viewport (L in vim)
+    pub fn jump_to_viewport_bottom(&mut self) {
+        let viewport_start = self.scroll_offset.0;
+        let viewport_end = (viewport_start + self.viewport_rows).min(self.total_rows);
+        let target_row = viewport_end.saturating_sub(1);
+
+        if target_row != self.selected_row && target_row < self.total_rows {
+            info!(target: "navigation", "NavigationState::jump_to_viewport_bottom - from {} to {} (viewport bottom)", 
+                  self.selected_row, target_row);
+            self.selected_row = target_row;
+            self.add_to_history(self.selected_row, self.selected_column);
+            // No need to ensure_visible since we're jumping to a visible position
+        }
+    }
+
     pub fn is_position_visible(&self, row: usize, col: usize) -> bool {
         let (scroll_row, scroll_col) = self.scroll_offset;
         row >= scroll_row
