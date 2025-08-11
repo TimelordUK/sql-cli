@@ -1238,7 +1238,7 @@ impl SortState {
 
     /// Get the next sort order for a column
     pub fn get_next_order(&self, column_index: usize) -> SortOrder {
-        if let Some(current_col) = self.column {
+        let next_order = if let Some(current_col) = self.column {
             if current_col == column_index {
                 // Same column - cycle through orders
                 match self.order {
@@ -1253,13 +1253,20 @@ impl SortState {
         } else {
             // No column sorted - start with ascending
             SortOrder::Ascending
-        }
+        };
+
+        eprintln!("🔍 GET_NEXT_ORDER: Current column {:?} order {:?}, requested column {}, next order {:?}", 
+                  self.column, self.order, column_index, next_order);
+        next_order
     }
 
     /// Advance the sort state for the given column
-    pub fn advance_sort_state(&mut self, column_index: usize, column_name: Option<String>) {
-        let new_order = self.get_next_order(column_index);
-
+    pub fn advance_sort_state(
+        &mut self,
+        column_index: usize,
+        column_name: Option<String>,
+        new_order: SortOrder,
+    ) {
         // Update history before changing state
         if let (Some(col), Some(name)) = (self.column, &self.column_name) {
             self.history.push_back(SortHistoryEntry {
@@ -2560,10 +2567,15 @@ impl AppStateContainer {
     }
 
     /// Advance the sort state for a column
-    pub fn advance_sort_state(&self, column_index: usize, column_name: Option<String>) {
+    pub fn advance_sort_state(
+        &self,
+        column_index: usize,
+        column_name: Option<String>,
+        new_order: SortOrder,
+    ) {
         self.sort
             .borrow_mut()
-            .advance_sort_state(column_index, column_name);
+            .advance_sort_state(column_index, column_name, new_order);
     }
 
     /// Perform sorting on the results data and return sorted results
