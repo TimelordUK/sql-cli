@@ -1577,6 +1577,74 @@ impl HistorySearchState {
     }
 }
 
+/// Help widget state management
+#[derive(Debug, Clone)]
+pub struct HelpState {
+    /// Whether help is visible
+    pub is_visible: bool,
+
+    /// Vertical scroll offset
+    pub scroll_offset: u16,
+
+    /// Maximum scroll based on content height
+    pub max_scroll: u16,
+
+    /// Number of times help was opened
+    pub open_count: usize,
+
+    /// Last time help was opened
+    pub last_opened: Option<Instant>,
+}
+
+impl HelpState {
+    pub fn new() -> Self {
+        Self {
+            is_visible: false,
+            scroll_offset: 0,
+            max_scroll: 0,
+            open_count: 0,
+            last_opened: None,
+        }
+    }
+
+    /// Show help and reset scroll
+    pub fn show(&mut self) {
+        self.is_visible = true;
+        self.scroll_offset = 0;
+        self.open_count += 1;
+        self.last_opened = Some(Instant::now());
+    }
+
+    /// Hide help
+    pub fn hide(&mut self) {
+        self.is_visible = false;
+    }
+
+    /// Toggle help visibility
+    pub fn toggle(&mut self) {
+        if self.is_visible {
+            self.hide();
+        } else {
+            self.show();
+        }
+    }
+
+    /// Scroll down by amount
+    pub fn scroll_down(&mut self, amount: u16) {
+        self.scroll_offset = (self.scroll_offset + amount).min(self.max_scroll);
+    }
+
+    /// Scroll up by amount
+    pub fn scroll_up(&mut self, amount: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+    }
+
+    /// Set maximum scroll based on content height and viewport
+    pub fn set_max_scroll(&mut self, content_lines: usize, viewport_height: usize) {
+        self.max_scroll = content_lines.saturating_sub(viewport_height) as u16;
+    }
+}
+
 /// Container for all widget states
 pub struct WidgetStates {
     pub search_modes: SearchModesWidget,
@@ -2093,8 +2161,8 @@ pub struct AppStateContainer {
     debug_enabled: bool,
     debug_service: RefCell<Option<crate::debug_service::DebugService>>,
 
-    // UI visibility flags
-    show_help: bool,
+    // Help state - manages visibility and scrolling
+    help: RefCell<HelpState>,
 }
 
 impl AppStateContainer {
@@ -2127,7 +2195,7 @@ impl AppStateContainer {
             mode_stack: vec![AppMode::Command],
             debug_enabled: false,
             debug_service: RefCell::new(None), // Will be set later via set_debug_service
-            show_help: false,
+            help: RefCell::new(HelpState::new()),
         })
     }
 
@@ -3929,37 +3997,135 @@ impl AppStateContainer {
         self.debug_enabled
     }
 
-    // Help control
-    pub fn toggle_help(&mut self) {
-        let old_value = self.show_help;
-        self.show_help = !self.show_help;
+    // Help control methods with comprehensive logging
+    pub fn toggle_help(&self) {
+        let mut help = self.help.borrow_mut();
+        let old_visible = help.is_visible;
+        help.toggle();
+
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
-                "AppStateContainer",
+                "Help",
                 format!(
-                    "Help mode changed: {} -> {} (in toggle_help)",
-                    old_value, self.show_help
+                    "Toggled help: {} -> {}, open_count: {}",
+                    old_visible, help.is_visible, help.open_count
                 ),
             );
         }
     }
 
     pub fn is_help_visible(&self) -> bool {
-        self.show_help
+        self.help.borrow().is_visible
     }
 
-    pub fn set_help_visible(&mut self, visible: bool) {
-        let old_value = self.show_help;
-        self.show_help = visible;
+    pub fn set_help_visible(&self, visible: bool) {
+        let mut help = self.help.borrow_mut();
+        let old_visible = help.is_visible;
+
+        if visible {
+            help.show();
+        } else {
+            help.hide();
+        }
+
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
-                "AppStateContainer",
+                "Help",
                 format!(
-                    "Help visibility changed: {} -> {} (in set_help_visible)",
-                    old_value, visible
+                    "Set help visibility: {} -> {}, scroll reset: {}",
+                    old_visible, help.is_visible, visible
                 ),
             );
         }
+    }
+
+    /// Scroll help down by one line
+    pub fn help_scroll_down(&self) {
+        let mut help = self.help.borrow_mut();
+        let old_scroll = help.scroll_offset;
+        help.scroll_down(1);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            if old_scroll != help.scroll_offset {
+                debug_service.info(
+                    "Help",
+                    format!("Scrolled down: {} -> {}", old_scroll, help.scroll_offset),
+                );
+            }
+        }
+    }
+
+    /// Scroll help up by one line
+    pub fn help_scroll_up(&self) {
+        let mut help = self.help.borrow_mut();
+        let old_scroll = help.scroll_offset;
+        help.scroll_up(1);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            if old_scroll != help.scroll_offset {
+                debug_service.info(
+                    "Help",
+                    format!("Scrolled up: {} -> {}", old_scroll, help.scroll_offset),
+                );
+            }
+        }
+    }
+
+    /// Page down in help (10 lines)
+    pub fn help_page_down(&self) {
+        let mut help = self.help.borrow_mut();
+        let old_scroll = help.scroll_offset;
+        help.scroll_down(10);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Help",
+                format!("Page down: {} -> {}", old_scroll, help.scroll_offset),
+            );
+        }
+    }
+
+    /// Page up in help (10 lines)
+    pub fn help_page_up(&self) {
+        let mut help = self.help.borrow_mut();
+        let old_scroll = help.scroll_offset;
+        help.scroll_up(10);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Help",
+                format!("Page up: {} -> {}", old_scroll, help.scroll_offset),
+            );
+        }
+    }
+
+    /// Set maximum scroll for help based on content
+    pub fn set_help_max_scroll(&self, content_lines: usize, viewport_height: usize) {
+        let mut help = self.help.borrow_mut();
+        let old_max = help.max_scroll;
+        help.set_max_scroll(content_lines, viewport_height);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            if old_max != help.max_scroll {
+                debug_service.info(
+                    "Help",
+                    format!(
+                        "Updated max scroll: {} -> {} (content: {}, viewport: {})",
+                        old_max, help.max_scroll, content_lines, viewport_height
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Get current help scroll offset
+    pub fn help_scroll_offset(&self) -> u16 {
+        self.help.borrow().scroll_offset
+    }
+
+    /// Get help state for debugging
+    pub fn help_state(&self) -> std::cell::Ref<'_, HelpState> {
+        self.help.borrow()
     }
 
     // Key press management - uses interior mutability so it can be called through Arc
@@ -4056,8 +4222,19 @@ impl AppStateContainer {
 
         // UI Flags
         dump.push_str("UI FLAGS:\n");
-        dump.push_str(&format!("  Help Visible: {}\n", self.show_help));
         dump.push_str(&format!("  Debug Enabled: {}\n", self.debug_enabled));
+        dump.push_str("\n");
+
+        // Help State
+        let help = self.help.borrow();
+        dump.push_str("HELP STATE:\n");
+        dump.push_str(&format!("  Visible: {}\n", help.is_visible));
+        dump.push_str(&format!("  Scroll Offset: {}\n", help.scroll_offset));
+        dump.push_str(&format!("  Max Scroll: {}\n", help.max_scroll));
+        dump.push_str(&format!("  Open Count: {}\n", help.open_count));
+        if let Some(ref last_opened) = help.last_opened {
+            dump.push_str(&format!("  Last Opened: {:?} ago\n", last_opened.elapsed()));
+        }
         dump.push_str("\n");
 
         // Input state
@@ -4607,7 +4784,8 @@ impl fmt::Debug for AppStateContainer {
                 &self.column_search.borrow().is_active,
             )
             .field("debug_enabled", &self.debug_enabled)
-            .field("show_help", &self.show_help)
+            .field("help_visible", &self.help.borrow().is_visible)
+            .field("help_scroll", &self.help.borrow().scroll_offset)
             .field("cached_results", &self.results_cache.cache.len())
             .field("history_count", &self.command_history.get_all().len())
             .finish()

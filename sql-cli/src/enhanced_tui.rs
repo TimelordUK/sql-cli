@@ -214,24 +214,26 @@ impl EnhancedTuiApp {
 
     /// Toggle help visibility (uses state_container if available, falls back to local field)
     fn toggle_help(&mut self) {
-        let old_value = self.show_help;
-        // TODO: Will need Arc<Mutex<>> or interior mutability to modify through Arc
-        // For now, just use local field
-        self.show_help = !self.show_help;
-
-        // Log the state change
-        log_state_change!(self, "show_help", old_value, self.show_help, "toggle_help");
+        if let Some(ref state_container) = self.state_container {
+            state_container.toggle_help();
+        } else {
+            // Fallback to local field
+            let old_value = self.show_help;
+            self.show_help = !self.show_help;
+            log_state_change!(self, "show_help", old_value, self.show_help, "toggle_help");
+        }
     }
 
     /// Set help visibility (uses state_container if available, falls back to local field)
     fn set_help_visible(&mut self, visible: bool) {
-        let old_value = self.show_help;
-        // TODO: Will need Arc<Mutex<>> or interior mutability to modify through Arc
-        // For now, just use local field
-        self.show_help = visible;
-
-        // Log the state change
-        log_state_change!(self, "show_help", old_value, visible, "set_help_visible");
+        if let Some(ref state_container) = self.state_container {
+            state_container.set_help_visible(visible);
+        } else {
+            // Fallback to local field
+            let old_value = self.show_help;
+            self.show_help = visible;
+            log_state_change!(self, "show_help", old_value, visible, "set_help_visible");
+        }
     }
 
     /// Get jump-to-row input text (uses state_container if available, falls back to local field)
@@ -2770,7 +2772,10 @@ impl EnhancedTuiApp {
     fn exit_help(&mut self) {
         self.help_widget.on_exit();
         self.set_help_visible(false); // Keep state_container in sync
-        self.help_scroll = 0;
+                                      // Scroll is automatically reset when help is hidden in state_container
+        if self.state_container.is_none() {
+            self.help_scroll = 0;
+        }
         let mode = if self.buffer().get_results().is_some() {
             AppMode::Results
         } else {
@@ -2782,25 +2787,47 @@ impl EnhancedTuiApp {
     fn scroll_help_down(&mut self) {
         let max_lines: usize = 58;
         let visible_height: usize = 30;
-        let max_scroll = max_lines.saturating_sub(visible_height);
-        if (self.help_scroll as usize) < max_scroll {
-            self.help_scroll += 1;
+
+        if let Some(ref state_container) = self.state_container {
+            state_container.set_help_max_scroll(max_lines, visible_height);
+            state_container.help_scroll_down();
+        } else {
+            // Fallback to local
+            let max_scroll = max_lines.saturating_sub(visible_height);
+            if (self.help_scroll as usize) < max_scroll {
+                self.help_scroll += 1;
+            }
         }
     }
 
     fn scroll_help_up(&mut self) {
-        self.help_scroll = self.help_scroll.saturating_sub(1);
+        if let Some(ref state_container) = self.state_container {
+            state_container.help_scroll_up();
+        } else {
+            self.help_scroll = self.help_scroll.saturating_sub(1);
+        }
     }
 
     fn help_page_down(&mut self) {
         let max_lines: usize = 58;
         let visible_height: usize = 30;
-        let max_scroll = max_lines.saturating_sub(visible_height);
-        self.help_scroll = (self.help_scroll + 10).min(max_scroll as u16);
+
+        if let Some(ref state_container) = self.state_container {
+            state_container.set_help_max_scroll(max_lines, visible_height);
+            state_container.help_page_down();
+        } else {
+            // Fallback to local
+            let max_scroll = max_lines.saturating_sub(visible_height);
+            self.help_scroll = (self.help_scroll + 10).min(max_scroll as u16);
+        }
     }
 
     fn help_page_up(&mut self) {
-        self.help_scroll = self.help_scroll.saturating_sub(10);
+        if let Some(ref state_container) = self.state_container {
+            state_container.help_page_up();
+        } else {
+            self.help_scroll = self.help_scroll.saturating_sub(10);
+        }
     }
 
     fn handle_history_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -6556,8 +6583,12 @@ impl EnhancedTuiApp {
         let right_total_lines = right_content.len();
         let max_lines = left_total_lines.max(right_total_lines);
 
-        // Apply scroll offset
-        let scroll_offset = self.help_scroll as usize;
+        // Apply scroll offset (from state container or local)
+        let scroll_offset = if let Some(ref state_container) = self.state_container {
+            state_container.help_scroll_offset() as usize
+        } else {
+            self.help_scroll as usize
+        };
 
         // Get visible portions with scrolling
         let left_visible: Vec<Line> = left_content
