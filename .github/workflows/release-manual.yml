@@ -1,10 +1,10 @@
-name: Manual Release
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
-      version_bump:
-        description: 'Version bump type'
+      release_type:
+        description: 'Release type'
         required: true
         default: 'patch'
         type: choice
@@ -12,293 +12,144 @@ on:
           - patch
           - minor
           - major
-      prerelease:
-        description: 'Pre-release?'
+          - custom
+      custom_version:
+        description: 'Custom version (only used if release_type is custom, e.g., 1.16.1)'
         required: false
-        default: false
-        type: boolean
-
-env:
-  CARGO_TERM_COLOR: always
-
-permissions:
-  contents: write
-  pull-requests: write
+        type: string
+      release_notes:
+        description: 'Additional release notes (optional)'
+        required: false
+        type: string
 
 jobs:
-  prepare-release:
+  release:
+    name: Release
     runs-on: ubuntu-latest
-    outputs:
-      new_version: ${{ steps.version.outputs.new_version }}
-    
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: Get current version
-      id: current_version
-      run: |
-        cd sql-cli
-        CURRENT_VERSION=$(grep "^version" Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-        echo "current=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
-        echo "Current version: ${CURRENT_VERSION}"
-    
-    - name: Calculate new version
-      id: version
-      run: |
-        CURRENT="${{ steps.current_version.outputs.current }}"
-        IFS='.' read -r major minor patch <<< "${CURRENT}"
-        
-        case "${{ github.event.inputs.version_bump }}" in
-          major)
-            major=$((major + 1))
-            minor=0
-            patch=0
-            ;;
-          minor)
-            minor=$((minor + 1))
-            patch=0
-            ;;
-          patch)
-            patch=$((patch + 1))
-            ;;
-        esac
-        
-        NEW_VERSION="${major}.${minor}.${patch}"
-        echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
-        echo "New version: ${NEW_VERSION}"
-    
-    - name: Update Cargo.toml version
-      run: |
-        cd sql-cli
-        sed -i 's/^version = .*/version = "${{ steps.version.outputs.new_version }}"/' Cargo.toml
-        cargo update
-    
-    - name: Commit version bump
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add .
-        git commit -m "chore: bump version to v${{ steps.version.outputs.new_version }}"
-    
-    - name: Push changes
-      uses: ad-m/github-push-action@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: ${{ github.ref }}
-    
-    - name: Create tag
-      run: |
-        git tag "v${{ steps.version.outputs.new_version }}"
-    
-    - name: Push tag
-      uses: ad-m/github-push-action@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        tags: true
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-  build-release:
-    needs: prepare-release
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact: sql-cli-linux-x64
-            binary: sql-cli
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact: sql-cli-windows-x64
-            binary: sql-cli.exe
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact: sql-cli-macos-x64
-            binary: sql-cli
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact: sql-cli-macos-arm64
-            binary: sql-cli
-    
-    runs-on: ${{ matrix.os }}
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        ref: 'v${{ needs.prepare-release.outputs.new_version }}'
-        fetch-depth: 0  # Fetch all history for proper changelog generation
-    
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: ${{ matrix.target }}
-        override: true
-    
-    - name: Build Release
-      working-directory: ./sql-cli
-      run: cargo build --release --target ${{ matrix.target }}
-    
-    - name: Strip debug symbols (Windows)
-      if: matrix.os == 'windows-latest'
-      working-directory: ./sql-cli
-      shell: bash
-      run: strip target/${{ matrix.target }}/release/sql-cli.exe || true
-    
-    - name: Create archive (Unix)
-      if: matrix.os != 'windows-latest'
-      run: |
-        cd sql-cli/target/${{ matrix.target }}/release
-        tar czf ${{ matrix.artifact }}.tar.gz ${{ matrix.binary }}
-        mv ${{ matrix.artifact }}.tar.gz ../../../../
-    
-    - name: Create archive (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        cd sql-cli/target/${{ matrix.target }}/release
-        7z a -tzip ${{ matrix.artifact }}.zip ${{ matrix.binary }}
-        mv ${{ matrix.artifact }}.zip ../../../../
-    
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.artifact }}
-        path: |
-          *.tar.gz
-          *.zip
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
 
-  create-release:
-    needs: [prepare-release, build-release]
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        ref: 'v${{ needs.prepare-release.outputs.new_version }}'
-        fetch-depth: 0  # Fetch all history for proper changelog generation
-    
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-    
-    - name: Generate changelog
-      id: changelog
-      run: |
-        VERSION="${{ needs.prepare-release.outputs.new_version }}"
-        echo "# SQL CLI v${VERSION}" > RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        
-        # Add release date
-        echo "**Release Date:** $(date +'%B %d, %Y')" >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        
-        # Get commits since last tag (excluding the current tag)
-        # We need to skip the version bump commit to find the actual previous release tag
-        LAST_TAG=$(git tag --sort=-version:refname | grep -v "^v$VERSION$" | head -n 1 || echo "")
-        
-        echo "Debug: Current version: v$VERSION"
-        echo "Debug: Last tag found: $LAST_TAG"
-        
-        # Generate categorized changelog
-        echo "## ✨ What's New" >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        
-        # Features (exclude version bump commits)
-        if [ -z "$LAST_TAG" ]; then
-          FEAT_COMMITS=$(git log --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" | grep -v "^chore: bump version" || true)
-        else
-          FEAT_COMMITS=$(git log ${LAST_TAG}..HEAD^ --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" | grep -v "^chore: bump version" || true)
-        fi
-        
-        if [ ! -z "$FEAT_COMMITS" ]; then
-          echo "### 🚀 Features" >> RELEASE_NOTES.md
-          echo "$FEAT_COMMITS" | sed 's/^feat\(.*\): /- /' >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-        fi
-        
-        # Fixes (exclude version bump commits)
-        if [ -z "$LAST_TAG" ]; then
-          FIX_COMMITS=$(git log --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" | grep -v "^chore: bump version" || true)
-        else
-          FIX_COMMITS=$(git log ${LAST_TAG}..HEAD^ --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" | grep -v "^chore: bump version" || true)
-        fi
-        
-        if [ ! -z "$FIX_COMMITS" ]; then
-          echo "### 🐛 Bug Fixes" >> RELEASE_NOTES.md
-          echo "$FIX_COMMITS" | sed 's/^fix\(.*\): /- /' >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-        fi
-        
-        # Documentation (exclude version bump commits)
-        if [ -z "$LAST_TAG" ]; then
-          DOCS_COMMITS=$(git log --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" | grep -v "^chore: bump version" || true)
-        else
-          DOCS_COMMITS=$(git log ${LAST_TAG}..HEAD^ --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" | grep -v "^chore: bump version" || true)
-        fi
-        
-        if [ ! -z "$DOCS_COMMITS" ]; then
-          echo "### 📚 Documentation" >> RELEASE_NOTES.md
-          echo "$DOCS_COMMITS" | sed 's/^docs\(.*\): /- /' >> RELEASE_NOTES.md
-          echo "" >> RELEASE_NOTES.md
-        fi
-        
-        # All commits (detailed)
-        echo "## 📝 All Changes" >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        echo "<details>" >> RELEASE_NOTES.md
-        echo "<summary>Click to expand full commit list</summary>" >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        
-        if [ -z "$LAST_TAG" ]; then
-          git log --pretty=format:"- %s (%an)" | grep -v "^- chore: bump version" >> RELEASE_NOTES.md
-        else
-          git log ${LAST_TAG}..HEAD^ --pretty=format:"- %s (%an)" | grep -v "^- chore: bump version" >> RELEASE_NOTES.md
-        fi
-        
-        echo "" >> RELEASE_NOTES.md
-        echo "</details>" >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        
-        # Key highlights (manual - you can customize this)
-        echo "## 🎯 Highlights" >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        echo "- **Dynamic Column Sizing**: Columns automatically adjust width based on visible data" >> RELEASE_NOTES.md
-        echo "- **Compact Mode**: Press 'C' to reduce padding and fit more columns" >> RELEASE_NOTES.md
-        echo "- **Viewport Lock**: Press Space to anchor scrolling position" >> RELEASE_NOTES.md
-        echo "- **Auto-Execute**: CSV/JSON files show data immediately on load" >> RELEASE_NOTES.md
-        echo "- **Visual Source Indicators**: See where your data comes from (📦 📁 🌐 🗄️)" >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        
-        echo "## 📦 Installation" >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        echo "Download the appropriate binary for your platform from the assets below." >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        echo "### Supported Platforms" >> RELEASE_NOTES.md
-        echo "- **Linux x64**: \`sql-cli-linux-x64.tar.gz\`" >> RELEASE_NOTES.md
-        echo "- **Windows x64**: \`sql-cli-windows-x64.zip\`" >> RELEASE_NOTES.md
-        echo "- **macOS x64** (Intel): \`sql-cli-macos-x64.tar.gz\`" >> RELEASE_NOTES.md
-        echo "- **macOS ARM64** (Apple Silicon): \`sql-cli-macos-arm64.tar.gz\`" >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        echo "### Quick Start" >> RELEASE_NOTES.md
-        echo "\`\`\`bash" >> RELEASE_NOTES.md
-        echo "# Load a CSV file with instant preview" >> RELEASE_NOTES.md
-        echo "sql-cli data/customers.csv" >> RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        echo "# Connect to API" >> RELEASE_NOTES.md
-        echo "sql-cli --url http://localhost:5000" >> RELEASE_NOTES.md
-        echo "\`\`\`" >> RELEASE_NOTES.md
-    
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: v${{ needs.prepare-release.outputs.new_version }}
-        name: SQL CLI v${{ needs.prepare-release.outputs.new_version }}
-        body_path: RELEASE_NOTES.md
-        draft: false
-        prerelease: ${{ github.event.inputs.prerelease }}
-        files: |
-          artifacts/**/*.tar.gz
-          artifacts/**/*.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Determine version
+        id: version
+        run: |
+          # Get current version from Cargo.toml
+          CURRENT_VERSION=$(grep "^version" Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Current version: $CURRENT_VERSION"
+          
+          # Parse version components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          
+          # Determine new version based on input
+          if [ "${{ github.event.inputs.release_type }}" = "custom" ]; then
+            if [ -z "${{ github.event.inputs.custom_version }}" ]; then
+              echo "Error: Custom version not provided"
+              exit 1
+            fi
+            NEW_VERSION="${{ github.event.inputs.custom_version }}"
+          elif [ "${{ github.event.inputs.release_type }}" = "major" ]; then
+            NEW_VERSION="$((MAJOR + 1)).0.0"
+          elif [ "${{ github.event.inputs.release_type }}" = "minor" ]; then
+            NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
+          else
+            NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          fi
+          
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update version in Cargo.toml
+        run: |
+          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.new_version }}\"/" Cargo.toml
+          
+      - name: Build release binary
+        run: |
+          cargo build --release
+          
+      - name: Generate release notes
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.new_version }}"
+          LAST_TAG=$(git tag --sort=-version:refname | head -n 1 || echo "")
+          
+          {
+            echo "# SQL CLI v${VERSION}"
+            echo ""
+            echo "**Release Date:** $(date +'%B %d, %Y')"
+            echo ""
+            
+            # Add custom notes if provided
+            if [ -n "${{ github.event.inputs.release_notes }}" ]; then
+              echo "## Release Notes"
+              echo "${{ github.event.inputs.release_notes }}"
+              echo ""
+            fi
+            
+            echo "## Changes"
+            echo ""
+            
+            # Get commits since last tag
+            if [ -n "$LAST_TAG" ]; then
+              # Features
+              FEATURES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^feat:" | sed 's/^feat: /- /' || true)
+              if [ -n "$FEATURES" ]; then
+                echo "### 🚀 Features"
+                echo "$FEATURES"
+                echo ""
+              fi
+              
+              # Fixes
+              FIXES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^fix:" | sed 's/^fix: /- /' || true)
+              if [ -n "$FIXES" ]; then
+                echo "### 🐛 Bug Fixes"
+                echo "$FIXES"
+                echo ""
+              fi
+              
+              # All changes
+              echo "### 📝 All Changes"
+              git log ${LAST_TAG}..HEAD --pretty=format:"- %s" | grep -v "^- chore: bump version"
+            else
+              echo "Initial release"
+            fi
+          } > RELEASE_NOTES.md
+          
+          # Save to output
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Commit version bump
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add Cargo.toml
+          git commit -m "chore: bump version to v${{ steps.version.outputs.new_version }}"
+          git push
+
+      - name: Create and push tag
+        run: |
+          git tag -a "v${{ steps.version.outputs.new_version }}" -m "Release v${{ steps.version.outputs.new_version }}"
+          git push origin "v${{ steps.version.outputs.new_version }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.new_version }}
+          name: v${{ steps.version.outputs.new_version }}
+          body: ${{ steps.notes.outputs.notes }}
+          draft: false
+          prerelease: false
+          files: |
+            target/release/sql-cli
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
