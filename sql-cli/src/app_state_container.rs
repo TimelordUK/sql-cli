@@ -2833,6 +2833,10 @@ impl AppStateContainer {
         self.navigation.borrow()
     }
 
+    pub fn navigation_mut(&self) -> std::cell::RefMut<'_, NavigationState> {
+        self.navigation.borrow_mut()
+    }
+
     pub fn get_current_position(&self) -> (usize, usize) {
         let navigation = self.navigation.borrow();
         (navigation.selected_row, navigation.selected_column)
