@@ -2,6 +2,7 @@ use crate::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
+use tracing::{debug, info, trace};
 
 /// Convert JSON values (from CSV or JSON sources) to DataTable
 pub struct DataTableConverter;
@@ -9,15 +10,26 @@ pub struct DataTableConverter;
 impl DataTableConverter {
     /// Convert a vector of JSON values to a DataTable
     pub fn from_json_values(values: &[Value], table_name: impl Into<String>) -> Result<DataTable> {
+        let table_name = table_name.into();
+        info!(target: "datatable", "Converting {} JSON values to DataTable '{}'", 
+            values.len(), table_name);
+
         if values.is_empty() {
             return Ok(DataTable::new(table_name));
         }
 
         // Extract column names from first row
         let column_names = Self::extract_column_names(values)?;
+        debug!(target: "datatable", "Found {} columns: {:?}", 
+            column_names.len(), column_names);
 
         // Infer column types by sampling rows
         let column_types = Self::infer_column_types(values, &column_names);
+
+        // Log inferred types
+        for (name, dtype) in column_names.iter().zip(column_types.iter()) {
+            debug!(target: "datatable", "Column '{}' inferred as {:?}", name, dtype);
+        }
 
         // Create DataTable with columns
         let mut table = DataTable::new(table_name);
@@ -39,6 +51,9 @@ impl DataTableConverter {
 
         // Update column statistics
         Self::update_column_stats(&mut table);
+
+        info!(target: "datatable", "DataTable '{}' created: {} rows, {} columns", 
+            table.name, table.row_count(), table.column_count());
 
         Ok(table)
     }
@@ -76,6 +91,9 @@ impl DataTableConverter {
         // Update column statistics
         Self::update_column_stats(&mut table);
 
+        info!(target: "datatable", "DataTable '{}' created: {} rows, {} columns", 
+            table.name, table.row_count(), table.column_count());
+
         Ok(table)
     }
 
@@ -98,6 +116,7 @@ impl DataTableConverter {
 
         // Sample up to 100 rows for type inference
         let sample_size = values.len().min(100);
+        trace!(target: "datatable", "Sampling {} rows for type inference", sample_size);
 
         for row in values.iter().take(sample_size) {
             if let Some(obj) = row.as_object() {

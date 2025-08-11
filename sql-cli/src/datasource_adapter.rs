@@ -3,6 +3,7 @@ use crate::csv_datasource::CsvApiClient;
 use crate::datasource_trait::{DataSource, DataSourceQueryResponse};
 use anyhow::Result;
 use std::collections::HashMap;
+use tracing::{debug, info, trace};
 
 /// Adapter to make CsvApiClient implement DataSource trait
 pub struct CsvDataSourceAdapter {
@@ -15,14 +16,36 @@ impl CsvDataSourceAdapter {
     }
 
     pub fn from_csv_path(path: &str, table_name: &str) -> Result<Self> {
+        info!(target: "datasource", "Loading CSV from path: {}", path);
         let mut client = CsvApiClient::new();
         client.load_csv(path, table_name)?;
+
+        // Log metadata about loaded data
+        if let Some(schema) = client.get_schema() {
+            if let Some(columns) = schema.get(table_name) {
+                info!(target: "datasource", "CSV loaded successfully: table='{}', columns={}", 
+                    table_name, columns.len());
+                debug!(target: "datasource", "Column names: {:?}", columns);
+            }
+        }
+
         Ok(Self { client })
     }
 
     pub fn from_json_path(path: &str, table_name: &str) -> Result<Self> {
+        info!(target: "datasource", "Loading JSON from path: {}", path);
         let mut client = CsvApiClient::new();
         client.load_json(path, table_name)?;
+
+        // Log metadata about loaded data
+        if let Some(schema) = client.get_schema() {
+            if let Some(columns) = schema.get(table_name) {
+                info!(target: "datasource", "JSON loaded successfully: table='{}', columns={}", 
+                    table_name, columns.len());
+                debug!(target: "datasource", "Column names: {:?}", columns);
+            }
+        }
+
         Ok(Self { client })
     }
 
@@ -38,8 +61,13 @@ impl CsvDataSourceAdapter {
 
 impl DataSource for CsvDataSourceAdapter {
     fn query(&self, sql: &str) -> Result<DataSourceQueryResponse> {
+        debug!(target: "datasource", "Executing query: {}", sql);
         let response = self.client.query_csv(sql)?;
-        Ok(convert_query_response(response))
+        let converted = convert_query_response(response);
+        info!(target: "datasource", "Query returned {} rows with {} columns", 
+            converted.count, converted.columns.len());
+        trace!(target: "datasource", "Query columns: {:?}", converted.columns);
+        Ok(converted)
     }
 
     fn query_with_options(
