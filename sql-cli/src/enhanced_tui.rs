@@ -52,6 +52,7 @@ use sql_cli::widget_traits::DebugInfoProvider;
 use sql_cli::yank_manager::YankManager;
 use std::cmp::Ordering;
 use std::io;
+use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
@@ -242,10 +243,17 @@ impl EnhancedTuiApp {
 
     /// Set jump-to-row input text (uses state_container if available, falls back to local field)
     fn set_jump_to_row_input(&mut self, input: String) {
-        let old_value = self.jump_to_row_input.clone();
-        // TODO: Will need Arc<Mutex<>> for state_container modification
-        // For now, just use local field
-        self.jump_to_row_input = input.clone();
+        let old_value = self.get_jump_to_row_input();
+
+        if let Some(ref mut container_arc) = self.state_container {
+            // Use unsafe to get mutable access through Arc
+            let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+            unsafe {
+                (*container_ptr).jump_to_row_mut().input = input.clone();
+            }
+        } else {
+            self.jump_to_row_input = input.clone();
+        }
 
         // Log the state change
         log_state_change!(
@@ -259,9 +267,15 @@ impl EnhancedTuiApp {
 
     /// Clear jump-to-row input (uses state_container if available, falls back to local field)
     fn clear_jump_to_row_input(&mut self) {
-        // TODO: Will need Arc<Mutex<>> for state_container modification
-        // For now, just use local field
-        self.jump_to_row_input.clear();
+        if let Some(ref mut container_arc) = self.state_container {
+            // Use unsafe to get mutable access through Arc
+            let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+            unsafe {
+                (*container_ptr).jump_to_row_mut().input.clear();
+            }
+        } else {
+            self.jump_to_row_input.clear();
+        }
 
         // Log the state clear
         log_state_clear!(self, "jump_to_row_input", "clear_jump_to_row_input");
@@ -1718,6 +1732,15 @@ impl EnhancedTuiApp {
                 "jump_to_row" => {
                     self.buffer_mut().set_mode(AppMode::JumpToRow);
                     self.clear_jump_to_row_input();
+
+                    // Set jump-to-row state as active
+                    if let Some(ref mut container_arc) = self.state_container {
+                        let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+                        unsafe {
+                            (*container_ptr).jump_to_row_mut().is_active = true;
+                        }
+                    }
+
                     self.buffer_mut()
                         .set_status_message("Enter row number:".to_string());
                 }
@@ -6782,6 +6805,15 @@ impl EnhancedTuiApp {
             KeyCode::Esc => {
                 self.buffer_mut().set_mode(AppMode::Results);
                 self.clear_jump_to_row_input();
+
+                // Clear is_active flag
+                if let Some(ref mut container_arc) = self.state_container {
+                    let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+                    unsafe {
+                        (*container_ptr).jump_to_row_mut().is_active = false;
+                    }
+                }
+
                 self.buffer_mut()
                     .set_status_message("Jump cancelled".to_string());
             }
@@ -6814,6 +6846,14 @@ impl EnhancedTuiApp {
                 }
                 self.buffer_mut().set_mode(AppMode::Results);
                 self.clear_jump_to_row_input();
+
+                // Clear is_active flag
+                if let Some(ref mut container_arc) = self.state_container {
+                    let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+                    unsafe {
+                        (*container_ptr).jump_to_row_mut().is_active = false;
+                    }
+                }
             }
             KeyCode::Backspace => {
                 let mut input = self.get_jump_to_row_input();
