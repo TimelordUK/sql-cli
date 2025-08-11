@@ -6837,6 +6837,12 @@ impl EnhancedTuiApp {
                         let max_row = self.get_current_data().map(|d| d.len()).unwrap_or(0);
 
                         if target_row < max_row {
+                            // Update NavigationState first
+                            if let Some(ref state_container) = self.state_container {
+                                let mut nav = state_container.navigation_mut();
+                                nav.jump_to_row(target_row);
+                            }
+
                             self.table_state.select(Some(target_row));
 
                             // Adjust viewport to center the target row
