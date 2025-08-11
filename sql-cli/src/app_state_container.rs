@@ -1256,6 +1256,36 @@ impl SortState {
         }
     }
 
+    /// Advance the sort state for the given column
+    pub fn advance_sort_state(&mut self, column_index: usize, column_name: Option<String>) {
+        let new_order = self.get_next_order(column_index);
+
+        // Update history before changing state
+        if let (Some(col), Some(name)) = (self.column, &self.column_name) {
+            self.history.push_back(SortHistoryEntry {
+                column_index: col,
+                column_name: name.clone(),
+                order: self.order.clone(),
+                sorted_at: std::time::Instant::now(),
+                row_count: 0, // We don't track row count here, could be added later
+            });
+        }
+
+        // Update statistics
+        self.total_sorts += 1;
+
+        // Update current state
+        if new_order == SortOrder::None {
+            self.column = None;
+            self.column_name = None;
+        } else {
+            self.column = Some(column_index);
+            self.column_name = column_name;
+        }
+        self.order = new_order;
+        self.last_sort_time = Some(std::time::Instant::now());
+    }
+
     /// Get sort statistics
     pub fn get_stats(&self) -> String {
         let current = if let (Some(col), Some(name)) = (self.column, &self.column_name) {
@@ -2527,6 +2557,13 @@ impl AppStateContainer {
     /// Get next sort order for a column
     pub fn get_next_sort_order(&self, column_index: usize) -> SortOrder {
         self.sort.borrow().get_next_order(column_index)
+    }
+
+    /// Advance the sort state for a column
+    pub fn advance_sort_state(&self, column_index: usize, column_name: Option<String>) {
+        self.sort
+            .borrow_mut()
+            .advance_sort_state(column_index, column_name);
     }
 
     /// Perform sorting on the results data and return sorted results

@@ -4570,6 +4570,26 @@ impl EnhancedTuiApp {
     }
 
     fn sort_by_column(&mut self, column_index: usize) {
+        // Get column name for proper tracking from results
+        let column_name = if let Some(results) = self.buffer().get_results() {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                    if column_index < headers.len() {
+                        Some(headers[column_index].to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Delegate sorting entirely to AppStateContainer
         // Extract all values from state_container first
         let new_order = if let Some(ref state_container) = self.state_container {
@@ -4581,13 +4601,13 @@ impl EnhancedTuiApp {
             return;
         };
 
+        // Advance the sort state in AppStateContainer first
+        if let Some(ref state_container) = self.state_container {
+            state_container.advance_sort_state(column_index, column_name.clone());
+        }
+
         // Handle the three cases: Ascending, Descending, None
         if new_order == SortOrder::None {
-            // Clear sort - just reset to show we're unsorted, but keep current data
-            if let Some(ref state_container) = self.state_container {
-                state_container.clear_sort();
-            }
-
             // Clear sort state in buffer
             self.buffer_mut().set_sort_column(None);
             self.buffer_mut().set_sort_order(SortOrder::None);
