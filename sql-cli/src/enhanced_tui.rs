@@ -126,6 +126,8 @@ struct CompletionState {
     last_cursor_pos: usize,
 }
 
+// MIGRATED to AppStateContainer as HistorySearchState
+// Keeping local struct for fallback compatibility during migration
 #[derive(Clone)]
 struct HistoryState {
     search_query: String,
@@ -158,7 +160,7 @@ pub struct EnhancedTuiApp {
     // search_state: SearchState, // MIGRATED to AppStateContainer
     // column_search_state: ColumnSearchState, // MIGRATED to AppStateContainer
     completion_state: CompletionState,
-    history_state: HistoryState,
+    history_state: HistoryState, // FALLBACK: Used when AppStateContainer not available
     command_history: CommandHistory,
     // SAFETY FIX: Temporary fallback filter state to replace dangerous static
     fallback_filter_state: FilterState,
@@ -968,11 +970,25 @@ impl EnhancedTuiApp {
                 // Special handling for History mode - initialize history search
                 if mode == AppMode::History {
                     // Use AppStateContainer if available, otherwise fall back to legacy
-                    if let Some(ref state_container) = self.state_container {
+                    if self.state_container.is_some() {
                         eprintln!("[DEBUG] Using AppStateContainer for history search");
                         let current_input = self.get_input_text();
-                        state_container.start_history_search(current_input);
-                        let match_count = state_container.history_search().matches.len();
+
+                        // Start history search
+                        {
+                            let state_container = self.state_container.as_ref().unwrap();
+                            state_container.start_history_search(current_input);
+                        }
+
+                        // Initialize with schema context
+                        self.update_history_matches_in_container();
+
+                        // Get match count
+                        let match_count = {
+                            let state_container = self.state_container.as_ref().unwrap();
+                            state_container.history_search().matches.len()
+                        };
+
                         self.buffer_mut()
                             .set_status_message(format!("History search: {} matches", match_count));
                     } else {
@@ -1000,18 +1016,31 @@ impl EnhancedTuiApp {
         // Handle Ctrl+R for history search
         if let KeyCode::Char('r') = normalized_key.code {
             if normalized_key.modifiers.contains(KeyModifiers::CONTROL) {
-                if let Some(ref state_container) = self.state_container {
+                if self.state_container.is_some() {
                     // Start history search mode
                     let current_input = self.get_input_text();
                     eprintln!(
                         "[DEBUG] Starting history search with input: '{}'",
                         current_input
                     );
-                    state_container.start_history_search(current_input);
 
-                    // Check if history search is active
-                    let is_active = state_container.is_history_search_active();
-                    let match_count = state_container.history_search().matches.len();
+                    // Start history search
+                    {
+                        let state_container = self.state_container.as_ref().unwrap();
+                        state_container.start_history_search(current_input);
+                    }
+
+                    // Initialize with schema context
+                    self.update_history_matches_in_container();
+
+                    // Get status
+                    let (is_active, match_count) = {
+                        let state_container = self.state_container.as_ref().unwrap();
+                        let is_active = state_container.is_history_search_active();
+                        let match_count = state_container.history_search().matches.len();
+                        (is_active, match_count)
+                    };
+
                     eprintln!(
                         "[DEBUG] History search active: {}, matches: {}",
                         is_active, match_count
@@ -1816,10 +1845,24 @@ impl EnhancedTuiApp {
                     self.table_state.select(None);
 
                     // Start history search
-                    if let Some(ref state_container) = self.state_container {
+                    if self.state_container.is_some() {
                         let current_input = self.get_input_text();
-                        state_container.start_history_search(current_input);
-                        let match_count = state_container.history_search().matches.len();
+
+                        // Start history search
+                        {
+                            let state_container = self.state_container.as_ref().unwrap();
+                            state_container.start_history_search(current_input);
+                        }
+
+                        // Initialize with schema context
+                        self.update_history_matches_in_container();
+
+                        // Get match count
+                        let match_count = {
+                            let state_container = self.state_container.as_ref().unwrap();
+                            state_container.history_search().matches.len()
+                        };
+
                         self.buffer_mut()
                             .set_status_message(format!("History search: {} matches", match_count));
 
@@ -2797,18 +2840,12 @@ impl EnhancedTuiApp {
                     state_container.history_search_next();
                 }
                 KeyCode::Backspace => {
-                    let history_search = state_container.history_search();
-                    let mut query = history_search.query.clone();
-                    drop(history_search); // Release the borrow
-                    query.pop();
-                    state_container.update_history_search(query);
+                    state_container.history_search_backspace();
+                    self.update_history_matches_in_container();
                 }
                 KeyCode::Char(c) => {
-                    let history_search = state_container.history_search();
-                    let mut query = history_search.query.clone();
-                    drop(history_search); // Release the borrow
-                    query.push(c);
-                    state_container.update_history_search(query);
+                    state_container.history_search_add_char(c);
+                    self.update_history_matches_in_container();
                 }
                 _ => {}
             }
@@ -2867,6 +2904,44 @@ impl EnhancedTuiApp {
         Ok(false)
     }
 
+    /// Update history matches in the AppStateContainer with schema context
+    fn update_history_matches_in_container(&mut self) {
+        if let Some(ref state_container) = self.state_container {
+            // Get current schema columns and data source for better matching
+            let (current_columns, current_source_str) = if self.buffer().is_csv_mode() {
+                if let Some(csv_client) = self.buffer().get_csv_client() {
+                    if let Some(schema) = csv_client.get_schema() {
+                        // Get the first (and usually only) table's columns and name
+                        let (cols, table_name) = schema
+                            .iter()
+                            .next()
+                            .map(|(table_name, cols)| (cols.clone(), Some(table_name.clone())))
+                            .unwrap_or((vec![], None));
+                        (cols, table_name)
+                    } else {
+                        (vec![], None)
+                    }
+                } else {
+                    (vec![], None)
+                }
+            } else if self.buffer().is_cache_mode() {
+                (vec![], Some("cache".to_string()))
+            } else {
+                (vec![], Some("api".to_string()))
+            };
+
+            let current_source = current_source_str.as_deref();
+            let query = state_container.history_search().query.clone();
+
+            state_container.update_history_search_with_schema(
+                query,
+                &current_columns,
+                current_source,
+            );
+        }
+    }
+
+    /// Update history matches for fallback local state
     fn update_history_matches(&mut self) {
         // Get current schema columns and data source for better matching
         let (current_columns, current_source_str) = if self.buffer().is_csv_mode() {

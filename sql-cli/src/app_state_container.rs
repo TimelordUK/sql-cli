@@ -3060,6 +3060,74 @@ impl AppStateContainer {
         }
     }
 
+    /// Update history search with schema context (columns and source)
+    pub fn update_history_search_with_schema(
+        &self,
+        query: String,
+        columns: &[String],
+        source: Option<&str>,
+    ) {
+        let mut history_search = self.history_search.borrow_mut();
+        let old_query = history_search.query.clone();
+        let old_matches_count = history_search.matches.len();
+
+        history_search.query = query.clone();
+
+        // Use the schema-aware search from command_history
+        history_search.matches = self
+            .command_history
+            .search_with_schema(&query, columns, source);
+
+        // Reset selected index
+        history_search.selected_index = 0;
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "HistorySearch",
+                format!(
+                    "Updated history search with schema: '{}' -> '{}', matches: {} -> {}, columns: {}, source: {:?}",
+                    old_query,
+                    query,
+                    old_matches_count,
+                    history_search.matches.len(),
+                    columns.len(),
+                    source
+                ),
+            );
+        }
+    }
+
+    /// Handle character input during history search
+    pub fn history_search_add_char(&self, c: char) {
+        let mut history_search = self.history_search.borrow_mut();
+        let old_query = history_search.query.clone();
+        history_search.query.push(c);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "HistorySearch",
+                format!(
+                    "Added char '{}': '{}' -> '{}'",
+                    c, old_query, history_search.query
+                ),
+            );
+        }
+    }
+
+    /// Handle backspace during history search
+    pub fn history_search_backspace(&self) {
+        let mut history_search = self.history_search.borrow_mut();
+        let old_query = history_search.query.clone();
+        history_search.query.pop();
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "HistorySearch",
+                format!("Backspace: '{}' -> '{}'", old_query, history_search.query),
+            );
+        }
+    }
+
     pub fn history_search_next(&self) {
         let mut history_search = self.history_search.borrow_mut();
         if !history_search.matches.is_empty() {
