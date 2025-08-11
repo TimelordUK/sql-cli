@@ -797,6 +797,127 @@ impl Default for ResultsState {
     }
 }
 
+/// Clipboard/Yank state management
+#[derive(Debug, Clone)]
+pub struct ClipboardState {
+    /// Last yanked item (description, full_value, preview)
+    pub last_yanked: Option<YankedItem>,
+
+    /// History of yanked items
+    pub yank_history: VecDeque<YankedItem>,
+
+    /// Maximum history size
+    pub max_history: usize,
+
+    /// Current yank register (for multi-register support in future)
+    pub current_register: char,
+
+    /// Statistics
+    pub total_yanks: usize,
+    pub last_yank_time: Option<Instant>,
+}
+
+#[derive(Debug, Clone)]
+pub struct YankedItem {
+    /// Description of what was yanked (e.g., "cell at [2,3]", "row 5", "column 'name'")
+    pub description: String,
+
+    /// The full value that was yanked
+    pub full_value: String,
+
+    /// Preview of the value (truncated for display)
+    pub preview: String,
+
+    /// Type of yank operation
+    pub yank_type: YankType,
+
+    /// When this was yanked
+    pub yanked_at: DateTime<Local>,
+
+    /// Size in bytes
+    pub size_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum YankType {
+    Cell {
+        row: usize,
+        column: usize,
+    },
+    Row {
+        row: usize,
+    },
+    Column {
+        name: String,
+        index: usize,
+    },
+    All,
+    Selection {
+        start: (usize, usize),
+        end: (usize, usize),
+    },
+    TestCase,
+    DebugContext,
+}
+
+impl Default for ClipboardState {
+    fn default() -> Self {
+        Self {
+            last_yanked: None,
+            yank_history: VecDeque::with_capacity(50),
+            max_history: 50,
+            current_register: '"', // Default register like vim
+            total_yanks: 0,
+            last_yank_time: None,
+        }
+    }
+}
+
+impl ClipboardState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a new yanked item
+    pub fn add_yank(&mut self, item: YankedItem) {
+        // Add to history
+        self.yank_history.push_front(item.clone());
+
+        // Trim history if needed
+        while self.yank_history.len() > self.max_history {
+            self.yank_history.pop_back();
+        }
+
+        // Update current
+        self.last_yanked = Some(item);
+        self.total_yanks += 1;
+        self.last_yank_time = Some(Instant::now());
+    }
+
+    /// Clear clipboard
+    pub fn clear(&mut self) {
+        self.last_yanked = None;
+    }
+
+    /// Clear all history
+    pub fn clear_history(&mut self) {
+        self.yank_history.clear();
+        self.last_yanked = None;
+    }
+
+    /// Get clipboard statistics
+    pub fn get_stats(&self) -> String {
+        format!(
+            "Total yanks: {}, History items: {}, Last yank: {}",
+            self.total_yanks,
+            self.yank_history.len(),
+            self.last_yank_time
+                .map(|t| format!("{:?} ago", t.elapsed()))
+                .unwrap_or_else(|| "never".to_string())
+        )
+    }
+}
+
 impl ResultsState {
     pub fn new() -> Self {
         Self::default()
@@ -1060,6 +1181,9 @@ pub struct AppStateContainer {
     // Results state (centralized query results management)
     results: RefCell<ResultsState>,
 
+    // Clipboard/Yank state
+    clipboard: RefCell<ClipboardState>,
+
     // Legacy results cache (to be deprecated)
     results_cache: ResultsCache,
 
@@ -1096,6 +1220,7 @@ impl AppStateContainer {
             command_history,
             key_press_history: RefCell::new(KeyPressHistory::new(50)), // Keep last 50 key presses
             results: RefCell::new(ResultsState::new()),
+            clipboard: RefCell::new(ClipboardState::new()),
             results_cache: ResultsCache::new(100),
             mode_stack: vec![AppMode::Command],
             debug_enabled: false,
@@ -1901,6 +2026,212 @@ impl AppStateContainer {
         }
     }
 
+    // Clipboard operations with logging
+
+    /// Get clipboard state (read-only)
+    pub fn clipboard(&self) -> std::cell::Ref<'_, ClipboardState> {
+        self.clipboard.borrow()
+    }
+
+    /// Get clipboard state (mutable)
+    pub fn clipboard_mut(&self) -> std::cell::RefMut<'_, ClipboardState> {
+        self.clipboard.borrow_mut()
+    }
+
+    /// Yank a cell to clipboard
+    pub fn yank_cell(&self, row: usize, column: usize, value: String, preview: String) {
+        let description = format!("cell at [{}, {}]", row, column);
+        let size_bytes = value.len();
+
+        let item = YankedItem {
+            description: description.clone(),
+            full_value: value.clone(),
+            preview: preview.clone(),
+            yank_type: YankType::Cell { row, column },
+            yanked_at: Local::now(),
+            size_bytes,
+        };
+
+        self.clipboard.borrow_mut().add_yank(item);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Clipboard",
+                format!(
+                    "Yanked {}: '{}' ({} bytes)",
+                    description,
+                    if preview.len() > 50 {
+                        format!("{}...", &preview[..50])
+                    } else {
+                        preview
+                    },
+                    size_bytes
+                ),
+            );
+        }
+    }
+
+    /// Yank a row to clipboard
+    pub fn yank_row(&self, row: usize, value: String, preview: String) {
+        let description = format!("row {}", row);
+        let size_bytes = value.len();
+
+        let item = YankedItem {
+            description: description.clone(),
+            full_value: value.clone(),
+            preview: preview.clone(),
+            yank_type: YankType::Row { row },
+            yanked_at: Local::now(),
+            size_bytes,
+        };
+
+        self.clipboard.borrow_mut().add_yank(item);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Clipboard",
+                format!(
+                    "Yanked {}: {} columns ({} bytes)",
+                    description,
+                    value.split('\t').count(),
+                    size_bytes
+                ),
+            );
+        }
+    }
+
+    /// Yank a column to clipboard
+    pub fn yank_column(
+        &self,
+        column_name: String,
+        column_index: usize,
+        value: String,
+        preview: String,
+    ) {
+        let description = format!("column '{}'", column_name);
+        let size_bytes = value.len();
+        let row_count = value.lines().count();
+
+        let item = YankedItem {
+            description: description.clone(),
+            full_value: value.clone(),
+            preview: preview.clone(),
+            yank_type: YankType::Column {
+                name: column_name.clone(),
+                index: column_index,
+            },
+            yanked_at: Local::now(),
+            size_bytes,
+        };
+
+        self.clipboard.borrow_mut().add_yank(item);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Clipboard",
+                format!(
+                    "Yanked {}: {} rows ({} bytes)",
+                    description, row_count, size_bytes
+                ),
+            );
+        }
+    }
+
+    /// Yank all data to clipboard
+    pub fn yank_all(&self, value: String, preview: String) {
+        let size_bytes = value.len();
+        let row_count = value.lines().count();
+
+        let item = YankedItem {
+            description: "all data".to_string(),
+            full_value: value.clone(),
+            preview: preview.clone(),
+            yank_type: YankType::All,
+            yanked_at: Local::now(),
+            size_bytes,
+        };
+
+        self.clipboard.borrow_mut().add_yank(item);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Clipboard",
+                format!("Yanked all data: {} rows ({} bytes)", row_count, size_bytes),
+            );
+        }
+    }
+
+    /// Yank a test case to clipboard
+    pub fn yank_test_case(&self, value: String) {
+        let size_bytes = value.len();
+        let line_count = value.lines().count();
+
+        let item = YankedItem {
+            description: "Test Case".to_string(),
+            full_value: value.clone(),
+            preview: format!("{} lines of test case", line_count),
+            yank_type: YankType::TestCase,
+            yanked_at: Local::now(),
+            size_bytes,
+        };
+
+        self.clipboard.borrow_mut().add_yank(item);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Clipboard",
+                format!(
+                    "Yanked test case: {} lines ({} bytes)",
+                    line_count, size_bytes
+                ),
+            );
+        }
+    }
+
+    /// Yank debug context to clipboard
+    pub fn yank_debug_context(&self, value: String) {
+        let size_bytes = value.len();
+        let line_count = value.lines().count();
+
+        let item = YankedItem {
+            description: "Debug Context".to_string(),
+            full_value: value.clone(),
+            preview: "Query context with data for test creation".to_string(),
+            yank_type: YankType::DebugContext,
+            yanked_at: Local::now(),
+            size_bytes,
+        };
+
+        self.clipboard.borrow_mut().add_yank(item);
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "Clipboard",
+                format!(
+                    "Yanked debug context: {} lines ({} bytes)",
+                    line_count, size_bytes
+                ),
+            );
+        }
+    }
+
+    /// Clear clipboard
+    pub fn clear_clipboard(&self) {
+        let had_item = self.clipboard.borrow().last_yanked.is_some();
+        self.clipboard.borrow_mut().clear();
+
+        if had_item {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info("Clipboard", "Clipboard cleared".to_string());
+            }
+        }
+    }
+
+    /// Get clipboard statistics for debug display
+    pub fn get_clipboard_stats(&self) -> String {
+        self.clipboard.borrow().get_stats()
+    }
+
     /// Get comprehensive results statistics
     pub fn get_results_stats(&self) -> (CacheStats, PerformanceStats) {
         let results = self.results.borrow();
@@ -2353,6 +2684,47 @@ impl AppStateContainer {
                 .enumerate()
             {
                 dump.push_str(&format!("    {}. ({}, {})\n", i + 1, row, col));
+            }
+        }
+        dump.push_str("\n");
+
+        // Clipboard state
+        dump.push_str("CLIPBOARD STATE:\n");
+        let clipboard = self.clipboard.borrow();
+        if let Some(ref yanked) = clipboard.last_yanked {
+            dump.push_str(&format!("  Last Yanked: {}\n", yanked.description));
+            dump.push_str(&format!("  Type: {:?}\n", yanked.yank_type));
+            dump.push_str(&format!("  Size: {} bytes\n", yanked.size_bytes));
+            dump.push_str(&format!(
+                "  Preview: {}\n",
+                if yanked.preview.len() > 60 {
+                    format!("{}...", &yanked.preview[..60])
+                } else {
+                    yanked.preview.clone()
+                }
+            ));
+            dump.push_str(&format!(
+                "  Yanked at: {}\n",
+                yanked.yanked_at.format("%H:%M:%S")
+            ));
+        } else {
+            dump.push_str("  [Empty]\n");
+        }
+        dump.push_str(&format!("  Total yanks: {}\n", clipboard.total_yanks));
+        dump.push_str(&format!(
+            "  History items: {}\n",
+            clipboard.yank_history.len()
+        ));
+        if !clipboard.yank_history.is_empty() {
+            dump.push_str("  Recent yanks:\n");
+            for (i, item) in clipboard.yank_history.iter().take(5).enumerate() {
+                dump.push_str(&format!(
+                    "    {}. {} ({} bytes) at {}\n",
+                    i + 1,
+                    item.description,
+                    item.size_bytes,
+                    item.yanked_at.format("%H:%M:%S")
+                ));
             }
         }
         dump.push_str("\n");
