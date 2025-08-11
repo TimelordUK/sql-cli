@@ -3568,6 +3568,12 @@ impl EnhancedTuiApp {
     }
 
     fn goto_first_row(&mut self) {
+        // Update NavigationState
+        if let Some(ref state_container) = self.state_container {
+            let mut nav = state_container.navigation_mut();
+            nav.jump_to_first_row();
+        }
+
         self.table_state.select(Some(0));
         let mut offset = self.buffer().get_scroll_offset();
         offset.0 = 0; // Reset viewport to top
@@ -3862,6 +3868,13 @@ impl EnhancedTuiApp {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
             let last_row = total_rows - 1;
+
+            // Update NavigationState
+            if let Some(ref state_container) = self.state_container {
+                let mut nav = state_container.navigation_mut();
+                nav.jump_to_last_row();
+            }
+
             self.table_state.select(Some(last_row));
             // Position viewport to show the last row at the bottom
             let visible_rows = self.buffer().get_last_visible_rows();
