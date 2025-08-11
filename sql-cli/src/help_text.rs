@@ -23,8 +23,12 @@ impl HelpText {
             Line::from("  Enter    - Execute query"),
             Line::from("  Tab      - Auto-complete"),
             Line::from("  Ctrl+R   - Search history"),
+            Line::from("  Ctrl+P   - Previous command in history"),
+            Line::from("  Ctrl+N   - Next command in history"),
+            Line::from("  Alt+↑    - Previous command (alternative)"),
+            Line::from("  Alt+↓    - Next command (alternative)"),
             Line::from("  Ctrl+X   - Expand SELECT * to columns"),
-            Line::from("  F3       - Toggle multi-line"),
+            Line::from("  F3       - (Multi-line mode removed)"),
             Line::from(""),
             Line::from("NAVIGATION").style(
                 Style::default()
@@ -35,6 +39,8 @@ impl HelpText {
             Line::from("  Ctrl+E   - End of line"),
             Line::from("  Ctrl+←   - Move backward word"),
             Line::from("  Ctrl+→   - Move forward word"),
+            Line::from("  Alt+B    - Move backward word (bash-style)"),
+            Line::from("  Alt+F    - Move forward word (bash-style)"),
             Line::from(""),
             Line::from("EDITING").style(
                 Style::default()
@@ -43,10 +49,15 @@ impl HelpText {
             ),
             Line::from("  Ctrl+W   - Delete word backward"),
             Line::from("  Alt+D    - Delete word forward"),
-            Line::from("  F9       - Kill to end of line (Ctrl+K alternative)"),
+            Line::from("  Ctrl+K   - Kill to end of line"),
+            Line::from("  Ctrl+U   - Kill to beginning of line"),
+            Line::from("  F9       - Kill to end (Ctrl+K alternative)"),
             Line::from("  F10      - Kill to beginning (Ctrl+U alternative)"),
-            Line::from("  Ctrl+Y   - Yank (paste)"),
+            Line::from("  Ctrl+Y   - Yank (paste from kill ring)"),
+            Line::from("  Ctrl+V   - Paste from system clipboard"),
             Line::from("  Ctrl+Z   - Undo"),
+            Line::from("  Alt+[    - Jump to previous SQL token"),
+            Line::from("  Alt+]    - Jump to next SQL token"),
             Line::from(""),
             Line::from("BUFFER MANAGEMENT").style(
                 Style::default()
@@ -134,7 +145,9 @@ impl HelpText {
             Line::from("  C        - 🎯 Toggle compact"),
             Line::from("  N        - 🔢 Toggle row nums"),
             Line::from("  :        - 📍 Jump to row"),
-            Line::from("  Space    - 🔒 Viewport lock"),
+            Line::from("  Space    - 🔒 Toggle viewport lock"),
+            Line::from("  x/X      - 🔒 Toggle cursor lock (alternative)"),
+            Line::from("  Ctrl+Space - 🔒 Toggle cursor lock"),
             Line::from("  p        - 📌 Pin/unpin column"),
             Line::from("  P        - Clear all pins"),
             Line::from("  /        - Search in results"),
