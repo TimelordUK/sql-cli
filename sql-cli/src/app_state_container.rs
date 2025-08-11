@@ -3544,6 +3544,65 @@ impl AppStateContainer {
         }
         dump.push_str("\n");
 
+        // Selection state
+        dump.push_str("SELECTION STATE:\n");
+        let selection = self.selection.borrow();
+        dump.push_str(&format!("  Mode: {:?}\n", selection.mode));
+        if let Some(row) = selection.selected_row {
+            dump.push_str(&format!("  Selected Row: {}\n", row));
+        } else {
+            dump.push_str("  Selected Row: None\n");
+        }
+        dump.push_str(&format!(
+            "  Selected Column: {}\n",
+            selection.selected_column
+        ));
+        if !selection.selected_cells.is_empty() {
+            dump.push_str(&format!(
+                "  Selected Cells: {} cells\n",
+                selection.selected_cells.len()
+            ));
+            if selection.selected_cells.len() <= 5 {
+                for (row, col) in &selection.selected_cells {
+                    dump.push_str(&format!("    - ({}, {})\n", row, col));
+                }
+            } else {
+                for (row, col) in selection.selected_cells.iter().take(3) {
+                    dump.push_str(&format!("    - ({}, {})\n", row, col));
+                }
+                dump.push_str(&format!(
+                    "    ... and {} more\n",
+                    selection.selected_cells.len() - 3
+                ));
+            }
+        }
+        if let Some((row, col)) = selection.selection_anchor {
+            dump.push_str(&format!("  Selection Anchor: ({}, {})\n", row, col));
+        }
+        dump.push_str(&format!(
+            "  Total Selections: {}\n",
+            selection.total_selections
+        ));
+        if let Some(ref last_time) = selection.last_selection_time {
+            dump.push_str(&format!(
+                "  Last Selection: {:?} ago\n",
+                last_time.elapsed()
+            ));
+        }
+        dump.push_str(&format!("  History Items: {}\n", selection.history.len()));
+        if !selection.history.is_empty() {
+            dump.push_str("  Recent selections:\n");
+            for (i, entry) in selection.history.iter().rev().take(5).enumerate() {
+                dump.push_str(&format!(
+                    "    {}. {:?} mode at {}\n",
+                    i + 1,
+                    entry.mode,
+                    entry.timestamp.format("%H:%M:%S")
+                ));
+            }
+        }
+        dump.push_str("\n");
+
         // Clipboard state
         dump.push_str("CLIPBOARD STATE:\n");
         let clipboard = self.clipboard.borrow();

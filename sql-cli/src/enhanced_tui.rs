@@ -547,24 +547,6 @@ impl EnhancedTuiApp {
             sql_parser: SqlParser::new(),
             hybrid_parser: HybridParser::new(),
             config: config.clone(),
-
-            // sort_state: SortState {  // MIGRATED to AppStateContainer
-            //     column: None,
-            //     order: SortOrder::None,
-            // },
-            // filter_state: FilterState { ... }, // MIGRATED to AppStateContainer
-            // fuzzy_filter_state: FuzzyFilterState { ... }, // MIGRATED to buffer system
-            // search_state: SearchState { // MIGRATED to AppStateContainer
-            //     pattern: String::new(),
-            //     current_match: None,
-            //     matches: Vec::new(),
-            //     match_index: 0,
-            // },
-            // column_search_state: ColumnSearchState {  // MIGRATED to AppStateContainer
-            //     pattern: String::new(),
-            //     matching_columns: Vec::new(),
-            //     current_match: 0,
-            // },
             completion_state: CompletionState {
                 suggestions: Vec::new(),
                 current_index: 0,
