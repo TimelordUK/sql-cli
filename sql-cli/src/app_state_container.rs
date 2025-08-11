@@ -776,21 +776,141 @@ impl NavigationState {
     }
 
     pub fn update_totals(&mut self, rows: usize, columns: usize) {
+        info!(target: "navigation", "NavigationState::update_totals - rows: {} -> {}, columns: {} -> {}", 
+              self.total_rows, rows, self.total_columns, columns);
+
         self.total_rows = rows;
         self.total_columns = columns;
 
         // Adjust selected position if it's out of bounds
         if self.selected_row >= rows && rows > 0 {
+            let old_row = self.selected_row;
             self.selected_row = rows - 1;
+            info!(target: "navigation", "Adjusted selected_row from {} to {} (out of bounds)", old_row, self.selected_row);
         }
         if self.selected_column >= columns && columns > 0 {
+            let old_col = self.selected_column;
             self.selected_column = columns - 1;
+            info!(target: "navigation", "Adjusted selected_column from {} to {} (out of bounds)", old_col, self.selected_column);
         }
     }
 
     pub fn set_viewport_size(&mut self, rows: usize, columns: usize) {
+        info!(target: "navigation", "NavigationState::set_viewport_size - rows: {} -> {}, columns: {} -> {}", 
+              self.viewport_rows, rows, self.viewport_columns, columns);
         self.viewport_rows = rows;
         self.viewport_columns = columns;
+    }
+
+    /// Move to next row
+    pub fn next_row(&mut self) -> bool {
+        if self.selected_row < self.total_rows.saturating_sub(1) {
+            self.selected_row += 1;
+            self.add_to_history(self.selected_row, self.selected_column);
+            self.ensure_visible(self.selected_row, self.selected_column);
+            info!(target: "navigation", "NavigationState::next_row - moved to row {}", self.selected_row);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Move to previous row
+    pub fn previous_row(&mut self) -> bool {
+        if self.selected_row > 0 {
+            self.selected_row -= 1;
+            self.add_to_history(self.selected_row, self.selected_column);
+            self.ensure_visible(self.selected_row, self.selected_column);
+            info!(target: "navigation", "NavigationState::previous_row - moved to row {}", self.selected_row);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Move to next column
+    pub fn next_column(&mut self) -> bool {
+        if self.selected_column < self.total_columns.saturating_sub(1) {
+            self.selected_column += 1;
+            self.add_to_history(self.selected_row, self.selected_column);
+            self.ensure_visible(self.selected_row, self.selected_column);
+            info!(target: "navigation", "NavigationState::next_column - moved to column {}", self.selected_column);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Move to previous column
+    pub fn previous_column(&mut self) -> bool {
+        if self.selected_column > 0 {
+            self.selected_column -= 1;
+            self.add_to_history(self.selected_row, self.selected_column);
+            self.ensure_visible(self.selected_row, self.selected_column);
+            info!(target: "navigation", "NavigationState::previous_column - moved to column {}", self.selected_column);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Jump to specific row
+    pub fn jump_to_row(&mut self, row: usize) {
+        let target_row = row.min(self.total_rows.saturating_sub(1));
+        info!(target: "navigation", "NavigationState::jump_to_row - from {} to {}", self.selected_row, target_row);
+        self.selected_row = target_row;
+        self.add_to_history(self.selected_row, self.selected_column);
+        self.ensure_visible(self.selected_row, self.selected_column);
+    }
+
+    /// Jump to first row
+    pub fn jump_to_first_row(&mut self) {
+        info!(target: "navigation", "NavigationState::jump_to_first_row - from row {}", self.selected_row);
+        self.selected_row = 0;
+        self.add_to_history(self.selected_row, self.selected_column);
+        self.ensure_visible(self.selected_row, self.selected_column);
+    }
+
+    /// Jump to last row
+    pub fn jump_to_last_row(&mut self) {
+        let last_row = self.total_rows.saturating_sub(1);
+        info!(target: "navigation", "NavigationState::jump_to_last_row - from {} to {}", self.selected_row, last_row);
+        self.selected_row = last_row;
+        self.add_to_history(self.selected_row, self.selected_column);
+        self.ensure_visible(self.selected_row, self.selected_column);
+    }
+
+    /// Set selected position
+    pub fn set_position(&mut self, row: usize, column: usize) {
+        info!(target: "navigation", "NavigationState::set_position - ({}, {}) -> ({}, {})", 
+              self.selected_row, self.selected_column, row, column);
+        self.selected_row = row.min(self.total_rows.saturating_sub(1));
+        self.selected_column = column.min(self.total_columns.saturating_sub(1));
+        self.add_to_history(self.selected_row, self.selected_column);
+        self.ensure_visible(self.selected_row, self.selected_column);
+    }
+
+    /// Page down
+    pub fn page_down(&mut self) {
+        let old_row = self.selected_row;
+        self.selected_row =
+            (self.selected_row + self.viewport_rows).min(self.total_rows.saturating_sub(1));
+        if self.selected_row != old_row {
+            info!(target: "navigation", "NavigationState::page_down - from {} to {}", old_row, self.selected_row);
+            self.add_to_history(self.selected_row, self.selected_column);
+            self.ensure_visible(self.selected_row, self.selected_column);
+        }
+    }
+
+    /// Page up
+    pub fn page_up(&mut self) {
+        let old_row = self.selected_row;
+        self.selected_row = self.selected_row.saturating_sub(self.viewport_rows);
+        if self.selected_row != old_row {
+            info!(target: "navigation", "NavigationState::page_up - from {} to {}", old_row, self.selected_row);
+            self.add_to_history(self.selected_row, self.selected_column);
+            self.ensure_visible(self.selected_row, self.selected_column);
+        }
     }
 
     pub fn is_position_visible(&self, row: usize, col: usize) -> bool {
@@ -818,7 +938,11 @@ impl NavigationState {
             scroll_col = col.saturating_sub(self.viewport_columns - 1);
         }
 
-        self.scroll_offset = (scroll_row, scroll_col);
+        if self.scroll_offset != (scroll_row, scroll_col) {
+            info!(target: "navigation", "NavigationState::ensure_visible - scroll_offset: {:?} -> {:?}", 
+                  self.scroll_offset, (scroll_row, scroll_col));
+            self.scroll_offset = (scroll_row, scroll_col);
+        }
     }
 
     pub fn add_to_history(&mut self, row: usize, col: usize) {

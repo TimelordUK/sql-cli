@@ -3306,6 +3306,17 @@ impl EnhancedTuiApp {
 
     // Helper to get estimated visible rows based on terminal size
 
+    fn get_column_count(&self) -> usize {
+        if let Some(results) = self.buffer().get_results() {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    return obj.len();
+                }
+            }
+        }
+        0
+    }
+
     // Navigation functions
     fn next_row(&mut self) {
         let total_rows = self.get_row_count();
@@ -3313,12 +3324,83 @@ impl EnhancedTuiApp {
             // Update viewport size before navigation
             self.update_viewport_size();
 
-            let current = self.table_state.selected().unwrap_or(0);
-            if current >= total_rows - 1 {
-                return;
-            } // Already at bottom
+            // Use AppStateContainer for navigation
+            if let Some(ref state_container) = self.state_container {
+                let mut nav = state_container.navigation_mut();
 
-            let new_position = current + 1;
+                // Update totals if needed
+                let total_cols = self.get_column_count();
+                nav.update_totals(total_rows, total_cols);
+
+                // Move to next row
+                if nav.next_row() {
+                    // Sync with local table_state for rendering
+                    self.table_state.select(Some(nav.selected_row));
+
+                    // Sync scroll offset with buffer
+                    self.buffer_mut().set_scroll_offset(nav.scroll_offset);
+                }
+            } else {
+                // Fallback to old implementation
+                let current = self.table_state.selected().unwrap_or(0);
+                if current >= total_rows - 1 {
+                    return;
+                } // Already at bottom
+
+                let new_position = current + 1;
+                self.table_state.select(Some(new_position));
+
+                // Update viewport based on lock mode
+                if self.buffer().is_viewport_lock() {
+                    // In lock mode, keep cursor at fixed viewport position
+                    if let Some(lock_row) = self.buffer().get_viewport_lock_row() {
+                        // Adjust viewport so cursor stays at lock_row position
+                        let mut offset = self.buffer().get_scroll_offset();
+                        offset.0 = new_position.saturating_sub(lock_row);
+                        self.buffer_mut().set_scroll_offset(offset);
+                    }
+                } else {
+                    // Normal scrolling behavior
+                    let visible_rows = self.buffer().get_last_visible_rows();
+
+                    // Check if cursor would be below the last visible row
+                    let offset = self.buffer().get_scroll_offset();
+                    if new_position > offset.0 + visible_rows - 1 {
+                        // Cursor moved below viewport - scroll down by one
+                        self.buffer_mut()
+                            .set_scroll_offset((offset.0 + 1, offset.1));
+                    }
+                }
+            }
+        }
+    }
+
+    fn previous_row(&mut self) {
+        // Use AppStateContainer for navigation
+        if let Some(ref state_container) = self.state_container {
+            let mut nav = state_container.navigation_mut();
+
+            // Update totals if needed
+            let total_rows = self.get_row_count();
+            let total_cols = self.get_column_count();
+            nav.update_totals(total_rows, total_cols);
+
+            // Move to previous row
+            if nav.previous_row() {
+                // Sync with local table_state for rendering
+                self.table_state.select(Some(nav.selected_row));
+
+                // Sync scroll offset with buffer
+                self.buffer_mut().set_scroll_offset(nav.scroll_offset);
+            }
+        } else {
+            // Fallback to old implementation
+            let current = self.table_state.selected().unwrap_or(0);
+            if current == 0 {
+                return;
+            } // Already at top
+
+            let new_position = current - 1;
             self.table_state.select(Some(new_position));
 
             // Update viewport based on lock mode
@@ -3332,44 +3414,12 @@ impl EnhancedTuiApp {
                 }
             } else {
                 // Normal scrolling behavior
-                let visible_rows = self.buffer().get_last_visible_rows();
-
-                // Check if cursor would be below the last visible row
-                let offset = self.buffer().get_scroll_offset();
-                if new_position > offset.0 + visible_rows - 1 {
-                    // Cursor moved below viewport - scroll down by one
-                    self.buffer_mut()
-                        .set_scroll_offset((offset.0 + 1, offset.1));
-                }
-            }
-        }
-    }
-
-    fn previous_row(&mut self) {
-        let current = self.table_state.selected().unwrap_or(0);
-        if current == 0 {
-            return;
-        } // Already at top
-
-        let new_position = current - 1;
-        self.table_state.select(Some(new_position));
-
-        // Update viewport based on lock mode
-        if self.buffer().is_viewport_lock() {
-            // In lock mode, keep cursor at fixed viewport position
-            if let Some(lock_row) = self.buffer().get_viewport_lock_row() {
-                // Adjust viewport so cursor stays at lock_row position
                 let mut offset = self.buffer().get_scroll_offset();
-                offset.0 = new_position.saturating_sub(lock_row);
-                self.buffer_mut().set_scroll_offset(offset);
-            }
-        } else {
-            // Normal scrolling behavior
-            let mut offset = self.buffer().get_scroll_offset();
-            if new_position < offset.0 {
-                // Cursor moved above viewport - scroll up
-                offset.0 = new_position;
-                self.buffer_mut().set_scroll_offset(offset);
+                if new_position < offset.0 {
+                    // Cursor moved above viewport - scroll up
+                    offset.0 = new_position;
+                    self.buffer_mut().set_scroll_offset(offset);
+                }
             }
         }
     }
