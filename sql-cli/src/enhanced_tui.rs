@@ -4602,20 +4602,31 @@ impl EnhancedTuiApp {
 
         // Now we can freely use self.buffer_mut() since state_container is no longer borrowed
         if new_order == SortOrder::None {
-            // Clear the filtered_data to restore original order from results.data
-            self.buffer_mut().set_filtered_data(None);
+            // Re-execute the last query to restore original order
+            let last_query = self.buffer().get_last_query();
+            if !last_query.is_empty() {
+                // Clear sort state in buffer first
+                self.buffer_mut().set_sort_column(None);
+                self.buffer_mut().set_sort_order(SortOrder::None);
 
-            // Clear sort state in buffer
-            self.buffer_mut().set_sort_column(None);
-            self.buffer_mut().set_sort_order(SortOrder::None);
+                // Re-execute the query (it's cached so it will be fast)
+                self.execute_query(&last_query.clone());
 
-            // Reset table state but preserve current column position
-            let current_column = self.buffer().get_current_column();
-            self.reset_table_state();
-            self.buffer_mut().set_current_column(current_column);
+                self.buffer_mut()
+                    .set_status_message("Sort cleared - restored original order".to_string());
+            } else {
+                // Fallback to clearing filtered data if no query to re-execute
+                self.buffer_mut().set_filtered_data(None);
+                self.buffer_mut().set_sort_column(None);
+                self.buffer_mut().set_sort_order(SortOrder::None);
 
-            self.buffer_mut()
-                .set_status_message("Sort cleared - returned to original order".to_string());
+                let current_column = self.buffer().get_current_column();
+                self.reset_table_state();
+                self.buffer_mut().set_current_column(current_column);
+
+                self.buffer_mut()
+                    .set_status_message("Sort cleared - returned to original order".to_string());
+            }
             return;
         }
 

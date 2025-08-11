@@ -2534,8 +2534,18 @@ impl AppStateContainer {
         let results = self.results.borrow();
         let original_results = results.current_results.as_ref()?;
 
-        // Get the sort order for this column
-        let sort_order = self.sort.borrow().get_next_order(column_index);
+        // Get the current sort state (don't advance it)
+        let sort_order = if let Some(col) = self.sort.borrow().column {
+            if col == column_index {
+                self.sort.borrow().order.clone()
+            } else {
+                // Different column, would start with ascending
+                SortOrder::Ascending
+            }
+        } else {
+            // No current sort, would start with ascending
+            SortOrder::Ascending
+        };
 
         if sort_order == SortOrder::None {
             // Return original unsorted data
