@@ -814,6 +814,10 @@ impl EnhancedTuiApp {
     }
 
     fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
+        // Initialize viewport size before first draw
+        self.update_viewport_size();
+        info!(target: "navigation", "Initial viewport size update completed");
+
         // Initial draw
         terminal.draw(|f| self.ui(f))?;
 
@@ -2979,7 +2983,26 @@ impl EnhancedTuiApp {
                             warn!(target: "results", "Failed to cache results in AppStateContainer: {}", e);
                         }
                     }
+
+                    // Update NavigationState with total rows and columns
+                    let total_rows = row_count;
+                    let total_cols = if !response.data.is_empty() {
+                        if let Some(obj) = response.data[0].as_object() {
+                            obj.len()
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    };
+                    state_container
+                        .navigation_mut()
+                        .update_totals(total_rows, total_cols);
+                    info!(target: "navigation", "Updated NavigationState totals after query: {} rows x {} cols", total_rows, total_cols);
                 }
+
+                // Update viewport size to ensure NavigationState has correct dimensions
+                self.update_viewport_size();
 
                 // Update parser with the FULL schema if we're in CSV/cache mode
                 // For CSV mode, get the complete schema from the CSV client, not from query results
@@ -3715,8 +3738,12 @@ impl EnhancedTuiApp {
 
     fn update_viewport_size(&mut self) {
         // Update the stored viewport size based on current terminal size
-        if let Ok((_, height)) = crossterm::terminal::size() {
+        if let Ok((width, height)) = crossterm::terminal::size() {
+            let terminal_width = width as usize;
             let terminal_height = height as usize;
+
+            info!(target: "navigation", "update_viewport_size - terminal dimensions: {}x{}", terminal_width, terminal_height);
+
             // Match the actual layout calculation:
             // - Input area: 3 rows (from input_height)
             // - Status bar: 3 rows
@@ -3729,8 +3756,19 @@ impl EnhancedTuiApp {
             // - 1 row for top border
             // - 1 row for header
             // - 1 row for bottom border
-            self.buffer_mut()
-                .set_last_visible_rows(results_area_height.saturating_sub(3).max(10));
+            let visible_rows = results_area_height.saturating_sub(3).max(10);
+
+            // Update buffer's last_visible_rows
+            self.buffer_mut().set_last_visible_rows(visible_rows);
+
+            // Update NavigationState's viewport dimensions
+            if let Some(ref state_container) = self.state_container {
+                state_container
+                    .navigation_mut()
+                    .set_viewport_size(visible_rows, terminal_width);
+            }
+
+            info!(target: "navigation", "update_viewport_size - viewport set to: {}x{} rows", visible_rows, terminal_width);
         }
     }
 

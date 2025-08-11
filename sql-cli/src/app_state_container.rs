@@ -3635,31 +3635,79 @@ impl AppStateContainer {
             dump.push_str("\n");
         }
 
-        // Navigation state
+        // Navigation state with enhanced viewport information
         let navigation = self.navigation.borrow();
         dump.push_str("NAVIGATION STATE:\n");
         dump.push_str(&format!(
-            "  Position: ({}, {})\n",
+            "  Cursor Position: row={}, col={}\n",
             navigation.selected_row, navigation.selected_column
         ));
         dump.push_str(&format!(
-            "  Scroll Offset: {:?}\n",
-            navigation.scroll_offset
+            "  Scroll Offset: row={}, col={}\n",
+            navigation.scroll_offset.0, navigation.scroll_offset.1
         ));
         dump.push_str(&format!(
-            "  Viewport: {}x{} rows x cols\n",
+            "  Viewport Dimensions: {} rows x {} cols\n",
             navigation.viewport_rows, navigation.viewport_columns
         ));
         dump.push_str(&format!(
-            "  Data Size: {}x{} rows x cols\n",
+            "  Data Size: {} rows x {} cols\n",
             navigation.total_rows, navigation.total_columns
         ));
+
+        // Viewport boundary analysis
+        dump.push_str("\nVIEWPORT BOUNDARIES:\n");
+        let at_top = navigation.selected_row == 0;
+        let at_bottom = navigation.selected_row == navigation.total_rows.saturating_sub(1);
+        let at_left = navigation.selected_column == 0;
+        let at_right = navigation.selected_column == navigation.total_columns.saturating_sub(1);
+
+        dump.push_str(&format!("  At Top Edge: {}\n", at_top));
+        dump.push_str(&format!("  At Bottom Edge: {}\n", at_bottom));
+        dump.push_str(&format!("  At Left Edge: {}\n", at_left));
+        dump.push_str(&format!("  At Right Edge: {}\n", at_right));
+
+        // Scrolling state
+        let viewport_bottom = navigation.scroll_offset.0 + navigation.viewport_rows;
+        let viewport_right = navigation.scroll_offset.1 + navigation.viewport_columns;
+        let should_scroll_down = navigation.selected_row >= viewport_bottom.saturating_sub(1);
+        let should_scroll_up = navigation.selected_row < navigation.scroll_offset.0;
+        let should_scroll_right = navigation.selected_column >= viewport_right.saturating_sub(1);
+        let should_scroll_left = navigation.selected_column < navigation.scroll_offset.1;
+
+        dump.push_str("\nSCROLLING STATE:\n");
         dump.push_str(&format!(
-            "  Viewport Lock: {} at row {:?}\n",
+            "  Visible Row Range: {} to {}\n",
+            navigation.scroll_offset.0,
+            viewport_bottom.min(navigation.total_rows).saturating_sub(1)
+        ));
+        dump.push_str(&format!(
+            "  Visible Col Range: {} to {}\n",
+            navigation.scroll_offset.1,
+            viewport_right
+                .min(navigation.total_columns)
+                .saturating_sub(1)
+        ));
+        dump.push_str(&format!(
+            "  Should Scroll Down: {} (cursor at {}, viewport bottom at {})\n",
+            should_scroll_down,
+            navigation.selected_row,
+            viewport_bottom.saturating_sub(1)
+        ));
+        dump.push_str(&format!(
+            "  Should Scroll Up: {} (cursor at {}, viewport top at {})\n",
+            should_scroll_up, navigation.selected_row, navigation.scroll_offset.0
+        ));
+        dump.push_str(&format!("  Should Scroll Right: {}\n", should_scroll_right));
+        dump.push_str(&format!("  Should Scroll Left: {}\n", should_scroll_left));
+
+        dump.push_str(&format!(
+            "\n  Viewport Lock: {} at row {:?}\n",
             navigation.viewport_lock, navigation.viewport_lock_row
         ));
+
         if !navigation.selection_history.is_empty() {
-            dump.push_str("  Recent positions:\n");
+            dump.push_str("\n  Recent positions:\n");
             for (i, &(row, col)) in navigation
                 .selection_history
                 .iter()
