@@ -1,5 +1,5 @@
 use crate::api_client::QueryResponse;
-use crate::buffer::{AppMode, BufferManager};
+use crate::buffer::{AppMode, BufferManager, SortOrder};
 use crate::debug_service::DebugLevel;
 use crate::help_widget::HelpWidget;
 use crate::history::CommandHistory;
@@ -769,6 +769,141 @@ impl JumpToRowState {
     }
 }
 
+/// State for column sorting
+#[derive(Debug, Clone)]
+pub struct SortState {
+    /// Currently sorted column index
+    pub column: Option<usize>,
+    /// Column name (for display)
+    pub column_name: Option<String>,
+    /// Sort order (Ascending, Descending, None)
+    pub order: SortOrder,
+    /// History of sort operations
+    pub history: VecDeque<SortHistoryEntry>,
+    /// Maximum history size
+    pub max_history: usize,
+    /// Total sorts performed
+    pub total_sorts: usize,
+    /// Last sort time
+    pub last_sort_time: Option<Instant>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SortHistoryEntry {
+    /// Column that was sorted
+    pub column_index: usize,
+    /// Column name
+    pub column_name: String,
+    /// Sort order applied
+    pub order: SortOrder,
+    /// When the sort was performed
+    pub sorted_at: Instant,
+    /// Number of rows sorted
+    pub row_count: usize,
+}
+
+impl Default for SortState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SortState {
+    pub fn new() -> Self {
+        Self {
+            column: None,
+            column_name: None,
+            order: SortOrder::None,
+            history: VecDeque::with_capacity(20),
+            max_history: 20,
+            total_sorts: 0,
+            last_sort_time: None,
+        }
+    }
+
+    /// Set sort column and order
+    pub fn set_sort(
+        &mut self,
+        column_index: usize,
+        column_name: String,
+        order: SortOrder,
+        row_count: usize,
+    ) {
+        // Add to history
+        if self.history.len() >= self.max_history {
+            self.history.pop_front();
+        }
+
+        self.history.push_back(SortHistoryEntry {
+            column_index,
+            column_name: column_name.clone(),
+            order: order.clone(),
+            sorted_at: Instant::now(),
+            row_count,
+        });
+
+        // Update current state
+        self.column = Some(column_index);
+        self.column_name = Some(column_name);
+        self.order = order;
+        self.total_sorts += 1;
+        self.last_sort_time = Some(Instant::now());
+    }
+
+    /// Clear sort (return to original order)
+    pub fn clear_sort(&mut self) {
+        self.column = None;
+        self.column_name = None;
+        self.order = SortOrder::None;
+        self.last_sort_time = Some(Instant::now());
+    }
+
+    /// Get the next sort order for a column
+    pub fn get_next_order(&self, column_index: usize) -> SortOrder {
+        if let Some(current_col) = self.column {
+            if current_col == column_index {
+                // Same column - cycle through orders
+                match self.order {
+                    SortOrder::None => SortOrder::Ascending,
+                    SortOrder::Ascending => SortOrder::Descending,
+                    SortOrder::Descending => SortOrder::None,
+                }
+            } else {
+                // Different column - start with ascending
+                SortOrder::Ascending
+            }
+        } else {
+            // No column sorted - start with ascending
+            SortOrder::Ascending
+        }
+    }
+
+    /// Get sort statistics
+    pub fn get_stats(&self) -> String {
+        let current = if let (Some(col), Some(name)) = (self.column, &self.column_name) {
+            format!(
+                "Column {} ({}) {}",
+                col,
+                name,
+                match self.order {
+                    SortOrder::Ascending => "↑",
+                    SortOrder::Descending => "↓",
+                    SortOrder::None => "-",
+                }
+            )
+        } else {
+            "None".to_string()
+        };
+
+        format!(
+            "Current: {}, Total sorts: {}, History items: {}",
+            current,
+            self.total_sorts,
+            self.history.len()
+        )
+    }
+}
+
 /// History search state (for Ctrl+R functionality)
 #[derive(Debug, Clone)]
 pub struct HistorySearchState {
@@ -1281,6 +1416,7 @@ pub struct AppStateContainer {
     filter: RefCell<FilterState>,
     column_search: RefCell<ColumnSearchState>,
     history_search: RefCell<HistorySearchState>,
+    sort: RefCell<SortState>,
 
     // Widget states
     widgets: WidgetStates,
@@ -1329,6 +1465,7 @@ impl AppStateContainer {
             filter: RefCell::new(FilterState::new()),
             column_search: RefCell::new(ColumnSearchState::new()),
             history_search: RefCell::new(HistorySearchState::new()),
+            sort: RefCell::new(SortState::new()),
             widgets,
             cache_list: CacheListState::new(),
             column_stats: ColumnStatsState::new(),
@@ -1768,6 +1905,98 @@ impl AppStateContainer {
         } else {
             None
         }
+    }
+
+    // Sort operations with logging
+
+    /// Sort by column
+    pub fn sort_by_column(&self, column_index: usize, column_name: String, row_count: usize) {
+        let mut sort_state = self.sort.borrow_mut();
+
+        // Get the next sort order for this column
+        let new_order = sort_state.get_next_order(column_index);
+
+        let old_column = sort_state.column;
+        let old_order = sort_state.order.clone();
+
+        if new_order == SortOrder::None {
+            // Clear sort - return to original order
+            sort_state.clear_sort();
+
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "Sort",
+                    format!(
+                        "Cleared sort on column {} ({}), returning to original order",
+                        column_index, column_name
+                    ),
+                );
+            }
+        } else {
+            // Apply sort
+            sort_state.set_sort(
+                column_index,
+                column_name.clone(),
+                new_order.clone(),
+                row_count,
+            );
+
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "Sort",
+                    format!(
+                        "Sorted column {} ({}) {}, {} rows (was: column {:?} {})",
+                        column_index,
+                        column_name,
+                        match new_order {
+                            SortOrder::Ascending => "ascending ↑",
+                            SortOrder::Descending => "descending ↓",
+                            SortOrder::None => "none",
+                        },
+                        row_count,
+                        old_column,
+                        match old_order {
+                            SortOrder::Ascending => "↑",
+                            SortOrder::Descending => "↓",
+                            SortOrder::None => "-",
+                        }
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Clear all sorting
+    pub fn clear_sort(&self) {
+        let mut sort_state = self.sort.borrow_mut();
+        let had_sort = sort_state.column.is_some();
+        let old_column = sort_state.column;
+        let old_name = sort_state.column_name.clone();
+
+        sort_state.clear_sort();
+
+        if had_sort {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "Sort",
+                    format!(
+                        "Cleared all sorting (was: column {:?} - {})",
+                        old_column,
+                        old_name.unwrap_or_else(|| "unknown".to_string())
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Get current sort state
+    pub fn sort(&self) -> std::cell::Ref<SortState> {
+        self.sort.borrow()
+    }
+
+    /// Get next sort order for a column
+    pub fn get_next_sort_order(&self, column_index: usize) -> SortOrder {
+        self.sort.borrow().get_next_order(column_index)
     }
 
     // History search operations (Ctrl+R)
@@ -3001,6 +3230,47 @@ impl AppStateContainer {
                     entry.pattern,
                     entry.match_count,
                     entry.timestamp.format("%H:%M:%S")
+                ));
+            }
+        }
+        dump.push_str("\n");
+
+        // Sort state
+        dump.push_str("SORT STATE:\n");
+        let sort = self.sort.borrow();
+        if let (Some(col), Some(name)) = (sort.column, &sort.column_name) {
+            dump.push_str(&format!(
+                "  Current: Column {} ({}) {}\n",
+                col,
+                name,
+                match sort.order {
+                    SortOrder::Ascending => "Ascending ↑",
+                    SortOrder::Descending => "Descending ↓",
+                    SortOrder::None => "None",
+                }
+            ));
+        } else {
+            dump.push_str("  Current: No sorting applied\n");
+        }
+        if let Some(ref last_time) = sort.last_sort_time {
+            dump.push_str(&format!("  Last sort: {:?} ago\n", last_time.elapsed()));
+        }
+        dump.push_str(&format!("  Total sorts: {}\n", sort.total_sorts));
+        dump.push_str(&format!("  History items: {}\n", sort.history.len()));
+        if !sort.history.is_empty() {
+            dump.push_str("  Recent sorts:\n");
+            for (i, entry) in sort.history.iter().rev().take(5).enumerate() {
+                dump.push_str(&format!(
+                    "    {}. Column {} ({}) {} - {} rows\n",
+                    i + 1,
+                    entry.column_index,
+                    entry.column_name,
+                    match entry.order {
+                        SortOrder::Ascending => "↑",
+                        SortOrder::Descending => "↓",
+                        SortOrder::None => "-",
+                    },
+                    entry.row_count
                 ));
             }
         }
