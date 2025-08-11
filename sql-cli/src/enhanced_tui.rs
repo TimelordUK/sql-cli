@@ -6837,24 +6837,34 @@ impl EnhancedTuiApp {
                         let max_row = self.get_current_data().map(|d| d.len()).unwrap_or(0);
 
                         if target_row < max_row {
-                            // Update NavigationState first
+                            // Calculate centered viewport position
+                            let visible_rows = self.buffer().get_last_visible_rows();
+                            let centered_scroll_offset = if visible_rows > 0 {
+                                target_row.saturating_sub(visible_rows / 2)
+                            } else {
+                                target_row
+                            };
+
+                            // Update NavigationState with proper scroll offset
                             if let Some(ref state_container) = self.state_container {
                                 let mut nav = state_container.navigation_mut();
                                 nav.jump_to_row(target_row);
+                                // Also update NavigationState's scroll offset to center the row
+                                nav.scroll_offset.0 = centered_scroll_offset;
+                                info!(target: "navigation", "Jump-to-row: set scroll_offset to {} to center row {}", centered_scroll_offset, target_row);
                             }
 
                             self.table_state.select(Some(target_row));
 
-                            // Adjust viewport to center the target row
-                            let visible_rows = self.buffer().get_last_visible_rows();
-                            if visible_rows > 0 {
-                                let mut offset = self.buffer().get_scroll_offset();
-                                offset.0 = target_row.saturating_sub(visible_rows / 2);
-                                self.buffer_mut().set_scroll_offset(offset);
-                            }
+                            // Update buffer's scroll offset to match
+                            let mut offset = self.buffer().get_scroll_offset();
+                            offset.0 = centered_scroll_offset;
+                            self.buffer_mut().set_scroll_offset(offset);
 
-                            self.buffer_mut()
-                                .set_status_message(format!("Jumped to row {}", row_num));
+                            self.buffer_mut().set_status_message(format!(
+                                "Jumped to row {} (centered)",
+                                row_num
+                            ));
                         } else {
                             self.buffer_mut().set_status_message(format!(
                                 "Row {} out of range (max: {})",
