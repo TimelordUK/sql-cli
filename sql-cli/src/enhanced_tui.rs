@@ -4286,7 +4286,18 @@ impl EnhancedTuiApp {
                 state_container.clear_sort();
             }
 
-            // Local state is now managed in AppStateContainer
+            // Clear the filtered_data to restore original order from results.data
+            self.buffer_mut().set_filtered_data(None);
+
+            // Clear sort state in buffer
+            self.buffer_mut().set_sort_column(None);
+            self.buffer_mut().set_sort_order(SortOrder::None);
+
+            // Reset table state but preserve current column position
+            let current_column = self.buffer().get_current_column();
+            self.reset_table_state();
+            self.buffer_mut().set_current_column(current_column);
+
             self.buffer_mut()
                 .set_status_message("Sort cleared - returned to original order".to_string());
             return;
