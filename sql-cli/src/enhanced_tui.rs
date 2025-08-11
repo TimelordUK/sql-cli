@@ -4601,13 +4601,13 @@ impl EnhancedTuiApp {
             return;
         };
 
-        // Advance the sort state in AppStateContainer first
-        if let Some(ref state_container) = self.state_container {
-            state_container.advance_sort_state(column_index, column_name.clone());
-        }
-
         // Handle the three cases: Ascending, Descending, None
         if new_order == SortOrder::None {
+            // Advance state to None BEFORE clearing
+            if let Some(ref state_container) = self.state_container {
+                state_container.advance_sort_state(column_index, column_name.clone());
+            }
+
             // Clear sort state in buffer
             self.buffer_mut().set_sort_column(None);
             self.buffer_mut().set_sort_order(SortOrder::None);
@@ -4615,6 +4615,11 @@ impl EnhancedTuiApp {
             self.buffer_mut()
                 .set_status_message("Sort cleared - showing current data unsorted".to_string());
             return;
+        }
+
+        // For Ascending/Descending, advance state AFTER determining new_order but BEFORE sorting
+        if let Some(ref state_container) = self.state_container {
+            state_container.advance_sort_state(column_index, column_name.clone());
         }
 
         // For Ascending/Descending, get sorted data from AppStateContainer
