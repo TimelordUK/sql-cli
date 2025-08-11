@@ -3467,6 +3467,7 @@ impl AppStateContainer {
             match key.code {
                 KeyCode::Char('$')
                 | KeyCode::Char('^')
+                | KeyCode::Char(':')
                 | KeyCode::Char('!')
                 | KeyCode::Char('@')
                 | KeyCode::Char('#')
