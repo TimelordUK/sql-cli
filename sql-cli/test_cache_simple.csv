@@ -1,0 +1,11 @@
+id,name,value,category,status
+1,Alice,100,A,active
+2,Bob,200,B,active
+3,Charlie,300,A,inactive
+4,David,400,C,active
+5,Eve,500,B,inactive
+6,Frank,600,A,active
+7,Grace,700,C,inactive
+8,Henry,800,B,active
+9,Iris,900,A,active
+10,Jack,1000,C,inactive

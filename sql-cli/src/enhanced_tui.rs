@@ -2839,7 +2839,29 @@ impl EnhancedTuiApp {
             .set_status_message(format!("Executing query: '{}'...", query));
         let start_time = std::time::Instant::now();
 
-        let result = if self.buffer().is_cache_mode() {
+        // Check cache first (only for non-cache mode queries)
+        let cached_result = if !self.buffer().is_cache_mode() {
+            if let Some(ref state_container) = self.state_container {
+                // Use the same key format as when caching
+                let query_key = format!("{}:{}", query, self.buffer().get_table_name());
+                let cached = state_container.get_cached_results(&query_key);
+                if cached.is_some() {
+                    info!(target: "query", "Found cached results for query: {} (key: {})", query, query_key);
+                }
+                cached
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let result = if let Some(mut cached_response) = cached_result {
+            // Use cached results - ensure cached flag is set
+            cached_response.cached = Some(true);
+            info!(target: "query", "Using cached results, skipping query execution");
+            Ok(cached_response)
+        } else if self.buffer().is_cache_mode() {
             // When in cache mode, use CSV client to query cached data
             if let Some(cached_data) = self.buffer().get_cached_data() {
                 let mut csv_client = CsvApiClient::new();
@@ -2941,17 +2963,22 @@ impl EnhancedTuiApp {
 
                 // Also update AppStateContainer with results and performance metrics
                 if let Some(ref state_container) = self.state_container {
-                    let from_cache = data_source.as_deref() == Some("cache");
+                    // Check if this was from cache (either cache mode or cached_result was used)
+                    let from_cache =
+                        data_source.as_deref() == Some("cache") || response.cached.unwrap_or(false);
+
                     if let Err(e) =
                         state_container.set_results(response.clone(), duration, from_cache)
                     {
                         warn!(target: "results", "Failed to update results in AppStateContainer: {}", e);
                     }
 
-                    // Also cache results for future use
-                    let query_key = format!("{}:{}", query, self.buffer().get_table_name());
-                    if let Err(e) = state_container.cache_results(query_key, response.clone()) {
-                        warn!(target: "results", "Failed to cache results in AppStateContainer: {}", e);
+                    // Only cache results if they weren't already from cache
+                    if !from_cache {
+                        let query_key = format!("{}:{}", query, self.buffer().get_table_name());
+                        if let Err(e) = state_container.cache_results(query_key, response.clone()) {
+                            warn!(target: "results", "Failed to cache results in AppStateContainer: {}", e);
+                        }
                     }
                 }
 
