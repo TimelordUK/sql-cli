@@ -22,21 +22,25 @@ on:
         required: false
         type: string
 
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
 jobs:
-  release:
-    name: Release
+  prepare-release:
+    name: Prepare Release
     runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      release_notes: ${{ steps.notes.outputs.notes }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
 
       - name: Determine version
         id: version
@@ -65,17 +69,11 @@ jobs:
           
           echo "New version: $NEW_VERSION"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 
       - name: Update version in Cargo.toml
         run: |
           sed -i "s/^version = .*/version = \"${{ steps.version.outputs.new_version }}\"/" sql-cli/Cargo.toml
-          
-      - name: Build release binary
-        working-directory: ./sql-cli
-        run: |
-          cargo build --release
-          
+
       - name: Generate release notes
         id: notes
         run: |
@@ -142,15 +140,83 @@ jobs:
           git tag -a "v${{ steps.version.outputs.new_version }}" -m "Release v${{ steps.version.outputs.new_version }}"
           git push origin "v${{ steps.version.outputs.new_version }}"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ steps.version.outputs.new_version }}
-          name: v${{ steps.version.outputs.new_version }}
-          body: ${{ steps.notes.outputs.notes }}
-          draft: false
-          prerelease: false
-          files: |
-            sql-cli/target/release/sql-cli
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  build:
+    name: Build Release Binaries
+    needs: prepare-release
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: sql-cli-linux-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: sql-cli-windows-x64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: sql-cli-macos-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: sql-cli-macos-arm64
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: v${{ needs.prepare-release.outputs.new_version }}
+    
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        override: true
+    
+    - name: Build Release
+      working-directory: ./sql-cli
+      run: cargo build --release --target ${{ matrix.target }}
+    
+    - name: Create artifact directory
+      run: mkdir -p artifacts
+    
+    - name: Copy binary (Unix)
+      if: matrix.os != 'windows-latest'
+      run: cp sql-cli/target/${{ matrix.target }}/release/sql-cli artifacts/${{ matrix.artifact }}
+    
+    - name: Copy binary (Windows)
+      if: matrix.os == 'windows-latest'
+      run: cp sql-cli/target/${{ matrix.target }}/release/sql-cli.exe artifacts/${{ matrix.artifact }}.exe
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: artifacts/*
+  
+  release:
+    name: Create GitHub Release
+    needs: [prepare-release, build]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: v${{ needs.prepare-release.outputs.new_version }}
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ needs.prepare-release.outputs.new_version }}
+        name: v${{ needs.prepare-release.outputs.new_version }}
+        body: ${{ needs.prepare-release.outputs.release_notes }}
+        files: artifacts/**/*
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
