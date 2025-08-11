@@ -13,6 +13,7 @@ use anyhow::Result;
 use chrono::{DateTime, Local};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -2526,6 +2527,105 @@ impl AppStateContainer {
     /// Get next sort order for a column
     pub fn get_next_sort_order(&self, column_index: usize) -> SortOrder {
         self.sort.borrow().get_next_order(column_index)
+    }
+
+    /// Perform sorting on the results data and return sorted results
+    pub fn sort_results_data(&self, column_index: usize) -> Option<QueryResponse> {
+        let results = self.results.borrow();
+        let original_results = results.current_results.as_ref()?;
+
+        // Get the sort order for this column
+        let sort_order = self.sort.borrow().get_next_order(column_index);
+
+        if sort_order == SortOrder::None {
+            // Return original unsorted data
+            return Some(original_results.clone());
+        }
+
+        // Get column name from first row
+        let first_row = original_results.data.first()?;
+        let obj = first_row.as_object()?;
+        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+
+        if column_index >= headers.len() {
+            return Some(original_results.clone());
+        }
+
+        let column_name = headers[column_index];
+
+        // Create a vector of (original_json_row, row_index) pairs for sorting
+        let mut indexed_rows: Vec<(serde_json::Value, usize)> = original_results
+            .data
+            .iter()
+            .enumerate()
+            .map(|(i, row)| (row.clone(), i))
+            .collect();
+
+        // Sort based on the original JSON values
+        indexed_rows.sort_by(|(row_a, _), (row_b, _)| {
+            let val_a = row_a.get(column_name);
+            let val_b = row_b.get(column_name);
+
+            let cmp = match (val_a, val_b) {
+                (Some(serde_json::Value::Number(a)), Some(serde_json::Value::Number(b))) => {
+                    // Numeric comparison
+                    let a_f64 = a.as_f64().unwrap_or(0.0);
+                    let b_f64 = b.as_f64().unwrap_or(0.0);
+                    a_f64.partial_cmp(&b_f64).unwrap_or(Ordering::Equal)
+                }
+                (Some(serde_json::Value::String(a)), Some(serde_json::Value::String(b))) => {
+                    // String comparison
+                    a.cmp(&b)
+                }
+                (Some(serde_json::Value::Bool(a)), Some(serde_json::Value::Bool(b))) => {
+                    // Boolean comparison (false < true)
+                    a.cmp(&b)
+                }
+                (Some(serde_json::Value::Null), Some(serde_json::Value::Null)) => Ordering::Equal,
+                (Some(serde_json::Value::Null), Some(_)) => {
+                    // NULL comes first
+                    Ordering::Less
+                }
+                (Some(_), Some(serde_json::Value::Null)) => {
+                    // NULL comes first
+                    Ordering::Greater
+                }
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Less,
+                (Some(_), None) => Ordering::Greater,
+                // Mixed type comparison - fall back to string representation
+                (Some(a), Some(b)) => {
+                    let a_str = match a {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    let b_str = match b {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    a_str.cmp(&b_str)
+                }
+            };
+
+            match sort_order {
+                SortOrder::Ascending => cmp,
+                SortOrder::Descending => cmp.reverse(),
+                SortOrder::None => Ordering::Equal,
+            }
+        });
+
+        // Rebuild the QueryResponse with sorted data
+        let sorted_data: Vec<serde_json::Value> =
+            indexed_rows.into_iter().map(|(row, _)| row).collect();
+
+        let mut sorted_results = original_results.clone();
+        sorted_results.data = sorted_data;
+
+        // Update sort state
+        let row_count = sorted_results.data.len();
+        self.sort_by_column(column_index, column_name.to_string(), row_count);
+
+        Some(sorted_results)
     }
 
     // Selection operations with logging
