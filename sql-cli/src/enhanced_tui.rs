@@ -4593,11 +4593,13 @@ impl EnhancedTuiApp {
         // Delegate sorting entirely to AppStateContainer
         // Extract all values from state_container first
         let (current_state, new_order) = if let Some(ref state_container) = self.state_container {
-            let sort_state = state_container.sort();
-            let current_state = format!(
-                "Column {:?} Order {:?}",
-                sort_state.column, sort_state.order
-            );
+            let current_state = {
+                let sort_state = state_container.sort();
+                format!(
+                    "Column {:?} Order {:?}",
+                    sort_state.column, sort_state.order
+                )
+            }; // sort_state borrow dropped here
             let new_order = state_container.get_next_sort_order(column_index);
             eprintln!(
                 "🔍 SORT DEBUG: Current state: {}, Next order: {:?}",
