@@ -160,7 +160,7 @@ pub struct EnhancedTuiApp {
     config: Config,
 
     // Enhanced features
-    sort_state: SortState,
+    // sort_state: SortState, // MIGRATED to AppStateContainer
     // filter_state: FilterState, // MIGRATED to AppStateContainer
     // search_state: SearchState, // MIGRATED to AppStateContainer
     // column_search_state: ColumnSearchState, // MIGRATED to AppStateContainer
@@ -272,6 +272,22 @@ impl EnhancedTuiApp {
 
         // Log the state clear
         log_state_clear!(self, "jump_to_row_input", "clear_jump_to_row_input");
+    }
+
+    // Helper to get sort state from AppStateContainer or create temporary one
+    fn get_sort_state(&self) -> SortState {
+        if let Some(ref state_container) = self.state_container {
+            let sort = state_container.sort();
+            SortState {
+                column: sort.column,
+                order: sort.order.clone(),
+            }
+        } else {
+            SortState {
+                column: None,
+                order: SortOrder::None,
+            }
+        }
     }
 
     // --- Buffer Compatibility Layer ---
@@ -530,10 +546,10 @@ impl EnhancedTuiApp {
             hybrid_parser: HybridParser::new(),
             config: config.clone(),
 
-            sort_state: SortState {
-                column: None,
-                order: SortOrder::None,
-            },
+            // sort_state: SortState {  // MIGRATED to AppStateContainer
+            //     column: None,
+            //     order: SortOrder::None,
+            // },
             // filter_state: FilterState { ... }, // MIGRATED to AppStateContainer
             // fuzzy_filter_state: FuzzyFilterState { ... }, // MIGRATED to buffer system
             // search_state: SearchState { // MIGRATED to AppStateContainer
@@ -4218,26 +4234,34 @@ impl EnhancedTuiApp {
     }
 
     fn sort_by_column(&mut self, column_index: usize) {
-        let new_order = match &self.sort_state {
-            SortState {
-                column: Some(col),
-                order,
-            } if *col == column_index => match order {
-                SortOrder::Ascending => SortOrder::Descending,
-                SortOrder::Descending => SortOrder::None,
-                SortOrder::None => SortOrder::Ascending,
-            },
-            _ => SortOrder::Ascending,
+        // Get the next sort order from AppStateContainer
+        let new_order = if let Some(ref state_container) = self.state_container {
+            state_container.get_next_sort_order(column_index)
+        } else {
+            // Fallback to local logic
+            let sort_state = self.get_sort_state();
+            match &sort_state {
+                SortState {
+                    column: Some(col),
+                    order,
+                } if *col == column_index => match order {
+                    SortOrder::Ascending => SortOrder::Descending,
+                    SortOrder::Descending => SortOrder::None,
+                    SortOrder::None => SortOrder::Ascending,
+                },
+                _ => SortOrder::Ascending,
+            }
         };
 
         if new_order == SortOrder::None {
-            // Reset to original order - would need to store original data
-            self.sort_state = SortState {
-                column: None,
-                order: SortOrder::None,
-            };
+            // Clear sort through AppStateContainer
+            if let Some(ref state_container) = self.state_container {
+                state_container.clear_sort();
+            }
+
+            // Local state is now managed in AppStateContainer
             self.buffer_mut()
-                .set_status_message("Sort cleared".to_string());
+                .set_status_message("Sort cleared - returned to original order".to_string());
             return;
         }
 
@@ -4381,10 +4405,36 @@ impl EnhancedTuiApp {
             self.buffer_mut().set_filtered_data(Some(sorted_data));
         }
 
-        self.sort_state = SortState {
-            column: Some(column_index),
-            order: new_order,
-        };
+        // Update AppStateContainer with the sort
+        if let Some(ref state_container) = self.state_container {
+            // Get column name for logging
+            let column_name = if let Some(results) = self.buffer().get_results() {
+                if let Some(first_row) = results.data.first() {
+                    if let Some(obj) = first_row.as_object() {
+                        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                        if column_index < headers.len() {
+                            headers[column_index].to_string()
+                        } else {
+                            format!("Column {}", column_index)
+                        }
+                    } else {
+                        format!("Column {}", column_index)
+                    }
+                } else {
+                    format!("Column {}", column_index)
+                }
+            } else {
+                format!("Column {}", column_index)
+            };
+
+            let row_count = self.get_row_count();
+            state_container.sort_by_column(column_index, column_name, row_count);
+        }
+
+        // Local state is now managed in AppStateContainer
+        // Buffer's sort state is updated via set_sort_column and set_sort_order
+        self.buffer_mut().set_sort_column(Some(column_index));
+        self.buffer_mut().set_sort_order(new_order.clone());
 
         // Reset table state but preserve current column position
         let current_column = self.buffer().get_current_column();
@@ -5846,18 +5896,38 @@ impl EnhancedTuiApp {
 
         // Add data headers
         header_cells.extend(visible_columns.iter().map(|(actual_col_index, header)| {
-            let sort_indicator = if let Some(col) = self.sort_state.column {
-                if col == *actual_col_index {
-                    match self.sort_state.order {
-                        SortOrder::Ascending => " ↑",
-                        SortOrder::Descending => " ↓",
-                        SortOrder::None => "",
+            // Get sort indicator from AppStateContainer if available
+            let sort_indicator = if let Some(ref state_container) = self.state_container {
+                let sort = state_container.sort();
+                if let Some(col) = sort.column {
+                    if col == *actual_col_index {
+                        match sort.order {
+                            SortOrder::Ascending => " ↑",
+                            SortOrder::Descending => " ↓",
+                            SortOrder::None => "",
+                        }
+                    } else {
+                        ""
                     }
                 } else {
                     ""
                 }
             } else {
-                ""
+                // Fallback to local sort state
+                let sort_state = self.get_sort_state();
+                if let Some(col) = sort_state.column {
+                    if col == *actual_col_index {
+                        match sort_state.order {
+                            SortOrder::Ascending => " ↑",
+                            SortOrder::Descending => " ↓",
+                            SortOrder::None => "",
+                        }
+                    } else {
+                        ""
+                    }
+                } else {
+                    ""
+                }
             };
 
             let column_indicator = if *actual_col_index == self.buffer().get_current_column() {
