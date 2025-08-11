@@ -52,6 +52,7 @@ use sql_cli::widget_traits::DebugInfoProvider;
 use sql_cli::yank_manager::YankManager;
 use std::cmp::Ordering;
 use std::io;
+use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
@@ -242,10 +243,17 @@ impl EnhancedTuiApp {
 
     /// Set jump-to-row input text (uses state_container if available, falls back to local field)
     fn set_jump_to_row_input(&mut self, input: String) {
-        let old_value = self.jump_to_row_input.clone();
-        // TODO: Will need Arc<Mutex<>> for state_container modification
-        // For now, just use local field
-        self.jump_to_row_input = input.clone();
+        let old_value = self.get_jump_to_row_input();
+
+        if let Some(ref mut container_arc) = self.state_container {
+            // Use unsafe to get mutable access through Arc
+            let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+            unsafe {
+                (*container_ptr).jump_to_row_mut().input = input.clone();
+            }
+        } else {
+            self.jump_to_row_input = input.clone();
+        }
 
         // Log the state change
         log_state_change!(
@@ -259,9 +267,15 @@ impl EnhancedTuiApp {
 
     /// Clear jump-to-row input (uses state_container if available, falls back to local field)
     fn clear_jump_to_row_input(&mut self) {
-        // TODO: Will need Arc<Mutex<>> for state_container modification
-        // For now, just use local field
-        self.jump_to_row_input.clear();
+        if let Some(ref mut container_arc) = self.state_container {
+            // Use unsafe to get mutable access through Arc
+            let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+            unsafe {
+                (*container_ptr).jump_to_row_mut().input.clear();
+            }
+        } else {
+            self.jump_to_row_input.clear();
+        }
 
         // Log the state clear
         log_state_clear!(self, "jump_to_row_input", "clear_jump_to_row_input");
@@ -814,6 +828,10 @@ impl EnhancedTuiApp {
     }
 
     fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
+        // Initialize viewport size before first draw
+        self.update_viewport_size();
+        info!(target: "navigation", "Initial viewport size update completed");
+
         // Initial draw
         terminal.draw(|f| self.ui(f))?;
 
@@ -1560,6 +1578,9 @@ impl EnhancedTuiApp {
             || matches!(
                 normalized_key.code,
                 KeyCode::Char('G')
+                    | KeyCode::Char('H')
+                    | KeyCode::Char('M')
+                    | KeyCode::Char('L')
                     | KeyCode::Char('C')
                     | KeyCode::Char('F')
                     | KeyCode::Char('S')
@@ -1665,6 +1686,9 @@ impl EnhancedTuiApp {
                     debug!("Executing goto_last_row action");
                     self.goto_last_row();
                 }
+                "goto_viewport_top" => self.goto_viewport_top(),
+                "goto_viewport_middle" => self.goto_viewport_middle(),
+                "goto_viewport_bottom" => self.goto_viewport_bottom(),
                 "goto_first_column" => self.goto_first_column(),
                 "goto_last_column" => self.goto_last_column(),
                 "page_up" => self.page_up(),
@@ -1708,6 +1732,15 @@ impl EnhancedTuiApp {
                 "jump_to_row" => {
                     self.buffer_mut().set_mode(AppMode::JumpToRow);
                     self.clear_jump_to_row_input();
+
+                    // Set jump-to-row state as active
+                    if let Some(ref mut container_arc) = self.state_container {
+                        let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+                        unsafe {
+                            (*container_ptr).jump_to_row_mut().is_active = true;
+                        }
+                    }
+
                     self.buffer_mut()
                         .set_status_message("Enter row number:".to_string());
                 }
@@ -1794,22 +1827,103 @@ impl EnhancedTuiApp {
         // Fall back to direct key handling for special cases not in dispatcher
         match key.code {
             KeyCode::Char(' ') => {
-                // Toggle viewport lock with Space
-                let current_lock = self.buffer().is_viewport_lock();
-                self.buffer_mut().set_viewport_lock(!current_lock);
-                if self.buffer().is_viewport_lock() {
-                    // Lock to current position in viewport (middle of screen)
-                    let visible_rows = self.buffer().get_last_visible_rows();
-                    self.buffer_mut()
-                        .set_viewport_lock_row(Some(visible_rows / 2));
-                    self.buffer_mut().set_status_message(format!(
-                        "Viewport lock: ON (anchored at row {} of viewport)",
-                        visible_rows / 2 + 1
-                    ));
+                // Toggle viewport lock with Space - using AppStateContainer
+                if let Some(ref state_container) = self.state_container {
+                    state_container.toggle_viewport_lock();
+
+                    // Extract values we need before mutable borrows
+                    let (is_locked, lock_row, position_status) = {
+                        let navigation = state_container.navigation();
+                        (
+                            navigation.viewport_lock,
+                            navigation.viewport_lock_row,
+                            navigation.get_position_status(),
+                        )
+                    };
+
+                    // Update buffer state to match NavigationState
+                    self.buffer_mut().set_viewport_lock(is_locked);
+                    self.buffer_mut().set_viewport_lock_row(lock_row);
+
+                    if is_locked {
+                        self.buffer_mut().set_status_message(format!(
+                            "Viewport lock: ON (locked at row {}){}",
+                            lock_row.map_or(0, |r| r + 1),
+                            position_status
+                        ));
+                    } else {
+                        self.buffer_mut().set_status_message(
+                            "Viewport lock: OFF (normal scrolling)".to_string(),
+                        );
+                    }
                 } else {
-                    self.buffer_mut().set_viewport_lock_row(None);
-                    self.buffer_mut()
-                        .set_status_message("Viewport lock: OFF (normal scrolling)".to_string());
+                    // Fallback to buffer-based lock for compatibility
+                    let current_lock = self.buffer().is_viewport_lock();
+                    self.buffer_mut().set_viewport_lock(!current_lock);
+                    if self.buffer().is_viewport_lock() {
+                        let visible_rows = self.buffer().get_last_visible_rows();
+                        self.buffer_mut()
+                            .set_viewport_lock_row(Some(visible_rows / 2));
+                        self.buffer_mut().set_status_message(format!(
+                            "Viewport lock: ON (anchored at row {} of viewport)",
+                            visible_rows / 2 + 1
+                        ));
+                    } else {
+                        self.buffer_mut().set_viewport_lock_row(None);
+                        self.buffer_mut().set_status_message(
+                            "Viewport lock: OFF (normal scrolling)".to_string(),
+                        );
+                    }
+                }
+            }
+            // Note: Many terminals can't distinguish Shift+Space from Space
+            // So we support 'x' as an alternative for cursor lock
+            KeyCode::Char('x') | KeyCode::Char('X') => {
+                // Toggle cursor lock with 'x' key - using AppStateContainer
+                if let Some(ref state_container) = self.state_container {
+                    state_container.toggle_cursor_lock();
+
+                    // Extract values we need before mutable borrows
+                    let (is_locked, lock_position) = {
+                        let navigation = state_container.navigation();
+                        (navigation.cursor_lock, navigation.cursor_lock_position)
+                    };
+
+                    // Update buffer state (we might need separate buffer fields for this)
+                    // For now, we'll just show status message
+                    if is_locked {
+                        self.buffer_mut().set_status_message(format!(
+                            "Cursor lock: ON (locked at visual position {})",
+                            lock_position.map_or(0, |p| p + 1)
+                        ));
+                    } else {
+                        self.buffer_mut().set_status_message(
+                            "Cursor lock: OFF (cursor moves normally)".to_string(),
+                        );
+                    }
+                }
+            }
+            KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Also support Ctrl+Space for cursor lock
+                if let Some(ref state_container) = self.state_container {
+                    state_container.toggle_cursor_lock();
+
+                    // Extract values we need before mutable borrows
+                    let (is_locked, lock_position) = {
+                        let navigation = state_container.navigation();
+                        (navigation.cursor_lock, navigation.cursor_lock_position)
+                    };
+
+                    if is_locked {
+                        self.buffer_mut().set_status_message(format!(
+                            "Cursor lock: ON (locked at visual position {})",
+                            lock_position.map_or(0, |p| p + 1)
+                        ));
+                    } else {
+                        self.buffer_mut().set_status_message(
+                            "Cursor lock: OFF (cursor moves normally)".to_string(),
+                        );
+                    }
                 }
             }
             KeyCode::PageDown | KeyCode::Char('f')
@@ -2979,7 +3093,26 @@ impl EnhancedTuiApp {
                             warn!(target: "results", "Failed to cache results in AppStateContainer: {}", e);
                         }
                     }
+
+                    // Update NavigationState with total rows and columns
+                    let total_rows = row_count;
+                    let total_cols = if !response.data.is_empty() {
+                        if let Some(obj) = response.data[0].as_object() {
+                            obj.len()
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    };
+                    state_container
+                        .navigation_mut()
+                        .update_totals(total_rows, total_cols);
+                    info!(target: "navigation", "Updated NavigationState totals after query: {} rows x {} cols", total_rows, total_cols);
                 }
+
+                // Update viewport size to ensure NavigationState has correct dimensions
+                self.update_viewport_size();
 
                 // Update parser with the FULL schema if we're in CSV/cache mode
                 // For CSV mode, get the complete schema from the CSV client, not from query results
@@ -3306,6 +3439,17 @@ impl EnhancedTuiApp {
 
     // Helper to get estimated visible rows based on terminal size
 
+    fn get_column_count(&self) -> usize {
+        if let Some(results) = self.buffer().get_results() {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    return obj.len();
+                }
+            }
+        }
+        0
+    }
+
     // Navigation functions
     fn next_row(&mut self) {
         let total_rows = self.get_row_count();
@@ -3313,18 +3457,129 @@ impl EnhancedTuiApp {
             // Update viewport size before navigation
             self.update_viewport_size();
 
-            let current = self.table_state.selected().unwrap_or(0);
-            if current >= total_rows - 1 {
-                return;
-            } // Already at bottom
+            // Use AppStateContainer for navigation
+            if let Some(ref state_container) = self.state_container {
+                // Extract values we need before mutable borrows
+                let (new_row, new_scroll_offset) = {
+                    let mut nav = state_container.navigation_mut();
 
-            let new_position = current + 1;
+                    // Update totals if needed
+                    let total_cols = self.get_column_count();
+                    nav.update_totals(total_rows, total_cols);
+
+                    // Move to next row
+                    if nav.next_row() {
+                        (Some(nav.selected_row), nav.scroll_offset)
+                    } else {
+                        (None, nav.scroll_offset)
+                    }
+                };
+
+                // Now we can use mutable self since we've dropped the nav borrow
+                if let Some(row) = new_row {
+                    // Sync with local table_state for rendering
+                    self.table_state.select(Some(row));
+
+                    // Sync scroll offset with buffer
+                    self.buffer_mut().set_scroll_offset(new_scroll_offset);
+                }
+            } else {
+                // Fallback to old implementation
+                let current = self.table_state.selected().unwrap_or(0);
+                if current >= total_rows - 1 {
+                    return;
+                } // Already at bottom
+
+                let new_position = current + 1;
+                self.table_state.select(Some(new_position));
+
+                // Update viewport based on lock mode
+                let is_locked = if let Some(ref state_container) = self.state_container {
+                    state_container.is_viewport_locked()
+                } else {
+                    self.buffer().is_viewport_lock()
+                };
+                if is_locked {
+                    // In lock mode, keep cursor at fixed viewport position
+                    let lock_row = if let Some(ref state_container) = self.state_container {
+                        state_container.navigation().viewport_lock_row
+                    } else {
+                        self.buffer().get_viewport_lock_row()
+                    };
+                    if let Some(lock_row) = lock_row {
+                        // Adjust viewport so cursor stays at lock_row position
+                        let mut offset = self.buffer().get_scroll_offset();
+                        offset.0 = new_position.saturating_sub(lock_row);
+                        self.buffer_mut().set_scroll_offset(offset);
+                    }
+                } else {
+                    // Normal scrolling behavior
+                    let visible_rows = self.buffer().get_last_visible_rows();
+
+                    // Check if cursor would be below the last visible row
+                    let offset = self.buffer().get_scroll_offset();
+                    if new_position > offset.0 + visible_rows - 1 {
+                        // Cursor moved below viewport - scroll down by one
+                        self.buffer_mut()
+                            .set_scroll_offset((offset.0 + 1, offset.1));
+                    }
+                }
+            }
+        }
+    }
+
+    fn previous_row(&mut self) {
+        // Use AppStateContainer for navigation
+        if let Some(ref state_container) = self.state_container {
+            // Extract values we need before mutable borrows
+            let (new_row, new_scroll_offset) = {
+                let mut nav = state_container.navigation_mut();
+
+                // Update totals if needed
+                let total_rows = self.get_row_count();
+                let total_cols = self.get_column_count();
+                nav.update_totals(total_rows, total_cols);
+
+                // Move to previous row
+                if nav.previous_row() {
+                    (Some(nav.selected_row), nav.scroll_offset)
+                } else {
+                    (None, nav.scroll_offset)
+                }
+            };
+
+            // Now we can use mutable self since we've dropped the nav borrow
+            if let Some(row) = new_row {
+                // Sync with local table_state for rendering
+                self.table_state.select(Some(row));
+
+                // Sync scroll offset with buffer
+                self.buffer_mut().set_scroll_offset(new_scroll_offset);
+            }
+        } else {
+            // Fallback to old implementation
+            let current = self.table_state.selected().unwrap_or(0);
+            if current == 0 {
+                return;
+            } // Already at top
+
+            let new_position = current - 1;
             self.table_state.select(Some(new_position));
 
             // Update viewport based on lock mode
-            if self.buffer().is_viewport_lock() {
+            let is_locked = if let Some(ref state_container) = self.state_container {
+                state_container.is_viewport_locked()
+            } else {
+                self.buffer().is_viewport_lock()
+            };
+            if is_locked {
                 // In lock mode, keep cursor at fixed viewport position
-                if let Some(lock_row) = self.buffer().get_viewport_lock_row() {
+                let lock_row = if let Some(ref state_container) = self.state_container {
+                    state_container.navigation().viewport_lock_row
+                } else {
+                    self.buffer().get_viewport_lock_row()
+                };
+                if let Some(lock_row) = lock_row {
                     // Adjust viewport so cursor stays at lock_row position
                     let mut offset = self.buffer().get_scroll_offset();
                     offset.0 = new_position.saturating_sub(lock_row);
@@ -3332,44 +3587,12 @@ impl EnhancedTuiApp {
                 }
             } else {
                 // Normal scrolling behavior
-                let visible_rows = self.buffer().get_last_visible_rows();
-
-                // Check if cursor would be below the last visible row
-                let offset = self.buffer().get_scroll_offset();
-                if new_position > offset.0 + visible_rows - 1 {
-                    // Cursor moved below viewport - scroll down by one
-                    self.buffer_mut()
-                        .set_scroll_offset((offset.0 + 1, offset.1));
-                }
-            }
-        }
-    }
-
-    fn previous_row(&mut self) {
-        let current = self.table_state.selected().unwrap_or(0);
-        if current == 0 {
-            return;
-        } // Already at top
-
-        let new_position = current - 1;
-        self.table_state.select(Some(new_position));
-
-        // Update viewport based on lock mode
-        if self.buffer().is_viewport_lock() {
-            // In lock mode, keep cursor at fixed viewport position
-            if let Some(lock_row) = self.buffer().get_viewport_lock_row() {
-                // Adjust viewport so cursor stays at lock_row position
                 let mut offset = self.buffer().get_scroll_offset();
-                offset.0 = new_position.saturating_sub(lock_row);
-                self.buffer_mut().set_scroll_offset(offset);
-            }
-        } else {
-            // Normal scrolling behavior
-            let mut offset = self.buffer().get_scroll_offset();
-            if new_position < offset.0 {
-                // Cursor moved above viewport - scroll up
-                offset.0 = new_position;
-                self.buffer_mut().set_scroll_offset(offset);
+                if new_position < offset.0 {
+                    // Cursor moved above viewport - scroll up
+                    offset.0 = new_position;
+                    self.buffer_mut().set_scroll_offset(offset);
+                }
             }
         }
     }
@@ -3446,6 +3669,12 @@ impl EnhancedTuiApp {
     }
 
     fn goto_first_row(&mut self) {
+        // Update NavigationState
+        if let Some(ref state_container) = self.state_container {
+            let mut nav = state_container.navigation_mut();
+            nav.jump_to_first_row();
+        }
+
         self.table_state.select(Some(0));
         let mut offset = self.buffer().get_scroll_offset();
         offset.0 = 0; // Reset viewport to top
@@ -3455,6 +3684,63 @@ impl EnhancedTuiApp {
         if total_rows > 0 {
             self.buffer_mut()
                 .set_status_message(format!("Jumped to first row (1/{})", total_rows));
+        }
+    }
+
+    fn goto_viewport_top(&mut self) {
+        // Jump to top of current viewport (H in vim)
+        if let Some(ref state_container) = self.state_container {
+            let (new_row, status_msg) = {
+                let mut nav = state_container.navigation_mut();
+                nav.jump_to_viewport_top();
+                let row = nav.selected_row;
+                let total = nav.total_rows;
+                (
+                    row,
+                    format!("Jumped to viewport top (row {}/{})", row + 1, total),
+                )
+            };
+
+            self.table_state.select(Some(new_row));
+            self.buffer_mut().set_status_message(status_msg);
+        }
+    }
+
+    fn goto_viewport_middle(&mut self) {
+        // Jump to middle of current viewport (M in vim)
+        if let Some(ref state_container) = self.state_container {
+            let (new_row, status_msg) = {
+                let mut nav = state_container.navigation_mut();
+                nav.jump_to_viewport_middle();
+                let row = nav.selected_row;
+                let total = nav.total_rows;
+                (
+                    row,
+                    format!("Jumped to viewport middle (row {}/{})", row + 1, total),
+                )
+            };
+
+            self.table_state.select(Some(new_row));
+            self.buffer_mut().set_status_message(status_msg);
+        }
+    }
+
+    fn goto_viewport_bottom(&mut self) {
+        // Jump to bottom of current viewport (L in vim)
+        if let Some(ref state_container) = self.state_container {
+            let (new_row, status_msg) = {
+                let mut nav = state_container.navigation_mut();
+                nav.jump_to_viewport_bottom();
+                let row = nav.selected_row;
+                let total = nav.total_rows;
+                (
+                    row,
+                    format!("Jumped to viewport bottom (row {}/{})", row + 1, total),
+                )
+            };
+
+            self.table_state.select(Some(new_row));
+            self.buffer_mut().set_status_message(status_msg);
         }
     }
 
@@ -3645,8 +3931,12 @@ impl EnhancedTuiApp {
 
     fn update_viewport_size(&mut self) {
         // Update the stored viewport size based on current terminal size
-        if let Ok((_, height)) = crossterm::terminal::size() {
+        if let Ok((width, height)) = crossterm::terminal::size() {
+            let terminal_width = width as usize;
             let terminal_height = height as usize;
+
+            info!(target: "navigation", "update_viewport_size - terminal dimensions: {}x{}", terminal_width, terminal_height);
+
             // Match the actual layout calculation:
             // - Input area: 3 rows (from input_height)
             // - Status bar: 3 rows
@@ -3659,8 +3949,19 @@ impl EnhancedTuiApp {
             // - 1 row for top border
             // - 1 row for header
             // - 1 row for bottom border
-            self.buffer_mut()
-                .set_last_visible_rows(results_area_height.saturating_sub(3).max(10));
+            let visible_rows = results_area_height.saturating_sub(3).max(10);
+
+            // Update buffer's last_visible_rows
+            self.buffer_mut().set_last_visible_rows(visible_rows);
+
+            // Update NavigationState's viewport dimensions
+            if let Some(ref state_container) = self.state_container {
+                state_container
+                    .navigation_mut()
+                    .set_viewport_size(visible_rows, terminal_width);
+            }
+
+            info!(target: "navigation", "update_viewport_size - viewport set to: {}x{} rows", visible_rows, terminal_width);
         }
     }
 
@@ -3668,6 +3969,13 @@ impl EnhancedTuiApp {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
             let last_row = total_rows - 1;
+
+            // Update NavigationState
+            if let Some(ref state_container) = self.state_container {
+                let mut nav = state_container.navigation_mut();
+                nav.jump_to_last_row();
+            }
+
             self.table_state.select(Some(last_row));
             // Position viewport to show the last row at the bottom
             let visible_rows = self.buffer().get_last_visible_rows();
@@ -5670,12 +5978,40 @@ impl EnhancedTuiApp {
             spans.push(Span::styled("COMPACT", Style::default().fg(Color::Green)));
         }
 
-        if self.buffer().is_viewport_lock() {
-            spans.push(Span::raw(" | "));
-            spans.push(Span::styled(
-                &self.config.display.icons.lock,
-                Style::default().fg(Color::Magenta),
-            ));
+        // Show lock status indicators
+        if let Some(ref state_container) = self.state_container {
+            let navigation = state_container.navigation();
+
+            // Viewport lock indicator with boundary status
+            if navigation.viewport_lock {
+                spans.push(Span::raw(" | "));
+                let lock_text = if navigation.is_at_viewport_top() {
+                    format!("{}V↑", &self.config.display.icons.lock)
+                } else if navigation.is_at_viewport_bottom() {
+                    format!("{}V↓", &self.config.display.icons.lock)
+                } else {
+                    format!("{}V", &self.config.display.icons.lock)
+                };
+                spans.push(Span::styled(lock_text, Style::default().fg(Color::Magenta)));
+            }
+
+            // Cursor lock indicator
+            if navigation.cursor_lock {
+                spans.push(Span::raw(" | "));
+                spans.push(Span::styled(
+                    format!("{}C", &self.config.display.icons.lock),
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+        } else {
+            // Fallback for buffer-based lock
+            if self.buffer().is_viewport_lock() {
+                spans.push(Span::raw(" | "));
+                spans.push(Span::styled(
+                    &self.config.display.icons.lock,
+                    Style::default().fg(Color::Magenta),
+                ));
+            }
         }
 
         // Help shortcuts (right side)
@@ -6611,6 +6947,15 @@ impl EnhancedTuiApp {
             KeyCode::Esc => {
                 self.buffer_mut().set_mode(AppMode::Results);
                 self.clear_jump_to_row_input();
+
+                // Clear is_active flag
+                if let Some(ref mut container_arc) = self.state_container {
+                    let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+                    unsafe {
+                        (*container_ptr).jump_to_row_mut().is_active = false;
+                    }
+                }
+
                 self.buffer_mut()
                     .set_status_message("Jump cancelled".to_string());
             }
@@ -6621,18 +6966,34 @@ impl EnhancedTuiApp {
                         let max_row = self.get_current_data().map(|d| d.len()).unwrap_or(0);
 
                         if target_row < max_row {
-                            self.table_state.select(Some(target_row));
-
-                            // Adjust viewport to center the target row
+                            // Calculate centered viewport position
                             let visible_rows = self.buffer().get_last_visible_rows();
-                            if visible_rows > 0 {
-                                let mut offset = self.buffer().get_scroll_offset();
-                                offset.0 = target_row.saturating_sub(visible_rows / 2);
-                                self.buffer_mut().set_scroll_offset(offset);
+                            let centered_scroll_offset = if visible_rows > 0 {
+                                target_row.saturating_sub(visible_rows / 2)
+                            } else {
+                                target_row
+                            };
+
+                            // Update NavigationState with proper scroll offset
+                            if let Some(ref state_container) = self.state_container {
+                                let mut nav = state_container.navigation_mut();
+                                nav.jump_to_row(target_row);
+                                // Also update NavigationState's scroll offset to center the row
+                                nav.scroll_offset.0 = centered_scroll_offset;
+                                info!(target: "navigation", "Jump-to-row: set scroll_offset to {} to center row {}", centered_scroll_offset, target_row);
                             }
 
-                            self.buffer_mut()
-                                .set_status_message(format!("Jumped to row {}", row_num));
+                            self.table_state.select(Some(target_row));
+
+                            // Update buffer's scroll offset to match
+                            let mut offset = self.buffer().get_scroll_offset();
+                            offset.0 = centered_scroll_offset;
+                            self.buffer_mut().set_scroll_offset(offset);
+
+                            self.buffer_mut().set_status_message(format!(
+                                "Jumped to row {} (centered)",
+                                row_num
+                            ));
                         } else {
                             self.buffer_mut().set_status_message(format!(
                                 "Row {} out of range (max: {})",
@@ -6643,6 +7004,14 @@ impl EnhancedTuiApp {
                 }
                 self.buffer_mut().set_mode(AppMode::Results);
                 self.clear_jump_to_row_input();
+
+                // Clear is_active flag
+                if let Some(ref mut container_arc) = self.state_container {
+                    let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+                    unsafe {
+                        (*container_ptr).jump_to_row_mut().is_active = false;
+                    }
+                }
             }
             KeyCode::Backspace => {
                 let mut input = self.get_jump_to_row_input();
