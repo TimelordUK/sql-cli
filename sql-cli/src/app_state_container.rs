@@ -480,13 +480,53 @@ impl FilterState {
     }
 }
 
-/// Column search state
+/// Column search state management
 #[derive(Debug, Clone)]
 pub struct ColumnSearchState {
+    /// Current search pattern
     pub pattern: String,
+
+    /// Matching columns (index, column_name)
     pub matching_columns: Vec<(usize, String)>,
+
+    /// Current match index (index into matching_columns)
     pub current_match: usize,
+
+    /// Whether column search is active
     pub is_active: bool,
+
+    /// Search history
+    pub history: VecDeque<ColumnSearchHistoryEntry>,
+
+    /// Total searches performed
+    pub total_searches: usize,
+
+    /// Last search time
+    pub last_search_time: Option<Instant>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ColumnSearchHistoryEntry {
+    /// Search pattern
+    pub pattern: String,
+
+    /// Number of matching columns
+    pub match_count: usize,
+
+    /// Column names that matched
+    pub matched_columns: Vec<String>,
+
+    /// When this search was performed
+    pub timestamp: DateTime<Local>,
+
+    /// How long the search took
+    pub duration_ms: Option<u64>,
+}
+
+impl Default for ColumnSearchState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ColumnSearchState {
@@ -496,17 +536,94 @@ impl ColumnSearchState {
             matching_columns: Vec::new(),
             current_match: 0,
             is_active: false,
+            history: VecDeque::with_capacity(20),
+            total_searches: 0,
+            last_search_time: None,
         }
     }
 
+    /// Clear the column search state
     pub fn clear(&mut self) {
-        // TODO: Add logging when log crate is available
-        // info!(target: "state", "ColumnSearchState::clear() - had {} matching columns for pattern '{}'",
-        //       self.matching_columns.len(), self.pattern);
+        // Save to history if we had an active search
+        if self.is_active && !self.pattern.is_empty() {
+            let duration_ms = self
+                .last_search_time
+                .map(|t| t.elapsed().as_millis() as u64);
+            let entry = ColumnSearchHistoryEntry {
+                pattern: self.pattern.clone(),
+                match_count: self.matching_columns.len(),
+                matched_columns: self
+                    .matching_columns
+                    .iter()
+                    .map(|(_, name)| name.clone())
+                    .collect(),
+                timestamp: Local::now(),
+                duration_ms,
+            };
+            self.history.push_front(entry);
+
+            // Trim history
+            while self.history.len() > 20 {
+                self.history.pop_back();
+            }
+        }
+
         self.pattern.clear();
         self.matching_columns.clear();
         self.current_match = 0;
         self.is_active = false;
+        self.last_search_time = None;
+    }
+
+    /// Set search results
+    pub fn set_matches(&mut self, matches: Vec<(usize, String)>) {
+        self.matching_columns = matches;
+        self.current_match = 0;
+        self.total_searches += 1;
+        self.last_search_time = Some(Instant::now());
+    }
+
+    /// Navigate to next match
+    pub fn next_match(&mut self) -> Option<(usize, String)> {
+        if self.matching_columns.is_empty() {
+            return None;
+        }
+
+        self.current_match = (self.current_match + 1) % self.matching_columns.len();
+        Some(self.matching_columns[self.current_match].clone())
+    }
+
+    /// Navigate to previous match
+    pub fn prev_match(&mut self) -> Option<(usize, String)> {
+        if self.matching_columns.is_empty() {
+            return None;
+        }
+
+        self.current_match = if self.current_match == 0 {
+            self.matching_columns.len() - 1
+        } else {
+            self.current_match - 1
+        };
+        Some(self.matching_columns[self.current_match].clone())
+    }
+
+    /// Get current match
+    pub fn current_match(&self) -> Option<(usize, String)> {
+        if self.matching_columns.is_empty() {
+            None
+        } else {
+            Some(self.matching_columns[self.current_match].clone())
+        }
+    }
+
+    /// Get search statistics
+    pub fn get_stats(&self) -> String {
+        format!(
+            "Total searches: {}, History items: {}, Current matches: {}",
+            self.total_searches,
+            self.history.len(),
+            self.matching_columns.len()
+        )
     }
 }
 
@@ -1508,6 +1625,149 @@ impl AppStateContainer {
 
     pub fn column_search_mut(&self) -> std::cell::RefMut<'_, ColumnSearchState> {
         self.column_search.borrow_mut()
+    }
+
+    // Column search operations with logging
+
+    /// Start column search with pattern
+    pub fn start_column_search(&self, pattern: String) {
+        let mut column_search = self.column_search.borrow_mut();
+        let old_pattern = column_search.pattern.clone();
+        let old_active = column_search.is_active;
+
+        column_search.pattern = pattern.clone();
+        column_search.is_active = true;
+        column_search.last_search_time = Some(Instant::now());
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "ColumnSearch",
+                format!(
+                    "Starting column search: '{}' (was: '{}', active: {})",
+                    pattern, old_pattern, old_active
+                ),
+            );
+        }
+    }
+
+    /// Update column search matches
+    pub fn update_column_search_matches(
+        &self,
+        columns: &[(String, usize)],
+        pattern: &str,
+    ) -> Vec<(usize, String)> {
+        let pattern_lower = pattern.to_lowercase();
+        let mut matches = Vec::new();
+
+        for (name, index) in columns {
+            if name.to_lowercase().contains(&pattern_lower) {
+                matches.push((*index, name.clone()));
+            }
+        }
+
+        let mut column_search = self.column_search.borrow_mut();
+        column_search.set_matches(matches.clone());
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "ColumnSearch",
+                format!(
+                    "Found {} columns matching '{}': {:?}",
+                    matches.len(),
+                    pattern,
+                    matches.iter().map(|(_, name)| name).collect::<Vec<_>>()
+                ),
+            );
+        }
+
+        matches
+    }
+
+    /// Navigate to next column match
+    pub fn next_column_match(&self) -> Option<(usize, String)> {
+        let mut column_search = self.column_search.borrow_mut();
+        if let Some((idx, name)) = column_search.next_match() {
+            let current = column_search.current_match;
+            let total = column_search.matching_columns.len();
+
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "ColumnSearch",
+                    format!(
+                        "Navigate to next column: {}/{} - '{}' (index {})",
+                        current + 1,
+                        total,
+                        name,
+                        idx
+                    ),
+                );
+            }
+
+            Some((idx, name))
+        } else {
+            None
+        }
+    }
+
+    /// Navigate to previous column match
+    pub fn previous_column_match(&self) -> Option<(usize, String)> {
+        let mut column_search = self.column_search.borrow_mut();
+        if let Some((idx, name)) = column_search.prev_match() {
+            let current = column_search.current_match;
+            let total = column_search.matching_columns.len();
+
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "ColumnSearch",
+                    format!(
+                        "Navigate to previous column: {}/{} - '{}' (index {})",
+                        current + 1,
+                        total,
+                        name,
+                        idx
+                    ),
+                );
+            }
+
+            Some((idx, name))
+        } else {
+            None
+        }
+    }
+
+    /// Clear column search
+    pub fn clear_column_search(&self) {
+        let mut column_search = self.column_search.borrow_mut();
+        let had_matches = column_search.matching_columns.len();
+        let had_pattern = column_search.pattern.clone();
+
+        column_search.clear();
+
+        if let Some(ref debug_service) = *self.debug_service.borrow() {
+            debug_service.info(
+                "ColumnSearch",
+                format!(
+                    "Cleared column search (had pattern: '{}', {} matches)",
+                    had_pattern, had_matches
+                ),
+            );
+        }
+    }
+
+    /// Accept current column match
+    pub fn accept_column_match(&self) -> Option<(usize, String)> {
+        let column_search = self.column_search.borrow();
+        if let Some((idx, name)) = column_search.current_match() {
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "ColumnSearch",
+                    format!("Accepted column: '{}' at index {}", name, idx),
+                );
+            }
+            Some((idx, name))
+        } else {
+            None
+        }
     }
 
     // History search operations (Ctrl+R)
@@ -2684,6 +2944,64 @@ impl AppStateContainer {
                 .enumerate()
             {
                 dump.push_str(&format!("    {}. ({}, {})\n", i + 1, row, col));
+            }
+        }
+        dump.push_str("\n");
+
+        // Column search state
+        dump.push_str("COLUMN SEARCH STATE:\n");
+        let column_search = self.column_search.borrow();
+        if column_search.is_active {
+            dump.push_str(&format!("  Pattern: '{}'\n", column_search.pattern));
+            dump.push_str(&format!(
+                "  Matches: {} columns found\n",
+                column_search.matching_columns.len()
+            ));
+            if !column_search.matching_columns.is_empty() {
+                dump.push_str(&format!(
+                    "  Current: {} of {}\n",
+                    column_search.current_match + 1,
+                    column_search.matching_columns.len()
+                ));
+                dump.push_str("  Matching columns:\n");
+                for (i, (idx, name)) in column_search.matching_columns.iter().enumerate() {
+                    dump.push_str(&format!(
+                        "    {}[{}] {} (index {})\n",
+                        if i == column_search.current_match {
+                            "*"
+                        } else {
+                            " "
+                        },
+                        i + 1,
+                        name,
+                        idx
+                    ));
+                }
+            }
+            if let Some(ref last_time) = column_search.last_search_time {
+                dump.push_str(&format!("  Search time: {:?}\n", last_time.elapsed()));
+            }
+        } else {
+            dump.push_str("  [Inactive]\n");
+        }
+        dump.push_str(&format!(
+            "  Total searches: {}\n",
+            column_search.total_searches
+        ));
+        dump.push_str(&format!(
+            "  History items: {}\n",
+            column_search.history.len()
+        ));
+        if !column_search.history.is_empty() {
+            dump.push_str("  Recent searches:\n");
+            for (i, entry) in column_search.history.iter().take(5).enumerate() {
+                dump.push_str(&format!(
+                    "    {}. '{}' ({} matches) at {}\n",
+                    i + 1,
+                    entry.pattern,
+                    entry.match_count,
+                    entry.timestamp.format("%H:%M:%S")
+                ));
             }
         }
         dump.push_str("\n");

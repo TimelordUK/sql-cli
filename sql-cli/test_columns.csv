@@ -1,5 +1,7 @@
-orderid,quantity,price,product
-1001,5,19.99,Widget A
-1002,3,29.99,Widget B
-1003,8,14.50,Widget C
-1004,2,39.99,Widget D
+id,first_name,last_name,email,age,department,salary,hire_date
+1,John,Smith,john.smith@example.com,28,Engineering,75000,2022-01-15
+2,Jane,Doe,jane.doe@example.com,32,Marketing,65000,2021-06-20
+3,Bob,Johnson,bob.j@example.com,45,Sales,80000,2019-03-10
+4,Alice,Williams,alice.w@example.com,29,Engineering,72000,2022-03-01
+5,Charlie,Brown,charlie.b@example.com,38,HR,60000,2020-07-15
+EOF < /dev/null
