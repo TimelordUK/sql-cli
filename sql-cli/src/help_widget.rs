@@ -291,11 +291,94 @@ impl HelpWidget {
         // Render section tabs
         self.render_section_tabs(f, chunks[0]);
 
-        // Render content based on selected section
+        // Render content based on selected section - now with two columns for some sections
+        match self.state.selected_section {
+            HelpSection::General => {
+                // General section uses two columns
+                self.render_two_column_content(f, chunks[1]);
+            }
+            _ => {
+                // Other sections use single column for now
+                self.render_single_column_content(f, chunks[1]);
+            }
+        }
+
+        // Render status/search bar
+        self.render_status_bar(f, chunks[2]);
+    }
+
+    /// Render content in two columns
+    fn render_two_column_content(&mut self, f: &mut Frame, area: Rect) {
+        // Split into two columns
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+
+        // Get the two-column content from HelpText
+        let left_content = HelpText::left_column();
+        let right_content = HelpText::right_column();
+
+        // Calculate visible area for scrolling
+        let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
+        let max_lines = left_content.len().max(right_content.len());
+        self.state.max_scroll = max_lines.saturating_sub(visible_height) as u16;
+
+        // Apply scroll offset
+        let scroll_offset = self.state.scroll_offset as usize;
+
+        // Get visible portions with scrolling
+        let left_visible: Vec<Line> = left_content
+            .into_iter()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .collect();
+
+        let right_visible: Vec<Line> = right_content
+            .into_iter()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .collect();
+
+        // Create scroll indicator in title
+        let scroll_indicator = if max_lines > visible_height {
+            format!(
+                " ({}/{})",
+                scroll_offset + 1,
+                max_lines.saturating_sub(visible_height) + 1
+            )
+        } else {
+            String::new()
+        };
+
+        // Render left column
+        let left_paragraph = Paragraph::new(left_visible)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("Commands & Editing{}", scroll_indicator)),
+            )
+            .style(Style::default());
+
+        // Render right column
+        let right_paragraph = Paragraph::new(right_visible)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Navigation & Features"),
+            )
+            .style(Style::default());
+
+        f.render_widget(left_paragraph, chunks[0]);
+        f.render_widget(right_paragraph, chunks[1]);
+    }
+
+    /// Render content in single column (for other tabs)
+    fn render_single_column_content(&mut self, f: &mut Frame, area: Rect) {
         let content = self.get_section_content();
 
         // Calculate max scroll
-        let visible_height = chunks[1].height.saturating_sub(2) as usize;
+        let visible_height = area.height.saturating_sub(2) as usize;
         let content_height = content.lines().count();
         self.state.max_scroll = content_height.saturating_sub(visible_height) as u16;
 
@@ -309,10 +392,7 @@ impl HelpWidget {
             .wrap(Wrap { trim: false })
             .scroll((self.state.scroll_offset, 0));
 
-        f.render_widget(paragraph, chunks[1]);
-
-        // Render status/search bar
-        self.render_status_bar(f, chunks[2]);
+        f.render_widget(paragraph, area);
     }
 
     /// Render section tabs

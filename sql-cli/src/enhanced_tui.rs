@@ -35,6 +35,7 @@ use sql_cli::data_exporter::DataExporter;
 use sql_cli::debug_info::DebugInfo;
 use sql_cli::debug_widget::DebugWidget;
 use sql_cli::editor_widget::{BufferAction, EditorAction, EditorWidget};
+use sql_cli::help_text::HelpText;
 use sql_cli::help_widget::{HelpAction, HelpWidget};
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::hybrid_parser::HybridParser;
@@ -6560,13 +6561,11 @@ impl EnhancedTuiApp {
     }
 
     fn render_help(&mut self, f: &mut Frame, area: Rect) {
-        // Use the new HelpWidget for rendering
+        // Use the HelpWidget for tabbed interface
         self.help_widget.render(f, area);
     }
 
-    // REMOVED: render_help_old - unused function
-    /*
-    fn render_help_old(&self, f: &mut Frame, area: Rect) {
+    fn render_help_two_column(&self, f: &mut Frame, area: Rect) {
         // Create two-column layout
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -6635,7 +6634,6 @@ impl EnhancedTuiApp {
         f.render_widget(left_paragraph, chunks[0]);
         f.render_widget(right_paragraph, chunks[1]);
     }
-    */
 
     fn render_debug(&self, f: &mut Frame, area: Rect) {
         self.debug_widget.render(f, area, AppMode::Debug);
