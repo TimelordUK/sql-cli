@@ -35,7 +35,6 @@ use sql_cli::data_exporter::DataExporter;
 use sql_cli::debug_info::DebugInfo;
 use sql_cli::debug_widget::DebugWidget;
 use sql_cli::editor_widget::{BufferAction, EditorAction, EditorWidget};
-use sql_cli::help_text::HelpText;
 use sql_cli::help_widget::{HelpAction, HelpWidget};
 use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::hybrid_parser::HybridParser;
@@ -50,7 +49,6 @@ use sql_cli::where_ast::format_where_ast;
 use sql_cli::where_parser::WhereParser;
 use sql_cli::widget_traits::DebugInfoProvider;
 use sql_cli::yank_manager::YankManager;
-use std::cmp::Ordering;
 use std::io;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
@@ -1826,8 +1824,8 @@ impl EnhancedTuiApp {
 
         // Fall back to direct key handling for special cases not in dispatcher
         match key.code {
-            KeyCode::Char(' ') => {
-                // Toggle viewport lock with Space - using AppStateContainer
+            KeyCode::Char(' ') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Toggle viewport lock with Space (but not Ctrl+Space) - using AppStateContainer
                 if let Some(ref state_container) = self.state_container {
                     state_container.toggle_viewport_lock();
 
@@ -4574,31 +4572,38 @@ impl EnhancedTuiApp {
     }
 
     fn sort_by_column(&mut self, column_index: usize) {
-        // Get the next sort order from AppStateContainer
-        let new_order = if let Some(ref state_container) = self.state_container {
-            state_container.get_next_sort_order(column_index)
-        } else {
-            // Fallback to local logic
-            let sort_state = self.get_sort_state();
-            match &sort_state {
-                SortState {
-                    column: Some(col),
-                    order,
-                } if *col == column_index => match order {
-                    SortOrder::Ascending => SortOrder::Descending,
-                    SortOrder::Descending => SortOrder::None,
-                    SortOrder::None => SortOrder::Ascending,
-                },
-                _ => SortOrder::Ascending,
-            }
-        };
-
-        if new_order == SortOrder::None {
-            // Clear sort through AppStateContainer
+        // Delegate sorting entirely to AppStateContainer
+        // Extract all values from state_container first
+        let (new_order, sorted_results_opt, last_execution_time, from_cache) =
             if let Some(ref state_container) = self.state_container {
-                state_container.clear_sort();
-            }
+                // Get the next sort order
+                let new_order = state_container.get_next_sort_order(column_index);
 
+                if new_order == SortOrder::None {
+                    // Clear sort - restore original order
+                    state_container.clear_sort();
+                }
+
+                // Perform the sort in AppStateContainer and get sorted results
+                let sorted_results_opt = state_container.sort_results_data(column_index);
+                let last_execution_time = state_container.get_last_execution_time();
+                let from_cache = state_container.is_results_from_cache();
+
+                (
+                    new_order,
+                    sorted_results_opt,
+                    last_execution_time,
+                    from_cache,
+                )
+            } else {
+                // Fallback if no AppStateContainer (shouldn't happen in normal operation)
+                self.buffer_mut()
+                    .set_status_message("Cannot sort - state container not available".to_string());
+                return;
+            };
+
+        // Now we can freely use self.buffer_mut() since state_container is no longer borrowed
+        if new_order == SortOrder::None {
             // Clear the filtered_data to restore original order from results.data
             self.buffer_mut().set_filtered_data(None);
 
@@ -4616,191 +4621,42 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Sort using original JSON values for proper type-aware comparison
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        if let Some(sorted_results) = sorted_results_opt {
+            // Update buffer with sorted results
+            self.buffer_mut().set_results(Some(sorted_results.clone()));
+            self.buffer_mut().set_filtered_data(None); // Force regeneration of string data
 
-                    if column_index < headers.len() {
-                        let column_name = headers[column_index];
-
-                        // Create a vector of (original_json_row, row_index) pairs for sorting
-                        let mut indexed_rows: Vec<(serde_json::Value, usize)> = results
-                            .data
-                            .iter()
-                            .enumerate()
-                            .map(|(i, row)| (row.clone(), i))
-                            .collect();
-
-                        // Sort based on the original JSON values
-                        indexed_rows.sort_by(|(row_a, _), (row_b, _)| {
-                            let val_a = row_a.get(column_name);
-                            let val_b = row_b.get(column_name);
-
-                            let cmp = match (val_a, val_b) {
-                                (
-                                    Some(serde_json::Value::Number(a)),
-                                    Some(serde_json::Value::Number(b)),
-                                ) => {
-                                    // Numeric comparison - this handles integers and floats properly
-                                    let a_f64 = a.as_f64().unwrap_or(0.0);
-                                    let b_f64 = b.as_f64().unwrap_or(0.0);
-                                    a_f64.partial_cmp(&b_f64).unwrap_or(Ordering::Equal)
-                                }
-                                (
-                                    Some(serde_json::Value::String(a)),
-                                    Some(serde_json::Value::String(b)),
-                                ) => {
-                                    // String comparison
-                                    a.cmp(b)
-                                }
-                                (
-                                    Some(serde_json::Value::Bool(a)),
-                                    Some(serde_json::Value::Bool(b)),
-                                ) => {
-                                    // Boolean comparison (false < true)
-                                    a.cmp(b)
-                                }
-                                (Some(serde_json::Value::Null), Some(serde_json::Value::Null)) => {
-                                    Ordering::Equal
-                                }
-                                (Some(serde_json::Value::Null), Some(_)) => {
-                                    // NULL comes first
-                                    Ordering::Less
-                                }
-                                (Some(_), Some(serde_json::Value::Null)) => {
-                                    // NULL comes first
-                                    Ordering::Greater
-                                }
-                                (None, None) => Ordering::Equal,
-                                (None, Some(_)) => Ordering::Less,
-                                (Some(_), None) => Ordering::Greater,
-                                // Mixed type comparison - fall back to string representation
-                                (Some(a), Some(b)) => {
-                                    let a_str = match a {
-                                        serde_json::Value::String(s) => s.clone(),
-                                        other => other.to_string(),
-                                    };
-                                    let b_str = match b {
-                                        serde_json::Value::String(s) => s.clone(),
-                                        other => other.to_string(),
-                                    };
-                                    a_str.cmp(&b_str)
-                                }
-                            };
-
-                            match new_order {
-                                SortOrder::Ascending => cmp,
-                                SortOrder::Descending => cmp.reverse(),
-                                SortOrder::None => Ordering::Equal,
-                            }
-                        });
-
-                        // Rebuild the QueryResponse with sorted data
-                        let sorted_data: Vec<serde_json::Value> =
-                            indexed_rows.into_iter().map(|(row, _)| row).collect();
-
-                        // Update both the results and clear filtered_data to force regeneration
-                        let mut new_results = results.clone();
-                        new_results.data = sorted_data;
-                        self.buffer_mut().set_results(Some(new_results.clone()));
-                        self.buffer_mut().set_filtered_data(None); // Force regeneration of string data
-
-                        // Also update AppStateContainer with sorted results
-                        if let Some(ref state_container) = self.state_container {
-                            // Sorting doesn't change execution time or cache status, so use existing values
-                            let last_execution_time = state_container.get_last_execution_time();
-                            let from_cache = state_container.is_results_from_cache();
-                            if let Err(e) = state_container.set_results(
-                                new_results,
-                                last_execution_time,
-                                from_cache,
-                            ) {
-                                warn!(target: "results", "Failed to update sorted results in AppStateContainer: {}", e);
-                            }
-                        }
-                    }
+            // Update AppStateContainer with sorted results
+            if let Some(ref state_container) = self.state_container {
+                if let Err(e) =
+                    state_container.set_results(sorted_results, last_execution_time, from_cache)
+                {
+                    warn!(target: "results", "Failed to update sorted results in AppStateContainer: {}", e);
                 }
             }
-        } else if let Some(data) = self.buffer().get_filtered_data() {
-            // Fallback to string-based sorting if no JSON data available
-            // Clone the data, sort it, and set it back
-            let mut sorted_data = data.clone();
-            sorted_data.sort_by(|a, b| {
-                if column_index >= a.len() || column_index >= b.len() {
-                    return Ordering::Equal;
-                }
 
-                let cell_a = &a[column_index];
-                let cell_b = &b[column_index];
+            // Update buffer's sort state
+            self.buffer_mut().set_sort_column(Some(column_index));
+            self.buffer_mut().set_sort_order(new_order.clone());
 
-                // Try numeric comparison first
-                if let (Ok(num_a), Ok(num_b)) = (cell_a.parse::<f64>(), cell_b.parse::<f64>()) {
-                    let cmp = num_a.partial_cmp(&num_b).unwrap_or(Ordering::Equal);
-                    match new_order {
-                        SortOrder::Ascending => cmp,
-                        SortOrder::Descending => cmp.reverse(),
-                        SortOrder::None => Ordering::Equal,
-                    }
-                } else {
-                    // String comparison
-                    let cmp = cell_a.cmp(cell_b);
-                    match new_order {
-                        SortOrder::Ascending => cmp,
-                        SortOrder::Descending => cmp.reverse(),
-                        SortOrder::None => Ordering::Equal,
-                    }
+            // Reset table state but preserve current column position
+            let current_column = self.buffer().get_current_column();
+            self.reset_table_state();
+            self.buffer_mut().set_current_column(current_column);
+
+            self.buffer_mut().set_status_message(format!(
+                "Sorted by column {} ({}) - type-aware",
+                column_index + 1,
+                match new_order {
+                    SortOrder::Ascending => "ascending",
+                    SortOrder::Descending => "descending",
+                    SortOrder::None => "none",
                 }
-            });
-            self.buffer_mut().set_filtered_data(Some(sorted_data));
+            ));
+        } else {
+            self.buffer_mut()
+                .set_status_message("No data available to sort".to_string());
         }
-
-        // Update AppStateContainer with the sort
-        if let Some(ref state_container) = self.state_container {
-            // Get column name for logging
-            let column_name = if let Some(results) = self.buffer().get_results() {
-                if let Some(first_row) = results.data.first() {
-                    if let Some(obj) = first_row.as_object() {
-                        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                        if column_index < headers.len() {
-                            headers[column_index].to_string()
-                        } else {
-                            format!("Column {}", column_index)
-                        }
-                    } else {
-                        format!("Column {}", column_index)
-                    }
-                } else {
-                    format!("Column {}", column_index)
-                }
-            } else {
-                format!("Column {}", column_index)
-            };
-
-            let row_count = self.get_row_count();
-            state_container.sort_by_column(column_index, column_name, row_count);
-        }
-
-        // Local state is now managed in AppStateContainer
-        // Buffer's sort state is updated via set_sort_column and set_sort_order
-        self.buffer_mut().set_sort_column(Some(column_index));
-        self.buffer_mut().set_sort_order(new_order.clone());
-
-        // Reset table state but preserve current column position
-        let current_column = self.buffer().get_current_column();
-        self.reset_table_state();
-        self.buffer_mut().set_current_column(current_column);
-
-        self.buffer_mut().set_status_message(format!(
-            "Sorted by column {} ({}) - type-aware",
-            column_index + 1,
-            match new_order {
-                SortOrder::Ascending => "ascending",
-                SortOrder::Descending => "descending",
-                SortOrder::None => "none",
-            }
-        ));
     }
 
     fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
