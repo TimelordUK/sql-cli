@@ -2888,9 +2888,13 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     let buffer_id = buffer.get_id();
                     buffer.set_results(Some(response.clone()));
+                    // Clear filtered_data since we have new query results
+                    buffer.set_filtered_data(None);
                     info!(target: "buffer", "Stored {} results in buffer {}", row_count, buffer_id);
                 }
                 self.buffer_mut().set_results(Some(response.clone())); // Keep for compatibility during migration
+                                                                       // Also clear filtered_data in the compatibility path
+                self.buffer_mut().set_filtered_data(None);
 
                 // Also update AppStateContainer with results and performance metrics
                 if let Some(ref state_container) = self.state_container {
