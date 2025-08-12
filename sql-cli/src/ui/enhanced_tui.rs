@@ -144,13 +144,6 @@ impl EnhancedTuiApp {
     // --- State Container Access ---
     // Helper methods for accessing the state container during migration
 
-    // format_number_compact MOVED to AppStateContainer as a utility method
-
-    /// Check if help is visible
-    fn is_help_visible(&self) -> bool {
-        self.state_container.is_help_visible()
-    }
-
     /// Toggle help visibility
     fn toggle_help(&mut self) {
         self.state_container.toggle_help();
@@ -308,9 +301,13 @@ impl EnhancedTuiApp {
 
     // Helper to set input text with specific cursor position
     fn set_input_text_with_cursor(&mut self, text: String, cursor_pos: usize) {
-        let old_text = self.buffer().get_input_text();
-        let old_cursor = self.buffer().get_input_cursor_position();
-        let mode = self.buffer().get_mode();
+        let (old_text, old_cursor, mode) = {
+            let buffer = self.buffer();
+            let old_text = buffer.get_input_text();
+            let old_cursor = buffer.get_input_cursor_position();
+            let mode = buffer.get_mode();
+            (old_text, old_cursor, mode)
+        };
 
         // Log every input text change with cursor position
         info!(target: "input", "SET_INPUT_TEXT_WITH_CURSOR: '{}' (cursor {}) -> '{}' (cursor {}) (mode: {:?})", 
@@ -322,7 +319,7 @@ impl EnhancedTuiApp {
 
         // Transaction-like block for input updates
         {
-            let mut buffer = self.buffer_mut();
+            let buffer = self.buffer_mut();
             buffer.set_input_text(text.clone());
             buffer.set_input_cursor_position(cursor_pos);
         }
@@ -342,9 +339,10 @@ impl EnhancedTuiApp {
     // 2. self.input (tui_input widget)
     // 3. AppStateContainer's command_input
     fn sync_all_input_states(&mut self) {
-        let text = self.buffer().get_input_text();
-        let cursor = self.buffer().get_input_cursor_position();
-        let mode = self.buffer().get_mode();
+        let buffer = self.buffer();
+        let text = buffer.get_input_text();
+        let cursor = buffer.get_input_cursor_position();
+        let mode = buffer.get_mode();
 
         // Get caller for debugging
         let backtrace_str = std::backtrace::Backtrace::capture().to_string();
@@ -401,17 +399,15 @@ impl EnhancedTuiApp {
     // Helper to get visual cursor position (for rendering)
     fn get_visual_cursor(&self) -> (usize, usize) {
         // Get text and cursor from appropriate source based on mode
-        let (text, cursor) = match self.buffer().get_mode() {
+        let buffer = self.buffer();
+        let (text, cursor) = match buffer.get_mode() {
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 // Special modes use self.input directly
                 (self.input.value().to_string(), self.input.cursor())
             }
             _ => {
                 // Other modes use buffer
-                (
-                    self.buffer().get_input_text(),
-                    self.buffer().get_input_cursor_position(),
-                )
+                (buffer.get_input_text(), buffer.get_input_cursor_position())
             }
         };
 
@@ -467,6 +463,7 @@ impl EnhancedTuiApp {
         }
 
         // Create buffer manager first
+
         let mut buffer_manager = BufferManager::new();
         let mut buffer = buffer::Buffer::new(1);
         // Sync initial settings from config
