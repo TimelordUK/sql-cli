@@ -1,0 +1,246 @@
+# This is an improved version of the release workflow
+# Copy this content to .github/workflows/release.yml
+
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+      custom_version:
+        description: 'Custom version (only used if release_type is custom, e.g., 1.16.1)'
+        required: false
+        type: string
+      release_notes:
+        description: 'Additional release notes (optional)'
+        required: false
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      release_notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine version
+        id: version
+        run: |
+          # Get current version from Cargo.toml
+          CURRENT_VERSION=$(grep "^version" sql-cli/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Current version: $CURRENT_VERSION"
+          
+          # Parse version components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          
+          # Determine new version based on input
+          if [ "${{ github.event.inputs.release_type }}" = "custom" ]; then
+            if [ -z "${{ github.event.inputs.custom_version }}" ]; then
+              echo "Error: Custom version not provided"
+              exit 1
+            fi
+            NEW_VERSION="${{ github.event.inputs.custom_version }}"
+          elif [ "${{ github.event.inputs.release_type }}" = "major" ]; then
+            NEW_VERSION="$((MAJOR + 1)).0.0"
+          elif [ "${{ github.event.inputs.release_type }}" = "minor" ]; then
+            NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
+          else
+            NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          fi
+          
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update version in Cargo.toml
+        run: |
+          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.new_version }}\"/" sql-cli/Cargo.toml
+
+      - name: Generate comprehensive release notes
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.new_version }}"
+          LAST_TAG=$(git tag --sort=-version:refname | head -n 1 || echo "")
+          
+          # Get commit statistics
+          if [ -n "$LAST_TAG" ]; then
+            COMMIT_COUNT=$(git rev-list --count ${LAST_TAG}..HEAD 2>/dev/null || echo "0")
+            FILES_CHANGED=$(git diff --name-only ${LAST_TAG}..HEAD 2>/dev/null | wc -l || echo "0")
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%H|%s|%b" 2>/dev/null || echo "")
+          else
+            COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+            FILES_CHANGED=$(git ls-files | wc -l || echo "0")
+            COMMITS=$(git log --pretty=format:"%H|%s|%b" 2>/dev/null || echo "")
+          fi
+          
+          {
+            echo "# SQL CLI v${VERSION}"
+            echo ""
+            echo "**Release Date:** $(date +'%B %d, %Y')"
+            echo ""
+            
+            # Add custom notes if provided
+            if [ -n "${{ github.event.inputs.release_notes }}" ]; then
+              echo "## 📢 Release Notes"
+              echo "${{ github.event.inputs.release_notes }}"
+              echo ""
+            fi
+            
+            # Add statistics
+            echo "## 📊 Release Overview"
+            echo "- **Commits in this release:** $COMMIT_COUNT"
+            echo "- **Files updated:** $FILES_CHANGED"
+            echo ""
+            
+            # Detect and highlight features
+            echo "## ✨ Highlights"
+            echo ""
+            
+            # Check for visual enhancements
+            if echo "$COMMITS" | grep -qi "cell.*render\|visual\|key.*indicator\|fade\|theme"; then
+              echo "### 🎨 Visual Improvements"
+              if echo "$COMMITS" | grep -qi "key.*indicator"; then
+                echo "- **Key Press Indicator**: Visual feedback for key presses with fade effects (F12 to toggle)"
+              fi
+              if echo "$COMMITS" | grep -qi "cell.*highlight"; then
+                echo "- **Enhanced Cell Selection**: Multiple rendering modes for better visual feedback"
+              fi
+              echo ""
+            fi
+            
+            # Check for debugging improvements
+            if echo "$COMMITS" | grep -qi "debug\|log\|diagnostic"; then
+              echo "### 🔍 Enhanced Debugging"
+              if echo "$COMMITS" | grep -qi "dual.*log"; then
+                echo "- **Dual Logging**: Simultaneous file and in-memory logging"
+              fi
+              echo "- **Better Diagnostics**: Improved error messages and state dumps"
+              echo ""
+            fi
+            
+            # Check for state management
+            if echo "$COMMITS" | grep -qi "state.*container\|refactor.*v[0-9]"; then
+              echo "### 🏗️ Architecture Improvements"
+              echo "- **State Management**: Continued migration to centralized AppStateContainer"
+              echo "- **Code Quality**: Transaction-like state updates for better consistency"
+              echo ""
+            fi
+            
+            # Check for data integrity
+            if echo "$COMMITS" | grep -qi "history.*protect\|corrupt\|atomic"; then
+              echo "### 💾 Data Protection"
+              echo "- **History Recovery**: Automatic recovery from corrupted files"
+              echo "- **Atomic Writes**: Safer file operations to prevent data loss"
+              echo ""
+            fi
+            
+            # Traditional categorized changes
+            echo "## 📝 Changes by Category"
+            echo ""
+            
+            # Features
+            if [ -n "$LAST_TAG" ]; then
+              FEATURES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" | sed 's/^feat[^:]*: //' | grep -v "bump version" || true)
+              if [ -n "$FEATURES" ]; then
+                echo "### 🚀 New Features"
+                echo "$FEATURES" | while IFS= read -r line; do
+                  [ -n "$line" ] && echo "- $line"
+                done
+                echo ""
+              fi
+              
+              # Bug Fixes
+              FIXES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" | sed 's/^fix[^:]*: //' | grep -v "bump version" || true)
+              if [ -n "$FIXES" ]; then
+                echo "### 🐛 Bug Fixes"
+                echo "$FIXES" | while IFS= read -r line; do
+                  [ -n "$line" ] && echo "- $line"
+                done
+                echo ""
+              fi
+              
+              # Refactoring
+              REFACTORS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^refactor(\(.*\))?:" | sed 's/^refactor[^:]*: //' | grep -v "bump version" || true)
+              if [ -n "$REFACTORS" ]; then
+                echo "### 🔧 Refactoring"
+                echo "$REFACTORS" | while IFS= read -r line; do
+                  [ -n "$line" ] && echo "- $line"
+                done
+                echo ""
+              fi
+              
+              # Documentation
+              DOCS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" | sed 's/^docs[^:]*: //' | grep -v "bump version" || true)
+              if [ -n "$DOCS" ]; then
+                echo "### 📚 Documentation"
+                echo "$DOCS" | while IFS= read -r line; do
+                  [ -n "$line" ] && echo "- $line"
+                done
+                echo ""
+              fi
+            fi
+            
+            # Collapsible full commit list
+            echo "<details>"
+            echo "<summary>📋 View all commits</summary>"
+            echo ""
+            if [ -n "$LAST_TAG" ]; then
+              git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%an)" | grep -v "bump version"
+            else
+              git log --pretty=format:"- %s (%an)" | head -20
+            fi
+            echo ""
+            echo "</details>"
+            echo ""
+            
+            # Key features section
+            echo "## 🎯 Key Features"
+            echo ""
+            echo "- **Instant Data Preview**: CSV/JSON files load immediately"
+            echo "- **Visual Feedback**: Key press indicator, cell highlighting"
+            echo "- **Advanced Navigation**: Vim-style keys, viewport/cursor lock"
+            echo "- **Powerful Search**: Regular search (Ctrl+F), fuzzy filter (Ctrl+/)"
+            echo "- **Data Export**: Save as CSV or JSON"
+            echo "- **Debug Mode**: Press F5 for comprehensive state information"
+            echo ""
+            
+            # Installation
+            echo "## 📦 Installation"
+            echo ""
+            echo "Download the binary for your platform from the assets below."
+            echo ""
+            
+            echo "---"
+            echo "**Thank you for using SQL CLI!** 🎉"
+            echo ""
+            echo "Report issues: [GitHub Issues](https://github.com/TimelordUK/sql-cli/issues)"
+            
+          } > RELEASE_NOTES.md
+          
+          # Save to output
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # ... rest of the workflow remains the same ...
