@@ -336,6 +336,39 @@ impl EnhancedTuiApp {
             .set_input_text_with_cursor(text, cursor_pos);
     }
 
+    // MASTER SYNC METHOD - Use this whenever input changes!
+    // This ensures all three input states stay synchronized:
+    // 1. Buffer's input_text and cursor
+    // 2. self.input (tui_input widget)
+    // 3. AppStateContainer's command_input
+    fn sync_all_input_states(&mut self) {
+        let text = self.buffer().get_input_text();
+        let cursor = self.buffer().get_input_cursor_position();
+        let mode = self.buffer().get_mode();
+
+        // Get caller for debugging
+        let backtrace_str = std::backtrace::Backtrace::capture().to_string();
+        let caller = backtrace_str
+            .lines()
+            .skip(3) // Skip backtrace frames
+            .find(|line| line.contains("enhanced_tui") && !line.contains("sync_all_input_states"))
+            .and_then(|line| line.split("::").last())
+            .unwrap_or("unknown");
+
+        // Update the tui_input widget
+        self.input = tui_input::Input::new(text.clone()).with_cursor(cursor);
+
+        // Sync with AppStateContainer
+        self.state_container
+            .set_input_text_with_cursor(text.clone(), cursor);
+
+        info!(target: "input", "SYNC_ALL [{}]: text='{}', cursor={}, mode={:?}", 
+              caller,
+              if text.len() > 50 { format!("{}...", &text[..50]) } else { text.clone() },
+              cursor,
+              mode);
+    }
+
     // Helper to clear input
     fn clear_input(&mut self) {
         self.set_input_text(String::new());
@@ -1205,9 +1238,8 @@ impl EnhancedTuiApp {
                             )
                         };
 
-                        // Update the appropriate input field based on edit mode
-                        // Always use single-line mode
-                        self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
+                        // Sync all input states
+                        self.sync_all_input_states();
                         self.buffer_mut().set_status_message(debug_msg);
                     }
                 }
@@ -1228,9 +1260,8 @@ impl EnhancedTuiApp {
                         // Sync the input field with buffer (for now, until we complete migration)
                         let text = buffer.get_input_text();
 
-                        // Update the appropriate input field based on edit mode
-                        // Always use single-line mode
-                        self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
+                        // Sync all input states
+                        self.sync_all_input_states();
                         self.buffer_mut()
                             .set_status_message("Next command from history".to_string());
                     }
@@ -1247,9 +1278,8 @@ impl EnhancedTuiApp {
 
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     if buffer.navigate_history_up(&history_commands) {
-                        let text = buffer.get_input_text();
-                        // Always use single-line mode
-                        self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
+                        // Sync all input states
+                        self.sync_all_input_states();
                         self.buffer_mut()
                             .set_status_message("Previous command (Alt+Up)".to_string());
                     }
@@ -1266,9 +1296,8 @@ impl EnhancedTuiApp {
 
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     if buffer.navigate_history_down(&history_commands) {
-                        let text = buffer.get_input_text();
-                        // Always use single-line mode
-                        self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
+                        // Sync all input states
+                        self.sync_all_input_states();
                         self.buffer_mut()
                             .set_status_message("Next command (Alt+Down)".to_string());
                     }
@@ -1577,11 +1606,8 @@ impl EnhancedTuiApp {
 
                     if !last_query.is_empty() {
                         debug!(target: "buffer", "Restoring last_query to input_text: '{}'", last_query);
-                        self.buffer_mut().set_input_text(last_query.clone());
-                        self.buffer_mut()
-                            .set_input_cursor_position(last_query.len());
-                        self.input =
-                            tui_input::Input::new(last_query.clone()).with_cursor(last_query.len());
+                        // Use the helper method to sync all three input states
+                        self.set_input_text(last_query.clone());
                     } else if !current_input.is_empty() {
                         debug!(target: "buffer", "No last_query but input_text has content, keeping: '{}'", current_input);
                     } else {
@@ -1709,11 +1735,8 @@ impl EnhancedTuiApp {
                     let last_query = self.buffer().get_last_query();
 
                     if !last_query.is_empty() {
-                        self.buffer_mut().set_input_text(last_query.clone());
-                        self.buffer_mut()
-                            .set_input_cursor_position(last_query.len());
-                        self.input =
-                            tui_input::Input::new(last_query.clone()).with_cursor(last_query.len());
+                        // Use helper to sync all states
+                        self.set_input_text(last_query.clone());
                     }
 
                     self.buffer_mut().set_mode(AppMode::Command);
@@ -2042,6 +2065,7 @@ impl EnhancedTuiApp {
 
         // Clear input field for search mode use
         self.input = tui_input::Input::default();
+        // Note: Not syncing here as search modes use input differently
     }
 
     fn handle_search_modes_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -2146,9 +2170,8 @@ impl EnhancedTuiApp {
                     // This is the SQL that was saved when we entered the search mode
                     if !sql.is_empty() {
                         debug!(target: "search", "Restoring saved SQL to input_text: '{}'", sql);
-                        self.buffer_mut().set_input_text(sql.clone());
-                        self.buffer_mut().set_input_cursor_position(cursor);
-                        self.input = tui_input::Input::new(sql).with_cursor(cursor);
+                        // Use helper to sync all states
+                        self.set_input_text_with_cursor(sql, cursor);
                     } else {
                         debug!(target: "search", "No saved SQL to restore, keeping input_text as is");
                     }
@@ -2212,9 +2235,8 @@ impl EnhancedTuiApp {
                 if let Some((sql, cursor)) = self.search_modes_widget.exit_mode() {
                     debug!(target: "search", "Cancel: Restoring saved SQL: '{}', cursor: {}", sql, cursor);
                     if !sql.is_empty() {
-                        self.buffer_mut().set_input_text(sql.clone());
-                        self.buffer_mut().set_input_cursor_position(cursor);
-                        self.input = tui_input::Input::new(sql).with_cursor(cursor);
+                        // Use helper to sync all states
+                        self.set_input_text_with_cursor(sql, cursor);
                     }
                 } else {
                     debug!(target: "search", "Cancel: No saved SQL from widget");
@@ -2424,9 +2446,8 @@ impl EnhancedTuiApp {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 } else {
                     // Fallback: restore from buffer's stored text if undo fails
-                    let text = self.buffer().get_input_text();
-                    let cursor = self.buffer().get_input_cursor_position();
-                    self.input = tui_input::Input::new(text.clone()).with_cursor(cursor);
+                    // Sync all input states
+                    self.sync_all_input_states();
                 }
 
                 // Cancel column search and return to results
@@ -2455,9 +2476,8 @@ impl EnhancedTuiApp {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 } else {
                     // Fallback: restore from buffer's stored text if undo fails
-                    let text = self.buffer().get_input_text();
-                    let cursor = self.buffer().get_input_cursor_position();
-                    self.input = tui_input::Input::new(text.clone()).with_cursor(cursor);
+                    // Sync all input states
+                    self.sync_all_input_states();
                 }
 
                 self.buffer_mut().set_mode(AppMode::Results);
@@ -3142,11 +3162,8 @@ impl EnhancedTuiApp {
             // Set cursor to correct position
             if let Some(buffer) = self.buffer_manager.current_mut() {
                 buffer.set_input_cursor_position(cursor_pos_new);
-                // Sync for rendering
-                if self.buffer().get_edit_mode() == EditMode::SingleLine {
-                    self.input =
-                        tui_input::Input::new(new_query.clone()).with_cursor(cursor_pos_new);
-                }
+                // Sync all input states after undo/redo
+                self.sync_all_input_states();
             }
 
             // Update completion state
@@ -4427,10 +4444,9 @@ impl EnhancedTuiApp {
     fn update_parser_for_current_buffer(&mut self) {
         // Sync the input field with the current buffer's text
         if let Some(buffer) = self.buffer_manager.current() {
-            let text = buffer.get_input_text();
-            let cursor_pos = buffer.get_input_cursor_position();
-            self.input = tui_input::Input::new(text.clone()).with_cursor(cursor_pos);
-            debug!(target: "buffer", "Synced input field with buffer text: '{}' (cursor: {})", text, cursor_pos);
+            // Sync all input states when switching buffers
+            self.sync_all_input_states();
+            debug!(target: "buffer", "Synced all input states after buffer switch");
         }
 
         // Update the parser's schema based on the current buffer's data source
@@ -4919,6 +4935,16 @@ impl EnhancedTuiApp {
         } else {
             // Always get input text through the buffer API for consistency
             let input_text_string = self.get_input_text();
+
+            // Debug log to track rendering issues
+            trace!(target: "render", "Rendering input: text='{}', mode={:?}, cursor={}",
+                   if input_text_string.len() > 50 {
+                       format!("{}...", &input_text_string[..50])
+                   } else {
+                       input_text_string.clone()
+                   },
+                   self.buffer().get_mode(),
+                   self.get_input_cursor());
 
             // Get history search query if in history mode
             let history_query_string = if self.buffer().get_mode() == AppMode::History {
