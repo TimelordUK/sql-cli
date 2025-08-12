@@ -9,7 +9,8 @@ use crate::stats_widget::StatsWidget;
 // TODO: Add DebugWidget when it implements DebugInfoProvider
 // use crate::debug_widget::DebugWidget;
 use crate::widget_traits::DebugInfoProvider;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use arboard::Clipboard;
 use chrono::{DateTime, Local};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::cell::RefCell;
@@ -3749,9 +3750,29 @@ impl AppStateContainer {
     }
 
     /// Yank a cell to clipboard
-    pub fn yank_cell(&self, row: usize, column: usize, value: String, preview: String) {
+    pub fn yank_cell(
+        &self,
+        row: usize,
+        column: usize,
+        value: String,
+        preview: String,
+    ) -> Result<()> {
         let description = format!("cell at [{}, {}]", row, column);
         let size_bytes = value.len();
+
+        // Copy to system clipboard
+        let mut system_clipboard = Clipboard::new()?;
+        system_clipboard.set_text(&value)?;
+
+        // Verify clipboard write
+        let clipboard_content = system_clipboard.get_text().unwrap_or_default();
+        if clipboard_content != value {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                value.len(),
+                clipboard_content.len()
+            ));
+        }
 
         let item = YankedItem {
             description: description.clone(),
@@ -3779,12 +3800,28 @@ impl AppStateContainer {
                 ),
             );
         }
+
+        Ok(())
     }
 
     /// Yank a row to clipboard
-    pub fn yank_row(&self, row: usize, value: String, preview: String) {
+    pub fn yank_row(&self, row: usize, value: String, preview: String) -> Result<()> {
         let description = format!("row {}", row);
         let size_bytes = value.len();
+
+        // Copy to system clipboard
+        let mut system_clipboard = Clipboard::new()?;
+        system_clipboard.set_text(&value)?;
+
+        // Verify clipboard write
+        let clipboard_content = system_clipboard.get_text().unwrap_or_default();
+        if clipboard_content != value {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                value.len(),
+                clipboard_content.len()
+            ));
+        }
 
         let item = YankedItem {
             description: description.clone(),
@@ -3808,6 +3845,8 @@ impl AppStateContainer {
                 ),
             );
         }
+
+        Ok(())
     }
 
     /// Yank a column to clipboard
@@ -3817,10 +3856,24 @@ impl AppStateContainer {
         column_index: usize,
         value: String,
         preview: String,
-    ) {
+    ) -> Result<()> {
         let description = format!("column '{}'", column_name);
         let size_bytes = value.len();
         let row_count = value.lines().count();
+
+        // Copy to system clipboard
+        let mut system_clipboard = Clipboard::new()?;
+        system_clipboard.set_text(&value)?;
+
+        // Verify clipboard write
+        let clipboard_content = system_clipboard.get_text().unwrap_or_default();
+        if clipboard_content != value {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                value.len(),
+                clipboard_content.len()
+            ));
+        }
 
         let item = YankedItem {
             description: description.clone(),
@@ -3845,12 +3898,28 @@ impl AppStateContainer {
                 ),
             );
         }
+
+        Ok(())
     }
 
     /// Yank all data to clipboard
-    pub fn yank_all(&self, value: String, preview: String) {
+    pub fn yank_all(&self, value: String, preview: String) -> Result<()> {
         let size_bytes = value.len();
         let row_count = value.lines().count();
+
+        // Copy to system clipboard
+        let mut system_clipboard = Clipboard::new()?;
+        system_clipboard.set_text(&value)?;
+
+        // Verify clipboard write
+        let clipboard_content = system_clipboard.get_text().unwrap_or_default();
+        if clipboard_content != value {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                value.len(),
+                clipboard_content.len()
+            ));
+        }
 
         let item = YankedItem {
             description: "all data".to_string(),
@@ -3869,12 +3938,28 @@ impl AppStateContainer {
                 format!("Yanked all data: {} rows ({} bytes)", row_count, size_bytes),
             );
         }
+
+        Ok(())
     }
 
     /// Yank a test case to clipboard
-    pub fn yank_test_case(&self, value: String) {
+    pub fn yank_test_case(&self, value: String) -> Result<()> {
         let size_bytes = value.len();
         let line_count = value.lines().count();
+
+        // Copy to system clipboard
+        let mut system_clipboard = Clipboard::new()?;
+        system_clipboard.set_text(&value)?;
+
+        // Verify clipboard write
+        let clipboard_content = system_clipboard.get_text().unwrap_or_default();
+        if clipboard_content != value {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                value.len(),
+                clipboard_content.len()
+            ));
+        }
 
         let item = YankedItem {
             description: "Test Case".to_string(),
@@ -3896,12 +3981,28 @@ impl AppStateContainer {
                 ),
             );
         }
+
+        Ok(())
     }
 
     /// Yank debug context to clipboard
-    pub fn yank_debug_context(&self, value: String) {
+    pub fn yank_debug_context(&self, value: String) -> Result<()> {
         let size_bytes = value.len();
         let line_count = value.lines().count();
+
+        // Copy to system clipboard
+        let mut system_clipboard = Clipboard::new()?;
+        system_clipboard.set_text(&value)?;
+
+        // Verify clipboard write
+        let clipboard_content = system_clipboard.get_text().unwrap_or_default();
+        if clipboard_content != value {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                value.len(),
+                clipboard_content.len()
+            ));
+        }
 
         let item = YankedItem {
             description: "Debug Context".to_string(),
@@ -3923,6 +4024,8 @@ impl AppStateContainer {
                 ),
             );
         }
+
+        Ok(())
     }
 
     /// Clear clipboard
@@ -3940,6 +4043,31 @@ impl AppStateContainer {
     /// Get clipboard statistics for debug display
     pub fn get_clipboard_stats(&self) -> String {
         self.clipboard.borrow().get_stats()
+    }
+
+    /// Read from system clipboard
+    pub fn read_from_clipboard(&self) -> Result<String> {
+        let mut system_clipboard = Clipboard::new()?;
+        let text = system_clipboard.get_text()?;
+        Ok(text)
+    }
+
+    /// Write to system clipboard without tracking
+    pub fn write_to_clipboard(&self, text: &str) -> Result<()> {
+        let mut system_clipboard = Clipboard::new()?;
+        system_clipboard.set_text(text)?;
+
+        // Verify the write
+        let clipboard_content = system_clipboard.get_text().unwrap_or_default();
+        if clipboard_content != text {
+            return Err(anyhow!(
+                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
+                text.len(),
+                clipboard_content.len()
+            ));
+        }
+
+        Ok(())
     }
 
     /// Get comprehensive results statistics

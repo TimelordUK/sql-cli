@@ -1,7 +1,7 @@
+use crate::app_state_container::AppStateContainer;
 use crate::buffer::BufferAPI;
 use crate::data_exporter::DataExporter;
 use anyhow::{anyhow, Result};
-use arboard::Clipboard;
 use serde_json::Value;
 
 /// Manages clipboard operations for data yanking
@@ -18,6 +18,7 @@ impl YankManager {
     /// Yank a single cell value to clipboard
     pub fn yank_cell(
         buffer: &dyn BufferAPI,
+        state_container: &AppStateContainer,
         row_index: usize,
         column_index: usize,
     ) -> Result<YankResult> {
@@ -48,28 +49,22 @@ impl YankManager {
             None => String::new(),
         };
 
-        // Copy to clipboard
-        let mut clipboard = Clipboard::new()?;
-        clipboard.set_text(&value)?;
-
-        // Verify clipboard write by reading it back
-        let clipboard_content = clipboard.get_text().unwrap_or_default();
-        let clipboard_len = clipboard_content.len();
-        if clipboard_content != value {
-            return Err(anyhow!(
-                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
-                value.len(),
-                clipboard_len
-            ));
-        }
-
-        // Prepare result
+        // Prepare display value
         let col_name = header.to_string();
         let display_value = if value.len() > 20 {
             format!("{}...", &value[..17])
         } else {
             value.clone()
         };
+
+        // Copy to clipboard using AppStateContainer
+        let clipboard_len = value.len();
+        state_container.yank_cell(
+            row_index,
+            column_index,
+            value.clone(),
+            display_value.clone(),
+        )?;
 
         Ok(YankResult {
             description: format!("{} ({} chars)", col_name, clipboard_len),
@@ -79,7 +74,11 @@ impl YankManager {
     }
 
     /// Yank an entire row as tab-separated values
-    pub fn yank_row(buffer: &dyn BufferAPI, row_index: usize) -> Result<YankResult> {
+    pub fn yank_row(
+        buffer: &dyn BufferAPI,
+        state_container: &AppStateContainer,
+        row_index: usize,
+    ) -> Result<YankResult> {
         let results = buffer
             .get_results()
             .ok_or_else(|| anyhow!("No results available"))?;
@@ -96,23 +95,16 @@ impl YankManager {
         // Use DataExporter's utility function
         let row_text = DataExporter::format_row_for_clipboard(obj);
 
-        // Copy to clipboard
-        let mut clipboard = Clipboard::new()?;
-        clipboard.set_text(&row_text)?;
-
-        // Verify clipboard write by reading it back
-        let clipboard_content = clipboard.get_text().unwrap_or_default();
-        let clipboard_len = clipboard_content.len();
-        if clipboard_content != row_text {
-            return Err(anyhow!(
-                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
-                row_text.len(),
-                clipboard_len
-            ));
-        }
-
         // Count values for preview
         let num_values = obj.len();
+
+        // Copy to clipboard using AppStateContainer
+        let clipboard_len = row_text.len();
+        state_container.yank_row(
+            row_index,
+            row_text.clone(),
+            format!("{} values", num_values),
+        )?;
 
         Ok(YankResult {
             description: format!("Row {} ({} chars)", row_index + 1, clipboard_len),
@@ -122,7 +114,11 @@ impl YankManager {
     }
 
     /// Yank an entire column
-    pub fn yank_column(buffer: &dyn BufferAPI, column_index: usize) -> Result<YankResult> {
+    pub fn yank_column(
+        buffer: &dyn BufferAPI,
+        state_container: &AppStateContainer,
+        column_index: usize,
+    ) -> Result<YankResult> {
         let results = buffer
             .get_results()
             .ok_or_else(|| anyhow!("No results available"))?;
@@ -167,26 +163,20 @@ impl YankManager {
         // Use Windows-compatible line endings (\r\n) for better clipboard compatibility
         let column_text = column_values.join("\r\n");
 
-        // Copy to clipboard
-        let mut clipboard = Clipboard::new()?;
-        clipboard.set_text(&column_text)?;
-
-        // Verify clipboard write by reading it back
-        let clipboard_content = clipboard.get_text().unwrap_or_default();
-        let clipboard_len = clipboard_content.len();
-        if clipboard_content != column_text {
-            return Err(anyhow!(
-                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
-                column_text.len(),
-                clipboard_len
-            ));
-        }
-
         let preview = if column_values.len() > 5 {
             format!("{} values", column_values.len())
         } else {
             column_values.join(", ")
         };
+
+        // Copy to clipboard using AppStateContainer
+        let clipboard_len = column_text.len();
+        state_container.yank_column(
+            header.to_string(),
+            column_index,
+            column_text.clone(),
+            preview.clone(),
+        )?;
 
         Ok(YankResult {
             description: format!("Column '{}' ({} chars)", header, clipboard_len),
@@ -196,7 +186,10 @@ impl YankManager {
     }
 
     /// Yank all data as TSV (Tab-Separated Values) for better Windows clipboard compatibility
-    pub fn yank_all(buffer: &dyn BufferAPI) -> Result<YankResult> {
+    pub fn yank_all(
+        buffer: &dyn BufferAPI,
+        state_container: &AppStateContainer,
+    ) -> Result<YankResult> {
         // Determine what data to use
         let data = if buffer.is_filter_active() || buffer.is_fuzzy_filter_active() {
             // Use filtered data if available
@@ -219,20 +212,8 @@ impl YankManager {
         let tsv_text = DataExporter::generate_tsv_text(&data)
             .ok_or_else(|| anyhow!("Failed to generate TSV"))?;
 
-        // Copy to clipboard
-        let mut clipboard = Clipboard::new()?;
-        clipboard.set_text(&tsv_text)?;
-
-        // Verify clipboard write by reading it back
-        let clipboard_content = clipboard.get_text().unwrap_or_default();
-        let clipboard_len = clipboard_content.len();
-        if clipboard_content != tsv_text {
-            return Err(anyhow!(
-                "Clipboard write verification failed. Expected {} chars, wrote {} chars",
-                tsv_text.len(),
-                clipboard_len
-            ));
-        }
+        // Copy to clipboard using AppStateContainer
+        let clipboard_len = tsv_text.len();
 
         // Create preview
         let row_count = data.len();
@@ -252,9 +233,13 @@ impl YankManager {
             ""
         };
 
+        // Call AppStateContainer's yank_all
+        let preview = format!("{} rows × {} columns", row_count, col_count);
+        state_container.yank_all(tsv_text.clone(), preview.clone())?;
+
         Ok(YankResult {
             description: format!("All data{} as TSV ({} chars)", filter_info, clipboard_len),
-            preview: format!("{} rows × {} columns", row_count, col_count),
+            preview,
             full_value: tsv_text,
         })
     }

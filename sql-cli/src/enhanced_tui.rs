@@ -3789,18 +3789,19 @@ impl EnhancedTuiApp {
                 .map(|(row, col, _, _)| (*row, *col))
                 .collect();
 
-            self.buffer_mut().set_search_matches(buffer_matches.clone());
-
             if !buffer_matches.is_empty() {
-                self.buffer_mut().set_search_match_index(0);
-                self.buffer_mut().set_current_match(Some(buffer_matches[0]));
                 let (row, _) = buffer_matches[0];
                 self.state_container.set_table_selected_row(Some(row));
-                self.buffer_mut()
-                    .set_status_message(format!("Found {} matches", buffer_matches.len()));
+
+                let buffer = self.buffer_mut();
+                buffer.set_search_matches(buffer_matches.clone());
+                buffer.set_search_match_index(0);
+                buffer.set_current_match(Some(buffer_matches[0]));
+                buffer.set_status_message(format!("Found {} matches", buffer_matches.len()));
             } else {
-                self.buffer_mut()
-                    .set_status_message("No matches found".to_string());
+                let buffer = self.buffer_mut();
+                buffer.set_status_message("No matches found".to_string());
+                buffer.set_search_matches(buffer_matches.clone());
             }
         }
     }
@@ -4545,17 +4546,10 @@ impl EnhancedTuiApp {
         if let Some(selected_row) = self.state_container.get_table_selected_row() {
             let column = self.buffer().get_current_column();
             debug!("Yanking cell at row={}, column={}", selected_row, column);
-            match YankManager::yank_cell(self.buffer(), selected_row, column) {
+            match YankManager::yank_cell(self.buffer(), &self.state_container, selected_row, column)
+            {
                 Ok(result) => {
-                    // Use AppStateContainer for clipboard management
-                    {
-                        self.state_container.yank_cell(
-                            selected_row,
-                            column,
-                            result.full_value.clone(),
-                            result.preview.clone(),
-                        );
-                    }
+                    // YankManager already handled clipboard via AppStateContainer
                     // Keep local copy for backward compatibility (will be removed later)
                     self.last_yanked = Some((result.description.clone(), result.preview.clone()));
                     let message = format!("Yanked cell: {}", result.full_value);
@@ -4575,16 +4569,9 @@ impl EnhancedTuiApp {
 
     fn yank_row(&mut self) {
         if let Some(selected_row) = self.state_container.get_table_selected_row() {
-            match YankManager::yank_row(self.buffer(), selected_row) {
+            match YankManager::yank_row(self.buffer(), &self.state_container, selected_row) {
                 Ok(result) => {
-                    // Use AppStateContainer for clipboard management
-                    {
-                        self.state_container.yank_row(
-                            selected_row,
-                            result.full_value.clone(),
-                            result.preview.clone(),
-                        );
-                    }
+                    // YankManager already handled clipboard via AppStateContainer
                     // Keep local copy for backward compatibility
                     self.last_yanked = Some((result.description.clone(), result.preview));
                     self.buffer_mut()
@@ -4600,23 +4587,9 @@ impl EnhancedTuiApp {
 
     fn yank_column(&mut self) {
         let column = self.buffer().get_current_column();
-        match YankManager::yank_column(self.buffer(), column) {
+        match YankManager::yank_column(self.buffer(), &self.state_container, column) {
             Ok(result) => {
-                // Use AppStateContainer for clipboard management
-                {
-                    // Extract column name from description (format: "column 'name'")
-                    let column_name = result
-                        .description
-                        .trim_start_matches("column '")
-                        .trim_end_matches("'")
-                        .to_string();
-                    self.state_container.yank_column(
-                        column_name,
-                        column,
-                        result.full_value.clone(),
-                        result.preview.clone(),
-                    );
-                }
+                // YankManager already handled clipboard via AppStateContainer
                 // Keep local copy for backward compatibility
                 self.last_yanked = Some((result.description.clone(), result.preview));
                 self.buffer_mut()
@@ -4630,13 +4603,9 @@ impl EnhancedTuiApp {
     }
 
     fn yank_all(&mut self) {
-        match YankManager::yank_all(self.buffer()) {
+        match YankManager::yank_all(self.buffer(), &self.state_container) {
             Ok(result) => {
-                // Use AppStateContainer for clipboard management
-                {
-                    self.state_container
-                        .yank_all(result.full_value.clone(), result.preview.clone());
-                }
+                // YankManager already handled clipboard via AppStateContainer
                 // Keep local copy for backward compatibility
                 self.last_yanked = Some((result.description.clone(), result.preview.clone()));
                 self.buffer_mut().set_status_message(format!(
@@ -4655,31 +4624,23 @@ impl EnhancedTuiApp {
     fn yank_as_test_case(&mut self) {
         let test_case = DebugInfo::generate_test_case(self.buffer());
 
-        match arboard::Clipboard::new() {
-            Ok(mut clipboard) => match clipboard.set_text(&test_case) {
-                Ok(_) => {
-                    self.buffer_mut().set_status_message(format!(
-                        "Copied complete test case to clipboard ({} lines)",
-                        test_case.lines().count()
-                    ));
-                    self.last_yanked = Some((
-                        "Test Case".to_string(),
-                        format!(
-                            "{}...",
-                            test_case.lines().take(3).collect::<Vec<_>>().join("; ")
-                        ),
-                    ));
-                }
-                Err(e) => {
-                    self.buffer_mut().set_status_message(format!(
-                        "Failed to copy test case to clipboard: {}",
-                        e
-                    ));
-                }
-            },
+        match self.state_container.yank_test_case(test_case.clone()) {
+            Ok(_) => {
+                self.buffer_mut().set_status_message(format!(
+                    "Copied complete test case to clipboard ({} lines)",
+                    test_case.lines().count()
+                ));
+                self.last_yanked = Some((
+                    "Test Case".to_string(),
+                    format!(
+                        "{}...",
+                        test_case.lines().take(3).collect::<Vec<_>>().join("; ")
+                    ),
+                ));
+            }
             Err(e) => {
                 self.buffer_mut()
-                    .set_status_message(format!("Failed to access clipboard: {}", e));
+                    .set_status_message(format!("Failed to copy test case to clipboard: {}", e));
             }
         }
     }
@@ -4688,112 +4649,97 @@ impl EnhancedTuiApp {
     fn yank_debug_with_context(&mut self) {
         let debug_context = DebugInfo::generate_debug_context(self.buffer());
 
-        // Use AppStateContainer for clipboard management
+        match self
+            .state_container
+            .yank_debug_context(debug_context.clone())
         {
-            self.state_container
-                .yank_debug_context(debug_context.clone());
-        }
-
-        match arboard::Clipboard::new() {
-            Ok(mut clipboard) => match clipboard.set_text(&debug_context) {
-                Ok(_) => {
-                    self.buffer_mut().set_status_message(format!(
-                        "Copied debug context to clipboard ({} lines)",
-                        debug_context.lines().count()
-                    ));
-                    self.last_yanked = Some((
-                        "Debug Context".to_string(),
-                        "Query context with data for test creation".to_string(),
-                    ));
-                }
-                Err(e) => {
-                    self.buffer_mut()
-                        .set_status_message(format!("Failed to copy debug context: {}", e));
-                }
-            },
+            Ok(_) => {
+                self.buffer_mut().set_status_message(format!(
+                    "Copied debug context to clipboard ({} lines)",
+                    debug_context.lines().count()
+                ));
+                self.last_yanked = Some((
+                    "Debug Context".to_string(),
+                    "Query context with data for test creation".to_string(),
+                ));
+            }
             Err(e) => {
                 self.buffer_mut()
-                    .set_status_message(format!("Failed to access clipboard: {}", e));
+                    .set_status_message(format!("Failed to copy debug context: {}", e));
             }
         }
     }
 
     fn paste_from_clipboard(&mut self) {
         // Paste from system clipboard into the current input field
-        match arboard::Clipboard::new() {
-            Ok(mut clipboard) => match clipboard.get_text() {
-                Ok(text) => {
-                    match self.buffer().get_mode() {
-                        AppMode::Command => {
-                            // Always use single-line mode paste
-                            // Get current cursor position
-                            let cursor_pos = self.get_input_cursor();
-                            let current_value = self.get_input_text();
+        match self.state_container.read_from_clipboard() {
+            Ok(text) => {
+                match self.buffer().get_mode() {
+                    AppMode::Command => {
+                        // Always use single-line mode paste
+                        // Get current cursor position
+                        let cursor_pos = self.get_input_cursor();
+                        let current_value = self.get_input_text();
 
-                            // Insert at cursor position
-                            let mut new_value = String::new();
-                            new_value.push_str(&current_value[..cursor_pos]);
-                            new_value.push_str(&text);
-                            new_value.push_str(&current_value[cursor_pos..]);
+                        // Insert at cursor position
+                        let mut new_value = String::new();
+                        new_value.push_str(&current_value[..cursor_pos]);
+                        new_value.push_str(&text);
+                        new_value.push_str(&current_value[cursor_pos..]);
 
-                            self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
+                        self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
 
-                            self.buffer_mut()
-                                .set_status_message(format!("Pasted {} characters", text.len()));
-                        }
-                        AppMode::Filter
-                        | AppMode::FuzzyFilter
-                        | AppMode::Search
-                        | AppMode::ColumnSearch => {
-                            // For search/filter modes, append to current pattern
-                            let cursor_pos = self.get_input_cursor();
-                            let current_value = self.get_input_text();
+                        self.buffer_mut()
+                            .set_status_message(format!("Pasted {} characters", text.len()));
+                    }
+                    AppMode::Filter
+                    | AppMode::FuzzyFilter
+                    | AppMode::Search
+                    | AppMode::ColumnSearch => {
+                        // For search/filter modes, append to current pattern
+                        let cursor_pos = self.get_input_cursor();
+                        let current_value = self.get_input_text();
 
-                            let mut new_value = String::new();
-                            new_value.push_str(&current_value[..cursor_pos]);
-                            new_value.push_str(&text);
-                            new_value.push_str(&current_value[cursor_pos..]);
+                        let mut new_value = String::new();
+                        new_value.push_str(&current_value[..cursor_pos]);
+                        new_value.push_str(&text);
+                        new_value.push_str(&current_value[cursor_pos..]);
 
-                            self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
+                        self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
 
-                            // Update the appropriate filter/search state
-                            match self.buffer().get_mode() {
-                                AppMode::Filter => {
-                                    self.get_filter_state_mut().pattern = self.get_input_text();
-                                    self.apply_filter();
-                                }
-                                AppMode::FuzzyFilter => {
-                                    let input_text = self.get_input_text();
-                                    self.buffer_mut().set_fuzzy_filter_pattern(input_text);
-                                    self.apply_fuzzy_filter();
-                                }
-                                AppMode::Search => {
-                                    let search_text = self.get_input_text();
-                                    self.buffer_mut().set_search_pattern(search_text);
-                                    // TODO: self.search_in_results();
-                                }
-                                AppMode::ColumnSearch => {
-                                    let input_text = self.get_input_text();
-                                    self.buffer_mut().set_column_search_pattern(input_text);
-                                    // TODO: self.search_columns();
-                                }
-                                _ => {}
+                        // Update the appropriate filter/search state
+                        match self.buffer().get_mode() {
+                            AppMode::Filter => {
+                                self.get_filter_state_mut().pattern = self.get_input_text();
+                                self.apply_filter();
                             }
-                        }
-                        _ => {
-                            self.buffer_mut()
-                                .set_status_message("Paste not available in this mode".to_string());
+                            AppMode::FuzzyFilter => {
+                                let input_text = self.get_input_text();
+                                self.buffer_mut().set_fuzzy_filter_pattern(input_text);
+                                self.apply_fuzzy_filter();
+                            }
+                            AppMode::Search => {
+                                let search_text = self.get_input_text();
+                                self.buffer_mut().set_search_pattern(search_text);
+                                // TODO: self.search_in_results();
+                            }
+                            AppMode::ColumnSearch => {
+                                let input_text = self.get_input_text();
+                                self.buffer_mut().set_column_search_pattern(input_text);
+                                // TODO: self.search_columns();
+                            }
+                            _ => {}
                         }
                     }
+                    _ => {
+                        self.buffer_mut()
+                            .set_status_message("Paste not available in this mode".to_string());
+                    }
                 }
-                Err(e) => {
-                    self.buffer_mut()
-                        .set_status_message(format!("Failed to paste: {}", e));
-                }
-            },
+            }
             Err(e) => {
                 self.buffer_mut()
-                    .set_status_message(format!("Can't access clipboard: {}", e));
+                    .set_status_message(format!("Failed to paste: {}", e));
             }
         }
     }
@@ -6912,41 +6858,16 @@ impl EnhancedTuiApp {
                 self.debug_widget.set_content(debug_info.clone());
 
                 // Try to copy to clipboard
-                match arboard::Clipboard::new() {
-                    Ok(mut clipboard) => match clipboard.set_text(&debug_info) {
-                        Ok(_) => {
-                            // Verify clipboard write by reading it back
-                            match clipboard.get_text() {
-                                Ok(clipboard_content) => {
-                                    let clipboard_len = clipboard_content.len();
-                                    if clipboard_content == debug_info {
-                                        self.buffer_mut().set_status_message(format!(
-                                            "DEBUG INFO copied to clipboard ({} chars)!",
-                                            clipboard_len
-                                        ));
-                                    } else {
-                                        self.buffer_mut().set_status_message(format!(
-                                                "Clipboard verification failed! Expected {} chars, got {} chars",
-                                                debug_info.len(), clipboard_len
-                                            ));
-                                    }
-                                }
-                                Err(e) => {
-                                    self.buffer_mut().set_status_message(format!(
-                                        "Debug info copied but verification failed: {}",
-                                        e
-                                    ));
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            self.buffer_mut()
-                                .set_status_message(format!("Clipboard error: {}", e));
-                        }
-                    },
+                match self.state_container.write_to_clipboard(&debug_info) {
+                    Ok(_) => {
+                        self.buffer_mut().set_status_message(format!(
+                            "DEBUG INFO copied to clipboard ({} chars)!",
+                            debug_info.len()
+                        ));
+                    }
                     Err(e) => {
                         self.buffer_mut()
-                            .set_status_message(format!("Can't access clipboard: {}", e));
+                            .set_status_message(format!("Clipboard error: {}", e));
                     }
                 }
             }
