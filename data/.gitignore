@@ -1,0 +1,27 @@
+# Interim development files
+backup_interim_files/
+*_test.csv
+*_test.json
+*_temp.csv
+*_temp.json
+tick_database*.csv
+tick_database*.json
+vwap_*.csv
+vwap_*.json
+!production_vwap_final.csv
+!production_vwap_final.json
+large_vwap_*.csv
+large_vwap_*.json
+realistic_flow*.csv
+realistic_flow*.json
+sor_execution*.json
+*_v2.csv
+*_v2.json
+*_fixed.py
+!generate_production_vwap_fixed.py
+
+# Keep only production files
+!generate_production_data.py
+!instruments.csv
+!instruments.json
+!TRADING_SIMULATION_ARCHITECTURE.md
