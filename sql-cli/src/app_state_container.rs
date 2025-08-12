@@ -82,7 +82,24 @@ impl KeyPressEntry {
 
     /// Check if this entry represents the same key press (for coalescing)
     pub fn is_same_key(&self, key: &KeyEvent, mode: &AppMode) -> bool {
-        self.raw_event == *key && self.app_mode == *mode
+        // Compare only the key code and modifiers, not the entire event
+        // (KeyEvent might have other fields that differ between presses)
+        // Also check that keys are pressed within 1 second of each other for coalescing
+        let time_window = chrono::Duration::seconds(1);
+        let now = Local::now();
+        let time_diff = now - self.last_timestamp;
+
+        let code_match = self.raw_event.code == key.code;
+        let modifier_match = self.raw_event.modifiers == key.modifiers;
+        let mode_match = self.app_mode == *mode;
+        let time_match = time_diff < time_window;
+
+        tracing::trace!(
+            "is_same_key: code_match={}, modifier_match={}, mode_match={}, time_match={} ({}ms < 1000ms)",
+            code_match, modifier_match, mode_match, time_match, time_diff.num_milliseconds()
+        );
+
+        code_match && modifier_match && mode_match && time_match
     }
 
     /// Add a repeat to this entry
@@ -91,10 +108,21 @@ impl KeyPressEntry {
         self.last_timestamp = Local::now();
     }
 
-    /// Get display string with repeat count
+    /// Get display string with repeat count in vim-style notation
     pub fn display_with_count(&self) -> String {
         if self.repeat_count > 1 {
-            format!("{} x{}", self.display_string, self.repeat_count)
+            // Use vim-style notation: 5j instead of j x5
+            // For special keys, keep the x notation for clarity
+            match self.display_string.as_str() {
+                // Single letter keys get vim notation
+                s if s.len() == 1 => format!("{}{}", self.repeat_count, s),
+                // Arrow keys get compact notation
+                "↑" | "↓" | "←" | "→" => {
+                    format!("{}{}", self.repeat_count, self.display_string)
+                }
+                // Multi-char keys keep x notation for clarity
+                _ => format!("{} x{}", self.display_string, self.repeat_count),
+            }
         } else {
             self.display_string.clone()
         }
@@ -221,14 +249,29 @@ impl KeyPressHistory {
     pub fn add(&mut self, entry: KeyPressEntry) {
         // Check if we can coalesce with the last entry
         if let Some(last_entry) = self.entries.back_mut() {
+            // Debug logging to understand why coalescing might fail
+            let time_diff = Local::now() - last_entry.last_timestamp;
+            tracing::debug!(
+                "Key coalesce check: last_key={:?}/{:?}, new_key={:?}/{:?}, mode_match={}, time_diff={}ms",
+                last_entry.raw_event.code,
+                last_entry.raw_event.modifiers,
+                entry.raw_event.code,
+                entry.raw_event.modifiers,
+                last_entry.app_mode == entry.app_mode,
+                time_diff.num_milliseconds()
+            );
+
             if last_entry.is_same_key(&entry.raw_event, &entry.app_mode) {
                 // Same key pressed again in same mode, just increment counter
+                tracing::debug!("Key coalesced! Count now: {}", last_entry.repeat_count + 1);
                 last_entry.add_repeat();
                 // Update the action in case it changed
                 if entry.interpreted_action != last_entry.interpreted_action {
                     last_entry.interpreted_action = entry.interpreted_action;
                 }
                 return;
+            } else {
+                tracing::debug!("Key NOT coalesced - adding new entry");
             }
         }
 
