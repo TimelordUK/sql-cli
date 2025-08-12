@@ -1,4 +1,4 @@
-# This is an improved version of the release workflow
+# Fixed version of the release workflow
 # Copy this content to .github/workflows/release.yml
 
 name: Manual Release
@@ -24,6 +24,7 @@ on:
         description: 'Additional release notes (optional)'
         required: false
         type: string
+        default: ''
 
 env:
   CARGO_TERM_COLOR: always
@@ -94,154 +95,146 @@ jobs:
             COMMITS=$(git log --pretty=format:"%H|%s|%b" 2>/dev/null || echo "")
           fi
           
-          {
-            echo "# SQL CLI v${VERSION}"
-            echo ""
-            echo "**Release Date:** $(date +'%B %d, %Y')"
-            echo ""
-            
-            # Add custom notes if provided
-            if [ -n "${{ github.event.inputs.release_notes }}" ]; then
-              echo "## 📢 Release Notes"
-              echo "${{ github.event.inputs.release_notes }}"
-              echo ""
-            fi
-            
-            # Add statistics
-            echo "## 📊 Release Overview"
-            echo "- **Commits in this release:** $COMMIT_COUNT"
-            echo "- **Files updated:** $FILES_CHANGED"
-            echo ""
-            
-            # Detect and highlight features
-            echo "## ✨ Highlights"
-            echo ""
-            
-            # Check for visual enhancements
-            if echo "$COMMITS" | grep -qi "cell.*render\|visual\|key.*indicator\|fade\|theme"; then
-              echo "### 🎨 Visual Improvements"
-              if echo "$COMMITS" | grep -qi "key.*indicator"; then
-                echo "- **Key Press Indicator**: Visual feedback for key presses with fade effects (F12 to toggle)"
-              fi
-              if echo "$COMMITS" | grep -qi "cell.*highlight"; then
-                echo "- **Enhanced Cell Selection**: Multiple rendering modes for better visual feedback"
-              fi
-              echo ""
-            fi
-            
-            # Check for debugging improvements
-            if echo "$COMMITS" | grep -qi "debug\|log\|diagnostic"; then
-              echo "### 🔍 Enhanced Debugging"
-              if echo "$COMMITS" | grep -qi "dual.*log"; then
-                echo "- **Dual Logging**: Simultaneous file and in-memory logging"
-              fi
-              echo "- **Better Diagnostics**: Improved error messages and state dumps"
-              echo ""
-            fi
-            
-            # Check for state management
-            if echo "$COMMITS" | grep -qi "state.*container\|refactor.*v[0-9]"; then
-              echo "### 🏗️ Architecture Improvements"
-              echo "- **State Management**: Continued migration to centralized AppStateContainer"
-              echo "- **Code Quality**: Transaction-like state updates for better consistency"
-              echo ""
-            fi
-            
-            # Check for data integrity
-            if echo "$COMMITS" | grep -qi "history.*protect\|corrupt\|atomic"; then
-              echo "### 💾 Data Protection"
-              echo "- **History Recovery**: Automatic recovery from corrupted files"
-              echo "- **Atomic Writes**: Safer file operations to prevent data loss"
-              echo ""
-            fi
-            
-            # Traditional categorized changes
-            echo "## 📝 Changes by Category"
-            echo ""
-            
-            # Features
-            if [ -n "$LAST_TAG" ]; then
-              FEATURES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" | sed 's/^feat[^:]*: //' | grep -v "bump version" || true)
-              if [ -n "$FEATURES" ]; then
-                echo "### 🚀 New Features"
-                echo "$FEATURES" | while IFS= read -r line; do
-                  [ -n "$line" ] && echo "- $line"
-                done
-                echo ""
-              fi
-              
-              # Bug Fixes
-              FIXES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" | sed 's/^fix[^:]*: //' | grep -v "bump version" || true)
-              if [ -n "$FIXES" ]; then
-                echo "### 🐛 Bug Fixes"
-                echo "$FIXES" | while IFS= read -r line; do
-                  [ -n "$line" ] && echo "- $line"
-                done
-                echo ""
-              fi
-              
-              # Refactoring
-              REFACTORS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^refactor(\(.*\))?:" | sed 's/^refactor[^:]*: //' | grep -v "bump version" || true)
-              if [ -n "$REFACTORS" ]; then
-                echo "### 🔧 Refactoring"
-                echo "$REFACTORS" | while IFS= read -r line; do
-                  [ -n "$line" ] && echo "- $line"
-                done
-                echo ""
-              fi
-              
-              # Documentation
-              DOCS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" | sed 's/^docs[^:]*: //' | grep -v "bump version" || true)
-              if [ -n "$DOCS" ]; then
-                echo "### 📚 Documentation"
-                echo "$DOCS" | while IFS= read -r line; do
-                  [ -n "$line" ] && echo "- $line"
-                done
-                echo ""
-              fi
-            fi
-            
-            # Collapsible full commit list
-            echo "<details>"
-            echo "<summary>📋 View all commits</summary>"
-            echo ""
-            if [ -n "$LAST_TAG" ]; then
-              git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%an)" | grep -v "bump version"
-            else
-              git log --pretty=format:"- %s (%an)" | head -20
-            fi
-            echo ""
-            echo "</details>"
-            echo ""
-            
-            # Key features section
-            echo "## 🎯 Key Features"
-            echo ""
-            echo "- **Instant Data Preview**: CSV/JSON files load immediately"
-            echo "- **Visual Feedback**: Key press indicator, cell highlighting"
-            echo "- **Advanced Navigation**: Vim-style keys, viewport/cursor lock"
-            echo "- **Powerful Search**: Regular search (Ctrl+F), fuzzy filter (Ctrl+/)"
-            echo "- **Data Export**: Save as CSV or JSON"
-            echo "- **Debug Mode**: Press F5 for comprehensive state information"
-            echo ""
-            
-            # Installation
-            echo "## 📦 Installation"
-            echo ""
-            echo "Download the binary for your platform from the assets below."
-            echo ""
-            
-            echo "---"
-            echo "**Thank you for using SQL CLI!** 🎉"
-            echo ""
-            echo "Report issues: [GitHub Issues](https://github.com/TimelordUK/sql-cli/issues)"
-            
-          } > RELEASE_NOTES.md
+          # Build release notes
+          NOTES="# SQL CLI v${VERSION}
+
+**Release Date:** $(date +'%B %d, %Y')
+"
           
-          # Save to output
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
-          cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Add custom notes if provided
+          CUSTOM_NOTES="${{ github.event.inputs.release_notes }}"
+          if [ -n "$CUSTOM_NOTES" ]; then
+            NOTES="$NOTES
+## 📢 Release Notes
+
+$CUSTOM_NOTES
+"
+          fi
+          
+          # Add statistics
+          NOTES="$NOTES
+## 📊 Release Overview
+- **Commits in this release:** $COMMIT_COUNT
+- **Files updated:** $FILES_CHANGED
+
+## ✨ Highlights
+"
+          
+          # Check for specific feature categories
+          if echo "$COMMITS" | grep -qi "input.*sync\|scroll.*indicator\|character.*count"; then
+            NOTES="$NOTES
+### 🎯 Input Improvements
+- Fixed input synchronization bug that existed since project start
+- Added character count and cursor position display
+- Visual scroll indicators when text extends beyond view
+"
+          fi
+          
+          if echo "$COMMITS" | grep -qi "datatable\|dataprovider\|data.*migration"; then
+            NOTES="$NOTES
+### 📊 DataTable Architecture
+- Advanced migration to DataProvider trait pattern
+- Abstracted TUI from direct data access
+- Foundation for multiple data source support
+"
+          fi
+          
+          if echo "$COMMITS" | grep -qi "word.*nav\|ctrl.*left\|ctrl.*right"; then
+            NOTES="$NOTES
+### ⌨️ Navigation Enhancements
+- Added Ctrl+Left/Right for word navigation
+- Cross-platform compatibility improvements
+"
+          fi
+          
+          # Traditional categorized changes
+          NOTES="$NOTES
+## 📝 Changes by Category
+"
+          
+          # Features
+          if [ -n "$LAST_TAG" ]; then
+            FEATURES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null | grep -E "^feat(\(.*\))?:" | sed 's/^feat[^:]*: //' | grep -v "bump version" || true)
+            if [ -n "$FEATURES" ]; then
+              NOTES="$NOTES
+### 🚀 New Features"
+              while IFS= read -r line; do
+                [ -n "$line" ] && NOTES="$NOTES
+- $line"
+              done <<< "$FEATURES"
+              NOTES="$NOTES
+"
+            fi
+            
+            # Bug Fixes
+            FIXES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null | grep -E "^fix(\(.*\))?:" | sed 's/^fix[^:]*: //' | grep -v "bump version" || true)
+            if [ -n "$FIXES" ]; then
+              NOTES="$NOTES
+### 🐛 Bug Fixes"
+              while IFS= read -r line; do
+                [ -n "$line" ] && NOTES="$NOTES
+- $line"
+              done <<< "$FIXES"
+              NOTES="$NOTES
+"
+            fi
+            
+            # Refactoring
+            REFACTORS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null | grep -E "^refactor(\(.*\))?:" | sed 's/^refactor[^:]*: //' | grep -v "bump version" || true)
+            if [ -n "$REFACTORS" ]; then
+              NOTES="$NOTES
+### 🔧 Refactoring"
+              while IFS= read -r line; do
+                [ -n "$line" ] && NOTES="$NOTES
+- $line"
+              done <<< "$REFACTORS"
+              NOTES="$NOTES
+"
+            fi
+          fi
+          
+          # Add commit details
+          NOTES="$NOTES
+<details>
+<summary>📋 View all commits</summary>
+
+"
+          if [ -n "$LAST_TAG" ]; then
+            COMMIT_LIST=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%an)" 2>/dev/null | grep -v "bump version" || true)
+          else
+            COMMIT_LIST=$(git log --pretty=format:"- %s (%an)" 2>/dev/null | head -20 || true)
+          fi
+          NOTES="$NOTES$COMMIT_LIST
+
+</details>
+
+## 🎯 Key Features
+
+- **Instant Data Preview**: CSV/JSON files load immediately
+- **Visual Feedback**: Key press indicator, cell highlighting  
+- **Advanced Navigation**: Vim-style keys, viewport/cursor lock
+- **Powerful Search**: Regular search (Ctrl+F), fuzzy filter (Ctrl+/)
+- **Data Export**: Save as CSV or JSON
+- **Debug Mode**: Press F5 for comprehensive state information
+
+## 📦 Installation
+
+Download the binary for your platform from the assets below.
+
+---
+**Thank you for using SQL CLI!** 🎉
+
+Report issues: [GitHub Issues](https://github.com/TimelordUK/sql-cli/issues)"
+          
+          # Save to file first for debugging
+          echo "$NOTES" > RELEASE_NOTES.md
+          
+          # Use delimiter for multiline output
+          {
+            echo "notes<<RELEASE_NOTES_EOF"
+            echo "$NOTES"
+            echo "RELEASE_NOTES_EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Commit version bump
         run: |
