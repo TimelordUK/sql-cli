@@ -516,7 +516,56 @@ impl CommandHistory {
             return Ok(());
         }
 
-        let entries: Vec<HistoryEntry> = serde_json::from_str(&content)?;
+        // Try to parse the history file
+        let entries: Vec<HistoryEntry> = match serde_json::from_str(&content) {
+            Ok(entries) => entries,
+            Err(e) => {
+                eprintln!("[History] ERROR: Failed to parse history file: {}", e);
+                eprintln!("[History] Attempting recovery from backup...");
+
+                // Try to recover from backup
+                if let Some(backup_content) = self.protection.recover_from_backup() {
+                    eprintln!("[History] Found backup, attempting to restore...");
+
+                    // Try to parse the backup
+                    match serde_json::from_str::<Vec<HistoryEntry>>(&backup_content) {
+                        Ok(backup_entries) => {
+                            eprintln!(
+                                "[History] Successfully recovered {} entries from backup",
+                                backup_entries.len()
+                            );
+
+                            // Save the recovered content to the main history file
+                            fs::write(&self.history_file, &backup_content)?;
+
+                            // Move the corrupted file for investigation
+                            let corrupted_path = self.history_file.with_extension("json.corrupted");
+                            let _ = fs::rename(
+                                &self.history_file.with_extension("json"),
+                                &corrupted_path,
+                            );
+                            eprintln!("[History] Corrupted file moved to {:?}", corrupted_path);
+
+                            backup_entries
+                        }
+                        Err(backup_err) => {
+                            eprintln!("[History] Backup also corrupted: {}", backup_err);
+                            eprintln!("[History] Starting with empty history");
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    eprintln!("[History] No backup available, starting with empty history");
+
+                    // Move the corrupted file for investigation
+                    let corrupted_path = self.history_file.with_extension("json.corrupted");
+                    let _ = fs::copy(&self.history_file, &corrupted_path);
+                    eprintln!("[History] Corrupted file copied to {:?}", corrupted_path);
+
+                    Vec::new()
+                }
+            }
+        };
         eprintln!(
             "[History] Loaded {} entries from history file",
             entries.len()
@@ -598,7 +647,13 @@ impl CommandHistory {
             self.protection.backup_before_write(&new_content, new_count);
         }
 
-        fs::write(&self.history_file, new_content)?;
+        // Use atomic write to prevent corruption from partial writes
+        // Write to a temp file first, then rename it
+        let temp_file = self.history_file.with_extension("json.tmp");
+        fs::write(&temp_file, new_content)?;
+
+        // Atomic rename (on Unix, rename is atomic)
+        fs::rename(temp_file, &self.history_file)?;
         Ok(())
     }
 

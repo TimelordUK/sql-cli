@@ -149,8 +149,16 @@ fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::err
 }
 
 fn main() -> io::Result<()> {
-    // Initialize logging/tracing
-    sql_cli::logging::init_tracing();
+    // Initialize unified logging (tracing + dual logging)
+    sql_cli::logging::init_tracing_with_dual_logging();
+
+    // Get the dual logger to show the log path
+    if let Some(dual_logger) = sql_cli::dual_logging::get_dual_logger() {
+        eprintln!("📝 Debug logs will be written to:");
+        eprintln!("   {}", dual_logger.log_path().display());
+        eprintln!("   Tail with: tail -f {}", dual_logger.log_path().display());
+        eprintln!("");
+    }
 
     // Check if user wants TUI mode (default) or classic mode
     let args: Vec<String> = std::env::args().collect();

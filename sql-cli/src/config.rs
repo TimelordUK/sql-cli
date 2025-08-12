@@ -26,6 +26,9 @@ pub struct DisplayConfig {
 
     /// Icons for different states (can be overridden)
     pub icons: IconConfig,
+
+    /// Show key press indicator by default
+    pub show_key_indicator: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +100,9 @@ pub struct ThemeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CellSelectionStyle {
+    /// Style mode: "underline", "block", "border", "corners", "subtle"
+    pub mode: String,
+
     /// Foreground color for selected cell (e.g., "yellow", "orange", "cyan")
     pub foreground: String,
 
@@ -109,8 +115,14 @@ pub struct CellSelectionStyle {
     /// Whether to bold the text
     pub bold: bool,
 
-    /// Whether to underline the text
+    /// Whether to underline the text (legacy, use mode instead)
     pub underline: bool,
+
+    /// Border style for "border" mode: "single", "double", "rounded", "thick"
+    pub border_style: String,
+
+    /// Whether to show cell corners in "corners" mode
+    pub corner_chars: String, // e.g., "┌┐└┘" or "╭╮╰╯" for rounded
 }
 
 impl Default for Config {
@@ -131,6 +143,7 @@ impl Default for DisplayConfig {
             show_row_numbers: false,
             compact_mode: false,
             icons: IconConfig::default(),
+            show_key_indicator: false, // Default off, enable in config
         }
     }
 }
@@ -209,11 +222,14 @@ impl Default for ThemeConfig {
 impl Default for CellSelectionStyle {
     fn default() -> Self {
         Self {
+            mode: "underline".to_string(), // Default to current behavior
             foreground: "yellow".to_string(),
             use_background: false,
             background: "cyan".to_string(),
             bold: true,
-            underline: true,
+            underline: true, // Keep for backward compatibility
+            border_style: "single".to_string(),
+            corner_chars: "┌┐└┘".to_string(),
         }
     }
 }

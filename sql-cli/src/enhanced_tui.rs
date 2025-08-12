@@ -27,6 +27,7 @@ use sql_cli::buffer::{
 };
 use sql_cli::buffer_handler::BufferHandler;
 use sql_cli::cache::QueryCache;
+use sql_cli::cell_renderer::CellRenderer;
 use sql_cli::config::Config;
 use sql_cli::csv_datasource::CsvApiClient;
 use sql_cli::cursor_manager::CursorManager;
@@ -41,6 +42,7 @@ use sql_cli::history::{CommandHistory, HistoryMatch};
 use sql_cli::hybrid_parser::HybridParser;
 use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
 use sql_cli::key_dispatcher::KeyDispatcher;
+use sql_cli::key_indicator::{format_key_for_display, KeyPressIndicator};
 use sql_cli::logging::{get_log_buffer, LogRingBuffer};
 use sql_cli::search_modes_widget::{SearchMode, SearchModesAction, SearchModesWidget};
 use sql_cli::service_container::ServiceContainer;
@@ -127,18 +129,11 @@ struct CompletionState {
     last_cursor_pos: usize,
 }
 
-// MIGRATED to AppStateContainer as HistorySearchState
-// Keeping local struct for fallback compatibility during migration
-#[derive(Clone)]
-struct HistoryState {
-    search_query: String,
-    matches: Vec<HistoryMatch>,
-    selected_index: usize,
-}
+// HistoryState has been fully migrated to AppStateContainer
 
 pub struct EnhancedTuiApp {
-    // State container - will gradually take over all state management
-    state_container: Option<std::sync::Arc<AppStateContainer>>,
+    // State container - manages all state
+    state_container: std::sync::Arc<AppStateContainer>,
     // Service container for dependency injection
     service_container: Option<ServiceContainer>,
 
@@ -160,8 +155,7 @@ pub struct EnhancedTuiApp {
     // filter_state: FilterState, // MIGRATED to AppStateContainer
     // search_state: SearchState, // MIGRATED to AppStateContainer
     // column_search_state: ColumnSearchState, // MIGRATED to AppStateContainer
-    completion_state: CompletionState,
-    history_state: HistoryState, // FALLBACK: Used when AppStateContainer not available
+    // completion_state: CompletionState,
     command_history: CommandHistory,
     // SAFETY FIX: Temporary fallback filter state to replace dangerous static
     fallback_filter_state: FilterState,
@@ -198,66 +192,44 @@ pub struct EnhancedTuiApp {
     // Display options
     jump_to_row_input: String, // TODO: Remove once fully migrated to state_container
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
+
+    // Visual enhancements
+    cell_renderer: CellRenderer,
+    key_indicator: KeyPressIndicator,
 }
 
 impl EnhancedTuiApp {
     // --- State Container Access ---
     // Helper methods for accessing the state container during migration
 
-    /// Check if help is visible (uses state_container if available, falls back to local field)
+    /// Check if help is visible
     fn is_help_visible(&self) -> bool {
-        if let Some(ref container_arc) = self.state_container {
-            container_arc.is_help_visible()
-        } else {
-            self.show_help
-        }
+        self.state_container.is_help_visible()
     }
 
-    /// Toggle help visibility (uses state_container if available, falls back to local field)
+    /// Toggle help visibility
     fn toggle_help(&mut self) {
-        if let Some(ref state_container) = self.state_container {
-            state_container.toggle_help();
-        } else {
-            // Fallback to local field
-            let old_value = self.show_help;
-            self.show_help = !self.show_help;
-            log_state_change!(self, "show_help", old_value, self.show_help, "toggle_help");
-        }
+        self.state_container.toggle_help();
     }
 
-    /// Set help visibility (uses state_container if available, falls back to local field)
+    /// Set help visibility
     fn set_help_visible(&mut self, visible: bool) {
-        if let Some(ref state_container) = self.state_container {
-            state_container.set_help_visible(visible);
-        } else {
-            // Fallback to local field
-            let old_value = self.show_help;
-            self.show_help = visible;
-            log_state_change!(self, "show_help", old_value, visible, "set_help_visible");
-        }
+        self.state_container.set_help_visible(visible);
     }
 
-    /// Get jump-to-row input text (uses state_container if available, falls back to local field)
+    /// Get jump-to-row input text
     fn get_jump_to_row_input(&self) -> String {
-        if let Some(ref container_arc) = self.state_container {
-            container_arc.jump_to_row().input.clone()
-        } else {
-            self.jump_to_row_input.clone()
-        }
+        self.state_container.jump_to_row().input.clone()
     }
 
-    /// Set jump-to-row input text (uses state_container if available, falls back to local field)
+    /// Set jump-to-row input text
     fn set_jump_to_row_input(&mut self, input: String) {
         let old_value = self.get_jump_to_row_input();
 
-        if let Some(ref mut container_arc) = self.state_container {
-            // Use unsafe to get mutable access through Arc
-            let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
-            unsafe {
-                (*container_ptr).jump_to_row_mut().input = input.clone();
-            }
-        } else {
-            self.jump_to_row_input = input.clone();
+        // Use unsafe to get mutable access through Arc
+        let container_ptr = Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
+        unsafe {
+            (*container_ptr).jump_to_row_mut().input = input.clone();
         }
 
         // Log the state change
@@ -270,35 +242,24 @@ impl EnhancedTuiApp {
         );
     }
 
-    /// Clear jump-to-row input (uses state_container if available, falls back to local field)
+    /// Clear jump-to-row input
     fn clear_jump_to_row_input(&mut self) {
-        if let Some(ref mut container_arc) = self.state_container {
-            // Use unsafe to get mutable access through Arc
-            let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
-            unsafe {
-                (*container_ptr).jump_to_row_mut().input.clear();
-            }
-        } else {
-            self.jump_to_row_input.clear();
+        // Use unsafe to get mutable access through Arc
+        let container_ptr = Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
+        unsafe {
+            (*container_ptr).jump_to_row_mut().input.clear();
         }
 
         // Log the state clear
         log_state_clear!(self, "jump_to_row_input", "clear_jump_to_row_input");
     }
 
-    // Helper to get sort state from AppStateContainer or create temporary one
+    // Helper to get sort state from AppStateContainer
     fn get_sort_state(&self) -> SortState {
-        if let Some(ref state_container) = self.state_container {
-            let sort = state_container.sort();
-            SortState {
-                column: sort.column,
-                order: sort.order.clone(),
-            }
-        } else {
-            SortState {
-                column: None,
-                order: SortOrder::None,
-            }
+        let sort = self.state_container.sort();
+        SortState {
+            column: sort.column,
+            order: sort.order.clone(),
         }
     }
 
@@ -472,12 +433,7 @@ impl EnhancedTuiApp {
     }
 
     fn get_selection_mode(&self) -> SelectionMode {
-        // Helper for compatibility during migration
-        if let Some(ref state_container) = self.state_container {
-            state_container.get_selection_mode()
-        } else {
-            SelectionMode::Row
-        }
+        self.state_container.get_selection_mode()
     }
 
     fn sanitize_table_name(name: &str) -> String {
@@ -503,6 +459,15 @@ impl EnhancedTuiApp {
             Config::default()
         });
 
+        // Log initialization
+        if let Some(logger) = sql_cli::dual_logging::get_dual_logger() {
+            logger.log(
+                "INFO",
+                "EnhancedTuiApp",
+                &format!("Initializing TUI with API URL: {}", api_url),
+            );
+        }
+
         // Create buffer manager first
         let mut buffer_manager = BufferManager::new();
         let mut buffer = sql_cli::buffer::Buffer::new(1);
@@ -522,32 +487,26 @@ impl EnhancedTuiApp {
 
         // Initialize state container as Arc
         let state_container = match AppStateContainer::new(container_buffer_manager) {
-            Ok(container) => Some(std::sync::Arc::new(container)),
+            Ok(container) => std::sync::Arc::new(container),
             Err(e) => {
-                eprintln!("WARNING: Failed to initialize AppStateContainer: {}", e);
-                eprintln!("Falling back to legacy initialization without state container");
-                None
+                panic!("Failed to initialize AppStateContainer: {}", e);
             }
         };
 
         // Initialize service container and help widget
-        let (service_container, help_widget) = if let Some(ref state_arc) = state_container {
-            let services = ServiceContainer::new(state_arc.clone());
+        let services = ServiceContainer::new(state_container.clone());
 
-            // Inject debug service into AppStateContainer (now works with RefCell)
-            state_arc.set_debug_service(services.debug_service.clone_service());
+        // Inject debug service into AppStateContainer (now works with RefCell)
+        state_container.set_debug_service(services.debug_service.clone_service());
 
-            // IMPORTANT: Enable the debug service so it actually logs!
-            services.enable_debug();
+        // IMPORTANT: Enable the debug service so it actually logs!
+        services.enable_debug();
 
-            // Create help widget and set services
-            let mut widget = HelpWidget::new();
-            widget.set_services(services.clone_for_widget());
+        // Create help widget and set services
+        let mut help_widget = HelpWidget::new();
+        help_widget.set_services(services.clone_for_widget());
 
-            (Some(services), widget)
-        } else {
-            (None, HelpWidget::new())
-        };
+        let service_container = Some(services);
 
         Self {
             state_container,
@@ -562,17 +521,6 @@ impl EnhancedTuiApp {
             sql_parser: SqlParser::new(),
             hybrid_parser: HybridParser::new(),
             config: config.clone(),
-            completion_state: CompletionState {
-                suggestions: Vec::new(),
-                current_index: 0,
-                last_query: String::new(),
-                last_cursor_pos: 0,
-            },
-            history_state: HistoryState {
-                search_query: String::new(),
-                matches: Vec::new(),
-                selected_index: 0,
-            },
             command_history: CommandHistory::new().unwrap_or_default(),
             // SAFETY FIX: Initialize fallback filter state to replace dangerous static
             fallback_filter_state: FilterState {
@@ -602,7 +550,16 @@ impl EnhancedTuiApp {
             redo_stack: Vec::new(),
             last_visible_rows: 30, // Default estimate
             jump_to_row_input: String::new(),
-            log_buffer: get_log_buffer(),
+            log_buffer: sql_cli::dual_logging::get_dual_logger()
+                .map(|logger| logger.ring_buffer().clone()),
+            cell_renderer: CellRenderer::new(config.theme.cell_selection_style.clone()),
+            key_indicator: {
+                let mut indicator = KeyPressIndicator::new();
+                if config.display.show_key_indicator {
+                    indicator.set_enabled(true);
+                }
+                indicator
+            },
         }
     }
 
@@ -867,6 +824,9 @@ impl EnhancedTuiApp {
                             continue;
                         }
 
+                        // Record key press for visual indicator
+                        self.key_indicator.record_key(format_key_for_display(&key));
+
                         let should_exit = match self.buffer().get_mode() {
                             AppMode::Command => self.handle_command_input(key)?,
                             AppMode::Results => self.handle_results_input(key)?,
@@ -906,30 +866,22 @@ impl EnhancedTuiApp {
 
     fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Normalize the key for platform differences
-        let normalized_key = if let Some(ref state_container) = self.state_container {
-            // First normalize the key for platform differences
-            let normalized = state_container.normalize_key(key);
+        let normalized = self.state_container.normalize_key(key);
 
-            // Get the action that will be performed (if any)
-            let action = self
-                .key_dispatcher
-                .get_command_action(&normalized)
-                .map(|s| s.to_string());
+        // Get the action that will be performed (if any)
+        let action = self
+            .key_dispatcher
+            .get_command_action(&normalized)
+            .map(|s| s.to_string());
 
-            // Log the key press (mutable borrow needed)
-            if let Some(ref mut state_container) = self.state_container {
-                // Log both the original and normalized key if different
-                if normalized != key {
-                    state_container
-                        .log_key_press(key, Some(format!("normalized to {:?}", normalized)));
-                }
-                state_container.log_key_press(normalized, action);
-            }
+        // Log the key press
+        if normalized != key {
+            self.state_container
+                .log_key_press(key, Some(format!("normalized to {:?}", normalized)));
+        }
+        self.state_container.log_key_press(normalized, action);
 
-            normalized
-        } else {
-            key
-        };
+        let normalized_key = normalized;
 
         // NEW: Try editor widget first for high-level actions
         let key_dispatcher = self.key_dispatcher.clone();
@@ -972,39 +924,20 @@ impl EnhancedTuiApp {
                 }
                 // Special handling for History mode - initialize history search
                 if mode == AppMode::History {
-                    // Use AppStateContainer if available, otherwise fall back to legacy
-                    if self.state_container.is_some() {
-                        eprintln!("[DEBUG] Using AppStateContainer for history search");
-                        let current_input = self.get_input_text();
+                    eprintln!("[DEBUG] Using AppStateContainer for history search");
+                    let current_input = self.get_input_text();
 
-                        // Start history search
-                        {
-                            let state_container = self.state_container.as_ref().unwrap();
-                            state_container.start_history_search(current_input);
-                        }
+                    // Start history search
+                    self.state_container.start_history_search(current_input);
 
-                        // Initialize with schema context
-                        self.update_history_matches_in_container();
+                    // Initialize with schema context
+                    self.update_history_matches_in_container();
 
-                        // Get match count
-                        let match_count = {
-                            let state_container = self.state_container.as_ref().unwrap();
-                            state_container.history_search().matches.len()
-                        };
+                    // Get match count
+                    let match_count = self.state_container.history_search().matches.len();
 
-                        self.buffer_mut()
-                            .set_status_message(format!("History search: {} matches", match_count));
-                    } else {
-                        eprintln!("[DEBUG] Using legacy history search");
-                        self.history_state.search_query.clear();
-                        self.update_history_matches();
-                        // Debug: log how many history entries we have
-                        let total_entries = self.command_history.get_all().len();
-                        self.buffer_mut().set_status_message(format!(
-                            "History search: {} total entries",
-                            total_entries
-                        ));
-                    }
+                    self.buffer_mut()
+                        .set_status_message(format!("History search: {} matches", match_count));
                 }
                 return Ok(false);
             }
@@ -1019,43 +952,34 @@ impl EnhancedTuiApp {
         // Handle Ctrl+R for history search
         if let KeyCode::Char('r') = normalized_key.code {
             if normalized_key.modifiers.contains(KeyModifiers::CONTROL) {
-                if self.state_container.is_some() {
-                    // Start history search mode
-                    let current_input = self.get_input_text();
-                    eprintln!(
-                        "[DEBUG] Starting history search with input: '{}'",
-                        current_input
-                    );
+                // Start history search mode
+                let current_input = self.get_input_text();
+                eprintln!(
+                    "[DEBUG] Starting history search with input: '{}'",
+                    current_input
+                );
 
-                    // Start history search
-                    {
-                        let state_container = self.state_container.as_ref().unwrap();
-                        state_container.start_history_search(current_input);
-                    }
+                // Start history search
+                self.state_container.start_history_search(current_input);
 
-                    // Initialize with schema context
-                    self.update_history_matches_in_container();
+                // Initialize with schema context
+                self.update_history_matches_in_container();
 
-                    // Get status
-                    let (is_active, match_count) = {
-                        let state_container = self.state_container.as_ref().unwrap();
-                        let is_active = state_container.is_history_search_active();
-                        let match_count = state_container.history_search().matches.len();
-                        (is_active, match_count)
-                    };
+                // Get status
+                let is_active = self.state_container.is_history_search_active();
+                let match_count = self.state_container.history_search().matches.len();
 
-                    eprintln!(
-                        "[DEBUG] History search active: {}, matches: {}",
-                        is_active, match_count
-                    );
+                eprintln!(
+                    "[DEBUG] History search active: {}, matches: {}",
+                    is_active, match_count
+                );
 
-                    self.buffer_mut().set_mode(AppMode::History);
-                    self.buffer_mut().set_status_message(format!(
-                        "History search started (Ctrl+R) - {} matches",
-                        match_count
-                    ));
-                    return Ok(false);
-                }
+                self.buffer_mut().set_mode(AppMode::History);
+                self.buffer_mut().set_status_message(format!(
+                    "History search started (Ctrl+R) - {} matches",
+                    match_count
+                ));
+                return Ok(false);
             }
         }
 
@@ -1443,6 +1367,15 @@ impl EnhancedTuiApp {
                 };
                 self.buffer_mut().set_status_message(message);
             }
+            KeyCode::F(12) => {
+                // Toggle key press indicator
+                let enabled = !self.key_indicator.enabled;
+                self.key_indicator.set_enabled(enabled);
+                self.buffer_mut().set_status_message(format!(
+                    "Key press indicator {}",
+                    if enabled { "enabled" } else { "disabled" }
+                ));
+            }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Kill line - delete from cursor to end of line
                 self.buffer_mut()
@@ -1546,12 +1479,7 @@ impl EnhancedTuiApp {
                 self.handle_input_key(key);
 
                 // Clear completion state when typing other characters
-                if let Some(ref state_container) = self.state_container {
-                    state_container.clear_completion();
-                } else {
-                    self.completion_state.suggestions.clear();
-                    self.completion_state.current_index = 0;
-                }
+                self.state_container.clear_completion();
 
                 // Always use single-line completion
                 self.handle_completion()
@@ -1567,11 +1495,7 @@ impl EnhancedTuiApp {
     }
 
     fn handle_results_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        let selection_mode = if let Some(ref state_container) = self.state_container {
-            state_container.get_selection_mode()
-        } else {
-            SelectionMode::Row
-        };
+        let selection_mode = self.state_container.get_selection_mode();
 
         debug!(
             "handle_results_input: key={:?}, selection_mode={:?}",
@@ -1579,34 +1503,38 @@ impl EnhancedTuiApp {
         );
 
         // Normalize the key for platform differences
-        let normalized_key = if let Some(ref state_container) = self.state_container {
-            // First normalize the key for platform differences
-            let normalized = state_container.normalize_key(key);
+        let normalized = self.state_container.normalize_key(key);
 
-            // Get the action that will be performed (if any)
-            let action = self
-                .key_dispatcher
-                .get_results_action(&normalized)
-                .map(|s| s.to_string());
+        // Get the action that will be performed (if any)
+        let action = self
+            .key_dispatcher
+            .get_results_action(&normalized)
+            .map(|s| s.to_string());
 
-            // Log the key press (mutable borrow needed)
-            if let Some(ref mut state_container) = self.state_container {
-                // Log both the original and normalized key if different
-                if normalized != key {
-                    state_container
-                        .log_key_press(key, Some(format!("normalized to {:?}", normalized)));
-                }
-                state_container.log_key_press(normalized, action.clone());
-            }
+        // Log the key press
+        if normalized != key {
+            self.state_container
+                .log_key_press(key, Some(format!("normalized to {:?}", normalized)));
+        }
+        self.state_container
+            .log_key_press(normalized, action.clone());
 
-            normalized
-        } else {
-            key
-        };
+        let normalized_key = normalized;
 
         // Debug uppercase G specifically
         if matches!(key.code, KeyCode::Char('G')) {
             debug!("Detected uppercase G key press!");
+        }
+
+        // Handle F12 for key indicator toggle
+        if matches!(key.code, KeyCode::F(12)) {
+            let enabled = !self.key_indicator.enabled;
+            self.key_indicator.set_enabled(enabled);
+            self.buffer_mut().set_status_message(format!(
+                "Key press indicator {}",
+                if enabled { "enabled" } else { "disabled" }
+            ));
+            return Ok(false);
         }
 
         // In cell mode, skip chord handler for 'y' key - handle it directly
@@ -1775,11 +1703,10 @@ impl EnhancedTuiApp {
                     self.clear_jump_to_row_input();
 
                     // Set jump-to-row state as active
-                    if let Some(ref mut container_arc) = self.state_container {
-                        let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
-                        unsafe {
-                            (*container_ptr).jump_to_row_mut().is_active = true;
-                        }
+                    let container_ptr =
+                        Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
+                    unsafe {
+                        (*container_ptr).jump_to_row_mut().is_active = true;
                     }
 
                     self.buffer_mut()
@@ -1788,18 +1715,14 @@ impl EnhancedTuiApp {
                 "pin_column" => self.toggle_column_pin(),
                 "clear_pins" => self.clear_all_pinned_columns(),
                 "toggle_selection_mode" => {
-                    if let Some(ref state_container) = self.state_container {
-                        state_container.toggle_selection_mode();
-                        let new_mode = state_container.get_selection_mode();
-                        let msg = match new_mode {
-                            SelectionMode::Cell => {
-                                "Cell mode - Navigate to select individual cells"
-                            }
-                            SelectionMode::Row => "Row mode - Navigate to select rows",
-                            SelectionMode::Column => "Column mode - Navigate to select columns",
-                        };
-                        self.buffer_mut().set_status_message(msg.to_string());
-                    }
+                    self.state_container.toggle_selection_mode();
+                    let new_mode = self.state_container.get_selection_mode();
+                    let msg = match new_mode {
+                        SelectionMode::Cell => "Cell mode - Navigate to select individual cells",
+                        SelectionMode::Row => "Row mode - Navigate to select rows",
+                        SelectionMode::Column => "Column mode - Navigate to select columns",
+                    };
+                    self.buffer_mut().set_status_message(msg.to_string());
                     return Ok(false); // Return to prevent duplicate handling
                 }
                 "export_to_csv" => self.export_to_csv(),
@@ -1848,30 +1771,22 @@ impl EnhancedTuiApp {
                     self.table_state.select(None);
 
                     // Start history search
-                    if self.state_container.is_some() {
-                        let current_input = self.get_input_text();
+                    let current_input = self.get_input_text();
 
-                        // Start history search
-                        {
-                            let state_container = self.state_container.as_ref().unwrap();
-                            state_container.start_history_search(current_input);
-                        }
+                    // Start history search
+                    self.state_container.start_history_search(current_input);
 
-                        // Initialize with schema context
-                        self.update_history_matches_in_container();
+                    // Initialize with schema context
+                    self.update_history_matches_in_container();
 
-                        // Get match count
-                        let match_count = {
-                            let state_container = self.state_container.as_ref().unwrap();
-                            state_container.history_search().matches.len()
-                        };
+                    // Get match count
+                    let match_count = self.state_container.history_search().matches.len();
 
-                        self.buffer_mut()
-                            .set_status_message(format!("History search: {} matches", match_count));
+                    self.buffer_mut()
+                        .set_status_message(format!("History search: {} matches", match_count));
 
-                        // Switch to History mode to show the search interface
-                        self.buffer_mut().set_mode(AppMode::History);
-                    }
+                    // Switch to History mode to show the search interface
+                    self.buffer_mut().set_mode(AppMode::History);
                 }
                 _ => {
                     // Action not recognized, continue to handle key directly
@@ -1883,102 +1798,75 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char(' ') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Toggle viewport lock with Space (but not Ctrl+Space) - using AppStateContainer
-                if let Some(ref state_container) = self.state_container {
-                    state_container.toggle_viewport_lock();
+                self.state_container.toggle_viewport_lock();
 
-                    // Extract values we need before mutable borrows
-                    let (is_locked, lock_row, position_status) = {
-                        let navigation = state_container.navigation();
-                        (
-                            navigation.viewport_lock,
-                            navigation.viewport_lock_row,
-                            navigation.get_position_status(),
-                        )
-                    };
+                // Extract values we need before mutable borrows
+                let (is_locked, lock_row, position_status) = {
+                    let navigation = self.state_container.navigation();
+                    (
+                        navigation.viewport_lock,
+                        navigation.viewport_lock_row,
+                        navigation.get_position_status(),
+                    )
+                };
 
-                    // Update buffer state to match NavigationState
-                    self.buffer_mut().set_viewport_lock(is_locked);
-                    self.buffer_mut().set_viewport_lock_row(lock_row);
+                // Update buffer state to match NavigationState
+                self.buffer_mut().set_viewport_lock(is_locked);
+                self.buffer_mut().set_viewport_lock_row(lock_row);
 
-                    if is_locked {
-                        self.buffer_mut().set_status_message(format!(
-                            "Viewport lock: ON (locked at row {}){}",
-                            lock_row.map_or(0, |r| r + 1),
-                            position_status
-                        ));
-                    } else {
-                        self.buffer_mut().set_status_message(
-                            "Viewport lock: OFF (normal scrolling)".to_string(),
-                        );
-                    }
+                if is_locked {
+                    self.buffer_mut().set_status_message(format!(
+                        "Viewport lock: ON (locked at row {}){}",
+                        lock_row.map_or(0, |r| r + 1),
+                        position_status
+                    ));
                 } else {
-                    // Fallback to buffer-based lock for compatibility
-                    let current_lock = self.buffer().is_viewport_lock();
-                    self.buffer_mut().set_viewport_lock(!current_lock);
-                    if self.buffer().is_viewport_lock() {
-                        let visible_rows = self.buffer().get_last_visible_rows();
-                        self.buffer_mut()
-                            .set_viewport_lock_row(Some(visible_rows / 2));
-                        self.buffer_mut().set_status_message(format!(
-                            "Viewport lock: ON (anchored at row {} of viewport)",
-                            visible_rows / 2 + 1
-                        ));
-                    } else {
-                        self.buffer_mut().set_viewport_lock_row(None);
-                        self.buffer_mut().set_status_message(
-                            "Viewport lock: OFF (normal scrolling)".to_string(),
-                        );
-                    }
+                    self.buffer_mut()
+                        .set_status_message("Viewport lock: OFF (normal scrolling)".to_string());
                 }
             }
             // Note: Many terminals can't distinguish Shift+Space from Space
             // So we support 'x' as an alternative for cursor lock
             KeyCode::Char('x') | KeyCode::Char('X') => {
                 // Toggle cursor lock with 'x' key - using AppStateContainer
-                if let Some(ref state_container) = self.state_container {
-                    state_container.toggle_cursor_lock();
+                self.state_container.toggle_cursor_lock();
 
-                    // Extract values we need before mutable borrows
-                    let (is_locked, lock_position) = {
-                        let navigation = state_container.navigation();
-                        (navigation.cursor_lock, navigation.cursor_lock_position)
-                    };
+                // Extract values we need before mutable borrows
+                let (is_locked, lock_position) = {
+                    let navigation = self.state_container.navigation();
+                    (navigation.cursor_lock, navigation.cursor_lock_position)
+                };
 
-                    // Update buffer state (we might need separate buffer fields for this)
-                    // For now, we'll just show status message
-                    if is_locked {
-                        self.buffer_mut().set_status_message(format!(
-                            "Cursor lock: ON (locked at visual position {})",
-                            lock_position.map_or(0, |p| p + 1)
-                        ));
-                    } else {
-                        self.buffer_mut().set_status_message(
-                            "Cursor lock: OFF (cursor moves normally)".to_string(),
-                        );
-                    }
+                // Update buffer state (we might need separate buffer fields for this)
+                // For now, we'll just show status message
+                if is_locked {
+                    self.buffer_mut().set_status_message(format!(
+                        "Cursor lock: ON (locked at visual position {})",
+                        lock_position.map_or(0, |p| p + 1)
+                    ));
+                } else {
+                    self.buffer_mut()
+                        .set_status_message("Cursor lock: OFF (cursor moves normally)".to_string());
                 }
             }
             KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Also support Ctrl+Space for cursor lock
-                if let Some(ref state_container) = self.state_container {
-                    state_container.toggle_cursor_lock();
+                self.state_container.toggle_cursor_lock();
 
-                    // Extract values we need before mutable borrows
-                    let (is_locked, lock_position) = {
-                        let navigation = state_container.navigation();
-                        (navigation.cursor_lock, navigation.cursor_lock_position)
-                    };
+                // Extract values we need before mutable borrows
+                let (is_locked, lock_position) = {
+                    let navigation = self.state_container.navigation();
+                    (navigation.cursor_lock, navigation.cursor_lock_position)
+                };
 
-                    if is_locked {
-                        self.buffer_mut().set_status_message(format!(
-                            "Cursor lock: ON (locked at visual position {})",
-                            lock_position.map_or(0, |p| p + 1)
-                        ));
-                    } else {
-                        self.buffer_mut().set_status_message(
-                            "Cursor lock: OFF (cursor moves normally)".to_string(),
-                        );
-                    }
+                if is_locked {
+                    self.buffer_mut().set_status_message(format!(
+                        "Cursor lock: ON (locked at visual position {})",
+                        lock_position.map_or(0, |p| p + 1)
+                    ));
+                } else {
+                    self.buffer_mut()
+                        .set_status_message("Cursor lock: OFF (cursor moves normally)".to_string());
                 }
             }
             KeyCode::PageDown | KeyCode::Char('f')
@@ -2088,18 +1976,12 @@ impl EnhancedTuiApp {
                 debug!(target: "search", "Search: current results count={}", 
                        self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
 
-                // Set search pattern in AppStateContainer if available
-                if let Some(ref state_container) = self.state_container {
-                    state_container.start_search(pattern.clone());
-                }
+                // Set search pattern in AppStateContainer
+                self.state_container.start_search(pattern.clone());
 
                 self.buffer_mut().set_search_pattern(pattern);
                 self.perform_search();
-                let matches_count = if let Some(ref state_container) = self.state_container {
-                    state_container.search().matches.len()
-                } else {
-                    0 // Fallback when state_container not available
-                };
+                let matches_count = self.state_container.search().matches.len();
                 debug!(target: "search", "After perform_search, app_mode={:?}, matches_found={}", 
                        self.buffer().get_mode(),
                        matches_count);
@@ -2110,13 +1992,9 @@ impl EnhancedTuiApp {
                        self.buffer().is_case_insensitive(),
                        self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
                 self.buffer_mut().set_filter_pattern(pattern.clone());
-                if let Some(ref state_container) = self.state_container {
-                    state_container.filter_mut().set_pattern(pattern.clone());
-                } else {
-                    // Fallback when state_container not available
-                    // This shouldn't happen in normal operation
-                    eprintln!("[WARNING] FilterState migration: state_container not available");
-                }
+                self.state_container
+                    .filter_mut()
+                    .set_pattern(pattern.clone());
                 self.apply_filter();
                 debug!(target: "search", "After apply_filter, app_mode={:?}, filtered_count={}", 
                        self.buffer().get_mode(),
@@ -2136,9 +2014,7 @@ impl EnhancedTuiApp {
                 debug!(target: "search", "Executing column search with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
 
                 // Use AppStateContainer for column search
-                if let Some(ref state_container) = self.state_container {
-                    state_container.start_column_search(pattern.clone());
-                }
+                self.state_container.start_column_search(pattern.clone());
 
                 self.buffer_mut().set_column_search_pattern(pattern.clone());
                 // Pattern is now stored in AppStateContainer via search_columns()
@@ -2195,22 +2071,13 @@ impl EnhancedTuiApp {
         // Clear patterns
         match mode {
             SearchMode::Search => {
-                // Clear search in AppStateContainer if available
-                if let Some(ref state_container) = self.state_container {
-                    state_container.clear_search();
-                }
+                // Clear search in AppStateContainer
+                self.state_container.clear_search();
                 self.buffer_mut().set_search_pattern(String::new());
             }
             SearchMode::Filter => {
                 self.buffer_mut().set_filter_pattern(String::new());
-                if let Some(ref state_container) = self.state_container {
-                    state_container.filter_mut().clear();
-                } else {
-                    // Fallback when state_container not available
-                    eprintln!(
-                        "[WARNING] FilterState migration: state_container not available for clear"
-                    );
-                }
+                self.state_container.filter_mut().clear();
             }
             SearchMode::FuzzyFilter => {
                 self.buffer_mut().set_fuzzy_filter_pattern(String::new());
@@ -2219,9 +2086,7 @@ impl EnhancedTuiApp {
             }
             SearchMode::ColumnSearch => {
                 // Use AppStateContainer to clear column search
-                if let Some(ref state_container) = self.state_container {
-                    state_container.clear_column_search();
-                }
+                self.state_container.clear_column_search();
 
                 self.buffer_mut().set_column_search_pattern(String::new());
                 self.buffer_mut().set_column_search_matches(Vec::new());
@@ -2252,14 +2117,9 @@ impl EnhancedTuiApp {
                     }
                     SearchMode::Filter => {
                         self.buffer_mut().set_filter_pattern(pattern.clone());
-                        if let Some(ref state_container) = self.state_container {
-                            let mut filter = state_container.filter_mut();
-                            filter.pattern = pattern.clone();
-                            filter.is_active = true;
-                        } else {
-                            // Fallback when state_container not available
-                            eprintln!("[WARNING] FilterState migration: state_container not available in Set Filter");
-                        }
+                        let mut filter = self.state_container.filter_mut();
+                        filter.pattern = pattern.clone();
+                        filter.is_active = true;
                     }
                     SearchMode::FuzzyFilter => {
                         self.buffer_mut().set_fuzzy_filter_pattern(pattern);
@@ -2289,14 +2149,11 @@ impl EnhancedTuiApp {
                     SearchMode::Filter => {
                         debug!(target: "search", "Filter Apply: Applying filter with pattern '{}'", pattern);
                         self.buffer_mut().set_filter_pattern(pattern.clone());
-                        if let Some(ref state_container) = self.state_container {
-                            let mut filter = state_container.filter_mut();
+                        {
+                            let mut filter = self.state_container.filter_mut();
                             filter.pattern = pattern.clone();
                             filter.is_active = true;
-                        } else {
-                            // Fallback when state_container not available
-                            eprintln!("[WARNING] FilterState migration: state_container not available in Filter Apply");
-                        }
+                        } // filter borrow ends here
                         self.apply_filter();
                         debug!(target: "search", "Filter Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
                     }
@@ -2308,16 +2165,15 @@ impl EnhancedTuiApp {
                     }
                     SearchMode::ColumnSearch => {
                         // For column search, Apply (Enter key) jumps to the current match and exits
-                        let column_info = if let Some(ref state_container) = self.state_container {
-                            let column_search = state_container.column_search();
+
+                        let column_info = {
+                            let column_search = self.state_container.column_search();
                             if !column_search.matching_columns.is_empty() {
                                 let current_match = column_search.current_match;
                                 Some(column_search.matching_columns[current_match].clone())
                             } else {
                                 None
                             }
-                        } else {
-                            None
                         };
 
                         if let Some((col_idx, col_name)) = column_info {
@@ -2392,12 +2248,7 @@ impl EnhancedTuiApp {
                     AppMode::Filter => {
                         // Clear both local and buffer filter state
                         debug!(target: "search", "Filter Cancel: Clearing filter pattern and state");
-                        if let Some(ref state_container) = self.state_container {
-                            state_container.filter_mut().clear();
-                        } else {
-                            // Fallback when state_container not available
-                            eprintln!("[WARNING] FilterState migration: state_container not available in Filter Cancel");
-                        }
+                        self.state_container.filter_mut().clear();
                         self.buffer_mut().set_filter_pattern(String::new());
                         self.buffer_mut().set_filter_active(false);
                         // Re-apply empty filter to restore all results
@@ -2405,21 +2256,13 @@ impl EnhancedTuiApp {
                     }
                     AppMode::ColumnSearch => {
                         // Clear column search state using AppStateContainer
-                        if let Some(ref state_container) = self.state_container {
-                            state_container.clear_column_search();
-                        }
-
+                        self.state_container.clear_column_search();
                         // Clear local and buffer state for compatibility
                         self.buffer_mut().set_column_search_pattern(String::new());
                         self.buffer_mut().set_column_search_matches(Vec::new());
                         self.buffer_mut().set_column_search_current_match(0);
                         // Clear column search in AppStateContainer
-                        if let Some(ref state_container) = self.state_container {
-                            state_container.clear_column_search();
-                        }
-                        // current_match is set via AppStateContainer in start_column_search
-
-                        // IMPORTANT: Don't modify input_text when cancelling column search!
+                        self.state_container.clear_column_search();
                         // The widget will restore the original SQL that was saved when entering the mode
                         debug!(target: "search", "ColumnSearch Cancel: Exiting without modifying input_text");
                         debug!(target: "search", "ColumnSearch Cancel: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
@@ -2532,9 +2375,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Esc => {
                 // Clear filter state using AppStateContainer
-                if let Some(ref state_container) = self.state_container {
-                    state_container.filter_mut().clear();
-                }
+                self.state_container.filter_mut().clear();
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
@@ -2550,27 +2391,19 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Backspace => {
-                let pattern = if let Some(ref state_container) = self.state_container {
-                    let mut filter = state_container.filter_mut();
-                    filter.pattern.pop();
-                    filter.pattern.clone()
-                } else {
-                    // Fallback
-                    eprintln!("[WARNING] FilterState migration: state_container not available in handle_filter_input");
-                    String::new()
+                let pattern = {
+                    let mut filter = self.state_container.filter_mut();
+                    filter.pattern.pop(); // Remove last character
+                    filter.pattern.clone() // Return the updated pattern
                 };
                 // Update input for rendering
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
             }
             KeyCode::Char(c) => {
-                let pattern = if let Some(ref state_container) = self.state_container {
-                    let mut filter = state_container.filter_mut();
+                let pattern = {
+                    let mut filter = self.state_container.filter_mut();
                     filter.pattern.push(c);
                     filter.pattern.clone()
-                } else {
-                    // Fallback
-                    eprintln!("[WARNING] FilterState migration: state_container not available in handle_filter_input");
-                    String::new()
                 };
                 // Update input for rendering
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
@@ -2774,9 +2607,6 @@ impl EnhancedTuiApp {
         self.help_widget.on_exit();
         self.set_help_visible(false); // Keep state_container in sync
                                       // Scroll is automatically reset when help is hidden in state_container
-        if self.state_container.is_none() {
-            self.help_scroll = 0;
-        }
         let mode = if self.buffer().get_results().is_some() {
             AppMode::Results
         } else {
@@ -2789,188 +2619,76 @@ impl EnhancedTuiApp {
         let max_lines: usize = 58;
         let visible_height: usize = 30;
 
-        if let Some(ref state_container) = self.state_container {
-            state_container.set_help_max_scroll(max_lines, visible_height);
-            state_container.help_scroll_down();
-        } else {
-            // Fallback to local
-            let max_scroll = max_lines.saturating_sub(visible_height);
-            if (self.help_scroll as usize) < max_scroll {
-                self.help_scroll += 1;
-            }
-        }
+        self.state_container
+            .set_help_max_scroll(max_lines, visible_height);
+        self.state_container.help_scroll_down();
     }
 
     fn scroll_help_up(&mut self) {
-        if let Some(ref state_container) = self.state_container {
-            state_container.help_scroll_up();
-        } else {
-            self.help_scroll = self.help_scroll.saturating_sub(1);
-        }
+        self.state_container.help_scroll_up();
     }
 
     fn help_page_down(&mut self) {
         let max_lines: usize = 58;
         let visible_height: usize = 30;
 
-        if let Some(ref state_container) = self.state_container {
-            state_container.set_help_max_scroll(max_lines, visible_height);
-            state_container.help_page_down();
-        } else {
-            // Fallback to local
-            let max_scroll = max_lines.saturating_sub(visible_height);
-            self.help_scroll = (self.help_scroll + 10).min(max_scroll as u16);
-        }
+        self.state_container
+            .set_help_max_scroll(max_lines, visible_height);
+        self.state_container.help_page_down();
     }
 
     fn help_page_up(&mut self) {
-        if let Some(ref state_container) = self.state_container {
-            state_container.help_page_up();
-        } else {
-            self.help_scroll = self.help_scroll.saturating_sub(10);
-        }
+        self.state_container.help_page_up();
     }
 
     fn handle_history_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        if let Some(ref state_container) = self.state_container {
-            match key.code {
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    return Ok(true)
-                }
-                KeyCode::Esc => {
-                    // Cancel history search and restore original input
-                    let original_input = state_container.cancel_history_search();
-                    self.set_input_text(original_input);
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
+            KeyCode::Esc => {
+                // Cancel history search and restore original input
+                let original_input = self.state_container.cancel_history_search();
+                self.set_input_text(original_input);
+                self.buffer_mut().set_mode(AppMode::Command);
+                self.buffer_mut()
+                    .set_status_message("History search cancelled".to_string());
+            }
+            KeyCode::Enter => {
+                // Accept the selected history command
+                if let Some(command) = self.state_container.accept_history_search() {
+                    self.set_input_text(command);
                     self.buffer_mut().set_mode(AppMode::Command);
                     self.buffer_mut()
-                        .set_status_message("History search cancelled".to_string());
+                        .set_status_message("Command loaded from history".to_string());
+                    // Reset scroll to show end of command
+                    self.input_scroll_offset = 0;
+                    self.update_horizontal_scroll(120); // Will be properly updated on next render
                 }
-                KeyCode::Enter => {
-                    // Accept the selected history command
-                    if let Some(command) = state_container.accept_history_search() {
-                        self.set_input_text(command);
-                        self.buffer_mut().set_mode(AppMode::Command);
-                        self.buffer_mut()
-                            .set_status_message("Command loaded from history".to_string());
-                        // Reset scroll to show end of command
-                        self.input_scroll_offset = 0;
-                        self.update_horizontal_scroll(120); // Will be properly updated on next render
-                    }
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    state_container.history_search_previous();
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    state_container.history_search_next();
-                }
-                KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    // Ctrl+R cycles through matches
-                    state_container.history_search_next();
-                }
-                KeyCode::Backspace => {
-                    state_container.history_search_backspace();
-                    self.update_history_matches_in_container();
-                }
-                KeyCode::Char(c) => {
-                    state_container.history_search_add_char(c);
-                    self.update_history_matches_in_container();
-                }
-                _ => {}
             }
-        } else {
-            // Fallback to old behavior if no state container
-            match key.code {
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    return Ok(true)
-                }
-                KeyCode::Esc => {
-                    self.buffer_mut().set_mode(AppMode::Command);
-                }
-                KeyCode::Enter => {
-                    if !self.history_state.matches.is_empty()
-                        && self.history_state.selected_index < self.history_state.matches.len()
-                    {
-                        let selected_command = self.history_state.matches
-                            [self.history_state.selected_index]
-                            .entry
-                            .command
-                            .clone();
-                        // Use helper to set text through buffer
-                        self.set_input_text(selected_command);
-                        self.buffer_mut().set_mode(AppMode::Command);
-                        self.buffer_mut()
-                            .set_status_message("Command loaded from history".to_string());
-                        // Reset scroll to show end of command
-                        self.input_scroll_offset = 0;
-                        self.update_horizontal_scroll(120); // Will be properly updated on next render
-                    }
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if !self.history_state.matches.is_empty() {
-                        self.history_state.selected_index =
-                            self.history_state.selected_index.saturating_sub(1);
-                    }
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if !self.history_state.matches.is_empty()
-                        && self.history_state.selected_index + 1 < self.history_state.matches.len()
-                    {
-                        self.history_state.selected_index += 1;
-                    }
-                }
-                KeyCode::Backspace => {
-                    self.history_state.search_query.pop();
-                    self.update_history_matches();
-                }
-                KeyCode::Char(c) => {
-                    self.history_state.search_query.push(c);
-                    self.update_history_matches();
-                }
-                _ => {}
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.state_container.history_search_previous();
             }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.state_container.history_search_next();
+            }
+            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+R cycles through matches
+                self.state_container.history_search_next();
+            }
+            KeyCode::Backspace => {
+                self.state_container.history_search_backspace();
+                self.update_history_matches_in_container();
+            }
+            KeyCode::Char(c) => {
+                self.state_container.history_search_add_char(c);
+                self.update_history_matches_in_container();
+            }
+            _ => {}
         }
         Ok(false)
     }
 
     /// Update history matches in the AppStateContainer with schema context
     fn update_history_matches_in_container(&mut self) {
-        if let Some(ref state_container) = self.state_container {
-            // Get current schema columns and data source for better matching
-            let (current_columns, current_source_str) = if self.buffer().is_csv_mode() {
-                if let Some(csv_client) = self.buffer().get_csv_client() {
-                    if let Some(schema) = csv_client.get_schema() {
-                        // Get the first (and usually only) table's columns and name
-                        let (cols, table_name) = schema
-                            .iter()
-                            .next()
-                            .map(|(table_name, cols)| (cols.clone(), Some(table_name.clone())))
-                            .unwrap_or((vec![], None));
-                        (cols, table_name)
-                    } else {
-                        (vec![], None)
-                    }
-                } else {
-                    (vec![], None)
-                }
-            } else if self.buffer().is_cache_mode() {
-                (vec![], Some("cache".to_string()))
-            } else {
-                (vec![], Some("api".to_string()))
-            };
-
-            let current_source = current_source_str.as_deref();
-            let query = state_container.history_search().query.clone();
-
-            state_container.update_history_search_with_schema(
-                query,
-                &current_columns,
-                current_source,
-            );
-        }
-    }
-
-    /// Update history matches for fallback local state
-    fn update_history_matches(&mut self) {
         // Get current schema columns and data source for better matching
         let (current_columns, current_source_str) = if self.buffer().is_csv_mode() {
             if let Some(csv_client) = self.buffer().get_csv_client() {
@@ -2995,13 +2713,13 @@ impl EnhancedTuiApp {
         };
 
         let current_source = current_source_str.as_deref();
+        let query = self.state_container.history_search().query.clone();
 
-        self.history_state.matches = self.command_history.search_with_schema(
-            &self.history_state.search_query,
+        self.state_container.update_history_search_with_schema(
+            query,
             &current_columns,
             current_source,
         );
-        self.history_state.selected_index = 0;
     }
 
     fn handle_debug_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -3059,17 +2777,12 @@ impl EnhancedTuiApp {
 
         // Check cache first (only for non-cache mode queries)
         let cached_result = if !self.buffer().is_cache_mode() {
-            if let Some(ref state_container) = self.state_container {
-                // Use the same key format as when caching
-                let query_key = format!("{}:{}", query, self.buffer().get_table_name());
-                let cached = state_container.get_cached_results(&query_key);
-                if cached.is_some() {
-                    info!(target: "query", "Found cached results for query: {} (key: {})", query, query_key);
-                }
-                cached
-            } else {
-                None
+            let query_key = format!("{}:{}", query, self.buffer().get_table_name());
+            let cached = self.state_container.get_cached_results(&query_key);
+            if cached.is_some() {
+                info!(target: "query", "Found cached results for query: {} (key: {})", query, query_key);
             }
+            cached
         } else {
             None
         };
@@ -3180,41 +2893,44 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_filtered_data(None);
 
                 // Also update AppStateContainer with results and performance metrics
-                if let Some(ref state_container) = self.state_container {
-                    // Check if this was from cache (either cache mode or cached_result was used)
-                    let from_cache =
-                        data_source.as_deref() == Some("cache") || response.cached.unwrap_or(false);
 
-                    if let Err(e) =
-                        state_container.set_results(response.clone(), duration, from_cache)
+                // Check if this was from cache (either cache mode or cached_result was used)
+                let from_cache =
+                    data_source.as_deref() == Some("cache") || response.cached.unwrap_or(false);
+
+                if let Err(e) =
+                    self.state_container
+                        .set_results(response.clone(), duration, from_cache)
+                {
+                    warn!(target: "results", "Failed to update results in AppStateContainer: {}", e);
+                }
+
+                // Only cache results if they weren't already from cache
+                if !from_cache {
+                    let query_key = format!("{}:{}", query, self.buffer().get_table_name());
+                    if let Err(e) = self
+                        .state_container
+                        .cache_results(query_key, response.clone())
                     {
-                        warn!(target: "results", "Failed to update results in AppStateContainer: {}", e);
+                        warn!(target: "results", "Failed to cache results in AppStateContainer: {}", e);
                     }
+                }
 
-                    // Only cache results if they weren't already from cache
-                    if !from_cache {
-                        let query_key = format!("{}:{}", query, self.buffer().get_table_name());
-                        if let Err(e) = state_container.cache_results(query_key, response.clone()) {
-                            warn!(target: "results", "Failed to cache results in AppStateContainer: {}", e);
-                        }
-                    }
-
-                    // Update NavigationState with total rows and columns
-                    let total_rows = row_count;
-                    let total_cols = if !response.data.is_empty() {
-                        if let Some(obj) = response.data[0].as_object() {
-                            obj.len()
-                        } else {
-                            0
-                        }
+                // Update NavigationState with total rows and columns
+                let total_rows = row_count;
+                let total_cols = if !response.data.is_empty() {
+                    if let Some(obj) = response.data[0].as_object() {
+                        obj.len()
                     } else {
                         0
-                    };
-                    state_container
-                        .navigation_mut()
-                        .update_totals(total_rows, total_cols);
-                    info!(target: "navigation", "Updated NavigationState totals after query: {} rows x {} cols", total_rows, total_cols);
-                }
+                    }
+                } else {
+                    0
+                };
+                self.state_container
+                    .navigation_mut()
+                    .update_totals(total_rows, total_cols);
+                info!(target: "navigation", "Updated NavigationState totals after query: {} rows x {} cols", total_rows, total_cols);
 
                 // Update viewport size to ensure NavigationState has correct dimensions
                 self.update_viewport_size();
@@ -3373,66 +3089,38 @@ impl EnhancedTuiApp {
         let cursor_pos = self.get_input_cursor();
         let query = self.get_input_text();
 
-        // Get the suggestion based on whether we have AppStateContainer
-        let suggestion = if let Some(ref state_container) = self.state_container {
-            // Use AppStateContainer for completion
-            let is_same_context = state_container.is_same_completion_context(&query, cursor_pos);
+        // Use AppStateContainer for completion
+        let is_same_context = self
+            .state_container
+            .is_same_completion_context(&query, cursor_pos);
 
-            if !is_same_context {
-                // New completion context - get fresh suggestions
-                let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
-                if hybrid_result.suggestions.is_empty() {
-                    self.buffer_mut()
-                        .set_status_message("No completions available".to_string());
-                    return;
-                }
-
-                state_container.set_completion_suggestions(hybrid_result.suggestions);
-            } else if state_container.is_completion_active() {
-                // Cycle to next suggestion
-                state_container.next_completion();
-            } else {
+        if !is_same_context {
+            // New completion context - get fresh suggestions
+            let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
+            if hybrid_result.suggestions.is_empty() {
                 self.buffer_mut()
                     .set_status_message("No completions available".to_string());
                 return;
             }
 
-            // Get the current suggestion from AppStateContainer
-            if let Some(sugg) = state_container.get_current_completion() {
-                sugg
-            } else {
-                self.buffer_mut()
-                    .set_status_message("No completion selected".to_string());
-                return;
-            }
+            self.state_container
+                .set_completion_suggestions(hybrid_result.suggestions);
+        } else if self.state_container.is_completion_active() {
+            // Cycle to next suggestion
+            self.state_container.next_completion();
         } else {
-            // Fallback to local completion_state
-            let is_same_context = query == self.completion_state.last_query
-                && cursor_pos == self.completion_state.last_cursor_pos;
+            self.buffer_mut()
+                .set_status_message("No completions available".to_string());
+            return;
+        }
 
-            if !is_same_context {
-                // New completion context - get fresh suggestions
-                let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
-                if hybrid_result.suggestions.is_empty() {
-                    self.buffer_mut()
-                        .set_status_message("No completions available".to_string());
-                    return;
-                }
-
-                self.completion_state.suggestions = hybrid_result.suggestions;
-                self.completion_state.current_index = 0;
-            } else if !self.completion_state.suggestions.is_empty() {
-                // Cycle to next suggestion
-                self.completion_state.current_index = (self.completion_state.current_index + 1)
-                    % self.completion_state.suggestions.len();
-            } else {
-                self.buffer_mut()
-                    .set_status_message("No completions available".to_string());
-                return;
-            }
-
-            // Apply the current suggestion (clone to avoid borrow issues)
-            self.completion_state.suggestions[self.completion_state.current_index].clone()
+        // Get the current suggestion from AppStateContainer
+        let suggestion = if let Some(sugg) = self.state_container.get_current_completion() {
+            sugg
+        } else {
+            self.buffer_mut()
+                .set_status_message("No completion selected".to_string());
+            return;
         };
         let partial_word = self.extract_partial_word_at_cursor(&query, cursor_pos);
 
@@ -3476,39 +3164,22 @@ impl EnhancedTuiApp {
             }
 
             // Update completion state for next tab press
-            if let Some(ref state_container) = self.state_container {
-                state_container.update_completion_context(new_query.clone(), cursor_pos);
+            self.state_container
+                .update_completion_context(new_query.clone(), cursor_pos);
 
-                let completion = state_container.completion();
-                let suggestion_info = if completion.suggestions.len() > 1 {
-                    format!(
-                        "Completed: {} ({}/{} - Tab for next)",
-                        suggestion,
-                        completion.current_index + 1,
-                        completion.suggestions.len()
-                    )
-                } else {
-                    format!("Completed: {}", suggestion)
-                };
-                drop(completion);
-                self.buffer_mut().set_status_message(suggestion_info);
+            let completion = self.state_container.completion();
+            let suggestion_info = if completion.suggestions.len() > 1 {
+                format!(
+                    "Completed: {} ({}/{} - Tab for next)",
+                    suggestion,
+                    completion.current_index + 1,
+                    completion.suggestions.len()
+                )
             } else {
-                // Fallback to local state
-                self.completion_state.last_query = new_query;
-                self.completion_state.last_cursor_pos = cursor_pos;
-
-                let suggestion_info = if self.completion_state.suggestions.len() > 1 {
-                    format!(
-                        "Completed: {} ({}/{} - Tab for next)",
-                        suggestion,
-                        self.completion_state.current_index + 1,
-                        self.completion_state.suggestions.len()
-                    )
-                } else {
-                    format!("Completed: {}", suggestion)
-                };
-                self.buffer_mut().set_status_message(suggestion_info);
-            }
+                format!("Completed: {}", suggestion)
+            };
+            drop(completion);
+            self.buffer_mut().set_status_message(suggestion_info);
         } else {
             // Just insert the suggestion at cursor position
             let before_cursor = &query[..cursor_pos];
@@ -3535,12 +3206,8 @@ impl EnhancedTuiApp {
             }
 
             // Update completion state
-            if let Some(ref state_container) = self.state_container {
-                state_container.update_completion_context(new_query, cursor_pos_new);
-            } else {
-                self.completion_state.last_query = new_query;
-                self.completion_state.last_cursor_pos = cursor_pos_new;
-            }
+            self.state_container
+                .update_completion_context(new_query, cursor_pos_new);
 
             self.buffer_mut()
                 .set_status_message(format!("Inserted: {}", suggestion));
@@ -3618,91 +3285,16 @@ impl EnhancedTuiApp {
             // Update viewport size before navigation
             self.update_viewport_size();
 
-            // Use AppStateContainer for navigation
-            if let Some(ref state_container) = self.state_container {
-                // Extract values we need before mutable borrows
-                let (new_row, new_scroll_offset) = {
-                    let mut nav = state_container.navigation_mut();
-
-                    // Update totals if needed
-                    let total_cols = self.get_column_count();
-                    nav.update_totals(total_rows, total_cols);
-
-                    // Move to next row
-                    if nav.next_row() {
-                        (Some(nav.selected_row), nav.scroll_offset)
-                    } else {
-                        (None, nav.scroll_offset)
-                    }
-                };
-
-                // Now we can use mutable self since we've dropped the nav borrow
-                if let Some(row) = new_row {
-                    // Sync with local table_state for rendering
-                    self.table_state.select(Some(row));
-
-                    // Sync scroll offset with buffer
-                    self.buffer_mut().set_scroll_offset(new_scroll_offset);
-                }
-            } else {
-                // Fallback to old implementation
-                let current = self.table_state.selected().unwrap_or(0);
-                if current >= total_rows - 1 {
-                    return;
-                } // Already at bottom
-
-                let new_position = current + 1;
-                self.table_state.select(Some(new_position));
-
-                // Update viewport based on lock mode
-                let is_locked = if let Some(ref state_container) = self.state_container {
-                    state_container.is_viewport_locked()
-                } else {
-                    self.buffer().is_viewport_lock()
-                };
-                if is_locked {
-                    // In lock mode, keep cursor at fixed viewport position
-                    let lock_row = if let Some(ref state_container) = self.state_container {
-                        state_container.navigation().viewport_lock_row
-                    } else {
-                        self.buffer().get_viewport_lock_row()
-                    };
-                    if let Some(lock_row) = lock_row {
-                        // Adjust viewport so cursor stays at lock_row position
-                        let mut offset = self.buffer().get_scroll_offset();
-                        offset.0 = new_position.saturating_sub(lock_row);
-                        self.buffer_mut().set_scroll_offset(offset);
-                    }
-                } else {
-                    // Normal scrolling behavior
-                    let visible_rows = self.buffer().get_last_visible_rows();
-
-                    // Check if cursor would be below the last visible row
-                    let offset = self.buffer().get_scroll_offset();
-                    if new_position > offset.0 + visible_rows - 1 {
-                        // Cursor moved below viewport - scroll down by one
-                        self.buffer_mut()
-                            .set_scroll_offset((offset.0 + 1, offset.1));
-                    }
-                }
-            }
-        }
-    }
-
-    fn previous_row(&mut self) {
-        // Use AppStateContainer for navigation
-        if let Some(ref state_container) = self.state_container {
             // Extract values we need before mutable borrows
             let (new_row, new_scroll_offset) = {
-                let mut nav = state_container.navigation_mut();
+                let mut nav = self.state_container.navigation_mut();
 
                 // Update totals if needed
-                let total_rows = self.get_row_count();
                 let total_cols = self.get_column_count();
                 nav.update_totals(total_rows, total_cols);
 
-                // Move to previous row
-                if nav.previous_row() {
+                // Move to next row
+                if nav.next_row() {
                     (Some(nav.selected_row), nav.scroll_offset)
                 } else {
                     (None, nav.scroll_offset)
@@ -3717,44 +3309,35 @@ impl EnhancedTuiApp {
                 // Sync scroll offset with buffer
                 self.buffer_mut().set_scroll_offset(new_scroll_offset);
             }
-        } else {
-            // Fallback to old implementation
-            let current = self.table_state.selected().unwrap_or(0);
-            if current == 0 {
-                return;
-            } // Already at top
+        }
+    }
 
-            let new_position = current - 1;
-            self.table_state.select(Some(new_position));
+    fn previous_row(&mut self) {
+        // Use AppStateContainer for navigation
+        // Extract values we need before mutable borrows
+        let (new_row, new_scroll_offset) = {
+            let mut nav = self.state_container.navigation_mut();
 
-            // Update viewport based on lock mode
-            let is_locked = if let Some(ref state_container) = self.state_container {
-                state_container.is_viewport_locked()
+            // Update totals if needed
+            let total_rows = self.get_row_count();
+            let total_cols = self.get_column_count();
+            nav.update_totals(total_rows, total_cols);
+
+            // Move to previous row
+            if nav.previous_row() {
+                (Some(nav.selected_row), nav.scroll_offset)
             } else {
-                self.buffer().is_viewport_lock()
-            };
-            if is_locked {
-                // In lock mode, keep cursor at fixed viewport position
-                let lock_row = if let Some(ref state_container) = self.state_container {
-                    state_container.navigation().viewport_lock_row
-                } else {
-                    self.buffer().get_viewport_lock_row()
-                };
-                if let Some(lock_row) = lock_row {
-                    // Adjust viewport so cursor stays at lock_row position
-                    let mut offset = self.buffer().get_scroll_offset();
-                    offset.0 = new_position.saturating_sub(lock_row);
-                    self.buffer_mut().set_scroll_offset(offset);
-                }
-            } else {
-                // Normal scrolling behavior
-                let mut offset = self.buffer().get_scroll_offset();
-                if new_position < offset.0 {
-                    // Cursor moved above viewport - scroll up
-                    offset.0 = new_position;
-                    self.buffer_mut().set_scroll_offset(offset);
-                }
+                (None, nav.scroll_offset)
             }
+        };
+
+        // Now we can use mutable self since we've dropped the nav borrow
+        if let Some(row) = new_row {
+            // Sync with local table_state for rendering
+            self.table_state.select(Some(row));
+
+            // Sync scroll offset with buffer
+            self.buffer_mut().set_scroll_offset(new_scroll_offset);
         }
     }
 
@@ -3831,14 +3414,17 @@ impl EnhancedTuiApp {
 
     fn goto_first_row(&mut self) {
         // Update NavigationState
-        if let Some(ref state_container) = self.state_container {
-            let mut nav = state_container.navigation_mut();
+        {
+            let mut nav = self.state_container.navigation_mut();
             nav.jump_to_first_row();
-        }
+        } // nav borrow ends here
 
         self.table_state.select(Some(0));
-        let mut offset = self.buffer().get_scroll_offset();
-        offset.0 = 0; // Reset viewport to top
+        let offset = {
+            let mut offset = self.buffer().get_scroll_offset();
+            offset.0 = 0; // Reset viewport to top
+            offset
+        }; // immutable borrow ends here
         self.buffer_mut().set_scroll_offset(offset);
 
         let total_rows = self.get_row_count();
@@ -3849,60 +3435,54 @@ impl EnhancedTuiApp {
     }
 
     fn goto_viewport_top(&mut self) {
-        // Jump to top of current viewport (H in vim)
-        if let Some(ref state_container) = self.state_container {
-            let (new_row, status_msg) = {
-                let mut nav = state_container.navigation_mut();
-                nav.jump_to_viewport_top();
-                let row = nav.selected_row;
-                let total = nav.total_rows;
-                (
-                    row,
-                    format!("Jumped to viewport top (row {}/{})", row + 1, total),
-                )
-            };
+        let (new_row, status_msg) = {
+            let mut nav = self.state_container.navigation_mut();
+            nav.jump_to_viewport_top();
+            let row = nav.selected_row;
+            let total = nav.total_rows;
+            (
+                row,
+                format!("Jumped to viewport top (row {}/{})", row + 1, total),
+            )
+        };
 
-            self.table_state.select(Some(new_row));
-            self.buffer_mut().set_status_message(status_msg);
-        }
+        self.table_state.select(Some(new_row));
+        self.buffer_mut().set_status_message(status_msg);
     }
 
     fn goto_viewport_middle(&mut self) {
         // Jump to middle of current viewport (M in vim)
-        if let Some(ref state_container) = self.state_container {
-            let (new_row, status_msg) = {
-                let mut nav = state_container.navigation_mut();
-                nav.jump_to_viewport_middle();
-                let row = nav.selected_row;
-                let total = nav.total_rows;
-                (
-                    row,
-                    format!("Jumped to viewport middle (row {}/{})", row + 1, total),
-                )
-            };
 
-            self.table_state.select(Some(new_row));
-            self.buffer_mut().set_status_message(status_msg);
-        }
+        let (new_row, status_msg) = {
+            let mut nav = self.state_container.navigation_mut();
+            nav.jump_to_viewport_middle();
+            let row = nav.selected_row;
+            let total = nav.total_rows;
+            (
+                row,
+                format!("Jumped to viewport middle (row {}/{})", row + 1, total),
+            )
+        };
+
+        self.table_state.select(Some(new_row));
+        self.buffer_mut().set_status_message(status_msg);
     }
 
     fn goto_viewport_bottom(&mut self) {
         // Jump to bottom of current viewport (L in vim)
-        if let Some(ref state_container) = self.state_container {
-            let (new_row, status_msg) = {
-                let mut nav = state_container.navigation_mut();
-                nav.jump_to_viewport_bottom();
-                let row = nav.selected_row;
-                let total = nav.total_rows;
-                (
-                    row,
-                    format!("Jumped to viewport bottom (row {}/{})", row + 1, total),
-                )
-            };
+        let (new_row, status_msg) = {
+            let mut nav = self.state_container.navigation_mut();
+            nav.jump_to_viewport_bottom();
+            let row = nav.selected_row;
+            let total = nav.total_rows;
+            (
+                row,
+                format!("Jumped to viewport bottom (row {}/{})", row + 1, total),
+            )
+        };
 
-            self.table_state.select(Some(new_row));
-            self.buffer_mut().set_status_message(status_msg);
-        }
+        self.table_state.select(Some(new_row));
+        self.buffer_mut().set_status_message(status_msg);
     }
 
     fn toggle_column_pin(&mut self) {
@@ -4116,11 +3696,10 @@ impl EnhancedTuiApp {
             self.buffer_mut().set_last_visible_rows(visible_rows);
 
             // Update NavigationState's viewport dimensions
-            if let Some(ref state_container) = self.state_container {
-                state_container
-                    .navigation_mut()
-                    .set_viewport_size(visible_rows, terminal_width);
-            }
+
+            self.state_container
+                .navigation_mut()
+                .set_viewport_size(visible_rows, terminal_width);
 
             info!(target: "navigation", "update_viewport_size - viewport set to: {}x{} rows", visible_rows, terminal_width);
         }
@@ -4130,10 +3709,9 @@ impl EnhancedTuiApp {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
             let last_row = total_rows - 1;
-
             // Update NavigationState
-            if let Some(ref state_container) = self.state_container {
-                let mut nav = state_container.navigation_mut();
+            {
+                let mut nav = self.state_container.navigation_mut();
                 nav.jump_to_last_row();
             }
 
@@ -4184,170 +3762,84 @@ impl EnhancedTuiApp {
 
     // Search and filter functions
     fn perform_search(&mut self) {
-        // Use AppStateContainer for search if available
-        if let Some(ref state_container) = self.state_container {
-            if let Some(data) = self.get_current_data() {
-                // Perform search using AppStateContainer
-                let matches = state_container.perform_search(&data);
+        if let Some(data) = self.get_current_data() {
+            // Perform search using AppStateContainer
+            let matches = self.state_container.perform_search(&data);
 
-                // Update buffer with matches for now (until we fully migrate)
-                let buffer_matches: Vec<(usize, usize)> = matches
-                    .iter()
-                    .map(|(row, col, _, _)| (*row, *col))
-                    .collect();
+            // Update buffer with matches for now (until we fully migrate)
+            let buffer_matches: Vec<(usize, usize)> = matches
+                .iter()
+                .map(|(row, col, _, _)| (*row, *col))
+                .collect();
 
-                self.buffer_mut().set_search_matches(buffer_matches.clone());
+            self.buffer_mut().set_search_matches(buffer_matches.clone());
 
-                if !buffer_matches.is_empty() {
-                    self.buffer_mut().set_search_match_index(0);
-                    self.buffer_mut().set_current_match(Some(buffer_matches[0]));
-                    let (row, _) = buffer_matches[0];
-                    self.table_state.select(Some(row));
-                    self.buffer_mut()
-                        .set_status_message(format!("Found {} matches", buffer_matches.len()));
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("No matches found".to_string());
-                }
-            }
-        } else {
-            // Fallback to old implementation
-            if let Some(data) = self.get_current_data() {
-                self.buffer_mut().set_search_matches(Vec::new());
-
-                if let Ok(regex) = Regex::new(&self.buffer().get_search_pattern()) {
-                    for (row_idx, row) in data.iter().enumerate() {
-                        for (col_idx, cell) in row.iter().enumerate() {
-                            if regex.is_match(cell) {
-                                let mut matches = self.buffer().get_search_matches();
-                                matches.push((row_idx, col_idx));
-                                self.buffer_mut().set_search_matches(matches);
-                            }
-                        }
-                    }
-
-                    if !self.buffer().get_search_matches().is_empty() {
-                        self.buffer_mut().set_search_match_index(0);
-                        let matches = self.buffer().get_search_matches();
-                        self.buffer_mut().set_current_match(Some(matches[0]));
-                        let (row, _) = matches[0];
-                        self.table_state.select(Some(row));
-                        self.buffer_mut()
-                            .set_status_message(format!("Found {} matches", matches.len()));
-                    } else {
-                        self.buffer_mut()
-                            .set_status_message("No matches found".to_string());
-                    }
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("Invalid regex pattern".to_string());
-                }
+            if !buffer_matches.is_empty() {
+                self.buffer_mut().set_search_match_index(0);
+                self.buffer_mut().set_current_match(Some(buffer_matches[0]));
+                let (row, _) = buffer_matches[0];
+                self.table_state.select(Some(row));
+                self.buffer_mut()
+                    .set_status_message(format!("Found {} matches", buffer_matches.len()));
+            } else {
+                self.buffer_mut()
+                    .set_status_message("No matches found".to_string());
             }
         }
     }
 
     fn next_search_match(&mut self) {
         // Use AppStateContainer for search navigation if available
-        if let Some(ref state_container) = self.state_container {
-            if let Some((row, col)) = state_container.next_search_match() {
-                // Extract values before mutable borrows
-                let current_idx = state_container.search().current_match + 1;
-                let total = state_container.search().matches.len();
-                let search_match_index = state_container.search().current_match;
 
-                // Now do mutable operations
-                self.table_state.select(Some(row));
-                self.buffer_mut().set_current_match(Some((row, col)));
-                self.buffer_mut()
-                    .set_status_message(format!("Match {} of {}", current_idx, total));
-                self.buffer_mut().set_search_match_index(search_match_index);
-            } else {
-                self.buffer_mut()
-                    .set_status_message("No search matches".to_string());
-            }
+        if let Some((row, col)) = self.state_container.next_search_match() {
+            // Extract values before mutable borrows
+            let current_idx = self.state_container.search().current_match + 1;
+            let total = self.state_container.search().matches.len();
+            let search_match_index = self.state_container.search().current_match;
+
+            // Now do mutable operations
+            self.table_state.select(Some(row));
+            self.buffer_mut().set_current_match(Some((row, col)));
+            self.buffer_mut()
+                .set_status_message(format!("Match {} of {}", current_idx, total));
+            self.buffer_mut().set_search_match_index(search_match_index);
         } else {
-            // Fallback to old implementation
-            if !self.buffer().get_search_matches().is_empty() {
-                let matches = self.buffer().get_search_matches();
-                let new_index = (self.buffer().get_search_match_index() + 1) % matches.len();
-                self.buffer_mut().set_search_match_index(new_index);
-                let (row, _) = matches[new_index];
-                self.table_state.select(Some(row));
-                self.buffer_mut()
-                    .set_current_match(Some(matches[new_index]));
-                self.buffer_mut().set_status_message(format!(
-                    "Match {} of {}",
-                    new_index + 1,
-                    matches.len()
-                ));
-            }
+            self.buffer_mut()
+                .set_status_message("No search matches".to_string());
         }
     }
 
     fn previous_search_match(&mut self) {
         // Use AppStateContainer for search navigation if available
-        if let Some(ref state_container) = self.state_container {
-            if let Some((row, col)) = state_container.previous_search_match() {
-                // Extract values before mutable borrows
-                let current_idx = state_container.search().current_match + 1;
-                let total = state_container.search().matches.len();
-                let search_match_index = state_container.search().current_match;
+        if let Some((row, col)) = self.state_container.previous_search_match() {
+            // Extract values before mutable borrows
+            let current_idx = self.state_container.search().current_match + 1;
+            let total = self.state_container.search().matches.len();
+            let search_match_index = self.state_container.search().current_match;
 
-                // Now do mutable operations
-                self.table_state.select(Some(row));
-                self.buffer_mut().set_current_match(Some((row, col)));
-                self.buffer_mut()
-                    .set_status_message(format!("Match {} of {}", current_idx, total));
-                self.buffer_mut().set_search_match_index(search_match_index);
-            } else {
-                self.buffer_mut()
-                    .set_status_message("No search matches".to_string());
-            }
+            // Now do mutable operations
+            self.table_state.select(Some(row));
+            self.buffer_mut().set_current_match(Some((row, col)));
+            self.buffer_mut()
+                .set_status_message(format!("Match {} of {}", current_idx, total));
+            self.buffer_mut().set_search_match_index(search_match_index);
         } else {
-            // Fallback to old implementation
-            if !self.buffer().get_search_matches().is_empty() {
-                let matches = self.buffer().get_search_matches();
-                let current_index = self.buffer().get_search_match_index();
-                let new_index = if current_index == 0 {
-                    matches.len() - 1
-                } else {
-                    current_index - 1
-                };
-                self.buffer_mut().set_search_match_index(new_index);
-                let (row, _) = matches[new_index];
-                self.table_state.select(Some(row));
-                self.buffer_mut()
-                    .set_current_match(Some(matches[new_index]));
-                self.buffer_mut().set_status_message(format!(
-                    "Match {} of {}",
-                    new_index + 1,
-                    matches.len()
-                ));
-            }
+            self.buffer_mut()
+                .set_status_message("No search matches".to_string());
         }
     }
 
     fn apply_filter(&mut self) {
         // Always use AppStateContainer for filter state
-        let pattern = if let Some(ref state_container) = self.state_container {
-            state_container.filter().pattern.clone()
-        } else {
-            // This shouldn't happen but provide fallback
-            eprintln!(
-                "[WARNING] FilterState migration: state_container not available in apply_filter"
-            );
-            return;
-        };
+        let pattern = self.state_container.filter().pattern.clone();
 
-        debug!(target: "filter", "apply_filter called with pattern: '{}', case_insensitive: {}", 
+        debug!(target: "filter", "apply_filter called with pattern: '{}', case_insensitive: {}",
                pattern, self.buffer().is_case_insensitive());
 
         if pattern.is_empty() {
             debug!(target: "filter", "Pattern is empty, clearing filter");
             self.buffer_mut().set_filtered_data(None);
-            if let Some(ref state_container) = self.state_container {
-                state_container.filter_mut().clear();
-            }
+            self.state_container.filter_mut().clear();
             self.buffer_mut()
                 .set_status_message("Filter cleared".to_string());
             return;
@@ -4385,7 +3877,7 @@ impl EnhancedTuiApp {
                                 matches = true;
                                 // Debug first few matches
                                 if filtered.len() < 3 {
-                                    debug!(target: "filter", "  Match found in cell: '{}'", 
+                                    debug!(target: "filter", "  Match found in cell: '{}'",
                                            if cell_str.len() > 50 { format!("{}...", &cell_str[..50]) } else { cell_str.clone() });
                                 }
                             }
@@ -4400,15 +3892,15 @@ impl EnhancedTuiApp {
                 }
 
                 let filtered_count = filtered.len();
-                debug!(target: "filter", "Filter applied: {} rows matched out of {}", 
+                debug!(target: "filter", "Filter applied: {} rows matched out of {}",
                        filtered_count, results.data.len());
 
                 // Update both buffer and AppStateContainer
                 self.buffer_mut().set_filtered_data(Some(filtered.clone()));
                 self.buffer_mut().set_filter_active(true);
 
-                if let Some(ref state_container) = self.state_container {
-                    let mut filter = state_container.filter_mut();
+                {
+                    let mut filter = self.state_container.filter_mut();
                     filter.set_filtered_indices(filtered_indices);
                     filter.set_filtered_data(Some(filtered));
                     filter.is_active = true;
@@ -4420,17 +3912,13 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_current_column(0);
 
                 // Clear search state but keep filter state
-                if let Some(ref state_container) = self.state_container {
-                    let mut search = state_container.search_mut();
+                {
+                    let mut search = self.state_container.search_mut();
                     search.pattern = String::new();
                     search.current_match = 0;
                     search.matches = Vec::new();
                     search.is_active = false;
-                } else {
-                    // Fallback when state_container not available
-                    eprintln!("[WARNING] SearchState migration: state_container not available for search reset");
                 }
-
                 self.buffer_mut()
                     .set_status_message(format!("Filtered to {} rows", filtered_count));
             } else {
@@ -4441,11 +3929,7 @@ impl EnhancedTuiApp {
     }
 
     fn search_columns(&mut self) {
-        let pattern = self
-            .state_container
-            .as_ref()
-            .map(|c| c.column_search().pattern.clone())
-            .unwrap_or_else(|| self.buffer().get_column_search_pattern());
+        let pattern = self.state_container.column_search().pattern.clone();
         debug!(target: "search", "search_columns called with pattern: '{}'", pattern);
         if pattern.is_empty() {
             debug!(target: "search", "Pattern is empty, skipping column search");
@@ -4465,19 +3949,9 @@ impl EnhancedTuiApp {
         }
 
         // Use AppStateContainer for column search
-        let matching_columns = if let Some(ref state_container) = self.state_container {
-            state_container.update_column_search_matches(&columns, &pattern)
-        } else {
-            // Fallback to local implementation if no state container
-            let mut matches = Vec::new();
-            for (name, index) in &columns {
-                if name.to_lowercase().contains(&pattern.to_lowercase()) {
-                    matches.push((*index, name.clone()));
-                }
-            }
-            matches
-        };
-
+        let matching_columns = self
+            .state_container
+            .update_column_search_matches(&columns, &pattern);
         debug!(target: "search", "Found {} matching columns", matching_columns.len());
         if !matching_columns.is_empty() {
             for (idx, (col_idx, col_name)) in matching_columns.iter().enumerate() {
@@ -4516,69 +3990,58 @@ impl EnhancedTuiApp {
 
     fn next_column_match(&mut self) {
         // Use AppStateContainer for navigation
-        if let Some(ref state_container) = self.state_container {
-            if let Some((col_index, col_name)) = state_container.next_column_match() {
-                // Get the info we need before mutating self
-                let (current_match, total_matches) = {
-                    let column_search = state_container.column_search();
-                    (
-                        column_search.current_match + 1,
-                        column_search.matching_columns.len(),
-                    )
-                };
+        if let Some((col_index, col_name)) = self.state_container.next_column_match() {
+            // Get the info we need before mutating self
+            let (current_match, total_matches) = {
+                let column_search = self.state_container.column_search();
+                (
+                    column_search.current_match + 1,
+                    column_search.matching_columns.len(),
+                )
+            };
 
-                // Now we can mutate self
-                self.current_column = col_index;
-                self.buffer_mut().set_current_column(col_index);
-                self.buffer_mut().set_status_message(format!(
-                    "Column {}/{}: {} - Tab/Shift-Tab to navigate",
-                    current_match, total_matches, col_name
-                ));
+            // Now we can mutate self
+            self.current_column = col_index;
+            self.buffer_mut().set_current_column(col_index);
+            self.buffer_mut().set_status_message(format!(
+                "Column {}/{}: {} - Tab/Shift-Tab to navigate",
+                current_match, total_matches, col_name
+            ));
 
-                // Update buffer's column search state for compatibility
-                self.buffer_mut()
-                    .set_column_search_current_match(current_match - 1);
+            // Update buffer's column search state for compatibility
+            self.buffer_mut()
+                .set_column_search_current_match(current_match - 1);
 
-                // State is now managed in AppStateContainer
-            }
-        } else {
-            // Fallback should not happen - AppStateContainer required
-            error!("next_column_match: AppStateContainer not available");
-            return;
+            // State is now managed in AppStateContainer
         }
     }
 
     fn previous_column_match(&mut self) {
         // Use AppStateContainer for navigation
-        if let Some(ref state_container) = self.state_container {
-            if let Some((col_index, col_name)) = state_container.previous_column_match() {
-                // Get the info we need before mutating self
-                let (current_match, total_matches) = {
-                    let column_search = state_container.column_search();
-                    (
-                        column_search.current_match + 1,
-                        column_search.matching_columns.len(),
-                    )
-                };
 
-                // Now we can mutate self
-                self.current_column = col_index;
-                self.buffer_mut().set_current_column(col_index);
-                self.buffer_mut().set_status_message(format!(
-                    "Column {}/{}: {} - Tab/Shift-Tab to navigate",
-                    current_match, total_matches, col_name
-                ));
+        if let Some((col_index, col_name)) = self.state_container.previous_column_match() {
+            // Get the info we need before mutating self
+            let (current_match, total_matches) = {
+                let column_search = self.state_container.column_search();
+                (
+                    column_search.current_match + 1,
+                    column_search.matching_columns.len(),
+                )
+            };
 
-                // Update buffer's column search state for compatibility
-                self.buffer_mut()
-                    .set_column_search_current_match(current_match - 1);
+            // Now we can mutate self
+            self.current_column = col_index;
+            self.buffer_mut().set_current_column(col_index);
+            self.buffer_mut().set_status_message(format!(
+                "Column {}/{}: {} - Tab/Shift-Tab to navigate",
+                current_match, total_matches, col_name
+            ));
 
-                // State is now managed in AppStateContainer
-            }
-        } else {
-            // Fallback should not happen - AppStateContainer required
-            error!("previous_column_match: AppStateContainer not available");
-            return;
+            // Update buffer's column search state for compatibility
+            self.buffer_mut()
+                .set_column_search_current_match(current_match - 1);
+
+            // State is now managed in AppStateContainer
         }
     }
 
@@ -4761,21 +4224,14 @@ impl EnhancedTuiApp {
         };
 
         // Delegate sorting entirely to AppStateContainer
-        let new_order = if let Some(ref state_container) = self.state_container {
-            state_container.get_next_sort_order(column_index)
-        } else {
-            // Fallback if no AppStateContainer (shouldn't happen in normal operation)
-            self.buffer_mut()
-                .set_status_message("Cannot sort - state container not available".to_string());
-            return;
-        };
+        let new_order = self.state_container.get_next_sort_order(column_index);
 
         // Handle the three cases: Ascending, Descending, None
         if new_order == SortOrder::None {
             // Debug: Clearing sort (None case)
             // Advance state to None BEFORE clearing
-            if let Some(ref state_container) = self.state_container {
-                state_container.advance_sort_state(
+            {
+                self.state_container.advance_sort_state(
                     column_index,
                     column_name.clone(),
                     new_order.clone(),
@@ -4806,8 +4262,8 @@ impl EnhancedTuiApp {
 
         // Debug: Sorting with order
         // For Ascending/Descending, advance state AFTER determining new_order but BEFORE sorting
-        if let Some(ref state_container) = self.state_container {
-            state_container.advance_sort_state(
+        {
+            self.state_container.advance_sort_state(
                 column_index,
                 column_name.clone(),
                 new_order.clone(),
@@ -4815,18 +4271,14 @@ impl EnhancedTuiApp {
         }
 
         // For Ascending/Descending, get sorted data from AppStateContainer
-        let (sorted_results_opt, last_execution_time, from_cache) =
-            if let Some(ref state_container) = self.state_container {
-                let sorted_results =
-                    state_container.sort_results_data(column_index, new_order.clone());
-                let last_execution_time = state_container.get_last_execution_time();
-                let from_cache = false; // Sort operations are not cached queries
-                (sorted_results, last_execution_time, from_cache)
-            } else {
-                self.buffer_mut()
-                    .set_status_message("Cannot sort - state container not available".to_string());
-                return;
-            };
+        let (sorted_results_opt, last_execution_time, from_cache) = {
+            let sorted_results = self
+                .state_container
+                .sort_results_data(column_index, new_order.clone());
+            let last_execution_time = self.state_container.get_last_execution_time();
+            let from_cache = false; // Sort operations are not cached queries
+            (sorted_results, last_execution_time, from_cache)
+        };
 
         if let Some(sorted_results) = sorted_results_opt {
             // Update buffer with sorted results
@@ -4834,10 +4286,12 @@ impl EnhancedTuiApp {
             self.buffer_mut().set_filtered_data(None); // Force regeneration of string data
 
             // Update AppStateContainer with sorted results
-            if let Some(ref state_container) = self.state_container {
-                if let Err(e) =
-                    state_container.set_results(sorted_results, last_execution_time, from_cache)
-                {
+            {
+                if let Err(e) = self.state_container.set_results(
+                    sorted_results,
+                    last_execution_time,
+                    from_cache,
+                ) {
                     warn!(target: "results", "Failed to update sorted results in AppStateContainer: {}", e);
                 }
             }
@@ -4910,17 +4364,12 @@ impl EnhancedTuiApp {
         };
 
         // Clear search state
-        if let Some(ref state_container) = self.state_container {
-            let mut search = state_container.search_mut();
+        {
+            let mut search = self.state_container.search_mut();
             search.pattern = String::new();
             search.current_match = 0;
             search.matches = Vec::new();
             search.is_active = false;
-        } else {
-            // Fallback when state_container not available
-            eprintln!(
-                "[WARNING] SearchState migration: state_container not available for search clear"
-            );
         }
 
         // Clear fuzzy filter state to prevent it from persisting across queries
@@ -5065,8 +4514,8 @@ impl EnhancedTuiApp {
             match YankManager::yank_cell(self.buffer(), selected_row, column) {
                 Ok(result) => {
                     // Use AppStateContainer for clipboard management
-                    if let Some(ref state_container) = self.state_container {
-                        state_container.yank_cell(
+                    {
+                        self.state_container.yank_cell(
                             selected_row,
                             column,
                             result.full_value.clone(),
@@ -5095,8 +4544,8 @@ impl EnhancedTuiApp {
             match YankManager::yank_row(self.buffer(), selected_row) {
                 Ok(result) => {
                     // Use AppStateContainer for clipboard management
-                    if let Some(ref state_container) = self.state_container {
-                        state_container.yank_row(
+                    {
+                        self.state_container.yank_row(
                             selected_row,
                             result.full_value.clone(),
                             result.preview.clone(),
@@ -5120,14 +4569,14 @@ impl EnhancedTuiApp {
         match YankManager::yank_column(self.buffer(), column) {
             Ok(result) => {
                 // Use AppStateContainer for clipboard management
-                if let Some(ref state_container) = self.state_container {
+                {
                     // Extract column name from description (format: "column 'name'")
                     let column_name = result
                         .description
                         .trim_start_matches("column '")
                         .trim_end_matches("'")
                         .to_string();
-                    state_container.yank_column(
+                    self.state_container.yank_column(
                         column_name,
                         column,
                         result.full_value.clone(),
@@ -5150,8 +4599,9 @@ impl EnhancedTuiApp {
         match YankManager::yank_all(self.buffer()) {
             Ok(result) => {
                 // Use AppStateContainer for clipboard management
-                if let Some(ref state_container) = self.state_container {
-                    state_container.yank_all(result.full_value.clone(), result.preview.clone());
+                {
+                    self.state_container
+                        .yank_all(result.full_value.clone(), result.preview.clone());
                 }
                 // Keep local copy for backward compatibility
                 self.last_yanked = Some((result.description.clone(), result.preview.clone()));
@@ -5205,8 +4655,9 @@ impl EnhancedTuiApp {
         let debug_context = DebugInfo::generate_debug_context(self.buffer());
 
         // Use AppStateContainer for clipboard management
-        if let Some(ref state_container) = self.state_container {
-            state_container.yank_debug_context(debug_context.clone());
+        {
+            self.state_container
+                .yank_debug_context(debug_context.clone());
         }
 
         match arboard::Clipboard::new() {
@@ -5509,11 +4960,7 @@ impl EnhancedTuiApp {
             AppMode::ColumnSearch => "Column Search".to_string(),
             AppMode::Help => "Help".to_string(),
             AppMode::History => {
-                let query = if let Some(ref state_container) = self.state_container {
-                    state_container.history_search().query.clone()
-                } else {
-                    self.history_state.search_query.clone()
-                };
+                let query = self.state_container.history_search().query.clone();
                 format!("History Search: '{}' (Esc to cancel)", query)
             }
             AppMode::Debug => "Parser Debug (F5)".to_string(),
@@ -5540,11 +4987,7 @@ impl EnhancedTuiApp {
 
             // Get history search query if in history mode
             let history_query_string = if self.buffer().get_mode() == AppMode::History {
-                if let Some(ref state_container) = self.state_container {
-                    state_container.history_search().query.clone()
-                } else {
-                    self.history_state.search_query.clone()
-                }
+                self.state_container.history_search().query.clone()
             } else {
                 String::new()
             };
@@ -5653,11 +5096,7 @@ impl EnhancedTuiApp {
                     ));
                 }
                 AppMode::History => {
-                    let query_len = if let Some(ref state_container) = self.state_container {
-                        state_container.history_search().query.len()
-                    } else {
-                        self.history_state.search_query.len()
-                    };
+                    let query_len = self.state_container.history_search().query.len();
                     f.set_cursor_position((chunks[0].x + query_len as u16 + 1, chunks[0].y + 1));
                 }
                 _ => {}
@@ -5940,8 +5379,8 @@ impl EnhancedTuiApp {
                     }
 
                     // Show last yanked value from AppStateContainer
-                    if let Some(ref state_container) = self.state_container {
-                        if let Some(ref yanked) = state_container.clipboard().last_yanked {
+                    {
+                        if let Some(ref yanked) = self.state_container.clipboard().last_yanked {
                             spans.push(Span::raw(" | "));
                             spans.push(Span::styled(
                                 "Yanked: ",
@@ -5952,17 +5391,6 @@ impl EnhancedTuiApp {
                                 Style::default().fg(Color::Green),
                             ));
                         }
-                    } else if let Some((col, val)) = &self.last_yanked {
-                        // Fallback to local state if no container
-                        spans.push(Span::raw(" | "));
-                        spans.push(Span::styled(
-                            "Yanked: ",
-                            Style::default().fg(Color::DarkGray),
-                        ));
-                        spans.push(Span::styled(
-                            format!("{}={}", col, val),
-                            Style::default().fg(Color::Green),
-                        ));
                     }
                 }
             }
@@ -6042,8 +5470,8 @@ impl EnhancedTuiApp {
         }
 
         // Show lock status indicators
-        if let Some(ref state_container) = self.state_container {
-            let navigation = state_container.navigation();
+        {
+            let navigation = self.state_container.navigation();
 
             // Viewport lock indicator with boundary status
             if navigation.viewport_lock {
@@ -6064,15 +5492,6 @@ impl EnhancedTuiApp {
                 spans.push(Span::styled(
                     format!("{}C", &self.config.display.icons.lock),
                     Style::default().fg(Color::Yellow),
-                ));
-            }
-        } else {
-            // Fallback for buffer-based lock
-            if self.buffer().is_viewport_lock() {
-                spans.push(Span::raw(" | "));
-                spans.push(Span::styled(
-                    &self.config.display.icons.lock,
-                    Style::default().fg(Color::Magenta),
                 ));
             }
         }
@@ -6096,6 +5515,20 @@ impl EnhancedTuiApp {
             AppMode::History => "Enter:Select | Esc:Cancel",
             AppMode::JumpToRow => "Enter:Jump | Esc:Cancel",
         };
+
+        // Add key press indicator if enabled
+        if self.key_indicator.enabled {
+            let key_display = self.key_indicator.to_string();
+            if !key_display.is_empty() {
+                spans.push(Span::raw(" | Keys: "));
+                spans.push(Span::styled(
+                    key_display,
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::ITALIC),
+                ));
+            }
+        }
 
         // Calculate available space for help text
         let current_length: usize = spans.iter().map(|s| s.content.len()).sum();
@@ -6342,27 +5775,11 @@ impl EnhancedTuiApp {
         // Add data headers
         header_cells.extend(visible_columns.iter().map(|(actual_col_index, header)| {
             // Get sort indicator from AppStateContainer if available
-            let sort_indicator = if let Some(ref state_container) = self.state_container {
-                let sort = state_container.sort();
+            let sort_indicator = {
+                let sort = self.state_container.sort();
                 if let Some(col) = sort.column {
                     if col == *actual_col_index {
                         match sort.order {
-                            SortOrder::Ascending => " ↑",
-                            SortOrder::Descending => " ↓",
-                            SortOrder::None => "",
-                        }
-                    } else {
-                        ""
-                    }
-                } else {
-                    ""
-                }
-            } else {
-                // Fallback to local sort state
-                let sort_state = self.get_sort_state();
-                if let Some(col) = sort_state.column {
-                    if col == *actual_col_index {
-                        match sort_state.order {
                             SortOrder::Ascending => " ↑",
                             SortOrder::Descending => " ↓",
                             SortOrder::None => "",
@@ -6439,11 +5856,8 @@ impl EnhancedTuiApp {
                     if self.get_selection_mode() == SelectionMode::Cell {
                         // In cell mode, only highlight the specific cell
                         if is_selected_cell {
-                            // Use a highlighted foreground instead of changing background
-                            // This works better with various terminal color schemes
-                            style = style
-                                .fg(Color::Yellow) // Bright, readable color
-                                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+                            // Use the configured cell renderer for styling
+                            style = self.cell_renderer.get_selected_style();
                         }
                     } else {
                         // In row mode, highlight the current column for all rows
@@ -6583,11 +5997,7 @@ impl EnhancedTuiApp {
         let max_lines = left_total_lines.max(right_total_lines);
 
         // Apply scroll offset (from state container or local)
-        let scroll_offset = if let Some(ref state_container) = self.state_container {
-            state_container.help_scroll_offset() as usize
-        } else {
-            self.help_scroll as usize
-        };
+        let scroll_offset = { self.state_container.help_scroll_offset() as usize };
 
         // Get visible portions with scrolling
         let left_visible: Vec<Line> = left_content
@@ -6644,20 +6054,10 @@ impl EnhancedTuiApp {
     }
 
     fn render_history(&self, f: &mut Frame, area: Rect) {
-        // Get history state from AppStateContainer if available
-        let (matches_empty, search_query_empty) =
-            if let Some(ref state_container) = self.state_container {
-                let history_search = state_container.history_search();
-                (
-                    history_search.matches.is_empty(),
-                    history_search.query.is_empty(),
-                )
-            } else {
-                (
-                    self.history_state.matches.is_empty(),
-                    self.history_state.search_query.is_empty(),
-                )
-            };
+        // Get history state from AppStateContainer
+        let history_search = self.state_container.history_search();
+        let matches_empty = history_search.matches.is_empty();
+        let search_query_empty = history_search.query.is_empty();
 
         if matches_empty {
             let no_history = if search_query_empty {
@@ -6691,21 +6091,11 @@ impl EnhancedTuiApp {
     }
 
     fn render_history_list(&self, f: &mut Frame, area: Rect) {
-        // Get history data from AppStateContainer if available, otherwise use local state
-        let (matches, selected_index, match_count) =
-            if let Some(ref state_container) = self.state_container {
-                let history_search = state_container.history_search();
-                let matches = history_search.matches.clone();
-                let selected_index = history_search.selected_index;
-                let match_count = matches.len();
-                (matches, selected_index, match_count)
-            } else {
-                (
-                    self.history_state.matches.clone(),
-                    self.history_state.selected_index,
-                    self.history_state.matches.len(),
-                )
-            };
+        // Get history data from AppStateContainer
+        let history_search = self.state_container.history_search();
+        let matches = history_search.matches.clone();
+        let selected_index = history_search.selected_index;
+        let match_count = matches.len();
 
         // Create more compact history list - just show essential info
         let history_items: Vec<Line> = matches
@@ -6780,19 +6170,12 @@ impl EnhancedTuiApp {
     }
 
     fn render_selected_command_preview(&self, f: &mut Frame, area: Rect) {
-        // Get the selected match from AppStateContainer if available
-        let selected_match = if let Some(ref state_container) = self.state_container {
-            let history_search = state_container.history_search();
-            history_search
-                .matches
-                .get(history_search.selected_index)
-                .cloned()
-        } else {
-            self.history_state
-                .matches
-                .get(self.history_state.selected_index)
-                .cloned()
-        };
+        // Get the selected match from AppStateContainer
+        let history_search = self.state_container.history_search();
+        let selected_match = history_search
+            .matches
+            .get(history_search.selected_index)
+            .cloned();
 
         if let Some(selected_match) = selected_match {
             let entry = &selected_match.entry;
@@ -7013,8 +6396,9 @@ impl EnhancedTuiApp {
                 self.clear_jump_to_row_input();
 
                 // Clear is_active flag
-                if let Some(ref mut container_arc) = self.state_container {
-                    let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+                {
+                    let container_ptr =
+                        Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
                     unsafe {
                         (*container_ptr).jump_to_row_mut().is_active = false;
                     }
@@ -7039,8 +6423,8 @@ impl EnhancedTuiApp {
                             };
 
                             // Update NavigationState with proper scroll offset
-                            if let Some(ref state_container) = self.state_container {
-                                let mut nav = state_container.navigation_mut();
+                            {
+                                let mut nav = self.state_container.navigation_mut();
                                 nav.jump_to_row(target_row);
                                 // Also update NavigationState's scroll offset to center the row
                                 nav.scroll_offset.0 = centered_scroll_offset;
@@ -7070,8 +6454,9 @@ impl EnhancedTuiApp {
                 self.clear_jump_to_row_input();
 
                 // Clear is_active flag
-                if let Some(ref mut container_arc) = self.state_container {
-                    let container_ptr = Arc::as_ptr(container_arc) as *mut AppStateContainer;
+                {
+                    let container_ptr =
+                        Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
                     unsafe {
                         (*container_ptr).jump_to_row_mut().is_active = false;
                     }
@@ -7396,14 +6781,10 @@ impl EnhancedTuiApp {
 
                 // Add column search state if active
                 let show_column_search = self.buffer().get_mode() == AppMode::ColumnSearch
-                    || self
-                        .state_container
-                        .as_ref()
-                        .map(|c| !c.column_search().pattern.is_empty())
-                        .unwrap_or(false);
+                    || !self.state_container.column_search().pattern.is_empty();
                 if show_column_search {
-                    if let Some(ref state_container) = self.state_container {
-                        let column_search = state_container.column_search();
+                    {
+                        let column_search = self.state_container.column_search();
                         debug_info.push_str("\n========== COLUMN SEARCH STATE ==========\n");
                         debug_info.push_str(&format!("Pattern: '{}'\n", column_search.pattern));
                         debug_info.push_str(&format!(
@@ -7479,9 +6860,9 @@ impl EnhancedTuiApp {
                 }
 
                 // Add AppStateContainer debug dump if available
-                if let Some(ref container) = self.state_container {
+                {
                     debug_info.push_str("\n");
-                    debug_info.push_str(&container.debug_dump());
+                    debug_info.push_str(&self.state_container.debug_dump());
                     debug_info.push_str("\n");
                 }
 
