@@ -3,7 +3,8 @@
 //! These adapters implement the DataProvider trait for existing data sources,
 //! allowing gradual migration to the new architecture.
 
-// Future adapters:
-// - buffer_adapter.rs - Makes Buffer implement DataProvider
-// - csv_adapter.rs - Makes CSVClient implement DataProvider
-// - api_adapter.rs - Makes API responses implement DataProvider
+pub mod buffer_adapter;
+pub mod csv_client_adapter;
+
+pub use buffer_adapter::BufferAdapter;
+pub use csv_client_adapter::CsvClientAdapter;
