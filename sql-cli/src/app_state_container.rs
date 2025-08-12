@@ -3074,6 +3074,9 @@ impl AppStateContainer {
             nav.selected_column = column;
             nav.add_to_history(row, column);
 
+            // Ensure the column is visible in the viewport
+            nav.ensure_visible(row, column);
+
             if let Some(ref debug_service) = *self.debug_service.borrow() {
                 debug_service.info(
                     "Navigation",

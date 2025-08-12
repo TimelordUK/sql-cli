@@ -1,0 +1,27 @@
+[
+  {
+    "order_id": "ORD_1754985600_7487",
+    "client_name": "Blackrock Asset Management",
+    "ticker": "ASML.AS",
+    "side": "Buy",
+    "order_date": "2025-08-12T09:00:00",
+    "ordered_quantity": 100000,
+    "filled_quantity": 34809,
+    "fill_percentage": 34.81,
+    "average_price": 649.9709,
+    "total_commission": 4525.03,
+    "total_fees": 678.82,
+    "venues_used": [
+      "ARCA",
+      "IEX",
+      "DarkPool",
+      "BATS",
+      "NYSE",
+      "NASDAQ"
+    ],
+    "first_fill_time": "2025-08-12T09:02:00.126000",
+    "last_fill_time": "2025-08-12T18:53:00.983000",
+    "total_fills": 256,
+    "status": "Filled"
+  }
+]
