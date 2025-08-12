@@ -1,82 +1,27 @@
-# This is an improved version of the release workflow
-# Copy this content to .github/workflows/release.yml
+# How to Update the Release Action
 
-name: Manual Release
+## Location
+The file to update is in the root repository:
+`.github/workflows/manual-release.yml` (or `release.yml`)
 
-on:
-  workflow_dispatch:
-    inputs:
-      release_type:
-        description: 'Release type'
-        required: true
-        default: 'patch'
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
-          - custom
-      custom_version:
-        description: 'Custom version (only used if release_type is custom, e.g., 1.16.1)'
-        required: false
-        type: string
-      release_notes:
-        description: 'Additional release notes (optional)'
-        required: false
-        type: string
+## What to Replace
 
-env:
-  CARGO_TERM_COLOR: always
-
-permissions:
-  contents: write
-
-jobs:
-  prepare-release:
-    name: Prepare Release
-    runs-on: ubuntu-latest
-    outputs:
-      new_version: ${{ steps.version.outputs.new_version }}
-      release_notes: ${{ steps.notes.outputs.notes }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Determine version
-        id: version
+### Find this section (around line 56-98):
+```yaml
+      - name: Generate release notes
+        id: notes
         run: |
-          # Get current version from Cargo.toml
-          CURRENT_VERSION=$(grep "^version" sql-cli/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          echo "Current version: $CURRENT_VERSION"
+          VERSION="${{ steps.version.outputs.new_version }}"
+          LAST_TAG=$(git tag --sort=-version:refname | head -n 1 || echo "")
           
-          # Parse version components
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-          
-          # Determine new version based on input
-          if [ "${{ github.event.inputs.release_type }}" = "custom" ]; then
-            if [ -z "${{ github.event.inputs.custom_version }}" ]; then
-              echo "Error: Custom version not provided"
-              exit 1
-            fi
-            NEW_VERSION="${{ github.event.inputs.custom_version }}"
-          elif [ "${{ github.event.inputs.release_type }}" = "major" ]; then
-            NEW_VERSION="$((MAJOR + 1)).0.0"
-          elif [ "${{ github.event.inputs.release_type }}" = "minor" ]; then
-            NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
-          else
-            NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
-          fi
-          
-          echo "New version: $NEW_VERSION"
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          {
+            echo "# SQL CLI v${VERSION}"
+            # ... basic release notes generation ...
+          } > RELEASE_NOTES.md
+```
 
-      - name: Update version in Cargo.toml
-        run: |
-          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.new_version }}\"/" sql-cli/Cargo.toml
-
+### Replace with this enhanced version:
+```yaml
       - name: Generate comprehensive release notes
         id: notes
         run: |
@@ -242,5 +187,29 @@ jobs:
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+```
 
-      # ... rest of the workflow remains the same ...
+## Summary of Changes
+
+The enhanced version adds:
+1. **Statistics**: Commit count, files changed
+2. **Feature Detection**: Scans commits for keywords to detect:
+   - Visual improvements (key indicator, cell highlighting)
+   - Debugging enhancements (dual logging, F5 mode)
+   - Architecture improvements (state management)
+   - Data protection (history recovery)
+3. **Better Formatting**: Organized into meaningful sections
+4. **Collapsible Details**: Full commit list in expandable section
+5. **Key Features**: Highlights main capabilities
+
+## Benefits
+
+With this change, your release notes will automatically detect and highlight:
+- ✅ Key press indicator and visual feedback features
+- ✅ Dual logging system
+- ✅ State management refactoring progress
+- ✅ History protection improvements
+- ✅ Transaction-like updates
+- ✅ All the "hidden" work that doesn't show in commit prefixes
+
+Instead of just seeing "refactor: ..." you'll get meaningful descriptions of what was actually improved!
