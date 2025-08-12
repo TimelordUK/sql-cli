@@ -1,6 +1,6 @@
 use crate::api_client::ApiClient;
 use crate::cache::QueryCache;
-use crate::config::Config;
+use crate::config::config::Config;
 use crate::history::CommandHistory;
 use crate::hybrid_parser::HybridParser;
 use crate::parser::SqlParser;

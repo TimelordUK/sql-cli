@@ -4,7 +4,7 @@ use reedline::{
     MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline,
     ReedlineEvent, ReedlineMenu, Signal, ValidationResult, Validator,
 };
-use sql_cli::app_paths::AppPaths;
+use crate::app_paths::AppPaths;
 use std::{borrow::Cow, io};
 
 mod completer;
@@ -23,7 +23,7 @@ mod virtual_table;
 
 use completer::SqlCompleter;
 use parser::{ParseState, SqlParser};
-use sql_cli::api_client::ApiClient;
+use crate::api_client::ApiClient;
 use table_display::{display_results, export_to_csv};
 
 struct SqlValidator;

@@ -1,5 +1,38 @@
+use crate::api_client::{ApiClient, QueryResponse};
+use crate::app_state_container::{AppStateContainer, SelectionMode};
+use crate::buffer::{
+    AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder, SortState,
+};
+use crate::buffer_handler::BufferHandler;
+use crate::cell_renderer::CellRenderer;
+use crate::config::config::Config;
+use crate::cursor_manager::CursorManager;
+use crate::data::csv_datasource::CsvApiClient;
+use crate::data::data_analyzer::DataAnalyzer;
+use crate::data::data_exporter::DataExporter;
+use crate::help_text::HelpText;
+use crate::history::{CommandHistory, HistoryMatch};
+use crate::key_chord_handler::{ChordResult, KeyChordHandler};
+use crate::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::parser::SqlParser;
+use crate::service_container::ServiceContainer;
+use crate::sql::cache::QueryCache;
+use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
+use crate::text_navigation::TextNavigator;
+use crate::ui::key_dispatcher::KeyDispatcher;
+use crate::utils::debug_info::DebugInfo;
+use crate::utils::logging::{get_log_buffer, LogRingBuffer};
+use crate::where_ast::format_where_ast;
+use crate::where_parser::WhereParser;
+use crate::widget_traits::DebugInfoProvider;
+use crate::widgets::debug_widget::DebugWidget;
+use crate::widgets::editor_widget::{BufferAction, EditorAction, EditorWidget};
+use crate::widgets::help_widget::{HelpAction, HelpWidget};
+use crate::widgets::search_modes_widget::{SearchMode, SearchModesAction, SearchModesWidget};
+use crate::widgets::stats_widget::{StatsAction, StatsWidget};
+use crate::yank_manager::YankManager;
+use crate::{buffer, data_analyzer, dual_logging};
 use anyhow::Result;
 use crossterm::{
     event::{
@@ -20,38 +53,6 @@ use ratatui::{
 };
 use regex::Regex;
 use serde_json::Value;
-use sql_cli::api_client::{ApiClient, QueryResponse};
-use sql_cli::app_state_container::{AppStateContainer, SelectionMode};
-use sql_cli::buffer::{
-    AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder, SortState,
-};
-use sql_cli::buffer_handler::BufferHandler;
-use sql_cli::cache::QueryCache;
-use sql_cli::cell_renderer::CellRenderer;
-use sql_cli::config::Config;
-use sql_cli::csv_datasource::CsvApiClient;
-use sql_cli::cursor_manager::CursorManager;
-use sql_cli::data_analyzer::DataAnalyzer;
-use sql_cli::data_exporter::DataExporter;
-use sql_cli::debug_info::DebugInfo;
-use sql_cli::debug_widget::DebugWidget;
-use sql_cli::editor_widget::{BufferAction, EditorAction, EditorWidget};
-use sql_cli::help_text::HelpText;
-use sql_cli::help_widget::{HelpAction, HelpWidget};
-use sql_cli::history::{CommandHistory, HistoryMatch};
-use sql_cli::hybrid_parser::HybridParser;
-use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
-use sql_cli::key_dispatcher::KeyDispatcher;
-use sql_cli::key_indicator::{format_key_for_display, KeyPressIndicator};
-use sql_cli::logging::{get_log_buffer, LogRingBuffer};
-use sql_cli::search_modes_widget::{SearchMode, SearchModesAction, SearchModesWidget};
-use sql_cli::service_container::ServiceContainer;
-use sql_cli::stats_widget::{StatsAction, StatsWidget};
-use sql_cli::text_navigation::TextNavigator;
-use sql_cli::where_ast::format_where_ast;
-use sql_cli::where_parser::WhereParser;
-use sql_cli::widget_traits::DebugInfoProvider;
-use sql_cli::yank_manager::YankManager;
 use std::io;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
@@ -208,15 +209,15 @@ impl EnhancedTuiApp {
     // These methods provide a gradual migration path from direct field access to BufferAPI
 
     /// Get current buffer if available (for reading)
-    fn current_buffer(&self) -> Option<&dyn sql_cli::buffer::BufferAPI> {
+    fn current_buffer(&self) -> Option<&dyn buffer::BufferAPI> {
         self.buffer_manager
             .current()
-            .map(|b| b as &dyn sql_cli::buffer::BufferAPI)
+            .map(|b| b as &dyn buffer::BufferAPI)
     }
 
     /// Get current buffer (panics if none exists)
     /// Use this when we know a buffer should always exist
-    fn buffer(&self) -> &dyn sql_cli::buffer::BufferAPI {
+    fn buffer(&self) -> &dyn buffer::BufferAPI {
         self.current_buffer()
             .expect("No buffer available - this should not happen")
     }
@@ -225,7 +226,7 @@ impl EnhancedTuiApp {
 
     /// Get current mutable buffer (panics if none exists)
     /// Use this when we know a buffer should always exist
-    fn buffer_mut(&mut self) -> &mut sql_cli::buffer::Buffer {
+    fn buffer_mut(&mut self) -> &mut buffer::Buffer {
         self.buffer_manager
             .current_mut()
             .expect("No buffer available - this should not happen")
@@ -393,7 +394,7 @@ impl EnhancedTuiApp {
         });
 
         // Log initialization
-        if let Some(logger) = sql_cli::dual_logging::get_dual_logger() {
+        if let Some(logger) = dual_logging::get_dual_logger() {
             logger.log(
                 "INFO",
                 "EnhancedTuiApp",
@@ -403,7 +404,7 @@ impl EnhancedTuiApp {
 
         // Create buffer manager first
         let mut buffer_manager = BufferManager::new();
-        let mut buffer = sql_cli::buffer::Buffer::new(1);
+        let mut buffer = buffer::Buffer::new(1);
         // Sync initial settings from config
         buffer.set_case_insensitive(config.behavior.case_insensitive_default);
         buffer.set_compact_mode(config.display.compact_mode);
@@ -412,7 +413,7 @@ impl EnhancedTuiApp {
 
         // Create a second buffer manager for the state container (temporary during migration)
         let mut container_buffer_manager = BufferManager::new();
-        let mut container_buffer = sql_cli::buffer::Buffer::new(1);
+        let mut container_buffer = buffer::Buffer::new(1);
         container_buffer.set_case_insensitive(config.behavior.case_insensitive_default);
         container_buffer.set_compact_mode(config.display.compact_mode);
         container_buffer.set_show_row_numbers(config.display.show_row_numbers);
@@ -465,8 +466,7 @@ impl EnhancedTuiApp {
             buffer_manager,
             buffer_handler: BufferHandler::new(),
             query_cache: QueryCache::new().ok(),
-            log_buffer: sql_cli::dual_logging::get_dual_logger()
-                .map(|logger| logger.ring_buffer().clone()),
+            log_buffer: dual_logging::get_dual_logger().map(|logger| logger.ring_buffer().clone()),
             cell_renderer: CellRenderer::new(config.theme.cell_selection_style.clone()),
             key_indicator: {
                 let mut indicator = KeyPressIndicator::new();
@@ -507,7 +507,7 @@ impl EnhancedTuiApp {
         {
             // Clear all buffers and add a CSV buffer
             app.buffer_manager.clear_all();
-            let mut buffer = sql_cli::buffer::Buffer::from_csv(
+            let mut buffer = buffer::Buffer::from_csv(
                 1,
                 std::path::PathBuf::from(csv_path),
                 csv_client,
@@ -597,7 +597,7 @@ impl EnhancedTuiApp {
         {
             // Clear all buffers and add a JSON buffer
             app.buffer_manager.clear_all();
-            let mut buffer = sql_cli::buffer::Buffer::from_json(
+            let mut buffer = buffer::Buffer::from_json(
                 1,
                 std::path::PathBuf::from(json_path),
                 csv_client,
@@ -2714,7 +2714,7 @@ impl EnhancedTuiApp {
                 csv_client.query_csv(query).map(|r| QueryResponse {
                     data: r.data,
                     count: r.count,
-                    query: sql_cli::api_client::QueryInfo {
+                    query: crate::api_client::QueryInfo {
                         select: r.query.select,
                         where_clause: r.query.where_clause,
                         order_by: r.query.order_by,
@@ -2732,7 +2732,7 @@ impl EnhancedTuiApp {
                 csv_client.query_csv(query).map(|r| QueryResponse {
                     data: r.data,
                     count: r.count,
-                    query: sql_cli::api_client::QueryInfo {
+                    query: crate::api_client::QueryInfo {
                         select: r.query.select,
                         where_clause: r.query.where_clause,
                         order_by: r.query.order_by,
@@ -3508,13 +3508,14 @@ impl EnhancedTuiApp {
         let stats = ColumnStatistics {
             column_name: analyzer_stats.column_name,
             column_type: match analyzer_stats.data_type {
-                sql_cli::data_analyzer::ColumnType::Integer
-                | sql_cli::data_analyzer::ColumnType::Float => ColumnType::Numeric,
-                sql_cli::data_analyzer::ColumnType::String
-                | sql_cli::data_analyzer::ColumnType::Boolean
-                | sql_cli::data_analyzer::ColumnType::Date => ColumnType::String,
-                sql_cli::data_analyzer::ColumnType::Mixed => ColumnType::Mixed,
-                sql_cli::data_analyzer::ColumnType::Unknown => ColumnType::Mixed,
+                data_analyzer::ColumnType::Integer | data_analyzer::ColumnType::Float => {
+                    ColumnType::Numeric
+                }
+                data_analyzer::ColumnType::String
+                | data_analyzer::ColumnType::Boolean
+                | data_analyzer::ColumnType::Date => ColumnType::String,
+                data_analyzer::ColumnType::Mixed => ColumnType::Mixed,
+                data_analyzer::ColumnType::Unknown => ColumnType::Mixed,
             },
             total_count: analyzer_stats.total_values,
             null_count: analyzer_stats.null_values,
@@ -4419,7 +4420,7 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_optimal_column_widths(&mut self) {
-        use sql_cli::column_manager::ColumnManager;
+        use crate::column_manager::ColumnManager;
 
         if let Some(results) = self.buffer().get_results() {
             let widths = ColumnManager::calculate_optimal_widths(&results.data);
@@ -4771,8 +4772,7 @@ impl EnhancedTuiApp {
     // Buffer management methods
 
     fn new_buffer(&mut self) {
-        let mut new_buffer =
-            sql_cli::buffer::Buffer::new(self.buffer_manager.all_buffers().len() + 1);
+        let mut new_buffer = buffer::Buffer::new(self.buffer_manager.all_buffers().len() + 1);
         // Apply config settings to the new buffer
         new_buffer.set_compact_mode(self.config.display.compact_mode);
         new_buffer.set_case_insensitive(self.config.behavior.case_insensitive_default);

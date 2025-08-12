@@ -1,7 +1,7 @@
 use crate::api_client::QueryResponse;
 use crate::buffer::SortOrder;
 use crate::buffer::{AppMode, BufferAPI};
-use crate::config::Config;
+use crate::config::config::Config;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::tui_state::SelectionMode;
 use ratatui::{

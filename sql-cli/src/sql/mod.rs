@@ -3,10 +3,12 @@
 //! This module handles all SQL-related functionality including
 //! parsing, query optimization, execution, and caching.
 
-// SQL components to be moved here:
-// - sql_parser.rs → parser.rs
-// - sql_executor.rs → executor.rs
-// - sql_highlighter.rs → highlighter.rs
-// - query_cache.rs → cache.rs
-// - hybrid_parser.rs
-// - cursor_aware_parser.rs
+pub mod cache;
+pub mod cursor_aware_parser;
+pub mod hybrid_parser;
+pub mod parser;
+pub mod recursive_parser;
+pub mod smart_parser;
+pub mod sql_highlighter;
+pub mod where_ast;
+pub mod where_parser;

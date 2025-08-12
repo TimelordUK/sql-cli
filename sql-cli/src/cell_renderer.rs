@@ -4,7 +4,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell},
 };
 
-use crate::config::CellSelectionStyle;
+use crate::config::config::CellSelectionStyle;
 
 /// Different visual styles for rendering selected cells
 #[derive(Debug, Clone)]

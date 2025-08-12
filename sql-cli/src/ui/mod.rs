@@ -2,9 +2,8 @@
 //!
 //! This module contains the main TUI application and related UI components.
 
-// UI components to be moved here:
-// - enhanced_tui.rs
-// - classic_cli.rs
-// - key_dispatcher.rs
-// - cursor_manager.rs
-// - cell_renderer.rs
+pub mod enhanced_tui;
+pub mod key_dispatcher;
+pub mod tui_app;
+pub mod tui_renderer;
+pub mod tui_state;
