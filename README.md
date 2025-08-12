@@ -2,7 +2,13 @@
 
 A powerful command-line tool for exploring CSV and JSON files using SQL queries, with intelligent tab completion and a sophisticated TUI. Works standalone (like csvlens) or can connect to REST API data sources.
 
-![SQL-CLI Overview](sql-cli/demos/overview-optimized.gif)
+trades demo
+
+![SQL-CLI Overview](sql-cli/demos/overview.gif)
+
+## customers demo
+
+![SQL-CLI Overview 2](sql-cli/demos/overview-optimized.gif)
 
 ## Primary Use Cases
 
