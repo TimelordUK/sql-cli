@@ -159,7 +159,7 @@ pub struct EnhancedTuiApp {
     command_history: CommandHistory,
     // SAFETY FIX: Temporary fallback filter state to replace dangerous static
     fallback_filter_state: FilterState,
-    scroll_offset: (usize, usize), // (row, col)
+    // scroll_offset: (usize, usize), // MIGRATED to ScrollState in AppStateContainer
     // current_column: usize,         // MIGRATED to AppStateContainer navigation
     sql_highlighter: SqlHighlighter,
     debug_widget: DebugWidget,
@@ -169,8 +169,8 @@ pub struct EnhancedTuiApp {
     search_modes_widget: SearchModesWidget,
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
-    help_scroll: u16,                   // Scroll offset for help page
-    input_scroll_offset: u16,           // Horizontal scroll offset for input
+    // help_scroll: u16,                   // MIGRATED to ScrollState in AppStateContainer
+    // input_scroll_offset: u16,           // MIGRATED to ScrollState in AppStateContainer
 
     // Selection and clipboard
     last_yanked: Option<(String, String)>, // (description, value) of last yanked item
@@ -183,14 +183,14 @@ pub struct EnhancedTuiApp {
     // Data source tracking
 
     // Undo/redo and kill ring
-    undo_stack: Vec<(String, usize)>, // (text, cursor_pos)
-    redo_stack: Vec<(String, usize)>,
+    // undo_stack: Vec<(String, usize)>, // MIGRATED to UndoRedoState in AppStateContainer
+    // redo_stack: Vec<(String, usize)>, // MIGRATED to UndoRedoState in AppStateContainer
 
     // Viewport tracking
-    last_visible_rows: usize, // Track the last calculated viewport height
+    // last_visible_rows: usize, // MIGRATED to ScrollState in AppStateContainer
 
     // Display options
-    jump_to_row_input: String, // TODO: Remove once fully migrated to state_container
+    // jump_to_row_input: String, // MIGRATED to JumpToRowState in AppStateContainer
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
 
     // Visual enhancements
@@ -568,7 +568,7 @@ impl EnhancedTuiApp {
                 regex: None,
                 active: false,
             },
-            scroll_offset: (0, 0),
+            // scroll_offset: (0, 0), // MIGRATED
             // current_column: 0, // MIGRATED to AppStateContainer
             sql_highlighter: SqlHighlighter::new(),
             debug_widget: DebugWidget::new(),
@@ -578,18 +578,18 @@ impl EnhancedTuiApp {
             search_modes_widget: SearchModesWidget::new(),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
-            help_scroll: 0,
-            input_scroll_offset: 0,
+            // help_scroll: 0, // MIGRATED
+            // input_scroll_offset: 0, // MIGRATED
             last_yanked: None,
             // CSV fields now in Buffer
             buffer_manager,
             buffer_handler: BufferHandler::new(),
             query_cache: QueryCache::new().ok(),
             // Cache fields now in Buffer
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
-            last_visible_rows: 30, // Default estimate
-            jump_to_row_input: String::new(),
+            // undo_stack: Vec::new(), // MIGRATED
+            // redo_stack: Vec::new(), // MIGRATED
+            // last_visible_rows: 30, // MIGRATED
+            // jump_to_row_input: String::new(), // MIGRATED
             log_buffer: sql_cli::dual_logging::get_dual_logger()
                 .map(|logger| logger.ring_buffer().clone()),
             cell_renderer: CellRenderer::new(config.theme.cell_selection_style.clone()),
@@ -2685,7 +2685,7 @@ impl EnhancedTuiApp {
                     self.buffer_mut()
                         .set_status_message("Command loaded from history".to_string());
                     // Reset scroll to show end of command
-                    self.input_scroll_offset = 0;
+                    self.state_container.scroll_mut().input_scroll_offset = 0;
                     self.update_horizontal_scroll(120); // Will be properly updated on next render
                 }
             }
@@ -4785,13 +4785,14 @@ impl EnhancedTuiApp {
         self.cursor_manager
             .update_horizontal_scroll(cursor_pos, terminal_width.saturating_sub(3));
 
-        // Keep legacy field in sync for now
-        if cursor_pos < self.input_scroll_offset as usize {
-            self.input_scroll_offset = cursor_pos as u16;
+        // Update scroll state in container
+        let mut scroll = self.state_container.scroll_mut();
+        if cursor_pos < scroll.input_scroll_offset as usize {
+            scroll.input_scroll_offset = cursor_pos as u16;
         }
         // If cursor is after the scroll window, scroll right
-        else if cursor_pos >= self.input_scroll_offset as usize + inner_width {
-            self.input_scroll_offset = (cursor_pos + 1).saturating_sub(inner_width) as u16;
+        else if cursor_pos >= scroll.input_scroll_offset as usize + inner_width {
+            scroll.input_scroll_offset = (cursor_pos + 1).saturating_sub(inner_width) as u16;
         }
     }
 
