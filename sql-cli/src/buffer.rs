@@ -276,6 +276,7 @@ pub trait BufferAPI {
     fn clear_filters(&mut self);
     fn get_row_count(&self) -> usize;
     fn get_column_count(&self) -> usize;
+    fn get_column_names(&self) -> Vec<String>;
 
     // --- Edit State ---
     fn get_undo_stack(&self) -> &Vec<(String, usize)>;
@@ -829,6 +830,17 @@ impl BufferAPI for Buffer {
             }
         }
         0
+    }
+
+    fn get_column_names(&self) -> Vec<String> {
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    return obj.keys().map(|k| k.to_string()).collect();
+                }
+            }
+        }
+        Vec::new()
     }
 
     // --- Edit State ---

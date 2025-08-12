@@ -3967,16 +3967,16 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Get columns from results
+        // Get columns using the new unified method
+        let column_names = self.buffer().get_column_names();
         let mut columns = Vec::new();
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    for (index, col_name) in obj.keys().enumerate() {
-                        columns.push((col_name.to_string(), index));
-                    }
-                }
-            }
+        for (index, col_name) in column_names.iter().enumerate() {
+            columns.push((col_name.clone(), index));
+        }
+
+        debug!(target: "search", "Got {} columns from buffer", columns.len());
+        if !columns.is_empty() {
+            debug!(target: "search", "Column names: {:?}", columns.iter().map(|(name, _)| name).collect::<Vec<_>>());
         }
 
         // Use AppStateContainer for column search

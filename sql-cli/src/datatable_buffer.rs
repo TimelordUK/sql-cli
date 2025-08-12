@@ -676,6 +676,15 @@ impl BufferAPI for DataTableBuffer {
         self.view.table().column_count()
     }
 
+    fn get_column_names(&self) -> Vec<String> {
+        self.view
+            .table()
+            .columns
+            .iter()
+            .map(|col| col.name.clone())
+            .collect()
+    }
+
     fn has_cached_data(&self) -> bool {
         false // DataTableBuffer doesn't use cached_data
     }
