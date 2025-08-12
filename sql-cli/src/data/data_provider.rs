@@ -5,6 +5,47 @@
 
 use std::fmt::Debug;
 
+/// Filter specification for DataView
+#[derive(Debug, Clone)]
+pub enum FilterSpec {
+    /// SQL WHERE clause filter
+    WhereClause(String),
+    /// Fuzzy text search across all columns
+    FuzzySearch(String),
+    /// Column-specific filter
+    ColumnFilter { column: usize, pattern: String },
+    /// Custom filter function
+    Custom(String),
+}
+
+/// Sort order for columns
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortOrder {
+    Ascending,
+    Descending,
+}
+
+/// Data type for columns
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DataType {
+    Text,
+    Number,
+    Date,
+    Boolean,
+    Json,
+    Unknown,
+}
+
+/// Column statistics
+#[derive(Debug, Clone)]
+pub struct ColumnStats {
+    pub null_count: usize,
+    pub unique_count: usize,
+    pub min_value: Option<String>,
+    pub max_value: Option<String>,
+    pub mean_value: Option<f64>,
+}
+
 /// Core trait for read-only data access
 ///
 /// This trait defines the minimal interface that any data source must provide
