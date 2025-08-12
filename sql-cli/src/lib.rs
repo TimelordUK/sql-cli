@@ -1,3 +1,15 @@
+// New module structure (gradually moving files here)
+pub mod api;
+// pub mod config_module; // Will enable after moving config.rs
+pub mod core;
+pub mod data;
+pub mod sql;
+pub mod state;
+pub mod ui;
+pub mod utils;
+pub mod widgets;
+
+// Existing flat structure (to be gradually moved to modules above)
 pub mod api_client;
 pub mod app_paths;
 pub mod buffer;
