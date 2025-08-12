@@ -2499,12 +2499,14 @@ impl EnhancedTuiApp {
                     self.input = tui_input::Input::new(text.clone()).with_cursor(cursor);
                 }
 
-                // Cancel column search and return to results
-                self.buffer_mut().set_mode(AppMode::Results);
-                self.buffer_mut().set_column_search_pattern(String::new());
-                self.buffer_mut().set_column_search_matches(Vec::new());
-                self.buffer_mut()
-                    .set_status_message("Column search cancelled".to_string());
+                // Cancel column search and return to results - transaction block
+                {
+                    let mut buffer = self.buffer_mut();
+                    buffer.set_mode(AppMode::Results);
+                    buffer.set_column_search_pattern(String::new());
+                    buffer.set_column_search_matches(Vec::new());
+                    buffer.set_status_message("Column search cancelled".to_string());
+                }
             }
             KeyCode::Enter => {
                 // Jump to first matching column
