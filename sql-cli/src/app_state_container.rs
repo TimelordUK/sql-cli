@@ -2325,7 +2325,7 @@ pub struct AppStateContainer {
     current_buffer_id: usize,
 
     // Input state
-    command_input: InputState,
+    command_input: RefCell<InputState>,
 
     // Search/Filter states
     search: RefCell<SearchState>,
@@ -2420,7 +2420,7 @@ impl AppStateContainer {
         Ok(Self {
             buffers,
             current_buffer_id: 0,
-            command_input: InputState::new(),
+            command_input: RefCell::new(InputState::new()),
             search: RefCell::new(SearchState::new()),
             filter: RefCell::new(FilterState::new()),
             column_search: RefCell::new(ColumnSearchState::new()),
@@ -2466,12 +2466,29 @@ impl AppStateContainer {
     }
 
     // Input state access
-    pub fn command_input(&self) -> &InputState {
-        &self.command_input
+    pub fn command_input(&self) -> std::cell::Ref<'_, InputState> {
+        self.command_input.borrow()
     }
 
-    pub fn command_input_mut(&mut self) -> &mut InputState {
-        &mut self.command_input
+    pub fn command_input_mut(&self) -> std::cell::RefMut<'_, InputState> {
+        self.command_input.borrow_mut()
+    }
+
+    // Helper methods to update input state (for use through Arc)
+    pub fn set_input_text(&self, text: String) {
+        let mut input = self.command_input.borrow_mut();
+        input.text = text.clone();
+        input.cursor_position = text.len();
+    }
+
+    pub fn set_input_text_with_cursor(&self, text: String, cursor: usize) {
+        let mut input = self.command_input.borrow_mut();
+        input.text = text;
+        input.cursor_position = cursor;
+    }
+
+    pub fn set_last_executed_query(&self, query: String) {
+        self.command_input.borrow_mut().last_executed_query = query;
     }
 
     // Search/Filter state access
@@ -4755,17 +4772,15 @@ impl AppStateContainer {
 
         // Input state
         dump.push_str("INPUT STATE:\n");
-        dump.push_str(&format!("  Text: '{}'\n", self.command_input.text));
-        dump.push_str(&format!(
-            "  Cursor: {}\n",
-            self.command_input.cursor_position
-        ));
+        let input = self.command_input.borrow();
+        dump.push_str(&format!("  Text: '{}'\n", input.text));
+        dump.push_str(&format!("  Cursor: {}\n", input.cursor_position));
         dump.push_str(&format!(
             "  Last Query: '{}'\n",
-            if self.command_input.last_executed_query.len() > 100 {
-                format!("{}...", &self.command_input.last_executed_query[..100])
+            if input.last_executed_query.len() > 100 {
+                format!("{}...", &input.last_executed_query[..100])
             } else {
-                self.command_input.last_executed_query.clone()
+                input.last_executed_query.clone()
             }
         ));
         dump.push_str("\n");

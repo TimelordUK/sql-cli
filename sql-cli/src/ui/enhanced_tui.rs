@@ -301,6 +301,9 @@ impl EnhancedTuiApp {
         // Always update the input field for all modes
         // TODO: Eventually migrate special modes to use buffer input
         self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
+
+        // IMPORTANT: Also sync with AppStateContainer's command_input to prevent desync
+        self.state_container.set_input_text(text);
     }
 
     // Helper to set input text with specific cursor position
@@ -326,7 +329,11 @@ impl EnhancedTuiApp {
 
         // Always update the input field for consistency
         // TODO: Eventually migrate special modes to use buffer input
-        self.input = tui_input::Input::new(text).with_cursor(cursor_pos);
+        self.input = tui_input::Input::new(text.clone()).with_cursor(cursor_pos);
+
+        // IMPORTANT: Also sync with AppStateContainer's command_input to prevent desync
+        self.state_container
+            .set_input_text_with_cursor(text, cursor_pos);
     }
 
     // Helper to clear input
@@ -2697,6 +2704,10 @@ impl EnhancedTuiApp {
         // This ensures we preserve the actual query that was run
         self.buffer_mut().set_last_query(query.to_string());
         debug!(target: "buffer", "Saved query to last_query: '{}'", query);
+
+        // Also sync with AppStateContainer to prevent desync
+        self.state_container
+            .set_last_executed_query(query.to_string());
 
         self.buffer_mut()
             .set_status_message(format!("Executing query: '{}'...", query));
