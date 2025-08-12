@@ -1,7 +1,7 @@
 use reedline::{Completer, Span, Suggestion};
 use std::sync::{Arc, Mutex};
 
-use crate::parser::{ParseState, Schema, SqlParser};
+use sql_cli::sql::parser::{ParseState, Schema, SqlParser};
 
 pub struct SqlCompleter {
     parser: Arc<Mutex<SqlParser>>,

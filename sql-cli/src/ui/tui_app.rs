@@ -1,3 +1,4 @@
+use crate::api_client::{ApiClient, QueryResponse};
 use crate::cursor_aware_parser::CursorAwareParser;
 use crate::parser::SqlParser;
 use anyhow::Result;
@@ -14,7 +15,6 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
     Frame, Terminal,
 };
-use sql_cli::api_client::{ApiClient, QueryResponse};
 use std::io;
 use tui_input::{backend::crossterm::EventHandler, Input};
 
