@@ -142,7 +142,7 @@ pub struct EnhancedTuiApp {
     cursor_manager: CursorManager, // New: manages cursor/navigation logic
     data_analyzer: DataAnalyzer,   // New: manages data analysis/statistics
     // results: Option<QueryResponse>, // MIGRATED to buffer system
-    table_state: TableState,
+    // table_state: TableState, // MIGRATED to AppStateContainer navigation
     show_help: bool, // TODO: Remove once fully migrated to state_container
     sql_parser: SqlParser,
     hybrid_parser: HybridParser,
@@ -160,7 +160,7 @@ pub struct EnhancedTuiApp {
     // SAFETY FIX: Temporary fallback filter state to replace dangerous static
     fallback_filter_state: FilterState,
     scroll_offset: (usize, usize), // (row, col)
-    current_column: usize,         // For column-based operations
+    // current_column: usize,         // MIGRATED to AppStateContainer navigation
     sql_highlighter: SqlHighlighter,
     debug_widget: DebugWidget,
     editor_widget: EditorWidget,
@@ -516,7 +516,7 @@ impl EnhancedTuiApp {
             cursor_manager: CursorManager::new(),
             data_analyzer: DataAnalyzer::new(),
             // results: None, // MIGRATED to buffer system
-            table_state: TableState::default(),
+            // table_state: TableState::default(), // MIGRATED to AppStateContainer
             show_help: false,
             sql_parser: SqlParser::new(),
             hybrid_parser: HybridParser::new(),
@@ -529,7 +529,7 @@ impl EnhancedTuiApp {
                 active: false,
             },
             scroll_offset: (0, 0),
-            current_column: 0,
+            // current_column: 0, // MIGRATED to AppStateContainer
             sql_highlighter: SqlHighlighter::new(),
             debug_widget: DebugWidget::new(),
             editor_widget: EditorWidget::new(),
@@ -1450,7 +1450,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Results);
                 // Restore previous position or default to 0
                 let row = self.buffer().get_last_results_row().unwrap_or(0);
-                self.table_state.select(Some(row));
+                self.state_container.set_table_selected_row(Some(row));
 
                 // Restore the exact scroll offset from when we left
                 let last_offset = self.buffer().get_last_scroll_offset();
@@ -1615,7 +1615,7 @@ impl EnhancedTuiApp {
                 "quit" => return Ok(true),
                 "exit_results_mode" => {
                     // Save current position before switching to Command mode
-                    if let Some(selected) = self.table_state.selected() {
+                    if let Some(selected) = self.state_container.get_table_selected_row() {
                         self.buffer_mut().set_last_results_row(Some(selected));
                         let scroll_offset = self.buffer().get_scroll_offset();
                         self.buffer_mut().set_last_scroll_offset(scroll_offset);
@@ -1641,7 +1641,7 @@ impl EnhancedTuiApp {
 
                     debug!(target: "mode", "Switching from Results to Command mode");
                     self.buffer_mut().set_mode(AppMode::Command);
-                    self.table_state.select(None);
+                    self.state_container.set_table_selected_row(None);
                 }
                 "next_row" => self.next_row(),
                 "previous_row" => self.previous_row(),
@@ -1768,7 +1768,7 @@ impl EnhancedTuiApp {
                     }
 
                     self.buffer_mut().set_mode(AppMode::Command);
-                    self.table_state.select(None);
+                    self.state_container.set_table_selected_row(None);
 
                     // Start history search
                     let current_input = self.get_input_text();
@@ -2177,7 +2177,7 @@ impl EnhancedTuiApp {
                         };
 
                         if let Some((col_idx, col_name)) = column_info {
-                            self.current_column = col_idx;
+                            self.state_container.set_current_column(col_idx);
                             self.buffer_mut().set_current_column(col_idx);
                             self.buffer_mut()
                                 .set_status_message(format!("Jumped to column: {}", col_name));
@@ -2974,7 +2974,7 @@ impl EnhancedTuiApp {
                 }
 
                 self.buffer_mut().set_mode(AppMode::Results);
-                self.table_state.select(Some(0));
+                self.state_container.set_table_selected_row(Some(0));
             }
             Err(e) => {
                 let duration = start_time.elapsed();
@@ -3304,7 +3304,7 @@ impl EnhancedTuiApp {
             // Now we can use mutable self since we've dropped the nav borrow
             if let Some(row) = new_row {
                 // Sync with local table_state for rendering
-                self.table_state.select(Some(row));
+                self.state_container.set_table_selected_row(Some(row));
 
                 // Sync scroll offset with buffer
                 self.buffer_mut().set_scroll_offset(new_scroll_offset);
@@ -3334,7 +3334,7 @@ impl EnhancedTuiApp {
         // Now we can use mutable self since we've dropped the nav borrow
         if let Some(row) = new_row {
             // Sync with local table_state for rendering
-            self.table_state.select(Some(row));
+            self.state_container.set_table_selected_row(Some(row));
 
             // Sync scroll offset with buffer
             self.buffer_mut().set_scroll_offset(new_scroll_offset);
@@ -3419,7 +3419,7 @@ impl EnhancedTuiApp {
             nav.jump_to_first_row();
         } // nav borrow ends here
 
-        self.table_state.select(Some(0));
+        self.state_container.set_table_selected_row(Some(0));
         let offset = {
             let mut offset = self.buffer().get_scroll_offset();
             offset.0 = 0; // Reset viewport to top
@@ -3446,7 +3446,7 @@ impl EnhancedTuiApp {
             )
         };
 
-        self.table_state.select(Some(new_row));
+        self.state_container.set_table_selected_row(Some(new_row));
         self.buffer_mut().set_status_message(status_msg);
     }
 
@@ -3464,7 +3464,7 @@ impl EnhancedTuiApp {
             )
         };
 
-        self.table_state.select(Some(new_row));
+        self.state_container.set_table_selected_row(Some(new_row));
         self.buffer_mut().set_status_message(status_msg);
     }
 
@@ -3481,7 +3481,7 @@ impl EnhancedTuiApp {
             )
         };
 
-        self.table_state.select(Some(new_row));
+        self.state_container.set_table_selected_row(Some(new_row));
         self.buffer_mut().set_status_message(status_msg);
     }
 
@@ -3715,7 +3715,7 @@ impl EnhancedTuiApp {
                 nav.jump_to_last_row();
             }
 
-            self.table_state.select(Some(last_row));
+            self.state_container.set_table_selected_row(Some(last_row));
             // Position viewport to show the last row at the bottom
             let visible_rows = self.buffer().get_last_visible_rows();
             let mut offset = self.buffer().get_scroll_offset();
@@ -3735,10 +3735,11 @@ impl EnhancedTuiApp {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
             let visible_rows = self.buffer().get_last_visible_rows();
-            let current = self.table_state.selected().unwrap_or(0);
+            let current = self.state_container.get_table_selected_row().unwrap_or(0);
             let new_position = (current + visible_rows).min(total_rows - 1);
 
-            self.table_state.select(Some(new_position));
+            self.state_container
+                .set_table_selected_row(Some(new_position));
 
             // Scroll viewport down by a page
             let mut offset = self.buffer().get_scroll_offset();
@@ -3749,10 +3750,11 @@ impl EnhancedTuiApp {
 
     fn page_up(&mut self) {
         let visible_rows = self.buffer().get_last_visible_rows();
-        let current = self.table_state.selected().unwrap_or(0);
+        let current = self.state_container.get_table_selected_row().unwrap_or(0);
         let new_position = current.saturating_sub(visible_rows);
 
-        self.table_state.select(Some(new_position));
+        self.state_container
+            .set_table_selected_row(Some(new_position));
 
         // Scroll viewport up by a page
         let mut offset = self.buffer().get_scroll_offset();
@@ -3778,7 +3780,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_search_match_index(0);
                 self.buffer_mut().set_current_match(Some(buffer_matches[0]));
                 let (row, _) = buffer_matches[0];
-                self.table_state.select(Some(row));
+                self.state_container.set_table_selected_row(Some(row));
                 self.buffer_mut()
                     .set_status_message(format!("Found {} matches", buffer_matches.len()));
             } else {
@@ -3798,7 +3800,7 @@ impl EnhancedTuiApp {
             let search_match_index = self.state_container.search().current_match;
 
             // Now do mutable operations
-            self.table_state.select(Some(row));
+            self.state_container.set_table_selected_row(Some(row));
             self.buffer_mut().set_current_match(Some((row, col)));
             self.buffer_mut()
                 .set_status_message(format!("Match {} of {}", current_idx, total));
@@ -3818,7 +3820,7 @@ impl EnhancedTuiApp {
             let search_match_index = self.state_container.search().current_match;
 
             // Now do mutable operations
-            self.table_state.select(Some(row));
+            self.state_container.set_table_selected_row(Some(row));
             self.buffer_mut().set_current_match(Some((row, col)));
             self.buffer_mut()
                 .set_status_message(format!("Match {} of {}", current_idx, total));
@@ -3907,7 +3909,7 @@ impl EnhancedTuiApp {
                 }
 
                 // Reset table state but preserve filtered data
-                self.table_state = TableState::default();
+                self.state_container.set_table_selected_row(Some(0));
                 self.buffer_mut().set_scroll_offset((0, 0));
                 self.buffer_mut().set_current_column(0);
 
@@ -3961,7 +3963,8 @@ impl EnhancedTuiApp {
 
         if !matching_columns.is_empty() {
             // Move to first match
-            self.current_column = matching_columns[0].0;
+            self.state_container
+                .set_current_column(matching_columns[0].0);
             // current_match is set via AppStateContainer in start_column_search
             debug!(target: "search", "Setting current column to index {} ('{}')", 
                    matching_columns[0].0, matching_columns[0].1);
@@ -4001,7 +4004,7 @@ impl EnhancedTuiApp {
             };
 
             // Now we can mutate self
-            self.current_column = col_index;
+            self.state_container.set_current_column(col_index);
             self.buffer_mut().set_current_column(col_index);
             self.buffer_mut().set_status_message(format!(
                 "Column {}/{}: {} - Tab/Shift-Tab to navigate",
@@ -4030,7 +4033,7 @@ impl EnhancedTuiApp {
             };
 
             // Now we can mutate self
-            self.current_column = col_index;
+            self.state_container.set_current_column(col_index);
             self.buffer_mut().set_current_column(col_index);
             self.buffer_mut().set_status_message(format!(
                 "Column {}/{}: {} - Tab/Shift-Tab to navigate",
@@ -4131,7 +4134,7 @@ impl EnhancedTuiApp {
                 filter_type, match_count, pattern
             ));
             // Reset table state for new filtered view
-            self.table_state = TableState::default();
+            self.state_container.set_table_selected_row(Some(0));
             self.buffer_mut().set_scroll_offset((0, 0));
         } else {
             let filter_type = if pattern.starts_with('\'') {
@@ -4350,7 +4353,7 @@ impl EnhancedTuiApp {
     // Removed convert_json_to_strings - moved to DataExporter module
 
     fn reset_table_state(&mut self) {
-        self.table_state = TableState::default();
+        self.state_container.set_table_selected_row(Some(0));
         self.buffer_mut().set_scroll_offset((0, 0));
         self.buffer_mut().set_current_column(0);
         self.buffer_mut().set_last_results_row(None); // Reset saved position for new results
@@ -4508,7 +4511,7 @@ impl EnhancedTuiApp {
 
     fn yank_cell(&mut self) {
         debug!("yank_cell called");
-        if let Some(selected_row) = self.table_state.selected() {
+        if let Some(selected_row) = self.state_container.get_table_selected_row() {
             let column = self.buffer().get_current_column();
             debug!("Yanking cell at row={}, column={}", selected_row, column);
             match YankManager::yank_cell(self.buffer(), selected_row, column) {
@@ -4540,7 +4543,7 @@ impl EnhancedTuiApp {
     }
 
     fn yank_row(&mut self) {
-        if let Some(selected_row) = self.table_state.selected() {
+        if let Some(selected_row) = self.state_container.get_table_selected_row() {
             match YankManager::yank_row(self.buffer(), selected_row) {
                 Ok(result) => {
                     // Use AppStateContainer for clipboard management
@@ -5277,7 +5280,7 @@ impl EnhancedTuiApp {
                 // In results mode, show navigation and data info
                 let total_rows = self.get_row_count();
                 if total_rows > 0 {
-                    let selected = self.table_state.selected().unwrap_or(0) + 1;
+                    let selected = self.state_container.get_table_selected_row().unwrap_or(0) + 1;
                     spans.push(Span::raw(" | "));
 
                     // Show selection mode
@@ -5326,7 +5329,9 @@ impl EnhancedTuiApp {
 
                                     // In cell mode, show the current cell value
                                     if self.get_selection_mode() == SelectionMode::Cell {
-                                        if let Some(selected_row) = self.table_state.selected() {
+                                        if let Some(selected_row) =
+                                            self.state_container.get_table_selected_row()
+                                        {
                                             if let Some(row_data) = results.data.get(selected_row) {
                                                 if let Some(row_obj) = row_data.as_object() {
                                                     if let Some(value) = row_obj.get(
@@ -5825,7 +5830,7 @@ impl EnhancedTuiApp {
             Cell::from(header_text).style(style)
         }));
 
-        let selected_row = self.table_state.selected().unwrap_or(0);
+        let selected_row = self.state_container.get_table_selected_row().unwrap_or(0);
 
         // Create data rows (already filtered to visible rows and columns)
         let rows: Vec<Row> = data_to_display
@@ -5965,7 +5970,9 @@ impl EnhancedTuiApp {
             table = table.highlight_symbol("  ");
         }
 
-        let mut table_state = self.table_state.clone();
+        let mut table_state = TableState::default();
+        // Set the table state from our navigation state
+        table_state.select(self.state_container.get_table_selected_row());
         // Adjust table state to use relative position within the viewport
         if let Some(selected) = table_state.selected() {
             let relative_position = selected.saturating_sub(row_viewport_start);
@@ -6431,7 +6438,8 @@ impl EnhancedTuiApp {
                                 info!(target: "navigation", "Jump-to-row: set scroll_offset to {} to center row {}", centered_scroll_offset, target_row);
                             }
 
-                            self.table_state.select(Some(target_row));
+                            self.state_container
+                                .set_table_selected_row(Some(target_row));
 
                             // Update buffer's scroll offset to match
                             let mut offset = self.buffer().get_scroll_offset();
@@ -6675,7 +6683,7 @@ impl EnhancedTuiApp {
                         buffer.get_last_query(),
                         buffer.get_input_text(),
                         buffer.get_selected_row(),
-                        buffer.get_current_column(),
+                        self.state_container.get_current_column(),
                         buffer.get_results().map(|r| r.data.len()).unwrap_or(0),
                         buffer.get_filtered_data().map(|d| d.len()).unwrap_or(0),
                     )
@@ -6816,7 +6824,10 @@ impl EnhancedTuiApp {
                             "Current Match Index: {}\n",
                             column_search.current_match
                         ));
-                        debug_info.push_str(&format!("Current Column: {}\n", self.current_column));
+                        debug_info.push_str(&format!(
+                            "Current Column: {}\n",
+                            self.state_container.get_current_column()
+                        ));
                         debug_info.push_str("==========================================\n");
                     }
                 }

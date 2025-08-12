@@ -2941,6 +2941,107 @@ impl AppStateContainer {
         self.selection.borrow().selected_column
     }
 
+    /// Get the current selected position from NavigationState
+    /// This is the primary source of truth for cursor position
+    pub fn get_current_position(&self) -> (usize, usize) {
+        let nav = self.navigation.borrow();
+        (nav.selected_row, nav.selected_column)
+    }
+
+    /// Sync selection state with navigation position
+    /// Called when navigation changes to update selection tracking
+    pub fn sync_selection_with_navigation(&self) {
+        let nav = self.navigation.borrow();
+        let mut selection = self.selection.borrow_mut();
+
+        // Update selection state to match navigation
+        selection.selected_row = Some(nav.selected_row);
+        selection.selected_column = nav.selected_column;
+        selection.last_selection_time = Some(Instant::now());
+        selection.total_selections += 1;
+    }
+
+    /// Handle yank chord based on selection mode
+    /// Returns the action taken for status messaging
+    pub fn handle_yank_by_mode(&self) -> Option<String> {
+        let mode = self.get_selection_mode();
+        let (_row, _col) = self.get_current_position();
+
+        match mode {
+            SelectionMode::Cell => {
+                // In cell mode, single 'y' yanks the cell
+                Some("yank_cell".to_string())
+            }
+            SelectionMode::Row => {
+                // In row mode, this starts a chord sequence
+                None // Chord handler will process
+            }
+            SelectionMode::Column => {
+                // In column mode, single 'y' yanks the column
+                Some("yank_column".to_string())
+            }
+        }
+    }
+
+    /// Get the selected row for table widget (ratatui compatibility)
+    pub fn get_table_selected_row(&self) -> Option<usize> {
+        let nav = self.navigation.borrow();
+        // Only return Some if we have actual data
+        if nav.total_rows > 0 {
+            Some(nav.selected_row)
+        } else {
+            None
+        }
+    }
+
+    /// Set the selected row (updates navigation state)
+    pub fn set_table_selected_row(&self, row: Option<usize>) {
+        if let Some(row) = row {
+            let mut nav = self.navigation.borrow_mut();
+            if row < nav.total_rows {
+                let old_row = nav.selected_row;
+                let column = nav.selected_column;
+                nav.selected_row = row;
+                nav.add_to_history(row, column);
+
+                if let Some(ref debug_service) = *self.debug_service.borrow() {
+                    debug_service.info(
+                        "Navigation",
+                        format!("Table row selected: {} → {}", old_row, row),
+                    );
+                }
+            }
+        }
+        // Sync selection state
+        self.sync_selection_with_navigation();
+    }
+
+    /// Get the current column index
+    pub fn get_current_column(&self) -> usize {
+        self.navigation.borrow().selected_column
+    }
+
+    /// Set the current column index
+    pub fn set_current_column(&self, column: usize) {
+        let mut nav = self.navigation.borrow_mut();
+        if column < nav.total_columns {
+            let old_col = nav.selected_column;
+            let row = nav.selected_row;
+            nav.selected_column = column;
+            nav.add_to_history(row, column);
+
+            if let Some(ref debug_service) = *self.debug_service.borrow() {
+                debug_service.info(
+                    "Navigation",
+                    format!("Column selected: {} → {}", old_col, column),
+                );
+            }
+        }
+        // Sync selection state
+        drop(nav); // Release borrow before calling sync
+        self.sync_selection_with_navigation();
+    }
+
     // Tab completion operations
     pub fn completion(&self) -> std::cell::Ref<'_, CompletionState> {
         self.completion.borrow()
@@ -3488,10 +3589,7 @@ impl AppStateContainer {
         self.navigation.borrow_mut()
     }
 
-    pub fn get_current_position(&self) -> (usize, usize) {
-        let navigation = self.navigation.borrow();
-        (navigation.selected_row, navigation.selected_column)
-    }
+    // get_current_position is defined earlier in the file at line 2946
 
     pub fn get_scroll_offset(&self) -> (usize, usize) {
         self.navigation.borrow().scroll_offset
