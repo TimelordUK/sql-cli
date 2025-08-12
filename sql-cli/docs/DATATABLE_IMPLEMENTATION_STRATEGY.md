@@ -22,7 +22,6 @@ Currently:
 - Data and view logic are intertwined
 - Row counts are incorrect due to multiple filter states
 - The TUI knows too much about data implementation
-
 Goal:
 - TUI only knows about views (what to display)
 - DataTable holds immutable source data
