@@ -2,7 +2,7 @@ use serde_json::Value;
 /// Integration tests for capturing and replaying real TUI queries
 /// This module provides infrastructure to capture complex queries from the TUI
 /// and turn them into regression tests using real data.
-use sql_cli::csv_datasource::CsvApiClient;
+use sql_cli::data::csv_datasource::CsvApiClient;
 use std::collections::HashMap;
 use std::fs;
 

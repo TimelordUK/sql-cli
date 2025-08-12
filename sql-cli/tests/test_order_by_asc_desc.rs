@@ -1,4 +1,4 @@
-use sql_cli::recursive_parser::{OrderByColumn, Parser, SortDirection};
+use sql_cli::sql::recursive_parser::{OrderByColumn, Parser, SortDirection};
 
 #[test]
 fn test_order_by_single_column_asc() {

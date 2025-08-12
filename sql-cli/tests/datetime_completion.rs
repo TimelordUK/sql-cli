@@ -1,4 +1,4 @@
-use sql_cli::cursor_aware_parser::CursorAwareParser;
+use sql_cli::sql::cursor_aware_parser::CursorAwareParser;
 
 #[test]
 fn test_datetime_completion_after_comparison() {
@@ -29,7 +29,7 @@ fn test_datetime_completion_with_partial() {
 
 #[test]
 fn test_datetime_parsing() {
-    use sql_cli::recursive_parser::Parser;
+    use sql_cli::sql::recursive_parser::Parser;
 
     let mut parser =
         Parser::new("SELECT * FROM trade_deal WHERE createdDate > DateTime(2025, 10, 20)");
@@ -40,7 +40,7 @@ fn test_datetime_parsing() {
     assert_eq!(where_clause.conditions.len(), 1);
 
     // Verify the DateTime constructor was parsed correctly
-    use sql_cli::recursive_parser::SqlExpression;
+    use sql_cli::sql::recursive_parser::SqlExpression;
     if let SqlExpression::BinaryOp { left, op, right } = &where_clause.conditions[0].expr {
         assert_eq!(op, ">");
         assert!(matches!(left.as_ref(), SqlExpression::Column(col) if col == "createdDate"));

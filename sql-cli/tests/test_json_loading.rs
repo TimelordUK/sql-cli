@@ -1,5 +1,5 @@
 use serde_json::json;
-use sql_cli::csv_datasource::{CsvApiClient, CsvDataSource};
+use sql_cli::data::csv_datasource::{CsvApiClient, CsvDataSource};
 use std::io::Write;
 use tempfile::NamedTempFile;
 

@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod datatable_conversion_tests {
     use serde_json::json;
-    use sql_cli::csv_datasource::CsvApiClient;
-    use sql_cli::datasource_adapter::CsvDataSourceAdapter;
-    use sql_cli::datasource_trait::DataSource;
-    use sql_cli::datatable_converter::DataTableConverter;
+    use sql_cli::data::csv_datasource::CsvApiClient;
+    use sql_cli::data::datasource_adapter::CsvDataSourceAdapter;
+    use sql_cli::data::datasource_trait::DataSource;
+    use sql_cli::data::datatable_converter::DataTableConverter;
 
     #[test]
     fn test_json_to_datatable_conversion() {

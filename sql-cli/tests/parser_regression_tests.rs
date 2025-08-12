@@ -1,6 +1,6 @@
 /// Parser regression tests captured from real TUI sessions
 /// These tests validate complex queries that were failing in the parser
-use sql_cli::csv_datasource::CsvApiClient;
+use sql_cli::data::csv_datasource::CsvApiClient;
 use std::fs;
 use tempfile::tempdir;
 

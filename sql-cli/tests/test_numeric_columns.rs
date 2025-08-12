@@ -1,5 +1,5 @@
-use sql_cli::where_ast::{WhereExpr, WhereValue};
-use sql_cli::where_parser::WhereParser;
+use sql_cli::sql::where_ast::{WhereExpr, WhereValue};
+use sql_cli::sql::where_parser::WhereParser;
 
 #[test]
 fn test_numeric_column_names() {

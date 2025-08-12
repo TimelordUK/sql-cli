@@ -1,5 +1,5 @@
 use serde_json::Value;
-use sql_cli::csv_datasource::CsvApiClient;
+use sql_cli::data::csv_datasource::CsvApiClient;
 use std::collections::HashMap;
 
 // Import the test infrastructure

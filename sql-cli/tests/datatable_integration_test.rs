@@ -1,5 +1,5 @@
-use sql_cli::datatable::{DataTable, DataType};
-use sql_cli::datatable_loaders::load_json_to_datatable;
+use sql_cli::data::datatable::{DataTable, DataType};
+use sql_cli::data::datatable_loaders::load_json_to_datatable;
 use std::path::PathBuf;
 
 fn get_test_data_path(filename: &str) -> PathBuf {
@@ -229,7 +229,7 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 #[test]
 fn test_debug_dump_display() {
     // Create a small test table
-    use sql_cli::datatable::{DataColumn, DataRow, DataValue};
+    use sql_cli::data::datatable::{DataColumn, DataRow, DataValue};
 
     let mut table = DataTable::new("test_table");
 

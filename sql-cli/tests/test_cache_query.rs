@@ -1,5 +1,5 @@
 use serde_json::json;
-use sql_cli::csv_datasource::CsvApiClient;
+use sql_cli::data::csv_datasource::CsvApiClient;
 
 #[test]
 fn test_cache_mode_query_filtering() {

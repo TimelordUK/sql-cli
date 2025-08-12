@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::json;
-use sql_cli::csv_datasource::CsvApiClient;
+use sql_cli::data::csv_datasource::CsvApiClient;
 
 #[test]
 fn test_date_comparison_with_datetime_function() -> Result<()> {
