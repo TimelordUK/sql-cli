@@ -1,6 +1,3 @@
-# Fixed version of the release workflow
-# Copy this content to .github/workflows/release.yml
-
 name: Manual Release
 
 on:
