@@ -10,6 +10,7 @@ pub mod csv_fixes;
 pub mod cursor_aware_parser;
 pub mod cursor_operations;
 pub mod data_exporter;
+pub mod data_provider;
 pub mod datasource_adapter;
 pub mod datasource_trait;
 pub mod datatable;
