@@ -1689,6 +1689,92 @@ impl HelpState {
     }
 }
 
+/// State for managing key chord sequences
+#[derive(Debug, Clone)]
+pub struct ChordState {
+    /// Current chord sequence being built
+    pub current_chord: Vec<String>, // Store as strings for simplicity
+    /// Time when current chord started (as timestamp)
+    pub chord_start: Option<std::time::SystemTime>,
+    /// Whether chord mode is active
+    pub is_active: bool,
+    /// Description of current chord mode (e.g., "Yank mode")
+    pub description: Option<String>,
+    /// Registered chord mappings (chord -> action)
+    pub registered_chords: std::collections::HashMap<String, String>,
+    /// History of chord completions
+    pub history: Vec<(String, String, std::time::SystemTime)>, // (chord, action, timestamp)
+}
+
+impl Default for ChordState {
+    fn default() -> Self {
+        let mut registered_chords = std::collections::HashMap::new();
+        // Register default yank chords
+        registered_chords.insert("yy".to_string(), "yank_row".to_string());
+        registered_chords.insert("yr".to_string(), "yank_row".to_string());
+        registered_chords.insert("yc".to_string(), "yank_column".to_string());
+        registered_chords.insert("ya".to_string(), "yank_all".to_string());
+        registered_chords.insert("yv".to_string(), "yank_cell".to_string());
+
+        Self {
+            current_chord: Vec::new(),
+            chord_start: None,
+            is_active: false,
+            description: None,
+            registered_chords,
+            history: Vec::new(),
+        }
+    }
+}
+
+impl ChordState {
+    /// Clear the current chord sequence
+    pub fn clear(&mut self) {
+        self.current_chord.clear();
+        self.chord_start = None;
+        self.is_active = false;
+        self.description = None;
+    }
+
+    /// Add a key to the current chord
+    pub fn add_key(&mut self, key: String) {
+        if self.current_chord.is_empty() {
+            self.chord_start = Some(std::time::SystemTime::now());
+        }
+        self.current_chord.push(key);
+        self.is_active = true;
+    }
+
+    /// Get the current chord as a string
+    pub fn get_chord_string(&self) -> String {
+        self.current_chord.join("")
+    }
+
+    /// Check if current chord matches a registered chord
+    pub fn check_match(&self) -> Option<String> {
+        let chord = self.get_chord_string();
+        self.registered_chords.get(&chord).cloned()
+    }
+
+    /// Check if current chord is a partial match
+    pub fn is_partial_match(&self) -> bool {
+        let current = self.get_chord_string();
+        self.registered_chords
+            .keys()
+            .any(|chord| chord.starts_with(&current) && chord.len() > current.len())
+    }
+
+    /// Record a completed chord
+    pub fn record_completion(&mut self, chord: String, action: String) {
+        self.history
+            .push((chord, action, std::time::SystemTime::now()));
+        // Keep only last 50 completions
+        if self.history.len() > 50 {
+            self.history.remove(0);
+        }
+    }
+}
+
 /// Container for all widget states
 pub struct WidgetStates {
     pub search_modes: SearchModesWidget,
@@ -2195,6 +2281,9 @@ pub struct AppStateContainer {
     // Clipboard/Yank state
     clipboard: RefCell<ClipboardState>,
 
+    // Chord state
+    chord: RefCell<ChordState>,
+
     // Legacy results cache (to be deprecated)
     results_cache: ResultsCache,
 
@@ -2235,6 +2324,7 @@ impl AppStateContainer {
             key_press_history: RefCell::new(KeyPressHistory::new(50)), // Keep last 50 key presses
             results: RefCell::new(ResultsState::new()),
             clipboard: RefCell::new(ClipboardState::new()),
+            chord: RefCell::new(ChordState::default()),
             results_cache: ResultsCache::new(100),
             mode_stack: vec![AppMode::Command],
             debug_enabled: false,
@@ -3793,6 +3883,18 @@ impl AppStateContainer {
     /// Get clipboard state (mutable)
     pub fn clipboard_mut(&self) -> std::cell::RefMut<'_, ClipboardState> {
         self.clipboard.borrow_mut()
+    }
+
+    // Chord operations
+
+    /// Get chord state (read-only)
+    pub fn chord(&self) -> std::cell::Ref<'_, ChordState> {
+        self.chord.borrow()
+    }
+
+    /// Get chord state (mutable)
+    pub fn chord_mut(&self) -> std::cell::RefMut<'_, ChordState> {
+        self.chord.borrow_mut()
     }
 
     /// Yank a cell to clipboard
