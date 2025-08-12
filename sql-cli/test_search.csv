@@ -1,0 +1,6 @@
+id,name,description,orderid,amount
+1,Widget A,First widget,ORD001,100.50
+2,Widget B,Second widget,ORD002,200.75
+3,Gadget X,Cool gadget,ORD003,300.25
+4,Tool Y,Useful tool,ORD004,400.00
+5,Device Z,Smart device,ORD005,500.99

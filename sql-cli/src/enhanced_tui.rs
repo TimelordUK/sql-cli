@@ -202,6 +202,38 @@ impl EnhancedTuiApp {
     // --- State Container Access ---
     // Helper methods for accessing the state container during migration
 
+    /// Format numbers in a compact way (1000 -> 1k, 1500000 -> 1.5M, etc.)
+    fn format_number_compact(n: usize) -> String {
+        if n < 1000 {
+            n.to_string()
+        } else if n < 1000000 {
+            let k = n as f64 / 1000.0;
+            if k.fract() == 0.0 {
+                format!("{}k", k as usize)
+            } else if k < 10.0 {
+                format!("{:.1}k", k)
+            } else {
+                format!("{}k", k as usize)
+            }
+        } else if n < 1000000000 {
+            let m = n as f64 / 1000000.0;
+            if m.fract() == 0.0 {
+                format!("{}M", m as usize)
+            } else if m < 10.0 {
+                format!("{:.1}M", m)
+            } else {
+                format!("{}M", m as usize)
+            }
+        } else {
+            let b = n as f64 / 1000000000.0;
+            if b.fract() == 0.0 {
+                format!("{}B", b as usize)
+            } else {
+                format!("{:.1}B", b)
+            }
+        }
+    }
+
     /// Check if help is visible
     fn is_help_visible(&self) -> bool {
         self.state_container.is_help_visible()
@@ -2024,8 +2056,7 @@ impl EnhancedTuiApp {
                 // Use AppStateContainer for column search
                 self.state_container.start_column_search(pattern.clone());
 
-                self.buffer_mut().set_column_search_pattern(pattern.clone());
-                // Pattern is now stored in AppStateContainer via search_columns()
+                // Pattern is now stored in AppStateContainer via start_column_search()
                 self.search_columns();
 
                 // IMPORTANT: Ensure we stay in ColumnSearch mode after search
@@ -2096,10 +2127,7 @@ impl EnhancedTuiApp {
                 // Use AppStateContainer to clear column search
                 self.state_container.clear_column_search();
 
-                self.buffer_mut().set_column_search_pattern(String::new());
-                self.buffer_mut().set_column_search_matches(Vec::new());
-                self.buffer_mut().set_column_search_current_match(0);
-                // Pattern is cleared in AppStateContainer via clear_column_search()
+                // All column search state is now managed by AppStateContainer
             }
         }
 
@@ -2133,8 +2161,7 @@ impl EnhancedTuiApp {
                         self.buffer_mut().set_fuzzy_filter_pattern(pattern);
                     }
                     SearchMode::ColumnSearch => {
-                        self.buffer_mut().set_column_search_pattern(pattern.clone());
-                        // Pattern is now stored in AppStateContainer
+                        // Pattern is stored in AppStateContainer via start_column_search
                     }
                 }
             }
@@ -2264,12 +2291,6 @@ impl EnhancedTuiApp {
                     }
                     AppMode::ColumnSearch => {
                         // Clear column search state using AppStateContainer
-                        self.state_container.clear_column_search();
-                        // Clear local and buffer state for compatibility
-                        self.buffer_mut().set_column_search_pattern(String::new());
-                        self.buffer_mut().set_column_search_matches(Vec::new());
-                        self.buffer_mut().set_column_search_current_match(0);
-                        // Clear column search in AppStateContainer
                         self.state_container.clear_column_search();
                         // The widget will restore the original SQL that was saved when entering the mode
                         debug!(target: "search", "ColumnSearch Cancel: Exiting without modifying input_text");
@@ -2499,22 +2520,19 @@ impl EnhancedTuiApp {
                     self.input = tui_input::Input::new(text.clone()).with_cursor(cursor);
                 }
 
-                // Cancel column search and return to results - transaction block
+                // Cancel column search and return to results
+                self.state_container.clear_column_search();
                 {
                     let mut buffer = self.buffer_mut();
                     buffer.set_mode(AppMode::Results);
-                    buffer.set_column_search_pattern(String::new());
-                    buffer.set_column_search_matches(Vec::new());
                     buffer.set_status_message("Column search cancelled".to_string());
                 }
             }
             KeyCode::Enter => {
                 // Jump to first matching column
-                if !self.buffer().get_column_search_matches().clone().is_empty() {
-                    let (column_index, column_name) =
-                        self.buffer().get_column_search_matches().clone()
-                            [self.buffer().get_column_search_current_match()]
-                        .clone();
+                if let Some((column_index, column_name)) =
+                    self.state_container.accept_column_match()
+                {
                     self.buffer_mut().set_current_column(column_index);
                     self.buffer_mut()
                         .set_status_message(format!("Jumped to column: {}", column_name));
@@ -2537,17 +2555,15 @@ impl EnhancedTuiApp {
             }
             KeyCode::Tab => {
                 // Next match (Tab only, not 'n' to allow typing 'n' in search)
-                if !self.buffer().get_column_search_matches().clone().is_empty() {
-                    let matches_len = self.buffer().get_column_search_matches().clone().len();
-                    let current = self.buffer().get_column_search_current_match();
-                    self.buffer_mut()
-                        .set_column_search_current_match((current + 1) % matches_len);
-                    let (column_index, column_name) =
-                        self.buffer().get_column_search_matches().clone()
-                            [self.buffer().get_column_search_current_match()]
-                        .clone();
-                    let current_match = self.buffer().get_column_search_current_match() + 1;
-                    let total_matches = self.buffer().get_column_search_matches().clone().len();
+                if let Some((column_index, column_name)) = self.state_container.next_column_match()
+                {
+                    let (current_match, total_matches) = {
+                        let column_search = self.state_container.column_search();
+                        (
+                            column_search.current_match + 1,
+                            column_search.matching_columns.len(),
+                        )
+                    };
                     self.buffer_mut().set_current_column(column_index);
                     self.buffer_mut().set_status_message(format!(
                         "Column {} of {}: {}",
@@ -2557,22 +2573,16 @@ impl EnhancedTuiApp {
             }
             KeyCode::BackTab => {
                 // Previous match (Shift+Tab only, not 'N' to allow typing 'N' in search)
-                if !self.buffer().get_column_search_matches().clone().is_empty() {
-                    let current = self.buffer().get_column_search_current_match();
-                    if current == 0 {
-                        let matches_len = self.buffer().get_column_search_matches().clone().len();
-                        self.buffer_mut()
-                            .set_column_search_current_match(matches_len - 1);
-                    } else {
-                        self.buffer_mut()
-                            .set_column_search_current_match(current - 1);
-                    }
-                    let (column_index, column_name) =
-                        self.buffer().get_column_search_matches().clone()
-                            [self.buffer().get_column_search_current_match()]
-                        .clone();
-                    let current_match = self.buffer().get_column_search_current_match() + 1;
-                    let total_matches = self.buffer().get_column_search_matches().clone().len();
+                if let Some((column_index, column_name)) =
+                    self.state_container.previous_column_match()
+                {
+                    let (current_match, total_matches) = {
+                        let column_search = self.state_container.column_search();
+                        (
+                            column_search.current_match + 1,
+                            column_search.matching_columns.len(),
+                        )
+                    };
                     self.buffer_mut().set_current_column(column_index);
                     self.buffer_mut().set_status_message(format!(
                         "Column {} of {}: {}",
@@ -2581,17 +2591,17 @@ impl EnhancedTuiApp {
                 }
             }
             KeyCode::Backspace => {
-                let mut pattern = self.buffer().get_column_search_pattern();
+                let mut pattern = self.state_container.column_search().pattern.clone();
                 pattern.pop();
-                self.buffer_mut().set_column_search_pattern(pattern.clone());
+                self.state_container.start_column_search(pattern.clone());
                 // Also update input to keep it in sync for rendering
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
                 self.update_column_search();
             }
             KeyCode::Char(c) => {
-                let mut pattern = self.buffer().get_column_search_pattern();
+                let mut pattern = self.state_container.column_search().pattern.clone();
                 pattern.push(c);
-                self.buffer_mut().set_column_search_pattern(pattern.clone());
+                self.state_container.start_column_search(pattern.clone());
                 // Also update input to keep it in sync for rendering
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
                 self.update_column_search();
@@ -3957,16 +3967,16 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Get columns from results
+        // Get columns using the new unified method
+        let column_names = self.buffer().get_column_names();
         let mut columns = Vec::new();
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    for (index, col_name) in obj.keys().enumerate() {
-                        columns.push((col_name.to_string(), index));
-                    }
-                }
-            }
+        for (index, col_name) in column_names.iter().enumerate() {
+            columns.push((col_name.clone(), index));
+        }
+
+        debug!(target: "search", "Got {} columns from buffer", columns.len());
+        if !columns.is_empty() {
+            debug!(target: "search", "Column names: {:?}", columns.iter().map(|(name, _)| name).collect::<Vec<_>>());
         }
 
         // Use AppStateContainer for column search
@@ -3982,11 +3992,15 @@ impl EnhancedTuiApp {
 
         if !matching_columns.is_empty() {
             // Move to first match
-            self.state_container
-                .set_current_column(matching_columns[0].0);
-            // current_match is set via AppStateContainer in start_column_search
+            let first_match_index = matching_columns[0].0;
+            let first_match_name = &matching_columns[0].1;
+
+            // Update BOTH AppStateContainer and buffer to keep them in sync
+            self.state_container.set_current_column(first_match_index);
+            self.buffer_mut().set_current_column(first_match_index);
+
             debug!(target: "search", "Setting current column to index {} ('{}')", 
-                   matching_columns[0].0, matching_columns[0].1);
+                   first_match_index, first_match_name);
             let status_msg = format!(
                 "Found {} columns matching '{}'. Tab/Shift-Tab to navigate.",
                 matching_columns.len(),
@@ -3995,16 +4009,11 @@ impl EnhancedTuiApp {
             debug!(target: "search", "Setting status: {}", status_msg);
             self.buffer_mut().set_status_message(status_msg);
 
-            // Also update buffer's column search matches
-            self.buffer_mut()
-                .set_column_search_matches(matching_columns.clone());
-            self.buffer_mut().set_column_search_current_match(0);
-            self.buffer_mut().set_current_column(matching_columns[0].0);
+            // Column search matches are now managed by AppStateContainer
         } else {
             let status_msg = format!("No columns matching '{}'", pattern);
             debug!(target: "search", "Setting status: {}", status_msg);
             self.buffer_mut().set_status_message(status_msg);
-            self.buffer_mut().set_column_search_matches(Vec::new());
         }
 
         // Matching columns are now stored in AppStateContainer
@@ -4030,9 +4039,7 @@ impl EnhancedTuiApp {
                 current_match, total_matches, col_name
             ));
 
-            // Update buffer's column search state for compatibility
-            self.buffer_mut()
-                .set_column_search_current_match(current_match - 1);
+            // Column search state is now managed by AppStateContainer
 
             // State is now managed in AppStateContainer
         }
@@ -4059,9 +4066,7 @@ impl EnhancedTuiApp {
                 current_match, total_matches, col_name
             ));
 
-            // Update buffer's column search state for compatibility
-            self.buffer_mut()
-                .set_column_search_current_match(current_match - 1);
+            // Column search state is now managed by AppStateContainer
 
             // State is now managed in AppStateContainer
         }
@@ -4181,37 +4186,41 @@ impl EnhancedTuiApp {
                 if let Some(obj) = first_row.as_object() {
                     let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
 
-                    // Find matching columns (case-insensitive)
-                    let pattern = self.buffer().get_column_search_pattern().to_lowercase();
-                    let mut matching_columns = Vec::new();
+                    // Create columns list for AppStateContainer
+                    let columns: Vec<(String, usize)> = headers
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, name)| (name.to_string(), idx))
+                        .collect();
 
-                    for (index, header) in headers.iter().enumerate() {
-                        if header.to_lowercase().contains(&pattern) {
-                            matching_columns.push((index, header.to_string()));
-                        }
-                    }
-
-                    self.buffer_mut()
-                        .set_column_search_matches(matching_columns);
-                    self.buffer_mut().set_column_search_current_match(0);
+                    // Update matches in AppStateContainer
+                    let pattern = self.state_container.column_search().pattern.clone();
+                    self.state_container
+                        .update_column_search_matches(&columns, &pattern);
 
                     // Update status message
-                    if self.buffer().get_column_search_pattern().is_empty() {
+                    if pattern.is_empty() {
                         self.buffer_mut()
                             .set_status_message("Enter column name to search".to_string());
-                    } else if self.buffer().get_column_search_matches().clone().is_empty() {
-                        let pattern = self.buffer().get_column_search_pattern();
-                        self.buffer_mut()
-                            .set_status_message(format!("No columns match '{}'", pattern));
                     } else {
-                        let (column_index, column_name) =
-                            self.buffer().get_column_search_matches().clone()[0].clone();
-                        let matches_len = self.buffer().get_column_search_matches().clone().len();
-                        self.buffer_mut().set_current_column(column_index);
-                        self.buffer_mut().set_status_message(format!(
-                            "Column 1 of {}: {} (Tab=next, Enter=select)",
-                            matches_len, column_name
-                        ));
+                        let (matching_columns, matches_len) = {
+                            let column_search = self.state_container.column_search();
+                            (
+                                column_search.matching_columns.clone(),
+                                column_search.matching_columns.len(),
+                            )
+                        };
+                        if matching_columns.is_empty() {
+                            self.buffer_mut()
+                                .set_status_message(format!("No columns match '{}'", pattern));
+                        } else {
+                            let (column_index, column_name) = matching_columns[0].clone();
+                            self.buffer_mut().set_current_column(column_index);
+                            self.buffer_mut().set_status_message(format!(
+                                "Column 1 of {}: {} (Tab=next, Enter=select)",
+                                matches_len, column_name
+                            ));
+                        }
                     }
                 } else {
                     self.buffer_mut()
@@ -4725,8 +4734,8 @@ impl EnhancedTuiApp {
                             }
                             AppMode::ColumnSearch => {
                                 let input_text = self.get_input_text();
-                                self.buffer_mut().set_column_search_pattern(input_text);
-                                // TODO: self.search_columns();
+                                self.state_container.start_column_search(input_text);
+                                // Column search pattern is now in AppStateContainer
                             }
                             _ => {}
                         }
@@ -5278,6 +5287,14 @@ impl EnhancedTuiApp {
                     spans.push(Span::styled(
                         format!("Row {}/{}", selected, total_rows),
                         Style::default().fg(Color::White),
+                    ));
+
+                    // Add cursor coordinates (x,y) - column and row position
+                    let current_col = self.buffer().get_current_column() + 1; // Make it 1-based
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(
+                        format!("({},{})", current_col, selected),
+                        Style::default().fg(Color::DarkGray),
                     ));
 
                     // Column information
@@ -5926,16 +5943,35 @@ impl EnhancedTuiApp {
         // Build the table with conditional row highlighting
         let mut table = Table::new(rows, constraints)
             .header(Row::new(header_cells).height(1))
-            .block(Block::default()
-                .borders(Borders::ALL)
-                .title(format!("Results ({} rows) - {} pinned, {} visible of {} | Viewport rows {}-{} (selected: {}) | Use h/l to scroll",
-                    total_rows,
-                    self.buffer().get_pinned_columns().clone().len(),
-                    visible_columns.len(),
-                    headers.len(),
-                    row_viewport_start + 1,
-                    row_viewport_end,
-                    selected_row + 1)));
+            .block(Block::default().borders(Borders::ALL).title({
+                // Create a stable, corruption-resistant title string
+                let row_count = Self::format_number_compact(total_rows);
+                let pinned = self.buffer().get_pinned_columns().len();
+                let visible = visible_columns.len();
+                let total = headers.len();
+                let start = row_viewport_start + 1;
+                let end = row_viewport_end;
+                let current = selected_row + 1;
+
+                // Use String::new() and push_str to avoid format! macro issues
+                let mut title = String::with_capacity(128);
+                title.push_str("Results (");
+                title.push_str(&row_count);
+                title.push_str(" rows) - ");
+                title.push_str(&pinned.to_string());
+                title.push_str(" pinned, ");
+                title.push_str(&visible.to_string());
+                title.push_str(" visible of ");
+                title.push_str(&total.to_string());
+                title.push_str(" | Viewport ");
+                title.push_str(&start.to_string());
+                title.push_str("-");
+                title.push_str(&end.to_string());
+                title.push_str(" (row: ");
+                title.push_str(&current.to_string());
+                title.push_str(")");
+                title
+            }));
 
         // Only apply row highlighting in row mode
         if self.get_selection_mode() == SelectionMode::Row {
@@ -6772,10 +6808,6 @@ impl EnhancedTuiApp {
                         let column_search = self.state_container.column_search();
                         debug_info.push_str("\n========== COLUMN SEARCH STATE ==========\n");
                         debug_info.push_str(&format!("Pattern: '{}'\n", column_search.pattern));
-                        debug_info.push_str(&format!(
-                            "Buffer Pattern: '{}'\n",
-                            self.buffer().get_column_search_pattern()
-                        ));
                         debug_info.push_str(&format!(
                             "Matching Columns: {} found\n",
                             column_search.matching_columns.len()

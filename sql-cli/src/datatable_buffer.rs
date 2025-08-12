@@ -1,7 +1,8 @@
 use crate::api_client::QueryResponse;
+use crate::app_state_container::ColumnSearchState;
 use crate::buffer::{
-    AppMode, BufferAPI, ColumnSearchState, ColumnStatistics, EditMode, FilterState,
-    FuzzyFilterState, SearchState, SortOrder, SortState,
+    AppMode, BufferAPI, ColumnStatistics, EditMode, FilterState, FuzzyFilterState, SearchState,
+    SortOrder, SortState,
 };
 use crate::csv_datasource::CsvApiClient;
 use crate::datatable::DataTable;
@@ -434,35 +435,7 @@ impl BufferAPI for DataTableBuffer {
     }
 
     // --- Column Search ---
-    fn get_column_search_pattern(&self) -> String {
-        self.column_search_state.pattern.clone()
-    }
-
-    fn set_column_search_pattern(&mut self, pattern: String) {
-        self.column_search_state.pattern = pattern;
-    }
-
-    fn get_column_search_matches(&self) -> &Vec<(usize, String)> {
-        &self.column_search_state.matching_columns
-    }
-
-    fn set_column_search_matches(&mut self, matches: Vec<(usize, String)>) {
-        self.column_search_state.matching_columns = matches;
-    }
-
-    fn get_column_search_current_match(&self) -> usize {
-        self.column_search_state.current_match
-    }
-
-    fn set_column_search_current_match(&mut self, index: usize) {
-        self.column_search_state.current_match = index;
-    }
-
-    fn clear_column_search(&mut self) {
-        self.column_search_state.pattern.clear();
-        self.column_search_state.matching_columns.clear();
-        self.column_search_state.current_match = 0;
-    }
+    // Column search methods: MIGRATED to AppStateContainer
 
     // --- Column Statistics ---
     fn get_column_stats(&self) -> Option<&ColumnStatistics> {
@@ -701,6 +674,15 @@ impl BufferAPI for DataTableBuffer {
 
     fn get_column_count(&self) -> usize {
         self.view.table().column_count()
+    }
+
+    fn get_column_names(&self) -> Vec<String> {
+        self.view
+            .table()
+            .columns
+            .iter()
+            .map(|col| col.name.clone())
+            .collect()
     }
 
     fn has_cached_data(&self) -> bool {

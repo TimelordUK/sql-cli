@@ -116,12 +116,7 @@ impl Default for SearchState {
     }
 }
 
-#[derive(Clone)]
-pub struct ColumnSearchState {
-    pub pattern: String,
-    pub matching_columns: Vec<(usize, String)>, // (index, column_name)
-    pub current_match: usize,
-}
+// ColumnSearchState: MIGRATED to AppStateContainer
 
 #[derive(Clone, Debug)]
 pub enum ColumnType {
@@ -148,15 +143,7 @@ pub struct ColumnStatistics {
     pub median: Option<f64>,
 }
 
-impl Default for ColumnSearchState {
-    fn default() -> Self {
-        Self {
-            pattern: String::new(),
-            matching_columns: Vec::new(),
-            current_match: 0,
-        }
-    }
-}
+// ColumnSearchState Default impl: MIGRATED to AppStateContainer
 
 // pub type ColumnStatistics = std::collections::BTreeMap<String, String>; // Replaced with struct
 
@@ -223,13 +210,6 @@ pub trait BufferAPI {
     fn clear_search_state(&mut self);
 
     // --- Column Search ---
-    fn get_column_search_pattern(&self) -> String;
-    fn set_column_search_pattern(&mut self, pattern: String);
-    fn get_column_search_matches(&self) -> &Vec<(usize, String)>;
-    fn set_column_search_matches(&mut self, matches: Vec<(usize, String)>);
-    fn get_column_search_current_match(&self) -> usize;
-    fn set_column_search_current_match(&mut self, index: usize);
-    fn clear_column_search(&mut self);
 
     // --- Column Statistics ---
     fn get_column_stats(&self) -> Option<&ColumnStatistics>;
@@ -296,6 +276,7 @@ pub trait BufferAPI {
     fn clear_filters(&mut self);
     fn get_row_count(&self) -> usize;
     fn get_column_count(&self) -> usize;
+    fn get_column_names(&self) -> Vec<String>;
 
     // --- Edit State ---
     fn get_undo_stack(&self) -> &Vec<(String, usize)>;
@@ -379,7 +360,7 @@ pub struct Buffer {
     pub filter_state: FilterState,
     pub fuzzy_filter_state: FuzzyFilterState,
     pub search_state: SearchState,
-    pub column_search_state: ColumnSearchState,
+    // column_search_state: MIGRATED to AppStateContainer
     pub column_stats: Option<ColumnStatistics>,
     pub filtered_data: Option<Vec<Vec<String>>>,
 
@@ -611,35 +592,6 @@ impl BufferAPI for Buffer {
     }
 
     // --- Column Search ---
-    fn get_column_search_pattern(&self) -> String {
-        self.column_search_state.pattern.clone()
-    }
-
-    fn set_column_search_pattern(&mut self, pattern: String) {
-        self.column_search_state.pattern = pattern;
-    }
-
-    fn get_column_search_matches(&self) -> &Vec<(usize, String)> {
-        &self.column_search_state.matching_columns
-    }
-
-    fn set_column_search_matches(&mut self, matches: Vec<(usize, String)>) {
-        self.column_search_state.matching_columns = matches;
-    }
-
-    fn get_column_search_current_match(&self) -> usize {
-        self.column_search_state.current_match
-    }
-
-    fn set_column_search_current_match(&mut self, index: usize) {
-        self.column_search_state.current_match = index;
-    }
-
-    fn clear_column_search(&mut self) {
-        self.column_search_state.pattern.clear();
-        self.column_search_state.matching_columns.clear();
-        self.column_search_state.current_match = 0;
-    }
 
     fn get_column_stats(&self) -> Option<&ColumnStatistics> {
         self.column_stats.as_ref()
@@ -880,6 +832,17 @@ impl BufferAPI for Buffer {
         0
     }
 
+    fn get_column_names(&self) -> Vec<String> {
+        if let Some(results) = &self.results {
+            if let Some(first_row) = results.data.first() {
+                if let Some(obj) = first_row.as_object() {
+                    return obj.keys().map(|k| k.to_string()).collect();
+                }
+            }
+        }
+        Vec::new()
+    }
+
     // --- Edit State ---
     fn get_undo_stack(&self) -> &Vec<(String, usize)> {
         &self.undo_stack
@@ -1033,11 +996,11 @@ impl BufferAPI for Buffer {
         output.push_str("\n--- Column Search ---\n");
         output.push_str(&format!(
             "Column Search Pattern: '{}'\n",
-            self.column_search_state.pattern
+            "<migrated>".to_string() // Column search migrated to AppStateContainer
         ));
         output.push_str(&format!(
             "Matching Columns: {:?}\n",
-            self.column_search_state.matching_columns
+            Vec::<(usize, String)>::new() // Column search migrated to AppStateContainer
         ));
         output.push_str("\n--- Sorting ---\n");
         output.push_str(&format!("Sort Column: {:?}\n", self.sort_state.column));
@@ -1222,7 +1185,7 @@ impl Buffer {
             filter_state: FilterState::default(),
             fuzzy_filter_state: FuzzyFilterState::default(),
             search_state: SearchState::default(),
-            column_search_state: ColumnSearchState::default(),
+            // column_search_state: MIGRATED to AppStateContainer
             column_stats: None,
             filtered_data: None,
 
@@ -1540,7 +1503,7 @@ impl Clone for Buffer {
             filter_state: self.filter_state.clone(),
             fuzzy_filter_state: self.fuzzy_filter_state.clone(),
             search_state: self.search_state.clone(),
-            column_search_state: self.column_search_state.clone(),
+            // column_search_state: MIGRATED to AppStateContainer
             filtered_data: self.filtered_data.clone(),
             column_widths: self.column_widths.clone(),
             scroll_offset: self.scroll_offset,
