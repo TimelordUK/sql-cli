@@ -11,8 +11,8 @@ mod completer;
 mod table_display;
 
 use completer::SqlCompleter;
-use sql_cli::sql::parser::{ParseState, SqlParser};
 use sql_cli::api_client::ApiClient;
+use sql_cli::sql::parser::{ParseState, SqlParser};
 use table_display::{display_results, export_to_csv};
 
 struct SqlValidator;
@@ -169,7 +169,8 @@ fn main() -> io::Result<()> {
     if args.contains(&"--generate-config".to_string()) {
         match sql_cli::config::config::Config::get_config_path() {
             Ok(path) => {
-                let config_content = sql_cli::config::config::Config::create_default_with_comments();
+                let config_content =
+                    sql_cli::config::config::Config::create_default_with_comments();
                 if let Some(parent) = path.parent() {
                     if let Err(e) = std::fs::create_dir_all(parent) {
                         eprintln!("Error creating config directory: {}", e);
