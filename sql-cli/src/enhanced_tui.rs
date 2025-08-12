@@ -99,35 +99,13 @@ macro_rules! log_state_clear {
 
 // Using SortOrder and SortState from sql_cli::buffer module
 
-#[derive(Clone)]
-struct FilterState {
-    pattern: String,
-    regex: Option<Regex>,
-    active: bool,
-}
+// FilterState REMOVED - migrated to AppStateContainer
 
-#[derive(Clone)]
-struct ColumnSearchState {
-    pattern: String,
-    matching_columns: Vec<(usize, String)>, // (index, column_name)
-    current_match: usize,                   // Index into matching_columns
-}
+// ColumnSearchState REMOVED - migrated to AppStateContainer
 
-#[derive(Clone)]
-struct SearchState {
-    pattern: String,
-    current_match: Option<(usize, usize)>, // (row, col)
-    matches: Vec<(usize, usize)>,
-    match_index: usize,
-}
+// SearchState REMOVED - migrated to AppStateContainer
 
-#[derive(Clone)]
-struct CompletionState {
-    suggestions: Vec<String>,
-    current_index: usize,
-    last_query: String,
-    last_cursor_pos: usize,
-}
+// CompletionState REMOVED - migrated to AppStateContainer
 
 // HistoryState has been fully migrated to AppStateContainer
 
@@ -157,8 +135,7 @@ pub struct EnhancedTuiApp {
     // column_search_state: ColumnSearchState, // MIGRATED to AppStateContainer
     // completion_state: CompletionState,
     command_history: CommandHistory,
-    // SAFETY FIX: Temporary fallback filter state to replace dangerous static
-    fallback_filter_state: FilterState,
+    // fallback_filter_state removed - using AppStateContainer
     // scroll_offset: (usize, usize), // MIGRATED to ScrollState in AppStateContainer
     // current_column: usize,         // MIGRATED to AppStateContainer navigation
     sql_highlighter: SqlHighlighter,
@@ -454,23 +431,7 @@ impl EnhancedTuiApp {
 
     // Note: mode methods removed - use buffer directly
 
-    // get_filter_state methods MIGRATED - now use state_container.filter()
-    // These methods are kept temporarily for fallback compatibility
-    fn get_filter_state(&self) -> &FilterState {
-        static FALLBACK_FILTER: FilterState = FilterState {
-            pattern: String::new(),
-            regex: None,
-            active: false,
-        };
-        // This should not be called - prefer state_container.filter()
-        &FALLBACK_FILTER
-    }
-
-    fn get_filter_state_mut(&mut self) -> &mut FilterState {
-        // SAFETY FIX: Use struct field instead of dangerous mutable static
-        // This is safe - no more undefined behavior from mutable statics
-        &mut self.fallback_filter_state
-    }
+    // get_filter_state methods REMOVED - now use state_container.filter()
 
     fn get_selection_mode(&self) -> SelectionMode {
         self.state_container.get_selection_mode()
@@ -563,11 +524,7 @@ impl EnhancedTuiApp {
             config: config.clone(),
             command_history: CommandHistory::new().unwrap_or_default(),
             // SAFETY FIX: Initialize fallback filter state to replace dangerous static
-            fallback_filter_state: FilterState {
-                pattern: String::new(),
-                regex: None,
-                active: false,
-            },
+            // fallback_filter_state removed - using AppStateContainer
             // scroll_offset: (0, 0), // MIGRATED
             // current_column: 0, // MIGRATED to AppStateContainer
             sql_highlighter: SqlHighlighter::new(),
@@ -4085,34 +4042,35 @@ impl EnhancedTuiApp {
         let mut filtered_indices = Vec::new();
 
         // Get the data to filter - either already filtered data or original results
-        let data_to_filter =
-            if self.get_filter_state().active && self.buffer().get_filtered_data().is_some() {
-                // If regex filter is active, fuzzy filter on top of that
-                self.buffer().get_filtered_data()
-            } else if let Some(results) = self.buffer().get_results() {
-                // Otherwise filter original results
-                let mut rows = Vec::new();
-                for item in &results.data {
-                    let mut row = Vec::new();
-                    if let Some(obj) = item.as_object() {
-                        for (_, value) in obj {
-                            let cell_str = match value {
-                                Value::String(s) => s.clone(),
-                                Value::Number(n) => n.to_string(),
-                                Value::Bool(b) => b.to_string(),
-                                Value::Null => "".to_string(),
-                                _ => value.to_string(),
-                            };
-                            row.push(cell_str);
-                        }
-                        rows.push(row);
+        let data_to_filter = if self.state_container.filter().is_active
+            && self.buffer().get_filtered_data().is_some()
+        {
+            // If regex filter is active, fuzzy filter on top of that
+            self.buffer().get_filtered_data()
+        } else if let Some(results) = self.buffer().get_results() {
+            // Otherwise filter original results
+            let mut rows = Vec::new();
+            for item in &results.data {
+                let mut row = Vec::new();
+                if let Some(obj) = item.as_object() {
+                    for (_, value) in obj {
+                        let cell_str = match value {
+                            Value::String(s) => s.clone(),
+                            Value::Number(n) => n.to_string(),
+                            Value::Bool(b) => b.to_string(),
+                            Value::Null => "".to_string(),
+                            _ => value.to_string(),
+                        };
+                        row.push(cell_str);
                     }
+                    rows.push(row);
                 }
-                self.buffer_mut().set_filtered_data(Some(rows));
-                self.buffer().get_filtered_data()
-            } else {
-                return;
-            };
+            }
+            self.buffer_mut().set_filtered_data(Some(rows));
+            self.buffer().get_filtered_data()
+        } else {
+            return;
+        };
 
         if let Some(data) = data_to_filter {
             for (index, row) in data.iter().enumerate() {
@@ -4401,11 +4359,8 @@ impl EnhancedTuiApp {
         }
 
         // Clear filter state to prevent old filtered data from persisting
-        *self.get_filter_state_mut() = FilterState {
-            pattern: String::new(),
-            regex: None,
-            active: false,
-        };
+        // Clear filter state in container
+        self.state_container.filter_mut().clear();
 
         // Clear search state
         {
@@ -4719,7 +4674,7 @@ impl EnhancedTuiApp {
                         // Update the appropriate filter/search state
                         match self.buffer().get_mode() {
                             AppMode::Filter => {
-                                self.get_filter_state_mut().pattern = self.get_input_text();
+                                self.state_container.filter_mut().pattern = self.get_input_text();
                                 self.apply_filter();
                             }
                             AppMode::FuzzyFilter => {
@@ -4756,7 +4711,7 @@ impl EnhancedTuiApp {
     fn export_to_json(&mut self) {
         // Include filtered data if filters are active
         let include_filtered =
-            self.get_filter_state().active || self.buffer().is_fuzzy_filter_active();
+            self.state_container.filter().is_active || self.buffer().is_fuzzy_filter_active();
 
         match DataExporter::export_to_json(self.buffer(), include_filtered) {
             Ok(message) => {
@@ -5370,10 +5325,10 @@ impl EnhancedTuiApp {
                             format!("Fuzzy: {}", self.buffer().get_fuzzy_filter_pattern()),
                             Style::default().fg(Color::Magenta),
                         ));
-                    } else if self.get_filter_state().active {
+                    } else if self.state_container.filter().is_active {
                         spans.push(Span::raw(" | "));
                         spans.push(Span::styled(
-                            format!("Filter: {}", self.get_filter_state().pattern),
+                            format!("Filter: {}", self.state_container.filter().pattern),
                             Style::default().fg(Color::Cyan),
                         ));
                     }
@@ -5874,12 +5829,9 @@ impl EnhancedTuiApp {
                     }
 
                     // Highlight filter matches
-                    if self.get_filter_state().active {
-                        if let Some(ref regex) = self.get_filter_state().regex {
-                            if regex.is_match(cell) {
-                                style = style.fg(Color::Cyan);
-                            }
-                        }
+                    if self.state_container.filter().is_active {
+                        // Note: regex-based highlighting removed as FilterState in AppStateContainer
+                        // doesn't have regex field. Filter highlighting is handled by buffer.
                     }
 
                     // Highlight fuzzy/exact filter matches
