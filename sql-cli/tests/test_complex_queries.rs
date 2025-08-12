@@ -1,5 +1,5 @@
-use sql_cli::recursive_parser::{Lexer, Parser, SortDirection, Token};
-use sql_cli::where_parser::WhereParser;
+use sql_cli::sql::recursive_parser::{Lexer, Parser, SortDirection, Token};
+use sql_cli::sql::where_parser::WhereParser;
 
 #[test]
 fn test_complex_trade_query_tokenization() {

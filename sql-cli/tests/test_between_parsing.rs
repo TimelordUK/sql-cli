@@ -1,4 +1,4 @@
-use sql_cli::recursive_parser::Parser;
+use sql_cli::sql::recursive_parser::Parser;
 
 #[test]
 fn test_between_simple() {

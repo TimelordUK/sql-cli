@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
-use sql_cli::where_ast::{evaluate_where_expr, evaluate_where_expr_with_options, WhereExpr};
-use sql_cli::where_parser::WhereParser;
+use sql_cli::sql::where_ast::{evaluate_where_expr, evaluate_where_expr_with_options, WhereExpr};
+use sql_cli::sql::where_parser::WhereParser;
 
 #[test]
 fn test_case_insensitive_contains() {

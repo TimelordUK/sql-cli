@@ -1,4 +1,4 @@
-use sql_cli::recursive_parser::{format_ast_tree, Parser};
+use sql_cli::sql::recursive_parser::{format_ast_tree, Parser};
 
 #[test]
 fn test_unclosed_parenthesis_in_where() {

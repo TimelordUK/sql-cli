@@ -1,5 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use sql_cli::{buffer::*, config::Config, csv_datasource::CsvApiClient, key_dispatcher::*};
+use sql_cli::{
+    buffer::*, config::config::Config, data::csv_datasource::CsvApiClient, ui::key_dispatcher::*,
+};
 use std::fs;
 use tempfile::tempdir;
 
