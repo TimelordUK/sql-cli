@@ -221,6 +221,11 @@ impl CursorManager {
         self.vertical_scroll = vertical;
     }
 
+    /// Reset horizontal scroll to zero (useful when switching queries)
+    pub fn reset_horizontal_scroll(&mut self) {
+        self.horizontal_scroll = 0;
+    }
+
     // ========== Token/Word Utilities ==========
 
     /// Find word boundaries at current position

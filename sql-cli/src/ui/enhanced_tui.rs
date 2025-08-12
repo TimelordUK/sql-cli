@@ -362,7 +362,16 @@ impl EnhancedTuiApp {
         self.state_container
             .set_input_text_with_cursor(text.clone(), cursor);
 
-        info!(target: "input", "SYNC_ALL [{}]: text='{}', cursor={}, mode={:?}", 
+        // Reset horizontal scroll to show the cursor properly
+        // This fixes the issue where switching between queries of different lengths
+        // leaves the scroll offset in the wrong position
+        self.cursor_manager.reset_horizontal_scroll();
+        self.state_container.scroll_mut().input_scroll_offset = 0;
+
+        // Update scroll to ensure cursor is visible
+        self.update_horizontal_scroll(120); // Will be properly updated on next render
+
+        info!(target: "input", "SYNC_ALL [{}]: text='{}', cursor={}, mode={:?}, scroll_reset", 
               caller,
               if text.len() > 50 { format!("{}...", &text[..50]) } else { text.clone() },
               cursor,
@@ -2609,13 +2618,14 @@ impl EnhancedTuiApp {
             KeyCode::Enter => {
                 // Accept the selected history command
                 if let Some(command) = self.state_container.accept_history_search() {
-                    self.set_input_text(command);
+                    // Set text with cursor at the beginning for better visibility
+                    self.set_input_text_with_cursor(command, 0);
                     self.buffer_mut().set_mode(AppMode::Command);
-                    self.buffer_mut()
-                        .set_status_message("Command loaded from history".to_string());
-                    // Reset scroll to show end of command
-                    self.state_container.scroll_mut().input_scroll_offset = 0;
-                    self.update_horizontal_scroll(120); // Will be properly updated on next render
+                    self.buffer_mut().set_status_message(
+                        "Command loaded from history (cursor at start)".to_string(),
+                    );
+                    // Sync to ensure scroll is reset properly
+                    self.sync_all_input_states()
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -4902,13 +4912,37 @@ impl EnhancedTuiApp {
         self.update_horizontal_scroll(chunks[0].width);
 
         // Command input area
+        // Get the current input text length and cursor position for display
+        let input_text_for_count = self.get_input_text();
+        let char_count = input_text_for_count.len();
+        let cursor_pos = self.get_input_cursor();
+        let char_count_display = if char_count > 0 {
+            format!(" [{}/{} chars]", cursor_pos, char_count)
+        } else {
+            String::new()
+        };
+
+        let scroll_offset = self.get_horizontal_scroll_offset();
+        let scroll_indicator = if scroll_offset > 0 {
+            " ◀ " // Indicate text is scrolled (text hidden to the left)
+        } else {
+            ""
+        };
+
         let input_title = match self.buffer().get_mode() {
-            AppMode::Command => "SQL Query".to_string(),
-            AppMode::Results => "SQL Query (Results Mode - Press ↑ to edit)".to_string(),
-            AppMode::Search => "Search Pattern".to_string(),
-            AppMode::Filter => "Filter Pattern".to_string(),
-            AppMode::FuzzyFilter => "Fuzzy Filter".to_string(),
-            AppMode::ColumnSearch => "Column Search".to_string(),
+            AppMode::Command => format!("SQL Query{}{}", char_count_display, scroll_indicator),
+            AppMode::Results => format!(
+                "SQL Query (Results Mode - Press ↑ to edit){}{}",
+                char_count_display, scroll_indicator
+            ),
+            AppMode::Search => format!("Search Pattern{}{}", char_count_display, scroll_indicator),
+            AppMode::Filter => format!("Filter Pattern{}{}", char_count_display, scroll_indicator),
+            AppMode::FuzzyFilter => {
+                format!("Fuzzy Filter{}{}", char_count_display, scroll_indicator)
+            }
+            AppMode::ColumnSearch => {
+                format!("Column Search{}{}", char_count_display, scroll_indicator)
+            }
             AppMode::Help => "Help".to_string(),
             AppMode::History => {
                 let query = self.state_container.history_search().query.clone();
