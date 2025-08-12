@@ -219,13 +219,14 @@ impl DebugService {
     }
 }
 
-/// Macro for easy debug logging
-#[macro_export]
-macro_rules! debug_log {
-    ($service:expr, $component:expr, $($arg:tt)*) => {
-        $service.info($component, format!($($arg)*))
-    };
-}
+// Commented out - duplicate with debug_helpers.rs
+// /// Macro for easy debug logging
+// #[macro_export]
+// macro_rules! debug_log {
+//     ($service:expr, $component:expr, $($arg:tt)*) => {
+//         $service.info($component, format!($($arg)*))
+//     };
+// }
 
 #[macro_export]
 macro_rules! debug_trace {
