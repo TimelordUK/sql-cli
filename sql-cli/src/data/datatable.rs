@@ -1,3 +1,4 @@
+use crate::data::data_provider::DataProvider;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -380,6 +381,28 @@ pub struct DataTableStats {
     pub column_count: usize,
     pub memory_size: usize,
     pub null_count: usize,
+}
+
+/// Implementation of DataProvider for DataTable
+/// This allows DataTable to be used wherever DataProvider trait is expected
+impl DataProvider for DataTable {
+    fn get_row(&self, index: usize) -> Option<Vec<String>> {
+        self.rows
+            .get(index)
+            .map(|row| row.values.iter().map(|v| v.to_string()).collect())
+    }
+
+    fn get_column_names(&self) -> Vec<String> {
+        self.column_names()
+    }
+
+    fn get_row_count(&self) -> usize {
+        self.row_count()
+    }
+
+    fn get_column_count(&self) -> usize {
+        self.column_count()
+    }
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use tui_input::{backend::crossterm::EventHandler, Input};
 /// Unified interface for managing input widgets (Input and TextArea)
 /// This trait abstracts the differences between single-line and multi-line input
 /// allowing the Buffer system to work with either transparently
-pub trait InputManager: Send {
+pub trait InputManager: Send + Sync {
     /// Get the current text content
     fn get_text(&self) -> String;
 

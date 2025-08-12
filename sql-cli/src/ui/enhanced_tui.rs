@@ -7,9 +7,11 @@ use crate::buffer_handler::BufferHandler;
 use crate::cell_renderer::CellRenderer;
 use crate::config::config::Config;
 use crate::cursor_manager::CursorManager;
+use crate::data::adapters::{BufferAdapter, CsvClientAdapter};
 use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_exporter::DataExporter;
+use crate::data::data_provider::DataProvider;
 use crate::help_text::HelpText;
 use crate::history::{CommandHistory, HistoryMatch};
 use crate::key_chord_handler::{ChordResult, KeyChordHandler};
@@ -230,6 +232,19 @@ impl EnhancedTuiApp {
         self.buffer_manager
             .current_mut()
             .expect("No buffer available - this should not happen")
+    }
+
+    /// Get a DataProvider view of the current buffer
+    /// This allows using the new trait-based data access pattern
+    fn get_data_provider(&self) -> Option<Box<dyn DataProvider + '_>> {
+        // For now, we'll use BufferAdapter for Buffer data
+        // In the future, we can check data source type and return appropriate adapter
+        if let Some(buffer) = self.buffer_manager.current() {
+            if buffer.get_results().is_some() {
+                return Some(Box::new(BufferAdapter::new(buffer)));
+            }
+        }
+        None
     }
 
     // Note: edit_mode methods removed - use buffer directly
@@ -3196,6 +3211,16 @@ impl EnhancedTuiApp {
         0
     }
 
+    /// Get column count using DataProvider trait (new pattern)
+    /// This demonstrates using the trait-based approach for column information
+    fn get_column_count_via_provider(&self) -> usize {
+        if let Some(provider) = self.get_data_provider() {
+            provider.get_column_count()
+        } else {
+            0
+        }
+    }
+
     // Navigation functions
     fn next_row(&mut self) {
         let total_rows = self.get_row_count();
@@ -4275,6 +4300,24 @@ impl EnhancedTuiApp {
         } else if let Some(results) = self.buffer().get_results() {
             // Return full results count
             results.data.len()
+        } else {
+            0
+        }
+    }
+
+    /// Get row count using DataProvider trait (new pattern)
+    /// This is a parallel implementation that uses the trait-based approach
+    fn get_row_count_via_provider(&self) -> usize {
+        // First check for filters - these still need buffer access for now
+        if self.buffer().is_fuzzy_filter_active() {
+            return self.buffer().get_fuzzy_filter_indices().len();
+        } else if let Some(filtered) = self.buffer().get_filtered_data() {
+            return filtered.len();
+        }
+
+        // Use DataProvider for unfiltered data
+        if let Some(provider) = self.get_data_provider() {
+            provider.get_row_count()
         } else {
             0
         }

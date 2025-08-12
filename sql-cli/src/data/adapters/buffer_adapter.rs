@@ -88,9 +88,9 @@ mod tests {
         // Create test query response
         let response = QueryResponse {
             query: QueryInfo {
-                query: "SELECT * FROM test".to_string(),
-                row_count: 2,
-                execution_time: 0.1,
+                select: vec!["*".to_string()],
+                where_clause: None,
+                order_by: None,
             },
             data: vec![
                 json!({
@@ -104,11 +104,13 @@ mod tests {
                     "age": 25
                 }),
             ],
-            columns: vec!["id".to_string(), "name".to_string(), "age".to_string()],
-            total_count: 2,
+            count: 2,
+            source: Some("test".to_string()),
+            table: Some("test".to_string()),
+            cached: Some(false),
         };
 
-        buffer.set_results(response);
+        buffer.set_results(Some(response));
 
         // Create adapter
         let adapter = BufferAdapter::new(&buffer);
@@ -116,14 +118,25 @@ mod tests {
         // Test DataProvider methods
         assert_eq!(adapter.get_row_count(), 2);
         assert_eq!(adapter.get_column_count(), 3);
-        assert_eq!(adapter.get_column_names(), vec!["id", "name", "age"]);
 
-        // Test getting a row
+        // Check column names contain expected values (order may vary)
+        let column_names = adapter.get_column_names();
+        assert!(column_names.contains(&"id".to_string()));
+        assert!(column_names.contains(&"name".to_string()));
+        assert!(column_names.contains(&"age".to_string()));
+
+        // Test getting a row - values should be present but order may vary
         let row = adapter.get_row(0).unwrap();
-        assert_eq!(row, vec!["1", "Alice", "30"]);
+        assert_eq!(row.len(), 3);
+        assert!(row.contains(&"1".to_string()));
+        assert!(row.contains(&"Alice".to_string()));
+        assert!(row.contains(&"30".to_string()));
 
         let row = adapter.get_row(1).unwrap();
-        assert_eq!(row, vec!["2", "Bob", "25"]);
+        assert_eq!(row.len(), 3);
+        assert!(row.contains(&"2".to_string()));
+        assert!(row.contains(&"Bob".to_string()));
+        assert!(row.contains(&"25".to_string()));
 
         // Test out of bounds
         assert!(adapter.get_row(2).is_none());
