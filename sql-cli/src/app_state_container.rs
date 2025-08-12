@@ -1689,6 +1689,81 @@ impl HelpState {
     }
 }
 
+/// State for undo/redo operations
+#[derive(Debug, Clone)]
+pub struct UndoRedoState {
+    /// Undo stack storing (text, cursor_position)
+    pub undo_stack: Vec<(String, usize)>,
+    /// Redo stack storing (text, cursor_position)
+    pub redo_stack: Vec<(String, usize)>,
+    /// Maximum number of undo entries to keep
+    pub max_undo_entries: usize,
+}
+
+impl Default for UndoRedoState {
+    fn default() -> Self {
+        Self {
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            max_undo_entries: 100,
+        }
+    }
+}
+
+impl UndoRedoState {
+    /// Push a state to the undo stack
+    pub fn push_undo(&mut self, text: String, cursor: usize) {
+        self.undo_stack.push((text, cursor));
+        if self.undo_stack.len() > self.max_undo_entries {
+            self.undo_stack.remove(0);
+        }
+        // Clear redo stack when new action is performed
+        self.redo_stack.clear();
+    }
+
+    /// Pop from undo stack
+    pub fn pop_undo(&mut self) -> Option<(String, usize)> {
+        self.undo_stack.pop()
+    }
+
+    /// Push to redo stack
+    pub fn push_redo(&mut self, text: String, cursor: usize) {
+        self.redo_stack.push((text, cursor));
+        if self.redo_stack.len() > self.max_undo_entries {
+            self.redo_stack.remove(0);
+        }
+    }
+
+    /// Pop from redo stack
+    pub fn pop_redo(&mut self) -> Option<(String, usize)> {
+        self.redo_stack.pop()
+    }
+}
+
+/// State for UI scrolling and viewport
+#[derive(Debug, Clone)]
+pub struct ScrollState {
+    /// Help widget scroll offset
+    pub help_scroll: u16,
+    /// Input field horizontal scroll offset
+    pub input_scroll_offset: u16,
+    /// Main viewport scroll offset (row, column)
+    pub viewport_scroll_offset: (usize, usize),
+    /// Last calculated visible rows (viewport height)
+    pub last_visible_rows: usize,
+}
+
+impl Default for ScrollState {
+    fn default() -> Self {
+        Self {
+            help_scroll: 0,
+            input_scroll_offset: 0,
+            viewport_scroll_offset: (0, 0),
+            last_visible_rows: 0,
+        }
+    }
+}
+
 /// State for managing key chord sequences
 #[derive(Debug, Clone)]
 pub struct ChordState {
@@ -2284,6 +2359,12 @@ pub struct AppStateContainer {
     // Chord state
     chord: RefCell<ChordState>,
 
+    // Undo/Redo state
+    undo_redo: RefCell<UndoRedoState>,
+
+    // Scroll and viewport state
+    scroll: RefCell<ScrollState>,
+
     // Legacy results cache (to be deprecated)
     results_cache: ResultsCache,
 
@@ -2325,6 +2406,8 @@ impl AppStateContainer {
             results: RefCell::new(ResultsState::new()),
             clipboard: RefCell::new(ClipboardState::new()),
             chord: RefCell::new(ChordState::default()),
+            undo_redo: RefCell::new(UndoRedoState::default()),
+            scroll: RefCell::new(ScrollState::default()),
             results_cache: ResultsCache::new(100),
             mode_stack: vec![AppMode::Command],
             debug_enabled: false,
@@ -3897,6 +3980,30 @@ impl AppStateContainer {
         self.chord.borrow_mut()
     }
 
+    // Undo/Redo operations
+
+    /// Get undo/redo state (read-only)
+    pub fn undo_redo(&self) -> std::cell::Ref<'_, UndoRedoState> {
+        self.undo_redo.borrow()
+    }
+
+    /// Get undo/redo state (mutable)
+    pub fn undo_redo_mut(&self) -> std::cell::RefMut<'_, UndoRedoState> {
+        self.undo_redo.borrow_mut()
+    }
+
+    // Scroll operations
+
+    /// Get scroll state (read-only)
+    pub fn scroll(&self) -> std::cell::Ref<'_, ScrollState> {
+        self.scroll.borrow()
+    }
+
+    /// Get scroll state (mutable)
+    pub fn scroll_mut(&self) -> std::cell::RefMut<'_, ScrollState> {
+        self.scroll.borrow_mut()
+    }
+
     /// Yank a cell to clipboard
     pub fn yank_cell(
         &self,
@@ -5098,6 +5205,50 @@ impl AppStateContainer {
                 }
             }
         }
+        dump.push_str("\n");
+
+        // Undo/Redo state
+        dump.push_str("UNDO/REDO STATE:\n");
+        let undo_redo = self.undo_redo.borrow();
+        dump.push_str(&format!(
+            "  Undo stack: {} entries\n",
+            undo_redo.undo_stack.len()
+        ));
+        dump.push_str(&format!(
+            "  Redo stack: {} entries\n",
+            undo_redo.redo_stack.len()
+        ));
+        if !undo_redo.undo_stack.is_empty() {
+            dump.push_str("  Recent undo entries:\n");
+            for (i, (text, cursor)) in undo_redo.undo_stack.iter().rev().take(3).enumerate() {
+                let preview = if text.len() > 50 {
+                    format!("{}...", &text[..50])
+                } else {
+                    text.clone()
+                };
+                dump.push_str(&format!(
+                    "    {}. '{}' (cursor: {})\n",
+                    i + 1,
+                    preview,
+                    cursor
+                ));
+            }
+        }
+        dump.push_str("\n");
+
+        // Scroll state
+        dump.push_str("SCROLL STATE:\n");
+        let scroll = self.scroll.borrow();
+        dump.push_str(&format!("  Help scroll: {}\n", scroll.help_scroll));
+        dump.push_str(&format!("  Input scroll: {}\n", scroll.input_scroll_offset));
+        dump.push_str(&format!(
+            "  Viewport scroll: ({}, {})\n",
+            scroll.viewport_scroll_offset.0, scroll.viewport_scroll_offset.1
+        ));
+        dump.push_str(&format!(
+            "  Last visible rows: {}\n",
+            scroll.last_visible_rows
+        ));
         dump.push_str("\n");
 
         // Widget states using DebugInfoProvider trait
