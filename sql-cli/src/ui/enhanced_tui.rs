@@ -1569,6 +1569,10 @@ impl EnhancedTuiApp {
                         self.yank_cell();
                         return Ok(false);
                     }
+                    "yank_query" => {
+                        self.yank_query();
+                        return Ok(false);
+                    }
                     _ => {
                         // Unknown action, continue with normal key handling
                     }
@@ -4597,6 +4601,48 @@ impl EnhancedTuiApp {
             Err(e) => {
                 self.buffer_mut()
                     .set_status_message(format!("Failed to yank all: {}", e));
+            }
+        }
+    }
+
+    fn yank_query(&mut self) {
+        let query = self.get_input_text();
+        if query.trim().is_empty() {
+            self.buffer_mut()
+                .set_status_message("No query to yank".to_string());
+            return;
+        }
+
+        match self.state_container.write_to_clipboard(&query) {
+            Ok(_) => {
+                let char_count = query.len();
+                let preview = if query.len() > 50 {
+                    format!("{}...", &query[..50])
+                } else {
+                    query.clone()
+                };
+                
+                // Create status message with character count
+                let status_msg = format!("Yanked SQL ({} chars)", char_count);
+                self.buffer_mut().set_status_message(status_msg);
+                
+                // Update local last_yanked for backward compatibility
+                self.last_yanked = Some(("Query".to_string(), preview.clone()));
+                
+                // Also update clipboard state for tracking
+                use crate::app_state_container::YankedItem;
+                self.state_container.clipboard_mut().last_yanked = Some(YankedItem {
+                    description: "SQL Query".to_string(),
+                    full_value: query,
+                    preview,
+                    yank_type: crate::app_state_container::YankType::Query,
+                    yanked_at: chrono::Local::now(),
+                    size_bytes: char_count,
+                });
+            }
+            Err(e) => {
+                self.buffer_mut()
+                    .set_status_message(format!("Failed to yank query: {}", e));
             }
         }
     }

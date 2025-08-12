@@ -2024,6 +2024,7 @@ pub enum YankType {
         start: (usize, usize),
         end: (usize, usize),
     },
+    Query,
     TestCase,
     DebugContext,
 }

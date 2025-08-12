@@ -96,6 +96,7 @@ impl KeyChordHandler {
         self.register_chord("yc", "yank_column");
         self.register_chord("ya", "yank_all");
         self.register_chord("yv", "yank_cell"); // Yank cell value in row mode
+        self.register_chord("yq", "yank_query"); // Yank current query text
 
         // Future chord possibilities (not currently implemented):
         // self.register_chord("gg", "go_to_top");  // Currently single 'g'

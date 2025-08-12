@@ -165,6 +165,7 @@ impl HelpText {
             Line::from("    yy     - Yank current row (row mode)"),
             Line::from("    yc     - Yank current column"),
             Line::from("    ya     - Yank all data"),
+            Line::from("    yq     - Yank current query"),
             Line::from("  Ctrl+E   - Export to CSV"),
             Line::from("  Ctrl+J   - Export to JSON"),
             Line::from("  ↑/Esc    - Back to command"),
