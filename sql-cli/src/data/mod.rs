@@ -1,0 +1,23 @@
+//! Data layer for DataTable/DataView architecture
+//!
+//! This module provides the data abstraction layer that separates
+//! data storage from presentation.
+
+pub mod adapters;
+pub mod converters;
+
+// Core data modules
+pub mod data_provider;
+pub mod datatable;
+pub mod datatable_buffer;
+pub mod datatable_converter;
+pub mod datatable_loaders;
+pub mod datatable_view;
+
+// Data source modules
+pub mod csv_datasource;
+pub mod csv_fixes;
+pub mod data_analyzer;
+pub mod data_exporter;
+pub mod datasource_adapter;
+pub mod datasource_trait;

@@ -4,25 +4,14 @@ use reedline::{
     MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline,
     ReedlineEvent, ReedlineMenu, Signal, ValidationResult, Validator,
 };
-use sql_cli::app_paths::AppPaths;
+use sql_cli::utils::app_paths::AppPaths;
 use std::{borrow::Cow, io};
 
 mod completer;
-mod csv_fixes;
-mod cursor_aware_parser;
-mod enhanced_tui;
-mod modern_tui_main;
-mod parser;
-mod recursive_parser;
-mod schema_config;
-mod smart_parser;
-mod sql_highlighter;
 mod table_display;
-mod tui_app;
-mod virtual_table;
 
 use completer::SqlCompleter;
-use parser::{ParseState, SqlParser};
+use sql_cli::sql::parser::{ParseState, SqlParser};
 use sql_cli::api_client::ApiClient;
 use table_display::{display_results, export_to_csv};
 
@@ -105,10 +94,6 @@ fn print_help() {
     );
     println!("  {}      - Use classic CLI mode", "--classic".green());
     println!("  {}       - Use simple TUI mode", "--simple".green());
-    println!(
-        "  {}       - Use experimental modern TUI",
-        "--modern".green()
-    );
     println!();
     println!("{}", "Commands:".yellow());
     println!("  {}  - Execute query and fetch results", "Enter".green());
@@ -150,10 +135,10 @@ fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::err
 
 fn main() -> io::Result<()> {
     // Initialize unified logging (tracing + dual logging)
-    sql_cli::logging::init_tracing_with_dual_logging();
+    sql_cli::utils::logging::init_tracing_with_dual_logging();
 
     // Get the dual logger to show the log path
-    if let Some(dual_logger) = sql_cli::dual_logging::get_dual_logger() {
+    if let Some(dual_logger) = sql_cli::utils::dual_logging::get_dual_logger() {
         eprintln!("📝 Debug logs will be written to:");
         eprintln!("   {}", dual_logger.log_path().display());
         eprintln!("   Tail with: tail -f {}", dual_logger.log_path().display());
@@ -165,7 +150,7 @@ fn main() -> io::Result<()> {
 
     // Check for config initialization
     if args.contains(&"--init-config".to_string()) {
-        match sql_cli::config::Config::init_wizard() {
+        match sql_cli::config::config::Config::init_wizard() {
             Ok(config) => {
                 println!("\nConfiguration initialized successfully!");
                 if !config.display.use_glyphs {
@@ -182,9 +167,9 @@ fn main() -> io::Result<()> {
 
     // Check for config file generation
     if args.contains(&"--generate-config".to_string()) {
-        match sql_cli::config::Config::get_config_path() {
+        match sql_cli::config::config::Config::get_config_path() {
             Ok(path) => {
-                let config_content = sql_cli::config::Config::create_default_with_comments();
+                let config_content = sql_cli::config::config::Config::create_default_with_comments();
                 if let Some(parent) = path.parent() {
                     if let Err(e) = std::fs::create_dir_all(parent) {
                         eprintln!("Error creating config directory: {}", e);
@@ -232,7 +217,7 @@ fn main() -> io::Result<()> {
     if use_tui {
         if use_classic_tui {
             println!("Starting simple TUI mode... (use --enhanced for csvlens-style features)");
-            if let Err(e) = tui_app::run_tui_app() {
+            if let Err(e) = sql_cli::ui::tui_app::run_tui_app() {
                 eprintln!("TUI Error: {}", e);
                 std::process::exit(1);
             }
@@ -249,39 +234,22 @@ fn main() -> io::Result<()> {
                 );
             } else {
                 println!(
-                    "Starting enhanced TUI mode... (use --modern for experimental TUI, --simple for basic TUI, --classic for CLI)"
+                    "Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)"
                 );
             }
             let api_url = std::env::var("TRADE_API_URL")
                 .unwrap_or_else(|_| "http://localhost:5000".to_string());
 
-            // Check if user wants modern TUI (experimental)
-            let use_modern = args.contains(&"--modern".to_string());
-
-            let result = if use_modern {
-                // Use the experimental modern TUI
-                if data_files.len() > 1 {
-                    let file_refs: Vec<&str> = data_files.iter().map(|s| s.as_str()).collect();
-                    modern_tui_main::run_modern_tui_multi(&api_url, file_refs)
-                } else {
-                    modern_tui_main::run_modern_tui(&api_url, data_file.as_deref())
-                }
+            // Use the enhanced TUI by default
+            let result = if data_files.len() > 1 {
+                let file_refs: Vec<&str> = data_files.iter().map(|s| s.as_str()).collect();
+                sql_cli::ui::enhanced_tui::run_enhanced_tui_multi(&api_url, file_refs)
             } else {
-                // Use the enhanced TUI by default (stable and feature-complete)
-                if data_files.len() > 1 {
-                    let file_refs: Vec<&str> = data_files.iter().map(|s| s.as_str()).collect();
-                    enhanced_tui::run_enhanced_tui_multi(&api_url, file_refs)
-                } else {
-                    enhanced_tui::run_enhanced_tui(&api_url, data_file.as_deref())
-                }
+                sql_cli::ui::enhanced_tui::run_enhanced_tui(&api_url, data_file.as_deref())
             };
 
             if let Err(e) = result {
-                if use_modern {
-                    eprintln!("Modern TUI Error: {}", e);
-                } else {
-                    eprintln!("Enhanced TUI Error: {}", e);
-                }
+                eprintln!("Enhanced TUI Error: {}", e);
                 eprintln!("Falling back to classic CLI mode...");
                 eprintln!("");
                 // Don't exit, fall through to classic mode
