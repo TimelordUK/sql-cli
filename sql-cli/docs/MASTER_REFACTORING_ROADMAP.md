@@ -31,7 +31,10 @@ This document outlines the complete refactoring journey from our current state t
 **Timeline: 2-3 weeks**
 **Approach: Implement C#-inspired DataTable/DataView pattern**
 
-Reference: `docs/DATATABLE_DATAVIEW_ARCHITECTURE.md`, `docs/DataView.md`
+Reference: 
+- `docs/DATATABLE_DATAVIEW_ARCHITECTURE.md` - Original architecture proposal
+- `docs/DataView.md` - High-level design overview  
+- `docs/DATATABLE_IMPLEMENTATION_STRATEGY.md` - **Actual implementation strategy (START HERE)**
 
 ### Core Components
 1. **DataTable** (Immutable Data Store)
