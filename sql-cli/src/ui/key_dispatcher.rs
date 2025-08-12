@@ -164,6 +164,16 @@ impl KeyDispatcher {
             "quick_switch_buffer".into(),
         );
 
+        // Ctrl+Left/Right for word navigation (standard in most editors)
+        self.command_map.insert(
+            KeyBinding::with_ctrl(KeyCode::Left),
+            "move_word_backward".into(),
+        );
+        self.command_map.insert(
+            KeyBinding::with_ctrl(KeyCode::Right),
+            "move_word_forward".into(),
+        );
+
         // Alt+number for buffer switching (1-9)
         for i in 1..=9 {
             let digit_char = char::from_digit(i, 10).unwrap();
@@ -180,7 +190,7 @@ impl KeyDispatcher {
         );
         self.command_map.insert(
             KeyBinding::with_alt(KeyCode::Char('b')),
-            "list_buffers".into(), // Changed from move_word_backward to list_buffers
+            "list_buffers".into(), // Alt+b for buffer list
         );
         self.command_map.insert(
             KeyBinding::with_alt(KeyCode::Char('f')),
