@@ -1,0 +1,7 @@
+id,name,value,description
+1,Widget A,100,First widget
+2,Widget B,200,Second widget
+3,Gadget X,300,Cool gadget
+4,Tool Y,400,Useful tool
+5,Device Z,500,Smart device
+EOF < /dev/null

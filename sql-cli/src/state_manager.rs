@@ -113,9 +113,8 @@ impl StateManager {
             } else {
                 None
             },
-            column_search_pattern: if !buffer.get_column_search_pattern().is_empty() {
-                Some(buffer.get_column_search_pattern())
-            } else {
+            column_search_pattern: {
+                // Column search migrated to AppStateContainer
                 None
             },
             table_scroll: buffer.get_scroll_offset(),
@@ -144,7 +143,8 @@ impl StateManager {
             buffer.set_fuzzy_filter_pattern(pattern.clone());
         }
         if let Some(pattern) = &context.column_search_pattern {
-            buffer.set_column_search_pattern(pattern.clone());
+            // Column search migrated to AppStateContainer
+            // buffer.set_column_search_pattern(pattern.clone());
         }
     }
 
@@ -163,7 +163,8 @@ impl StateManager {
                 buffer.set_fuzzy_filter_active(false);
             }
             AppMode::ColumnSearch => {
-                buffer.set_column_search_pattern(String::new());
+                // Column search migrated to AppStateContainer
+                // buffer.set_column_search_pattern(String::new());
             }
             _ => {}
         }

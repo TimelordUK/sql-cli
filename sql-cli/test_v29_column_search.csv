@@ -1,0 +1,7 @@
+id,name,description,category,price
+1,Widget A,First widget,Electronics,10.99
+2,Widget B,Second widget,Electronics,15.99
+3,Gadget X,Cool gadget,Home,25.99
+4,Tool Y,Useful tool,Hardware,8.50
+5,Device Z,Smart device,Electronics,99.99
+EOF < /dev/null
