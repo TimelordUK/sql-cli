@@ -3992,11 +3992,15 @@ impl EnhancedTuiApp {
 
         if !matching_columns.is_empty() {
             // Move to first match
-            self.state_container
-                .set_current_column(matching_columns[0].0);
-            // current_match is set via AppStateContainer in start_column_search
+            let first_match_index = matching_columns[0].0;
+            let first_match_name = &matching_columns[0].1;
+
+            // Update BOTH AppStateContainer and buffer to keep them in sync
+            self.state_container.set_current_column(first_match_index);
+            self.buffer_mut().set_current_column(first_match_index);
+
             debug!(target: "search", "Setting current column to index {} ('{}')", 
-                   matching_columns[0].0, matching_columns[0].1);
+                   first_match_index, first_match_name);
             let status_msg = format!(
                 "Found {} columns matching '{}'. Tab/Shift-Tab to navigate.",
                 matching_columns.len(),
