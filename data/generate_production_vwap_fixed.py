@@ -93,10 +93,31 @@ class ProductionVWAPGenerator:
         self.algo_parent['state'] = 'FILLED' if self.total_filled >= self.order_size else 'WORKING'
         self.algo_parent['urgency'] = urgency.value
         
-        # Calculate participation
+        # Calculate participation rate (our volume as % of market volume)
+        # Simulate market volume - typically 10-50M shares/day for liquid stock
         hour = (datetime.fromisoformat(timestamp.isoformat()).hour - 9)
-        expected = (self.order_size // 7) * (hour + 1) if hour < 7 else self.order_size
-        participation_pct = (self.total_filled / expected * 100) if expected > 0 else 100
+        minutes_elapsed = hour * 60 + timestamp.minute
+        total_minutes = 7 * 60  # 7 hour trading day
+        
+        # Market volume follows intraday U-shape (high at open/close)
+        daily_market_volume = 30_000_000  # 30M shares/day for liquid stock
+        if minutes_elapsed < 60:  # First hour - 20% of volume
+            cumulative_market_volume = daily_market_volume * 0.20 * (minutes_elapsed / 60)
+        elif minutes_elapsed < 360:  # Middle of day - 60% of volume
+            cumulative_market_volume = daily_market_volume * (0.20 + 0.60 * ((minutes_elapsed - 60) / 300))
+        else:  # Last hour - 20% of volume
+            cumulative_market_volume = daily_market_volume * (0.80 + 0.20 * ((minutes_elapsed - 360) / 60))
+        
+        # Our participation rate = our volume / market volume
+        # Should fluctuate around target (e.g., 20%) with some noise
+        if cumulative_market_volume > 0:
+            actual_participation = (self.total_filled / cumulative_market_volume) * 100
+            # Add some realistic noise
+            participation_pct = actual_participation + random.uniform(-2, 2)
+            participation_pct = max(0, min(30, participation_pct))  # Cap at 30% max
+        else:
+            participation_pct = 0
+            
         self.algo_parent['participation_pct'] = round(participation_pct, 1)
         
         self.add_snapshot(self.algo_parent, 'ALGO_UPDATE', timestamp)
@@ -176,18 +197,22 @@ class ProductionVWAPGenerator:
             if self.total_filled >= self.order_size:
                 break
                 
-            # Determine urgency
-            expected = (self.order_size // hours) * (hour + 1)
-            participation_rate = (self.total_filled / expected * 100) if expected > 0 else 0
+            # Determine urgency based on VWAP schedule adherence
+            # We want to complete order evenly over the day
+            target_completion = ((hour + 1) / hours) * 100  # % we should have filled by now
+            actual_completion = (self.total_filled / self.order_size) * 100
             
-            if participation_rate < 70:
+            # How far behind/ahead are we?
+            schedule_deviation = actual_completion - target_completion
+            
+            if schedule_deviation < -15:  # More than 15% behind schedule
                 urgency = Urgency.CRITICAL
-            elif participation_rate < 85:
+            elif schedule_deviation < -5:  # 5-15% behind
                 urgency = Urgency.URGENT
-            elif participation_rate < 95:
-                urgency = Urgency.NORMAL
-            else:
+            elif schedule_deviation > 5:   # Ahead of schedule
                 urgency = Urgency.PASSIVE
+            else:  # On track (-5% to +5%)
+                urgency = Urgency.NORMAL
             
             # Generate slices for this hour (cap for file size)
             hour_slices = min(slices_per_hour, 50)
