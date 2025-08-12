@@ -97,18 +97,6 @@ macro_rules! log_state_clear {
     };
 }
 
-// Using SortOrder and SortState from sql_cli::buffer module
-
-// FilterState REMOVED - migrated to AppStateContainer
-
-// ColumnSearchState REMOVED - migrated to AppStateContainer
-
-// SearchState REMOVED - migrated to AppStateContainer
-
-// CompletionState REMOVED - migrated to AppStateContainer
-
-// HistoryState has been fully migrated to AppStateContainer
-
 pub struct EnhancedTuiApp {
     // State container - manages all state
     state_container: std::sync::Arc<AppStateContainer>,
@@ -119,25 +107,12 @@ pub struct EnhancedTuiApp {
     input: Input,
     cursor_manager: CursorManager, // New: manages cursor/navigation logic
     data_analyzer: DataAnalyzer,   // New: manages data analysis/statistics
-    // results: Option<QueryResponse>, // MIGRATED to buffer system
-    // table_state: TableState, // MIGRATED to AppStateContainer navigation
-    show_help: bool, // TODO: Remove once fully migrated to state_container
-    sql_parser: SqlParser,
     hybrid_parser: HybridParser,
 
     // Configuration
     config: Config,
 
-    // Enhanced features
-    // sort_state: SortState, // MIGRATED to AppStateContainer
-    // filter_state: FilterState, // MIGRATED to AppStateContainer
-    // search_state: SearchState, // MIGRATED to AppStateContainer
-    // column_search_state: ColumnSearchState, // MIGRATED to AppStateContainer
-    // completion_state: CompletionState,
-    command_history: CommandHistory,
-    // fallback_filter_state removed - using AppStateContainer
-    // scroll_offset: (usize, usize), // MIGRATED to ScrollState in AppStateContainer
-    // current_column: usize,         // MIGRATED to AppStateContainer navigation
+    // command_history: CommandHistory, // MIGRATED to AppStateContainer
     sql_highlighter: SqlHighlighter,
     debug_widget: DebugWidget,
     editor_widget: EditorWidget,
@@ -146,8 +121,6 @@ pub struct EnhancedTuiApp {
     search_modes_widget: SearchModesWidget,
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
-    // help_scroll: u16,                   // MIGRATED to ScrollState in AppStateContainer
-    // input_scroll_offset: u16,           // MIGRATED to ScrollState in AppStateContainer
 
     // Selection and clipboard
     last_yanked: Option<(String, String)>, // (description, value) of last yanked item
@@ -157,17 +130,6 @@ pub struct EnhancedTuiApp {
     buffer_handler: BufferHandler, // Handles buffer operations like switching
     // Cache
     query_cache: Option<QueryCache>,
-    // Data source tracking
-
-    // Undo/redo and kill ring
-    // undo_stack: Vec<(String, usize)>, // MIGRATED to UndoRedoState in AppStateContainer
-    // redo_stack: Vec<(String, usize)>, // MIGRATED to UndoRedoState in AppStateContainer
-
-    // Viewport tracking
-    // last_visible_rows: usize, // MIGRATED to ScrollState in AppStateContainer
-
-    // Display options
-    // jump_to_row_input: String, // MIGRATED to JumpToRowState in AppStateContainer
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
 
     // Visual enhancements
@@ -179,37 +141,7 @@ impl EnhancedTuiApp {
     // --- State Container Access ---
     // Helper methods for accessing the state container during migration
 
-    /// Format numbers in a compact way (1000 -> 1k, 1500000 -> 1.5M, etc.)
-    fn format_number_compact(n: usize) -> String {
-        if n < 1000 {
-            n.to_string()
-        } else if n < 1000000 {
-            let k = n as f64 / 1000.0;
-            if k.fract() == 0.0 {
-                format!("{}k", k as usize)
-            } else if k < 10.0 {
-                format!("{:.1}k", k)
-            } else {
-                format!("{}k", k as usize)
-            }
-        } else if n < 1000000000 {
-            let m = n as f64 / 1000000.0;
-            if m.fract() == 0.0 {
-                format!("{}M", m as usize)
-            } else if m < 10.0 {
-                format!("{:.1}M", m)
-            } else {
-                format!("{}M", m as usize)
-            }
-        } else {
-            let b = n as f64 / 1000000000.0;
-            if b.fract() == 0.0 {
-                format!("{}B", b as usize)
-            } else {
-                format!("{:.1}B", b)
-            }
-        }
-    }
+    // format_number_compact MOVED to AppStateContainer as a utility method
 
     /// Check if help is visible
     fn is_help_visible(&self) -> bool {
@@ -516,17 +448,10 @@ impl EnhancedTuiApp {
             input: Input::default(),
             cursor_manager: CursorManager::new(),
             data_analyzer: DataAnalyzer::new(),
-            // results: None, // MIGRATED to buffer system
-            // table_state: TableState::default(), // MIGRATED to AppStateContainer
-            show_help: false,
-            sql_parser: SqlParser::new(),
+            // sql_parser: SqlParser::new(), // Not in struct anymore
             hybrid_parser: HybridParser::new(),
             config: config.clone(),
-            command_history: CommandHistory::new().unwrap_or_default(),
-            // SAFETY FIX: Initialize fallback filter state to replace dangerous static
-            // fallback_filter_state removed - using AppStateContainer
-            // scroll_offset: (0, 0), // MIGRATED
-            // current_column: 0, // MIGRATED to AppStateContainer
+            // command_history: CommandHistory::new().unwrap_or_default(), // MIGRATED to AppStateContainer
             sql_highlighter: SqlHighlighter::new(),
             debug_widget: DebugWidget::new(),
             editor_widget: EditorWidget::new(),
@@ -535,18 +460,11 @@ impl EnhancedTuiApp {
             search_modes_widget: SearchModesWidget::new(),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
-            // help_scroll: 0, // MIGRATED
-            // input_scroll_offset: 0, // MIGRATED
             last_yanked: None,
             // CSV fields now in Buffer
             buffer_manager,
             buffer_handler: BufferHandler::new(),
             query_cache: QueryCache::new().ok(),
-            // Cache fields now in Buffer
-            // undo_stack: Vec::new(), // MIGRATED
-            // redo_stack: Vec::new(), // MIGRATED
-            // last_visible_rows: 30, // MIGRATED
-            // jump_to_row_input: String::new(), // MIGRATED
             log_buffer: sql_cli::dual_logging::get_dual_logger()
                 .map(|logger| logger.ring_buffer().clone()),
             cell_renderer: CellRenderer::new(config.theme.cell_selection_style.clone()),
@@ -1239,7 +1157,10 @@ impl EnhancedTuiApp {
             KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Navigate to previous command in history
                 // Get history entries first, before mutable borrow
-                let history_entries = self.command_history.get_navigation_entries();
+                let history_entries = self
+                    .state_container
+                    .command_history()
+                    .get_navigation_entries();
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
@@ -1273,7 +1194,10 @@ impl EnhancedTuiApp {
             KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Navigate to next command in history
                 // Get history entries first, before mutable borrow
-                let history_entries = self.command_history.get_navigation_entries();
+                let history_entries = self
+                    .state_container
+                    .command_history()
+                    .get_navigation_entries();
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
@@ -1292,7 +1216,10 @@ impl EnhancedTuiApp {
             }
             // Alternative: Alt+Up for history previous (in case Ctrl+P is intercepted)
             KeyCode::Up if key.modifiers.contains(KeyModifiers::ALT) => {
-                let history_entries = self.command_history.get_navigation_entries();
+                let history_entries = self
+                    .state_container
+                    .command_history()
+                    .get_navigation_entries();
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
@@ -1308,7 +1235,10 @@ impl EnhancedTuiApp {
             }
             // Alternative: Alt+Down for history next
             KeyCode::Down if key.modifiers.contains(KeyModifiers::ALT) => {
-                let history_entries = self.command_history.get_navigation_entries();
+                let history_entries = self
+                    .state_container
+                    .command_history()
+                    .get_navigation_entries();
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
@@ -2847,13 +2777,16 @@ impl EnhancedTuiApp {
                     (vec![], Some("api".to_string()))
                 };
 
-                let _ = self.command_history.add_entry_with_schema(
-                    query.to_string(),
-                    true,
-                    Some(duration.as_millis() as u64),
-                    schema_columns,
-                    data_source.clone(),
-                );
+                let _ = self
+                    .state_container
+                    .command_history_mut()
+                    .add_entry_with_schema(
+                        query.to_string(),
+                        true,
+                        Some(duration.as_millis() as u64),
+                        schema_columns,
+                        data_source.clone(),
+                    );
 
                 // Add debug info about results
                 let row_count = response.data.len();
@@ -2984,13 +2917,16 @@ impl EnhancedTuiApp {
                     (vec![], Some("api".to_string()))
                 };
 
-                let _ = self.command_history.add_entry_with_schema(
-                    query.to_string(),
-                    false,
-                    Some(duration.as_millis() as u64),
-                    schema_columns,
-                    data_source,
-                );
+                let _ = self
+                    .state_container
+                    .command_history_mut()
+                    .add_entry_with_schema(
+                        query.to_string(),
+                        false,
+                        Some(duration.as_millis() as u64),
+                        schema_columns,
+                        data_source,
+                    );
                 self.buffer_mut()
                     .set_status_message(format!("Error: {}", e));
             }
@@ -5898,7 +5834,7 @@ impl EnhancedTuiApp {
             .header(Row::new(header_cells).height(1))
             .block(Block::default().borders(Borders::ALL).title({
                 // Create a stable, corruption-resistant title string
-                let row_count = Self::format_number_compact(total_rows);
+                let row_count = AppStateContainer::format_number_compact(total_rows);
                 let pinned = self.buffer().get_pinned_columns().len();
                 let visible = visible_columns.len();
                 let total = headers.len();
@@ -6236,26 +6172,42 @@ impl EnhancedTuiApp {
                                 let id = Some(potential_id.to_string());
                                 let query = if parts.len() > 3 {
                                     parts[3..].join(" ")
-                                } else if let Some(last_entry) =
-                                    self.command_history.get_last_entry()
-                                {
-                                    last_entry.command.clone()
                                 } else {
-                                    self.buffer_mut()
-                                        .set_status_message("No query to cache".to_string());
-                                    return Ok(());
+                                    // Get the last entry in a limited scope
+                                    let last_command = self
+                                        .state_container
+                                        .command_history()
+                                        .get_last_entry()
+                                        .map(|e| e.command.clone());
+
+                                    if let Some(command) = last_command {
+                                        command
+                                    } else {
+                                        self.buffer_mut()
+                                            .set_status_message("No query to cache".to_string());
+                                        return Ok(());
+                                    }
                                 };
                                 (id, query)
                             } else {
                                 // No ID provided, treat everything as the query
                                 (None, parts[2..].join(" "))
                             }
-                        } else if let Some(last_entry) = self.command_history.get_last_entry() {
-                            (None, last_entry.command.clone())
                         } else {
-                            self.buffer_mut()
-                                .set_status_message("No query to cache".to_string());
-                            return Ok(());
+                            // Get the last entry in a limited scope
+                            let last_command = self
+                                .state_container
+                                .command_history()
+                                .get_last_entry()
+                                .map(|e| e.command.clone());
+
+                            if let Some(command) = last_command {
+                                (None, command)
+                            } else {
+                                self.buffer_mut()
+                                    .set_status_message("No query to cache".to_string());
+                                return Ok(());
+                            }
                         };
 
                         match cache.save_query(&query, &data_to_save, custom_id) {

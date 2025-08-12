@@ -2347,7 +2347,7 @@ pub struct AppStateContainer {
     navigation: RefCell<NavigationState>,
 
     // History
-    command_history: CommandHistory,
+    command_history: RefCell<CommandHistory>,
     key_press_history: RefCell<KeyPressHistory>,
 
     // Results state (centralized query results management)
@@ -2380,6 +2380,38 @@ pub struct AppStateContainer {
 }
 
 impl AppStateContainer {
+    /// Format numbers in a compact way (1000 -> 1k, 1500000 -> 1.5M, etc.)
+    pub fn format_number_compact(n: usize) -> String {
+        if n < 1000 {
+            n.to_string()
+        } else if n < 1000000 {
+            let k = n as f64 / 1000.0;
+            if k.fract() == 0.0 {
+                format!("{}k", k as usize)
+            } else if k < 10.0 {
+                format!("{:.1}k", k)
+            } else {
+                format!("{}k", k as usize)
+            }
+        } else if n < 1000000000 {
+            let m = n as f64 / 1000000.0;
+            if m.fract() == 0.0 {
+                format!("{}M", m as usize)
+            } else if m < 10.0 {
+                format!("{:.1}M", m)
+            } else {
+                format!("{}M", m as usize)
+            }
+        } else {
+            let b = n as f64 / 1000000000.0;
+            if b.fract() == 0.0 {
+                format!("{}B", b as usize)
+            } else {
+                format!("{:.1}B", b)
+            }
+        }
+    }
+
     pub fn new(buffers: BufferManager) -> Result<Self> {
         let command_history = CommandHistory::new()?;
         let mut widgets = WidgetStates::new();
@@ -2401,7 +2433,7 @@ impl AppStateContainer {
             column_stats: ColumnStatsState::new(),
             jump_to_row: JumpToRowState::new(),
             navigation: RefCell::new(NavigationState::new()),
-            command_history,
+            command_history: RefCell::new(command_history),
             key_press_history: RefCell::new(KeyPressHistory::new(50)), // Keep last 50 key presses
             results: RefCell::new(ResultsState::new()),
             clipboard: RefCell::new(ClipboardState::new()),
@@ -3355,7 +3387,8 @@ impl AppStateContainer {
         history_search.original_input = original_input;
 
         // Initialize with all history entries
-        let all_entries = self.command_history.get_all();
+        let history = self.command_history.borrow();
+        let all_entries = history.get_all();
         eprintln!(
             "[DEBUG] Got {} entries from command_history.get_all()",
             all_entries.len()
@@ -3394,7 +3427,8 @@ impl AppStateContainer {
 
         if query.is_empty() {
             // Show all history when no search
-            let all_entries = self.command_history.get_all();
+            let history = self.command_history.borrow();
+            let all_entries = history.get_all();
             history_search.matches = all_entries
                 .iter()
                 .cloned()
@@ -3410,8 +3444,8 @@ impl AppStateContainer {
             use fuzzy_matcher::FuzzyMatcher;
 
             let matcher = SkimMatcherV2::default();
-            let mut matches: Vec<crate::history::HistoryMatch> = self
-                .command_history
+            let history = self.command_history.borrow();
+            let mut matches: Vec<crate::history::HistoryMatch> = history
                 .get_all()
                 .iter()
                 .cloned()
@@ -3465,6 +3499,7 @@ impl AppStateContainer {
         // Use the schema-aware search from command_history
         history_search.matches = self
             .command_history
+            .borrow()
             .search_with_schema(&query, columns, source);
 
         // Reset selected index
@@ -4381,12 +4416,12 @@ impl AppStateContainer {
     }
 
     // History access
-    pub fn command_history(&self) -> &CommandHistory {
-        &self.command_history
+    pub fn command_history(&self) -> std::cell::Ref<'_, CommandHistory> {
+        self.command_history.borrow()
     }
 
-    pub fn command_history_mut(&mut self) -> &mut CommandHistory {
-        &mut self.command_history
+    pub fn command_history_mut(&self) -> std::cell::RefMut<'_, CommandHistory> {
+        self.command_history.borrow_mut()
     }
 
     // Results cache access
@@ -5305,7 +5340,7 @@ impl AppStateContainer {
         dump.push_str("HISTORY STATE:\n");
         dump.push_str(&format!(
             "  Total Commands: {}\n",
-            self.command_history.get_all().len()
+            self.command_history.borrow().get_all().len()
         ));
         dump.push_str("\n");
 
@@ -5354,7 +5389,10 @@ impl fmt::Debug for AppStateContainer {
             .field("help_visible", &self.help.borrow().is_visible)
             .field("help_scroll", &self.help.borrow().scroll_offset)
             .field("cached_results", &self.results_cache.cache.len())
-            .field("history_count", &self.command_history.get_all().len())
+            .field(
+                "history_count",
+                &self.command_history.borrow().get_all().len(),
+            )
             .finish()
     }
 }
