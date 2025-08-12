@@ -5058,6 +5058,48 @@ impl AppStateContainer {
         }
         dump.push_str("\n");
 
+        // Chord state
+        dump.push_str("CHORD STATE:\n");
+        let chord = self.chord.borrow();
+        if !chord.current_chord.is_empty() {
+            dump.push_str(&format!("  Active chord: '{}'\n", chord.get_chord_string()));
+            if let Some(ref start) = chord.chord_start {
+                if let Ok(elapsed) = start.elapsed() {
+                    dump.push_str(&format!("  Time elapsed: {:.1}s\n", elapsed.as_secs_f32()));
+                }
+            }
+            if let Some(ref desc) = chord.description {
+                dump.push_str(&format!("  Description: {}\n", desc));
+            }
+        } else {
+            dump.push_str("  No active chord\n");
+        }
+
+        dump.push_str("\nREGISTERED CHORDS:\n");
+        let mut chords: Vec<_> = chord.registered_chords.iter().collect();
+        chords.sort_by_key(|(k, _)| k.as_str());
+        for (chord_seq, action) in chords {
+            dump.push_str(&format!("  {} → {}\n", chord_seq, action));
+        }
+
+        if !chord.history.is_empty() {
+            dump.push_str("\nCHORD HISTORY:\n");
+            for (i, (chord_str, action, timestamp)) in
+                chord.history.iter().rev().take(5).enumerate()
+            {
+                if let Ok(elapsed) = timestamp.elapsed() {
+                    dump.push_str(&format!(
+                        "  {}. {} → {} ({:.1}s ago)\n",
+                        i + 1,
+                        chord_str,
+                        action,
+                        elapsed.as_secs_f32()
+                    ));
+                }
+            }
+        }
+        dump.push_str("\n");
+
         // Widget states using DebugInfoProvider trait
         dump.push_str(&self.widgets.search_modes.debug_info());
         dump.push_str("\n");
