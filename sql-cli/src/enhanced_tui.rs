@@ -333,9 +333,13 @@ impl EnhancedTuiApp {
               if text.len() > 50 { format!("{}...", &text[..50]) } else { text.clone() },
               mode);
 
-        self.buffer_mut().set_input_text(text.clone());
-        // Also sync cursor position to end of text
-        self.buffer_mut().set_input_cursor_position(text.len());
+        // Transaction-like block for input updates
+        {
+            let mut buffer = self.buffer_mut();
+            buffer.set_input_text(text.clone());
+            // Also sync cursor position to end of text
+            buffer.set_input_cursor_position(text.len());
+        }
 
         // Always update the input field for all modes
         // TODO: Eventually migrate special modes to use buffer input
@@ -356,8 +360,12 @@ impl EnhancedTuiApp {
               cursor_pos,
               mode);
 
-        self.buffer_mut().set_input_text(text.clone());
-        self.buffer_mut().set_input_cursor_position(cursor_pos);
+        // Transaction-like block for input updates
+        {
+            let mut buffer = self.buffer_mut();
+            buffer.set_input_text(text.clone());
+            buffer.set_input_cursor_position(cursor_pos);
+        }
 
         // Always update the input field for consistency
         // TODO: Eventually migrate special modes to use buffer input
@@ -2416,17 +2424,22 @@ impl EnhancedTuiApp {
     fn handle_fuzzy_filter_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
             KeyCode::Esc => {
-                // Clear fuzzy filter and return to results
-                self.buffer_mut().set_fuzzy_filter_active(false);
-                self.buffer_mut().set_fuzzy_filter_pattern(String::new());
-                self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
-                // Restore original SQL query
-                if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
+                // Clear fuzzy filter and return to results - transaction-like block
+                let undo_state = {
+                    let mut buffer = self.buffer_mut();
+                    buffer.set_fuzzy_filter_active(false);
+                    buffer.set_fuzzy_filter_pattern(String::new());
+                    buffer.set_fuzzy_filter_indices(Vec::new());
+                    let undo = buffer.pop_undo();
+                    buffer.set_mode(AppMode::Results);
+                    buffer.set_status_message("Fuzzy filter cleared".to_string());
+                    undo
+                };
+
+                // Restore original SQL query if we had one
+                if let Some((original_query, cursor_pos)) = undo_state {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
                 }
-                self.buffer_mut().set_mode(AppMode::Results);
-                self.buffer_mut()
-                    .set_status_message("Fuzzy filter cleared".to_string());
             }
             KeyCode::Enter => {
                 // Apply fuzzy filter and return to results
@@ -3910,8 +3923,11 @@ impl EnhancedTuiApp {
 
                 // Reset table state but preserve filtered data
                 self.state_container.set_table_selected_row(Some(0));
-                self.buffer_mut().set_scroll_offset((0, 0));
-                self.buffer_mut().set_current_column(0);
+                {
+                    let mut buffer = self.buffer_mut();
+                    buffer.set_scroll_offset((0, 0));
+                    buffer.set_current_column(0);
+                }
 
                 // Clear search state but keep filter state
                 {
@@ -4120,22 +4136,30 @@ impl EnhancedTuiApp {
 
         let match_count = filtered_indices.len();
         let is_active = !filtered_indices.is_empty();
-        self.buffer_mut().set_fuzzy_filter_indices(filtered_indices);
-        self.buffer_mut().set_fuzzy_filter_active(is_active);
 
-        if self.buffer().is_fuzzy_filter_active() {
-            let filter_type = if pattern.starts_with('\'') {
-                "Exact"
-            } else {
-                "Fuzzy"
-            };
-            self.buffer_mut().set_status_message(format!(
-                "{} filter: {} matches for '{}' (highlighted in magenta)",
-                filter_type, match_count, pattern
-            ));
+        // Transaction-like block for fuzzy filter updates
+        {
+            let mut buffer = self.buffer_mut();
+            buffer.set_fuzzy_filter_indices(filtered_indices);
+            buffer.set_fuzzy_filter_active(is_active);
+
+            if is_active {
+                let filter_type = if pattern.starts_with('\'') {
+                    "Exact"
+                } else {
+                    "Fuzzy"
+                };
+                buffer.set_status_message(format!(
+                    "{} filter: {} matches for '{}' (highlighted in magenta)",
+                    filter_type, match_count, pattern
+                ));
+                buffer.set_scroll_offset((0, 0));
+            }
+        }
+
+        if is_active {
             // Reset table state for new filtered view
             self.state_container.set_table_selected_row(Some(0));
-            self.buffer_mut().set_scroll_offset((0, 0));
         } else {
             let filter_type = if pattern.starts_with('\'') {
                 "exact"
@@ -4354,10 +4378,15 @@ impl EnhancedTuiApp {
 
     fn reset_table_state(&mut self) {
         self.state_container.set_table_selected_row(Some(0));
-        self.buffer_mut().set_scroll_offset((0, 0));
-        self.buffer_mut().set_current_column(0);
-        self.buffer_mut().set_last_results_row(None); // Reset saved position for new results
-        self.buffer_mut().set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
+
+        // Transaction-like block for multiple buffer resets
+        {
+            let mut buffer = self.buffer_mut();
+            buffer.set_scroll_offset((0, 0));
+            buffer.set_current_column(0);
+            buffer.set_last_results_row(None); // Reset saved position for new results
+            buffer.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
+        }
 
         // Clear filter state to prevent old filtered data from persisting
         *self.get_filter_state_mut() = FilterState {
