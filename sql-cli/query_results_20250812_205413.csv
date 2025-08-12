@@ -1,0 +1,8 @@
+book,commission,confirmationStatus,counterparty,counterpartyCountry,counterpartyType,createdDate,currency,instrumentId,instrumentName,platformOrderId
+Options Trading,26.96,Confirmed,BNP Paribas,CH,Institution,2024-12-10T17:47:15,EUR,INST005007,AMZN CDS,P00001221
+Credit Trading,40.98,Confirmed,HSBC,CH,Institution,2024-12-21T17:47:15,EUR,INST002426,BAC ETF,P00006992
+Emerging Markets,48.33,Rejected,HSBC,DE,Broker,2025-07-08T17:47:15,EUR,INST004368,TTE FX Spot,P00003806
+Equity Trading,28.45,Unconfirmed,Jefferies,CH,Institution,2025-02-18T17:47:15,EUR,INST007623,LLY Swap,P00008973
+FX Trading,38.27,Unconfirmed,Morgan Stanley,CA,Institution,2024-08-18T17:47:15,EUR,INST006120,BAC Commodity,P00008173
+Options Trading,30.4,Unconfirmed,UBS,JP,Broker,2024-12-20T17:47:15,EUR,INST006128,AMZN Equity,P00008763
+Options Trading,24.14,Unconfirmed,Wells Fargo,CA,Broker,2025-01-15T17:47:15,EUR,INST007641,XOM Option,P00000571

@@ -3239,14 +3239,12 @@ impl EnhancedTuiApp {
     // Helper to get estimated visible rows based on terminal size
 
     fn get_column_count(&self) -> usize {
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    return obj.len();
-                }
-            }
+        // Use DataProvider trait for column count (migration step)
+        if let Some(provider) = self.get_data_provider() {
+            provider.get_column_count()
+        } else {
+            0
         }
-        0
     }
 
     /// Get column count using DataProvider trait (new pattern)
@@ -3256,6 +3254,16 @@ impl EnhancedTuiApp {
             provider.get_column_count()
         } else {
             0
+        }
+    }
+
+    /// Get column names using DataProvider trait
+    /// Part of the migration to trait-based data access
+    fn get_column_names_via_provider(&self) -> Vec<String> {
+        if let Some(provider) = self.get_data_provider() {
+            provider.get_column_names()
+        } else {
+            Vec::new()
         }
     }
 
@@ -3506,16 +3514,11 @@ impl EnhancedTuiApp {
                 _ => return,
             };
 
-            // Get column names from first row
-            let headers: Vec<String> = if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    obj.keys().map(|k| k.to_string()).collect()
-                } else {
-                    return;
-                }
-            } else {
+            // Get column names using DataProvider trait (migration step)
+            let headers = self.get_column_names_via_provider();
+            if headers.is_empty() {
                 return;
-            };
+            }
 
             let current_column = self.buffer().get_current_column();
             if current_column >= headers.len() {
@@ -4335,9 +4338,9 @@ impl EnhancedTuiApp {
         } else if let Some(filtered) = self.buffer().get_filtered_data() {
             // Return count from WHERE clause or other filters
             filtered.len()
-        } else if let Some(results) = self.buffer().get_results() {
-            // Return full results count
-            results.data.len()
+        } else if let Some(provider) = self.get_data_provider() {
+            // Use DataProvider trait for data access (migration step)
+            provider.get_row_count()
         } else {
             0
         }
