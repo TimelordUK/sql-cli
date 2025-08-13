@@ -10,3 +10,4 @@ pub mod debug_info;
 pub mod debug_service;
 pub mod dual_logging;
 pub mod logging;
+pub mod memory_tracker;

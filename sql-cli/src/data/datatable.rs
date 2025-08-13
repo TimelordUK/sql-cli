@@ -420,6 +420,9 @@ impl DataTable {
             table_name
         );
 
+        // Track memory before conversion
+        crate::utils::memory_tracker::track_memory("start_from_query_response");
+
         let mut table = DataTable::new(table_name);
 
         // Extract column names and types from first row

@@ -802,7 +802,7 @@ impl BufferAPI for Buffer {
     }
 
     fn is_cache_mode(&self) -> bool {
-        self.cache_mode
+        false
     }
 
     fn set_cache_mode(&mut self, cache_mode: bool) {

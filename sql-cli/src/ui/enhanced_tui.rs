@@ -2804,6 +2804,9 @@ impl EnhancedTuiApp {
             None
         };
 
+        // Track memory before query execution
+        crate::utils::memory_tracker::track_memory("before_query");
+
         let result = if let Some(mut cached_response) = cached_result {
             // Use cached results - ensure cached flag is set
             cached_response.cached = Some(true);
@@ -2834,7 +2837,10 @@ impl EnhancedTuiApp {
         } else if self.buffer().is_csv_mode() {
             if let Some(csv_client) = self.buffer().get_csv_client() {
                 // Convert CSV result to match the expected type
-                csv_client.query_csv(query).map(|r| QueryResponse {
+                crate::utils::memory_tracker::track_memory("before_csv_query");
+                let query_result = csv_client.query_csv(query);
+                crate::utils::memory_tracker::track_memory("after_csv_query");
+                query_result.map(|r| QueryResponse {
                     data: r.data,
                     count: r.count,
                     query: crate::api_client::QueryInfo {
@@ -2855,8 +2861,11 @@ impl EnhancedTuiApp {
                 .map_err(|e| anyhow::anyhow!("{}", e))
         };
 
+        crate::utils::memory_tracker::track_memory("after_query_result");
+
         match result {
             Ok(response) => {
+                crate::utils::memory_tracker::track_memory("in_Ok_response");
                 let duration = start_time.elapsed();
 
                 // Get schema columns and data source for history
@@ -2895,38 +2904,39 @@ impl EnhancedTuiApp {
 
                 // Add debug info about results
                 let row_count = response.data.len();
+                let has_results = !response.data.is_empty();
+                let source = response.source.clone();
 
                 // Capture the source from the response
-                self.buffer_mut()
-                    .set_last_query_source(response.source.clone());
+                self.buffer_mut().set_last_query_source(source);
 
-                // Store results in the current buffer
+                // Store results in the current buffer (only once - buffer_mut() returns the same buffer)
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     let buffer_id = buffer.get_id();
                     // V50: Convert QueryResponse to DataTable and store
+                    crate::utils::memory_tracker::track_memory("before_set_results");
+                    // TODO: In DataView phase, we should pass by value to avoid clone
+                    // For now we need to clone because response is used later for caching
                     if let Err(e) = buffer.set_results_as_datatable(Some(response.clone())) {
                         warn!(target: "buffer", "Failed to convert results to DataTable: {}", e);
                     }
+                    crate::utils::memory_tracker::track_memory("after_set_results");
                     // Clear filtered_data since we have new query results
                     buffer.set_filtered_data(None);
                     info!(target: "buffer", "Stored {} results in buffer {}", row_count, buffer_id);
+                } else {
+                    warn!("No current buffer available to store results");
                 }
-                // V50: Convert to DataTable for main buffer too
-                if let Err(e) = self
-                    .buffer_mut()
-                    .set_results_as_datatable(Some(response.clone()))
-                {
-                    warn!(target: "buffer", "Failed to convert results to DataTable: {}", e);
-                }
-                // Also clear filtered_data in the compatibility path
-                self.buffer_mut().set_filtered_data(None);
 
                 // Initialize selected row to 0 if we have results
-                if !response.data.is_empty() {
+                if has_results {
                     self.buffer_mut().set_selected_row(Some(0));
                     self.state_container.set_table_selected_row(Some(0));
                 }
 
+                // TODO: V51+ - AppStateContainer should work with DataTable, not QueryResponse
+                // This is keeping another copy of the JSON in memory
+                /*
                 // Also update AppStateContainer with results and performance metrics
 
                 // Check if this was from cache (either cache mode or cached_result was used)
@@ -2939,7 +2949,12 @@ impl EnhancedTuiApp {
                 {
                     warn!(target: "results", "Failed to update results in AppStateContainer: {}", e);
                 }
+                */
 
+                // TODO: V51+ - Cache DataTable instead of QueryResponse
+                // Caching QueryResponse wastes memory - we already have DataTable
+                // Commenting out to save memory until we refactor caching
+                /*
                 // Only cache results if they weren't already from cache
                 if !from_cache {
                     let query_key = format!("{}:{}", query, self.buffer().get_table_name());
@@ -2950,6 +2965,7 @@ impl EnhancedTuiApp {
                         warn!(target: "results", "Failed to cache results in AppStateContainer: {}", e);
                     }
                 }
+                */
 
                 // Update NavigationState with total rows and columns
                 let total_rows = row_count;
@@ -7183,6 +7199,14 @@ impl EnhancedTuiApp {
                         debug_info.push_str(&datatable.get_schema_summary());
                     }
                 }
+
+                // Add memory tracking history
+                debug_info.push_str("\n========== MEMORY USAGE ==========\n");
+                debug_info.push_str(&format!(
+                    "Current Memory: {} MB\n",
+                    crate::utils::memory_tracker::get_memory_mb()
+                ));
+                debug_info.push_str(&crate::utils::memory_tracker::format_memory_history());
 
                 // Add navigation timing statistics
                 debug_info.push_str("\n========== NAVIGATION TIMING ==========\n");
