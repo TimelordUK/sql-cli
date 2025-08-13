@@ -1515,6 +1515,12 @@ impl EnhancedTuiApp {
             debug!("Detected uppercase G key press!");
         }
 
+        // Handle F6 for DataTable demo (V46)
+        if matches!(key.code, KeyCode::F(6)) {
+            self.demo_datatable_conversion();
+            return Ok(false);
+        }
+
         // Handle F12 for key indicator toggle
         if matches!(key.code, KeyCode::F(12)) {
             let enabled = !self.key_indicator.enabled;
