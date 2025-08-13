@@ -82,9 +82,17 @@ jobs:
           
           # Get commit statistics
           if [ -n "$LAST_TAG" ]; then
-            COMMIT_COUNT=$(git rev-list --count ${LAST_TAG}..HEAD 2>/dev/null || echo "0")
-            FILES_CHANGED=$(git diff --name-only ${LAST_TAG}..HEAD 2>/dev/null | wc -l || echo "0")
-            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%H|%s|%b" 2>/dev/null || echo "")
+            # Check if there are any commits since last tag
+            if git rev-list ${LAST_TAG}..HEAD --count > /dev/null 2>&1 && [ "$(git rev-list --count ${LAST_TAG}..HEAD 2>/dev/null)" -gt 0 ]; then
+              COMMIT_COUNT=$(git rev-list --count ${LAST_TAG}..HEAD)
+              FILES_CHANGED=$(git diff --name-only ${LAST_TAG}..HEAD | wc -l)
+              COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%H|%s|%b")
+            else
+              # No commits since last tag
+              COMMIT_COUNT="0"
+              FILES_CHANGED="0"
+              COMMITS=""
+            fi
           else
             COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
             FILES_CHANGED=$(git ls-files | wc -l || echo "0")
@@ -158,8 +166,8 @@ jobs:
             echo ""
             
             # Features
-            if [ -n "$LAST_TAG" ]; then
-              FEATURES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^feat(\(.*\))?:" | sed 's/^feat[^:]*: //' | grep -v "bump version" || true)
+            if [ -n "$LAST_TAG" ] && [ "$COMMIT_COUNT" -gt 0 ]; then
+              FEATURES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null | grep -E "^feat(\(.*\))?:" | sed 's/^feat[^:]*: //' | grep -v "bump version" || true)
               if [ -n "$FEATURES" ]; then
                 echo "### 🚀 New Features"
                 echo "$FEATURES" | while IFS= read -r line; do
@@ -169,7 +177,7 @@ jobs:
               fi
               
               # Bug Fixes
-              FIXES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^fix(\(.*\))?:" | sed 's/^fix[^:]*: //' | grep -v "bump version" || true)
+              FIXES=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null | grep -E "^fix(\(.*\))?:" | sed 's/^fix[^:]*: //' | grep -v "bump version" || true)
               if [ -n "$FIXES" ]; then
                 echo "### 🐛 Bug Fixes"
                 echo "$FIXES" | while IFS= read -r line; do
@@ -179,7 +187,7 @@ jobs:
               fi
               
               # Refactoring
-              REFACTORS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^refactor(\(.*\))?:" | sed 's/^refactor[^:]*: //' | grep -v "bump version" || true)
+              REFACTORS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null | grep -E "^refactor(\(.*\))?:" | sed 's/^refactor[^:]*: //' | grep -v "bump version" || true)
               if [ -n "$REFACTORS" ]; then
                 echo "### 🔧 Refactoring"
                 echo "$REFACTORS" | while IFS= read -r line; do
@@ -189,7 +197,7 @@ jobs:
               fi
               
               # Documentation
-              DOCS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" | grep -E "^docs(\(.*\))?:" | sed 's/^docs[^:]*: //' | grep -v "bump version" || true)
+              DOCS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null | grep -E "^docs(\(.*\))?:" | sed 's/^docs[^:]*: //' | grep -v "bump version" || true)
               if [ -n "$DOCS" ]; then
                 echo "### 📚 Documentation"
                 echo "$DOCS" | while IFS= read -r line; do
@@ -200,16 +208,18 @@ jobs:
             fi
             
             # Collapsible full commit list
-            echo "<details>"
-            echo "<summary>📋 View all commits</summary>"
-            echo ""
-            if [ -n "$LAST_TAG" ]; then
-              git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%an)" | grep -v "bump version"
-            else
-              git log --pretty=format:"- %s (%an)" | head -20
+            if [ "$COMMIT_COUNT" -gt 0 ]; then
+              echo "<details>"
+              echo "<summary>📋 View all commits</summary>"
+              echo ""
+              if [ -n "$LAST_TAG" ]; then
+                git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%an)" 2>/dev/null | grep -v "bump version" || true
+              else
+                git log --pretty=format:"- %s (%an)" 2>/dev/null | head -20 || true
+              fi
+              echo ""
+              echo "</details>"
             fi
-            echo ""
-            echo "</details>"
             echo ""
             
             # Key features section
