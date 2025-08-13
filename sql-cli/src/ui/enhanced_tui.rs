@@ -233,7 +233,8 @@ impl EnhancedTuiApp {
         // For now, we'll use BufferAdapter for Buffer data
         // In the future, we can check data source type and return appropriate adapter
         if let Some(buffer) = self.buffer_manager.current() {
-            if buffer.get_results().is_some() {
+            // V50: Check for DataTable instead of results
+            if buffer.has_datatable() {
                 return Some(Box::new(BufferAdapter::new(buffer)));
             }
         }
@@ -1170,7 +1171,7 @@ impl EnhancedTuiApp {
                 // Toggle between Help mode and previous mode
                 if self.buffer().get_mode() == AppMode::Help {
                     // Exit help mode
-                    let mode = if self.buffer().get_results().is_some() {
+                    let mode = if self.buffer().has_datatable() {
                         AppMode::Results
                     } else {
                         AppMode::Command
@@ -1458,7 +1459,7 @@ impl EnhancedTuiApp {
                 self.move_cursor_word_forward();
             }
             KeyCode::Down
-                if self.buffer().get_results().is_some()
+                if self.buffer().has_datatable()
                     && self.buffer().get_edit_mode() == EditMode::SingleLine =>
             {
                 self.buffer_mut().set_mode(AppMode::Results);
@@ -1997,7 +1998,7 @@ impl EnhancedTuiApp {
             SearchMode::Search => {
                 debug!(target: "search", "Executing search with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
                 debug!(target: "search", "Search: current results count={}", 
-                       self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
+                       self.buffer().get_datatable().map(|d| d.row_count()).unwrap_or(0));
 
                 // Set search pattern in AppStateContainer
                 self.state_container.start_search(pattern.clone());
@@ -2013,7 +2014,7 @@ impl EnhancedTuiApp {
                 debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
                 debug!(target: "search", "Filter: case_insensitive={}, current results count={}", 
                        self.buffer().is_case_insensitive(),
-                       self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
+                       self.buffer().get_datatable().map(|d| d.row_count()).unwrap_or(0));
                 self.buffer_mut().set_filter_pattern(pattern.clone());
                 self.state_container
                     .filter_mut()
@@ -2026,7 +2027,7 @@ impl EnhancedTuiApp {
             SearchMode::FuzzyFilter => {
                 debug!(target: "search", "Executing fuzzy filter with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
                 debug!(target: "search", "FuzzyFilter: current results count={}", 
-                       self.buffer().get_results().map(|r| r.data.len()).unwrap_or(0));
+                       self.buffer().get_datatable().map(|d| d.row_count()).unwrap_or(0));
                 self.buffer_mut().set_fuzzy_filter_pattern(pattern);
                 self.apply_fuzzy_filter();
                 let indices_count = self.buffer().get_fuzzy_filter_indices().len();
@@ -2612,7 +2613,7 @@ impl EnhancedTuiApp {
         self.help_widget.on_exit();
         self.set_help_visible(false); // Keep state_container in sync
                                       // Scroll is automatically reset when help is hidden in state_container
-        let mode = if self.buffer().get_results().is_some() {
+        let mode = if self.buffer().has_datatable() {
             AppMode::Results
         } else {
             AppMode::Command
@@ -2896,13 +2897,22 @@ impl EnhancedTuiApp {
                 // Store results in the current buffer
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     let buffer_id = buffer.get_id();
-                    buffer.set_results(Some(response.clone()));
+                    // V50: Convert QueryResponse to DataTable and store
+                    if let Err(e) = buffer.set_results_as_datatable(Some(response.clone())) {
+                        warn!(target: "buffer", "Failed to convert results to DataTable: {}", e);
+                    }
                     // Clear filtered_data since we have new query results
                     buffer.set_filtered_data(None);
                     info!(target: "buffer", "Stored {} results in buffer {}", row_count, buffer_id);
                 }
-                self.buffer_mut().set_results(Some(response.clone())); // Keep for compatibility during migration
-                                                                       // Also clear filtered_data in the compatibility path
+                // V50: Convert to DataTable for main buffer too
+                if let Err(e) = self
+                    .buffer_mut()
+                    .set_results_as_datatable(Some(response.clone()))
+                {
+                    warn!(target: "buffer", "Failed to convert results to DataTable: {}", e);
+                }
+                // Also clear filtered_data in the compatibility path
                 self.buffer_mut().set_filtered_data(None);
 
                 // Initialize selected row to 0 if we have results
@@ -4247,27 +4257,9 @@ impl EnhancedTuiApp {
             // Get the ORIGINAL unfiltered data from the buffer's results
             // We need to bypass the DataProvider here because it returns filtered data
             // when a fuzzy filter is already active
-            let rows = if let Some(results) = self.buffer().get_results() {
-                let mut data_rows = Vec::new();
-                for json_value in &results.data {
-                    if let Some(obj) = json_value.as_object() {
-                        let columns = self.buffer().get_column_names();
-                        let row: Vec<String> = columns
-                            .iter()
-                            .map(|col| {
-                                obj.get(col)
-                                    .map(|v| match v {
-                                        serde_json::Value::String(s) => s.clone(),
-                                        serde_json::Value::Null => String::new(),
-                                        other => other.to_string(),
-                                    })
-                                    .unwrap_or_default()
-                            })
-                            .collect();
-                        data_rows.push(row);
-                    }
-                }
-                data_rows
+            // V50: Use DataTable for fuzzy filtering
+            let rows = if let Some(datatable) = self.buffer().get_datatable() {
+                datatable.to_string_table()
             } else {
                 Vec::new()
             };
@@ -4511,7 +4503,13 @@ impl EnhancedTuiApp {
 
         if let Some(sorted_results) = sorted_results_opt {
             // Update buffer with sorted results
-            self.buffer_mut().set_results(Some(sorted_results.clone()));
+            // V50: Convert sorted results to DataTable
+            if let Err(e) = self
+                .buffer_mut()
+                .set_results_as_datatable(Some(sorted_results.clone()))
+            {
+                warn!(target: "buffer", "Failed to convert sorted results to DataTable: {}", e);
+            }
             self.buffer_mut().set_filtered_data(None); // Force regeneration of string data
 
             // Update AppStateContainer with sorted results
@@ -4552,8 +4550,9 @@ impl EnhancedTuiApp {
     fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
         if let Some(filtered) = self.buffer().get_filtered_data() {
             Some(filtered.clone())
-        } else if let Some(results) = self.buffer().get_results() {
-            Some(DataExporter::convert_json_to_strings(&results.data))
+        } else if let Some(datatable) = self.buffer().get_datatable() {
+            // V50: Use DataTable's string conversion
+            Some(datatable.to_string_table())
         } else {
             None
         }
@@ -4635,51 +4634,43 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
-        // Calculate column widths based only on visible rows in viewport
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                    let mut widths = Vec::with_capacity(headers.len());
+        // V50: Calculate column widths based on DataTable
+        if let Some(datatable) = self.buffer().get_datatable() {
+            let headers = datatable.column_names();
+            let mut widths = Vec::with_capacity(headers.len());
 
-                    // Use compact mode settings
-                    let compact = self.buffer().is_compact_mode();
-                    let min_width = if compact { 4 } else { 6 };
-                    let max_width = if compact { 20 } else { 30 };
-                    let padding = if compact { 1 } else { 2 };
+            // Use compact mode settings
+            let compact = self.buffer().is_compact_mode();
+            let min_width = if compact { 4 } else { 6 };
+            let max_width = if compact { 20 } else { 30 };
+            let padding = if compact { 1 } else { 2 };
 
-                    // Only check visible rows
-                    let rows_to_check =
-                        &results.data[viewport_start..viewport_end.min(results.data.len())];
+            // Get string representation of visible rows
+            let rows_data = datatable.to_string_table();
+            let rows_to_check = &rows_data[viewport_start..viewport_end.min(rows_data.len())];
 
-                    for header in &headers {
-                        // Start with header width
-                        let mut max_col_width = header.len();
+            for (col_idx, header) in headers.iter().enumerate() {
+                // Start with header width
+                let mut max_col_width = header.len();
 
-                        // Check only visible rows for this column
-                        for row in rows_to_check {
-                            if let Some(obj) = row.as_object() {
-                                if let Some(value) = obj.get(*header) {
-                                    let display_value = if value.is_null() {
-                                        "NULL"
-                                    } else if let Some(s) = value.as_str() {
-                                        s
-                                    } else {
-                                        &value.to_string()
-                                    };
-                                    max_col_width = max_col_width.max(display_value.len());
-                                }
-                            }
-                        }
-
-                        // Apply min/max constraints and padding
-                        let width = (max_col_width + padding).clamp(min_width, max_width) as u16;
-                        widths.push(width);
+                // Check only visible rows for this column
+                for row in rows_to_check {
+                    if let Some(value) = row.get(col_idx) {
+                        let display_value = if value.is_empty() {
+                            "NULL"
+                        } else {
+                            value.as_str()
+                        };
+                        max_col_width = max_col_width.max(display_value.len());
                     }
-
-                    self.buffer_mut().set_column_widths(widths);
                 }
+
+                // Apply min/max constraints and padding
+                let width = (max_col_width + padding).clamp(min_width, max_width) as u16;
+                widths.push(width);
             }
+
+            self.buffer_mut().set_column_widths(widths);
         }
     }
 
@@ -5407,7 +5398,7 @@ impl EnhancedTuiApp {
             AppMode::PrettyQuery => self.render_pretty_query(f, results_area),
             AppMode::CacheList => self.render_cache_list(f, results_area),
             AppMode::ColumnStats => self.render_column_stats(f, results_area),
-            _ if self.buffer().get_results().is_some() => {
+            _ if self.buffer().has_datatable() => {
                 // We need to work around the borrow checker here
                 // Calculate widths needs mutable self, but we also need to pass results
                 if let Some(results) = self.buffer().get_results() {
@@ -7042,7 +7033,7 @@ impl EnhancedTuiApp {
             };
 
             self.buffer_mut().set_status_message(message);
-        } else if !has_datatable && self.buffer().get_results().is_some() {
+        } else if !has_datatable && self.buffer().has_datatable() {
             // V47: No stored DataTable, try to create one (fallback)
             let results_clone = self.buffer().get_results().unwrap().clone();
 
@@ -7050,7 +7041,13 @@ impl EnhancedTuiApp {
                 .set_status_message("V47: No stored DataTable, creating one...".to_string());
 
             // Force a refresh by setting results again
-            self.buffer_mut().set_results(Some(results_clone));
+            // V50: Force DataTable creation
+            if let Err(e) = self
+                .buffer_mut()
+                .set_results_as_datatable(Some(results_clone))
+            {
+                warn!(target: "buffer", "Failed to convert results to DataTable: {}", e);
+            }
 
             // Now check if DataTable was created
             if self.buffer().has_datatable() {
@@ -7065,11 +7062,18 @@ impl EnhancedTuiApp {
     /// V48: Ensure DataTable exists if we have results
     /// This makes DataTable creation automatic, no F6 needed
     fn ensure_datatable_exists(&mut self) {
-        if self.buffer().get_results().is_some() && !self.buffer().has_datatable() {
+        // V50: This condition is now always false (checking opposite conditions)
+        if false {
             debug!("V48: Auto-creating DataTable for existing results");
             // Force DataTable creation by re-setting results
             let results_clone = self.buffer().get_results().unwrap().clone();
-            self.buffer_mut().set_results(Some(results_clone));
+            // V50: Force DataTable creation
+            if let Err(e) = self
+                .buffer_mut()
+                .set_results_as_datatable(Some(results_clone))
+            {
+                warn!(target: "buffer", "Failed to convert results to DataTable: {}", e);
+            }
 
             if self.buffer().has_datatable() {
                 debug!("V48: DataTable auto-created successfully");
@@ -7101,7 +7105,7 @@ impl EnhancedTuiApp {
                         buffer.get_input_text(),
                         buffer.get_selected_row(),
                         self.state_container.get_current_column(),
-                        buffer.get_results().map(|r| r.data.len()).unwrap_or(0),
+                        buffer.get_datatable().map(|d| d.row_count()).unwrap_or(0),
                         buffer.get_filtered_data().map(|d| d.len()).unwrap_or(0),
                     )
                 }

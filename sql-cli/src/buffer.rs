@@ -1,4 +1,4 @@
-use crate::api_client::QueryResponse;
+use crate::api_client::QueryResponse; // V50: Still needed for conversion from API responses
 use crate::csv_datasource::CsvApiClient;
 use crate::cursor_operations::CursorOperations;
 use crate::data::datatable::DataTable;
@@ -155,18 +155,20 @@ pub struct ColumnStatistics {
 pub trait BufferAPI {
     // --- Identity ---
     fn get_id(&self) -> usize;
-    // --- Query and Results ---
+    // --- Query ---
     fn get_query(&self) -> String;
     fn set_query(&mut self, query: String);
-    fn get_results(&self) -> Option<&QueryResponse>;
-    fn set_results(&mut self, results: Option<QueryResponse>);
+    // V50: Removed get_results/set_results - use DataTable methods instead
     fn get_last_query(&self) -> String;
     fn set_last_query(&mut self, query: String);
 
-    // --- V47: DataTable Access ---
+    // --- V50: DataTable is primary storage ---
     fn get_datatable(&self) -> Option<&DataTable>;
     fn get_datatable_mut(&mut self) -> Option<&mut DataTable>;
     fn has_datatable(&self) -> bool;
+    fn set_datatable(&mut self, datatable: Option<DataTable>);
+    /// V50: Helper to convert QueryResponse to DataTable and store it
+    fn set_results_as_datatable(&mut self, response: Option<QueryResponse>) -> Result<(), String>;
 
     // --- Mode and Status ---
     fn get_mode(&self) -> AppMode;
@@ -346,9 +348,9 @@ pub struct Buffer {
     pub csv_mode: bool,
     pub csv_table_name: String,
     pub cache_mode: bool,
-    pub results: Option<QueryResponse>,
+    // V50: Removed results field - using DataTable as primary storage
     pub cached_data: Option<Vec<serde_json::Value>>,
-    /// V47: DataTable storage alongside JSON for parallel implementation
+    /// V50: DataTable is now the primary storage (no longer alongside JSON)
     pub datatable: Option<DataTable>,
 
     // --- UI State ---
@@ -418,34 +420,7 @@ impl BufferAPI for Buffer {
         self.input = Input::new(query.clone()).with_cursor(query.len());
     }
 
-    fn get_results(&self) -> Option<&QueryResponse> {
-        self.results.as_ref()
-    }
-
-    fn set_results(&mut self, results: Option<QueryResponse>) {
-        // V47: When setting results, also create and store DataTable
-        if let Some(ref response) = results {
-            debug!("V47: Converting QueryResponse to DataTable for storage");
-            let table_name = response.table.as_deref().unwrap_or(&self.csv_table_name);
-            match DataTable::from_query_response(response, table_name) {
-                Ok(datatable) => {
-                    debug!(
-                        "V47: Stored DataTable with {} rows, {} columns",
-                        datatable.row_count(),
-                        datatable.column_count()
-                    );
-                    self.datatable = Some(datatable);
-                }
-                Err(e) => {
-                    debug!("V47: Failed to create DataTable: {}", e);
-                    self.datatable = None;
-                }
-            }
-        } else {
-            self.datatable = None;
-        }
-        self.results = results;
-    }
+    // V50: Removed get_results/set_results - use get_datatable/set_datatable instead
 
     fn get_last_query(&self) -> String {
         self.last_query.clone()
@@ -455,7 +430,7 @@ impl BufferAPI for Buffer {
         self.last_query = query;
     }
 
-    // --- V47: DataTable Access ---
+    // --- V50: DataTable is primary storage ---
     fn get_datatable(&self) -> Option<&DataTable> {
         self.datatable.as_ref()
     }
@@ -466,6 +441,41 @@ impl BufferAPI for Buffer {
 
     fn has_datatable(&self) -> bool {
         self.datatable.is_some()
+    }
+
+    fn set_datatable(&mut self, datatable: Option<DataTable>) {
+        debug!(
+            "V50: Setting DataTable with {} rows",
+            datatable.as_ref().map(|d| d.row_count()).unwrap_or(0)
+        );
+        self.datatable = datatable;
+    }
+
+    fn set_results_as_datatable(&mut self, response: Option<QueryResponse>) -> Result<(), String> {
+        if let Some(ref resp) = response {
+            debug!("V50: Converting QueryResponse to DataTable");
+            let table_name = resp.table.as_deref().unwrap_or(&self.csv_table_name);
+            match DataTable::from_query_response(resp, table_name) {
+                Ok(datatable) => {
+                    debug!(
+                        "V50: Stored DataTable with {} rows, {} columns",
+                        datatable.row_count(),
+                        datatable.column_count()
+                    );
+                    self.datatable = Some(datatable);
+                    Ok(())
+                }
+                Err(e) => {
+                    let err_msg = format!("V50: Failed to create DataTable: {}", e);
+                    debug!("{}", err_msg);
+                    self.datatable = None;
+                    Err(err_msg)
+                }
+            }
+        } else {
+            self.datatable = None;
+            Ok(())
+        }
     }
 
     // --- Mode and Status ---
@@ -1207,7 +1217,7 @@ impl Buffer {
             csv_mode: false,
             csv_table_name: String::new(),
             cache_mode: false,
-            results: None,
+            // V50: Removed results field
             cached_data: None,
             datatable: None,
 
@@ -1532,7 +1542,7 @@ impl Clone for Buffer {
             csv_mode: self.csv_mode,
             csv_table_name: self.csv_table_name.clone(),
             cache_mode: self.cache_mode,
-            results: self.results.clone(),
+            // V50: Removed results field
             cached_data: self.cached_data.clone(),
             datatable: self.datatable.clone(),
             mode: self.mode.clone(),

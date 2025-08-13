@@ -82,20 +82,15 @@ impl DataExporter {
         ))
     }
 
-    /// Export buffer results to CSV format (legacy - will be deprecated)
+    /// V50: Export buffer results to CSV format using DataTable
     pub fn export_to_csv(buffer: &dyn BufferAPI) -> Result<String> {
-        let results = buffer
-            .get_results()
+        let datatable = buffer
+            .get_datatable()
             .ok_or_else(|| anyhow!("No results to export - run a query first"))?;
 
-        let first_row = results
-            .data
-            .first()
-            .ok_or_else(|| anyhow!("No data to export"))?;
-
-        let obj = first_row
-            .as_object()
-            .ok_or_else(|| anyhow!("Invalid data format"))?;
+        if datatable.row_count() == 0 {
+            return Err(anyhow!("No data to export"));
+        }
 
         // Generate filename with timestamp
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
@@ -104,30 +99,17 @@ impl DataExporter {
         let mut file = File::create(&filename)?;
 
         // Write headers
-        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        let headers = datatable.column_names();
         let header_line = headers.join(",");
         writeln!(file, "{}", header_line)?;
 
         // Write data rows
         let mut row_count = 0;
-        for item in &results.data {
-            if let Some(obj) = item.as_object() {
-                let row: Vec<String> = headers
-                    .iter()
-                    .map(|&header| match obj.get(header) {
-                        Some(Value::String(s)) => Self::escape_csv_field(s),
-                        Some(Value::Number(n)) => n.to_string(),
-                        Some(Value::Bool(b)) => b.to_string(),
-                        Some(Value::Null) => String::new(),
-                        Some(other) => Self::escape_csv_field(&other.to_string()),
-                        None => String::new(),
-                    })
-                    .collect();
-
-                let row_line = row.join(",");
-                writeln!(file, "{}", row_line)?;
-                row_count += 1;
-            }
+        for row_data in datatable.to_string_table() {
+            let row: Vec<String> = row_data.iter().map(|s| Self::escape_csv_field(s)).collect();
+            let row_line = row.join(",");
+            writeln!(file, "{}", row_line)?;
+            row_count += 1;
         }
 
         Ok(format!(
@@ -138,9 +120,14 @@ impl DataExporter {
 
     /// Export buffer results to JSON format
     pub fn export_to_json(buffer: &dyn BufferAPI, include_filtered: bool) -> Result<String> {
-        let results = buffer
-            .get_results()
+        // V50: For now, convert DataTable back to JSON for export
+        // This will be optimized later
+        let datatable = buffer
+            .get_datatable()
             .ok_or_else(|| anyhow!("No results to export - run a query first"))?;
+
+        // Convert DataTable to JSON values for export
+        let data = Self::datatable_to_json_values(datatable);
 
         // Determine what data to export
         let data_to_export = if include_filtered && buffer.is_filter_active() {
@@ -148,7 +135,7 @@ impl DataExporter {
         } else if include_filtered && buffer.is_fuzzy_filter_active() {
             Self::get_fuzzy_filtered_data(buffer)?
         } else {
-            results.data.clone()
+            data.clone()
         };
 
         // Generate filename with timestamp
@@ -173,14 +160,15 @@ impl DataExporter {
         ))
     }
 
-    /// Export selected rows to CSV
+    /// V50: Export selected rows to CSV
     pub fn export_selected_to_csv(
         buffer: &dyn BufferAPI,
         selected_rows: &[usize],
     ) -> Result<String> {
-        let results = buffer
-            .get_results()
+        let datatable = buffer
+            .get_datatable()
             .ok_or_else(|| anyhow!("No results to export"))?;
+        let data = Self::datatable_to_json_values(datatable);
 
         if selected_rows.is_empty() {
             return Err(anyhow!("No rows selected"));
@@ -188,8 +176,7 @@ impl DataExporter {
 
         // Get first valid row for headers
         let first_row_idx = selected_rows[0];
-        let first_row = results
-            .data
+        let first_row = data
             .get(first_row_idx)
             .ok_or_else(|| anyhow!("Invalid row index"))?;
 
@@ -211,7 +198,7 @@ impl DataExporter {
         // Write selected rows
         let mut row_count = 0;
         for &row_idx in selected_rows {
-            if let Some(item) = results.data.get(row_idx) {
+            if let Some(item) = data.get(row_idx) {
                 if let Some(obj) = item.as_object() {
                     let row: Vec<String> = headers
                         .iter()
@@ -250,13 +237,14 @@ impl DataExporter {
 
     /// Get filtered data based on current filter
     fn get_filtered_data(buffer: &dyn BufferAPI) -> Result<Vec<Value>> {
-        let results = buffer
-            .get_results()
+        let datatable = buffer
+            .get_datatable()
             .ok_or_else(|| anyhow!("No results available"))?;
+        let data = Self::datatable_to_json_values(datatable);
 
         let filter_pattern = buffer.get_filter_pattern();
         if filter_pattern.is_empty() {
-            return Ok(results.data.clone());
+            return Ok(data.clone());
         }
 
         let regex = regex::Regex::new(&filter_pattern)
@@ -288,18 +276,19 @@ impl DataExporter {
 
     /// Get fuzzy filtered data based on current fuzzy filter
     fn get_fuzzy_filtered_data(buffer: &dyn BufferAPI) -> Result<Vec<Value>> {
-        let results = buffer
-            .get_results()
+        let datatable = buffer
+            .get_datatable()
             .ok_or_else(|| anyhow!("No results available"))?;
+        let data = Self::datatable_to_json_values(datatable);
 
         let indices = buffer.get_fuzzy_filter_indices();
         if indices.is_empty() {
-            return Ok(results.data.clone());
+            return Ok(data.clone());
         }
 
         let filtered: Vec<Value> = indices
             .iter()
-            .filter_map(|&idx| results.data.get(idx).cloned())
+            .filter_map(|&idx| data.get(idx).cloned())
             .collect();
 
         Ok(filtered)
@@ -422,5 +411,25 @@ impl DataExporter {
         }
 
         Some(tsv_text)
+    }
+
+    /// V50: Helper to convert DataTable to JSON Values for export compatibility
+    fn datatable_to_json_values(datatable: &crate::data::datatable::DataTable) -> Vec<Value> {
+        use serde_json::json;
+
+        let headers = datatable.column_names();
+        let mut result = Vec::new();
+
+        for row_data in datatable.to_string_table() {
+            let mut obj = serde_json::Map::new();
+            for (i, header) in headers.iter().enumerate() {
+                if let Some(value) = row_data.get(i) {
+                    obj.insert(header.clone(), json!(value));
+                }
+            }
+            result.push(Value::Object(obj));
+        }
+
+        result
     }
 }

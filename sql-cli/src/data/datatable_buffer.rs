@@ -13,6 +13,7 @@ use crossterm::event::KeyEvent;
 use ratatui::style::Color;
 use ratatui::widgets::TableState;
 use std::path::PathBuf;
+use tracing::debug;
 use tui_input::Input;
 
 /// A Buffer implementation backed by DataTable
@@ -245,16 +246,7 @@ impl BufferAPI for DataTableBuffer {
         self.input = Input::new(query.clone()).with_cursor(query.len());
     }
 
-    fn get_results(&self) -> Option<&QueryResponse> {
-        // DataTableBuffer doesn't use QueryResponse - it has DataTable directly
-        // Return None to indicate this is not an API-based buffer
-        None
-    }
-
-    fn set_results(&mut self, _results: Option<QueryResponse>) {
-        // DataTableBuffer manages its own data through DataTable
-        // This is a no-op for compatibility
-    }
+    // V50: Removed get_results/set_results - DataTable methods are used instead
 
     fn get_last_query(&self) -> String {
         self.last_query.clone()
@@ -275,6 +267,23 @@ impl BufferAPI for DataTableBuffer {
 
     fn has_datatable(&self) -> bool {
         true // DataTableBuffer always has a DataTable
+    }
+
+    fn set_datatable(&mut self, datatable: Option<DataTable>) {
+        // V50: DataTableBuffer manages its own view, not direct DataTable storage
+        // This is a no-op for compatibility
+        if let Some(dt) = datatable {
+            debug!(
+                "V50: DataTableBuffer received DataTable with {} rows",
+                dt.row_count()
+            );
+        }
+    }
+
+    fn set_results_as_datatable(&mut self, _response: Option<QueryResponse>) -> Result<(), String> {
+        // V50: DataTableBuffer doesn't need QueryResponse conversion
+        // It manages data through DataTableView
+        Ok(())
     }
 
     // --- Mode and Status ---

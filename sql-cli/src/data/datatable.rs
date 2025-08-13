@@ -463,6 +463,21 @@ impl DataTable {
 
         Ok(table)
     }
+
+    /// V50: Convert DataTable to 2D vector of strings for display/export
+    pub fn to_string_table(&self) -> Vec<Vec<String>> {
+        self.rows
+            .iter()
+            .map(|row| row.values.iter().map(|value| value.to_string()).collect())
+            .collect()
+    }
+
+    /// V50: Get a single row as strings
+    pub fn get_row_as_strings(&self, index: usize) -> Option<Vec<String>> {
+        self.rows
+            .get(index)
+            .map(|row| row.values.iter().map(|value| value.to_string()).collect())
+    }
 }
 
 /// V46: Helper function to convert JSON value to DataValue
