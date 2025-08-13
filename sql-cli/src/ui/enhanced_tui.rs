@@ -4092,7 +4092,8 @@ impl EnhancedTuiApp {
                 .get_filtered_data()
                 .map(|data| (data.clone(), true))
         } else if let Some(provider) = self.get_data_provider() {
-            // Use DataProvider to get original results
+            // Always use fresh data from provider when no regex filter is active
+            // This ensures we don't accidentally use stale filtered_data
             let mut rows = Vec::new();
             let row_count = provider.get_row_count();
 
@@ -4149,10 +4150,8 @@ impl EnhancedTuiApp {
             let match_count = filtered_indices.len();
             let is_active = !filtered_indices.is_empty();
 
-            // Store the data if needed (when we extracted from provider)
-            if !needs_storage {
-                self.buffer_mut().set_filtered_data(Some(data));
-            }
+            // Don't store filtered_data for fuzzy filtering - it should only be used for regex filters
+            // Fuzzy filtering works through indices only
 
             // Transaction-like block for fuzzy filter updates
             {
