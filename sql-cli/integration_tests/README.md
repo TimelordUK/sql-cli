@@ -2,9 +2,18 @@
 
 This directory contains all integration and test files for the SQL CLI project.
 
+## Directory Structure
+
+```
+integration_tests/
+├── test_scripts/       # Shell scripts for testing features
+├── test_data/         # CSV and other data files for tests
+└── *.rs              # Rust integration test files
+```
+
 ## Organization
 
-### Shell Scripts (*.sh)
+### Shell Scripts (`test_scripts/`)
 - `test_all_fixes.sh` - Comprehensive test suite for all fixes
 - `test_buffer_switch.sh` - Tests buffer switching functionality
 - `test_column_search.sh` - Tests column search feature
@@ -61,20 +70,42 @@ These are standalone test programs that can be compiled and run individually:
 - `test_history_debug.rs`, `test_history_unit.rs` - History system tests
 - `test_state_init.rs` - State initialization
 
+### Test Data (`test_data/`)
+- Sample CSV files with various data types and structures
+- Query result exports for regression testing
+- Test fixtures for specific scenarios
+
 ## Running Tests
 
 ### Shell Scripts
 ```bash
-cd integration_tests
-./test_history_search.sh  # or any other .sh file
+# From project root
+./integration_tests/test_scripts/test_history_search.sh
+
+# Or for version-specific tests
+./integration_tests/test_scripts/test_v46_datatable.sh
 ```
 
 ### Rust Test Files
 ```bash
-cd integration_tests
-rustc test_csv.rs && ./test_csv  # Compile and run individual test
+# Run all integration tests
+cargo test --test '*'
+
+# Run specific test
+cargo test --test test_csv
+
+# With debug output
+RUST_LOG=debug cargo test --test test_name -- --nocapture
 ```
+
+## Version Tests
+
+Tests are versioned to match our DataTable migration strategy:
+- **V40-V45**: Trait-based migration (✅ complete)
+- **V46-V50**: DataTable introduction (🚧 in progress)
+- **V51-V60**: DataView implementation (📋 planned)
+- **V61-V70**: Full migration completion (📋 planned)
 
 ## Note
 These tests were moved from the main project directory to keep it clean and organized.
-All paths in the test files assume they're run from the integration_tests directory.
+Test scripts may need path adjustments if test data locations have changed.
