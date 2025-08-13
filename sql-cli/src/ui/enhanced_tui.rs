@@ -5594,6 +5594,18 @@ impl EnhancedTuiApp {
             }
         }
 
+        // Show status message if present
+        let status_msg = self.buffer().get_status_message();
+        if !status_msg.is_empty() {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(
+                status_msg,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
         // Help shortcuts (right side)
         let help_text = match self.buffer().get_mode() {
             AppMode::Command => "Enter:Run | Tab:Complete | ↓:Results | F1:Help",
