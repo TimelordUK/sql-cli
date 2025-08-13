@@ -132,6 +132,14 @@ impl DataProvider for CSVClientAdapter {
 
 Gradually change TUI methods to use traits instead of concrete types.
 
+**Progress:**
+- ✅ V40: Basic data access via traits (COMPLETE - merged)
+- ✅ V41: Export functionality via traits (COMPLETE - merged) 
+- ✅ V42: Filter operations via traits (COMPLETE - pushed, awaiting Windows test)
+- ⏳ V43: Column operations via traits (NEXT)
+- ⏳ V44: Sort operations via traits
+- ⏳ V45: Search operations via traits
+
 ```rust
 // Before (TUI knows about Buffer):
 impl EnhancedTuiApp {
@@ -467,8 +475,29 @@ impl EnhancedTuiApp {
 5. **Test continuously** - Each branch must be stable
 6. **Document decisions** - Future us will thank current us
 
+## Lessons Learned (As of V42)
+
+### The Refactoring Process is Working
+1. **Exposing Hidden Coupling**: Each version reveals synchronization issues that were masked by tight coupling
+2. **Incremental is Essential**: Small changes make debugging tractable - V42 had 5 separate issues that would have been overwhelming if done all at once
+3. **Adapters Are Powerful**: BufferAdapter successfully bridges old and new systems, proving the pattern
+
+### Common Issues Encountered
+1. **Borrow Checker Conflicts**: Scoped blocks pattern solves most issues
+2. **State Synchronization**: Need explicit sync methods when multiple components track state
+3. **Empty Edge Cases**: Empty patterns/filters need special handling
+4. **Configuration Respect**: All operations must honor global settings (e.g., case_insensitive)
+
+### What's Working Well
+- Each branch is stable and mergeable
+- Tests continue to pass
+- Performance hasn't degraded
+- The TUI remains functional throughout
+
 ## Conclusion
 
 This strategy allows us to completely rebuild the data layer without the TUI knowing or caring. By using traits as contracts and adapters as bridges, we can incrementally transform the system while maintaining stability. The key insight is that WHERE clauses, filtering, and sorting are naturally view operations - they don't modify data, they just change what we see.
+
+The journey from V40-V42 has validated this approach - we're successfully migrating complex operations while fixing long-standing issues along the way.
 
 The DataTable/DataView separation gives us the clean architecture we need while the incremental approach ensures we don't "spiral out of control" as originally feared.
