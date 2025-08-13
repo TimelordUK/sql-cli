@@ -131,6 +131,10 @@ pub struct EnhancedTuiApp {
     // Buffer management (new - for supporting multiple files)
     buffer_manager: BufferManager,
     buffer_handler: BufferHandler, // Handles buffer operations like switching
+
+    // Performance tracking
+    navigation_timings: Vec<String>, // Track last N navigation timings for debugging
+    render_timings: Vec<String>,     // Track last N render timings for debugging
     // Cache
     query_cache: Option<QueryCache>,
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
@@ -527,6 +531,8 @@ impl EnhancedTuiApp {
             // CSV fields now in Buffer
             buffer_manager,
             buffer_handler: BufferHandler::new(),
+            navigation_timings: Vec::new(),
+            render_timings: Vec::new(),
             query_cache: QueryCache::new().ok(),
             log_buffer: dual_logging::get_dual_logger().map(|logger| logger.ring_buffer().clone()),
             cell_renderer: CellRenderer::new(config.theme.cell_selection_style.clone()),
@@ -3379,25 +3385,39 @@ impl EnhancedTuiApp {
 
     // Navigation functions
     fn next_row(&mut self) {
+        use std::time::Instant;
+        let start = Instant::now();
+
         let total_rows = self.get_row_count();
+        let t1 = start.elapsed();
+
         if total_rows > 0 {
-            // Update viewport size before navigation
-            self.update_viewport_size();
+            // PERF: Don't update viewport size on every navigation
+            // self.update_viewport_size();
+
+            // Get column count and time it
+            let total_cols = self.get_column_count();
+            let t2 = start.elapsed();
 
             // Extract values we need before mutable borrows
-            let (new_row, new_scroll_offset) = {
+            let (new_row, new_scroll_offset, t3, t4) = {
                 let mut nav = self.state_container.navigation_mut();
 
-                // Update totals if needed
-                let total_cols = self.get_column_count();
                 nav.update_totals(total_rows, total_cols);
+                let t3_inner = start.elapsed();
 
                 // Move to next row
-                if nav.next_row() {
-                    (Some(nav.selected_row), nav.scroll_offset)
+                let result = if nav.next_row() {
+                    (
+                        Some(nav.selected_row),
+                        nav.scroll_offset,
+                        t3_inner,
+                        start.elapsed(),
+                    )
                 } else {
-                    (None, nav.scroll_offset)
-                }
+                    (None, nav.scroll_offset, t3_inner, start.elapsed())
+                };
+                result
             };
 
             // Now we can use mutable self since we've dropped the nav borrow
@@ -3411,6 +3431,21 @@ impl EnhancedTuiApp {
                 // Sync scroll offset with buffer
                 self.buffer_mut().set_scroll_offset(new_scroll_offset);
             }
+
+            let total = start.elapsed();
+
+            // Store timing for debug display (keep last 20 timings)
+            let timing_msg = format!("get_row_count={:?}, get_col_count={:?}, update_totals={:?}, nav={:?}, total={:?}, rows={}",
+                t1, t2 - t1, t3 - t2, t4 - t3, total, total_rows);
+
+            // Keep only the last 20 timings
+            if self.navigation_timings.len() >= 20 {
+                self.navigation_timings.remove(0);
+            }
+            self.navigation_timings.push(timing_msg.clone());
+
+            // Debug output now available in F5 view, no need for stderr
+            // eprintln!("next_row timing: {}", timing_msg);
         }
     }
 
@@ -4645,16 +4680,21 @@ impl EnhancedTuiApp {
             let max_width = if compact { 20 } else { 30 };
             let padding = if compact { 1 } else { 2 };
 
-            // Get string representation of visible rows
-            let rows_data = datatable.to_string_table();
-            let rows_to_check = &rows_data[viewport_start..viewport_end.min(rows_data.len())];
+            // PERF FIX: Only convert viewport rows to strings, not entire table!
+            // Get string representation of ONLY visible rows to avoid converting 100k rows
+            let mut rows_to_check = Vec::new();
+            for i in viewport_start..viewport_end.min(datatable.row_count()) {
+                if let Some(row_strings) = datatable.get_row_as_strings(i) {
+                    rows_to_check.push(row_strings);
+                }
+            }
 
             for (col_idx, header) in headers.iter().enumerate() {
                 // Start with header width
                 let mut max_col_width = header.len();
 
                 // Check only visible rows for this column
-                for row in rows_to_check {
+                for row in &rows_to_check {
                     if let Some(value) = row.get(col_idx) {
                         let display_value = if value.is_empty() {
                             "NULL"
@@ -5412,8 +5452,9 @@ impl EnhancedTuiApp {
                         .min(total_rows.saturating_sub(1));
                     let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
 
-                    // Calculate column widths based on viewport
-                    self.calculate_viewport_column_widths(row_viewport_start, row_viewport_end);
+                    // PERF: Skip column width calculation for now - it's expensive even with viewport
+                    // TODO: Re-enable when we have lazy column width calculation
+                    // self.calculate_viewport_column_widths(row_viewport_start, row_viewport_end);
                 }
 
                 // V50: Render using DataProvider which works with DataTable
@@ -5846,7 +5887,11 @@ impl EnhancedTuiApp {
     /// New trait-based table rendering method
     /// This uses DataProvider trait instead of directly accessing QueryResponse
     fn render_table_with_provider(&self, f: &mut Frame, area: Rect, provider: &dyn DataProvider) {
+        use std::time::Instant;
+        let render_start = Instant::now();
+
         let row_count = provider.get_row_count();
+        let t1 = render_start.elapsed();
 
         if row_count == 0 {
             let empty = Paragraph::new("No results found")
@@ -5963,8 +6008,10 @@ impl EnhancedTuiApp {
         let row_viewport_end = (row_viewport_start + max_visible_rows).min(row_count);
 
         // Get visible rows from provider
+        let t2 = render_start.elapsed();
         let visible_rows =
             provider.get_visible_rows(row_viewport_start, row_viewport_end - row_viewport_start);
+        let t3 = render_start.elapsed();
 
         // Transform to only show visible columns
         let data_to_display: Vec<Vec<String>> = visible_rows
@@ -5976,6 +6023,7 @@ impl EnhancedTuiApp {
                     .collect()
             })
             .collect();
+        let t4 = render_start.elapsed();
 
         // Create header row with sort indicators and column selection
         let mut header_cells: Vec<Cell> = Vec::new();
@@ -6179,6 +6227,26 @@ impl EnhancedTuiApp {
             );
 
         f.render_widget(table, area);
+
+        let total = render_start.elapsed();
+
+        // Store render timing (mutable access through unsafe - bit hacky but for debugging)
+        let timing_msg = format!(
+            "get_row_count={:?}, calc_viewport={:?}, get_visible_rows={:?}, transform={:?}, total={:?}, rows={}, visible={}",
+            t1, t2 - t1, t3 - t2, t4 - t3, total, row_count, row_viewport_end - row_viewport_start
+        );
+
+        // This is a bit ugly but we need mutable access in a &self method for debugging
+        unsafe {
+            let self_mut = self as *const Self as *mut Self;
+            if (*self_mut).render_timings.len() >= 20 {
+                (*self_mut).render_timings.remove(0);
+            }
+            (*self_mut).render_timings.push(timing_msg.clone());
+        }
+
+        // Debug output now available in F5 view, no need for stderr
+        // eprintln!("render_table timing: {}", timing_msg);
     }
 
     fn render_table_immutable(&self, f: &mut Frame, area: Rect, _results: &QueryResponse) {
@@ -7114,6 +7182,109 @@ impl EnhancedTuiApp {
                         debug_info.push_str("\n========== DATATABLE SCHEMA ==========\n");
                         debug_info.push_str(&datatable.get_schema_summary());
                     }
+                }
+
+                // Add navigation timing statistics
+                debug_info.push_str("\n========== NAVIGATION TIMING ==========\n");
+                if !self.navigation_timings.is_empty() {
+                    debug_info.push_str(&format!(
+                        "Last {} navigation timings:\n",
+                        self.navigation_timings.len()
+                    ));
+                    for timing in &self.navigation_timings {
+                        debug_info.push_str(&format!("  {}\n", timing));
+                    }
+                    // Calculate average
+                    if self.navigation_timings.len() > 0 {
+                        let total_ms: f64 = self
+                            .navigation_timings
+                            .iter()
+                            .filter_map(|s| {
+                                // Extract total time from the timing string
+                                if let Some(total_pos) = s.find("total=") {
+                                    let after_total = &s[total_pos + 6..];
+                                    if let Some(end_pos) =
+                                        after_total.find(',').or_else(|| after_total.find(')'))
+                                    {
+                                        let time_str = &after_total[..end_pos];
+                                        // Parse duration - expecting format like "123.456µs" or "1.234ms"
+                                        if let Some(us_pos) = time_str.find("µs") {
+                                            time_str[..us_pos]
+                                                .parse::<f64>()
+                                                .ok()
+                                                .map(|us| us / 1000.0)
+                                        } else if let Some(ms_pos) = time_str.find("ms") {
+                                            time_str[..ms_pos].parse::<f64>().ok()
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .sum();
+                        let avg_ms = total_ms / self.navigation_timings.len() as f64;
+                        debug_info.push_str(&format!("Average navigation time: {:.3}ms\n", avg_ms));
+                    }
+                } else {
+                    debug_info.push_str("No navigation timing data yet (press j/k to navigate)\n");
+                }
+
+                // Add render timing statistics
+                debug_info.push_str("\n========== RENDER TIMING ==========\n");
+                if !self.render_timings.is_empty() {
+                    debug_info.push_str(&format!(
+                        "Last {} render timings:\n",
+                        self.render_timings.len()
+                    ));
+                    for timing in &self.render_timings {
+                        debug_info.push_str(&format!("  {}\n", timing));
+                    }
+                    // Calculate average render time
+                    if self.render_timings.len() > 0 {
+                        let total_ms: f64 = self
+                            .render_timings
+                            .iter()
+                            .filter_map(|s| {
+                                // Extract total time from the timing string
+                                if let Some(total_pos) = s.find("total=") {
+                                    let after_total = &s[total_pos + 6..];
+                                    if let Some(end_pos) =
+                                        after_total.find(',').or_else(|| after_total.find(')'))
+                                    {
+                                        let time_str = &after_total[..end_pos];
+                                        // Parse duration
+                                        if let Some(us_pos) = time_str.find("µs") {
+                                            time_str[..us_pos]
+                                                .parse::<f64>()
+                                                .ok()
+                                                .map(|us| us / 1000.0)
+                                        } else if let Some(ms_pos) = time_str.find("ms") {
+                                            time_str[..ms_pos].parse::<f64>().ok()
+                                        } else if let Some(s_pos) = time_str.find("s") {
+                                            time_str[..s_pos]
+                                                .parse::<f64>()
+                                                .ok()
+                                                .map(|s| s * 1000.0)
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .sum();
+                        let avg_ms = total_ms / self.render_timings.len() as f64;
+                        debug_info.push_str(&format!("Average render time: {:.3}ms\n", avg_ms));
+                    }
+                } else {
+                    debug_info.push_str("No render timing data yet\n");
                 }
 
                 // Add buffer state info
