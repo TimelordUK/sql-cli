@@ -1447,6 +1447,10 @@ impl EnhancedTuiApp {
             KeyCode::F(6) => {
                 // V46: Demo DataTable conversion
                 self.demo_datatable_conversion();
+                // Don't switch to PrettyQuery mode immediately - let user see the DataTable message
+            }
+            KeyCode::F(7) => {
+                // Pretty query view (moved from F6)
                 let query = self.get_input_text();
                 if !query.trim().is_empty() {
                     self.debug_widget.generate_pretty_sql(&query);
