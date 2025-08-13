@@ -166,10 +166,17 @@ impl HelpText {
             Line::from("    yc     - Yank current column"),
             Line::from("    ya     - Yank all data"),
             Line::from("    yq     - Yank current query"),
-            Line::from("  Ctrl+E   - Export to CSV"),
-            Line::from("  Ctrl+J   - Export to JSON"),
             Line::from("  ↑/Esc    - Back to command"),
             Line::from("  q        - Quit"),
+            Line::from(""),
+            Line::from("EXPORT DATA 📤").style(
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Line::from("  Ctrl+E   - Export to CSV file"),
+            Line::from("  Ctrl+J   - Export to JSON file"),
+            Line::from("           (files saved with timestamp)"),
             Line::from(""),
             Line::from("SEARCH/FILTER").style(
                 Style::default()
