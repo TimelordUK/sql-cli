@@ -97,14 +97,15 @@ fn test_buffer_results() {
         cached: None,
     };
 
-    buffer.set_results(Some(results));
-    assert!(buffer.get_results().is_some());
+    // V50: Use set_results_as_datatable instead of set_results
+    buffer.set_results_as_datatable(Some(results)).unwrap();
+    assert!(buffer.get_datatable().is_some());
     assert_eq!(buffer.get_row_count(), 2);
     assert_eq!(buffer.get_column_count(), 2);
 
     // Test with no results
-    buffer.set_results(None);
-    assert!(buffer.get_results().is_none());
+    buffer.set_results_as_datatable(None).unwrap();
+    assert!(buffer.get_datatable().is_none());
     assert_eq!(buffer.get_row_count(), 0);
     assert_eq!(buffer.get_column_count(), 0);
 }

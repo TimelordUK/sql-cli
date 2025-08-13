@@ -1227,7 +1227,7 @@ impl EnhancedTuiApp {
                         self.buffer_mut().set_mode(AppMode::Help);
                         self.buffer_mut()
                             .set_status_message("Help Mode - Press ESC to return".to_string());
-                    } else if query == ":exit" || query == ":quit" {
+                    } else if query == ":exit" || query == ":quit" || query == ":q" {
                         return Ok(true);
                     } else if query == ":tui" {
                         // Already in TUI mode
@@ -6873,7 +6873,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Help);
                 self.buffer_mut()
                     .set_status_message("Help Mode - Press ESC to return".to_string());
-            } else if query == ":exit" || query == ":quit" {
+            } else if query == ":exit" || query == ":quit" || query == ":q" {
                 return Ok(true);
             } else {
                 // Execute the SQL query

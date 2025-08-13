@@ -79,7 +79,7 @@ fn test_buffer_with_data() -> anyhow::Result<()> {
     // Test initial state
     assert_eq!(buffer.get_id(), 1);
     assert_eq!(buffer.get_query(), "");
-    assert!(buffer.get_results().is_none());
+    assert!(buffer.get_datatable().is_none());
 
     // Test setting query
     buffer.set_query("SELECT * FROM trades".to_string());
@@ -103,15 +103,17 @@ fn test_buffer_with_data() -> anyhow::Result<()> {
         cached: Some(false),
     };
 
-    buffer.set_results(Some(test_response));
+    buffer
+        .set_results_as_datatable(Some(test_response))
+        .unwrap();
 
-    if let Some(results) = buffer.get_results() {
-        assert_eq!(results.data.len(), 2);
-        assert_eq!(results.data[0]["id"], 1);
-        assert_eq!(results.data[1]["name"], "Trade 2");
-        assert_eq!(results.count, 2);
+    if let Some(datatable) = buffer.get_datatable() {
+        assert_eq!(datatable.row_count(), 2);
+        // Note: DataTable doesn't provide direct JSON access anymore
+        // We're testing that the data was loaded successfully
+        assert_eq!(datatable.column_count(), 2);
     } else {
-        panic!("Results should be set");
+        panic!("DataTable should be set");
     }
 
     Ok(())

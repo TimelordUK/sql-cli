@@ -352,7 +352,7 @@ mod tests {
             cached: Some(false),
         };
 
-        buffer.set_results(Some(response));
+        buffer.set_results_as_datatable(Some(response)).unwrap();
 
         // Create adapter
         let adapter = BufferAdapter::new(&buffer);
