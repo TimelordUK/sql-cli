@@ -1,7 +1,10 @@
+use crate::api_client::QueryResponse;
 use crate::data::data_provider::DataProvider;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::fmt;
+use tracing::debug;
 
 /// Represents the data type of a column
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -361,7 +364,7 @@ impl DataTable {
         output
     }
 
-    fn estimate_memory_size(&self) -> usize {
+    pub fn estimate_memory_size(&self) -> usize {
         // Rough estimate of memory usage
         std::mem::size_of::<Self>()
             + self.columns.len() * std::mem::size_of::<DataColumn>()
@@ -371,6 +374,107 @@ impl DataTable {
                 .iter()
                 .map(|r| r.values.len() * std::mem::size_of::<DataValue>())
                 .sum::<usize>()
+    }
+
+    /// V46: Create DataTable from QueryResponse
+    /// This is the key conversion function that bridges old and new systems
+    pub fn from_query_response(response: &QueryResponse, table_name: &str) -> Result<Self, String> {
+        debug!(
+            "V46: Converting QueryResponse to DataTable for table '{}'",
+            table_name
+        );
+
+        let mut table = DataTable::new(table_name);
+
+        // Extract column names and types from first row
+        if let Some(first_row) = response.data.first() {
+            if let Some(obj) = first_row.as_object() {
+                // Create columns based on the keys in the JSON object
+                for key in obj.keys() {
+                    let column = DataColumn::new(key.clone());
+                    table.add_column(column);
+                }
+
+                // Now convert all rows
+                for json_row in &response.data {
+                    if let Some(row_obj) = json_row.as_object() {
+                        let mut values = Vec::new();
+
+                        // Ensure we get values in the same order as columns
+                        for column in &table.columns {
+                            let value = row_obj
+                                .get(&column.name)
+                                .map(|v| json_value_to_data_value(v))
+                                .unwrap_or(DataValue::Null);
+                            values.push(value);
+                        }
+
+                        table.add_row(DataRow::new(values))?;
+                    }
+                }
+
+                // Infer column types from the data
+                table.infer_column_types();
+
+                // Add metadata
+                if let Some(source) = &response.source {
+                    table.metadata.insert("source".to_string(), source.clone());
+                }
+                if let Some(cached) = response.cached {
+                    table
+                        .metadata
+                        .insert("cached".to_string(), cached.to_string());
+                }
+                table
+                    .metadata
+                    .insert("original_count".to_string(), response.count.to_string());
+
+                debug!(
+                    "V46: Created DataTable with {} columns and {} rows",
+                    table.column_count(),
+                    table.row_count()
+                );
+            } else {
+                // Handle non-object JSON (single values)
+                table.add_column(DataColumn::new("value"));
+                for json_value in &response.data {
+                    let value = json_value_to_data_value(json_value);
+                    table.add_row(DataRow::new(vec![value]))?;
+                }
+            }
+        }
+
+        Ok(table)
+    }
+}
+
+/// V46: Helper function to convert JSON value to DataValue
+fn json_value_to_data_value(json: &JsonValue) -> DataValue {
+    match json {
+        JsonValue::Null => DataValue::Null,
+        JsonValue::Bool(b) => DataValue::Boolean(*b),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                DataValue::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                DataValue::Float(f)
+            } else {
+                DataValue::String(n.to_string())
+            }
+        }
+        JsonValue::String(s) => {
+            // Try to detect if it's a date/time
+            if s.contains('-') && s.len() >= 8 && s.len() <= 30 {
+                // Simple heuristic for dates
+                DataValue::DateTime(s.clone())
+            } else {
+                DataValue::String(s.clone())
+            }
+        }
+        JsonValue::Array(_) | JsonValue::Object(_) => {
+            // Store complex types as JSON string
+            DataValue::String(json.to_string())
+        }
     }
 }
 
@@ -468,5 +572,73 @@ mod tests {
         assert_eq!(table.columns[0].data_type, DataType::Float);
         assert_eq!(table.columns[0].null_count, 1);
         assert!(table.columns[0].nullable);
+    }
+
+    #[test]
+    fn test_from_query_response() {
+        use crate::api_client::{QueryInfo, QueryResponse};
+        use serde_json::json;
+
+        let response = QueryResponse {
+            query: QueryInfo {
+                select: vec!["id".to_string(), "name".to_string(), "age".to_string()],
+                where_clause: None,
+                order_by: None,
+            },
+            data: vec![
+                json!({
+                    "id": 1,
+                    "name": "Alice",
+                    "age": 30
+                }),
+                json!({
+                    "id": 2,
+                    "name": "Bob",
+                    "age": 25
+                }),
+                json!({
+                    "id": 3,
+                    "name": "Carol",
+                    "age": null
+                }),
+            ],
+            count: 3,
+            source: Some("test.csv".to_string()),
+            table: Some("test".to_string()),
+            cached: Some(false),
+        };
+
+        let table = DataTable::from_query_response(&response, "test").unwrap();
+
+        assert_eq!(table.name, "test");
+        assert_eq!(table.row_count(), 3);
+        assert_eq!(table.column_count(), 3);
+
+        // Check column names
+        let col_names = table.column_names();
+        assert!(col_names.contains(&"id".to_string()));
+        assert!(col_names.contains(&"name".to_string()));
+        assert!(col_names.contains(&"age".to_string()));
+
+        // Check metadata
+        assert_eq!(table.metadata.get("source"), Some(&"test.csv".to_string()));
+        assert_eq!(table.metadata.get("cached"), Some(&"false".to_string()));
+
+        // Check first row values
+        assert_eq!(
+            table.get_value_by_name(0, "id"),
+            Some(&DataValue::Integer(1))
+        );
+        assert_eq!(
+            table.get_value_by_name(0, "name"),
+            Some(&DataValue::String("Alice".to_string()))
+        );
+        assert_eq!(
+            table.get_value_by_name(0, "age"),
+            Some(&DataValue::Integer(30))
+        );
+
+        // Check null handling
+        assert_eq!(table.get_value_by_name(2, "age"), Some(&DataValue::Null));
     }
 }
