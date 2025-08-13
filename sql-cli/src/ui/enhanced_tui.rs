@@ -5889,12 +5889,16 @@ impl EnhancedTuiApp {
             let selected_row = self.state_container.navigation().selected_row;
             let is_current_row = row_viewport_start + i == selected_row;
 
-            // Check if this row is a fuzzy filter match (for highlighting)
-            let is_fuzzy_match = if self.buffer().is_fuzzy_filter_active() {
-                let fuzzy_indices = self.buffer().get_fuzzy_filter_indices();
-                fuzzy_indices.contains(&(row_viewport_start + i))
+            // Get fuzzy filter pattern for cell-level matching
+            let fuzzy_pattern = if self.buffer().is_fuzzy_filter_active() {
+                let pattern = self.buffer().get_fuzzy_filter_pattern();
+                if !pattern.is_empty() {
+                    Some(pattern)
+                } else {
+                    None
+                }
             } else {
-                false
+                None
             };
 
             cells.extend(row_data.iter().enumerate().map(|(col_idx, val)| {
@@ -5906,10 +5910,31 @@ impl EnhancedTuiApp {
 
                 let mut cell = Cell::from(val.clone());
 
-                // Apply appropriate styling based on selection and fuzzy filter
-                if is_fuzzy_match && !is_current_row {
-                    // Always highlight fuzzy filter matches in magenta
-                    cell = cell.style(Style::default().fg(Color::Magenta));
+                // Check if THIS SPECIFIC CELL contains the fuzzy filter match
+                if let Some(ref pattern) = fuzzy_pattern {
+                    if !is_current_row {
+                        let cell_matches = if pattern.starts_with('\'') && pattern.len() > 1 {
+                            // Exact match mode - check if this cell contains the pattern
+                            let search_pattern = &pattern[1..];
+                            val.to_lowercase().contains(&search_pattern.to_lowercase())
+                        } else if !pattern.is_empty() {
+                            // Fuzzy match mode - check if this cell fuzzy matches
+                            use fuzzy_matcher::skim::SkimMatcherV2;
+                            use fuzzy_matcher::FuzzyMatcher;
+                            let matcher = SkimMatcherV2::default();
+                            matcher
+                                .fuzzy_match(val, pattern)
+                                .map(|score| score > 0)
+                                .unwrap_or(false)
+                        } else {
+                            false
+                        };
+
+                        if cell_matches {
+                            // Only highlight cells that actually contain the match
+                            cell = cell.style(Style::default().fg(Color::Magenta));
+                        }
+                    }
                 }
 
                 if is_current_row && is_selected_column {
