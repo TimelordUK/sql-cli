@@ -1,0 +1,26 @@
+[
+  {
+    "confirmationStatus": "Pending",
+    "status": "active",
+    "traderId": "TR001",
+    "quantity": 100
+  },
+  {
+    "confirmationStatus": "pending",
+    "status": "active",
+    "traderId": "TR002",
+    "quantity": 200
+  },
+  {
+    "confirmationStatus": "PENDING",
+    "status": "active",
+    "traderId": "TR003",
+    "quantity": 300
+  },
+  {
+    "confirmationStatus": "Confirmed",
+    "status": "active",
+    "traderId": "TR004",
+    "quantity": 400
+  }
+]
