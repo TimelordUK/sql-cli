@@ -244,8 +244,11 @@ impl SearchModesWidget {
                 };
 
                 if should_apply {
-                    // For fuzzy filter, we need to apply even empty patterns to clear
-                    if !pattern.is_empty() || state.mode == SearchMode::FuzzyFilter {
+                    // For filter modes, we need to apply even empty patterns to clear
+                    let allow_empty =
+                        matches!(state.mode, SearchMode::FuzzyFilter | SearchMode::Filter);
+
+                    if !pattern.is_empty() || allow_empty {
                         self.last_applied_pattern = Some(pattern.clone());
                         return Some(SearchModesAction::ExecuteDebounced(
                             state.mode.clone(),
