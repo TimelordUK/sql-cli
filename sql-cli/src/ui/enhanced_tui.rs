@@ -7,7 +7,7 @@ use crate::buffer_handler::BufferHandler;
 use crate::cell_renderer::CellRenderer;
 use crate::config::config::Config;
 use crate::cursor_manager::CursorManager;
-use crate::data::adapters::{BufferAdapter, CsvClientAdapter};
+use crate::data::adapters::BufferAdapter;
 use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_exporter::DataExporter;
@@ -3862,6 +3862,9 @@ impl EnhancedTuiApp {
             self.state_container.filter_mut().clear();
             self.buffer_mut()
                 .set_status_message("Filter cleared".to_string());
+
+            // Sync state after clearing regex filter
+            self.sync_filter_state("regex_filter_cleared");
             return;
         }
 
@@ -3948,6 +3951,9 @@ impl EnhancedTuiApp {
             }
             self.buffer_mut()
                 .set_status_message(format!("Filtered to {} rows", filtered_count));
+
+            // Sync state after applying regex filter
+            self.sync_filter_state("regex_filter_applied");
         } else if filter_result.is_none() && self.get_data_provider().is_some() {
             self.buffer_mut()
                 .set_status_message("Invalid regex pattern".to_string());
@@ -4067,6 +4073,56 @@ impl EnhancedTuiApp {
         }
     }
 
+    /// Synchronize all filter-related state across Buffer, AppStateContainer, and Navigation
+    fn sync_filter_state(&mut self, context: &str) {
+        let fuzzy_active = self.buffer().is_fuzzy_filter_active();
+        let fuzzy_indices = self.buffer().get_fuzzy_filter_indices();
+        let fuzzy_count = fuzzy_indices.len();
+        let regex_active = self.state_container.filter().is_active;
+        let filtered_data = self.buffer().get_filtered_data();
+        let total_rows = if let Some(provider) = self.get_data_provider() {
+            provider.get_row_count()
+        } else {
+            0
+        };
+
+        debug!(target: "filter_sync",
+            "[{}] State: fuzzy_active={}, fuzzy_count={}, regex_active={}, filtered_data={}, total_rows={}",
+            context, fuzzy_active, fuzzy_count, regex_active, filtered_data.is_some(), total_rows
+        );
+
+        // Update navigation totals based on active filters
+        let effective_row_count = if fuzzy_active && fuzzy_count > 0 {
+            fuzzy_count
+        } else if regex_active && filtered_data.is_some() {
+            filtered_data
+                .as_ref()
+                .map(|d| d.len())
+                .unwrap_or(total_rows)
+        } else {
+            total_rows
+        };
+
+        // Update navigation state with correct totals
+        let total_columns = self.state_container.navigation().total_columns;
+        self.state_container
+            .navigation_mut()
+            .update_totals(effective_row_count, total_columns);
+
+        // Reset selection if it's out of bounds
+        if self.state_container.navigation().selected_row >= effective_row_count
+            && effective_row_count > 0
+        {
+            self.state_container.navigation_mut().selected_row = 0;
+            debug!(target: "filter_sync", "[{}] Reset selected_row to 0 (was out of bounds)", context);
+        }
+
+        debug!(target: "filter_sync",
+            "[{}] Final: effective_rows={}, selected_row={}",
+            context, effective_row_count, self.state_container.navigation().selected_row
+        );
+    }
+
     fn apply_fuzzy_filter(&mut self) {
         if self.buffer().get_fuzzy_filter_pattern().is_empty() {
             self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
@@ -4078,6 +4134,9 @@ impl EnhancedTuiApp {
             }
             self.buffer_mut()
                 .set_status_message("Fuzzy filter cleared".to_string());
+
+            // Sync state after clearing
+            self.sync_filter_state("fuzzy_filter_cleared");
             return;
         }
 
@@ -4185,6 +4244,9 @@ impl EnhancedTuiApp {
                 self.buffer_mut()
                     .set_status_message(format!("No {} matches for '{}'", filter_type, pattern));
             }
+
+            // Sync state after applying filter
+            self.sync_filter_state("fuzzy_filter_applied");
         }
     }
 
