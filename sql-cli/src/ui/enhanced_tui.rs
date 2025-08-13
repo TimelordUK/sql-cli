@@ -7106,6 +7106,14 @@ impl EnhancedTuiApp {
                     ));
                 }
 
+                // Add DataTable schema information
+                if let Some(buffer) = self.buffer_manager.current() {
+                    if let Some(datatable) = buffer.get_datatable() {
+                        debug_info.push_str("\n========== DATATABLE SCHEMA ==========\n");
+                        debug_info.push_str(&datatable.get_schema_summary());
+                    }
+                }
+
                 // Add buffer state info
                 debug_info.push_str(&format!(
                     "\n========== BUFFER MANAGER STATE ==========\n\

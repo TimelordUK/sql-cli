@@ -470,6 +470,57 @@ impl DataTable {
             .get(index)
             .map(|row| row.values.iter().map(|value| value.to_string()).collect())
     }
+
+    /// Get a schema summary of the DataTable
+    pub fn get_schema_summary(&self) -> String {
+        let mut summary = String::new();
+        summary.push_str(&format!(
+            "DataTable Schema ({} columns, {} rows):\n",
+            self.columns.len(),
+            self.rows.len()
+        ));
+
+        for column in &self.columns {
+            let type_str = match &column.data_type {
+                DataType::String => "String",
+                DataType::Integer => "Integer",
+                DataType::Float => "Float",
+                DataType::Boolean => "Boolean",
+                DataType::DateTime => "DateTime",
+                DataType::Null => "Null",
+                DataType::Mixed => "Mixed",
+            };
+
+            let nullable_str = if column.nullable {
+                "nullable"
+            } else {
+                "not null"
+            };
+            let null_info = if column.null_count > 0 {
+                format!(", {} nulls", column.null_count)
+            } else {
+                String::new()
+            };
+
+            summary.push_str(&format!(
+                "  - {} : {} ({}{})\n",
+                column.name, type_str, nullable_str, null_info
+            ));
+        }
+
+        summary
+    }
+
+    /// Get detailed schema information as a structured format
+    pub fn get_schema_info(&self) -> Vec<(String, String, bool, usize)> {
+        self.columns
+            .iter()
+            .map(|col| {
+                let type_name = format!("{:?}", col.data_type);
+                (col.name.clone(), type_name, col.nullable, col.null_count)
+            })
+            .collect()
+    }
 }
 
 /// V46: Helper function to convert JSON value to DataValue
