@@ -12,6 +12,7 @@ use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_exporter::DataExporter;
 use crate::data::data_provider::DataProvider;
+use crate::data::datatable::DataTable;
 use crate::help_text::HelpText;
 use crate::history::{CommandHistory, HistoryMatch};
 use crate::key_chord_handler::{ChordResult, KeyChordHandler};
@@ -1444,7 +1445,8 @@ impl EnhancedTuiApp {
                 self.toggle_debug_mode();
             }
             KeyCode::F(6) => {
-                // Pretty print query view
+                // V46: Demo DataTable conversion
+                self.demo_datatable_conversion();
                 let query = self.get_input_text();
                 if !query.trim().is_empty() {
                     self.debug_widget.generate_pretty_sql(&query);
@@ -6869,6 +6871,58 @@ impl EnhancedTuiApp {
             }
         }
         Ok(false)
+    }
+
+    /// V46: Demonstrate DataTable conversion
+    fn demo_datatable_conversion(&mut self) {
+        if let Some(results) = self.buffer().get_results() {
+            let table_name = results.table.as_ref().map(|s| s.as_str()).unwrap_or("data");
+
+            match DataTable::from_query_response(results, &table_name) {
+                Ok(datatable) => {
+                    // Log success and show stats
+                    info!(
+                        "V46: Successfully converted to DataTable: {} rows x {} columns",
+                        datatable.row_count(),
+                        datatable.column_count()
+                    );
+
+                    // Show column types
+                    for (idx, column) in datatable.columns.iter().enumerate() {
+                        debug!(
+                            "V46: Column {}: {} ({:?}, nullable: {}, nulls: {})",
+                            idx, column.name, column.data_type, column.nullable, column.null_count
+                        );
+                    }
+
+                    // Show memory comparison
+                    let json_size = std::mem::size_of_val(results) + results.data.len() * 256; // Rough estimate per row
+                    let datatable_size = datatable.estimate_memory_size();
+
+                    let message = format!(
+                        "V46: DataTable created! {} rows, {} cols. Memory: JSON ~{}KB vs DataTable ~{}KB",
+                        datatable.row_count(),
+                        datatable.column_count(),
+                        json_size / 1024,
+                        datatable_size / 1024
+                    );
+
+                    self.buffer_mut().set_status_message(message);
+
+                    // Store debug dump for display
+                    let dump = datatable.debug_dump();
+                    debug!("V46 DataTable dump:\n{}", dump);
+                }
+                Err(e) => {
+                    let message = format!("V46: Failed to convert to DataTable: {}", e);
+                    self.buffer_mut().set_status_message(message);
+                    warn!("V46: DataTable conversion error: {}", e);
+                }
+            }
+        } else {
+            self.buffer_mut()
+                .set_status_message("V46: No results to convert to DataTable".to_string());
+        }
     }
 
     fn toggle_debug_mode(&mut self) {
