@@ -5,9 +5,9 @@
 
 use crate::buffer::{Buffer, BufferAPI};
 use crate::data::data_provider::{DataProvider, DataType};
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
+use tracing::debug;
 
 /// Adapter that makes Buffer implement DataProvider
 pub struct BufferAdapter<'a> {
@@ -153,6 +153,36 @@ impl<'a> Debug for BufferAdapter<'a> {
 
 impl<'a> DataProvider for BufferAdapter<'a> {
     fn get_row(&self, index: usize) -> Option<Vec<String>> {
+        // V48: Try to use DataTable first for better performance
+        if let Some(datatable) = self.buffer.get_datatable() {
+            debug!("V48: Using DataTable for get_row({})", index);
+
+            // Check if fuzzy filter is active
+            if self.buffer.is_fuzzy_filter_active() {
+                let fuzzy_indices = self.buffer.get_fuzzy_filter_indices();
+                // Map the display index to the actual data index
+                let actual_index = fuzzy_indices.get(index).copied()?;
+
+                // Get row from DataTable
+                if actual_index < datatable.row_count() {
+                    let row = &datatable.rows[actual_index];
+                    return Some(row.values.iter().map(|v| v.to_string()).collect());
+                }
+            } else if let Some(filtered_data) = self.buffer.get_filtered_data() {
+                // Regex filter is active - use filtered data (still string-based for now)
+                return filtered_data.get(index).cloned();
+            } else {
+                // Normal path - get row directly from DataTable
+                if index < datatable.row_count() {
+                    let row = &datatable.rows[index];
+                    return Some(row.values.iter().map(|v| v.to_string()).collect());
+                }
+            }
+        }
+
+        // Fallback to JSON if no DataTable
+        debug!("V48: Falling back to JSON for get_row({})", index);
+
         // Check if fuzzy filter is active
         if self.buffer.is_fuzzy_filter_active() {
             let fuzzy_indices = self.buffer.get_fuzzy_filter_indices();
@@ -181,20 +211,33 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     }
 
     fn get_column_names(&self) -> Vec<String> {
+        // V48: Use DataTable column names if available
+        if let Some(datatable) = self.buffer.get_datatable() {
+            debug!("V48: Using DataTable for column names");
+            return datatable.column_names();
+        }
+
+        // Fallback to buffer's method (which uses JSON)
         self.buffer.get_column_names()
     }
 
     fn get_row_count(&self) -> usize {
         // If fuzzy filter is active, return the filtered count
         if self.buffer.is_fuzzy_filter_active() {
-            self.buffer.get_fuzzy_filter_indices().len()
+            return self.buffer.get_fuzzy_filter_indices().len();
         } else if let Some(filtered_data) = self.buffer.get_filtered_data() {
             // Regex filter is active - return filtered count
-            filtered_data.len()
-        } else {
-            // No filter - return full dataset count
-            self.buffer.get_results().map(|r| r.data.len()).unwrap_or(0)
+            return filtered_data.len();
         }
+
+        // V48: Use DataTable row count if available
+        if let Some(datatable) = self.buffer.get_datatable() {
+            debug!("V48: Using DataTable for row count");
+            return datatable.row_count();
+        }
+
+        // Fallback to JSON
+        self.buffer.get_results().map(|r| r.data.len()).unwrap_or(0)
     }
 
     fn get_column_count(&self) -> usize {
@@ -202,7 +245,27 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     }
 
     fn get_column_type(&self, column_index: usize) -> DataType {
-        // Lazy initialize column types
+        // V48: Use DataTable column types if available
+        if let Some(datatable) = self.buffer.get_datatable() {
+            if let Some(column) = datatable.columns.get(column_index) {
+                debug!(
+                    "V48: Using DataTable column type for column {}",
+                    column_index
+                );
+                // Convert DataTable's DataType to DataProvider's DataType
+                return match &column.data_type {
+                    crate::data::datatable::DataType::String => DataType::Text,
+                    crate::data::datatable::DataType::Integer => DataType::Integer,
+                    crate::data::datatable::DataType::Float => DataType::Float,
+                    crate::data::datatable::DataType::Boolean => DataType::Boolean,
+                    crate::data::datatable::DataType::DateTime => DataType::Date,
+                    crate::data::datatable::DataType::Null => DataType::Unknown,
+                    crate::data::datatable::DataType::Mixed => DataType::Text,
+                };
+            }
+        }
+
+        // Fallback to detection
         let mut types_guard = self.column_types.lock().unwrap();
         if types_guard.is_none() {
             *types_guard = Some(self.detect_column_types());
@@ -216,7 +279,25 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     }
 
     fn get_column_types(&self) -> Vec<DataType> {
-        // Lazy initialize column types
+        // V48: Use DataTable column types if available
+        if let Some(datatable) = self.buffer.get_datatable() {
+            debug!("V48: Using DataTable for all column types");
+            return datatable
+                .columns
+                .iter()
+                .map(|column| match &column.data_type {
+                    crate::data::datatable::DataType::String => DataType::Text,
+                    crate::data::datatable::DataType::Integer => DataType::Integer,
+                    crate::data::datatable::DataType::Float => DataType::Float,
+                    crate::data::datatable::DataType::Boolean => DataType::Boolean,
+                    crate::data::datatable::DataType::DateTime => DataType::Date,
+                    crate::data::datatable::DataType::Null => DataType::Unknown,
+                    crate::data::datatable::DataType::Mixed => DataType::Text,
+                })
+                .collect();
+        }
+
+        // Fallback to detection
         let mut types_guard = self.column_types.lock().unwrap();
         if types_guard.is_none() {
             *types_guard = Some(self.detect_column_types());
