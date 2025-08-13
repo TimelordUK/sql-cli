@@ -3273,6 +3273,55 @@ impl EnhancedTuiApp {
         }
     }
 
+    /// Sort data using DataProvider (V44 migration helper)
+    /// Returns sorted indices without modifying underlying data
+    fn sort_via_provider(&self, column_index: usize, ascending: bool) -> Option<Vec<usize>> {
+        let provider = self.get_data_provider()?;
+        let row_count = provider.get_row_count();
+
+        // Collect column values with their original indices
+        let mut indexed_values: Vec<(String, usize)> = Vec::with_capacity(row_count);
+
+        for row_idx in 0..row_count {
+            if let Some(row) = provider.get_row(row_idx) {
+                if column_index < row.len() {
+                    indexed_values.push((row[column_index].clone(), row_idx));
+                } else {
+                    indexed_values.push((String::new(), row_idx));
+                }
+            }
+        }
+
+        // Sort by value, maintaining stable sort for equal values
+        indexed_values.sort_by(|(a, _), (b, _)| {
+            // Try numeric comparison first
+            match (a.parse::<f64>(), b.parse::<f64>()) {
+                (Ok(num_a), Ok(num_b)) => {
+                    let cmp = num_a
+                        .partial_cmp(&num_b)
+                        .unwrap_or(std::cmp::Ordering::Equal);
+                    if ascending {
+                        cmp
+                    } else {
+                        cmp.reverse()
+                    }
+                }
+                _ => {
+                    // Fall back to string comparison
+                    let cmp = a.cmp(b);
+                    if ascending {
+                        cmp
+                    } else {
+                        cmp.reverse()
+                    }
+                }
+            }
+        });
+
+        // Extract the sorted indices
+        Some(indexed_values.into_iter().map(|(_, idx)| idx).collect())
+    }
+
     // Navigation functions
     fn next_row(&mut self) {
         let total_rows = self.get_row_count();
@@ -4330,7 +4379,20 @@ impl EnhancedTuiApp {
             }
         };
 
-        // Delegate sorting entirely to AppStateContainer
+        // Check if we can use trait-based sorting (future path)
+        // For now, still delegate to AppStateContainer but document the migration path
+
+        // TODO(V44): Eventually this will be:
+        // if let Some(mut view_provider) = self.get_data_view_provider() {
+        //     let ascending = match new_order {
+        //         SortOrder::Ascending => true,
+        //         SortOrder::Descending => false,
+        //         SortOrder::None => { view_provider.clear_sort(); return; }
+        //     };
+        //     view_provider.sort_by(column_index, ascending);
+        // }
+
+        // Delegate sorting entirely to AppStateContainer (current implementation)
         let new_order = self.state_container.get_next_sort_order(column_index);
 
         // Handle the three cases: Ascending, Descending, None

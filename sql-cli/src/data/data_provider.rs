@@ -148,6 +148,23 @@ pub trait DataViewProvider: DataProvider {
     fn is_row_visible(&self, row_index: usize) -> bool {
         row_index < self.get_row_count()
     }
+
+    /// Get sorted indices for a column (for read-only sorting)
+    /// Returns a vector of indices in sorted order
+    fn get_sorted_indices(&self, column_index: usize, ascending: bool) -> Vec<usize> {
+        // Default implementation: return unsorted indices
+        (0..self.get_row_count()).collect()
+    }
+
+    /// Check if data is currently sorted
+    fn is_sorted(&self) -> bool {
+        false
+    }
+
+    /// Get current sort state
+    fn get_sort_state(&self) -> Option<(usize, bool)> {
+        None // Returns (column_index, is_ascending)
+    }
 }
 
 #[cfg(test)]
