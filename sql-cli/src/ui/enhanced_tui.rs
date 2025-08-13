@@ -4621,14 +4621,14 @@ impl EnhancedTuiApp {
                 } else {
                     query.clone()
                 };
-                
+
                 // Create status message with character count
                 let status_msg = format!("Yanked SQL ({} chars)", char_count);
                 self.buffer_mut().set_status_message(status_msg);
-                
+
                 // Update local last_yanked for backward compatibility
                 self.last_yanked = Some(("Query".to_string(), preview.clone()));
-                
+
                 // Also update clipboard state for tracking
                 use crate::app_state_container::YankedItem;
                 self.state_container.clipboard_mut().last_yanked = Some(YankedItem {
