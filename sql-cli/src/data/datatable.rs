@@ -365,15 +365,32 @@ impl DataTable {
     }
 
     pub fn estimate_memory_size(&self) -> usize {
-        // Rough estimate of memory usage
-        std::mem::size_of::<Self>()
-            + self.columns.len() * std::mem::size_of::<DataColumn>()
-            + self.rows.len() * std::mem::size_of::<DataRow>()
-            + self
-                .rows
-                .iter()
-                .map(|r| r.values.len() * std::mem::size_of::<DataValue>())
-                .sum::<usize>()
+        // Base structure size
+        let mut size = std::mem::size_of::<Self>();
+
+        // Column metadata
+        size += self.columns.len() * std::mem::size_of::<DataColumn>();
+        for col in &self.columns {
+            size += col.name.len();
+        }
+
+        // Row structure overhead
+        size += self.rows.len() * std::mem::size_of::<DataRow>();
+
+        // Actual data values
+        for row in &self.rows {
+            for value in &row.values {
+                // Base enum size
+                size += std::mem::size_of::<DataValue>();
+                // Add string content size
+                match value {
+                    DataValue::String(s) | DataValue::DateTime(s) => size += s.len(),
+                    _ => {} // Numbers and booleans are inline
+                }
+            }
+        }
+
+        size
     }
 
     /// V46: Create DataTable from QueryResponse

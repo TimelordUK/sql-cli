@@ -6906,7 +6906,29 @@ impl EnhancedTuiApp {
                     }
 
                     // Show memory comparison
-                    let json_size = std::mem::size_of_val(results) + results.data.len() * 256; // Rough estimate per row
+                    // Estimate JSON memory: structure + all string content
+                    let json_size = std::mem::size_of_val(results)
+                        + results
+                            .data
+                            .iter()
+                            .map(|row| {
+                                // Each row is a JSON object with field names repeated
+                                if let Some(obj) = row.as_object() {
+                                    obj.iter()
+                                        .map(|(k, v)| {
+                                            k.len() + // Field name
+                                    match v {
+                                        serde_json::Value::String(s) => s.len(),
+                                        _ => 8, // Number/bool estimate
+                                    }
+                                        })
+                                        .sum::<usize>()
+                                        + 24 * obj.len() // HashMap overhead per entry
+                                } else {
+                                    256 // Fallback estimate
+                                }
+                            })
+                            .sum::<usize>();
                     let datatable_size = datatable.estimate_memory_size();
 
                     let message = format!(
