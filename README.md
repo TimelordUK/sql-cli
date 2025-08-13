@@ -28,7 +28,7 @@ SELECT * FROM data WHERE amount > 1000 ORDER BY date DESC
 ## Screenshots
 
 ```sql
-SELECT * FROM trades_10k where exchange in ('nyse') and instrumentName.Length() > 5 and instrumentType.Contains('spot') and lastModifiedDate > DateTime(2024, 08, 01) order by counterparty desc, counterpartyCountry limit 20"
+SELECT * FROM trades_10k where exchange in ('nyse') and instrumentName.Length() > 5 and instrumentType.Contains('spot') and lastModifiedDate > DateTime(2024, 08, 01) order by counterparty desc, counterpartyCountry limit 20
 ```
 
 

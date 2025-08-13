@@ -4624,7 +4624,8 @@ impl EnhancedTuiApp {
 
                 // Create status message with character count
                 let status_msg = format!("Yanked SQL ({} chars)", char_count);
-                self.buffer_mut().set_status_message(status_msg);
+                debug!("Yanking query: {}", &status_msg);
+                self.buffer_mut().set_status_message(status_msg.clone());
 
                 // Update local last_yanked for backward compatibility
                 self.last_yanked = Some(("Query".to_string(), preview.clone()));
