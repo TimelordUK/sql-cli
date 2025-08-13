@@ -231,13 +231,29 @@ impl<'a> DataProvider for BufferAdapter<'a> {
         }
 
         // V48: Use DataTable row count if available
-        if let Some(datatable) = self.buffer.get_datatable() {
+        let actual_count = if let Some(datatable) = self.buffer.get_datatable() {
             debug!("V48: Using DataTable for row count");
-            return datatable.row_count();
+            datatable.row_count()
+        } else {
+            // Fallback to JSON
+            self.buffer.get_results().map(|r| r.data.len()).unwrap_or(0)
+        };
+
+        // MEMORY EXPERIMENT: Limit what we tell the TUI about
+        // This tests if Ratatui is creating objects for all rows
+        #[cfg(feature = "memory_experiment")]
+        {
+            let limited = actual_count.min(1000);
+            if limited < actual_count {
+                debug!(
+                    "MEMORY EXPERIMENT: Limiting row count from {} to {}",
+                    actual_count, limited
+                );
+            }
+            return limited;
         }
 
-        // Fallback to JSON
-        self.buffer.get_results().map(|r| r.data.len()).unwrap_or(0)
+        actual_count
     }
 
     fn get_column_count(&self) -> usize {

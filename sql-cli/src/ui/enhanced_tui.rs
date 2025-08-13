@@ -6916,6 +6916,25 @@ impl EnhancedTuiApp {
         Ok(false)
     }
 
+    /// Get current process memory usage in KB (Linux only)
+    #[cfg(target_os = "linux")]
+    fn get_process_memory_kb() -> Option<usize> {
+        std::fs::read_to_string("/proc/self/status")
+            .ok()?
+            .lines()
+            .find(|line| line.starts_with("VmRSS:"))
+            .and_then(|line| {
+                line.split_whitespace()
+                    .nth(1)
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn get_process_memory_kb() -> Option<usize> {
+        None
+    }
+
     /// V46: Demonstrate DataTable conversion
     fn demo_datatable_conversion(&mut self) {
         // V47: Collect all data before any mutable borrows to avoid borrow checker issues
@@ -6981,21 +7000,45 @@ impl EnhancedTuiApp {
                 row_count, col_count
             );
 
+            // Get actual process memory
+            let process_memory = Self::get_process_memory_kb();
+
             let message = if let Some(json_size) = json_size {
-                format!(
-                    "V47: DataTable stored! {} rows, {} cols. Memory: JSON ~{}KB vs DataTable ~{}KB",
-                    row_count,
-                    col_count,
-                    json_size / 1024,
-                    datatable_size / 1024
-                )
+                if let Some(mem_kb) = process_memory {
+                    format!(
+                        "V47: {} rows × {} cols | JSON ~{}KB, DataTable ~{}KB | Process total: {}MB",
+                        row_count,
+                        col_count,
+                        json_size / 1024,
+                        datatable_size / 1024,
+                        mem_kb / 1024
+                    )
+                } else {
+                    format!(
+                        "V47: DataTable stored! {} rows, {} cols. Memory: JSON ~{}KB vs DataTable ~{}KB",
+                        row_count,
+                        col_count,
+                        json_size / 1024,
+                        datatable_size / 1024
+                    )
+                }
             } else {
-                format!(
-                    "V47: DataTable stored! {} rows, {} cols. Memory: ~{}KB",
-                    row_count,
-                    col_count,
-                    datatable_size / 1024
-                )
+                if let Some(mem_kb) = process_memory {
+                    format!(
+                        "V47: {} rows × {} cols | DataTable ~{}KB | Process total: {}MB",
+                        row_count,
+                        col_count,
+                        datatable_size / 1024,
+                        mem_kb / 1024
+                    )
+                } else {
+                    format!(
+                        "V47: DataTable stored! {} rows, {} cols. Memory: ~{}KB",
+                        row_count,
+                        col_count,
+                        datatable_size / 1024
+                    )
+                }
             };
 
             self.buffer_mut().set_status_message(message);
