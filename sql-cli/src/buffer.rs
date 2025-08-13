@@ -867,31 +867,23 @@ impl BufferAPI for Buffer {
     fn get_row_count(&self) -> usize {
         if let Some(filtered) = &self.filtered_data {
             filtered.len()
-        } else if let Some(results) = &self.results {
-            results.data.len()
+        } else if let Some(datatable) = &self.datatable {
+            datatable.row_count()
         } else {
             0
         }
     }
 
     fn get_column_count(&self) -> usize {
-        if let Some(results) = &self.results {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    return obj.len();
-                }
-            }
+        if let Some(datatable) = &self.datatable {
+            return datatable.column_count();
         }
         0
     }
 
     fn get_column_names(&self) -> Vec<String> {
-        if let Some(results) = &self.results {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    return obj.keys().map(|k| k.to_string()).collect();
-                }
-            }
+        if let Some(datatable) = &self.datatable {
+            return datatable.column_names();
         }
         Vec::new()
     }
@@ -1005,7 +997,7 @@ impl BufferAPI for Buffer {
             self.last_query_source
         ));
         output.push_str("\n--- Results ---\n");
-        output.push_str(&format!("Has Results: {}\n", self.results.is_some()));
+        output.push_str(&format!("Has DataTable: {}\n", self.datatable.is_some()));
         output.push_str(&format!("Row Count: {}\n", self.get_row_count()));
         output.push_str(&format!("Column Count: {}\n", self.get_column_count()));
         output.push_str(&format!(
@@ -1187,7 +1179,7 @@ impl BufferAPI for Buffer {
 
     // --- Results Management ---
     fn clear_results(&mut self) {
-        self.results = None;
+        self.datatable = None;
         self.filtered_data = None;
         self.table_state.select(None);
         self.last_results_row = None;

@@ -6993,51 +6993,18 @@ impl EnhancedTuiApp {
             };
 
             self.buffer_mut().set_status_message(message);
-        } else if !has_datatable && self.buffer().has_datatable() {
-            // V47: No stored DataTable, try to create one (fallback)
-            let results_clone = self.buffer().get_results().unwrap().clone();
-
-            self.buffer_mut()
-                .set_status_message("V47: No stored DataTable, creating one...".to_string());
-
-            // Force a refresh by setting results again
-            // V50: Force DataTable creation
-            if let Err(e) = self
-                .buffer_mut()
-                .set_results_as_datatable(Some(results_clone))
-            {
-                warn!(target: "buffer", "Failed to convert results to DataTable: {}", e);
-            }
-
-            // Now check if DataTable was created
-            if self.buffer().has_datatable() {
-                self.demo_datatable_conversion(); // Recursively call to show the new DataTable
-            }
         } else {
             self.buffer_mut()
-                .set_status_message("V47: No results to convert to DataTable".to_string());
+                .set_status_message("V50: No DataTable available".to_string());
         }
     }
 
-    /// V48: Ensure DataTable exists if we have results
-    /// This makes DataTable creation automatic, no F6 needed
+    /// V50: DataTable is now the primary storage, so this is a no-op
     fn ensure_datatable_exists(&mut self) {
-        // V50: This condition is now always false (checking opposite conditions)
-        if false {
-            debug!("V48: Auto-creating DataTable for existing results");
-            // Force DataTable creation by re-setting results
-            let results_clone = self.buffer().get_results().unwrap().clone();
-            // V50: Force DataTable creation
-            if let Err(e) = self
-                .buffer_mut()
-                .set_results_as_datatable(Some(results_clone))
-            {
-                warn!(target: "buffer", "Failed to convert results to DataTable: {}", e);
-            }
-
-            if self.buffer().has_datatable() {
-                debug!("V48: DataTable auto-created successfully");
-            }
+        // V50: DataTable is always created when data is loaded
+        // This function is kept for compatibility but does nothing
+        if self.buffer().has_datatable() {
+            debug!("V50: DataTable already exists");
         }
     }
 

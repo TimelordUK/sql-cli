@@ -83,7 +83,7 @@ impl DebugInfo {
             Filtered Rows: {}\n\
             Current Column: {}\n\
             Sort State: {}\n",
-            buffer.get_results().map(|r| r.data.len()).unwrap_or(0),
+            buffer.get_datatable().map(|d| d.row_count()).unwrap_or(0),
             buffer.get_filtered_data().map(|d| d.len()).unwrap_or(0),
             buffer.get_current_column(),
             match sort_state {
@@ -180,22 +180,14 @@ impl DebugInfo {
         ));
 
         // Results info
-        if let Some(results) = buffer.get_results() {
+        if let Some(datatable) = buffer.get_datatable() {
             context.push_str(&format!("\nRESULTS INFO:\n"));
-            context.push_str(&format!("- Total rows: {}\n", results.data.len()));
-
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    context.push_str(&format!("- Columns: {}\n", obj.keys().count()));
-                    context.push_str(&format!(
-                        "- Column names: {}\n",
-                        obj.keys()
-                            .map(|k| k.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ));
-                }
-            }
+            context.push_str(&format!("- Total rows: {}\n", datatable.row_count()));
+            context.push_str(&format!("- Columns: {}\n", datatable.column_count()));
+            context.push_str(&format!(
+                "- Column names: {}\n",
+                datatable.column_names().join(", ")
+            ));
 
             // Filter info
             if buffer.is_filter_active() {
@@ -260,16 +252,11 @@ impl DebugInfo {
             buffer.get_id()
         ));
 
-        if let Some(results) = buffer.get_results() {
+        if let Some(datatable) = buffer.get_datatable() {
             test_case.push_str(&format!(
                 "// Results: {} rows, {} columns\n",
-                results.data.len(),
-                results
-                    .data
-                    .first()
-                    .and_then(|v| v.as_object())
-                    .map(|o| o.keys().count())
-                    .unwrap_or(0)
+                datatable.row_count(),
+                datatable.column_count()
             ));
         }
 
@@ -300,43 +287,18 @@ impl DebugInfo {
         ));
 
         // Add expected results
-        if let Some(results) = buffer.get_results() {
+        if let Some(datatable) = buffer.get_datatable() {
             test_case.push_str(&format!(
                 "        expected_row_count: {},\n",
-                results.data.len()
+                datatable.row_count()
             ));
 
             // Add column names
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    test_case.push_str("        expected_columns: vec![\n");
-                    for key in obj.keys() {
-                        test_case.push_str(&format!("            \"{}\".to_string(), \n", key));
-                    }
-                    test_case.push_str("        ],\n");
-
-                    // Add first row sample
-                    test_case.push_str("        expected_first_row: Some({\n");
-                    test_case
-                        .push_str("            let mut map = std::collections::HashMap::new();\n");
-
-                    // Add a few key fields as examples
-                    let sample_fields: Vec<&str> = obj.keys().take(3).map(|k| k.as_str()).collect();
-
-                    for field in sample_fields {
-                        if let Some(value) = obj.get(field) {
-                            test_case.push_str(&format!(
-                                "            map.insert(\"{}\".to_string(), {});\n",
-                                field,
-                                Self::value_to_rust_code(value)
-                            ));
-                        }
-                    }
-
-                    test_case.push_str("            map\n");
-                    test_case.push_str("        }),\n");
-                }
+            test_case.push_str("        expected_columns: vec![\n");
+            for column_name in datatable.column_names() {
+                test_case.push_str(&format!("            \"{}\".to_string(), \n", column_name));
             }
+            test_case.push_str("        ],\n");
         } else {
             test_case.push_str("        expected_row_count: 0,\n");
             test_case.push_str("        expected_columns: vec![],\n");
@@ -399,8 +361,8 @@ impl DebugInfo {
             ));
         }
 
-        if let Some(results) = buffer.get_results() {
-            summary.push(format!("{} rows", results.data.len()));
+        if let Some(datatable) = buffer.get_datatable() {
+            summary.push(format!("{} rows", datatable.row_count()));
 
             if buffer.is_filter_active() {
                 if let Some(filtered) = buffer.get_filtered_data() {
