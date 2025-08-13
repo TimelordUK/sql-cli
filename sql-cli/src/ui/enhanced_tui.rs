@@ -564,23 +564,58 @@ impl EnhancedTuiApp {
         // Sanitize the table name to be SQL-friendly
         let table_name = Self::sanitize_table_name(&raw_name);
 
-        csv_client.load_csv(csv_path, &table_name)?;
+        // Check for direct DataTable loading mode (bypass JSON)
+        let use_direct_loading = std::env::var("DIRECT_DATATABLE").is_ok();
 
-        // Get schema from CSV
-        let schema = csv_client
-            .get_schema()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get CSV schema"))?;
+        let (datatable_opt, schema) = if use_direct_loading {
+            info!("Using DIRECT DataTable loading (no JSON intermediate)");
+            crate::utils::memory_tracker::track_memory("before_direct_csv_load");
+
+            // Load CSV directly to DataTable
+            let datatable =
+                crate::data::datatable_loaders::load_csv_to_datatable(csv_path, &table_name)?;
+
+            crate::utils::memory_tracker::track_memory("after_direct_csv_load");
+            info!(
+                "Loaded {} rows directly to DataTable, memory: {} MB",
+                datatable.row_count(),
+                datatable.estimate_memory_size() / 1024 / 1024
+            );
+
+            // Create schema from DataTable columns
+            let mut schema = std::collections::HashMap::new();
+            schema.insert(table_name.clone(), datatable.column_names());
+
+            (Some(datatable), schema)
+        } else {
+            csv_client.load_csv(csv_path, &table_name)?;
+            let schema = csv_client
+                .get_schema()
+                .ok_or_else(|| anyhow::anyhow!("Failed to get CSV schema"))?;
+            (None, schema)
+        };
 
         // Replace the default buffer with a CSV buffer
         {
             // Clear all buffers and add a CSV buffer
             app.buffer_manager.clear_all();
-            let mut buffer = buffer::Buffer::from_csv(
-                1,
-                std::path::PathBuf::from(csv_path),
-                csv_client,
-                table_name.clone(),
-            );
+            let mut buffer = if let Some(datatable) = datatable_opt {
+                // Direct DataTable mode - create buffer without CSV client
+                let mut buf = buffer::Buffer::new(1);
+                buf.set_csv_mode(true);
+                buf.set_table_name(table_name.clone());
+                buf.set_datatable(Some(datatable));
+                info!("Created buffer with direct DataTable (no JSON)");
+                buf
+            } else {
+                // Legacy JSON mode
+                buffer::Buffer::from_csv(
+                    1,
+                    std::path::PathBuf::from(csv_path),
+                    csv_client,
+                    table_name.clone(),
+                )
+            };
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             buffer.set_compact_mode(app.config.display.compact_mode);
@@ -2835,7 +2870,60 @@ impl EnhancedTuiApp {
                 Err(anyhow::anyhow!("No cached data loaded"))
             }
         } else if self.buffer().is_csv_mode() {
-            if let Some(csv_client) = self.buffer().get_csv_client() {
+            // Check if we have a direct DataTable (no JSON path)
+            if self.buffer().has_datatable() && std::env::var("DIRECT_DATATABLE").is_ok() {
+                info!("Using direct DataTable query (no JSON)");
+                crate::utils::memory_tracker::track_memory("direct_query_start");
+
+                // For now, just return success for SELECT * queries
+                // TODO: Implement proper SQL parsing on DataTable
+                if query.trim().to_uppercase().starts_with("SELECT *") {
+                    // We already have the data in DataTable
+                    let duration = start_time.elapsed();
+                    crate::utils::memory_tracker::track_memory("direct_query_end");
+
+                    // Update navigation with DataTable info
+                    let (row_count, col_count) =
+                        if let Some(datatable) = self.buffer().get_datatable() {
+                            let rows = datatable.row_count();
+                            let cols = datatable.column_count();
+                            info!(
+                                "Direct DataTable query complete: {} rows, {} columns, {} ms",
+                                rows,
+                                cols,
+                                duration.as_millis()
+                            );
+                            (rows, cols)
+                        } else {
+                            (0, 0)
+                        };
+
+                    // Now do mutable operations
+                    self.state_container
+                        .navigation_mut()
+                        .update_totals(row_count, col_count);
+
+                    // Set buffer to results mode
+                    self.buffer_mut().set_mode(AppMode::Results);
+                    self.buffer_mut().set_selected_row(Some(0));
+                    self.state_container.set_table_selected_row(Some(0));
+
+                    // Update status
+                    self.buffer_mut().set_status_message(format!(
+                        "Query executed in {}ms ({} rows) - DIRECT DataTable mode",
+                        duration.as_millis(),
+                        row_count
+                    ));
+
+                    // Early return - skip all the QueryResponse processing
+                    return Ok(());
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Direct DataTable queries other than SELECT * not yet implemented"
+                    ))
+                }
+            } else if let Some(csv_client) = self.buffer().get_csv_client() {
+                // Legacy JSON path
                 // Convert CSV result to match the expected type
                 crate::utils::memory_tracker::track_memory("before_csv_query");
                 let query_result = csv_client.query_csv(query);

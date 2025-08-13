@@ -21,3 +21,4 @@ pub mod data_analyzer;
 pub mod data_exporter;
 pub mod datasource_adapter;
 pub mod datasource_trait;
+pub mod direct_csv_loader;
