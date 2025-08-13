@@ -1,4 +1,5 @@
 use crate::buffer::BufferAPI;
+use crate::data::data_provider::DataProvider;
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use serde_json::Value;
@@ -9,7 +10,73 @@ use std::io::Write;
 pub struct DataExporter;
 
 impl DataExporter {
-    /// Export buffer results to CSV format
+    /// Export data to CSV format using DataProvider trait
+    pub fn export_provider_to_csv(provider: &dyn DataProvider) -> Result<String> {
+        let row_count = provider.get_row_count();
+        if row_count == 0 {
+            return Err(anyhow!("No data to export"));
+        }
+
+        // Generate filename with timestamp
+        let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+        let filename = format!("query_results_{}.csv", timestamp);
+
+        let mut file = File::create(&filename)?;
+
+        // Write headers
+        let headers = provider.get_column_names();
+        let header_line = headers.join(",");
+        writeln!(file, "{}", header_line)?;
+
+        // Write data rows
+        for i in 0..row_count {
+            if let Some(row) = provider.get_row(i) {
+                let escaped_row: Vec<String> = row
+                    .iter()
+                    .map(|field| Self::escape_csv_field(field))
+                    .collect();
+                let row_line = escaped_row.join(",");
+                writeln!(file, "{}", row_line)?;
+            }
+        }
+
+        Ok(format!("Exported {} rows to {}", row_count, filename))
+    }
+
+    /// Export data to JSON format using DataProvider trait
+    pub fn export_provider_to_json(provider: &dyn DataProvider) -> Result<String> {
+        let row_count = provider.get_row_count();
+        if row_count == 0 {
+            return Err(anyhow!("No data to export"));
+        }
+
+        // Generate filename with timestamp
+        let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+        let filename = format!("query_results_{}.json", timestamp);
+
+        // Build JSON array
+        let headers = provider.get_column_names();
+        let mut json_array = Vec::new();
+
+        for i in 0..row_count {
+            if let Some(row) = provider.get_row(i) {
+                let mut json_obj = serde_json::Map::new();
+                for (j, value) in row.iter().enumerate() {
+                    if j < headers.len() {
+                        json_obj.insert(headers[j].clone(), Value::String(value.clone()));
+                    }
+                }
+                json_array.push(Value::Object(json_obj));
+            }
+        }
+
+        let file = File::create(&filename)?;
+        serde_json::to_writer_pretty(file, &json_array)?;
+
+        Ok(format!("Exported {} rows to {}", row_count, filename))
+    }
+
+    /// Export buffer results to CSV format (legacy - will be deprecated)
     pub fn export_to_csv(buffer: &dyn BufferAPI) -> Result<String> {
         let results = buffer
             .get_results()

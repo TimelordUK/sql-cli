@@ -4546,7 +4546,14 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_csv(&mut self) {
-        match DataExporter::export_to_csv(self.buffer()) {
+        // Use trait-based export with DataProvider
+        let result = if let Some(provider) = self.get_data_provider() {
+            DataExporter::export_provider_to_csv(provider.as_ref())
+        } else {
+            Err(anyhow::anyhow!("No data available to export"))
+        };
+
+        match result {
             Ok(message) => {
                 self.buffer_mut().set_status_message(message);
             }
@@ -4804,11 +4811,15 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_json(&mut self) {
-        // Include filtered data if filters are active
-        let include_filtered =
-            self.state_container.filter().is_active || self.buffer().is_fuzzy_filter_active();
+        // Use trait-based export with DataProvider
+        // TODO: Handle filtered data in future DataView implementation
+        let result = if let Some(provider) = self.get_data_provider() {
+            DataExporter::export_provider_to_json(provider.as_ref())
+        } else {
+            Err(anyhow::anyhow!("No data available to export"))
+        };
 
-        match DataExporter::export_to_json(self.buffer(), include_filtered) {
+        match result {
             Ok(message) => {
                 self.buffer_mut().set_status_message(message);
             }
