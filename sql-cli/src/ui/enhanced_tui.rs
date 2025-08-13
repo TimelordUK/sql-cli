@@ -4071,6 +4071,11 @@ impl EnhancedTuiApp {
         if self.buffer().get_fuzzy_filter_pattern().is_empty() {
             self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
             self.buffer_mut().set_fuzzy_filter_active(false);
+            // Clear filtered data to return to original dataset
+            if !self.state_container.filter().is_active {
+                // Only clear if no regex filter is active
+                self.buffer_mut().set_filtered_data(None);
+            }
             self.buffer_mut()
                 .set_status_message("Fuzzy filter cleared".to_string());
             return;
@@ -4115,12 +4120,17 @@ impl EnhancedTuiApp {
                 let row_text = row.join(" ");
 
                 // Check if pattern starts with ' for exact matching
-                let matches = if pattern.starts_with('\'') && pattern.len() > 1 {
-                    // Exact substring matching (case-insensitive)
-                    let exact_pattern = &pattern[1..];
-                    row_text
-                        .to_lowercase()
-                        .contains(&exact_pattern.to_lowercase())
+                let matches = if pattern.starts_with('\'') {
+                    if pattern.len() > 1 {
+                        // Exact substring matching (case-insensitive)
+                        let exact_pattern = &pattern[1..];
+                        row_text
+                            .to_lowercase()
+                            .contains(&exact_pattern.to_lowercase())
+                    } else {
+                        // Just a single quote - no pattern to match
+                        false
+                    }
                 } else {
                     // Fuzzy matching
                     let matcher = SkimMatcherV2::default();
@@ -5898,14 +5908,8 @@ impl EnhancedTuiApp {
 
                 // Apply appropriate styling based on selection and fuzzy filter
                 if is_fuzzy_match && !is_current_row {
-                    // Highlight fuzzy filter matches in magenta/cyan
-                    let highlight_color =
-                        if self.buffer().get_fuzzy_filter_pattern().starts_with('\'') {
-                            Color::Cyan // Exact match
-                        } else {
-                            Color::Magenta // Fuzzy match
-                        };
-                    cell = cell.style(Style::default().fg(highlight_color));
+                    // Always highlight fuzzy filter matches in magenta
+                    cell = cell.style(Style::default().fg(Color::Magenta));
                 }
 
                 if is_current_row && is_selected_column {
