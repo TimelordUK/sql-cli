@@ -624,6 +624,9 @@ impl EnhancedTuiApp {
                     e
                 ));
             }
+
+            // V48: Ensure DataTable is created after loading CSV
+            app.ensure_datatable_exists();
         }
 
         Ok(app)
@@ -715,6 +718,9 @@ impl EnhancedTuiApp {
                     e
                 ));
             }
+
+            // V48: Ensure DataTable is created after loading JSON
+            app.ensure_datatable_exists();
         }
 
         Ok(app)
@@ -2920,6 +2926,9 @@ impl EnhancedTuiApp {
                     .navigation_mut()
                     .update_totals(total_rows, total_cols);
                 info!(target: "navigation", "Updated NavigationState totals after query: {} rows x {} cols", total_rows, total_cols);
+
+                // V48: Ensure DataTable is created after query execution
+                self.ensure_datatable_exists();
 
                 // Update viewport size to ensure NavigationState has correct dimensions
                 self.update_viewport_size();
@@ -6983,6 +6992,21 @@ impl EnhancedTuiApp {
         } else {
             self.buffer_mut()
                 .set_status_message("V47: No results to convert to DataTable".to_string());
+        }
+    }
+
+    /// V48: Ensure DataTable exists if we have results
+    /// This makes DataTable creation automatic, no F6 needed
+    fn ensure_datatable_exists(&mut self) {
+        if self.buffer().get_results().is_some() && !self.buffer().has_datatable() {
+            debug!("V48: Auto-creating DataTable for existing results");
+            // Force DataTable creation by re-setting results
+            let results_clone = self.buffer().get_results().unwrap().clone();
+            self.buffer_mut().set_results(Some(results_clone));
+
+            if self.buffer().has_datatable() {
+                debug!("V48: DataTable auto-created successfully");
+            }
         }
     }
 

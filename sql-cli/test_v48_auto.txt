@@ -1,0 +1,1 @@
+Testing V48 auto DataTable creation - no F6 needed!
