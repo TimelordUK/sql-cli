@@ -4152,25 +4152,40 @@ impl EnhancedTuiApp {
             self.buffer()
                 .get_filtered_data()
                 .map(|data| (data.clone(), true))
-        } else if let Some(provider) = self.get_data_provider() {
-            // Always use fresh data from provider when no regex filter is active
-            // This ensures we don't accidentally use stale filtered_data
-            let mut rows = Vec::new();
-            let row_count = provider.get_row_count();
-
-            for index in 0..row_count {
-                if let Some(row) = provider.get_row(index) {
-                    rows.push(row);
+        } else {
+            // Get the ORIGINAL unfiltered data from the buffer's results
+            // We need to bypass the DataProvider here because it returns filtered data
+            // when a fuzzy filter is already active
+            let rows = if let Some(results) = self.buffer().get_results() {
+                let mut data_rows = Vec::new();
+                for json_value in &results.data {
+                    if let Some(obj) = json_value.as_object() {
+                        let columns = self.buffer().get_column_names();
+                        let row: Vec<String> = columns
+                            .iter()
+                            .map(|col| {
+                                obj.get(col)
+                                    .map(|v| match v {
+                                        serde_json::Value::String(s) => s.clone(),
+                                        serde_json::Value::Null => String::new(),
+                                        other => other.to_string(),
+                                    })
+                                    .unwrap_or_default()
+                            })
+                            .collect();
+                        data_rows.push(row);
+                    }
                 }
-            }
+                data_rows
+            } else {
+                Vec::new()
+            };
 
             if !rows.is_empty() {
                 Some((rows, false))
             } else {
                 None
             }
-        } else {
-            None
         };
 
         // Now provider borrow is dropped, process the data
