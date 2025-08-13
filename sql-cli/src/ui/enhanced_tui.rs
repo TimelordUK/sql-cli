@@ -2864,6 +2864,12 @@ impl EnhancedTuiApp {
                                                                        // Also clear filtered_data in the compatibility path
                 self.buffer_mut().set_filtered_data(None);
 
+                // Initialize selected row to 0 if we have results
+                if !response.data.is_empty() {
+                    self.buffer_mut().set_selected_row(Some(0));
+                    self.state_container.set_table_selected_row(Some(0));
+                }
+
                 // Also update AppStateContainer with results and performance metrics
 
                 // Check if this was from cache (either cache mode or cached_result was used)
@@ -3296,6 +3302,9 @@ impl EnhancedTuiApp {
                 // Sync with local table_state for rendering
                 self.state_container.set_table_selected_row(Some(row));
 
+                // Sync with buffer's table state so it shows in debug and rendering
+                self.buffer_mut().set_selected_row(Some(row));
+
                 // Sync scroll offset with buffer
                 self.buffer_mut().set_scroll_offset(new_scroll_offset);
             }
@@ -3325,6 +3334,9 @@ impl EnhancedTuiApp {
         if let Some(row) = new_row {
             // Sync with local table_state for rendering
             self.state_container.set_table_selected_row(Some(row));
+
+            // Sync with buffer's table state so it shows in debug and rendering
+            self.buffer_mut().set_selected_row(Some(row));
 
             // Sync scroll offset with buffer
             self.buffer_mut().set_scroll_offset(new_scroll_offset);
@@ -5620,8 +5632,6 @@ impl EnhancedTuiApp {
 
         // Get headers from provider
         let headers = provider.get_column_names();
-        let column_count = provider.get_column_count();
-
         // Calculate visible columns for virtual scrolling based on actual widths
         let terminal_width = area.width as usize;
         let available_width = terminal_width.saturating_sub(4); // Account for borders and padding
@@ -5693,8 +5703,8 @@ impl EnhancedTuiApp {
                 pos.saturating_sub(max_visible_scrollable_cols / 2)
             }
         } else {
-            // Current column is pinned, use scroll offset
-            self.buffer().get_scroll_offset().1.min(
+            // Current column is pinned, use scroll offset from navigation state
+            self.state_container.navigation().scroll_offset.1.min(
                 scrollable_indices
                     .len()
                     .saturating_sub(max_visible_scrollable_cols),
@@ -5715,10 +5725,11 @@ impl EnhancedTuiApp {
         let terminal_height = area.height as usize;
         let max_visible_rows = terminal_height.saturating_sub(3).max(10);
 
-        // Calculate row viewport
+        // Calculate row viewport using navigation state as source of truth
         let row_viewport_start = self
-            .buffer()
-            .get_scroll_offset()
+            .state_container
+            .navigation()
+            .scroll_offset
             .0
             .min(row_count.saturating_sub(1));
         let row_viewport_end = (row_viewport_start + max_visible_rows).min(row_count);
@@ -5821,7 +5832,9 @@ impl EnhancedTuiApp {
             // Add data cells
             cells.extend(row_data.iter().map(|val| Cell::from(val.clone())));
 
-            let row_style = if Some(row_viewport_start + i) == self.buffer().get_selected_row() {
+            // Get the selected row from navigation state (the source of truth)
+            let selected_row = self.state_container.navigation().selected_row;
+            let row_style = if row_viewport_start + i == selected_row {
                 Style::default()
                     .bg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD)
