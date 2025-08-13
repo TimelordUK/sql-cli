@@ -5829,12 +5829,39 @@ impl EnhancedTuiApp {
                 );
             }
 
-            // Add data cells
-            cells.extend(row_data.iter().map(|val| Cell::from(val.clone())));
-
-            // Get the selected row from navigation state (the source of truth)
+            // Add data cells with column highlighting
+            let current_column = self.state_container.navigation().selected_column;
             let selected_row = self.state_container.navigation().selected_row;
-            let row_style = if row_viewport_start + i == selected_row {
+            let is_current_row = row_viewport_start + i == selected_row;
+
+            cells.extend(row_data.iter().enumerate().map(|(col_idx, val)| {
+                // Check if this column matches the selected column in visible columns
+                let is_selected_column = visible_columns
+                    .get(col_idx)
+                    .map(|(actual_col, _)| *actual_col == current_column)
+                    .unwrap_or(false);
+
+                let cell = Cell::from(val.clone());
+
+                // Apply appropriate styling based on selection
+                if is_current_row && is_selected_column {
+                    // Crosshair cell - both row and column selected
+                    cell.style(
+                        Style::default()
+                            .bg(Color::Yellow)
+                            .fg(Color::Black)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else if is_selected_column {
+                    // Column highlight
+                    cell.style(Style::default().bg(Color::Rgb(50, 50, 50)))
+                } else {
+                    cell
+                }
+            }));
+
+            // Apply row highlighting
+            let row_style = if is_current_row {
                 Style::default()
                     .bg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD)
