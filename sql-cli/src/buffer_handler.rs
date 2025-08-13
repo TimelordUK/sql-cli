@@ -157,7 +157,7 @@ impl BufferHandler {
             let marker = if i == current_index { "▶" } else { " " };
 
             // Get buffer info
-            let has_results = buffer.get_results().is_some();
+            let has_results = buffer.has_datatable();
             let query = buffer.get_query();
             let query_preview = if !query.is_empty() {
                 if query.len() > 30 {

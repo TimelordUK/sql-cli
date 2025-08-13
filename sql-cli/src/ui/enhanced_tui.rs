@@ -6939,7 +6939,7 @@ impl EnhancedTuiApp {
             };
 
             // V50: JSON size is no longer applicable - DataTable is primary storage
-            let json_size = None;
+            let json_size: Option<usize> = None;
 
             (buffer.has_datatable(), datatable_info, json_size)
         };

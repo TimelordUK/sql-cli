@@ -1,5 +1,6 @@
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::BufferAPI;
+use crate::data::datatable::DataTable;
 use crate::data_exporter::DataExporter;
 use anyhow::{anyhow, Result};
 use serde_json::Value;
@@ -22,32 +23,24 @@ impl YankManager {
         row_index: usize,
         column_index: usize,
     ) -> Result<YankResult> {
-        let results = buffer
-            .get_results()
-            .ok_or_else(|| anyhow!("No results available"))?;
+        let datatable = buffer
+            .get_datatable()
+            .ok_or_else(|| anyhow!("No DataTable available"))?;
 
-        let row_data = results
-            .data
-            .get(row_index)
+        let row_data = datatable
+            .get_row_as_strings(row_index)
             .ok_or_else(|| anyhow!("Row index out of bounds"))?;
 
-        let obj = row_data
-            .as_object()
-            .ok_or_else(|| anyhow!("Invalid data format"))?;
-
-        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        let headers = datatable.column_names();
         let header = headers
             .get(column_index)
-            .ok_or_else(|| anyhow!("Column index out of bounds"))?;
+            .ok_or_else(|| anyhow!("Column index out of bounds"))?
+            .clone();
 
-        let value = match obj.get(*header) {
-            Some(Value::String(s)) => s.clone(),
-            Some(Value::Number(n)) => n.to_string(),
-            Some(Value::Bool(b)) => b.to_string(),
-            Some(Value::Null) => "NULL".to_string(),
-            Some(other) => other.to_string(),
-            None => String::new(),
-        };
+        let value = row_data
+            .get(column_index)
+            .cloned()
+            .unwrap_or_else(|| "NULL".to_string());
 
         // Prepare display value
         let col_name = header.to_string();
@@ -79,24 +72,19 @@ impl YankManager {
         state_container: &AppStateContainer,
         row_index: usize,
     ) -> Result<YankResult> {
-        let results = buffer
-            .get_results()
-            .ok_or_else(|| anyhow!("No results available"))?;
+        let datatable = buffer
+            .get_datatable()
+            .ok_or_else(|| anyhow!("No DataTable available"))?;
 
-        let row_data = results
-            .data
-            .get(row_index)
+        let row_data = datatable
+            .get_row_as_strings(row_index)
             .ok_or_else(|| anyhow!("Row index out of bounds"))?;
 
-        let obj = row_data
-            .as_object()
-            .ok_or_else(|| anyhow!("Invalid data format"))?;
-
-        // Use DataExporter's utility function
-        let row_text = DataExporter::format_row_for_clipboard(obj);
+        // Convert row to tab-separated text
+        let row_text = row_data.join("\t");
 
         // Count values for preview
-        let num_values = obj.len();
+        let num_values = row_data.len();
 
         // Copy to clipboard using AppStateContainer
         let clipboard_len = row_text.len();
@@ -119,43 +107,28 @@ impl YankManager {
         state_container: &AppStateContainer,
         column_index: usize,
     ) -> Result<YankResult> {
-        let results = buffer
-            .get_results()
-            .ok_or_else(|| anyhow!("No results available"))?;
+        let datatable = buffer
+            .get_datatable()
+            .ok_or_else(|| anyhow!("No DataTable available"))?;
 
         // Get header name
-        let first_row = results
-            .data
-            .first()
-            .ok_or_else(|| anyhow!("No data available"))?;
-
-        let obj = first_row
-            .as_object()
-            .ok_or_else(|| anyhow!("Invalid data format"))?;
-
-        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        let headers = datatable.column_names();
         let header = headers
             .get(column_index)
-            .ok_or_else(|| anyhow!("Column index out of bounds"))?;
+            .ok_or_else(|| anyhow!("Column index out of bounds"))?
+            .clone();
 
         // Collect all values from the column
         let mut column_values = Vec::new();
-        for row in &results.data {
-            if let Some(obj) = row.as_object() {
-                let value = match obj.get(*header) {
-                    Some(Value::String(s)) => {
-                        s.replace('\t', "    ").replace('\n', " ").replace('\r', "")
-                    }
-                    Some(Value::Number(n)) => n.to_string(),
-                    Some(Value::Bool(b)) => b.to_string(),
-                    Some(Value::Null) => "NULL".to_string(),
-                    Some(other) => other
-                        .to_string()
-                        .replace('\t', "    ")
-                        .replace('\n', " ")
-                        .replace('\r', ""),
-                    None => String::new(),
-                };
+        for row_idx in 0..datatable.row_count() {
+            if let Some(row_data) = datatable.get_row_as_strings(row_idx) {
+                let value = row_data
+                    .get(column_index)
+                    .cloned()
+                    .unwrap_or_else(|| "NULL".to_string())
+                    .replace('\t', "    ")
+                    .replace('\n', " ")
+                    .replace('\r', "");
                 column_values.push(value);
             }
         }
@@ -190,22 +163,25 @@ impl YankManager {
         buffer: &dyn BufferAPI,
         state_container: &AppStateContainer,
     ) -> Result<YankResult> {
+        // Get the DataTable
+        let datatable = buffer
+            .get_datatable()
+            .ok_or_else(|| anyhow!("No DataTable available"))?;
+
         // Determine what data to use
         let data = if buffer.is_filter_active() || buffer.is_fuzzy_filter_active() {
             // Use filtered data if available
             if let Some(filtered) = buffer.get_filtered_data() {
                 // Convert string data back to JSON for TSV generation
                 // This is a bit inefficient but maintains compatibility
-                Self::convert_filtered_to_json(buffer, filtered)?
-            } else if let Some(results) = buffer.get_results() {
-                results.data.clone()
+                Self::convert_filtered_to_json(datatable, filtered)?
             } else {
-                return Err(anyhow!("No data available"));
+                // Convert DataTable to JSON for TSV generation
+                Self::datatable_to_json(datatable)?
             }
-        } else if let Some(results) = buffer.get_results() {
-            results.data.clone()
         } else {
-            return Err(anyhow!("No data available"));
+            // Convert DataTable to JSON for TSV generation
+            Self::datatable_to_json(datatable)?
         };
 
         // Generate TSV text for better Windows/Excel compatibility
@@ -244,26 +220,50 @@ impl YankManager {
         })
     }
 
+    /// Helper to convert DataTable to JSON for TSV generation
+    fn datatable_to_json(datatable: &crate::data::datatable::DataTable) -> Result<Vec<Value>> {
+        let headers = datatable.column_names();
+        let mut json_data = Vec::new();
+
+        for row_idx in 0..datatable.row_count() {
+            if let Some(row_data) = datatable.get_row_as_strings(row_idx) {
+                let mut obj = serde_json::Map::new();
+                for (i, header) in headers.iter().enumerate() {
+                    if let Some(value) = row_data.get(i) {
+                        // Try to preserve original types
+                        if value == "NULL" || value.is_empty() {
+                            obj.insert(header.clone(), Value::Null);
+                        } else if let Ok(n) = value.parse::<f64>() {
+                            obj.insert(
+                                header.clone(),
+                                Value::Number(
+                                    serde_json::Number::from_f64(n)
+                                        .unwrap_or_else(|| serde_json::Number::from(0)),
+                                ),
+                            );
+                        } else if value == "true" || value == "false" {
+                            obj.insert(header.clone(), Value::Bool(value == "true"));
+                        } else {
+                            obj.insert(header.clone(), Value::String(value.clone()));
+                        }
+                    } else {
+                        obj.insert(header.clone(), Value::Null);
+                    }
+                }
+                json_data.push(Value::Object(obj));
+            }
+        }
+
+        Ok(json_data)
+    }
+
     /// Helper to convert filtered string data back to JSON
     fn convert_filtered_to_json(
-        buffer: &dyn BufferAPI,
+        datatable: &crate::data::datatable::DataTable,
         filtered_data: &[Vec<String>],
     ) -> Result<Vec<Value>> {
-        let results = buffer
-            .get_results()
-            .ok_or_else(|| anyhow!("No results available"))?;
-
-        // Get headers from original results
-        let first_row = results
-            .data
-            .first()
-            .ok_or_else(|| anyhow!("No data available"))?;
-
-        let obj = first_row
-            .as_object()
-            .ok_or_else(|| anyhow!("Invalid data format"))?;
-
-        let headers: Vec<String> = obj.keys().map(|k| k.to_string()).collect();
+        // Get headers from DataTable
+        let headers = datatable.column_names();
 
         // Convert filtered string data back to JSON
         let json_data: Vec<Value> = filtered_data

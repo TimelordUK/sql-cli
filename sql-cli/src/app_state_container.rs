@@ -5328,10 +5328,10 @@ impl AppStateContainer {
         if let Some(_buffer) = self.current_buffer() {
             // TODO: Add buffer mode and results when methods are available
             // dump.push_str(&format!("  Buffer Mode: {:?}\n", buffer.get_mode()));
-            // if let Some(results) = buffer.get_results() {
+            // if let Some(datatable) = buffer.get_datatable() {
             //     dump.push_str(&format!("  Results: {} rows x {} cols\n",
-            //         results.data.len(),
-            //         results.columns.len()
+            //         datatable.row_count(),
+            //         datatable.column_count()
             //     ));
             // }
             dump.push_str("  Buffer: Present\n");
