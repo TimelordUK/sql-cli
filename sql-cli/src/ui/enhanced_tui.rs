@@ -16,7 +16,6 @@ use crate::help_text::HelpText;
 use crate::history::{CommandHistory, HistoryMatch};
 use crate::key_chord_handler::{ChordResult, KeyChordHandler};
 use crate::key_indicator::{format_key_for_display, KeyPressIndicator};
-use crate::parser::SqlParser;
 use crate::service_container::ServiceContainer;
 use crate::sql::cache::QueryCache;
 use crate::sql::hybrid_parser::HybridParser;
@@ -4180,6 +4179,8 @@ impl EnhancedTuiApp {
 
             debug!(target: "fuzzy", "Processing {} rows with pattern '{}'", data.len(), pattern);
 
+            let case_insensitive = self.buffer().is_case_insensitive();
+
             for (index, row) in data.iter().enumerate() {
                 // Concatenate all columns into a single string for matching
                 let row_text = row.join(" ");
@@ -4187,18 +4188,26 @@ impl EnhancedTuiApp {
                 // Check if pattern starts with ' for exact matching
                 let matches = if pattern.starts_with('\'') {
                     if pattern.len() > 1 {
-                        // Exact substring matching (case-insensitive)
+                        // Exact substring matching
                         let exact_pattern = &pattern[1..];
-                        row_text
-                            .to_lowercase()
-                            .contains(&exact_pattern.to_lowercase())
+                        if case_insensitive {
+                            row_text
+                                .to_lowercase()
+                                .contains(&exact_pattern.to_lowercase())
+                        } else {
+                            row_text.contains(exact_pattern)
+                        }
                     } else {
                         // Just a single quote - no pattern to match
                         false
                     }
                 } else {
-                    // Fuzzy matching
-                    let matcher = SkimMatcherV2::default();
+                    // Fuzzy matching - SkimMatcherV2 handles case sensitivity internally
+                    let matcher = if case_insensitive {
+                        SkimMatcherV2::default().ignore_case()
+                    } else {
+                        SkimMatcherV2::default().respect_case()
+                    };
                     if let Some(score) = matcher.fuzzy_match(&row_text, &pattern) {
                         score > 0
                     } else {
@@ -5979,15 +5988,24 @@ impl EnhancedTuiApp {
                 // Check if THIS SPECIFIC CELL contains the fuzzy filter match
                 if let Some(ref pattern) = fuzzy_pattern {
                     if !is_current_row {
+                        let case_insensitive = self.buffer().is_case_insensitive();
                         let cell_matches = if pattern.starts_with('\'') && pattern.len() > 1 {
                             // Exact match mode - check if this cell contains the pattern
                             let search_pattern = &pattern[1..];
-                            val.to_lowercase().contains(&search_pattern.to_lowercase())
+                            if case_insensitive {
+                                val.to_lowercase().contains(&search_pattern.to_lowercase())
+                            } else {
+                                val.contains(search_pattern)
+                            }
                         } else if !pattern.is_empty() {
                             // Fuzzy match mode - check if this cell fuzzy matches
                             use fuzzy_matcher::skim::SkimMatcherV2;
                             use fuzzy_matcher::FuzzyMatcher;
-                            let matcher = SkimMatcherV2::default();
+                            let matcher = if case_insensitive {
+                                SkimMatcherV2::default().ignore_case()
+                            } else {
+                                SkimMatcherV2::default().respect_case()
+                            };
                             matcher
                                 .fuzzy_match(val, pattern)
                                 .map(|score| score > 0)
