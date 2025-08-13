@@ -5605,7 +5605,282 @@ impl EnhancedTuiApp {
         f.render_widget(status, area);
     }
 
+    /// New trait-based table rendering method
+    /// This uses DataProvider trait instead of directly accessing QueryResponse
+    fn render_table_with_provider(&self, f: &mut Frame, area: Rect, provider: &dyn DataProvider) {
+        let row_count = provider.get_row_count();
+
+        if row_count == 0 {
+            let empty = Paragraph::new("No results found")
+                .block(Block::default().borders(Borders::ALL).title("Results"))
+                .style(Style::default().fg(Color::Yellow));
+            f.render_widget(empty, area);
+            return;
+        }
+
+        // Get headers from provider
+        let headers = provider.get_column_names();
+        let column_count = provider.get_column_count();
+
+        // Calculate visible columns for virtual scrolling based on actual widths
+        let terminal_width = area.width as usize;
+        let available_width = terminal_width.saturating_sub(4); // Account for borders and padding
+
+        // Split columns into pinned and scrollable
+        let mut pinned_headers: Vec<(usize, String)> = Vec::new();
+        let mut scrollable_indices: Vec<usize> = Vec::new();
+
+        for (i, header) in headers.iter().enumerate() {
+            if self.buffer().get_pinned_columns().contains(&i) {
+                pinned_headers.push((i, header.clone()));
+            } else {
+                scrollable_indices.push(i);
+            }
+        }
+
+        // Calculate space used by pinned columns
+        let mut pinned_width = 0;
+        let column_widths = provider.get_column_widths();
+        for &(idx, _) in &pinned_headers {
+            if idx < column_widths.len() {
+                pinned_width += column_widths[idx];
+            } else {
+                pinned_width += 15; // Default width
+            }
+        }
+
+        // Calculate how many scrollable columns can fit in remaining space
+        let remaining_width = available_width.saturating_sub(pinned_width);
+        let max_visible_scrollable_cols = if !column_widths.is_empty() {
+            let mut width_used = 0;
+            let mut cols_that_fit = 0;
+
+            for &idx in &scrollable_indices {
+                if idx >= headers.len() {
+                    break;
+                }
+                let col_width = if idx < column_widths.len() {
+                    column_widths[idx]
+                } else {
+                    15
+                };
+                if width_used + col_width <= remaining_width {
+                    width_used += col_width;
+                    cols_that_fit += 1;
+                } else {
+                    break;
+                }
+            }
+            cols_that_fit.max(1)
+        } else {
+            // Fallback if no calculated widths
+            let avg_col_width = 15;
+            (remaining_width / avg_col_width).max(1)
+        };
+
+        // Calculate viewport for scrollable columns based on current_column
+        let current_in_scrollable = scrollable_indices
+            .iter()
+            .position(|&x| x == self.buffer().get_current_column());
+        let viewport_start = if let Some(pos) = current_in_scrollable {
+            if pos < max_visible_scrollable_cols / 2 {
+                0
+            } else if pos + max_visible_scrollable_cols / 2 >= scrollable_indices.len() {
+                scrollable_indices
+                    .len()
+                    .saturating_sub(max_visible_scrollable_cols)
+            } else {
+                pos.saturating_sub(max_visible_scrollable_cols / 2)
+            }
+        } else {
+            // Current column is pinned, use scroll offset
+            self.buffer().get_scroll_offset().1.min(
+                scrollable_indices
+                    .len()
+                    .saturating_sub(max_visible_scrollable_cols),
+            )
+        };
+        let viewport_end =
+            (viewport_start + max_visible_scrollable_cols).min(scrollable_indices.len());
+
+        // Build final list of visible columns (pinned + scrollable viewport)
+        let mut visible_columns: Vec<(usize, String)> = Vec::new();
+        visible_columns.extend(pinned_headers.iter().cloned());
+        for i in viewport_start..viewport_end {
+            let idx = scrollable_indices[i];
+            visible_columns.push((idx, headers[idx].clone()));
+        }
+
+        // Calculate viewport dimensions
+        let terminal_height = area.height as usize;
+        let max_visible_rows = terminal_height.saturating_sub(3).max(10);
+
+        // Calculate row viewport
+        let row_viewport_start = self
+            .buffer()
+            .get_scroll_offset()
+            .0
+            .min(row_count.saturating_sub(1));
+        let row_viewport_end = (row_viewport_start + max_visible_rows).min(row_count);
+
+        // Get visible rows from provider
+        let visible_rows =
+            provider.get_visible_rows(row_viewport_start, row_viewport_end - row_viewport_start);
+
+        // Transform to only show visible columns
+        let data_to_display: Vec<Vec<String>> = visible_rows
+            .iter()
+            .map(|row| {
+                visible_columns
+                    .iter()
+                    .map(|(idx, _)| row.get(*idx).cloned().unwrap_or_default())
+                    .collect()
+            })
+            .collect();
+
+        // Create header row with sort indicators and column selection
+        let mut header_cells: Vec<Cell> = Vec::new();
+
+        // Add row number header if enabled
+        if self.buffer().is_show_row_numbers() {
+            header_cells.push(
+                Cell::from("#").style(
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            );
+        }
+
+        // Add data headers
+        header_cells.extend(visible_columns.iter().map(|(actual_col_index, header)| {
+            // Get sort indicator from AppStateContainer if available
+            let sort_indicator = {
+                let sort = self.state_container.sort();
+                if let Some(col) = sort.column {
+                    if col == *actual_col_index {
+                        match sort.order {
+                            SortOrder::Ascending => " ↑",
+                            SortOrder::Descending => " ↓",
+                            SortOrder::None => "",
+                        }
+                    } else {
+                        ""
+                    }
+                } else {
+                    ""
+                }
+            };
+
+            let column_indicator = if *actual_col_index == self.buffer().get_current_column() {
+                " [*]"
+            } else {
+                ""
+            };
+
+            let pinned_indicator = if self
+                .buffer()
+                .get_pinned_columns()
+                .contains(actual_col_index)
+            {
+                " 📌"
+            } else {
+                ""
+            };
+
+            let mut style = Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD);
+
+            if *actual_col_index == self.buffer().get_current_column() {
+                style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+            }
+
+            Cell::from(format!(
+                "{}{}{}{}",
+                header, sort_indicator, column_indicator, pinned_indicator
+            ))
+            .style(style)
+        }));
+
+        let header = Row::new(header_cells);
+
+        // Create data rows
+        let mut rows: Vec<Row> = Vec::new();
+        for (i, row_data) in data_to_display.iter().enumerate() {
+            let mut cells: Vec<Cell> = Vec::new();
+
+            // Add row number if enabled
+            if self.buffer().is_show_row_numbers() {
+                let row_num = row_viewport_start + i + 1;
+                cells.push(
+                    Cell::from(row_num.to_string()).style(Style::default().fg(Color::DarkGray)),
+                );
+            }
+
+            // Add data cells
+            cells.extend(row_data.iter().map(|val| Cell::from(val.clone())));
+
+            let row_style = if Some(row_viewport_start + i) == self.buffer().get_selected_row() {
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            rows.push(Row::new(cells).style(row_style));
+        }
+
+        // Calculate column widths for the table widget
+        let mut widths: Vec<Constraint> = Vec::new();
+
+        // Add row number column width if enabled
+        if self.buffer().is_show_row_numbers() {
+            widths.push(Constraint::Length(8)); // Fixed width for row numbers
+        }
+
+        // Add widths for visible data columns
+        for (idx, _) in &visible_columns {
+            let width = if *idx < column_widths.len() {
+                column_widths[*idx] as u16
+            } else {
+                15
+            };
+            widths.push(Constraint::Length(width.min(50))); // Cap at 50 to prevent overly wide columns
+        }
+
+        // Create the table widget
+        let table = Table::new(rows, widths)
+            .header(header)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("Results ({} rows)", row_count)),
+            )
+            .column_spacing(1)
+            .row_highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        f.render_widget(table, area);
+    }
+
     fn render_table_immutable(&self, f: &mut Frame, area: Rect, results: &QueryResponse) {
+        // TODO: V40 - Migration in progress
+        // Try to use the new trait-based rendering if we can get a DataProvider
+        // This allows gradual migration while keeping the old code as fallback
+        if std::env::var("USE_TRAIT_RENDER").is_ok() {
+            if let Some(provider) = self.get_data_provider() {
+                // Use new trait-based rendering
+                self.render_table_with_provider(f, area, provider.as_ref());
+                return;
+            }
+        }
+
+        // Original implementation (fallback)
         if results.data.is_empty() {
             let empty = Paragraph::new("No results found")
                 .block(Block::default().borders(Borders::ALL).title("Results"))
