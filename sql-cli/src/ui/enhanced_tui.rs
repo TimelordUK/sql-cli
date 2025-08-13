@@ -4163,8 +4163,8 @@ impl EnhancedTuiApp {
     }
 
     fn update_column_search(&mut self) {
-        // Get column headers using DataProvider
-        if let Some(provider) = self.get_data_provider() {
+        // Get column headers using DataProvider - extract data in a scoped block
+        let column_data = if let Some(provider) = self.get_data_provider() {
             let headers = provider.get_column_names();
 
             // Create columns list for AppStateContainer
@@ -4174,6 +4174,13 @@ impl EnhancedTuiApp {
                 .map(|(idx, name)| (name.clone(), idx))
                 .collect();
 
+            Some((headers, columns))
+        } else {
+            None
+        };
+
+        // Now provider borrow is dropped, we can use mutable methods
+        if let Some((_headers, columns)) = column_data {
             // Update matches in AppStateContainer
             let pattern = self.state_container.column_search().pattern.clone();
             self.state_container
