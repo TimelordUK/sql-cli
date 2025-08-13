@@ -5807,15 +5807,11 @@ impl EnhancedTuiApp {
                 ""
             };
 
-            let pinned_indicator = if self
-                .buffer()
-                .get_pinned_columns()
-                .contains(actual_col_index)
-            {
-                " 📌"
-            } else {
-                ""
-            };
+            // Debug: Check if this column is pinned
+            let pinned_cols = self.buffer().get_pinned_columns().clone();
+            let is_pinned = pinned_cols.contains(actual_col_index);
+
+            let pinned_indicator = if is_pinned { " 📌" } else { "" };
 
             let mut style = Style::default()
                 .fg(Color::Cyan)
