@@ -14,6 +14,8 @@ pub struct BufferAdapter<'a> {
     buffer: &'a Buffer,
     /// Cached column types (lazy initialized, thread-safe)
     column_types: Arc<Mutex<Option<Vec<DataType>>>>,
+    /// Cached column widths to avoid recalculation on every frame
+    cached_column_widths: Arc<Mutex<Option<Vec<usize>>>>,
 }
 
 impl<'a> BufferAdapter<'a> {
@@ -22,6 +24,7 @@ impl<'a> BufferAdapter<'a> {
         Self {
             buffer,
             column_types: Arc::new(Mutex::new(None)),
+            cached_column_widths: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -116,6 +119,38 @@ impl<'a> BufferAdapter<'a> {
     }
 
     // V50: Removed json_to_row helper - no longer needed without JSON storage
+
+    /// Calculate column widths with caching to avoid recalculation on every frame
+    fn calculate_column_widths(&self) -> Vec<usize> {
+        // Default implementation: calculate from first 100 rows
+        let mut widths = vec![0; self.get_column_count()];
+        let sample_size = 100.min(self.get_row_count());
+
+        // Start with column name widths
+        for (i, name) in self.get_column_names().iter().enumerate() {
+            if i < widths.len() {
+                widths[i] = name.len();
+            }
+        }
+
+        // Check first 100 rows for max width
+        for row_idx in 0..sample_size {
+            if let Some(row) = self.get_row(row_idx) {
+                for (col_idx, value) in row.iter().enumerate() {
+                    if col_idx < widths.len() {
+                        widths[col_idx] = widths[col_idx].max(value.len());
+                    }
+                }
+            }
+        }
+
+        // Cap at reasonable max width
+        for width in &mut widths {
+            *width = (*width).min(50);
+        }
+
+        widths
+    }
 }
 
 impl<'a> Debug for BufferAdapter<'a> {
@@ -236,6 +271,17 @@ impl<'a> DataProvider for BufferAdapter<'a> {
             .and_then(|types| types.get(column_index))
             .copied()
             .unwrap_or(DataType::Unknown)
+    }
+
+    fn get_column_widths(&self) -> Vec<usize> {
+        // Use cached widths if available
+        let mut widths_guard = self.cached_column_widths.lock().unwrap();
+        if widths_guard.is_none() {
+            // Calculate and cache the widths
+            *widths_guard = Some(self.calculate_column_widths());
+        }
+
+        widths_guard.as_ref().unwrap().clone()
     }
 
     fn get_column_types(&self) -> Vec<DataType> {

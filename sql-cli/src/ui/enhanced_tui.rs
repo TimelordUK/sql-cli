@@ -5876,7 +5876,9 @@ impl EnhancedTuiApp {
 
         // Calculate space used by pinned columns
         let mut pinned_width = 0;
-        let column_widths = provider.get_column_widths();
+        // PERF TEST: Commenting out get_column_widths() call to test performance
+        // let column_widths = provider.get_column_widths();
+        let column_widths = vec![15; headers.len()]; // Use fixed width for now
         for &(idx, _) in &pinned_headers {
             if idx < column_widths.len() {
                 pinned_width += column_widths[idx];
