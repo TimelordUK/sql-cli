@@ -1,0 +1,33 @@
+# LLDB commands to test V42 filter migration
+# Usage: rust-lldb ./target/debug/sql-cli test_filters.csv -S test_v42_breakpoints.lldb
+
+# Load the .lldbinit for nice Rust formatting
+command source .lldbinit
+
+# Set breakpoints for filter operations using DataProvider
+
+# 1. Regex filter (Shift+F)
+b src/ui/enhanced_tui.rs:3869
+b src/ui/enhanced_tui.rs:3884
+
+# 2. Fuzzy filter (f key)  
+b src/ui/enhanced_tui.rs:4073
+b src/ui/enhanced_tui.rs:4085
+
+# 3. Column search (\ key)
+b src/ui/enhanced_tui.rs:4167
+b src/ui/enhanced_tui.rs:4168
+
+# 4. BufferAdapter trait methods
+b sql_cli::data::adapters::buffer_adapter::BufferAdapter::get_row
+b sql_cli::data::adapters::buffer_adapter::BufferAdapter::get_column_names
+
+# Run the program
+run
+
+# When it hits a breakpoint, you can:
+# - 'p provider' to see the DataProvider trait object
+# - 'bt' to see the call stack
+# - 'c' to continue
+# - 'n' to step over
+# - 's' to step into

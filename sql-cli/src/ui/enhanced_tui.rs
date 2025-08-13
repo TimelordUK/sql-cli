@@ -7,7 +7,7 @@ use crate::buffer_handler::BufferHandler;
 use crate::cell_renderer::CellRenderer;
 use crate::config::config::Config;
 use crate::cursor_manager::CursorManager;
-use crate::data::adapters::{BufferAdapter, CsvClientAdapter};
+use crate::data::adapters::BufferAdapter;
 use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_exporter::DataExporter;
@@ -16,7 +16,6 @@ use crate::help_text::HelpText;
 use crate::history::{CommandHistory, HistoryMatch};
 use crate::key_chord_handler::{ChordResult, KeyChordHandler};
 use crate::key_indicator::{format_key_for_display, KeyPressIndicator};
-use crate::parser::SqlParser;
 use crate::service_container::ServiceContainer;
 use crate::sql::cache::QueryCache;
 use crate::sql::hybrid_parser::HybridParser;
@@ -3862,10 +3861,14 @@ impl EnhancedTuiApp {
             self.state_container.filter_mut().clear();
             self.buffer_mut()
                 .set_status_message("Filter cleared".to_string());
+
+            // Sync state after clearing regex filter
+            self.sync_filter_state("regex_filter_cleared");
             return;
         }
 
-        if let Some(results) = self.buffer().get_results() {
+        // Extract data from provider in a scoped block to avoid borrow issues
+        let filter_result = if let Some(provider) = self.get_data_provider() {
             // Build regex with case-insensitive flag if needed
             let case_insensitive = self.buffer().is_case_insensitive();
             let regex_pattern = if case_insensitive {
@@ -3878,30 +3881,23 @@ impl EnhancedTuiApp {
             if let Ok(regex) = Regex::new(&regex_pattern) {
                 let mut filtered = Vec::new();
                 let mut filtered_indices = Vec::new();
+                let row_count = provider.get_row_count();
 
-                for (index, item) in results.data.iter().enumerate() {
-                    let mut row = Vec::new();
-                    let mut matches = false;
+                for index in 0..row_count {
+                    if let Some(row) = provider.get_row(index) {
+                        let mut matches = false;
 
-                    if let Some(obj) = item.as_object() {
-                        for (_, value) in obj {
-                            let cell_str = match value {
-                                Value::String(s) => s.clone(),
-                                Value::Number(n) => n.to_string(),
-                                Value::Bool(b) => b.to_string(),
-                                Value::Null => "".to_string(),
-                                _ => value.to_string(),
-                            };
-
-                            if regex.is_match(&cell_str) {
+                        // Check if any cell in the row matches the regex
+                        for cell_str in &row {
+                            if regex.is_match(cell_str) {
                                 matches = true;
                                 // Debug first few matches
                                 if filtered.len() < 3 {
                                     debug!(target: "filter", "  Match found in cell: '{}'",
                                            if cell_str.len() > 50 { format!("{}...", &cell_str[..50]) } else { cell_str.clone() });
                                 }
+                                break; // No need to check other cells once we have a match
                             }
-                            row.push(cell_str);
                         }
 
                         if matches {
@@ -3913,41 +3909,53 @@ impl EnhancedTuiApp {
 
                 let filtered_count = filtered.len();
                 debug!(target: "filter", "Filter applied: {} rows matched out of {}",
-                       filtered_count, results.data.len());
+                       filtered_count, row_count);
 
-                // Update both buffer and AppStateContainer
-                self.buffer_mut().set_filtered_data(Some(filtered.clone()));
-                self.buffer_mut().set_filter_active(true);
-
-                {
-                    let mut filter = self.state_container.filter_mut();
-                    filter.set_filtered_indices(filtered_indices);
-                    filter.set_filtered_data(Some(filtered));
-                    filter.is_active = true;
-                }
-
-                // Reset table state but preserve filtered data
-                self.state_container.set_table_selected_row(Some(0));
-                {
-                    let mut buffer = self.buffer_mut();
-                    buffer.set_scroll_offset((0, 0));
-                    buffer.set_current_column(0);
-                }
-
-                // Clear search state but keep filter state
-                {
-                    let mut search = self.state_container.search_mut();
-                    search.pattern = String::new();
-                    search.current_match = 0;
-                    search.matches = Vec::new();
-                    search.is_active = false;
-                }
-                self.buffer_mut()
-                    .set_status_message(format!("Filtered to {} rows", filtered_count));
+                Some((filtered, filtered_indices, filtered_count))
             } else {
-                self.buffer_mut()
-                    .set_status_message("Invalid regex pattern".to_string());
+                None
             }
+        } else {
+            None
+        };
+
+        // Now provider borrow is dropped, we can use mutable methods
+        if let Some((filtered, filtered_indices, filtered_count)) = filter_result {
+            // Update both buffer and AppStateContainer
+            self.buffer_mut().set_filtered_data(Some(filtered.clone()));
+            self.buffer_mut().set_filter_active(true);
+
+            {
+                let mut filter = self.state_container.filter_mut();
+                filter.set_filtered_indices(filtered_indices);
+                filter.set_filtered_data(Some(filtered));
+                filter.is_active = true;
+            }
+
+            // Reset table state but preserve filtered data
+            self.state_container.set_table_selected_row(Some(0));
+            {
+                let mut buffer = self.buffer_mut();
+                buffer.set_scroll_offset((0, 0));
+                buffer.set_current_column(0);
+            }
+
+            // Clear search state but keep filter state
+            {
+                let mut search = self.state_container.search_mut();
+                search.pattern = String::new();
+                search.current_match = 0;
+                search.matches = Vec::new();
+                search.is_active = false;
+            }
+            self.buffer_mut()
+                .set_status_message(format!("Filtered to {} rows", filtered_count));
+
+            // Sync state after applying regex filter
+            self.sync_filter_state("regex_filter_applied");
+        } else if filter_result.is_none() && self.get_data_provider().is_some() {
+            self.buffer_mut()
+                .set_status_message("Invalid regex pattern".to_string());
         }
     }
 
@@ -4064,64 +4072,157 @@ impl EnhancedTuiApp {
         }
     }
 
+    /// Synchronize all filter-related state across Buffer, AppStateContainer, and Navigation
+    fn sync_filter_state(&mut self, context: &str) {
+        let fuzzy_active = self.buffer().is_fuzzy_filter_active();
+        let fuzzy_indices = self.buffer().get_fuzzy_filter_indices();
+        let fuzzy_count = fuzzy_indices.len();
+        let regex_active = self.state_container.filter().is_active;
+        let filtered_data = self.buffer().get_filtered_data();
+        let total_rows = if let Some(provider) = self.get_data_provider() {
+            provider.get_row_count()
+        } else {
+            0
+        };
+
+        debug!(target: "filter_sync",
+            "[{}] State: fuzzy_active={}, fuzzy_count={}, regex_active={}, filtered_data={}, total_rows={}",
+            context, fuzzy_active, fuzzy_count, regex_active, filtered_data.is_some(), total_rows
+        );
+
+        // Update navigation totals based on active filters
+        let effective_row_count = if fuzzy_active && fuzzy_count > 0 {
+            fuzzy_count
+        } else if regex_active && filtered_data.is_some() {
+            filtered_data
+                .as_ref()
+                .map(|d| d.len())
+                .unwrap_or(total_rows)
+        } else {
+            total_rows
+        };
+
+        // Update navigation state with correct totals
+        let total_columns = self.state_container.navigation().total_columns;
+        self.state_container
+            .navigation_mut()
+            .update_totals(effective_row_count, total_columns);
+
+        // Reset selection if it's out of bounds
+        if self.state_container.navigation().selected_row >= effective_row_count
+            && effective_row_count > 0
+        {
+            self.state_container.navigation_mut().selected_row = 0;
+            debug!(target: "filter_sync", "[{}] Reset selected_row to 0 (was out of bounds)", context);
+        }
+
+        debug!(target: "filter_sync",
+            "[{}] Final: effective_rows={}, selected_row={}",
+            context, effective_row_count, self.state_container.navigation().selected_row
+        );
+    }
+
     fn apply_fuzzy_filter(&mut self) {
         if self.buffer().get_fuzzy_filter_pattern().is_empty() {
+            debug!(target: "fuzzy", "Clearing fuzzy filter - empty pattern");
             self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
             self.buffer_mut().set_fuzzy_filter_active(false);
+            // Clear filtered data to return to original dataset
+            if !self.state_container.filter().is_active {
+                // Only clear if no regex filter is active
+                self.buffer_mut().set_filtered_data(None);
+                debug!(target: "fuzzy", "Cleared filtered_data (no regex filter active)");
+            }
             self.buffer_mut()
                 .set_status_message("Fuzzy filter cleared".to_string());
+
+            // Sync state after clearing
+            self.sync_filter_state("fuzzy_filter_cleared");
+            debug!(target: "fuzzy", "Fuzzy filter cleared completely");
             return;
         }
 
         let pattern = self.buffer().get_fuzzy_filter_pattern();
-        let mut filtered_indices = Vec::new();
 
-        // Get the data to filter - either already filtered data or original results
-        let data_to_filter = if self.state_container.filter().is_active
+        // Extract data from provider in a scoped block to avoid borrow issues
+        let filter_data = if self.state_container.filter().is_active
             && self.buffer().get_filtered_data().is_some()
         {
             // If regex filter is active, fuzzy filter on top of that
-            self.buffer().get_filtered_data()
-        } else if let Some(results) = self.buffer().get_results() {
-            // Otherwise filter original results
-            let mut rows = Vec::new();
-            for item in &results.data {
-                let mut row = Vec::new();
-                if let Some(obj) = item.as_object() {
-                    for (_, value) in obj {
-                        let cell_str = match value {
-                            Value::String(s) => s.clone(),
-                            Value::Number(n) => n.to_string(),
-                            Value::Bool(b) => b.to_string(),
-                            Value::Null => "".to_string(),
-                            _ => value.to_string(),
-                        };
-                        row.push(cell_str);
-                    }
-                    rows.push(row);
-                }
-            }
-            self.buffer_mut().set_filtered_data(Some(rows));
-            self.buffer().get_filtered_data()
+            self.buffer()
+                .get_filtered_data()
+                .map(|data| (data.clone(), true))
         } else {
-            return;
+            // Get the ORIGINAL unfiltered data from the buffer's results
+            // We need to bypass the DataProvider here because it returns filtered data
+            // when a fuzzy filter is already active
+            let rows = if let Some(results) = self.buffer().get_results() {
+                let mut data_rows = Vec::new();
+                for json_value in &results.data {
+                    if let Some(obj) = json_value.as_object() {
+                        let columns = self.buffer().get_column_names();
+                        let row: Vec<String> = columns
+                            .iter()
+                            .map(|col| {
+                                obj.get(col)
+                                    .map(|v| match v {
+                                        serde_json::Value::String(s) => s.clone(),
+                                        serde_json::Value::Null => String::new(),
+                                        other => other.to_string(),
+                                    })
+                                    .unwrap_or_default()
+                            })
+                            .collect();
+                        data_rows.push(row);
+                    }
+                }
+                data_rows
+            } else {
+                Vec::new()
+            };
+
+            if !rows.is_empty() {
+                Some((rows, false))
+            } else {
+                None
+            }
         };
 
-        if let Some(data) = data_to_filter {
+        // Now provider borrow is dropped, process the data
+        if let Some((data, needs_storage)) = filter_data {
+            let mut filtered_indices = Vec::new();
+
+            debug!(target: "fuzzy", "Processing {} rows with pattern '{}'", data.len(), pattern);
+
+            let case_insensitive = self.buffer().is_case_insensitive();
+
             for (index, row) in data.iter().enumerate() {
                 // Concatenate all columns into a single string for matching
                 let row_text = row.join(" ");
 
                 // Check if pattern starts with ' for exact matching
-                let matches = if pattern.starts_with('\'') && pattern.len() > 1 {
-                    // Exact substring matching (case-insensitive)
-                    let exact_pattern = &pattern[1..];
-                    row_text
-                        .to_lowercase()
-                        .contains(&exact_pattern.to_lowercase())
+                let matches = if pattern.starts_with('\'') {
+                    if pattern.len() > 1 {
+                        // Exact substring matching
+                        let exact_pattern = &pattern[1..];
+                        if case_insensitive {
+                            row_text
+                                .to_lowercase()
+                                .contains(&exact_pattern.to_lowercase())
+                        } else {
+                            row_text.contains(exact_pattern)
+                        }
+                    } else {
+                        // Just a single quote - no pattern to match
+                        false
+                    }
                 } else {
-                    // Fuzzy matching
-                    let matcher = SkimMatcherV2::default();
+                    // Fuzzy matching - SkimMatcherV2 handles case sensitivity internally
+                    let matcher = if case_insensitive {
+                        SkimMatcherV2::default().ignore_case()
+                    } else {
+                        SkimMatcherV2::default().respect_case()
+                    };
                     if let Some(score) = matcher.fuzzy_match(&row_text, &pattern) {
                         score > 0
                     } else {
@@ -4133,95 +4234,98 @@ impl EnhancedTuiApp {
                     filtered_indices.push(index);
                 }
             }
-        }
 
-        let match_count = filtered_indices.len();
-        let is_active = !filtered_indices.is_empty();
+            let match_count = filtered_indices.len();
+            let is_active = !filtered_indices.is_empty();
 
-        // Transaction-like block for fuzzy filter updates
-        {
-            let mut buffer = self.buffer_mut();
-            buffer.set_fuzzy_filter_indices(filtered_indices);
-            buffer.set_fuzzy_filter_active(is_active);
+            // Don't store filtered_data for fuzzy filtering - it should only be used for regex filters
+            // Fuzzy filtering works through indices only
+
+            // Transaction-like block for fuzzy filter updates
+            {
+                let mut buffer = self.buffer_mut();
+                buffer.set_fuzzy_filter_indices(filtered_indices);
+                buffer.set_fuzzy_filter_active(is_active);
+
+                if is_active {
+                    let filter_type = if pattern.starts_with('\'') {
+                        "Exact"
+                    } else {
+                        "Fuzzy"
+                    };
+                    buffer.set_status_message(format!(
+                        "{} filter: {} matches for '{}' (highlighted in magenta)",
+                        filter_type, match_count, pattern
+                    ));
+                    buffer.set_scroll_offset((0, 0));
+                }
+            }
 
             if is_active {
-                let filter_type = if pattern.starts_with('\'') {
-                    "Exact"
-                } else {
-                    "Fuzzy"
-                };
-                buffer.set_status_message(format!(
-                    "{} filter: {} matches for '{}' (highlighted in magenta)",
-                    filter_type, match_count, pattern
-                ));
-                buffer.set_scroll_offset((0, 0));
-            }
-        }
-
-        if is_active {
-            // Reset table state for new filtered view
-            self.state_container.set_table_selected_row(Some(0));
-        } else {
-            let filter_type = if pattern.starts_with('\'') {
-                "exact"
+                // Reset table state for new filtered view
+                self.state_container.set_table_selected_row(Some(0));
             } else {
-                "fuzzy"
-            };
-            self.buffer_mut()
-                .set_status_message(format!("No {} matches for '{}'", filter_type, pattern));
+                let filter_type = if pattern.starts_with('\'') {
+                    "exact"
+                } else {
+                    "fuzzy"
+                };
+                self.buffer_mut()
+                    .set_status_message(format!("No {} matches for '{}'", filter_type, pattern));
+            }
+
+            // Sync state after applying filter
+            self.sync_filter_state("fuzzy_filter_applied");
         }
     }
 
     fn update_column_search(&mut self) {
-        // Get column headers from the current results
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        // Get column headers using DataProvider - extract data in a scoped block
+        let column_data = if let Some(provider) = self.get_data_provider() {
+            let headers = provider.get_column_names();
 
-                    // Create columns list for AppStateContainer
-                    let columns: Vec<(String, usize)> = headers
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, name)| (name.to_string(), idx))
-                        .collect();
+            // Create columns list for AppStateContainer
+            let columns: Vec<(String, usize)> = headers
+                .iter()
+                .enumerate()
+                .map(|(idx, name)| (name.clone(), idx))
+                .collect();
 
-                    // Update matches in AppStateContainer
-                    let pattern = self.state_container.column_search().pattern.clone();
-                    self.state_container
-                        .update_column_search_matches(&columns, &pattern);
+            Some((headers, columns))
+        } else {
+            None
+        };
 
-                    // Update status message
-                    if pattern.is_empty() {
-                        self.buffer_mut()
-                            .set_status_message("Enter column name to search".to_string());
-                    } else {
-                        let (matching_columns, matches_len) = {
-                            let column_search = self.state_container.column_search();
-                            (
-                                column_search.matching_columns.clone(),
-                                column_search.matching_columns.len(),
-                            )
-                        };
-                        if matching_columns.is_empty() {
-                            self.buffer_mut()
-                                .set_status_message(format!("No columns match '{}'", pattern));
-                        } else {
-                            let (column_index, column_name) = matching_columns[0].clone();
-                            self.buffer_mut().set_current_column(column_index);
-                            self.buffer_mut().set_status_message(format!(
-                                "Column 1 of {}: {} (Tab=next, Enter=select)",
-                                matches_len, column_name
-                            ));
-                        }
-                    }
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("No column data available".to_string());
-                }
-            } else {
+        // Now provider borrow is dropped, we can use mutable methods
+        if let Some((_headers, columns)) = column_data {
+            // Update matches in AppStateContainer
+            let pattern = self.state_container.column_search().pattern.clone();
+            self.state_container
+                .update_column_search_matches(&columns, &pattern);
+
+            // Update status message
+            if pattern.is_empty() {
                 self.buffer_mut()
-                    .set_status_message("No data available for column search".to_string());
+                    .set_status_message("Enter column name to search".to_string());
+            } else {
+                let (matching_columns, matches_len) = {
+                    let column_search = self.state_container.column_search();
+                    (
+                        column_search.matching_columns.clone(),
+                        column_search.matching_columns.len(),
+                    )
+                };
+                if matching_columns.is_empty() {
+                    self.buffer_mut()
+                        .set_status_message(format!("No columns match '{}'", pattern));
+                } else {
+                    let (column_index, column_name) = matching_columns[0].clone();
+                    self.buffer_mut().set_current_column(column_index);
+                    self.buffer_mut().set_status_message(format!(
+                        "Column 1 of {}: {} (Tab=next, Enter=select)",
+                        matches_len, column_name
+                    ));
+                }
             }
         } else {
             self.buffer_mut()
@@ -5875,6 +5979,18 @@ impl EnhancedTuiApp {
             let selected_row = self.state_container.navigation().selected_row;
             let is_current_row = row_viewport_start + i == selected_row;
 
+            // Get fuzzy filter pattern for cell-level matching
+            let fuzzy_pattern = if self.buffer().is_fuzzy_filter_active() {
+                let pattern = self.buffer().get_fuzzy_filter_pattern();
+                if !pattern.is_empty() {
+                    Some(pattern)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             cells.extend(row_data.iter().enumerate().map(|(col_idx, val)| {
                 // Check if this column matches the selected column in visible columns
                 let is_selected_column = visible_columns
@@ -5882,11 +5998,46 @@ impl EnhancedTuiApp {
                     .map(|(actual_col, _)| *actual_col == current_column)
                     .unwrap_or(false);
 
-                let cell = Cell::from(val.clone());
+                let mut cell = Cell::from(val.clone());
 
-                // Apply appropriate styling based on selection
+                // Check if THIS SPECIFIC CELL contains the fuzzy filter match
+                if let Some(ref pattern) = fuzzy_pattern {
+                    if !is_current_row {
+                        let case_insensitive = self.buffer().is_case_insensitive();
+                        let cell_matches = if pattern.starts_with('\'') && pattern.len() > 1 {
+                            // Exact match mode - check if this cell contains the pattern
+                            let search_pattern = &pattern[1..];
+                            if case_insensitive {
+                                val.to_lowercase().contains(&search_pattern.to_lowercase())
+                            } else {
+                                val.contains(search_pattern)
+                            }
+                        } else if !pattern.is_empty() {
+                            // Fuzzy match mode - check if this cell fuzzy matches
+                            use fuzzy_matcher::skim::SkimMatcherV2;
+                            use fuzzy_matcher::FuzzyMatcher;
+                            let matcher = if case_insensitive {
+                                SkimMatcherV2::default().ignore_case()
+                            } else {
+                                SkimMatcherV2::default().respect_case()
+                            };
+                            matcher
+                                .fuzzy_match(val, pattern)
+                                .map(|score| score > 0)
+                                .unwrap_or(false)
+                        } else {
+                            false
+                        };
+
+                        if cell_matches {
+                            // Only highlight cells that actually contain the match
+                            cell = cell.style(Style::default().fg(Color::Magenta));
+                        }
+                    }
+                }
+
                 if is_current_row && is_selected_column {
-                    // Crosshair cell - both row and column selected
+                    // Crosshair cell - both row and column selected (overrides fuzzy highlight)
                     cell.style(
                         Style::default()
                             .bg(Color::Yellow)
