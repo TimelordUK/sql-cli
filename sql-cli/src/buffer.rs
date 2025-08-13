@@ -1,6 +1,7 @@
 use crate::api_client::QueryResponse;
 use crate::csv_datasource::CsvApiClient;
 use crate::cursor_operations::CursorOperations;
+use crate::data::datatable::DataTable;
 use crate::hybrid_parser::HybridParser;
 use crate::input_manager::{create_from_input, create_single_line, InputManager};
 use anyhow::Result;
@@ -12,6 +13,7 @@ use regex::Regex;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use tracing::debug;
 use tui_input::Input;
 
 // Re-define the types we need (these should eventually be moved to a common module)
@@ -160,6 +162,11 @@ pub trait BufferAPI {
     fn set_results(&mut self, results: Option<QueryResponse>);
     fn get_last_query(&self) -> String;
     fn set_last_query(&mut self, query: String);
+
+    // --- V47: DataTable Access ---
+    fn get_datatable(&self) -> Option<&DataTable>;
+    fn get_datatable_mut(&mut self) -> Option<&mut DataTable>;
+    fn has_datatable(&self) -> bool;
 
     // --- Mode and Status ---
     fn get_mode(&self) -> AppMode;
@@ -341,6 +348,8 @@ pub struct Buffer {
     pub cache_mode: bool,
     pub results: Option<QueryResponse>,
     pub cached_data: Option<Vec<serde_json::Value>>,
+    /// V47: DataTable storage alongside JSON for parallel implementation
+    pub datatable: Option<DataTable>,
 
     // --- UI State ---
     pub mode: AppMode,
@@ -414,6 +423,27 @@ impl BufferAPI for Buffer {
     }
 
     fn set_results(&mut self, results: Option<QueryResponse>) {
+        // V47: When setting results, also create and store DataTable
+        if let Some(ref response) = results {
+            debug!("V47: Converting QueryResponse to DataTable for storage");
+            let table_name = response.table.as_deref().unwrap_or(&self.csv_table_name);
+            match DataTable::from_query_response(response, table_name) {
+                Ok(datatable) => {
+                    debug!(
+                        "V47: Stored DataTable with {} rows, {} columns",
+                        datatable.row_count(),
+                        datatable.column_count()
+                    );
+                    self.datatable = Some(datatable);
+                }
+                Err(e) => {
+                    debug!("V47: Failed to create DataTable: {}", e);
+                    self.datatable = None;
+                }
+            }
+        } else {
+            self.datatable = None;
+        }
         self.results = results;
     }
 
@@ -423,6 +453,19 @@ impl BufferAPI for Buffer {
 
     fn set_last_query(&mut self, query: String) {
         self.last_query = query;
+    }
+
+    // --- V47: DataTable Access ---
+    fn get_datatable(&self) -> Option<&DataTable> {
+        self.datatable.as_ref()
+    }
+
+    fn get_datatable_mut(&mut self) -> Option<&mut DataTable> {
+        self.datatable.as_mut()
+    }
+
+    fn has_datatable(&self) -> bool {
+        self.datatable.is_some()
     }
 
     // --- Mode and Status ---
@@ -1166,6 +1209,7 @@ impl Buffer {
             cache_mode: false,
             results: None,
             cached_data: None,
+            datatable: None,
 
             mode: AppMode::Command,
             edit_mode: EditMode::SingleLine,
