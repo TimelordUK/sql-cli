@@ -3865,7 +3865,8 @@ impl EnhancedTuiApp {
             return;
         }
 
-        if let Some(results) = self.buffer().get_results() {
+        // Use DataProvider trait to access data
+        if let Some(provider) = self.get_data_provider() {
             // Build regex with case-insensitive flag if needed
             let case_insensitive = self.buffer().is_case_insensitive();
             let regex_pattern = if case_insensitive {
@@ -3878,30 +3879,23 @@ impl EnhancedTuiApp {
             if let Ok(regex) = Regex::new(&regex_pattern) {
                 let mut filtered = Vec::new();
                 let mut filtered_indices = Vec::new();
+                let row_count = provider.get_row_count();
 
-                for (index, item) in results.data.iter().enumerate() {
-                    let mut row = Vec::new();
-                    let mut matches = false;
+                for index in 0..row_count {
+                    if let Some(row) = provider.get_row(index) {
+                        let mut matches = false;
 
-                    if let Some(obj) = item.as_object() {
-                        for (_, value) in obj {
-                            let cell_str = match value {
-                                Value::String(s) => s.clone(),
-                                Value::Number(n) => n.to_string(),
-                                Value::Bool(b) => b.to_string(),
-                                Value::Null => "".to_string(),
-                                _ => value.to_string(),
-                            };
-
-                            if regex.is_match(&cell_str) {
+                        // Check if any cell in the row matches the regex
+                        for cell_str in &row {
+                            if regex.is_match(cell_str) {
                                 matches = true;
                                 // Debug first few matches
                                 if filtered.len() < 3 {
                                     debug!(target: "filter", "  Match found in cell: '{}'",
                                            if cell_str.len() > 50 { format!("{}...", &cell_str[..50]) } else { cell_str.clone() });
                                 }
+                                break; // No need to check other cells once we have a match
                             }
-                            row.push(cell_str);
                         }
 
                         if matches {
@@ -3913,7 +3907,7 @@ impl EnhancedTuiApp {
 
                 let filtered_count = filtered.len();
                 debug!(target: "filter", "Filter applied: {} rows matched out of {}",
-                       filtered_count, results.data.len());
+                       filtered_count, row_count);
 
                 // Update both buffer and AppStateContainer
                 self.buffer_mut().set_filtered_data(Some(filtered.clone()));
@@ -4076,33 +4070,29 @@ impl EnhancedTuiApp {
         let pattern = self.buffer().get_fuzzy_filter_pattern();
         let mut filtered_indices = Vec::new();
 
-        // Get the data to filter - either already filtered data or original results
+        // Get the data to filter - either already filtered data or use DataProvider
         let data_to_filter = if self.state_container.filter().is_active
             && self.buffer().get_filtered_data().is_some()
         {
             // If regex filter is active, fuzzy filter on top of that
             self.buffer().get_filtered_data()
-        } else if let Some(results) = self.buffer().get_results() {
-            // Otherwise filter original results
+        } else if let Some(provider) = self.get_data_provider() {
+            // Use DataProvider to get original results
             let mut rows = Vec::new();
-            for item in &results.data {
-                let mut row = Vec::new();
-                if let Some(obj) = item.as_object() {
-                    for (_, value) in obj {
-                        let cell_str = match value {
-                            Value::String(s) => s.clone(),
-                            Value::Number(n) => n.to_string(),
-                            Value::Bool(b) => b.to_string(),
-                            Value::Null => "".to_string(),
-                            _ => value.to_string(),
-                        };
-                        row.push(cell_str);
-                    }
+            let row_count = provider.get_row_count();
+
+            for index in 0..row_count {
+                if let Some(row) = provider.get_row(index) {
                     rows.push(row);
                 }
             }
-            self.buffer_mut().set_filtered_data(Some(rows));
-            self.buffer().get_filtered_data()
+
+            if !rows.is_empty() {
+                self.buffer_mut().set_filtered_data(Some(rows));
+                self.buffer().get_filtered_data()
+            } else {
+                None
+            }
         } else {
             return;
         };
@@ -4173,55 +4163,45 @@ impl EnhancedTuiApp {
     }
 
     fn update_column_search(&mut self) {
-        // Get column headers from the current results
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        // Get column headers using DataProvider
+        if let Some(provider) = self.get_data_provider() {
+            let headers = provider.get_column_names();
 
-                    // Create columns list for AppStateContainer
-                    let columns: Vec<(String, usize)> = headers
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, name)| (name.to_string(), idx))
-                        .collect();
+            // Create columns list for AppStateContainer
+            let columns: Vec<(String, usize)> = headers
+                .iter()
+                .enumerate()
+                .map(|(idx, name)| (name.clone(), idx))
+                .collect();
 
-                    // Update matches in AppStateContainer
-                    let pattern = self.state_container.column_search().pattern.clone();
-                    self.state_container
-                        .update_column_search_matches(&columns, &pattern);
+            // Update matches in AppStateContainer
+            let pattern = self.state_container.column_search().pattern.clone();
+            self.state_container
+                .update_column_search_matches(&columns, &pattern);
 
-                    // Update status message
-                    if pattern.is_empty() {
-                        self.buffer_mut()
-                            .set_status_message("Enter column name to search".to_string());
-                    } else {
-                        let (matching_columns, matches_len) = {
-                            let column_search = self.state_container.column_search();
-                            (
-                                column_search.matching_columns.clone(),
-                                column_search.matching_columns.len(),
-                            )
-                        };
-                        if matching_columns.is_empty() {
-                            self.buffer_mut()
-                                .set_status_message(format!("No columns match '{}'", pattern));
-                        } else {
-                            let (column_index, column_name) = matching_columns[0].clone();
-                            self.buffer_mut().set_current_column(column_index);
-                            self.buffer_mut().set_status_message(format!(
-                                "Column 1 of {}: {} (Tab=next, Enter=select)",
-                                matches_len, column_name
-                            ));
-                        }
-                    }
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("No column data available".to_string());
-                }
-            } else {
+            // Update status message
+            if pattern.is_empty() {
                 self.buffer_mut()
-                    .set_status_message("No data available for column search".to_string());
+                    .set_status_message("Enter column name to search".to_string());
+            } else {
+                let (matching_columns, matches_len) = {
+                    let column_search = self.state_container.column_search();
+                    (
+                        column_search.matching_columns.clone(),
+                        column_search.matching_columns.len(),
+                    )
+                };
+                if matching_columns.is_empty() {
+                    self.buffer_mut()
+                        .set_status_message(format!("No columns match '{}'", pattern));
+                } else {
+                    let (column_index, column_name) = matching_columns[0].clone();
+                    self.buffer_mut().set_current_column(column_index);
+                    self.buffer_mut().set_status_message(format!(
+                        "Column 1 of {}: {} (Tab=next, Enter=select)",
+                        matches_len, column_name
+                    ));
+                }
             }
         } else {
             self.buffer_mut()
