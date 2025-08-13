@@ -142,7 +142,7 @@ impl<'a> DataProvider for BufferAdapter<'a> {
                 // Get row from DataTable
                 if actual_index < datatable.row_count() {
                     let row = &datatable.rows[actual_index];
-                    return Some(row.values.iter().map(|v| v.to_string()).collect());
+                    return Some(row.values.iter().map(|v| v.to_string_optimized()).collect());
                 }
             } else if let Some(filtered_data) = self.buffer.get_filtered_data() {
                 // Regex filter is active - use filtered data (still string-based for now)
@@ -151,7 +151,7 @@ impl<'a> DataProvider for BufferAdapter<'a> {
                 // Normal path - get row directly from DataTable
                 if index < datatable.row_count() {
                     let row = &datatable.rows[index];
-                    return Some(row.values.iter().map(|v| v.to_string()).collect());
+                    return Some(row.values.iter().map(|v| v.to_string_optimized()).collect());
                 }
             }
         }

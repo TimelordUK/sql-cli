@@ -155,6 +155,25 @@ impl DataValue {
             DataValue::Null => DataType::Null,
         }
     }
+
+    /// Get string representation without allocation when possible
+    /// Returns owned String for compatibility but tries to reuse existing strings
+    pub fn to_string_optimized(&self) -> String {
+        match self {
+            DataValue::String(s) => s.clone(),   // Clone existing string
+            DataValue::DateTime(s) => s.clone(), // Clone existing string
+            DataValue::Integer(i) => i.to_string(),
+            DataValue::Float(f) => f.to_string(),
+            DataValue::Boolean(b) => {
+                if *b {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
+            }
+            DataValue::Null => String::new(), // Empty string, minimal allocation
+        }
+    }
 }
 
 impl fmt::Display for DataValue {
@@ -300,7 +319,7 @@ impl DataTable {
     pub fn to_string_table(&self) -> Vec<Vec<String>> {
         self.rows
             .iter()
-            .map(|row| row.values.iter().map(|v| v.to_string()).collect())
+            .map(|row| row.values.iter().map(|v| v.to_string_optimized()).collect())
             .collect()
     }
 
@@ -466,9 +485,12 @@ impl DataTable {
 
     /// V50: Get a single row as strings
     pub fn get_row_as_strings(&self, index: usize) -> Option<Vec<String>> {
-        self.rows
-            .get(index)
-            .map(|row| row.values.iter().map(|value| value.to_string()).collect())
+        self.rows.get(index).map(|row| {
+            row.values
+                .iter()
+                .map(|value| value.to_string_optimized())
+                .collect()
+        })
     }
 
     /// Get a schema summary of the DataTable
@@ -568,7 +590,7 @@ impl DataProvider for DataTable {
     fn get_row(&self, index: usize) -> Option<Vec<String>> {
         self.rows
             .get(index)
-            .map(|row| row.values.iter().map(|v| v.to_string()).collect())
+            .map(|row| row.values.iter().map(|v| v.to_string_optimized()).collect())
     }
 
     fn get_column_names(&self) -> Vec<String> {
