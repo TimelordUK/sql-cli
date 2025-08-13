@@ -69,8 +69,11 @@ impl<'a> DataProvider for BufferAdapter<'a> {
                     .get(actual_index)
                     .map(|json_value| self.json_to_row(json_value))
             })
+        } else if let Some(filtered_data) = self.buffer.get_filtered_data() {
+            // Regex filter is active - use filtered data
+            filtered_data.get(index).cloned()
         } else {
-            // Normal path - get row directly
+            // Normal path - get row directly from results
             self.buffer.get_results().and_then(|results| {
                 results
                     .data
@@ -88,7 +91,11 @@ impl<'a> DataProvider for BufferAdapter<'a> {
         // If fuzzy filter is active, return the filtered count
         if self.buffer.is_fuzzy_filter_active() {
             self.buffer.get_fuzzy_filter_indices().len()
+        } else if let Some(filtered_data) = self.buffer.get_filtered_data() {
+            // Regex filter is active - return filtered count
+            filtered_data.len()
         } else {
+            // No filter - return full dataset count
             self.buffer.get_results().map(|r| r.data.len()).unwrap_or(0)
         }
     }
