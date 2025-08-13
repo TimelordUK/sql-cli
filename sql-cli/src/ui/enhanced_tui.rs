@@ -4708,16 +4708,12 @@ impl EnhancedTuiApp {
                         }
                     }
                 }
-            } else if let Some(results) = buffer.get_results() {
-                // For API mode or when we have results, use the result columns
-                if let Some(first_row) = results.data.first() {
-                    if let Some(obj) = first_row.as_object() {
-                        let columns: Vec<String> = obj.keys().map(|k| k.to_string()).collect();
-                        let table_name = buffer.get_table_name();
-                        debug!(target: "buffer", "Updating parser with {} columns for table '{}'", columns.len(), table_name);
-                        self.hybrid_parser.update_single_table(table_name, columns);
-                    }
-                }
+            } else if let Some(datatable) = buffer.get_datatable() {
+                // V50: Use DataTable for column names
+                let columns = datatable.column_names();
+                let table_name = buffer.get_table_name();
+                debug!(target: "buffer", "Updating parser with {} columns for table '{}'", columns.len(), table_name);
+                self.hybrid_parser.update_single_table(table_name, columns);
             }
         }
     }
@@ -5399,16 +5395,15 @@ impl EnhancedTuiApp {
             AppMode::CacheList => self.render_cache_list(f, results_area),
             AppMode::ColumnStats => self.render_column_stats(f, results_area),
             _ if self.buffer().has_datatable() => {
-                // We need to work around the borrow checker here
-                // Calculate widths needs mutable self, but we also need to pass results
-                if let Some(results) = self.buffer().get_results() {
+                // V50: Calculate viewport using DataTable
+                if let Some(datatable) = self.buffer().get_datatable() {
                     // Extract viewport info first
                     let terminal_height = results_area.height as usize;
                     let max_visible_rows = terminal_height.saturating_sub(3).max(10);
                     let total_rows = if let Some(filtered) = self.buffer().get_filtered_data() {
                         filtered.len()
                     } else {
-                        results.data.len()
+                        datatable.row_count()
                     };
                     let row_viewport_start = self
                         .buffer()
@@ -5421,9 +5416,9 @@ impl EnhancedTuiApp {
                     self.calculate_viewport_column_widths(row_viewport_start, row_viewport_end);
                 }
 
-                // Now render the table
-                if let Some(results) = self.buffer().get_results() {
-                    self.render_table_immutable(f, results_area, results);
+                // V50: Render using DataProvider which works with DataTable
+                if let Some(provider) = self.get_data_provider() {
+                    self.render_table_with_provider(f, results_area, provider.as_ref());
                 }
             }
             _ => {
@@ -5596,63 +5591,49 @@ impl EnhancedTuiApp {
                     ));
 
                     // Column information
-                    if let Some(results) = self.buffer().get_results() {
-                        if let Some(first_row) = results.data.first() {
-                            if let Some(obj) = first_row.as_object() {
-                                let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                                if self.buffer().get_current_column() < headers.len() {
-                                    spans.push(Span::raw(" | Col: "));
-                                    spans.push(Span::styled(
-                                        headers[self.buffer().get_current_column()],
-                                        Style::default().fg(Color::Cyan),
-                                    ));
+                    if let Some(datatable) = self.buffer().get_datatable() {
+                        let headers = datatable.column_names();
+                        if self.buffer().get_current_column() < headers.len() {
+                            spans.push(Span::raw(" | Col: "));
+                            spans.push(Span::styled(
+                                headers[self.buffer().get_current_column()].clone(),
+                                Style::default().fg(Color::Cyan),
+                            ));
 
-                                    // Show pinned columns count if any
-                                    if !self.buffer().get_pinned_columns().clone().is_empty() {
-                                        spans.push(Span::raw(" | "));
-                                        spans.push(Span::styled(
-                                            format!(
-                                                "📌{}",
-                                                self.buffer().get_pinned_columns().clone().len()
-                                            ),
-                                            Style::default().fg(Color::Magenta),
-                                        ));
-                                    }
+                            // Show pinned columns count if any
+                            if !self.buffer().get_pinned_columns().clone().is_empty() {
+                                spans.push(Span::raw(" | "));
+                                spans.push(Span::styled(
+                                    format!(
+                                        "📌{}",
+                                        self.buffer().get_pinned_columns().clone().len()
+                                    ),
+                                    Style::default().fg(Color::Magenta),
+                                ));
+                            }
 
-                                    // In cell mode, show the current cell value
-                                    if self.get_selection_mode() == SelectionMode::Cell {
-                                        if let Some(selected_row) =
-                                            self.state_container.get_table_selected_row()
-                                        {
-                                            if let Some(row_data) = results.data.get(selected_row) {
-                                                if let Some(row_obj) = row_data.as_object() {
-                                                    if let Some(value) = row_obj.get(
-                                                        headers[self.buffer().get_current_column()],
-                                                    ) {
-                                                        let cell_value = match value {
-                                                            Value::String(s) => s.clone(),
-                                                            Value::Number(n) => n.to_string(),
-                                                            Value::Bool(b) => b.to_string(),
-                                                            Value::Null => "NULL".to_string(),
-                                                            other => other.to_string(),
-                                                        };
+                            // In cell mode, show the current cell value
+                            if self.get_selection_mode() == SelectionMode::Cell {
+                                if let Some(selected_row) =
+                                    self.state_container.get_table_selected_row()
+                                {
+                                    if let Some(row_data) =
+                                        datatable.get_row_as_strings(selected_row)
+                                    {
+                                        let col_idx = self.buffer().get_current_column();
+                                        if let Some(cell_value) = row_data.get(col_idx) {
+                                            // Truncate if too long
+                                            let display_value = if cell_value.len() > 30 {
+                                                format!("{}...", &cell_value[..27])
+                                            } else {
+                                                cell_value.clone()
+                                            };
 
-                                                        // Truncate if too long
-                                                        let display_value = if cell_value.len() > 30
-                                                        {
-                                                            format!("{}...", &cell_value[..27])
-                                                        } else {
-                                                            cell_value
-                                                        };
-
-                                                        spans.push(Span::raw(" = "));
-                                                        spans.push(Span::styled(
-                                                            display_value,
-                                                            Style::default().fg(Color::Yellow),
-                                                        ));
-                                                    }
-                                                }
-                                            }
+                                            spans.push(Span::raw(" = "));
+                                            spans.push(Span::styled(
+                                                display_value,
+                                                Style::default().fg(Color::Yellow),
+                                            ));
                                         }
                                     }
                                 }
@@ -6482,9 +6463,13 @@ impl EnhancedTuiApp {
         match parts[1] {
             "save" => {
                 // Save last query results to cache with optional custom ID
-                if let Some(results) = self.buffer().get_results() {
-                    let data_to_save = results.data.clone(); // Extract the data we need
-                    let _ = results; // Explicitly drop the borrow
+                // V50: Save DataTable to cache
+                if let Some(datatable) = self.buffer().get_datatable() {
+                    // Convert to JSON for cache compatibility
+                    let data_to_save =
+                        crate::data::data_exporter::DataExporter::datatable_to_json_values(
+                            datatable,
+                        );
 
                     if let Some(ref mut cache) = self.query_cache {
                         // Check if a custom ID is provided
@@ -6953,33 +6938,8 @@ impl EnhancedTuiApp {
                 None
             };
 
-            let json_size = if let Some(results) = buffer.get_results() {
-                Some(
-                    std::mem::size_of_val(results)
-                        + results
-                            .data
-                            .iter()
-                            .map(|row| {
-                                if let Some(obj) = row.as_object() {
-                                    obj.iter()
-                                        .map(|(k, v)| {
-                                            k.len() + // Field name
-                                        match v {
-                                            serde_json::Value::String(s) => s.len(),
-                                            _ => 8, // Number/bool estimate
-                                        }
-                                        })
-                                        .sum::<usize>()
-                                        + 24 * obj.len() // HashMap overhead per entry
-                                } else {
-                                    256 // Fallback estimate
-                                }
-                            })
-                            .sum::<usize>(),
-                )
-            } else {
-                None
-            };
+            // V50: JSON size is no longer applicable - DataTable is primary storage
+            let json_size = None;
 
             (buffer.has_datatable(), datatable_info, json_size)
         };

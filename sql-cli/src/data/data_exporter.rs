@@ -250,8 +250,7 @@ impl DataExporter {
         let regex = regex::Regex::new(&filter_pattern)
             .map_err(|e| anyhow!("Invalid filter pattern: {}", e))?;
 
-        let filtered: Vec<Value> = results
-            .data
+        let filtered: Vec<Value> = data
             .iter()
             .filter(|item| {
                 if let Some(obj) = item.as_object() {
@@ -414,7 +413,7 @@ impl DataExporter {
     }
 
     /// V50: Helper to convert DataTable to JSON Values for export compatibility
-    fn datatable_to_json_values(datatable: &crate::data::datatable::DataTable) -> Vec<Value> {
+    pub fn datatable_to_json_values(datatable: &crate::data::datatable::DataTable) -> Vec<Value> {
         use serde_json::json;
 
         let headers = datatable.column_names();
