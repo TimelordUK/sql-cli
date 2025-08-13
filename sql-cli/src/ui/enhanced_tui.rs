@@ -3351,6 +3351,10 @@ impl EnhancedTuiApp {
         // Keep existing logic for now
         let new_column = self.buffer().get_current_column().saturating_sub(1);
         self.buffer_mut().set_current_column(new_column);
+
+        // Sync with navigation state in AppStateContainer
+        self.state_container.navigation_mut().selected_column = new_column;
+
         let mut offset = self.buffer().get_scroll_offset();
         offset.1 = offset.1.saturating_sub(1);
         let column_num = self.buffer().get_current_column() + 1;
@@ -3372,6 +3376,11 @@ impl EnhancedTuiApp {
                     let current_column = self.buffer().get_current_column();
                     if current_column + 1 < max_columns {
                         self.buffer_mut().set_current_column(current_column + 1);
+
+                        // Sync with navigation state in AppStateContainer
+                        let new_column = current_column + 1;
+                        self.state_container.navigation_mut().selected_column = new_column;
+
                         let mut offset = self.buffer().get_scroll_offset();
                         offset.1 += 1;
                         let column_num = self.buffer().get_current_column() + 1;
@@ -3386,6 +3395,10 @@ impl EnhancedTuiApp {
 
     fn goto_first_column(&mut self) {
         self.buffer_mut().set_current_column(0);
+
+        // Sync with navigation state in AppStateContainer
+        self.state_container.navigation_mut().selected_column = 0;
+
         let mut offset = self.buffer().get_scroll_offset();
         offset.1 = 0;
         self.buffer_mut().set_scroll_offset(offset);
@@ -3399,7 +3412,12 @@ impl EnhancedTuiApp {
                 if let Some(obj) = first_row.as_object() {
                     let max_columns = obj.len();
                     if max_columns > 0 {
-                        self.buffer_mut().set_current_column(max_columns - 1);
+                        let last_column = max_columns - 1;
+                        self.buffer_mut().set_current_column(last_column);
+
+                        // Sync with navigation state in AppStateContainer
+                        self.state_container.navigation_mut().selected_column = last_column;
+
                         // Update horizontal scroll to show the last column
                         // This ensures the last column is visible in the viewport
                         let mut offset = self.buffer().get_scroll_offset();
