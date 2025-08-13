@@ -1,5 +1,6 @@
 use crate::api_client::{QueryInfo, QueryResponse};
 use crate::csv_fixes::{build_column_lookup, find_column_case_insensitive, parse_column_name};
+use crate::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
 use crate::recursive_parser::{OrderByColumn, Parser, SortDirection};
 use crate::where_ast::evaluate_where_expr_with_options;
 use crate::where_parser::WhereParser;
@@ -11,6 +12,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use tracing::debug;
 
 #[derive(Clone, Debug)]
 pub struct CsvDataSource {
@@ -319,6 +321,91 @@ impl CsvDataSource {
     pub fn get_row_count(&self) -> usize {
         self.data.len()
     }
+
+    /// V49: Convert CsvDataSource directly to DataTable
+    /// This avoids the JSON intermediate format
+    pub fn to_datatable(&self) -> DataTable {
+        debug!(
+            "V49: Converting CsvDataSource to DataTable for table '{}'",
+            self.table_name
+        );
+
+        let mut table = DataTable::new(&self.table_name);
+
+        // Create columns from headers
+        for header in &self.headers {
+            table.add_column(DataColumn::new(header.clone()));
+        }
+
+        // Convert each JSON row to DataRow
+        for (row_idx, json_row) in self.data.iter().enumerate() {
+            if let Some(obj) = json_row.as_object() {
+                let mut values = Vec::new();
+
+                // Get values in the same order as headers
+                for header in &self.headers {
+                    let value = obj
+                        .get(header)
+                        .map(|v| json_value_to_data_value(v))
+                        .unwrap_or(DataValue::Null);
+                    values.push(value);
+                }
+
+                if let Err(e) = table.add_row(DataRow::new(values)) {
+                    debug!("V49: Failed to add row {}: {}", row_idx, e);
+                }
+            }
+        }
+
+        // Infer column types from the data
+        table.infer_column_types();
+
+        // Add metadata
+        table
+            .metadata
+            .insert("source".to_string(), "csv".to_string());
+        table
+            .metadata
+            .insert("original_count".to_string(), self.data.len().to_string());
+
+        debug!(
+            "V49: Created DataTable with {} rows and {} columns directly from CSV",
+            table.row_count(),
+            table.column_count()
+        );
+
+        table
+    }
+}
+
+/// V49: Helper function to convert JSON value to DataValue
+fn json_value_to_data_value(json: &Value) -> DataValue {
+    match json {
+        Value::Null => DataValue::Null,
+        Value::Bool(b) => DataValue::Boolean(*b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                DataValue::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                DataValue::Float(f)
+            } else {
+                DataValue::String(n.to_string())
+            }
+        }
+        Value::String(s) => {
+            // Try to detect if it's a date/time
+            if s.contains('-') && s.len() >= 8 && s.len() <= 30 {
+                // Simple heuristic for dates
+                DataValue::DateTime(s.clone())
+            } else {
+                DataValue::String(s.clone())
+            }
+        }
+        Value::Array(_) | Value::Object(_) => {
+            // Store complex types as JSON string
+            DataValue::String(json.to_string())
+        }
+    }
 }
 
 // Integration with ApiClient
@@ -402,5 +489,19 @@ impl CsvApiClient {
         });
 
         Ok(())
+    }
+
+    /// V49: Get DataTable directly from the datasource
+    /// This avoids JSON intermediate conversion
+    pub fn get_datatable(&self) -> Option<DataTable> {
+        self.datasource.as_ref().map(|ds| {
+            debug!("V49: CsvApiClient returning DataTable directly");
+            ds.to_datatable()
+        })
+    }
+
+    /// V49: Check if we have a datasource loaded
+    pub fn has_data(&self) -> bool {
+        self.datasource.is_some()
     }
 }

@@ -625,8 +625,20 @@ impl EnhancedTuiApp {
                 ));
             }
 
-            // V48: Ensure DataTable is created after loading CSV
-            app.ensure_datatable_exists();
+            // V49: Try to get DataTable directly from CsvApiClient
+            if let Some(csv_client) = app.buffer().get_csv_client() {
+                if let Some(datatable) = csv_client.get_datatable() {
+                    debug!("V49: Setting DataTable directly from CsvApiClient");
+                    // Store the DataTable directly
+                    if let Some(buffer) = app.buffer_manager.current_mut() {
+                        buffer.datatable = Some(datatable);
+                        debug!("V49: DataTable set directly, bypassing JSON conversion");
+                    }
+                }
+            } else {
+                // V48: Fallback - ensure DataTable is created from JSON
+                app.ensure_datatable_exists();
+            }
         }
 
         Ok(app)
@@ -719,8 +731,20 @@ impl EnhancedTuiApp {
                 ));
             }
 
-            // V48: Ensure DataTable is created after loading JSON
-            app.ensure_datatable_exists();
+            // V49: Try to get DataTable directly from CsvApiClient (also handles JSON)
+            if let Some(csv_client) = app.buffer().get_csv_client() {
+                if let Some(datatable) = csv_client.get_datatable() {
+                    debug!("V49: Setting DataTable directly from JSON loader");
+                    // Store the DataTable directly
+                    if let Some(buffer) = app.buffer_manager.current_mut() {
+                        buffer.datatable = Some(datatable);
+                        debug!("V49: DataTable set directly from JSON, bypassing conversion");
+                    }
+                }
+            } else {
+                // V48: Fallback - ensure DataTable is created from JSON
+                app.ensure_datatable_exists();
+            }
         }
 
         Ok(app)
