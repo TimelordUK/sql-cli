@@ -4,18 +4,115 @@
 //! trait system without modifying the Buffer code itself.
 
 use crate::buffer::{Buffer, BufferAPI};
-use crate::data::data_provider::DataProvider;
+use crate::data::data_provider::{DataProvider, DataType};
+use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::{Arc, Mutex};
 
 /// Adapter that makes Buffer implement DataProvider
 pub struct BufferAdapter<'a> {
     buffer: &'a Buffer,
+    /// Cached column types (lazy initialized, thread-safe)
+    column_types: Arc<Mutex<Option<Vec<DataType>>>>,
 }
 
 impl<'a> BufferAdapter<'a> {
     /// Create a new BufferAdapter wrapping a Buffer
     pub fn new(buffer: &'a Buffer) -> Self {
-        Self { buffer }
+        Self {
+            buffer,
+            column_types: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Detect column types by sampling data
+    fn detect_column_types(&self) -> Vec<DataType> {
+        let column_count = self.get_column_count();
+        let mut column_types = vec![DataType::Unknown; column_count];
+
+        // Sample first 100 rows to determine types
+        let sample_size = 100.min(self.get_row_count());
+        if sample_size == 0 {
+            return column_types;
+        }
+
+        // Count type occurrences for each column
+        let mut type_counts: Vec<std::collections::HashMap<DataType, usize>> =
+            vec![std::collections::HashMap::new(); column_count];
+
+        for row_idx in 0..sample_size {
+            if let Some(row) = self.get_row(row_idx) {
+                for (col_idx, value) in row.iter().enumerate() {
+                    if col_idx >= column_count {
+                        break;
+                    }
+
+                    let detected_type = Self::detect_value_type(value);
+                    *type_counts[col_idx].entry(detected_type).or_insert(0) += 1;
+                }
+            }
+        }
+
+        // Determine column type based on majority
+        for (col_idx, counts) in type_counts.iter().enumerate() {
+            if counts.is_empty() {
+                continue;
+            }
+
+            // If more than 90% of values are the same type, use that type
+            let total: usize = counts.values().sum();
+            let mut best_type = DataType::Mixed;
+
+            for (dtype, count) in counts {
+                if *count as f64 / total as f64 > 0.9 {
+                    best_type = *dtype;
+                    break;
+                }
+            }
+
+            // Special case: if we have both Integer and Float, use Float
+            if counts.contains_key(&DataType::Integer) && counts.contains_key(&DataType::Float) {
+                best_type = DataType::Float;
+            }
+
+            column_types[col_idx] = best_type;
+        }
+
+        column_types
+    }
+
+    /// Detect the type of a single value
+    fn detect_value_type(value: &str) -> DataType {
+        if value.is_empty() {
+            return DataType::Unknown;
+        }
+
+        // Check boolean
+        if value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("false") {
+            return DataType::Boolean;
+        }
+
+        // Check integer
+        if value.parse::<i64>().is_ok() {
+            return DataType::Integer;
+        }
+
+        // Check float
+        if value.parse::<f64>().is_ok() {
+            return DataType::Float;
+        }
+
+        // Check date (simple heuristic - contains dash or slash with numbers)
+        if value.len() >= 8 && value.len() <= 30 {
+            if (value.contains('-') || value.contains('/'))
+                && value.chars().any(|c| c.is_ascii_digit())
+            {
+                // More thorough date check could go here
+                return DataType::Date;
+            }
+        }
+
+        DataType::Text
     }
 
     /// Helper to convert JSON value to Vec<String>
@@ -102,6 +199,33 @@ impl<'a> DataProvider for BufferAdapter<'a> {
 
     fn get_column_count(&self) -> usize {
         self.get_column_names().len()
+    }
+
+    fn get_column_type(&self, column_index: usize) -> DataType {
+        // Lazy initialize column types
+        let mut types_guard = self.column_types.lock().unwrap();
+        if types_guard.is_none() {
+            *types_guard = Some(self.detect_column_types());
+        }
+
+        types_guard
+            .as_ref()
+            .and_then(|types| types.get(column_index))
+            .copied()
+            .unwrap_or(DataType::Unknown)
+    }
+
+    fn get_column_types(&self) -> Vec<DataType> {
+        // Lazy initialize column types
+        let mut types_guard = self.column_types.lock().unwrap();
+        if types_guard.is_none() {
+            *types_guard = Some(self.detect_column_types());
+        }
+
+        types_guard
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| vec![DataType::Unknown; self.get_column_count()])
     }
 }
 

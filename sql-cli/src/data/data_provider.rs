@@ -4,6 +4,7 @@
 //! data without knowing the underlying implementation (Buffer, CSVClient, DataTable, etc.)
 
 use std::fmt::Debug;
+use std::hash::Hash;
 
 /// Filter specification for DataView
 #[derive(Debug, Clone)]
@@ -26,13 +27,15 @@ pub enum SortOrder {
 }
 
 /// Data type for columns
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DataType {
     Text,
-    Number,
+    Integer,
+    Float,
     Date,
     Boolean,
     Json,
+    Mixed,
     Unknown,
 }
 
@@ -117,6 +120,21 @@ pub trait DataProvider: Send + Sync + Debug {
     /// Returns empty string if indices are out of bounds
     fn get_display_value(&self, row: usize, col: usize) -> String {
         self.get_cell_value(row, col).unwrap_or_default()
+    }
+
+    /// Get the data type of a specific column
+    /// This should be cached/determined at load time, not computed on each call
+    fn get_column_type(&self, column_index: usize) -> DataType {
+        // Default implementation: Unknown
+        // Implementations should override with actual type detection
+        DataType::Unknown
+    }
+
+    /// Get data types for all columns
+    /// Returns a vector where index corresponds to column index
+    fn get_column_types(&self) -> Vec<DataType> {
+        // Default implementation: all Unknown
+        vec![DataType::Unknown; self.get_column_count()]
     }
 }
 

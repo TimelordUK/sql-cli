@@ -1,0 +1,6 @@
+id,name,age,salary,active,join_date
+1,Alice,25,50000.50,true,2020-01-15
+2,Bob,30,60000.75,false,2019-06-20
+3,Carol,28,55000.00,true,2021-03-10
+4,David,35,70000.25,true,2018-11-05
+5,Eve,32,65000.00,false,2020-07-22
