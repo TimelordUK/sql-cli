@@ -264,6 +264,19 @@ impl BufferAPI for DataTableBuffer {
         self.last_query = query;
     }
 
+    // --- V47: DataTable Access ---
+    fn get_datatable(&self) -> Option<&DataTable> {
+        Some(self.view.get_datatable())
+    }
+
+    fn get_datatable_mut(&mut self) -> Option<&mut DataTable> {
+        Some(self.view.get_datatable_mut())
+    }
+
+    fn has_datatable(&self) -> bool {
+        true // DataTableBuffer always has a DataTable
+    }
+
     // --- Mode and Status ---
     fn get_mode(&self) -> AppMode {
         self.mode.clone()

@@ -160,6 +160,21 @@ impl DataTableView {
         &self.table
     }
 
+    /// Get the underlying table (mutable)
+    pub fn table_mut(&mut self) -> &mut DataTable {
+        &mut self.table
+    }
+
+    /// V47: Get reference to DataTable (for BufferAPI compatibility)
+    pub fn get_datatable(&self) -> &DataTable {
+        &self.table
+    }
+
+    /// V47: Get mutable reference to DataTable (for BufferAPI compatibility)
+    pub fn get_datatable_mut(&mut self) -> &mut DataTable {
+        &mut self.table
+    }
+
     /// Update visible columns based on terminal width and height
     pub fn update_viewport(&mut self, terminal_width: u16, terminal_height: u16) {
         // Calculate how many columns we can fit

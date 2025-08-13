@@ -1534,6 +1534,7 @@ impl Clone for Buffer {
             cache_mode: self.cache_mode,
             results: self.results.clone(),
             cached_data: self.cached_data.clone(),
+            datatable: self.datatable.clone(),
             mode: self.mode.clone(),
             edit_mode: self.edit_mode.clone(),
             input: self.input.clone(),
