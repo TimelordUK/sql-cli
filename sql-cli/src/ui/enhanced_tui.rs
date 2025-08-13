@@ -6885,75 +6885,89 @@ impl EnhancedTuiApp {
 
     /// V46: Demonstrate DataTable conversion
     fn demo_datatable_conversion(&mut self) {
-        if let Some(results) = self.buffer().get_results() {
-            let table_name = results.table.as_ref().map(|s| s.as_str()).unwrap_or("data");
+        // V47: First check if we have a stored DataTable
+        if let Some(datatable) = self.buffer().get_datatable() {
+            // Use the stored DataTable
+            info!(
+                "V47: Using stored DataTable: {} rows x {} columns",
+                datatable.row_count(),
+                datatable.column_count()
+            );
 
-            match DataTable::from_query_response(results, &table_name) {
-                Ok(datatable) => {
-                    // Log success and show stats
-                    info!(
-                        "V46: Successfully converted to DataTable: {} rows x {} columns",
-                        datatable.row_count(),
-                        datatable.column_count()
-                    );
+            // Show column types
+            for (idx, column) in datatable.columns.iter().enumerate() {
+                debug!(
+                    "V47: Column {}: {} ({:?}, nullable: {}, nulls: {})",
+                    idx, column.name, column.data_type, column.nullable, column.null_count
+                );
+            }
 
-                    // Show column types
-                    for (idx, column) in datatable.columns.iter().enumerate() {
-                        debug!(
-                            "V46: Column {}: {} ({:?}, nullable: {}, nulls: {})",
-                            idx, column.name, column.data_type, column.nullable, column.null_count
-                        );
-                    }
-
-                    // Show memory comparison
-                    // Estimate JSON memory: structure + all string content
-                    let json_size = std::mem::size_of_val(results)
-                        + results
-                            .data
-                            .iter()
-                            .map(|row| {
-                                // Each row is a JSON object with field names repeated
-                                if let Some(obj) = row.as_object() {
-                                    obj.iter()
-                                        .map(|(k, v)| {
-                                            k.len() + // Field name
+            // Show memory comparison with original JSON if available
+            if let Some(results) = self.buffer().get_results() {
+                // Estimate JSON memory
+                let json_size = std::mem::size_of_val(results)
+                    + results
+                        .data
+                        .iter()
+                        .map(|row| {
+                            if let Some(obj) = row.as_object() {
+                                obj.iter()
+                                    .map(|(k, v)| {
+                                        k.len() + // Field name
                                     match v {
                                         serde_json::Value::String(s) => s.len(),
                                         _ => 8, // Number/bool estimate
                                     }
-                                        })
-                                        .sum::<usize>()
-                                        + 24 * obj.len() // HashMap overhead per entry
-                                } else {
-                                    256 // Fallback estimate
-                                }
-                            })
-                            .sum::<usize>();
-                    let datatable_size = datatable.estimate_memory_size();
+                                    })
+                                    .sum::<usize>()
+                                    + 24 * obj.len() // HashMap overhead per entry
+                            } else {
+                                256 // Fallback estimate
+                            }
+                        })
+                        .sum::<usize>();
+                let datatable_size = datatable.estimate_memory_size();
 
-                    let message = format!(
-                        "V46: DataTable created! {} rows, {} cols. Memory: JSON ~{}KB vs DataTable ~{}KB",
-                        datatable.row_count(),
-                        datatable.column_count(),
-                        json_size / 1024,
-                        datatable_size / 1024
-                    );
+                let message = format!(
+                    "V47: DataTable stored! {} rows, {} cols. Memory: JSON ~{}KB vs DataTable ~{}KB",
+                    datatable.row_count(),
+                    datatable.column_count(),
+                    json_size / 1024,
+                    datatable_size / 1024
+                );
 
-                    self.buffer_mut().set_status_message(message);
+                self.buffer_mut().set_status_message(message);
 
-                    // Store debug dump for display
-                    let dump = datatable.debug_dump();
-                    debug!("V46 DataTable dump:\n{}", dump);
-                }
-                Err(e) => {
-                    let message = format!("V46: Failed to convert to DataTable: {}", e);
-                    self.buffer_mut().set_status_message(message);
-                    warn!("V46: DataTable conversion error: {}", e);
-                }
+                // Store debug dump for display
+                let dump = datatable.debug_dump();
+                debug!("V47 DataTable dump:\n{}", dump);
+            } else {
+                // No JSON results, just show DataTable info
+                let datatable_size = datatable.estimate_memory_size();
+                let message = format!(
+                    "V47: DataTable stored! {} rows, {} cols. Memory: ~{}KB",
+                    datatable.row_count(),
+                    datatable.column_count(),
+                    datatable_size / 1024
+                );
+                self.buffer_mut().set_status_message(message);
+            }
+        } else if let Some(results) = self.buffer().get_results() {
+            // V47: No stored DataTable, try to create one (fallback)
+            let table_name = results.table.as_ref().map(|s| s.as_str()).unwrap_or("data");
+            self.buffer_mut()
+                .set_status_message("V47: No stored DataTable, creating one...".to_string());
+            // Force a refresh by setting results again
+            let results_clone = results.clone();
+            self.buffer_mut().set_results(Some(results_clone));
+
+            // Now check if DataTable was created
+            if self.buffer().has_datatable() {
+                self.demo_datatable_conversion(); // Recursively call to show the new DataTable
             }
         } else {
             self.buffer_mut()
-                .set_status_message("V46: No results to convert to DataTable".to_string());
+                .set_status_message("V47: No results to convert to DataTable".to_string());
         }
     }
 
