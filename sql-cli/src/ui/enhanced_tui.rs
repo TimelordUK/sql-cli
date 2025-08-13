@@ -4545,6 +4545,23 @@ impl EnhancedTuiApp {
         }
     }
 
+    /// Centralized method for setting status messages
+    /// Ensures consistent logging and state synchronization
+    fn set_status_message(&mut self, message: impl Into<String>) {
+        let msg = message.into();
+        debug!("Status: {}", msg);
+        self.buffer_mut().set_status_message(msg.clone());
+        // Future: Could also sync to state_container if needed
+        // self.state_container.set_status(msg);
+    }
+
+    /// Set error status message with consistent formatting
+    fn set_error_status(&mut self, context: &str, error: impl std::fmt::Display) {
+        let msg = format!("{}: {}", context, error);
+        debug!("Error status: {}", msg);
+        self.set_status_message(msg);
+    }
+
     fn export_to_csv(&mut self) {
         // Use trait-based export with DataProvider
         let result = if let Some(provider) = self.get_data_provider() {
@@ -4554,15 +4571,8 @@ impl EnhancedTuiApp {
         };
 
         match result {
-            Ok(message) => {
-                debug!("Export CSV success: {}", message);
-                self.buffer_mut().set_status_message(message);
-            }
-            Err(e) => {
-                let error_msg = format!("Export failed: {}", e);
-                debug!("Export CSV failed: {}", e);
-                self.buffer_mut().set_status_message(error_msg);
-            }
+            Ok(message) => self.set_status_message(message),
+            Err(e) => self.set_error_status("Export failed", e),
         }
     }
 
@@ -4577,14 +4587,10 @@ impl EnhancedTuiApp {
                     // YankManager already handled clipboard via AppStateContainer
                     // Keep local copy for backward compatibility (will be removed later)
                     self.last_yanked = Some((result.description.clone(), result.preview.clone()));
-                    let message = format!("Yanked cell: {}", result.full_value);
-                    debug!("Yank successful: {}", message);
-                    self.buffer_mut().set_status_message(message);
+                    self.set_status_message(format!("Yanked cell: {}", result.full_value));
                 }
                 Err(e) => {
-                    let message = format!("Failed to yank cell: {}", e);
-                    debug!("Yank failed: {}", message);
-                    self.buffer_mut().set_status_message(message);
+                    self.set_error_status("Failed to yank cell", e);
                 }
             }
         } else {
@@ -4599,12 +4605,10 @@ impl EnhancedTuiApp {
                     // YankManager already handled clipboard via AppStateContainer
                     // Keep local copy for backward compatibility
                     self.last_yanked = Some((result.description.clone(), result.preview));
-                    self.buffer_mut()
-                        .set_status_message(format!("Yanked {}", result.description));
+                    self.set_status_message(format!("Yanked {}", result.description));
                 }
                 Err(e) => {
-                    self.buffer_mut()
-                        .set_status_message(format!("Failed to yank row: {}", e));
+                    self.set_error_status("Failed to yank row", e);
                 }
             }
         }
@@ -4822,15 +4826,8 @@ impl EnhancedTuiApp {
         };
 
         match result {
-            Ok(message) => {
-                debug!("Export JSON success: {}", message);
-                self.buffer_mut().set_status_message(message);
-            }
-            Err(e) => {
-                let error_msg = format!("Export failed: {}", e);
-                debug!("Export JSON failed: {}", e);
-                self.buffer_mut().set_status_message(error_msg);
-            }
+            Ok(message) => self.set_status_message(message),
+            Err(e) => self.set_error_status("Export failed", e),
         }
     }
 
