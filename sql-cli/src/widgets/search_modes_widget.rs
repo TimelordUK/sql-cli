@@ -131,6 +131,7 @@ pub enum SearchModesAction {
 pub struct SearchModesWidget {
     state: Option<SearchModesState>,
     debouncer: Debouncer,
+    last_applied_pattern: Option<String>,
 }
 
 impl SearchModesWidget {
@@ -138,6 +139,7 @@ impl SearchModesWidget {
         Self {
             state: None,
             debouncer: Debouncer::new(500), // 500ms debounce delay
+            last_applied_pattern: None,
         }
     }
 
@@ -147,11 +149,13 @@ impl SearchModesWidget {
         state.saved_sql_text = current_sql;
         state.saved_cursor_position = cursor_pos;
         self.state = Some(state);
+        self.last_applied_pattern = None; // Reset when entering a new mode
     }
 
     /// Exit the current mode and return saved state
     pub fn exit_mode(&mut self) -> Option<(String, usize)> {
         self.debouncer.reset();
+        self.last_applied_pattern = None; // Reset when exiting
         self.state
             .take()
             .map(|s| (s.saved_sql_text, s.saved_cursor_position))
@@ -232,11 +236,22 @@ impl SearchModesWidget {
         if self.debouncer.should_execute() {
             if let Some(state) = &self.state {
                 let pattern = state.get_pattern();
-                if !pattern.is_empty() {
-                    return Some(SearchModesAction::ExecuteDebounced(
-                        state.mode.clone(),
-                        pattern,
-                    ));
+
+                // Check if pattern is different from last applied
+                let should_apply = match &self.last_applied_pattern {
+                    Some(last) => last != &pattern,
+                    None => true, // First pattern always applies
+                };
+
+                if should_apply {
+                    // For fuzzy filter, we need to apply even empty patterns to clear
+                    if !pattern.is_empty() || state.mode == SearchMode::FuzzyFilter {
+                        self.last_applied_pattern = Some(pattern.clone());
+                        return Some(SearchModesAction::ExecuteDebounced(
+                            state.mode.clone(),
+                            pattern,
+                        ));
+                    }
                 }
             }
         }

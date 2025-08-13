@@ -4125,18 +4125,21 @@ impl EnhancedTuiApp {
 
     fn apply_fuzzy_filter(&mut self) {
         if self.buffer().get_fuzzy_filter_pattern().is_empty() {
+            debug!(target: "fuzzy", "Clearing fuzzy filter - empty pattern");
             self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
             self.buffer_mut().set_fuzzy_filter_active(false);
             // Clear filtered data to return to original dataset
             if !self.state_container.filter().is_active {
                 // Only clear if no regex filter is active
                 self.buffer_mut().set_filtered_data(None);
+                debug!(target: "fuzzy", "Cleared filtered_data (no regex filter active)");
             }
             self.buffer_mut()
                 .set_status_message("Fuzzy filter cleared".to_string());
 
             // Sync state after clearing
             self.sync_filter_state("fuzzy_filter_cleared");
+            debug!(target: "fuzzy", "Fuzzy filter cleared completely");
             return;
         }
 
@@ -4174,6 +4177,8 @@ impl EnhancedTuiApp {
         // Now provider borrow is dropped, process the data
         if let Some((data, needs_storage)) = filter_data {
             let mut filtered_indices = Vec::new();
+
+            debug!(target: "fuzzy", "Processing {} rows with pattern '{}'", data.len(), pattern);
 
             for (index, row) in data.iter().enumerate() {
                 // Concatenate all columns into a single string for matching
