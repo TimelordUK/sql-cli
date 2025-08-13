@@ -3865,8 +3865,8 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Use DataProvider trait to access data
-        if let Some(provider) = self.get_data_provider() {
+        // Extract data from provider in a scoped block to avoid borrow issues
+        let filter_result = if let Some(provider) = self.get_data_provider() {
             // Build regex with case-insensitive flag if needed
             let case_insensitive = self.buffer().is_case_insensitive();
             let regex_pattern = if case_insensitive {
@@ -3909,39 +3909,48 @@ impl EnhancedTuiApp {
                 debug!(target: "filter", "Filter applied: {} rows matched out of {}",
                        filtered_count, row_count);
 
-                // Update both buffer and AppStateContainer
-                self.buffer_mut().set_filtered_data(Some(filtered.clone()));
-                self.buffer_mut().set_filter_active(true);
-
-                {
-                    let mut filter = self.state_container.filter_mut();
-                    filter.set_filtered_indices(filtered_indices);
-                    filter.set_filtered_data(Some(filtered));
-                    filter.is_active = true;
-                }
-
-                // Reset table state but preserve filtered data
-                self.state_container.set_table_selected_row(Some(0));
-                {
-                    let mut buffer = self.buffer_mut();
-                    buffer.set_scroll_offset((0, 0));
-                    buffer.set_current_column(0);
-                }
-
-                // Clear search state but keep filter state
-                {
-                    let mut search = self.state_container.search_mut();
-                    search.pattern = String::new();
-                    search.current_match = 0;
-                    search.matches = Vec::new();
-                    search.is_active = false;
-                }
-                self.buffer_mut()
-                    .set_status_message(format!("Filtered to {} rows", filtered_count));
+                Some((filtered, filtered_indices, filtered_count))
             } else {
-                self.buffer_mut()
-                    .set_status_message("Invalid regex pattern".to_string());
+                None
             }
+        } else {
+            None
+        };
+
+        // Now provider borrow is dropped, we can use mutable methods
+        if let Some((filtered, filtered_indices, filtered_count)) = filter_result {
+            // Update both buffer and AppStateContainer
+            self.buffer_mut().set_filtered_data(Some(filtered.clone()));
+            self.buffer_mut().set_filter_active(true);
+
+            {
+                let mut filter = self.state_container.filter_mut();
+                filter.set_filtered_indices(filtered_indices);
+                filter.set_filtered_data(Some(filtered));
+                filter.is_active = true;
+            }
+
+            // Reset table state but preserve filtered data
+            self.state_container.set_table_selected_row(Some(0));
+            {
+                let mut buffer = self.buffer_mut();
+                buffer.set_scroll_offset((0, 0));
+                buffer.set_current_column(0);
+            }
+
+            // Clear search state but keep filter state
+            {
+                let mut search = self.state_container.search_mut();
+                search.pattern = String::new();
+                search.current_match = 0;
+                search.matches = Vec::new();
+                search.is_active = false;
+            }
+            self.buffer_mut()
+                .set_status_message(format!("Filtered to {} rows", filtered_count));
+        } else if filter_result.is_none() && self.get_data_provider().is_some() {
+            self.buffer_mut()
+                .set_status_message("Invalid regex pattern".to_string());
         }
     }
 
@@ -4068,14 +4077,15 @@ impl EnhancedTuiApp {
         }
 
         let pattern = self.buffer().get_fuzzy_filter_pattern();
-        let mut filtered_indices = Vec::new();
 
-        // Get the data to filter - either already filtered data or use DataProvider
-        let data_to_filter = if self.state_container.filter().is_active
+        // Extract data from provider in a scoped block to avoid borrow issues
+        let filter_data = if self.state_container.filter().is_active
             && self.buffer().get_filtered_data().is_some()
         {
             // If regex filter is active, fuzzy filter on top of that
-            self.buffer().get_filtered_data()
+            self.buffer()
+                .get_filtered_data()
+                .map(|data| (data.clone(), true))
         } else if let Some(provider) = self.get_data_provider() {
             // Use DataProvider to get original results
             let mut rows = Vec::new();
@@ -4088,16 +4098,18 @@ impl EnhancedTuiApp {
             }
 
             if !rows.is_empty() {
-                self.buffer_mut().set_filtered_data(Some(rows));
-                self.buffer().get_filtered_data()
+                Some((rows, false))
             } else {
                 None
             }
         } else {
-            return;
+            None
         };
 
-        if let Some(data) = data_to_filter {
+        // Now provider borrow is dropped, process the data
+        if let Some((data, needs_storage)) = filter_data {
+            let mut filtered_indices = Vec::new();
+
             for (index, row) in data.iter().enumerate() {
                 // Concatenate all columns into a single string for matching
                 let row_text = row.join(" ");
@@ -4123,42 +4135,47 @@ impl EnhancedTuiApp {
                     filtered_indices.push(index);
                 }
             }
-        }
 
-        let match_count = filtered_indices.len();
-        let is_active = !filtered_indices.is_empty();
+            let match_count = filtered_indices.len();
+            let is_active = !filtered_indices.is_empty();
 
-        // Transaction-like block for fuzzy filter updates
-        {
-            let mut buffer = self.buffer_mut();
-            buffer.set_fuzzy_filter_indices(filtered_indices);
-            buffer.set_fuzzy_filter_active(is_active);
+            // Store the data if needed (when we extracted from provider)
+            if !needs_storage {
+                self.buffer_mut().set_filtered_data(Some(data));
+            }
+
+            // Transaction-like block for fuzzy filter updates
+            {
+                let mut buffer = self.buffer_mut();
+                buffer.set_fuzzy_filter_indices(filtered_indices);
+                buffer.set_fuzzy_filter_active(is_active);
+
+                if is_active {
+                    let filter_type = if pattern.starts_with('\'') {
+                        "Exact"
+                    } else {
+                        "Fuzzy"
+                    };
+                    buffer.set_status_message(format!(
+                        "{} filter: {} matches for '{}' (highlighted in magenta)",
+                        filter_type, match_count, pattern
+                    ));
+                    buffer.set_scroll_offset((0, 0));
+                }
+            }
 
             if is_active {
-                let filter_type = if pattern.starts_with('\'') {
-                    "Exact"
-                } else {
-                    "Fuzzy"
-                };
-                buffer.set_status_message(format!(
-                    "{} filter: {} matches for '{}' (highlighted in magenta)",
-                    filter_type, match_count, pattern
-                ));
-                buffer.set_scroll_offset((0, 0));
-            }
-        }
-
-        if is_active {
-            // Reset table state for new filtered view
-            self.state_container.set_table_selected_row(Some(0));
-        } else {
-            let filter_type = if pattern.starts_with('\'') {
-                "exact"
+                // Reset table state for new filtered view
+                self.state_container.set_table_selected_row(Some(0));
             } else {
-                "fuzzy"
-            };
-            self.buffer_mut()
-                .set_status_message(format!("No {} matches for '{}'", filter_type, pattern));
+                let filter_type = if pattern.starts_with('\'') {
+                    "exact"
+                } else {
+                    "fuzzy"
+                };
+                self.buffer_mut()
+                    .set_status_message(format!("No {} matches for '{}'", filter_type, pattern));
+            }
         }
     }
 
