@@ -3508,15 +3508,31 @@ impl EnhancedTuiApp {
     fn toggle_column_pin(&mut self) {
         // Pin or unpin the current column
         let current_col = self.buffer().get_current_column();
+        let pinned_before = self.buffer().get_pinned_columns().clone();
+        debug!(
+            "toggle_column_pin: current_col={}, pinned_before={:?}",
+            current_col, pinned_before
+        );
+
         if self.buffer().get_pinned_columns().contains(&current_col) {
             // Column is already pinned, unpin it
             self.buffer_mut().remove_pinned_column(current_col);
+            let pinned_after = self.buffer().get_pinned_columns().clone();
+            debug!(
+                "toggle_column_pin: UNPINNED col={}, pinned_after={:?}",
+                current_col, pinned_after
+            );
             self.buffer_mut()
                 .set_status_message(format!("Column {} unpinned", current_col + 1));
         } else {
             // Pin the column (max 4 pinned columns)
             if self.buffer().get_pinned_columns().clone().len() < 4 {
                 self.buffer_mut().add_pinned_column(current_col);
+                let pinned_after = self.buffer().get_pinned_columns().clone();
+                debug!(
+                    "toggle_column_pin: PINNED col={}, pinned_after={:?}",
+                    current_col, pinned_after
+                );
                 self.buffer_mut()
                     .set_status_message(format!("Column {} pinned 📌", current_col + 1));
             } else {
@@ -5640,6 +5656,15 @@ impl EnhancedTuiApp {
     fn render_table_with_provider(&self, f: &mut Frame, area: Rect, provider: &dyn DataProvider) {
         let row_count = provider.get_row_count();
 
+        // Debug: Log pinned columns at start of render
+        let pinned = self.buffer().get_pinned_columns().clone();
+        if !pinned.is_empty() {
+            debug!(
+                "render_table_with_provider START: pinned_columns={:?}",
+                pinned
+            );
+        }
+
         if row_count == 0 {
             let empty = Paragraph::new("No results found")
                 .block(Block::default().borders(Borders::ALL).title("Results"))
@@ -5807,11 +5832,17 @@ impl EnhancedTuiApp {
                 ""
             };
 
-            // Debug: Check if this column is pinned
-            let pinned_cols = self.buffer().get_pinned_columns().clone();
-            let is_pinned = pinned_cols.contains(actual_col_index);
+            // Check if this column is pinned
+            let pinned_cols = self.buffer().get_pinned_columns();
 
-            let pinned_indicator = if is_pinned { " 📌" } else { "" };
+            // Debug: Always show pin on first column if ANY column is pinned (for testing)
+            let pinned_indicator = if !pinned_cols.is_empty() && *actual_col_index == 0 {
+                format!(" 📌{}", pinned_cols.len())
+            } else if pinned_cols.contains(actual_col_index) {
+                " 📌".to_string()
+            } else {
+                "".to_string()
+            };
 
             let mut style = Style::default()
                 .fg(Color::Cyan)
