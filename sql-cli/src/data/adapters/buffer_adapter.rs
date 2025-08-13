@@ -131,7 +131,7 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     fn get_row(&self, index: usize) -> Option<Vec<String>> {
         // V48: Try to use DataTable first for better performance
         if let Some(datatable) = self.buffer.get_datatable() {
-            debug!("V48: Using DataTable for get_row({})", index);
+            // Removed debug logging from hot path - was causing performance issues at 20k+ rows
 
             // Check if fuzzy filter is active
             if self.buffer.is_fuzzy_filter_active() {
@@ -157,14 +157,12 @@ impl<'a> DataProvider for BufferAdapter<'a> {
         }
 
         // V50: No JSON fallback - DataTable is required
-        debug!("V50: No DataTable available for get_row({})", index);
         None
     }
 
     fn get_column_names(&self) -> Vec<String> {
         // V48: Use DataTable column names if available
         if let Some(datatable) = self.buffer.get_datatable() {
-            debug!("V48: Using DataTable for column names");
             return datatable.column_names();
         }
 
@@ -183,10 +181,9 @@ impl<'a> DataProvider for BufferAdapter<'a> {
 
         // V50: Use DataTable row count (no JSON fallback)
         let actual_count = if let Some(datatable) = self.buffer.get_datatable() {
-            debug!("V50: Using DataTable for row count");
+            // Removed debug logging from hot path
             datatable.row_count()
         } else {
-            debug!("V50: No DataTable available, returning 0");
             0
         };
 
@@ -215,10 +212,6 @@ impl<'a> DataProvider for BufferAdapter<'a> {
         // V48: Use DataTable column types if available
         if let Some(datatable) = self.buffer.get_datatable() {
             if let Some(column) = datatable.columns.get(column_index) {
-                debug!(
-                    "V48: Using DataTable column type for column {}",
-                    column_index
-                );
                 // Convert DataTable's DataType to DataProvider's DataType
                 return match &column.data_type {
                     crate::data::datatable::DataType::String => DataType::Text,
@@ -248,7 +241,6 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     fn get_column_types(&self) -> Vec<DataType> {
         // V48: Use DataTable column types if available
         if let Some(datatable) = self.buffer.get_datatable() {
-            debug!("V48: Using DataTable for all column types");
             return datatable
                 .columns
                 .iter()
