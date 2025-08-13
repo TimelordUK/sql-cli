@@ -4379,21 +4379,24 @@ impl EnhancedTuiApp {
             }
         };
 
-        // Check if we can use trait-based sorting (future path)
-        // For now, still delegate to AppStateContainer but document the migration path
-
-        // TODO(V44): Eventually this will be:
-        // if let Some(mut view_provider) = self.get_data_view_provider() {
-        //     let ascending = match new_order {
-        //         SortOrder::Ascending => true,
-        //         SortOrder::Descending => false,
-        //         SortOrder::None => { view_provider.clear_sort(); return; }
-        //     };
-        //     view_provider.sort_by(column_index, ascending);
-        // }
-
         // Delegate sorting entirely to AppStateContainer (current implementation)
         let new_order = self.state_container.get_next_sort_order(column_index);
+
+        // V44: Demonstrate that we can get sorted indices via DataProvider
+        // This shows the migration path without breaking existing functionality
+        if new_order != SortOrder::None {
+            let ascending = new_order == SortOrder::Ascending;
+            if let Some(sorted_indices) = self.sort_via_provider(column_index, ascending) {
+                debug!(
+                    "V44: Got {} sorted indices via DataProvider for column {} ({})",
+                    sorted_indices.len(),
+                    column_index,
+                    if ascending { "asc" } else { "desc" }
+                );
+                // In future versions, we'll use these indices for rendering
+                // For now, we just log to show it works
+            }
+        }
 
         // Handle the three cases: Ascending, Descending, None
         if new_order == SortOrder::None {
