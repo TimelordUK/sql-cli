@@ -17,6 +17,32 @@ impl<'a> BufferAdapter<'a> {
     pub fn new(buffer: &'a Buffer) -> Self {
         Self { buffer }
     }
+
+    /// Helper to convert JSON value to Vec<String>
+    fn json_to_row(&self, json_value: &serde_json::Value) -> Vec<String> {
+        if let Some(obj) = json_value.as_object() {
+            // Get column names to ensure consistent ordering
+            let columns = self.get_column_names();
+            columns
+                .iter()
+                .map(|col| {
+                    obj.get(col)
+                        .map(|v| {
+                            // Convert JSON value to string
+                            match v {
+                                serde_json::Value::String(s) => s.clone(),
+                                serde_json::Value::Null => String::new(),
+                                other => other.to_string(),
+                            }
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
+        } else {
+            // Fallback for non-object JSON values
+            vec![json_value.to_string()]
+        }
+    }
 }
 
 impl<'a> Debug for BufferAdapter<'a> {
@@ -30,34 +56,28 @@ impl<'a> Debug for BufferAdapter<'a> {
 
 impl<'a> DataProvider for BufferAdapter<'a> {
     fn get_row(&self, index: usize) -> Option<Vec<String>> {
-        // Get results from buffer
-        self.buffer.get_results().and_then(|results| {
-            results.data.get(index).map(|json_value| {
-                // Convert JSON value to Vec<String>
-                if let Some(obj) = json_value.as_object() {
-                    // Get column names to ensure consistent ordering
-                    let columns = self.get_column_names();
-                    columns
-                        .iter()
-                        .map(|col| {
-                            obj.get(col)
-                                .map(|v| {
-                                    // Convert JSON value to string
-                                    match v {
-                                        serde_json::Value::String(s) => s.clone(),
-                                        serde_json::Value::Null => String::new(),
-                                        other => other.to_string(),
-                                    }
-                                })
-                                .unwrap_or_default()
-                        })
-                        .collect()
-                } else {
-                    // Fallback for non-object JSON values
-                    vec![json_value.to_string()]
-                }
+        // Check if fuzzy filter is active
+        if self.buffer.is_fuzzy_filter_active() {
+            let fuzzy_indices = self.buffer.get_fuzzy_filter_indices();
+            // Map the display index to the actual data index
+            let actual_index = fuzzy_indices.get(index).copied()?;
+
+            // Get the row at the actual index
+            self.buffer.get_results().and_then(|results| {
+                results
+                    .data
+                    .get(actual_index)
+                    .map(|json_value| self.json_to_row(json_value))
             })
-        })
+        } else {
+            // Normal path - get row directly
+            self.buffer.get_results().and_then(|results| {
+                results
+                    .data
+                    .get(index)
+                    .map(|json_value| self.json_to_row(json_value))
+            })
+        }
     }
 
     fn get_column_names(&self) -> Vec<String> {
@@ -65,7 +85,12 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     }
 
     fn get_row_count(&self) -> usize {
-        self.buffer.get_results().map(|r| r.data.len()).unwrap_or(0)
+        // If fuzzy filter is active, return the filtered count
+        if self.buffer.is_fuzzy_filter_active() {
+            self.buffer.get_fuzzy_filter_indices().len()
+        } else {
+            self.buffer.get_results().map(|r| r.data.len()).unwrap_or(0)
+        }
     }
 
     fn get_column_count(&self) -> usize {
