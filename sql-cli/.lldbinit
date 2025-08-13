@@ -1,0 +1,176 @@
+# LLDB Configuration for Rust Development
+# Place in project root or ~/.lldbinit
+
+# ============================================
+# GENERAL SETTINGS
+# ============================================
+
+# Enable command history
+settings set history-save true
+settings set history-size 10000
+
+# Better prompt showing thread and frame
+settings set prompt "(lldb) "
+
+# Stop on panic
+settings set target.process.stop-on-exec false
+
+# Show disassembly when no source
+settings set target.process.stop-on-sharedlibrary-events false
+
+# Pretty print Rust types
+settings set target.prefer-dynamic-value no-dynamic-values
+
+# Use external editor (change to your preference)
+# settings set target.source-map /rustc/<hash>/ /path/to/rust/src/
+
+# Colored output
+settings set use-color true
+
+# Auto-confirm dangerous operations
+settings set auto-confirm true
+
+# ============================================
+# RUST-SPECIFIC SETTINGS
+# ============================================
+
+# Better formatting for Rust types
+type summary add --summary-string "${var.ptr}" "alloc::string::String"
+type summary add --summary-string "${var.ptr}" "str"
+type summary add --summary-string "${var.len} items" "alloc::vec::Vec<*>"
+type summary add --summary-string "${var.v}" "core::option::Option<*>"
+type summary add --summary-string "${var.0}" "core::result::Result<*,*>"
+
+# ============================================
+# USEFUL ALIASES
+# ============================================
+
+# Shortcuts for common commands
+command alias b breakpoint
+command alias bd breakpoint delete
+command alias bl breakpoint list
+command alias bc breakpoint clear
+
+# Step commands
+command alias n thread step-over
+command alias s thread step-in
+command alias f finish
+command alias si thread step-inst
+
+# Continue
+command alias c continue
+command alias cont continue
+
+# Backtrace
+command alias bt thread backtrace
+command alias where thread backtrace
+command alias w thread backtrace
+
+# Print/Examine
+command alias p frame variable
+command alias pp expression -O --
+command alias pv expression -T --
+command alias pr expression -R --
+
+# List source
+command alias l source list
+command alias ll source list -c 20
+
+# Info commands
+command alias info-locals frame variable -s
+command alias info-args frame variable -a
+command alias info-all frame variable
+
+# Quit
+command alias q quit
+command alias exit quit
+
+# ============================================
+# RUST PRETTY PRINTING
+# ============================================
+
+# Import the Rust formatters - this gives us pretty printing for:
+# - String, &str, Vec, HashMap, Option, Result, etc.
+# The rust-lldb wrapper usually loads these automatically
+script
+import sys
+import os
+
+# Try multiple possible locations for Rust formatters
+possible_paths = [
+    # Rustup installation
+    os.path.expanduser("~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/etc"),
+    os.path.expanduser("~/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/etc"),
+    # System installation
+    "/usr/lib/rustlib/etc",
+    "/usr/local/lib/rustlib/etc",
+]
+
+for path in possible_paths:
+    lldb_commands = os.path.join(path, "lldb_commands")
+    if os.path.exists(lldb_commands):
+        print(f"Loading Rust formatters from {path}")
+        with open(lldb_commands, 'r') as f:
+            for line in f:
+                if line.startswith("command"):
+                    lldb.debugger.HandleCommand(line.strip())
+        break
+else:
+    print("Warning: Could not find Rust LLDB formatters")
+    print("Consider using 'rust-lldb' instead of 'lldb' directly")
+end
+
+# ============================================
+# CUSTOM COMMANDS FOR RUST
+# ============================================
+
+# Print String content nicely
+command alias print-string expression -T -- 
+
+# Print Vec content with length
+command alias print-vec expression -T -- 
+
+# Show current function
+command alias func frame info
+
+# Show all threads
+command alias threads thread list
+
+# ============================================
+# BREAKPOINT SHORTCUTS FOR THIS PROJECT
+# ============================================
+
+# Common breakpoints for sql-cli debugging
+command alias break-export b sql_cli::data::data_exporter::DataExporter::export_provider_to_csv
+command alias break-adapter b sql_cli::data::adapters::buffer_adapter::BufferAdapter::get_row
+command alias break-render b sql_cli::ui::enhanced_tui::EnhancedTuiApp::render_table_with_provider
+
+# ============================================
+# HELPFUL STARTUP MESSAGE
+# ============================================
+
+settings set stop-line-count-before 5
+settings set stop-line-count-after 10
+
+# Print help on startup
+script print("""
+╔════════════════════════════════════════════╗
+║         LLDB for Rust Debugging            ║
+╠════════════════════════════════════════════╣
+║ Quick Commands:                            ║
+║   b <location>  - Set breakpoint           ║
+║   r             - Run program              ║
+║   c             - Continue                 ║
+║   n             - Next line                ║
+║   s             - Step into                ║
+║   f             - Finish function          ║
+║   p <var>       - Print variable           ║
+║   bt            - Backtrace                ║
+║   q             - Quit                     ║
+║                                            ║
+║ Project Shortcuts:                         ║
+║   break-export  - Break at CSV export      ║
+║   break-adapter - Break at BufferAdapter   ║
+║   break-render  - Break at table render    ║
+╚════════════════════════════════════════════╝
+""")

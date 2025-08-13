@@ -4555,11 +4555,13 @@ impl EnhancedTuiApp {
 
         match result {
             Ok(message) => {
+                debug!("Export CSV success: {}", message);
                 self.buffer_mut().set_status_message(message);
             }
             Err(e) => {
-                self.buffer_mut()
-                    .set_status_message(format!("Export failed: {}", e));
+                let error_msg = format!("Export failed: {}", e);
+                debug!("Export CSV failed: {}", e);
+                self.buffer_mut().set_status_message(error_msg);
             }
         }
     }
@@ -4821,11 +4823,13 @@ impl EnhancedTuiApp {
 
         match result {
             Ok(message) => {
+                debug!("Export JSON success: {}", message);
                 self.buffer_mut().set_status_message(message);
             }
             Err(e) => {
-                self.buffer_mut()
-                    .set_status_message(format!("Export failed: {}", e));
+                let error_msg = format!("Export failed: {}", e);
+                debug!("Export JSON failed: {}", e);
+                self.buffer_mut().set_status_message(error_msg);
             }
         }
     }

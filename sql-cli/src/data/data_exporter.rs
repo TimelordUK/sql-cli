@@ -40,7 +40,10 @@ impl DataExporter {
             }
         }
 
-        Ok(format!("Exported {} rows to {}", row_count, filename))
+        Ok(format!(
+            "✓ Exported {} rows to CSV file: {}",
+            row_count, filename
+        ))
     }
 
     /// Export data to JSON format using DataProvider trait
@@ -73,7 +76,10 @@ impl DataExporter {
         let file = File::create(&filename)?;
         serde_json::to_writer_pretty(file, &json_array)?;
 
-        Ok(format!("Exported {} rows to {}", row_count, filename))
+        Ok(format!(
+            "✓ Exported {} rows to JSON file: {}",
+            row_count, filename
+        ))
     }
 
     /// Export buffer results to CSV format (legacy - will be deprecated)
@@ -124,7 +130,10 @@ impl DataExporter {
             }
         }
 
-        Ok(format!("Exported {} rows to {}", row_count, filename))
+        Ok(format!(
+            "✓ Exported {} rows to CSV file: {}",
+            row_count, filename
+        ))
     }
 
     /// Export buffer results to JSON format
@@ -157,7 +166,7 @@ impl DataExporter {
             };
 
         Ok(format!(
-            "Exported{} {} rows to {}",
+            "✓ Exported{} {} rows to JSON file: {}",
             filter_info,
             data_to_export.len(),
             filename
