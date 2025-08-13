@@ -5879,6 +5879,14 @@ impl EnhancedTuiApp {
             let selected_row = self.state_container.navigation().selected_row;
             let is_current_row = row_viewport_start + i == selected_row;
 
+            // Check if this row is a fuzzy filter match (for highlighting)
+            let is_fuzzy_match = if self.buffer().is_fuzzy_filter_active() {
+                let fuzzy_indices = self.buffer().get_fuzzy_filter_indices();
+                fuzzy_indices.contains(&(row_viewport_start + i))
+            } else {
+                false
+            };
+
             cells.extend(row_data.iter().enumerate().map(|(col_idx, val)| {
                 // Check if this column matches the selected column in visible columns
                 let is_selected_column = visible_columns
@@ -5886,11 +5894,22 @@ impl EnhancedTuiApp {
                     .map(|(actual_col, _)| *actual_col == current_column)
                     .unwrap_or(false);
 
-                let cell = Cell::from(val.clone());
+                let mut cell = Cell::from(val.clone());
 
-                // Apply appropriate styling based on selection
+                // Apply appropriate styling based on selection and fuzzy filter
+                if is_fuzzy_match && !is_current_row {
+                    // Highlight fuzzy filter matches in magenta/cyan
+                    let highlight_color =
+                        if self.buffer().get_fuzzy_filter_pattern().starts_with('\'') {
+                            Color::Cyan // Exact match
+                        } else {
+                            Color::Magenta // Fuzzy match
+                        };
+                    cell = cell.style(Style::default().fg(highlight_color));
+                }
+
                 if is_current_row && is_selected_column {
-                    // Crosshair cell - both row and column selected
+                    // Crosshair cell - both row and column selected (overrides fuzzy highlight)
                     cell.style(
                         Style::default()
                             .bg(Color::Yellow)
