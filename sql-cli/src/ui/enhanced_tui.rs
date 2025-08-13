@@ -3363,31 +3363,32 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_right(&mut self) {
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let max_columns = obj.len();
+        // Use DataProvider trait to get column count
+        let max_columns = if let Some(provider) = self.get_data_provider() {
+            provider.get_column_count()
+        } else {
+            0
+        };
 
-                    // Update cursor_manager for table navigation (incremental step)
-                    self.cursor_manager.move_table_right(max_columns);
+        if max_columns > 0 {
+            // Update cursor_manager for table navigation (incremental step)
+            self.cursor_manager.move_table_right(max_columns);
 
-                    // Keep existing logic for now
-                    let current_column = self.buffer().get_current_column();
-                    if current_column + 1 < max_columns {
-                        self.buffer_mut().set_current_column(current_column + 1);
+            // Keep existing logic for now
+            let current_column = self.buffer().get_current_column();
+            if current_column + 1 < max_columns {
+                self.buffer_mut().set_current_column(current_column + 1);
 
-                        // Sync with navigation state in AppStateContainer
-                        let new_column = current_column + 1;
-                        self.state_container.navigation_mut().selected_column = new_column;
+                // Sync with navigation state in AppStateContainer
+                let new_column = current_column + 1;
+                self.state_container.navigation_mut().selected_column = new_column;
 
-                        let mut offset = self.buffer().get_scroll_offset();
-                        offset.1 += 1;
-                        let column_num = self.buffer().get_current_column() + 1;
-                        self.buffer_mut().set_scroll_offset(offset);
-                        self.buffer_mut()
-                            .set_status_message(format!("Column {} selected", column_num));
-                    }
-                }
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.1 += 1;
+                let column_num = self.buffer().get_current_column() + 1;
+                self.buffer_mut().set_scroll_offset(offset);
+                self.buffer_mut()
+                    .set_status_message(format!("Column {} selected", column_num));
             }
         }
     }
@@ -3406,28 +3407,28 @@ impl EnhancedTuiApp {
     }
 
     fn goto_last_column(&mut self) {
-        if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let max_columns = obj.len();
-                    if max_columns > 0 {
-                        let last_column = max_columns - 1;
-                        self.buffer_mut().set_current_column(last_column);
+        // Use DataProvider trait to get column count
+        let max_columns = if let Some(provider) = self.get_data_provider() {
+            provider.get_column_count()
+        } else {
+            0
+        };
 
-                        // Sync with navigation state in AppStateContainer
-                        self.state_container.navigation_mut().selected_column = last_column;
+        if max_columns > 0 {
+            let last_column = max_columns - 1;
+            self.buffer_mut().set_current_column(last_column);
 
-                        // Update horizontal scroll to show the last column
-                        // This ensures the last column is visible in the viewport
-                        let mut offset = self.buffer().get_scroll_offset();
-                        let column = self.buffer().get_current_column();
-                        offset.1 = column.saturating_sub(5); // Keep some context
-                        self.buffer_mut().set_scroll_offset(offset);
-                        self.buffer_mut()
-                            .set_status_message(format!("Last column selected ({})", column + 1));
-                    }
-                }
-            }
+            // Sync with navigation state in AppStateContainer
+            self.state_container.navigation_mut().selected_column = last_column;
+
+            // Update horizontal scroll to show the last column
+            // This ensures the last column is visible in the viewport
+            let mut offset = self.buffer().get_scroll_offset();
+            let column = self.buffer().get_current_column();
+            offset.1 = column.saturating_sub(5); // Keep some context
+            self.buffer_mut().set_scroll_offset(offset);
+            self.buffer_mut()
+                .set_status_message(format!("Last column selected ({})", column + 1));
         }
     }
 
@@ -3539,13 +3540,7 @@ impl EnhancedTuiApp {
 
         // Collect all data first, then drop the buffer reference before calling analyzer
         let (column_name, data_to_analyze) = {
-            // Get the current column name and data
-            let results = match self.buffer().get_results() {
-                Some(r) if !r.data.is_empty() => r,
-                _ => return,
-            };
-
-            // Get column names using DataProvider trait (migration step)
+            // Get column names using DataProvider trait
             let headers = self.get_column_names_via_provider();
             if headers.is_empty() {
                 return;
@@ -3558,37 +3553,27 @@ impl EnhancedTuiApp {
 
             let column_name = headers[current_column].clone();
 
-            // Extract column data more efficiently - avoid cloning strings when possible
-            let data_to_analyze: Vec<String> =
-                if let Some(filtered) = self.buffer().get_filtered_data() {
-                    // For filtered data, we already have strings
-                    let mut string_data = Vec::new();
-                    for row in filtered {
+            // Extract column data using DataProvider trait
+            let data_to_analyze: Vec<String> = if let Some(provider) = self.get_data_provider() {
+                let row_count = provider.get_row_count();
+                let mut column_data = Vec::with_capacity(row_count);
+
+                for row_idx in 0..row_count {
+                    if let Some(row) = provider.get_row(row_idx) {
                         if current_column < row.len() {
-                            string_data.push(row[current_column].clone());
+                            column_data.push(row[current_column].clone());
+                        } else {
+                            // Handle missing column data
+                            column_data.push(String::new());
                         }
                     }
-                    string_data
-                } else {
-                    // For JSON data, we need to convert to owned strings
-                    results
-                        .data
-                        .iter()
-                        .filter_map(|row| {
-                            if let Some(obj) = row.as_object() {
-                                obj.get(&column_name).map(|v| match v {
-                                    Value::String(s) => s.clone(),
-                                    Value::Number(n) => n.to_string(),
-                                    Value::Bool(b) => b.to_string(),
-                                    Value::Null => String::new(),
-                                    _ => v.to_string(),
-                                })
-                            } else {
-                                None
-                            }
-                        })
-                        .collect()
-                };
+                }
+
+                column_data
+            } else {
+                // No data provider available
+                return;
+            };
 
             (column_name, data_to_analyze)
         };
@@ -4334,29 +4319,15 @@ impl EnhancedTuiApp {
     }
 
     fn sort_by_column(&mut self, column_index: usize) {
-        // Get column name for proper tracking from results
-        // Use a fallback column name if extraction fails to ensure state tracking works
-        let column_name = if let Some(results) = self.buffer().get_results() {
-            if let Some(first_row) = results.data.first() {
-                if let Some(obj) = first_row.as_object() {
-                    let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
-                    if column_index < headers.len() {
-                        Some(headers[column_index].to_string())
-                    } else {
-                        // Fallback for out of bounds
-                        Some(format!("Column_{}", column_index))
-                    }
-                } else {
-                    // Fallback for non-object row
-                    Some(format!("Column_{}", column_index))
-                }
+        // Get column name using DataProvider trait
+        let column_name = {
+            let headers = self.get_column_names_via_provider();
+            if column_index < headers.len() {
+                Some(headers[column_index].clone())
             } else {
-                // Fallback for empty results
+                // Fallback for out of bounds
                 Some(format!("Column_{}", column_index))
             }
-        } else {
-            // Fallback for no results
-            Some(format!("Column_{}", column_index))
         };
 
         // Delegate sorting entirely to AppStateContainer
@@ -4639,13 +4610,27 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_optimal_column_widths(&mut self) {
-        use crate::column_manager::ColumnManager;
-
-        if let Some(results) = self.buffer().get_results() {
-            let widths = ColumnManager::calculate_optimal_widths(&results.data);
+        // Use DataProvider trait to get column widths
+        let widths_u16 = if let Some(provider) = self.get_data_provider() {
+            let widths = provider.get_column_widths();
             if !widths.is_empty() {
-                self.buffer_mut().set_column_widths(widths);
+                // Convert usize to u16 for buffer compatibility
+                Some(
+                    widths
+                        .iter()
+                        .map(|&w| w.min(u16::MAX as usize) as u16)
+                        .collect::<Vec<u16>>(),
+                )
+            } else {
+                None
             }
+        } else {
+            None
+        };
+
+        // Now the provider borrow is dropped, we can mutably borrow self
+        if let Some(widths) = widths_u16 {
+            self.buffer_mut().set_column_widths(widths);
         }
     }
 
