@@ -2842,64 +2842,57 @@ impl EnhancedTuiApp {
                 Err(anyhow::anyhow!("No cached data loaded"))
             }
         } else if self.buffer().is_csv_mode() {
-            // Check if we have a direct DataTable (now default for CSV)
-            if self.buffer().has_datatable() {
+            // Check if we can use direct DataTable for simple SELECT * queries
+            let upper_query = query.trim().to_uppercase();
+            let is_simple_select = upper_query.starts_with("SELECT *")
+                && !upper_query.contains(" WHERE ")
+                && !upper_query.contains(" ORDER BY ")
+                && !upper_query.contains(" LIMIT ")
+                && !upper_query.contains(" GROUP BY ");
+
+            if self.buffer().has_datatable() && is_simple_select {
                 info!("Using direct DataTable query (no JSON)");
                 crate::utils::memory_tracker::track_memory("direct_query_start");
 
-                // For now, just return success for simple SELECT * queries without WHERE/ORDER BY
-                // TODO: Implement proper SQL parsing on DataTable
-                let upper_query = query.trim().to_uppercase();
-                if upper_query.starts_with("SELECT *")
-                    && !upper_query.contains(" WHERE ")
-                    && !upper_query.contains(" ORDER BY ")
-                    && !upper_query.contains(" LIMIT ")
-                    && !upper_query.contains(" GROUP BY ")
+                // We already have the data in DataTable
+                let duration = start_time.elapsed();
+                crate::utils::memory_tracker::track_memory("direct_query_end");
+
+                // Update navigation with DataTable info
+                let (row_count, col_count) = if let Some(datatable) = self.buffer().get_datatable()
                 {
-                    // We already have the data in DataTable
-                    let duration = start_time.elapsed();
-                    crate::utils::memory_tracker::track_memory("direct_query_end");
-
-                    // Update navigation with DataTable info
-                    let (row_count, col_count) =
-                        if let Some(datatable) = self.buffer().get_datatable() {
-                            let rows = datatable.row_count();
-                            let cols = datatable.column_count();
-                            info!(
-                                "Direct DataTable query complete: {} rows, {} columns, {} ms",
-                                rows,
-                                cols,
-                                duration.as_millis()
-                            );
-                            (rows, cols)
-                        } else {
-                            (0, 0)
-                        };
-
-                    // Now do mutable operations
-                    self.state_container
-                        .navigation_mut()
-                        .update_totals(row_count, col_count);
-
-                    // Set buffer to results mode
-                    self.buffer_mut().set_mode(AppMode::Results);
-                    self.buffer_mut().set_selected_row(Some(0));
-                    self.state_container.set_table_selected_row(Some(0));
-
-                    // Update status
-                    self.buffer_mut().set_status_message(format!(
-                        "Query executed in {}ms ({} rows) - DIRECT DataTable mode",
-                        duration.as_millis(),
-                        row_count
-                    ));
-
-                    // Early return - skip all the QueryResponse processing
-                    return Ok(());
+                    let rows = datatable.row_count();
+                    let cols = datatable.column_count();
+                    info!(
+                        "Direct DataTable query complete: {} rows, {} columns, {} ms",
+                        rows,
+                        cols,
+                        duration.as_millis()
+                    );
+                    (rows, cols)
                 } else {
-                    Err(anyhow::anyhow!(
-                        "Direct DataTable queries other than SELECT * not yet implemented"
-                    ))
-                }
+                    (0, 0)
+                };
+
+                // Now do mutable operations
+                self.state_container
+                    .navigation_mut()
+                    .update_totals(row_count, col_count);
+
+                // Set buffer to results mode
+                self.buffer_mut().set_mode(AppMode::Results);
+                self.buffer_mut().set_selected_row(Some(0));
+                self.state_container.set_table_selected_row(Some(0));
+
+                // Update status
+                self.buffer_mut().set_status_message(format!(
+                    "Query executed in {}ms ({} rows) - DIRECT DataTable mode",
+                    duration.as_millis(),
+                    row_count
+                ));
+
+                // Early return - skip all the QueryResponse processing
+                return Ok(());
             } else if let Some(csv_client) = self.buffer().get_csv_client() {
                 // Legacy JSON path
                 // Convert CSV result to match the expected type
