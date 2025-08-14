@@ -3417,26 +3417,71 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_left(&mut self) {
+        // Get pinned columns from DataView to respect boundaries
+        let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
+            let count = dataview.get_pinned_columns().len();
+            debug!(target: "navigation", "move_column_left: {} pinned columns", count);
+            count
+        } else {
+            0
+        };
+
+        let current_column = self.buffer().get_current_column();
+        debug!(target: "navigation", "move_column_left: current_column={}, pinned_count={}", current_column, pinned_count);
+
+        // Calculate new column, skipping over pinned columns
+        let new_column = if current_column > pinned_count {
+            // We're in the scrollable area, move left normally
+            current_column - 1
+        } else if current_column == pinned_count && pinned_count > 0 {
+            // We're at the boundary, wrap to the end
+            let max_columns = if let Some(provider) = self.get_data_provider() {
+                provider.get_column_count()
+            } else {
+                0
+            };
+            if max_columns > 0 {
+                max_columns - 1
+            } else {
+                current_column
+            }
+        } else {
+            // We're in pinned area (shouldn't happen), stay at boundary
+            pinned_count
+        };
+
+        debug!(target: "navigation", "move_column_left: new_column={}", new_column);
+
         // Update cursor_manager for table navigation (incremental step)
-        let (_row, _col) = self.cursor_manager.table_position();
         self.cursor_manager.move_table_left();
 
-        // Keep existing logic for now
-        let new_column = self.buffer().get_current_column().saturating_sub(1);
+        // Update the column position
         self.buffer_mut().set_current_column(new_column);
 
         // Sync with navigation state in AppStateContainer
         self.state_container.navigation_mut().selected_column = new_column;
 
         let mut offset = self.buffer().get_scroll_offset();
-        offset.1 = offset.1.saturating_sub(1);
-        let column_num = self.buffer().get_current_column() + 1;
+        if new_column >= pinned_count {
+            offset.1 = (new_column - pinned_count).saturating_sub(10); // Keep some context
+        }
         self.buffer_mut().set_scroll_offset(offset);
+
+        let column_num = new_column + 1;
         self.buffer_mut()
             .set_status_message(format!("Column {} selected", column_num));
     }
 
     fn move_column_right(&mut self) {
+        // Get pinned columns from DataView to respect boundaries
+        let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
+            let count = dataview.get_pinned_columns().len();
+            debug!(target: "navigation", "move_column_right: {} pinned columns", count);
+            count
+        } else {
+            0
+        };
+
         // Use DataProvider trait to get column count
         let max_columns = if let Some(provider) = self.get_data_provider() {
             provider.get_column_count()
@@ -3444,34 +3489,64 @@ impl EnhancedTuiApp {
             0
         };
 
+        let current_column = self.buffer().get_current_column();
+        debug!(target: "navigation", "move_column_right: current_column={}, pinned_count={}, max_columns={}", 
+               current_column, pinned_count, max_columns);
+
         if max_columns > 0 {
+            // Calculate new column, skipping over pinned columns
+            let new_column = if current_column < pinned_count {
+                // We're in pinned area (shouldn't happen), jump to first scrollable column
+                pinned_count
+            } else if current_column + 1 < max_columns {
+                // Normal move right
+                current_column + 1
+            } else {
+                // At the end, wrap to first scrollable column (skip pinned)
+                pinned_count
+            };
+
+            debug!(target: "navigation", "move_column_right: new_column={}", new_column);
+
             // Update cursor_manager for table navigation (incremental step)
             self.cursor_manager.move_table_right(max_columns);
 
-            // Keep existing logic for now
-            let current_column = self.buffer().get_current_column();
-            if current_column + 1 < max_columns {
-                self.buffer_mut().set_current_column(current_column + 1);
+            // Update the column position
+            self.buffer_mut().set_current_column(new_column);
 
-                // Sync with navigation state in AppStateContainer
-                let new_column = current_column + 1;
-                self.state_container.navigation_mut().selected_column = new_column;
+            // Sync with navigation state in AppStateContainer
+            self.state_container.navigation_mut().selected_column = new_column;
 
-                let mut offset = self.buffer().get_scroll_offset();
-                offset.1 += 1;
-                let column_num = self.buffer().get_current_column() + 1;
-                self.buffer_mut().set_scroll_offset(offset);
-                self.buffer_mut()
-                    .set_status_message(format!("Column {} selected", column_num));
+            let mut offset = self.buffer().get_scroll_offset();
+            if new_column >= pinned_count {
+                // Adjust scroll to keep column visible, accounting for pinned columns
+                let visible_column = new_column - pinned_count;
+                if visible_column > 10 {
+                    offset.1 = visible_column - 10; // Keep some columns visible before
+                }
             }
+            self.buffer_mut().set_scroll_offset(offset);
+
+            let column_num = new_column + 1;
+            self.buffer_mut()
+                .set_status_message(format!("Column {} selected", column_num));
         }
     }
 
     fn goto_first_column(&mut self) {
-        self.buffer_mut().set_current_column(0);
+        // Get pinned columns from DataView to respect boundaries
+        let first_col = if let Some(dataview) = self.buffer().get_dataview() {
+            let pinned_count = dataview.get_pinned_columns().len();
+            debug!(target: "navigation", "goto_first_column: {} pinned columns, jumping to first scrollable", pinned_count);
+            pinned_count // Jump to first scrollable column, not pinned
+        } else {
+            0
+        };
+
+        self.buffer_mut().set_current_column(first_col);
 
         // Sync with navigation state in AppStateContainer
-        self.state_container.navigation_mut().selected_column = 0;
+        self.state_container.navigation_mut().selected_column = first_col;
 
         let mut offset = self.buffer().get_scroll_offset();
         offset.1 = 0;
