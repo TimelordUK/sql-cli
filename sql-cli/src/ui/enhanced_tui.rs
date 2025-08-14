@@ -761,10 +761,7 @@ impl EnhancedTuiApp {
             app.buffer_manager.clear_all();
             // Direct DataTable mode - create buffer with both DataTable and CSV client
             let mut buffer = buffer::Buffer::new(1);
-            buffer.set_csv_mode(true);
-            buffer.set_table_name(table_name.clone());
             buffer.set_datatable(datatable_opt);
-            buffer.set_csv_client(Some(csv_client)); // Keep CSV client for complex queries
             info!("Created buffer with direct DataTable and CSV client fallback");
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
@@ -855,13 +852,6 @@ impl EnhancedTuiApp {
         let mut schema = std::collections::HashMap::new();
         schema.insert(table_name.clone(), datatable.column_names());
 
-        // TEMPORARY: Also create CsvApiClient for complex query support
-        // This will be removed once QueryEngine is implemented
-        let mut csv_client = CsvApiClient::new();
-        csv_client.set_case_insensitive(app.config.behavior.case_insensitive_default);
-        csv_client.load_json(json_path, &table_name)?;
-        info!("Created CsvApiClient as fallback for complex queries (temporary)");
-
         let datatable_opt = Some(datatable);
 
         // Replace the default buffer with a JSON buffer using direct DataTable
@@ -869,10 +859,7 @@ impl EnhancedTuiApp {
             // Clear all buffers and add a buffer with DataTable
             app.buffer_manager.clear_all();
             let mut buffer = buffer::Buffer::new(1);
-            buffer.set_csv_mode(true); // This flag is used for both CSV and JSON file modes
-            buffer.set_table_name(table_name.clone());
             buffer.set_datatable(datatable_opt);
-            buffer.set_csv_client(Some(csv_client)); // Keep CSV client for complex queries
             info!("Created buffer with direct DataTable and CSV client fallback");
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
@@ -1026,7 +1013,6 @@ impl EnhancedTuiApp {
                             AppMode::History => self.handle_history_input(key)?,
                             AppMode::Debug => self.handle_debug_input(key)?,
                             AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
-                            AppMode::CacheList => self.handle_cache_list_input(key)?,
                             AppMode::JumpToRow => self.handle_jump_to_row_input(key)?,
                             AppMode::ColumnStats => self.handle_column_stats_input(key)?,
                         };
@@ -1382,14 +1368,6 @@ impl EnhancedTuiApp {
                     "Multi-line mode has been removed. Use F6 for pretty print.".to_string(),
                 );
             }
-            KeyCode::F(7) => {
-                // F7 - Toggle cache mode or show cache list
-                if self.buffer().is_cache_mode() {
-                    self.buffer_mut().set_mode(AppMode::CacheList);
-                } else {
-                    self.buffer_mut().set_mode(AppMode::CacheList);
-                }
-            }
             KeyCode::Enter => {
                 // Always use single-line mode handling
                 let query = self.get_input_text().trim().to_string();
@@ -1475,9 +1453,6 @@ impl EnhancedTuiApp {
 
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     if buffer.navigate_history_down(&history_commands) {
-                        // Sync the input field with buffer (for now, until we complete migration)
-                        let text = buffer.get_input_text();
-
                         // Sync all input states
                         self.sync_all_input_states();
                         self.buffer_mut()
@@ -1525,13 +1500,6 @@ impl EnhancedTuiApp {
                 // Toggle case-insensitive string comparisons
                 let current = self.buffer().is_case_insensitive();
                 self.buffer_mut().set_case_insensitive(!current);
-
-                // Update CSV client if in CSV mode
-                // Update CSV client if in CSV mode
-                if let Some(csv_client) = self.buffer_mut().get_csv_client_mut() {
-                    csv_client.set_case_insensitive(!current);
-                }
-
                 self.buffer_mut().set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
                     if !current { "ON" } else { "OFF" }
@@ -1952,12 +1920,6 @@ impl EnhancedTuiApp {
                     // Toggle case-insensitive string comparisons
                     let current = self.buffer().is_case_insensitive();
                     self.buffer_mut().set_case_insensitive(!current);
-
-                    // Update CSV client if in CSV mode
-                    if let Some(csv_client) = self.buffer_mut().get_csv_client_mut() {
-                        csv_client.set_case_insensitive(!current);
-                    }
-
                     self.buffer_mut().set_status_message(format!(
                         "Case-insensitive string comparisons: {}",
                         if !current { "ON" } else { "OFF" }
@@ -2252,7 +2214,7 @@ impl EnhancedTuiApp {
                 self.apply_filter();
                 debug!(target: "search", "After apply_filter, app_mode={:?}, filtered_count={}", 
                        self.buffer().get_mode(),
-                       self.buffer().get_filtered_data().map(|d| d.len()).unwrap_or(0));
+                self.buffer().get_dataview().map(|v| v.row_count()).unwrap_or(0));
             }
             SearchMode::FuzzyFilter => {
                 debug!(target: "search", "Executing fuzzy filter with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
@@ -2927,27 +2889,15 @@ impl EnhancedTuiApp {
     /// Update history matches in the AppStateContainer with schema context
     fn update_history_matches_in_container(&mut self) {
         // Get current schema columns and data source for better matching
-        let (current_columns, current_source_str) = if self.buffer().is_csv_mode() {
-            if let Some(csv_client) = self.buffer().get_csv_client() {
-                if let Some(schema) = csv_client.get_schema() {
-                    // Get the first (and usually only) table's columns and name
-                    let (cols, table_name) = schema
-                        .iter()
-                        .next()
-                        .map(|(table_name, cols)| (cols.clone(), Some(table_name.clone())))
-                        .unwrap_or((vec![], None));
-                    (cols, table_name)
-                } else {
-                    (vec![], None)
-                }
+        let (current_columns, current_source_str) =
+            if let Some(dataview) = self.buffer().get_dataview() {
+                (
+                    dataview.column_names(),              // Gets visible columns
+                    Some(dataview.source().name.clone()), // Gets table name from DataTable
+                )
             } else {
                 (vec![], None)
-            }
-        } else if self.buffer().is_cache_mode() {
-            (vec![], Some("cache".to_string()))
-        } else {
-            (vec![], Some("api".to_string()))
-        };
+            };
 
         let current_source = current_source_str.as_deref();
         let query = self.state_container.history_search().query.clone();
@@ -3003,472 +2953,92 @@ impl EnhancedTuiApp {
     fn execute_query(&mut self, query: &str) -> Result<()> {
         info!(target: "query", "Executing query: {}", query);
 
-        // Save the query being executed to last_query BEFORE execution
-        // This ensures we preserve the actual query that was run
+        // 1. Save query to buffer and state container
         self.buffer_mut().set_last_query(query.to_string());
-        debug!(target: "buffer", "Saved query to last_query: '{}'", query);
-
-        // Also sync with AppStateContainer to prevent desync
         self.state_container
             .set_last_executed_query(query.to_string());
 
+        // 2. Update status
         self.buffer_mut()
             .set_status_message(format!("Executing query: '{}'...", query));
         let start_time = std::time::Instant::now();
 
-        // Check cache first (only for non-cache mode queries)
-        let cached_result = if !self.buffer().is_cache_mode() {
-            let query_key = format!("{}:{}", query, self.buffer().get_table_name());
-            let cached = self.state_container.get_cached_results(&query_key);
-            if cached.is_some() {
-                info!(target: "query", "Found cached results for query: {} (key: {})", query, query_key);
-            }
-            cached
+        // 3. Execute query on DataView
+        let result = if let Some(dataview) = self.buffer().get_dataview() {
+            // Get the DataTable Arc (should add source_arc() method to DataView to avoid cloning)
+            let table_arc = Arc::new(dataview.source().clone());
+            let case_insensitive = self.buffer().is_case_insensitive();
+
+            // Execute using QueryEngine
+            let engine =
+                crate::data::query_engine::QueryEngine::with_case_insensitive(case_insensitive);
+            engine.execute(table_arc, query)
         } else {
-            None
+            return Err(anyhow::anyhow!("No data loaded"));
         };
 
-        // Track memory before query execution
-        crate::utils::memory_tracker::track_memory("before_query");
-
-        let result = if let Some(mut cached_response) = cached_result {
-            // Use cached results - ensure cached flag is set
-            cached_response.cached = Some(true);
-            info!(target: "query", "Using cached results, skipping query execution");
-            Ok(cached_response)
-        } else if self.buffer().is_cache_mode() {
-            // When in cache mode, use CSV client to query cached data
-            if let Some(cached_data) = self.buffer().get_cached_data() {
-                let mut csv_client = CsvApiClient::new();
-                csv_client.set_case_insensitive(self.buffer().is_case_insensitive());
-                csv_client.load_from_json(cached_data.clone(), "cached_data")?;
-
-                csv_client.query_csv(query).map(|r| QueryResponse {
-                    data: r.data,
-                    count: r.count,
-                    query: crate::api_client::QueryInfo {
-                        select: r.query.select,
-                        where_clause: r.query.where_clause,
-                        order_by: r.query.order_by,
-                    },
-                    source: Some("cache".to_string()),
-                    table: Some("cached_data".to_string()),
-                    cached: Some(true),
-                })
-            } else {
-                Err(anyhow::anyhow!("No cached data loaded"))
-            }
-        } else if self.buffer().is_csv_mode() {
-            // Check if we can use direct DataTable for simple SELECT * queries
-            let upper_query = query.trim().to_uppercase();
-            let is_simple_select = upper_query.starts_with("SELECT *")
-                && !upper_query.contains(" WHERE ")
-                && !upper_query.contains(" ORDER BY ")
-                && !upper_query.contains(" LIMIT ")
-                && !upper_query.contains(" GROUP BY ");
-
-            if self.buffer().has_dataview() {
-                // Use QueryEngine for all queries on DataView's DataTable
-                info!("Using QueryEngine to execute query on DataTable");
-                crate::utils::memory_tracker::track_memory("query_engine_start");
-
-                if let Some(dataview) = self.buffer().get_dataview() {
-                    // Execute query using QueryEngine on DataView's source DataTable
-                    let table_arc = Arc::new(dataview.source().clone());
-                    let case_insensitive = self.buffer().is_case_insensitive();
-                    let engine = crate::data::query_engine::QueryEngine::with_case_insensitive(
-                        case_insensitive,
-                    );
-                    let result = engine.execute(table_arc, query);
-
-                    match result {
-                        Ok(mut dataview) => {
-                            let duration = start_time.elapsed();
-                            crate::utils::memory_tracker::track_memory("query_engine_end");
-
-                            // Apply hidden columns to the DataView (use buffer's hidden columns, not local copy)
-                            let hidden_columns = self.buffer().get_hidden_columns();
-                            for col_name in hidden_columns {
-                                dataview.hide_column_by_name(col_name);
-                            }
-
-                            let row_count = dataview.row_count();
-                            let col_count = dataview.column_count();
-
-                            info!(
-                                "QueryEngine query complete: {} rows, {} columns, {} ms",
-                                row_count,
-                                col_count,
-                                duration.as_millis()
-                            );
-
-                            // Store the DataView directly in the buffer (V51: No more QueryResponse conversion!)
-                            if let Some(buffer) = self.buffer_manager.current_mut() {
-                                let buffer_id = buffer.get_id();
-                                crate::utils::memory_tracker::track_memory("before_set_dataview");
-                                buffer.set_dataview(Some(dataview));
-                                crate::utils::memory_tracker::track_memory("after_set_dataview");
-                                // Clear filtered_data since we have new query results
-                                buffer.set_filtered_data(None);
-                                info!(target: "buffer", "Stored QueryEngine DataView with {} rows in buffer {}", row_count, buffer_id);
-                            } else {
-                                warn!("No current buffer available to store QueryEngine DataView");
-                            }
-
-                            // Update navigation
-                            self.state_container
-                                .navigation_mut()
-                                .update_totals(row_count, col_count);
-
-                            // Set buffer to results mode
-                            self.buffer_mut().set_mode(AppMode::Results);
-                            self.buffer_mut().set_selected_row(Some(0));
-                            self.state_container.set_table_selected_row(Some(0));
-
-                            // Update status
-                            self.buffer_mut().set_status_message(format!(
-                                "Query executed in {}ms ({} rows) - QueryEngine+DataView",
-                                duration.as_millis(),
-                                row_count
-                            ));
-
-                            // Add query to history (was missing in QueryEngine path!)
-                            info!(target: "history", "Adding QueryEngine query to history: '{}'", query);
-                            let history_result = self
-                                .state_container
-                                .command_history_mut()
-                                .add_entry_with_schema(
-                                    query.to_string(),
-                                    true,
-                                    Some(duration.as_millis() as u64),
-                                    vec![], // TODO: Get schema columns from DataView
-                                    Some("QueryEngine".to_string()),
-                                );
-
-                            match history_result {
-                                Ok(_) => {
-                                    let history_count =
-                                        self.state_container.command_history().get_all().len();
-                                    info!(target: "history", "Successfully added QueryEngine query to history. Total entries: {}", history_count);
-                                }
-                                Err(e) => {
-                                    warn!(target: "history", "Failed to add QueryEngine query to history: {}", e);
-                                }
-                            }
-
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            // Fall back to CSV client if QueryEngine fails
-                            warn!("QueryEngine failed, falling back to CSV client: {}", e);
-                            // Continue to CSV client code below
-                        }
-                    }
-                }
-            }
-
-            if let Some(csv_client) = self.buffer().get_csv_client() {
-                // Legacy JSON path
-                // Convert CSV result to match the expected type
-                crate::utils::memory_tracker::track_memory("before_csv_query");
-                let query_result = csv_client.query_csv(query);
-                crate::utils::memory_tracker::track_memory("after_csv_query");
-                query_result.map(|r| QueryResponse {
-                    data: r.data,
-                    count: r.count,
-                    query: crate::api_client::QueryInfo {
-                        select: r.query.select,
-                        where_clause: r.query.where_clause,
-                        order_by: r.query.order_by,
-                    },
-                    source: Some("file".to_string()),
-                    table: Some(self.buffer().get_table_name()),
-                    cached: Some(false),
-                })
-            } else {
-                Err(anyhow::anyhow!("CSV client not initialized"))
-            }
-        } else {
-            self.api_client
-                .query_trades(query)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        };
-
-        crate::utils::memory_tracker::track_memory("after_query_result");
-
+        // 4. Handle result
         match result {
-            Ok(response) => {
-                crate::utils::memory_tracker::track_memory("in_Ok_response");
+            Ok(new_dataview) => {
                 let duration = start_time.elapsed();
+                let row_count = new_dataview.row_count();
+                let col_count = new_dataview.column_count();
 
-                // Get schema columns and data source for history
-                let (schema_columns, data_source) = if self.buffer().is_csv_mode() {
-                    if let Some(csv_client) = self.buffer().get_csv_client() {
-                        if let Some(schema) = csv_client.get_schema() {
-                            // Get the first (and usually only) table's columns
-                            let cols = schema
-                                .iter()
-                                .next()
-                                .map(|(table_name, cols)| (cols.clone(), Some(table_name.clone())))
-                                .unwrap_or((vec![], None));
-                            cols
-                        } else {
-                            (vec![], None)
-                        }
-                    } else {
-                        (vec![], None)
-                    }
-                } else if self.buffer().is_cache_mode() {
-                    (vec![], Some("cache".to_string()))
-                } else {
-                    (vec![], Some("api".to_string()))
-                };
+                // Store the new DataView in buffer
+                self.buffer_mut().set_dataview(Some(new_dataview));
 
-                info!(target: "history", "Adding query to history: '{}'", query);
-                let result = self
-                    .state_container
+                // Update status
+                self.buffer_mut().set_status_message(format!(
+                    "Query executed: {} rows, {} columns ({} ms)",
+                    row_count,
+                    col_count,
+                    duration.as_millis()
+                ));
+
+                // 5. Add to history
+                let columns = self
+                    .buffer()
+                    .get_dataview()
+                    .map(|v| v.column_names())
+                    .unwrap_or_default();
+
+                let table_name = self
+                    .buffer()
+                    .get_dataview()
+                    .map(|v| v.source().name.clone())
+                    .unwrap_or_else(|| "data".to_string());
+
+                self.state_container
                     .command_history_mut()
                     .add_entry_with_schema(
                         query.to_string(),
-                        true,
+                        true, // success
                         Some(duration.as_millis() as u64),
-                        schema_columns,
-                        data_source.clone(),
-                    );
+                        columns,
+                        Some(table_name),
+                    )?;
 
-                match result {
-                    Ok(_) => {
-                        let history_count = self.state_container.command_history().get_all().len();
-                        info!(target: "history", "Successfully added query to history. Total entries: {}", history_count);
-                    }
-                    Err(e) => {
-                        warn!(target: "history", "Failed to add query to history: {}", e);
-                    }
-                }
-
-                // Add debug info about results
-                let row_count = response.data.len();
-                let has_results = !response.data.is_empty();
-                let source = response.source.clone();
-
-                // Capture the source from the response
-                self.buffer_mut().set_last_query_source(source);
-
-                // Store results in the current buffer (only once - buffer_mut() returns the same buffer)
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    let buffer_id = buffer.get_id();
-                    // V50: Convert QueryResponse to DataTable and store
-                    crate::utils::memory_tracker::track_memory("before_set_results");
-                    // TODO: In DataView phase, we should pass by value to avoid clone
-                    // For now we need to clone because response is used later for caching
-                    if let Err(e) = buffer.set_results_as_datatable(Some(response.clone())) {
-                        warn!(target: "buffer", "Failed to convert results to DataTable: {}", e);
-                    }
-                    crate::utils::memory_tracker::track_memory("after_set_results");
-                    // Clear filtered_data since we have new query results
-                    buffer.set_filtered_data(None);
-                    info!(target: "buffer", "Stored {} results in buffer {}", row_count, buffer_id);
-                } else {
-                    warn!("No current buffer available to store results");
-                }
-
-                // Initialize selected row to 0 if we have results
-                if has_results {
-                    self.buffer_mut().set_selected_row(Some(0));
-                    self.state_container.set_table_selected_row(Some(0));
-                }
-
-                // TODO: V51+ - AppStateContainer should work with DataTable, not QueryResponse
-                // This is keeping another copy of the JSON in memory
-                /*
-                // Also update AppStateContainer with results and performance metrics
-
-                // Check if this was from cache (either cache mode or cached_result was used)
-                let from_cache =
-                    data_source.as_deref() == Some("cache") || response.cached.unwrap_or(false);
-
-                if let Err(e) =
-                    self.state_container
-                        .set_results(response.clone(), duration, from_cache)
-                {
-                    warn!(target: "results", "Failed to update results in AppStateContainer: {}", e);
-                }
-                */
-
-                // TODO: V51+ - Cache DataTable instead of QueryResponse
-                // Caching QueryResponse wastes memory - we already have DataTable
-                // Commenting out to save memory until we refactor caching
-                /*
-                // Only cache results if they weren't already from cache
-                if !from_cache {
-                    let query_key = format!("{}:{}", query, self.buffer().get_table_name());
-                    if let Err(e) = self
-                        .state_container
-                        .cache_results(query_key, response.clone())
-                    {
-                        warn!(target: "results", "Failed to cache results in AppStateContainer: {}", e);
-                    }
-                }
-                */
-
-                // Update NavigationState with total rows and columns
-                let total_rows = row_count;
-                let total_cols = if !response.data.is_empty() {
-                    if let Some(obj) = response.data[0].as_object() {
-                        obj.len()
-                    } else {
-                        0
-                    }
-                } else {
-                    0
-                };
-                self.state_container
-                    .navigation_mut()
-                    .update_totals(total_rows, total_cols);
-                info!(target: "navigation", "Updated NavigationState totals after query: {} rows x {} cols", total_rows, total_cols);
-
-                // V48: Ensure DataTable is created after query execution
-                self.ensure_datatable_exists();
-
-                // Update viewport size to ensure NavigationState has correct dimensions
-                self.update_viewport_size();
-
-                // Update parser with the FULL schema if we're in CSV/cache mode
-                // For CSV mode, get the complete schema from the CSV client, not from query results
-                if self.buffer().is_csv_mode() {
-                    let table_name = self.buffer().get_table_name();
-                    if let Some(csv_client) = self.buffer().get_csv_client() {
-                        if let Some(schema) = csv_client.get_schema() {
-                            // Get the full column list from the schema
-                            if let Some(columns) = schema.get(&table_name) {
-                                info!(target: "buffer", "Query executed, updating parser with FULL schema ({} columns) for table '{}'", columns.len(), table_name);
-                                self.hybrid_parser
-                                    .update_single_table(table_name, columns.clone());
-                            }
-                        }
-                    }
-                } else if self.buffer().is_cache_mode() {
-                    // For cache mode, we still use the results columns since cached data might be filtered
-                    if let Some(first_row) = response.data.first() {
-                        if let Some(obj) = first_row.as_object() {
-                            let columns: Vec<String> = obj.keys().map(|k| k.to_string()).collect();
-                            info!(target: "buffer", "Query executed, updating parser with {} columns for cached table", columns.len());
-                            self.hybrid_parser
-                                .update_single_table("cached_data".to_string(), columns);
-                        }
-                    }
-                }
-
-                self.calculate_optimal_column_widths();
-                self.reset_table_state();
-
-                if row_count == 0 {
-                    self.buffer_mut().set_status_message(format!(
-                        "Query executed successfully but returned 0 rows ({}ms)",
-                        duration.as_millis()
-                    ));
-                } else {
-                    self.buffer_mut().set_status_message(format!("Query executed successfully - {} rows returned ({}ms) - Use ↓ or j/k to navigate", row_count, duration.as_millis()));
-                }
-
+                // 6. Switch to results mode and reset navigation
                 self.buffer_mut().set_mode(AppMode::Results);
-                self.state_container.set_table_selected_row(Some(0));
+                self.buffer_mut().set_selected_row(Some(0));
+                self.buffer_mut().set_current_column(0);
+                self.buffer_mut().set_scroll_offset((0, 0));
+
+                Ok(())
             }
             Err(e) => {
-                let duration = start_time.elapsed();
+                let error_msg = format!("Query error: {}", e);
+                self.buffer_mut().set_status_message(error_msg.clone());
 
-                // Get schema columns and data source for history (even for failed queries)
-                let (schema_columns, data_source) = if self.buffer().is_csv_mode() {
-                    if let Some(csv_client) = self.buffer().get_csv_client() {
-                        if let Some(schema) = csv_client.get_schema() {
-                            // Get the first (and usually only) table's columns
-                            let cols = schema
-                                .iter()
-                                .next()
-                                .map(|(table_name, cols)| (cols.clone(), Some(table_name.clone())))
-                                .unwrap_or((vec![], None));
-                            cols
-                        } else {
-                            (vec![], None)
-                        }
-                    } else {
-                        (vec![], None)
-                    }
-                } else if self.buffer().is_cache_mode() {
-                    (vec![], Some("cache".to_string()))
-                } else {
-                    (vec![], Some("api".to_string()))
-                };
+                // Add failed query to history
+                self.state_container.command_history_mut().add_entry(
+                    query.to_string(),
+                    false,
+                    None,
+                )?;
 
-                let _ = self
-                    .state_container
-                    .command_history_mut()
-                    .add_entry_with_schema(
-                        query.to_string(),
-                        false,
-                        Some(duration.as_millis() as u64),
-                        schema_columns,
-                        data_source,
-                    );
-                self.buffer_mut()
-                    .set_status_message(format!("Error: {}", e));
+                Err(anyhow::anyhow!(error_msg))
             }
-        }
-        Ok(())
-    }
-
-    fn parse_where_clause_ast(&self, query: &str) -> Result<String> {
-        let query_lower = query.to_lowercase();
-        if let Some(where_pos) = query_lower.find(" where ") {
-            let where_clause = &query[where_pos + 7..]; // Skip " where "
-
-            // Get columns from CSV client if available
-            let columns = if self.buffer().is_csv_mode() {
-                if let Some(csv_client) = self.buffer().get_csv_client() {
-                    if let Some(schema) = csv_client.get_schema() {
-                        schema
-                            .iter()
-                            .next()
-                            .map(|(_, cols)| cols.clone())
-                            .unwrap_or_default()
-                    } else {
-                        vec![]
-                    }
-                } else {
-                    vec![]
-                }
-            } else {
-                vec![]
-            };
-
-            match WhereParser::parse_with_options(
-                where_clause,
-                columns,
-                self.buffer().is_case_insensitive(),
-            ) {
-                Ok(ast) => {
-                    let tree = format_where_ast(&ast, 0);
-                    Ok(format!(
-                        "\n========== WHERE CLAUSE AST ==========\n\
-                        Query: {}\n\
-                        WHERE clause: {}\n\n\
-                        AST Tree:\n{}\n\n\
-                        Note: Parentheses in the query control operator precedence.\n\
-                        The parser respects: OR < AND < NOT < comparisons\n\
-                        Example: 'a = 1 OR b = 2 AND c = 3' parses as 'a = 1 OR (b = 2 AND c = 3)'\n\
-                        Use parentheses to override: '(a = 1 OR b = 2) AND c = 3'\n",
-                        query,
-                        where_clause,
-                        tree
-                    ))
-                }
-                Err(e) => Err(anyhow::anyhow!("Failed to parse WHERE clause: {}", e)),
-            }
-        } else {
-            Ok(
-                "\n========== WHERE CLAUSE AST ==========\nNo WHERE clause found in query\n"
-                    .to_string(),
-            )
         }
     }
 
@@ -4344,117 +3914,18 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn apply_filter(&mut self) {
-        // Always use AppStateContainer for filter state
-        let pattern = self.state_container.filter().pattern.clone();
+    fn apply_filter(&mut self, pattern: &str) {
+        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            dataview.apply_text_filter(pattern, !self.buffer().is_case_insensitive());
 
-        debug!(target: "filter", "apply_filter called with pattern: '{}', case_insensitive: {}",
-               pattern, self.buffer().is_case_insensitive());
-
-        if pattern.is_empty() {
-            debug!(target: "filter", "Pattern is empty, clearing filter");
-            self.buffer_mut().set_filtered_data(None);
-            self.state_container.filter_mut().clear();
-            self.buffer_mut()
-                .set_status_message("Filter cleared".to_string());
-
-            // Sync state after clearing regex filter
-            self.sync_filter_state("regex_filter_cleared");
-            return;
-        }
-
-        // Extract data from provider in a scoped block to avoid borrow issues
-        let filter_result = if let Some(provider) = self.get_data_provider() {
-            // Build regex with case-insensitive flag if needed
-            let case_insensitive = self.buffer().is_case_insensitive();
-            let regex_pattern = if case_insensitive {
-                format!("(?i){}", pattern)
+            let status = if pattern.is_empty() {
+                "Filter cleared".to_string()
             } else {
-                pattern.clone()
+                format!("Filter applied: {} matches", dataview.row_count())
             };
-            debug!(target: "filter", "Building regex pattern: '{}' (case_insensitive: {})", regex_pattern, case_insensitive);
-
-            if let Ok(regex) = Regex::new(&regex_pattern) {
-                let mut filtered = Vec::new();
-                let mut filtered_indices = Vec::new();
-                let row_count = provider.get_row_count();
-
-                for index in 0..row_count {
-                    if let Some(row) = provider.get_row(index) {
-                        let mut matches = false;
-
-                        // Check if any cell in the row matches the regex
-                        for cell_str in &row {
-                            if regex.is_match(cell_str) {
-                                matches = true;
-                                // Debug first few matches
-                                if filtered.len() < 3 {
-                                    debug!(target: "filter", "  Match found in cell: '{}'",
-                                           if cell_str.len() > 50 { format!("{}...", &cell_str[..50]) } else { cell_str.clone() });
-                                }
-                                break; // No need to check other cells once we have a match
-                            }
-                        }
-
-                        if matches {
-                            filtered.push(row);
-                            filtered_indices.push(index);
-                        }
-                    }
-                }
-
-                let filtered_count = filtered.len();
-                debug!(target: "filter", "Filter applied: {} rows matched out of {}",
-                       filtered_count, row_count);
-
-                Some((filtered, filtered_indices, filtered_count))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // Now provider borrow is dropped, we can use mutable methods
-        if let Some((filtered, filtered_indices, filtered_count)) = filter_result {
-            // Update both buffer and AppStateContainer
-            self.buffer_mut().set_filtered_data(Some(filtered.clone()));
-            self.buffer_mut().set_filter_active(true);
-
-            {
-                let mut filter = self.state_container.filter_mut();
-                filter.set_filtered_indices(filtered_indices);
-                filter.set_filtered_data(Some(filtered));
-                filter.is_active = true;
-            }
-
-            // Reset table state but preserve filtered data
-            self.state_container.set_table_selected_row(Some(0));
-            {
-                let mut buffer = self.buffer_mut();
-                buffer.set_scroll_offset((0, 0));
-                buffer.set_current_column(0);
-            }
-
-            // Clear search state but keep filter state
-            {
-                let mut search = self.state_container.search_mut();
-                search.pattern = String::new();
-                search.current_match = 0;
-                search.matches = Vec::new();
-                search.is_active = false;
-            }
-            self.buffer_mut()
-                .set_status_message(format!("Filtered to {} rows", filtered_count));
-
-            // Sync state after applying regex filter
-            self.sync_filter_state("regex_filter_applied");
-        } else if filter_result.is_none() && self.get_data_provider().is_some() {
-            self.buffer_mut()
-                .set_status_message("Invalid regex pattern".to_string());
+            self.buffer_mut().set_status_message(status);
         }
     }
-
     fn search_columns(&mut self) {
         let pattern = self.state_container.column_search().pattern.clone();
         debug!(target: "search", "search_columns called with pattern: '{}'", pattern);
@@ -4491,7 +3962,6 @@ impl EnhancedTuiApp {
             let first_match_index = matching_columns[0].0;
             let first_match_name = &matching_columns[0].1;
 
-            // Update BOTH AppStateContainer and buffer to keep them in sync
             self.state_container.set_current_column(first_match_index);
             self.buffer_mut().set_current_column(first_match_index);
 
@@ -4534,10 +4004,6 @@ impl EnhancedTuiApp {
                 "Column {}/{}: {} - Tab/Shift-Tab to navigate",
                 current_match, total_matches, col_name
             ));
-
-            // Column search state is now managed by AppStateContainer
-
-            // State is now managed in AppStateContainer
         }
     }
 
@@ -4561,199 +4027,30 @@ impl EnhancedTuiApp {
                 "Column {}/{}: {} - Tab/Shift-Tab to navigate",
                 current_match, total_matches, col_name
             ));
-
-            // Column search state is now managed by AppStateContainer
-
-            // State is now managed in AppStateContainer
         }
-    }
-
-    /// Synchronize all filter-related state across Buffer, AppStateContainer, and Navigation
-    fn sync_filter_state(&mut self, context: &str) {
-        let fuzzy_active = self.buffer().is_fuzzy_filter_active();
-        let fuzzy_indices = self.buffer().get_fuzzy_filter_indices();
-        let fuzzy_count = fuzzy_indices.len();
-        let regex_active = self.state_container.filter().is_active;
-        let filtered_data = self.buffer().get_filtered_data();
-        let total_rows = if let Some(provider) = self.get_data_provider() {
-            provider.get_row_count()
-        } else {
-            0
-        };
-
-        debug!(target: "filter_sync",
-            "[{}] State: fuzzy_active={}, fuzzy_count={}, regex_active={}, filtered_data={}, total_rows={}",
-            context, fuzzy_active, fuzzy_count, regex_active, filtered_data.is_some(), total_rows
-        );
-
-        // Update navigation totals based on active filters
-        let effective_row_count = if fuzzy_active && fuzzy_count > 0 {
-            fuzzy_count
-        } else if regex_active && filtered_data.is_some() {
-            filtered_data
-                .as_ref()
-                .map(|d| d.len())
-                .unwrap_or(total_rows)
-        } else {
-            total_rows
-        };
-
-        // Update navigation state with correct totals
-        let total_columns = self.state_container.navigation().total_columns;
-        self.state_container
-            .navigation_mut()
-            .update_totals(effective_row_count, total_columns);
-
-        // Reset selection if it's out of bounds
-        if self.state_container.navigation().selected_row >= effective_row_count
-            && effective_row_count > 0
-        {
-            self.state_container.navigation_mut().selected_row = 0;
-            debug!(target: "filter_sync", "[{}] Reset selected_row to 0 (was out of bounds)", context);
-        }
-
-        debug!(target: "filter_sync",
-            "[{}] Final: effective_rows={}, selected_row={}",
-            context, effective_row_count, self.state_container.navigation().selected_row
-        );
     }
 
     fn apply_fuzzy_filter(&mut self) {
-        if self.buffer().get_fuzzy_filter_pattern().is_empty() {
-            debug!(target: "fuzzy", "Clearing fuzzy filter - empty pattern");
-            self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
-            self.buffer_mut().set_fuzzy_filter_active(false);
-            // Clear filtered data to return to original dataset
-            if !self.state_container.filter().is_active {
-                // Only clear if no regex filter is active
-                self.buffer_mut().set_filtered_data(None);
-                debug!(target: "fuzzy", "Cleared filtered_data (no regex filter active)");
-            }
-            self.buffer_mut()
-                .set_status_message("Fuzzy filter cleared".to_string());
-
-            // Sync state after clearing
-            self.sync_filter_state("fuzzy_filter_cleared");
-            debug!(target: "fuzzy", "Fuzzy filter cleared completely");
-            return;
-        }
-
         let pattern = self.buffer().get_fuzzy_filter_pattern();
 
-        // Extract data from provider in a scoped block to avoid borrow issues
-        let filter_data = if self.state_container.filter().is_active
-            && self.buffer().get_filtered_data().is_some()
-        {
-            // If regex filter is active, fuzzy filter on top of that
-            self.buffer()
-                .get_filtered_data()
-                .map(|data| (data.clone(), true))
-        } else {
-            // Get the ORIGINAL unfiltered data from the buffer's results
-            // We need to bypass the DataProvider here because it returns filtered data
-            // when a fuzzy filter is already active
-            // Use DataView's source DataTable for fuzzy filtering
-            let rows = if let Some(dataview) = self.buffer().get_dataview() {
-                dataview.source().to_string_table()
-            } else {
-                Vec::new()
-            };
-
-            if !rows.is_empty() {
-                Some((rows, false))
-            } else {
-                None
-            }
-        };
-
-        // Now provider borrow is dropped, process the data
-        if let Some((data, needs_storage)) = filter_data {
-            let mut filtered_indices = Vec::new();
-
-            debug!(target: "fuzzy", "Processing {} rows with pattern '{}'", data.len(), pattern);
-
+        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
             let case_insensitive = self.buffer().is_case_insensitive();
+            dataview.apply_fuzzy_filter(&pattern, case_insensitive);
 
-            for (index, row) in data.iter().enumerate() {
-                // Concatenate all columns into a single string for matching
-                let row_text = row.join(" ");
-
-                // Check if pattern starts with ' for exact matching
-                let matches = if pattern.starts_with('\'') {
-                    if pattern.len() > 1 {
-                        // Exact substring matching
-                        let exact_pattern = &pattern[1..];
-                        if case_insensitive {
-                            row_text
-                                .to_lowercase()
-                                .contains(&exact_pattern.to_lowercase())
-                        } else {
-                            row_text.contains(exact_pattern)
-                        }
-                    } else {
-                        // Just a single quote - no pattern to match
-                        false
-                    }
-                } else {
-                    // Fuzzy matching - SkimMatcherV2 handles case sensitivity internally
-                    let matcher = if case_insensitive {
-                        SkimMatcherV2::default().ignore_case()
-                    } else {
-                        SkimMatcherV2::default().respect_case()
-                    };
-                    if let Some(score) = matcher.fuzzy_match(&row_text, &pattern) {
-                        score > 0
-                    } else {
-                        false
-                    }
-                };
-
-                if matches {
-                    filtered_indices.push(index);
-                }
-            }
-
-            let match_count = filtered_indices.len();
-            let is_active = !filtered_indices.is_empty();
-
-            // Don't store filtered_data for fuzzy filtering - it should only be used for regex filters
-            // Fuzzy filtering works through indices only
-
-            // Transaction-like block for fuzzy filter updates
-            {
-                let mut buffer = self.buffer_mut();
-                buffer.set_fuzzy_filter_indices(filtered_indices);
-                buffer.set_fuzzy_filter_active(is_active);
-
-                if is_active {
-                    let filter_type = if pattern.starts_with('\'') {
-                        "Exact"
-                    } else {
-                        "Fuzzy"
-                    };
-                    buffer.set_status_message(format!(
-                        "{} filter: {} matches for '{}' (highlighted in magenta)",
-                        filter_type, match_count, pattern
-                    ));
-                    buffer.set_scroll_offset((0, 0));
-                }
-            }
-
-            if is_active {
-                // Reset table state for new filtered view
-                self.state_container.set_table_selected_row(Some(0));
-            } else {
-                let filter_type = if pattern.starts_with('\'') {
-                    "exact"
-                } else {
-                    "fuzzy"
-                };
+            if pattern.is_empty() {
+                self.buffer_mut().set_fuzzy_filter_active(false);
                 self.buffer_mut()
-                    .set_status_message(format!("No {} matches for '{}'", filter_type, pattern));
+                    .set_status_message("Fuzzy filter cleared".to_string());
+            } else {
+                self.buffer_mut().set_fuzzy_filter_active(true);
+                let match_count = dataview.row_count();
+                self.buffer_mut()
+                    .set_status_message(format!("Fuzzy filter: {} matches", match_count));
             }
 
-            // Sync state after applying filter
-            self.sync_filter_state("fuzzy_filter_applied");
+            // Update fuzzy filter indices for compatibility
+            let indices = dataview.get_fuzzy_filter_indices();
+            self.buffer_mut().set_fuzzy_filter_indices(indices);
         }
     }
 
@@ -4811,139 +4108,23 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn sort_by_column(&mut self, column_index: usize) {
-        // Get column name using DataProvider trait
-        let column_name = {
-            let headers = self.get_column_names_via_provider();
-            if column_index < headers.len() {
-                Some(headers[column_index].clone())
-            } else {
-                // Fallback for out of bounds
-                Some(format!("Column_{}", column_index))
-            }
-        };
-
-        // Delegate sorting entirely to AppStateContainer (current implementation)
-        let new_order = self.state_container.get_next_sort_order(column_index);
-
-        // V44: Demonstrate that we can get sorted indices via DataProvider
-        // This shows the migration path without breaking existing functionality
-        if new_order != SortOrder::None {
-            let ascending = new_order == SortOrder::Ascending;
-            if let Some(sorted_indices) = self.sort_via_provider(column_index, ascending) {
-                debug!(
-                    "V44: Got {} sorted indices via DataProvider for column {} ({})",
-                    sorted_indices.len(),
-                    column_index,
-                    if ascending { "asc" } else { "desc" }
-                );
-                // In future versions, we'll use these indices for rendering
-                // For now, we just log to show it works
-            }
-        }
-
-        // Handle the three cases: Ascending, Descending, None
-        if new_order == SortOrder::None {
-            // Debug: Clearing sort (None case)
-            // Advance state to None BEFORE clearing
-            {
-                self.state_container.advance_sort_state(
-                    column_index,
-                    column_name.clone(),
-                    new_order.clone(),
-                );
-            }
-
-            // Restore original unsorted data by re-executing the query
-            let last_query = self.buffer().get_last_query();
-            if !last_query.is_empty() {
-                // Re-execute the original query to get unsorted data
-                if let Err(e) = self.execute_query(&last_query) {
-                    self.buffer_mut()
-                        .set_status_message(format!("Failed to restore unsorted data: {}", e));
-                } else {
-                    self.buffer_mut().set_status_message(
-                        "Sort cleared - showing original unsorted data".to_string(),
-                    );
-                }
-            } else {
-                // Fallback: just clear sort indicators
-                self.buffer_mut().set_sort_column(None);
-                self.buffer_mut().set_sort_order(SortOrder::None);
+    fn sort_by_column(&mut self, column_index: usize, ascending: bool) {
+        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            if let Err(e) = dataview.apply_sort(column_index, ascending) {
                 self.buffer_mut()
-                    .set_status_message("Sort cleared".to_string());
+                    .set_status_message(format!("Sort error: {}", e));
+            } else {
+                self.buffer_mut().set_status_message(format!(
+                    "Sorted by column {} ({})",
+                    column_index,
+                    if ascending { "ascending" } else { "descending" }
+                ));
             }
-            return;
-        }
-
-        // Debug: Sorting with order
-        // For Ascending/Descending, advance state AFTER determining new_order but BEFORE sorting
-        {
-            self.state_container.advance_sort_state(
-                column_index,
-                column_name.clone(),
-                new_order.clone(),
-            );
-        }
-
-        // For Ascending/Descending, get sorted data from AppStateContainer
-        let (sorted_results_opt, last_execution_time, from_cache) = {
-            let sorted_results = self
-                .state_container
-                .sort_results_data(column_index, new_order.clone());
-            let last_execution_time = self.state_container.get_last_execution_time();
-            let from_cache = false; // Sort operations are not cached queries
-            (sorted_results, last_execution_time, from_cache)
-        };
-
-        if let Some(sorted_results) = sorted_results_opt {
-            // Update buffer with sorted results
-            // V50: Convert sorted results to DataTable
-            if let Err(e) = self
-                .buffer_mut()
-                .set_results_as_datatable(Some(sorted_results.clone()))
-            {
-                warn!(target: "buffer", "Failed to convert sorted results to DataTable: {}", e);
-            }
-            self.buffer_mut().set_filtered_data(None); // Force regeneration of string data
-
-            // Update AppStateContainer with sorted results
-            {
-                if let Err(e) = self.state_container.set_results(
-                    sorted_results,
-                    last_execution_time,
-                    from_cache,
-                ) {
-                    warn!(target: "results", "Failed to update sorted results in AppStateContainer: {}", e);
-                }
-            }
-
-            // Update buffer's sort state
-            self.buffer_mut().set_sort_column(Some(column_index));
-            self.buffer_mut().set_sort_order(new_order.clone());
-
-            // Reset table state but preserve current column position
-            let current_column = self.buffer().get_current_column();
-            self.reset_table_state();
-            self.buffer_mut().set_current_column(current_column);
-
-            self.buffer_mut().set_status_message(format!(
-                "Sorted by column {} ({}) - type-aware",
-                column_index + 1,
-                match new_order {
-                    SortOrder::Ascending => "ascending",
-                    SortOrder::Descending => "descending",
-                    SortOrder::None => "none",
-                }
-            ));
-        } else {
-            self.buffer_mut()
-                .set_status_message("No data available to sort".to_string());
         }
     }
 
     fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
-        if let Some(filtered) = self.buffer().get_filtered_data() {
+        if let Some(filtered) = self.buffer().get_dataview() {
             Some(filtered.clone())
         } else if let Some(dataview) = self.buffer().get_dataview() {
             // Use DataView's source for string conversion
@@ -4958,7 +4139,7 @@ impl EnhancedTuiApp {
         if self.buffer().is_fuzzy_filter_active() {
             // Return the count of fuzzy filtered indices
             self.buffer().get_fuzzy_filter_indices().len()
-        } else if let Some(filtered) = self.buffer().get_filtered_data() {
+        } else if let Some(filtered) = self.buffer().get_dataview() {
             // Return count from WHERE clause or other filters
             filtered.len()
         } else if let Some(provider) = self.get_data_provider() {
@@ -4975,7 +4156,7 @@ impl EnhancedTuiApp {
         // First check for filters - these still need buffer access for now
         if self.buffer().is_fuzzy_filter_active() {
             return self.buffer().get_fuzzy_filter_indices().len();
-        } else if let Some(filtered) = self.buffer().get_filtered_data() {
+        } else if let Some(filtered) = self.buffer().get_dataview() {
             return filtered.len();
         }
 
@@ -5076,50 +4257,16 @@ impl EnhancedTuiApp {
     }
 
     fn update_parser_for_current_buffer(&mut self) {
-        // Sync the input field with the current buffer's text
-        if let Some(buffer) = self.buffer_manager.current() {
-            // Sync all input states when switching buffers
-            self.sync_all_input_states();
-            debug!(target: "buffer", "Synced all input states after buffer switch");
-        }
+        // Sync input states
+        self.sync_all_input_states();
 
-        // Update the parser's schema based on the current buffer's data source
-        if let Some(buffer) = self.buffer_manager.current() {
-            if buffer.is_csv_mode() {
-                let table_name = buffer.get_table_name();
-                if let Some(csv_client) = buffer.get_csv_client() {
-                    if let Some(schema) = csv_client.get_schema() {
-                        // Get the full column list from the schema
-                        if let Some(columns) = schema.get(&table_name) {
-                            debug!(target: "buffer", "Updating parser with {} columns for table '{}'", columns.len(), table_name);
-                            self.hybrid_parser
-                                .update_single_table(table_name, columns.clone());
-                        }
-                    }
-                }
-            } else if buffer.is_cache_mode() {
-                // For cache mode, use cached data schema if available
-                if let Some(cached_data) = buffer.get_cached_data() {
-                    if let Some(first_row) = cached_data.first() {
-                        if let Some(obj) = first_row.as_object() {
-                            let columns: Vec<String> = obj.keys().map(|k| k.to_string()).collect();
-                            debug!(target: "buffer", "Updating parser with {} columns for cached data", columns.len());
-                            self.hybrid_parser
-                                .update_single_table("cached_data".to_string(), columns);
-                        }
-                    }
-                }
-            } else if let Some(dataview) = buffer.get_dataview() {
-                // Use DataView for column names (shows actual visible columns)
-                let columns = dataview.column_names();
-                let table_name = buffer.get_table_name();
-                debug!(target: "buffer", "Updating parser with {} visible columns for table '{}'", columns.len(), table_name);
-                self.hybrid_parser.update_single_table(table_name, columns);
-            } else {
-                // No DataView available - might be loading or empty buffer
-                let table_name = buffer.get_table_name();
-                debug!(target: "buffer", "No DataView available for table '{}'", table_name);
-            }
+        // Update parser schema from DataView
+        if let Some(dataview) = self.buffer().get_dataview() {
+            let table_name = dataview.source().name.clone();
+            let columns = dataview.source().column_names();
+
+            debug!(target: "buffer", "Updating parser with {} columns for table '{}'", columns.len(), table_name);
+            self.hybrid_parser.update_single_table(table_name, columns);
         }
     }
 
@@ -5643,7 +4790,6 @@ impl EnhancedTuiApp {
             }
             AppMode::Debug => "Parser Debug (F5)".to_string(),
             AppMode::PrettyQuery => "Pretty Query View (F6)".to_string(),
-            AppMode::CacheList => "Cache Management (F7)".to_string(),
             AppMode::JumpToRow => format!("Jump to row: {}", self.get_jump_to_row_input()),
             AppMode::ColumnStats => "Column Statistics (S to close)".to_string(),
         };
@@ -5720,7 +4866,6 @@ impl EnhancedTuiApp {
                             AppMode::History => Style::default().fg(Color::Magenta),
                             AppMode::Debug => Style::default().fg(Color::Yellow),
                             AppMode::PrettyQuery => Style::default().fg(Color::Green),
-                            AppMode::CacheList => Style::default().fg(Color::Cyan),
                             AppMode::JumpToRow => Style::default().fg(Color::Magenta),
                             AppMode::ColumnStats => Style::default().fg(Color::Cyan),
                             _ => Style::default(),
@@ -5797,7 +4942,6 @@ impl EnhancedTuiApp {
             AppMode::History => self.render_history(f, results_area),
             AppMode::Debug => self.render_debug(f, results_area),
             AppMode::PrettyQuery => self.render_pretty_query(f, results_area),
-            AppMode::CacheList => self.render_cache_list(f, results_area),
             AppMode::ColumnStats => self.render_column_stats(f, results_area),
             _ if self.buffer().has_dataview() => {
                 // Calculate viewport using DataView
@@ -5805,11 +4949,7 @@ impl EnhancedTuiApp {
                     // Extract viewport info first
                     let terminal_height = results_area.height as usize;
                     let max_visible_rows = terminal_height.saturating_sub(3).max(10);
-                    let total_rows = if let Some(filtered) = self.buffer().get_filtered_data() {
-                        filtered.len()
-                    } else {
-                        dataview.row_count()
-                    };
+                    let total_rows = dataview.row_count();
                     let row_viewport_start = self
                         .buffer()
                         .get_scroll_offset()
@@ -5869,7 +5009,6 @@ impl EnhancedTuiApp {
             AppMode::History => "HISTORY",
             AppMode::Debug => "DEBUG",
             AppMode::PrettyQuery => "PRETTY",
-            AppMode::CacheList => "CACHE",
             AppMode::JumpToRow => "JUMP",
             AppMode::ColumnStats => "STATS",
         };
@@ -6299,10 +5438,7 @@ impl EnhancedTuiApp {
             headers.len()
         );
         debug!("Column headers: {:?}", headers);
-        debug!(
-            "Buffer has {} hidden columns",
-            self.buffer().get_hidden_columns().len()
-        );
+        debug!("Buffer has {} hidden columns", self.buffer().get().len());
 
         // Calculate visible columns for virtual scrolling based on actual widths
         let terminal_width = area.width as usize;
@@ -6920,160 +6056,6 @@ impl EnhancedTuiApp {
                 .style(Style::default().fg(Color::DarkGray));
             f.render_widget(empty_preview, area);
         }
-    }
-
-    fn handle_cache_command(&mut self, command: &str) -> Result<()> {
-        let parts: Vec<&str> = command.split_whitespace().collect();
-        if parts.len() < 2 {
-            self.buffer_mut().set_status_message(
-                "Invalid cache command. Use :cache save <query> or :cache load <id>".to_string(),
-            );
-            return Ok(());
-        }
-
-        match parts[1] {
-            "save" => {
-                // Save last query results to cache with optional custom ID
-                // Save DataView's source DataTable to cache
-                if let Some(dataview) = self.buffer().get_dataview() {
-                    // Convert to JSON for cache compatibility
-                    let data_to_save =
-                        crate::data::data_exporter::DataExporter::datatable_to_json_values(
-                            dataview.source(),
-                        );
-
-                    if let Some(ref mut cache) = self.query_cache {
-                        // Check if a custom ID is provided
-                        let (custom_id, query) = if parts.len() > 2 {
-                            // Check if the first word after "save" could be an ID (alphanumeric)
-                            let potential_id = parts[2];
-                            if potential_id
-                                .chars()
-                                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
-                                && !potential_id.starts_with("SELECT")
-                                && !potential_id.starts_with("select")
-                            {
-                                // First word is likely an ID
-                                let id = Some(potential_id.to_string());
-                                let query = if parts.len() > 3 {
-                                    parts[3..].join(" ")
-                                } else {
-                                    // Get the last entry in a limited scope
-                                    let last_command = self
-                                        .state_container
-                                        .command_history()
-                                        .get_last_entry()
-                                        .map(|e| e.command.clone());
-
-                                    if let Some(command) = last_command {
-                                        command
-                                    } else {
-                                        self.buffer_mut()
-                                            .set_status_message("No query to cache".to_string());
-                                        return Ok(());
-                                    }
-                                };
-                                (id, query)
-                            } else {
-                                // No ID provided, treat everything as the query
-                                (None, parts[2..].join(" "))
-                            }
-                        } else {
-                            // Get the last entry in a limited scope
-                            let last_command = self
-                                .state_container
-                                .command_history()
-                                .get_last_entry()
-                                .map(|e| e.command.clone());
-
-                            if let Some(command) = last_command {
-                                (None, command)
-                            } else {
-                                self.buffer_mut()
-                                    .set_status_message("No query to cache".to_string());
-                                return Ok(());
-                            }
-                        };
-
-                        match cache.save_query(&query, &data_to_save, custom_id) {
-                            Ok(id) => {
-                                self.buffer_mut().set_status_message(format!(
-                                    "Query cached with ID: {} ({} rows)",
-                                    id,
-                                    data_to_save.len()
-                                ));
-                            }
-                            Err(e) => {
-                                self.buffer_mut()
-                                    .set_status_message(format!("Failed to cache query: {}", e));
-                            }
-                        }
-                    }
-                } else {
-                    self.buffer_mut().set_status_message(
-                        "No results to cache. Execute a query first.".to_string(),
-                    );
-                }
-            }
-            "load" => {
-                if parts.len() < 3 {
-                    self.buffer_mut()
-                        .set_status_message("Usage: :cache load <id>".to_string());
-                    return Ok(());
-                }
-
-                if let Ok(id) = parts[2].parse::<u64>() {
-                    if let Some(ref cache) = self.query_cache {
-                        match cache.load_query(id) {
-                            Ok((_query, data)) => {
-                                self.buffer_mut().set_cached_data(Some(data.clone()));
-                                self.buffer_mut().set_cache_mode(true);
-                                self.buffer_mut().set_status_message(format!(
-                                    "Loaded cache ID {} with {} rows. Cache mode enabled.",
-                                    id,
-                                    data.len()
-                                ));
-
-                                // Update parser with cached data schema if available
-                                if let Some(first_row) = data.first() {
-                                    if let Some(obj) = first_row.as_object() {
-                                        let columns: Vec<String> =
-                                            obj.keys().map(|k| k.to_string()).collect();
-                                        self.hybrid_parser.update_single_table(
-                                            "cached_data".to_string(),
-                                            columns,
-                                        );
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                self.buffer_mut()
-                                    .set_status_message(format!("Failed to load cache: {}", e));
-                            }
-                        }
-                    }
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("Invalid cache ID".to_string());
-                }
-            }
-            "list" => {
-                self.buffer_mut().set_mode(AppMode::CacheList);
-            }
-            "clear" => {
-                self.buffer_mut().set_cache_mode(false);
-                self.buffer_mut().set_cached_data(None);
-                self.buffer_mut()
-                    .set_status_message("Cache mode disabled".to_string());
-            }
-            _ => {
-                self.buffer_mut().set_status_message(
-                    "Unknown cache command. Use save, load, list, or clear.".to_string(),
-                );
-            }
-        }
-
-        Ok(())
     }
 
     fn handle_cache_list_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -7969,12 +6951,6 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                                     continue;
                                 }
                             }
-
-                            // Set the CSV client and metadata in the buffer
-                            buffer.set_csv_client(Some(csv_client));
-                            buffer.set_csv_mode(true);
-                            buffer.set_table_name(table_name.clone());
-
                             info!(target: "buffer", "Loaded {} file '{}' into buffer {}: table='{}', case_insensitive={}", 
                                   extension.to_uppercase(), file_path, buffer.get_id(), table_name, case_insensitive);
 

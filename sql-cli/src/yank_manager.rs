@@ -163,50 +163,36 @@ impl YankManager {
         buffer: &dyn BufferAPI,
         state_container: &AppStateContainer,
     ) -> Result<YankResult> {
-        // Get the DataTable
-        let datatable = buffer
-            .get_datatable()
-            .ok_or_else(|| anyhow!("No DataTable available"))?;
-
-        // Determine what data to use
-        let data = if buffer.is_filter_active() || buffer.is_fuzzy_filter_active() {
-            // Use filtered data if available
-            if let Some(filtered) = buffer.get_filtered_data() {
-                // Convert string data back to JSON for TSV generation
-                // This is a bit inefficient but maintains compatibility
-                Self::convert_filtered_to_json(datatable, filtered)?
-            } else {
-                // Convert DataTable to JSON for TSV generation
-                Self::datatable_to_json(datatable)?
-            }
+        // Prefer DataView when available (which handles filtering/sorting)
+        let tsv_text = if let Some(dataview) = buffer.get_dataview() {
+            // Use DataView's built-in TSV export
+            dataview.to_tsv()?
+        } else if let Some(datatable) = buffer.get_datatable() {
+            // Fall back to DataTable for legacy buffers
+            let data = Self::datatable_to_json(datatable)?;
+            DataExporter::generate_tsv_text(&data)
+                .ok_or_else(|| anyhow!("Failed to generate TSV"))?
         } else {
-            // Convert DataTable to JSON for TSV generation
-            Self::datatable_to_json(datatable)?
+            return Err(anyhow!("No data available"));
         };
-
-        // Generate TSV text for better Windows/Excel compatibility
-        let tsv_text = DataExporter::generate_tsv_text(&data)
-            .ok_or_else(|| anyhow!("Failed to generate TSV"))?;
 
         // Copy to clipboard using AppStateContainer
         let clipboard_len = tsv_text.len();
 
-        // Create preview
-        let row_count = data.len();
-        let col_count = if let Some(first) = data.first() {
-            if let Some(obj) = first.as_object() {
-                obj.len()
-            } else {
-                0
-            }
+        // Create preview based on what data source we used
+        let (row_count, col_count, filter_info) = if let Some(dataview) = buffer.get_dataview() {
+            // Get counts from DataView
+            let rows = dataview.row_count();
+            let cols = dataview.column_count();
+            let filtered = dataview.has_filter();
+            (rows, cols, if filtered { " (filtered)" } else { "" })
+        } else if let Some(datatable) = buffer.get_datatable() {
+            // Get counts from DataTable
+            let rows = datatable.row_count();
+            let cols = datatable.column_count();
+            (rows, cols, "")
         } else {
-            0
-        };
-
-        let filter_info = if buffer.is_filter_active() || buffer.is_fuzzy_filter_active() {
-            " (filtered)"
-        } else {
-            ""
+            (0, 0, "")
         };
 
         // Call AppStateContainer's yank_all
@@ -253,48 +239,6 @@ impl YankManager {
                 json_data.push(Value::Object(obj));
             }
         }
-
-        Ok(json_data)
-    }
-
-    /// Helper to convert filtered string data back to JSON
-    fn convert_filtered_to_json(
-        datatable: &crate::data::datatable::DataTable,
-        filtered_data: &[Vec<String>],
-    ) -> Result<Vec<Value>> {
-        // Get headers from DataTable
-        let headers = datatable.column_names();
-
-        // Convert filtered string data back to JSON
-        let json_data: Vec<Value> = filtered_data
-            .iter()
-            .map(|row| {
-                let mut obj = serde_json::Map::new();
-                for (i, header) in headers.iter().enumerate() {
-                    if let Some(value) = row.get(i) {
-                        // Try to preserve original types
-                        if value == "NULL" || value.is_empty() {
-                            obj.insert(header.clone(), Value::Null);
-                        } else if let Ok(n) = value.parse::<f64>() {
-                            obj.insert(
-                                header.clone(),
-                                Value::Number(
-                                    serde_json::Number::from_f64(n)
-                                        .unwrap_or_else(|| serde_json::Number::from(0)),
-                                ),
-                            );
-                        } else if value == "true" || value == "false" {
-                            obj.insert(header.clone(), Value::Bool(value == "true"));
-                        } else {
-                            obj.insert(header.clone(), Value::String(value.clone()));
-                        }
-                    } else {
-                        obj.insert(header.clone(), Value::Null);
-                    }
-                }
-                Value::Object(obj)
-            })
-            .collect();
 
         Ok(json_data)
     }

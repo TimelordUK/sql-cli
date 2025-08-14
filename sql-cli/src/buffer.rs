@@ -31,7 +31,6 @@ pub enum AppMode {
     History,
     Debug,
     PrettyQuery,
-    CacheList,
     JumpToRow,
     ColumnStats,
 }

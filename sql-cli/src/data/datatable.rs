@@ -486,6 +486,11 @@ impl DataTable {
         Ok(table)
     }
 
+    /// Get a single row by index
+    pub fn get_row(&self, index: usize) -> Option<&DataRow> {
+        self.rows.get(index)
+    }
+
     /// V50: Get a single row as strings
     pub fn get_row_as_strings(&self, index: usize) -> Option<Vec<String>> {
         self.rows.get(index).map(|row| {
@@ -494,6 +499,135 @@ impl DataTable {
                 .map(|value| value.to_string_optimized())
                 .collect()
         })
+    }
+
+    /// Pretty print the DataTable with a nice box drawing
+    pub fn pretty_print(&self) -> String {
+        let mut output = String::new();
+
+        // Header
+        output.push_str("╔═══════════════════════════════════════════════════════╗\n");
+        output.push_str(&format!("║ DataTable: {:^41} ║\n", self.name));
+        output.push_str("╠═══════════════════════════════════════════════════════╣\n");
+
+        // Summary stats
+        output.push_str(&format!(
+            "║ Rows: {:6} | Columns: {:3} | Memory: ~{:6} bytes ║\n",
+            self.row_count(),
+            self.column_count(),
+            self.get_stats().memory_size
+        ));
+
+        // Metadata if any
+        if !self.metadata.is_empty() {
+            output.push_str("╠═══════════════════════════════════════════════════════╣\n");
+            output.push_str("║ Metadata:                                             ║\n");
+            for (key, value) in &self.metadata {
+                let truncated_value = if value.len() > 35 {
+                    format!("{}...", &value[..32])
+                } else {
+                    value.clone()
+                };
+                output.push_str(&format!(
+                    "║   {:15} : {:35} ║\n",
+                    Self::truncate_string(key, 15),
+                    truncated_value
+                ));
+            }
+        }
+
+        // Column details
+        output.push_str("╠═══════════════════════════════════════════════════════╣\n");
+        output.push_str("║ Columns:                                              ║\n");
+        output.push_str("╟───────────────────┬──────────┬─────────┬──────┬──────╢\n");
+        output.push_str("║ Name              │ Type     │ Nullable│ Nulls│Unique║\n");
+        output.push_str("╟───────────────────┼──────────┼─────────┼──────┼──────╢\n");
+
+        for column in &self.columns {
+            let type_str = match &column.data_type {
+                DataType::String => "String",
+                DataType::Integer => "Integer",
+                DataType::Float => "Float",
+                DataType::Boolean => "Boolean",
+                DataType::DateTime => "DateTime",
+                DataType::Null => "Null",
+                DataType::Mixed => "Mixed",
+            };
+
+            output.push_str(&format!(
+                "║ {:17} │ {:8} │ {:7} │ {:4} │ {:4} ║\n",
+                Self::truncate_string(&column.name, 17),
+                type_str,
+                if column.nullable { "Yes" } else { "No" },
+                column.null_count,
+                column.unique_values.unwrap_or(0)
+            ));
+        }
+
+        output.push_str("╚═══════════════════════════════════════════════════════╝\n");
+
+        // Sample data (first 5 rows)
+        output.push_str("\nSample Data (first 5 rows):\n");
+        let sample_count = self.rows.len().min(5);
+
+        if sample_count > 0 {
+            // Column headers
+            output.push_str("┌");
+            for (i, col) in self.columns.iter().enumerate() {
+                if i > 0 {
+                    output.push_str("┬");
+                }
+                output.push_str(&"─".repeat(20));
+            }
+            output.push_str("┐\n");
+
+            output.push_str("│");
+            for col in &self.columns {
+                output.push_str(&format!(" {:^18} │", Self::truncate_string(&col.name, 18)));
+            }
+            output.push_str("\n");
+
+            output.push_str("├");
+            for (i, _) in self.columns.iter().enumerate() {
+                if i > 0 {
+                    output.push_str("┼");
+                }
+                output.push_str(&"─".repeat(20));
+            }
+            output.push_str("┤\n");
+
+            // Data rows
+            for row_idx in 0..sample_count {
+                if let Some(row) = self.rows.get(row_idx) {
+                    output.push_str("│");
+                    for value in &row.values {
+                        let value_str = value.to_string();
+                        output
+                            .push_str(&format!(" {:18} │", Self::truncate_string(&value_str, 18)));
+                    }
+                    output.push_str("\n");
+                }
+            }
+
+            output.push_str("└");
+            for (i, _) in self.columns.iter().enumerate() {
+                if i > 0 {
+                    output.push_str("┴");
+                }
+                output.push_str(&"─".repeat(20));
+            }
+            output.push_str("┘\n");
+        }
+
+        output
+    }
+
+    fn truncate_string(s: &str, max_len: usize) -> String {
+        if s.len() > max_len {
+            format!("{}...", &s[..max_len - 3])
+        } else {
+            s.to_string()
+        }
     }
 
     /// Get a schema summary of the DataTable

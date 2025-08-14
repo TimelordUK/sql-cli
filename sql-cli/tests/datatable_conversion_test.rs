@@ -1,3 +1,7 @@
+// Tests
+#[cfg(test)]
+mod data_view_tests;
+
 #[cfg(test)]
 mod datatable_conversion_tests {
     use serde_json::json;

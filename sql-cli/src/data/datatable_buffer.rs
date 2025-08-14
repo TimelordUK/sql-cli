@@ -660,7 +660,6 @@ impl BufferAPI for DataTableBuffer {
         self.filter_state.active = false;
         self.filter_state.pattern.clear();
         self.view.clear_filter();
-        self.update_filtered_data_cache();
     }
 
     fn get_row_count(&self) -> usize {
