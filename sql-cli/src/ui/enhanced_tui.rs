@@ -578,18 +578,26 @@ impl EnhancedTuiApp {
         let mut schema = std::collections::HashMap::new();
         schema.insert(table_name.clone(), datatable.column_names());
 
+        // TEMPORARY: Also create CsvApiClient for complex query support
+        // This will be removed once QueryEngine is implemented
+        let mut csv_client = CsvApiClient::new();
+        csv_client.set_case_insensitive(app.config.behavior.case_insensitive_default);
+        csv_client.load_csv(csv_path, &table_name)?;
+        info!("Created CsvApiClient as fallback for complex queries (temporary)");
+
         let (datatable_opt, schema) = (Some(datatable), schema);
 
         // Replace the default buffer with a CSV buffer using direct DataTable
         {
             // Clear all buffers and add a CSV buffer
             app.buffer_manager.clear_all();
-            // Direct DataTable mode - create buffer without CSV client
+            // Direct DataTable mode - create buffer with both DataTable and CSV client
             let mut buffer = buffer::Buffer::new(1);
             buffer.set_csv_mode(true);
             buffer.set_table_name(table_name.clone());
             buffer.set_datatable(datatable_opt);
-            info!("Created buffer with direct DataTable (no JSON)");
+            buffer.set_csv_client(Some(csv_client)); // Keep CSV client for complex queries
+            info!("Created buffer with direct DataTable and CSV client fallback");
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             buffer.set_compact_mode(app.config.display.compact_mode);
@@ -679,6 +687,13 @@ impl EnhancedTuiApp {
         let mut schema = std::collections::HashMap::new();
         schema.insert(table_name.clone(), datatable.column_names());
 
+        // TEMPORARY: Also create CsvApiClient for complex query support
+        // This will be removed once QueryEngine is implemented
+        let mut csv_client = CsvApiClient::new();
+        csv_client.set_case_insensitive(app.config.behavior.case_insensitive_default);
+        csv_client.load_json(json_path, &table_name)?;
+        info!("Created CsvApiClient as fallback for complex queries (temporary)");
+
         let datatable_opt = Some(datatable);
 
         // Replace the default buffer with a JSON buffer using direct DataTable
@@ -689,7 +704,8 @@ impl EnhancedTuiApp {
             buffer.set_csv_mode(true); // This flag is used for both CSV and JSON file modes
             buffer.set_table_name(table_name.clone());
             buffer.set_datatable(datatable_opt);
-            info!("Created buffer with direct DataTable from JSON");
+            buffer.set_csv_client(Some(csv_client)); // Keep CSV client for complex queries
+            info!("Created buffer with direct DataTable and CSV client fallback");
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             buffer.set_compact_mode(app.config.display.compact_mode);
