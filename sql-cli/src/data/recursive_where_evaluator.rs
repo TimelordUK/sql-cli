@@ -1,6 +1,7 @@
 use crate::data::datatable::{DataTable, DataValue};
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
 use anyhow::Result;
+use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 
 /// Evaluates WHERE clauses from recursive_parser directly against DataTable
 pub struct RecursiveWhereEvaluator<'a> {
@@ -137,6 +138,50 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             | (Some(DataValue::Null), "IS NOT", ExprValue::Null) => Ok(false),
             (Some(_), "IS NOT", ExprValue::Null) => Ok(true),
 
+            // DateTime comparisons
+            (Some(DataValue::String(date_str)), op_str, ExprValue::DateTime(dt)) => {
+                // Try to parse the string as a datetime
+                if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
+                    match op_str {
+                        "=" => Ok(parsed_dt == *dt),
+                        "!=" | "<>" => Ok(parsed_dt != *dt),
+                        ">" => Ok(parsed_dt > *dt),
+                        ">=" => Ok(parsed_dt >= *dt),
+                        "<" => Ok(parsed_dt < *dt),
+                        "<=" => Ok(parsed_dt <= *dt),
+                        _ => Ok(false),
+                    }
+                } else if let Ok(parsed_dt) =
+                    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S")
+                {
+                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
+                    match op_str {
+                        "=" => Ok(parsed_utc == *dt),
+                        "!=" | "<>" => Ok(parsed_utc != *dt),
+                        ">" => Ok(parsed_utc > *dt),
+                        ">=" => Ok(parsed_utc >= *dt),
+                        "<" => Ok(parsed_utc < *dt),
+                        "<=" => Ok(parsed_utc <= *dt),
+                        _ => Ok(false),
+                    }
+                } else if let Ok(parsed_date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                    let parsed_dt =
+                        NaiveDateTime::new(parsed_date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
+                    match op_str {
+                        "=" => Ok(parsed_utc == *dt),
+                        "!=" | "<>" => Ok(parsed_utc != *dt),
+                        ">" => Ok(parsed_utc > *dt),
+                        ">=" => Ok(parsed_utc >= *dt),
+                        "<" => Ok(parsed_utc < *dt),
+                        "<=" => Ok(parsed_utc <= *dt),
+                        _ => Ok(false),
+                    }
+                } else {
+                    Ok(false)
+                }
+            }
+
             _ => Ok(false),
         }
     }
@@ -226,8 +271,12 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
                 let search_str = self.extract_string_value(&args[0])?;
 
+                // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
                     Some(DataValue::String(s)) => Ok(s.contains(&search_str)),
+                    Some(DataValue::Integer(n)) => Ok(n.to_string().contains(&search_str)),
+                    Some(DataValue::Float(f)) => Ok(f.to_string().contains(&search_str)),
+                    Some(DataValue::Boolean(b)) => Ok(b.to_string().contains(&search_str)),
                     _ => Ok(false),
                 }
             }
@@ -237,8 +286,12 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
                 let prefix = self.extract_string_value(&args[0])?;
 
+                // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
                     Some(DataValue::String(s)) => Ok(s.starts_with(&prefix)),
+                    Some(DataValue::Integer(n)) => Ok(n.to_string().starts_with(&prefix)),
+                    Some(DataValue::Float(f)) => Ok(f.to_string().starts_with(&prefix)),
+                    Some(DataValue::Boolean(b)) => Ok(b.to_string().starts_with(&prefix)),
                     _ => Ok(false),
                 }
             }
@@ -248,8 +301,12 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
                 let suffix = self.extract_string_value(&args[0])?;
 
+                // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
                     Some(DataValue::String(s)) => Ok(s.ends_with(&suffix)),
+                    Some(DataValue::Integer(n)) => Ok(n.to_string().ends_with(&suffix)),
+                    Some(DataValue::Float(f)) => Ok(f.to_string().ends_with(&suffix)),
+                    Some(DataValue::Boolean(b)) => Ok(b.to_string().ends_with(&suffix)),
                     _ => Ok(false),
                 }
             }
@@ -281,6 +338,44 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     Ok(ExprValue::String(n.clone()))
                 }
             }
+            SqlExpression::DateTimeConstructor {
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+            } => {
+                // Create a DateTime from the constructor
+                let naive_date = NaiveDate::from_ymd_opt(*year, *month, *day)
+                    .ok_or_else(|| anyhow::anyhow!("Invalid date: {}-{}-{}", year, month, day))?;
+                let naive_time = NaiveTime::from_hms_opt(
+                    hour.unwrap_or(0),
+                    minute.unwrap_or(0),
+                    second.unwrap_or(0),
+                )
+                .ok_or_else(|| anyhow::anyhow!("Invalid time"))?;
+                let naive_datetime = NaiveDateTime::new(naive_date, naive_time);
+                let datetime = Utc.from_utc_datetime(&naive_datetime);
+                Ok(ExprValue::DateTime(datetime))
+            }
+            SqlExpression::DateTimeToday {
+                hour,
+                minute,
+                second,
+            } => {
+                // Get today's date with optional time
+                let today = Local::now().date_naive();
+                let time = NaiveTime::from_hms_opt(
+                    hour.unwrap_or(0),
+                    minute.unwrap_or(0),
+                    second.unwrap_or(0),
+                )
+                .ok_or_else(|| anyhow::anyhow!("Invalid time"))?;
+                let naive_datetime = NaiveDateTime::new(today, time);
+                let datetime = Utc.from_utc_datetime(&naive_datetime);
+                Ok(ExprValue::DateTime(datetime))
+            }
             _ => Ok(ExprValue::Null),
         }
     }
@@ -289,5 +384,6 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 enum ExprValue {
     String(String),
     Number(f64),
+    DateTime(DateTime<Utc>),
     Null,
 }
