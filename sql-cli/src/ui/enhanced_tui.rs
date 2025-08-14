@@ -170,21 +170,17 @@ impl EnhancedTuiApp {
         let col_idx = self.state_container.navigation().selected_column;
         debug!("Current column index: {}", col_idx);
 
-        if let Some(datatable) = self.buffer().get_datatable() {
-            let columns = datatable.column_names();
-            let hidden_count = self.buffer().get_hidden_columns().len();
-            debug!(
-                "Available columns: {:?}, hidden count: {}",
-                columns, hidden_count
-            );
+        if let Some(dataview) = self.buffer().get_dataview() {
+            let columns = dataview.column_names();
+            // DataView already tracks hidden columns, so visible count is just the current count
+            let visible_count = columns.len();
+            debug!("Visible columns: {:?}, count: {}", columns, visible_count);
 
             if col_idx < columns.len() {
                 let col_name = columns[col_idx].clone();
 
                 // Don't hide if it's the last visible column
-                let visible_count = columns.len() - hidden_count;
-                debug!("Visible columns count: {}", visible_count);
-
+                // With DataView, columns.len() IS the visible count
                 if visible_count > 1 {
                     self.buffer_mut().add_hidden_column(col_name.clone());
                     debug!(
@@ -410,7 +406,7 @@ impl EnhancedTuiApp {
         // In the future, we can check data source type and return appropriate adapter
         if let Some(buffer) = self.buffer_manager.current() {
             // V51: Check for DataView first, then DataTable
-            if buffer.has_dataview() || buffer.has_datatable() {
+            if buffer.has_dataview() {
                 return Some(Box::new(BufferAdapter::new(buffer)));
             }
         }
@@ -1356,7 +1352,7 @@ impl EnhancedTuiApp {
                 // Toggle between Help mode and previous mode
                 if self.buffer().get_mode() == AppMode::Help {
                     // Exit help mode
-                    let mode = if self.buffer().has_datatable() {
+                    let mode = if self.buffer().has_dataview() {
                         AppMode::Results
                     } else {
                         AppMode::Command
@@ -1644,7 +1640,7 @@ impl EnhancedTuiApp {
                 self.move_cursor_word_forward();
             }
             KeyCode::Down
-                if self.buffer().has_datatable()
+                if self.buffer().has_dataview()
                     && self.buffer().get_edit_mode() == EditMode::SingleLine =>
             {
                 self.buffer_mut().set_mode(AppMode::Results);
@@ -2232,7 +2228,7 @@ impl EnhancedTuiApp {
             SearchMode::Search => {
                 debug!(target: "search", "Executing search with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
                 debug!(target: "search", "Search: current results count={}", 
-                       self.buffer().get_datatable().map(|d| d.row_count()).unwrap_or(0));
+                       self.buffer().get_dataview().map(|v| v.source().row_count()).unwrap_or(0));
 
                 // Set search pattern in AppStateContainer
                 self.state_container.start_search(pattern.clone());
@@ -2248,7 +2244,7 @@ impl EnhancedTuiApp {
                 debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
                 debug!(target: "search", "Filter: case_insensitive={}, current results count={}", 
                        self.buffer().is_case_insensitive(),
-                       self.buffer().get_datatable().map(|d| d.row_count()).unwrap_or(0));
+                       self.buffer().get_dataview().map(|v| v.source().row_count()).unwrap_or(0));
                 self.buffer_mut().set_filter_pattern(pattern.clone());
                 self.state_container
                     .filter_mut()
@@ -2261,7 +2257,7 @@ impl EnhancedTuiApp {
             SearchMode::FuzzyFilter => {
                 debug!(target: "search", "Executing fuzzy filter with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
                 debug!(target: "search", "FuzzyFilter: current results count={}", 
-                       self.buffer().get_datatable().map(|d| d.row_count()).unwrap_or(0));
+                       self.buffer().get_dataview().map(|v| v.source().row_count()).unwrap_or(0));
                 self.buffer_mut().set_fuzzy_filter_pattern(pattern);
                 self.apply_fuzzy_filter();
                 let indices_count = self.buffer().get_fuzzy_filter_indices().len();
@@ -2847,7 +2843,7 @@ impl EnhancedTuiApp {
         self.help_widget.on_exit();
         self.set_help_visible(false); // Keep state_container in sync
                                       // Scroll is automatically reset when help is hidden in state_container
-        let mode = if self.buffer().has_datatable() {
+        let mode = if self.buffer().has_dataview() {
             AppMode::Results
         } else {
             AppMode::Command
@@ -3071,8 +3067,8 @@ impl EnhancedTuiApp {
                 && !upper_query.contains(" LIMIT ")
                 && !upper_query.contains(" GROUP BY ");
 
-            if self.buffer().has_datatable() {
-                // Use QueryEngine for all queries on DataTable
+            if self.buffer().has_dataview() {
+                // Use QueryEngine for all queries on DataView's DataTable
                 info!("Using QueryEngine to execute query on DataTable");
                 crate::utils::memory_tracker::track_memory("query_engine_start");
 
@@ -5077,12 +5073,16 @@ impl EnhancedTuiApp {
                         }
                     }
                 }
-            } else if let Some(datatable) = buffer.get_datatable() {
-                // V50: Use DataTable for column names
-                let columns = datatable.column_names();
+            } else if let Some(dataview) = buffer.get_dataview() {
+                // Use DataView for column names (shows actual visible columns)
+                let columns = dataview.column_names();
                 let table_name = buffer.get_table_name();
-                debug!(target: "buffer", "Updating parser with {} columns for table '{}'", columns.len(), table_name);
+                debug!(target: "buffer", "Updating parser with {} visible columns for table '{}'", columns.len(), table_name);
                 self.hybrid_parser.update_single_table(table_name, columns);
+            } else {
+                // No DataView available - might be loading or empty buffer
+                let table_name = buffer.get_table_name();
+                debug!(target: "buffer", "No DataView available for table '{}'", table_name);
             }
         }
     }
@@ -5763,16 +5763,16 @@ impl EnhancedTuiApp {
             AppMode::PrettyQuery => self.render_pretty_query(f, results_area),
             AppMode::CacheList => self.render_cache_list(f, results_area),
             AppMode::ColumnStats => self.render_column_stats(f, results_area),
-            _ if self.buffer().has_datatable() => {
-                // V50: Calculate viewport using DataTable
-                if let Some(datatable) = self.buffer().get_datatable() {
+            _ if self.buffer().has_dataview() => {
+                // Calculate viewport using DataView
+                if let Some(dataview) = self.buffer().get_dataview() {
                     // Extract viewport info first
                     let terminal_height = results_area.height as usize;
                     let max_visible_rows = terminal_height.saturating_sub(3).max(10);
                     let total_rows = if let Some(filtered) = self.buffer().get_filtered_data() {
                         filtered.len()
                     } else {
-                        datatable.row_count()
+                        dataview.row_count()
                     };
                     let row_viewport_start = self
                         .buffer()
@@ -7438,8 +7438,8 @@ impl EnhancedTuiApp {
     fn ensure_datatable_exists(&mut self) {
         // V50: DataTable is always created when data is loaded
         // This function is kept for compatibility but does nothing
-        if self.buffer().has_datatable() {
-            debug!("V50: DataTable already exists");
+        if self.buffer().has_dataview() {
+            debug!("V50: DataView already exists");
         }
     }
 
@@ -7467,8 +7467,11 @@ impl EnhancedTuiApp {
                         buffer.get_input_text(),
                         buffer.get_selected_row(),
                         self.state_container.get_current_column(),
-                        buffer.get_datatable().map(|d| d.row_count()).unwrap_or(0),
-                        buffer.get_filtered_data().map(|d| d.len()).unwrap_or(0),
+                        buffer
+                            .get_dataview()
+                            .map(|v| v.source().row_count())
+                            .unwrap_or(0),
+                        buffer.get_dataview().map(|v| v.row_count()).unwrap_or(0),
                     )
                 }
             } else {
@@ -7564,8 +7567,9 @@ impl EnhancedTuiApp {
                         debug_info.push_str(&format!("\nVisible Rows: {}\n", dataview.row_count()));
 
                         // Show if columns have been reordered
-                        if let Some(datatable) = buffer.get_datatable() {
-                            let original_columns = datatable.column_names();
+                        // Use the DataView's source to get original column order
+                        {
+                            let original_columns = dataview.source().column_names();
                             if visible_columns != original_columns {
                                 debug_info.push_str("\nColumn Order Changed: YES\n");
 
