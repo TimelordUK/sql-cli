@@ -55,22 +55,41 @@ impl DataView {
     }
 
     /// Move a column left in the view (swap with previous column)
+    /// With wraparound: moving left from first position moves to last
     pub fn move_column_left(&mut self, visible_column_index: usize) -> bool {
-        if visible_column_index == 0 || visible_column_index >= self.visible_columns.len() {
+        if visible_column_index >= self.visible_columns.len() {
             return false;
         }
-        self.visible_columns
-            .swap(visible_column_index - 1, visible_column_index);
+
+        if visible_column_index == 0 {
+            // Wraparound: move first column to end
+            let col = self.visible_columns.remove(0);
+            self.visible_columns.push(col);
+        } else {
+            // Normal swap with previous
+            self.visible_columns
+                .swap(visible_column_index - 1, visible_column_index);
+        }
         true
     }
 
     /// Move a column right in the view (swap with next column)
+    /// With wraparound: moving right from last position moves to first
     pub fn move_column_right(&mut self, visible_column_index: usize) -> bool {
-        if visible_column_index >= self.visible_columns.len() - 1 {
+        let len = self.visible_columns.len();
+        if visible_column_index >= len {
             return false;
         }
-        self.visible_columns
-            .swap(visible_column_index, visible_column_index + 1);
+
+        if visible_column_index == len - 1 {
+            // Wraparound: move last column to beginning
+            let col = self.visible_columns.pop().unwrap();
+            self.visible_columns.insert(0, col);
+        } else {
+            // Normal swap with next
+            self.visible_columns
+                .swap(visible_column_index, visible_column_index + 1);
+        }
         true
     }
 

@@ -232,22 +232,43 @@ impl EnhancedTuiApp {
 
         let col_idx = self.state_container.navigation().selected_column;
 
-        // Get the current column name from DataTable
-        if let Some(datatable) = self.buffer().get_datatable() {
-            let columns = datatable.column_names();
+        // Get the current column name from DataView (not DataTable!)
+        // This ensures we use the view's current column order
+        if let Some(dataview) = self.buffer().get_dataview() {
+            let columns = dataview.column_names();
             if col_idx < columns.len() {
                 let col_name = columns[col_idx].clone();
 
                 // Move the column in the DataView
-                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-                    if dataview.move_column_left_by_name(&col_name) {
-                        // Move cursor left with the column
-                        if col_idx > 0 {
-                            self.state_container.navigation_mut().selected_column = col_idx - 1;
+                if let Some(dataview_mut) = self.buffer_mut().get_dataview_mut() {
+                    // Use the visible column index directly
+                    if dataview_mut.move_column_left(col_idx) {
+                        // Cursor follows the column to its new position
+                        // This allows pressing < multiple times to move the same column
+                        if col_idx == 0 {
+                            // Column wrapped to end, cursor follows to last position
+                            let new_col_count = dataview_mut.column_count();
+                            if new_col_count > 0 {
+                                self.state_container.navigation_mut().selected_column =
+                                    new_col_count - 1;
+                                self.buffer_mut().set_current_column(new_col_count - 1);
+                            }
+                            self.buffer_mut()
+                                .set_status_message(format!("Moved column '{}' to end", col_name));
+                        } else {
+                            // Normal move left, cursor follows to new position
+                            let new_position = col_idx - 1;
+                            self.state_container.navigation_mut().selected_column = new_position;
+                            self.buffer_mut().set_current_column(new_position);
+                            self.buffer_mut()
+                                .set_status_message(format!("Moved column '{}' left", col_name));
                         }
-                        self.buffer_mut()
-                            .set_status_message(format!("Moved column '{}' left", col_name));
-                        debug!("Moved column '{}' left in DataView", col_name);
+                        debug!(
+                            "Moved column '{}' left in DataView (from {} to {})",
+                            col_name,
+                            col_idx,
+                            self.state_container.navigation().selected_column
+                        );
                     }
                 }
             }
@@ -262,22 +283,42 @@ impl EnhancedTuiApp {
 
         let col_idx = self.state_container.navigation().selected_column;
 
-        // Get the current column name from DataTable
-        if let Some(datatable) = self.buffer().get_datatable() {
-            let columns = datatable.column_names();
+        // Get the current column name from DataView (not DataTable!)
+        // This ensures we use the view's current column order
+        if let Some(dataview) = self.buffer().get_dataview() {
+            let columns = dataview.column_names();
             if col_idx < columns.len() {
                 let col_name = columns[col_idx].clone();
+                let col_count = columns.len();
 
                 // Move the column in the DataView
-                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-                    if dataview.move_column_right_by_name(&col_name) {
-                        // Move cursor right with the column
-                        if col_idx < columns.len() - 1 {
-                            self.state_container.navigation_mut().selected_column = col_idx + 1;
+                if let Some(dataview_mut) = self.buffer_mut().get_dataview_mut() {
+                    // Use the visible column index directly
+                    if dataview_mut.move_column_right(col_idx) {
+                        // Cursor follows the column to its new position
+                        // This allows pressing > multiple times to move the same column
+                        if col_idx == col_count - 1 {
+                            // Column wrapped to beginning, cursor follows to first position
+                            self.state_container.navigation_mut().selected_column = 0;
+                            self.buffer_mut().set_current_column(0);
+                            self.buffer_mut().set_status_message(format!(
+                                "Moved column '{}' to beginning",
+                                col_name
+                            ));
+                        } else {
+                            // Normal move right, cursor follows to new position
+                            let new_position = col_idx + 1;
+                            self.state_container.navigation_mut().selected_column = new_position;
+                            self.buffer_mut().set_current_column(new_position);
+                            self.buffer_mut()
+                                .set_status_message(format!("Moved column '{}' right", col_name));
                         }
-                        self.buffer_mut()
-                            .set_status_message(format!("Moved column '{}' right", col_name));
-                        debug!("Moved column '{}' right in DataView", col_name);
+                        debug!(
+                            "Moved column '{}' right in DataView (from {} to {})",
+                            col_name,
+                            col_idx,
+                            self.state_container.navigation().selected_column
+                        );
                     }
                 }
             }
@@ -7505,6 +7546,49 @@ impl EnhancedTuiApp {
                     if let Some(datatable) = buffer.get_datatable() {
                         debug_info.push_str("\n========== DATATABLE SCHEMA ==========\n");
                         debug_info.push_str(&datatable.get_schema_summary());
+                    }
+
+                    // Add DataView information - shows the actual view state
+                    if let Some(dataview) = buffer.get_dataview() {
+                        debug_info.push_str("\n========== DATAVIEW STATE ==========\n");
+
+                        // Show visible columns in order
+                        let visible_columns = dataview.column_names();
+                        debug_info
+                            .push_str(&format!("Visible Columns ({}):\n", visible_columns.len()));
+                        for (idx, col_name) in visible_columns.iter().enumerate() {
+                            debug_info.push_str(&format!("  [{}] {}\n", idx, col_name));
+                        }
+
+                        // Show row information
+                        debug_info.push_str(&format!("\nVisible Rows: {}\n", dataview.row_count()));
+
+                        // Show if columns have been reordered
+                        if let Some(datatable) = buffer.get_datatable() {
+                            let original_columns = datatable.column_names();
+                            if visible_columns != original_columns {
+                                debug_info.push_str("\nColumn Order Changed: YES\n");
+
+                                // Show what columns are hidden
+                                let hidden: Vec<String> = original_columns
+                                    .iter()
+                                    .filter(|col| !visible_columns.contains(col))
+                                    .cloned()
+                                    .collect();
+                                if !hidden.is_empty() {
+                                    debug_info
+                                        .push_str(&format!("Hidden Columns ({}):\n", hidden.len()));
+                                    for col in hidden {
+                                        debug_info.push_str(&format!("  - {}\n", col));
+                                    }
+                                }
+                            } else {
+                                debug_info.push_str("\nColumn Order Changed: NO\n");
+                            }
+                        }
+                    } else {
+                        debug_info.push_str("\n========== DATAVIEW STATE ==========\n");
+                        debug_info.push_str("No DataView available (using DataTable directly)\n");
                     }
                 }
 
