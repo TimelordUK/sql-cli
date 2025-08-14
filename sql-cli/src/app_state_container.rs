@@ -3392,8 +3392,9 @@ impl AppStateContainer {
 
     // History search operations (Ctrl+R)
     pub fn start_history_search(&self, original_input: String) {
-        eprintln!(
-            "[DEBUG] start_history_search called with input: '{}'",
+        info!(
+            target: "history",
+            "Starting history search with original input: '{}'",
             original_input
         );
 
@@ -3402,18 +3403,31 @@ impl AppStateContainer {
         history_search.matches.clear();
         history_search.selected_index = 0;
         history_search.is_active = true;
-        history_search.original_input = original_input;
+        history_search.original_input = original_input.clone();
 
         // Initialize with all history entries
         let history = self.command_history.borrow();
         let all_entries = history.get_all();
-        eprintln!(
-            "[DEBUG] Got {} entries from command_history.get_all()",
+        info!(
+            target: "history",
+            "Loaded {} history entries for search",
             all_entries.len()
         );
 
+        // Log the last few entries to verify they're there (showing in display order - newest first)
+        if !all_entries.is_empty() {
+            let recent_count = std::cmp::min(5, all_entries.len());
+            info!(target: "history", "Most recent {} entries (newest first):", recent_count);
+            // Show in reverse order since we display newest first
+            for (i, entry) in all_entries.iter().rev().take(recent_count).enumerate() {
+                info!(target: "history", "  [{}] '{}'", i, entry.command);
+            }
+        }
+
+        // Show entries in reverse order (most recent first)
         history_search.matches = all_entries
             .iter()
+            .rev() // Most recent first
             .cloned()
             .map(|entry| crate::history::HistoryMatch {
                 entry,

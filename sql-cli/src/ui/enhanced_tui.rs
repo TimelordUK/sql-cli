@@ -2901,10 +2901,10 @@ impl EnhancedTuiApp {
                     self.sync_all_input_states()
                 }
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 self.state_container.history_search_previous();
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 self.state_container.history_search_next();
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -3132,6 +3132,30 @@ impl EnhancedTuiApp {
                                 row_count
                             ));
 
+                            // Add query to history (was missing in QueryEngine path!)
+                            info!(target: "history", "Adding QueryEngine query to history: '{}'", query);
+                            let history_result = self
+                                .state_container
+                                .command_history_mut()
+                                .add_entry_with_schema(
+                                    query.to_string(),
+                                    true,
+                                    Some(duration.as_millis() as u64),
+                                    vec![], // TODO: Get schema columns from DataView
+                                    Some("QueryEngine".to_string()),
+                                );
+
+                            match history_result {
+                                Ok(_) => {
+                                    let history_count =
+                                        self.state_container.command_history().get_all().len();
+                                    info!(target: "history", "Successfully added QueryEngine query to history. Total entries: {}", history_count);
+                                }
+                                Err(e) => {
+                                    warn!(target: "history", "Failed to add QueryEngine query to history: {}", e);
+                                }
+                            }
+
                             return Ok(());
                         }
                         Err(e) => {
@@ -3200,7 +3224,8 @@ impl EnhancedTuiApp {
                     (vec![], Some("api".to_string()))
                 };
 
-                let _ = self
+                info!(target: "history", "Adding query to history: '{}'", query);
+                let result = self
                     .state_container
                     .command_history_mut()
                     .add_entry_with_schema(
@@ -3210,6 +3235,16 @@ impl EnhancedTuiApp {
                         schema_columns,
                         data_source.clone(),
                     );
+
+                match result {
+                    Ok(_) => {
+                        let history_count = self.state_container.command_history().get_all().len();
+                        info!(target: "history", "Successfully added query to history. Total entries: {}", history_count);
+                    }
+                    Err(e) => {
+                        warn!(target: "history", "Failed to add query to history: {}", e);
+                    }
+                }
 
                 // Add debug info about results
                 let row_count = response.data.len();

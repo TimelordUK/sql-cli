@@ -587,6 +587,9 @@ impl CommandHistory {
         // Reverse back to chronological order
         deduplicated.reverse();
 
+        // Sort by timestamp to ensure chronological order (oldest first)
+        deduplicated.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+
         // Log if we removed duplicates (only on first load, not every save)
         let removed_count = original_count - deduplicated.len();
         if removed_count > 0 {
