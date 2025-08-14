@@ -3,8 +3,9 @@ target/
 Cargo.lock
 
 # C#
-bin/
-obj/
+# Only ignore bin/ and obj/ at root level, not in subdirectories like src/bin/
+/bin/
+/obj/
 *.user
 *.suo
 *.cache
