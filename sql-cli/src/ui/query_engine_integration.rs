@@ -22,6 +22,26 @@ impl QueryEngineIntegration {
         Self::dataview_to_query_response(view)
     }
 
+    /// Execute a query with hidden columns
+    pub fn execute_query_with_hidden_columns(
+        table: &DataTable,
+        query: &str,
+        hidden_columns: &[String],
+    ) -> Result<QueryResponse> {
+        // Need an Arc for QueryEngine
+        let table_arc = Arc::new(table.clone());
+        let engine = QueryEngine;
+        let mut view = engine.execute(table_arc, query)?;
+
+        // Hide the specified columns
+        for col_name in hidden_columns {
+            view.hide_column_by_name(col_name);
+        }
+
+        // Convert DataView to QueryResponse format
+        Self::dataview_to_query_response(view)
+    }
+
     /// Convert a DataView to QueryResponse format for TUI compatibility
     fn dataview_to_query_response(view: DataView) -> Result<QueryResponse> {
         let mut rows = Vec::new();

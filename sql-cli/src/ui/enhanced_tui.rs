@@ -143,6 +143,9 @@ pub struct EnhancedTuiApp {
     // Visual enhancements
     cell_renderer: CellRenderer,
     key_indicator: KeyPressIndicator,
+
+    // View state (for DataView integration)
+    hidden_columns: Vec<String>,
 }
 
 impl EnhancedTuiApp {
@@ -152,6 +155,61 @@ impl EnhancedTuiApp {
     /// Toggle help visibility
     fn toggle_help(&mut self) {
         self.state_container.toggle_help();
+    }
+
+    // --- Column Visibility Management ---
+
+    /// Hide the currently selected column
+    pub fn hide_current_column(&mut self) {
+        if self.buffer().get_mode() != AppMode::Results {
+            return;
+        }
+
+        // Get current column index and name
+        let col_idx = self.state_container.navigation().selected_column;
+        if let Some(datatable) = self.buffer().get_datatable() {
+            let columns = datatable.column_names();
+            if col_idx < columns.len() {
+                let col_name = columns[col_idx].clone();
+
+                // Don't hide if it's the last visible column
+                let visible_count = columns.len() - self.hidden_columns.len();
+                if visible_count > 1 {
+                    self.hidden_columns.push(col_name.clone());
+
+                    // Re-execute the query to apply hidden columns
+                    let last_query = self.buffer().get_last_query();
+                    if !last_query.is_empty() {
+                        let _ = self.execute_query(&last_query);
+                    }
+
+                    self.buffer_mut().set_status_message(format!(
+                        "Hidden column: '{}' (Press Ctrl+Shift+H to unhide all)",
+                        col_name
+                    ));
+                } else {
+                    self.buffer_mut()
+                        .set_status_message("Cannot hide last visible column".to_string());
+                }
+            }
+        }
+    }
+
+    /// Unhide all columns
+    pub fn unhide_all_columns(&mut self) {
+        if !self.hidden_columns.is_empty() {
+            let count = self.hidden_columns.len();
+            self.hidden_columns.clear();
+
+            // Re-execute the query to show all columns
+            let last_query = self.buffer().get_last_query();
+            if !last_query.is_empty() {
+                let _ = self.execute_query(&last_query);
+            }
+
+            self.buffer_mut()
+                .set_status_message(format!("Unhidden {} column(s)", count));
+        }
     }
 
     /// Set help visibility
@@ -544,6 +602,7 @@ impl EnhancedTuiApp {
                 }
                 indicator
             },
+            hidden_columns: Vec::new(),
         }
     }
 
@@ -1294,6 +1353,20 @@ impl EnhancedTuiApp {
                         self.buffer_mut().set_status_message(debug_msg);
                     }
                 }
+            }
+            // Column visibility - Ctrl+H to hide current column
+            KeyCode::Char('h')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                self.hide_current_column();
+            }
+            // Column visibility - Ctrl+Shift+H to unhide all columns
+            KeyCode::Char('H')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                self.unhide_all_columns();
             }
             // History navigation - Ctrl+N or Alt+Down
             KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -2857,8 +2930,18 @@ impl EnhancedTuiApp {
                 crate::utils::memory_tracker::track_memory("query_engine_start");
 
                 if let Some(datatable) = self.buffer().get_datatable() {
-                    // Execute query using QueryEngine
-                    match QueryEngineIntegration::execute_query(datatable, query) {
+                    // Execute query using QueryEngine with hidden columns
+                    let result = if self.hidden_columns.is_empty() {
+                        QueryEngineIntegration::execute_query(datatable, query)
+                    } else {
+                        QueryEngineIntegration::execute_query_with_hidden_columns(
+                            datatable,
+                            query,
+                            &self.hidden_columns,
+                        )
+                    };
+
+                    match result {
                         Ok(response) => {
                             let duration = start_time.elapsed();
                             crate::utils::memory_tracker::track_memory("query_engine_end");

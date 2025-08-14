@@ -42,6 +42,18 @@ impl DataView {
         self
     }
 
+    /// Hide a column by index
+    pub fn hide_column(&mut self, column_index: usize) {
+        self.visible_columns.retain(|&idx| idx != column_index);
+    }
+
+    /// Hide a column by name
+    pub fn hide_column_by_name(&mut self, column_name: &str) {
+        if let Some(col_idx) = self.source.get_column_index(column_name) {
+            self.hide_column(col_idx);
+        }
+    }
+
     /// Create a view with specific rows
     pub fn with_rows(mut self, rows: Vec<usize>) -> Self {
         self.visible_rows = rows;
