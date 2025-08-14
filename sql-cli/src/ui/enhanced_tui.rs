@@ -12,7 +12,7 @@ use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_exporter::DataExporter;
 use crate::data::data_provider::DataProvider;
-use crate::data::datatable::DataTable;
+// DataTable import removed - TUI only works with DataView
 use crate::help_text::HelpText;
 use crate::history::{CommandHistory, HistoryMatch};
 use crate::key_chord_handler::{ChordResult, KeyChordHandler};
@@ -3072,9 +3072,9 @@ impl EnhancedTuiApp {
                 info!("Using QueryEngine to execute query on DataTable");
                 crate::utils::memory_tracker::track_memory("query_engine_start");
 
-                if let Some(datatable) = self.buffer().get_datatable() {
-                    // Execute query using QueryEngine directly with DataView (V51: No more QueryResponse!)
-                    let table_arc = Arc::new(datatable.clone());
+                if let Some(dataview) = self.buffer().get_dataview() {
+                    // Execute query using QueryEngine on DataView's source DataTable
+                    let table_arc = Arc::new(dataview.source().clone());
                     let case_insensitive = self.buffer().is_case_insensitive();
                     let engine = crate::data::query_engine::QueryEngine::with_case_insensitive(
                         case_insensitive,
@@ -4617,9 +4617,9 @@ impl EnhancedTuiApp {
             // Get the ORIGINAL unfiltered data from the buffer's results
             // We need to bypass the DataProvider here because it returns filtered data
             // when a fuzzy filter is already active
-            // V50: Use DataTable for fuzzy filtering
-            let rows = if let Some(datatable) = self.buffer().get_datatable() {
-                datatable.to_string_table()
+            // Use DataView's source DataTable for fuzzy filtering
+            let rows = if let Some(dataview) = self.buffer().get_dataview() {
+                dataview.source().to_string_table()
             } else {
                 Vec::new()
             };
@@ -4910,9 +4910,9 @@ impl EnhancedTuiApp {
     fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
         if let Some(filtered) = self.buffer().get_filtered_data() {
             Some(filtered.clone())
-        } else if let Some(datatable) = self.buffer().get_datatable() {
-            // V50: Use DataTable's string conversion
-            Some(datatable.to_string_table())
+        } else if let Some(dataview) = self.buffer().get_dataview() {
+            // Use DataView's source for string conversion
+            Some(dataview.source().to_string_table())
         } else {
             None
         }
@@ -4994,9 +4994,9 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
-        // V50: Calculate column widths based on DataTable
-        if let Some(datatable) = self.buffer().get_datatable() {
-            let headers = datatable.column_names();
+        // Calculate column widths based on DataView
+        if let Some(dataview) = self.buffer().get_dataview() {
+            let headers = dataview.column_names();
             let mut widths = Vec::with_capacity(headers.len());
 
             // Use compact mode settings
@@ -5008,8 +5008,9 @@ impl EnhancedTuiApp {
             // PERF FIX: Only convert viewport rows to strings, not entire table!
             // Get string representation of ONLY visible rows to avoid converting 100k rows
             let mut rows_to_check = Vec::new();
-            for i in viewport_start..viewport_end.min(datatable.row_count()) {
-                if let Some(row_strings) = datatable.get_row_as_strings(i) {
+            let source_table = dataview.source();
+            for i in viewport_start..viewport_end.min(source_table.row_count()) {
+                if let Some(row_strings) = source_table.get_row_as_strings(i) {
                     rows_to_check.push(row_strings);
                 }
             }
@@ -5961,8 +5962,8 @@ impl EnhancedTuiApp {
                     ));
 
                     // Column information
-                    if let Some(datatable) = self.buffer().get_datatable() {
-                        let headers = datatable.column_names();
+                    if let Some(dataview) = self.buffer().get_dataview() {
+                        let headers = dataview.column_names();
                         if self.buffer().get_current_column() < headers.len() {
                             spans.push(Span::raw(" | Col: "));
                             spans.push(Span::styled(
@@ -6014,7 +6015,7 @@ impl EnhancedTuiApp {
                                     self.state_container.get_table_selected_row()
                                 {
                                     if let Some(row_data) =
-                                        datatable.get_row_as_strings(selected_row)
+                                        dataview.source().get_row_as_strings(selected_row)
                                     {
                                         let col_idx = self.buffer().get_current_column();
                                         if let Some(cell_value) = row_data.get(col_idx) {
@@ -6898,12 +6899,12 @@ impl EnhancedTuiApp {
         match parts[1] {
             "save" => {
                 // Save last query results to cache with optional custom ID
-                // V50: Save DataTable to cache
-                if let Some(datatable) = self.buffer().get_datatable() {
+                // Save DataView's source DataTable to cache
+                if let Some(dataview) = self.buffer().get_dataview() {
                     // Convert to JSON for cache compatibility
                     let data_to_save =
                         crate::data::data_exporter::DataExporter::datatable_to_json_values(
-                            datatable,
+                            dataview.source(),
                         );
 
                     if let Some(ref mut cache) = self.query_cache {
@@ -7352,7 +7353,8 @@ impl EnhancedTuiApp {
         let (has_datatable, datatable_info, json_size) = {
             let buffer = self.buffer();
 
-            let datatable_info = if let Some(datatable) = buffer.get_datatable() {
+            let datatable_info = if let Some(dataview) = buffer.get_dataview() {
+                let datatable = dataview.source();
                 // Log column types
                 for (idx, column) in datatable.columns.iter().enumerate() {
                     debug!(
@@ -7376,7 +7378,7 @@ impl EnhancedTuiApp {
             // V50: JSON size is no longer applicable - DataTable is primary storage
             let json_size: Option<usize> = None;
 
-            (buffer.has_datatable(), datatable_info, json_size)
+            (buffer.has_dataview(), datatable_info, json_size)
         };
 
         // Now handle the results with mutable borrows
@@ -7546,7 +7548,8 @@ impl EnhancedTuiApp {
 
                 // Add DataTable schema information
                 if let Some(buffer) = self.buffer_manager.current() {
-                    if let Some(datatable) = buffer.get_datatable() {
+                    if let Some(dataview) = buffer.get_dataview() {
+                        let datatable = dataview.source();
                         debug_info.push_str("\n========== DATATABLE SCHEMA ==========\n");
                         debug_info.push_str(&datatable.get_schema_summary());
                     }
