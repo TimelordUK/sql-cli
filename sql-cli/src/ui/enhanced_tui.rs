@@ -5453,18 +5453,23 @@ impl EnhancedTuiApp {
 
         // Get pinned column names from DataView
         let pinned_column_names = if let Some(dataview) = self.buffer().get_dataview() {
-            dataview.get_pinned_column_names()
+            let names = dataview.get_pinned_column_names();
+            debug!(target: "render", "Got {} pinned column names from DataView: {:?}", names.len(), names);
+            names
         } else {
+            debug!(target: "render", "No DataView available - no pinned columns");
             Vec::new()
         };
 
         for (i, header) in headers.iter().enumerate() {
             if pinned_column_names.contains(header) {
+                debug!(target: "render", "Column {} ('{}') is pinned - adding to pinned_headers", i, header);
                 pinned_headers.push((i, header.clone()));
             } else {
                 scrollable_indices.push(i);
             }
         }
+        debug!(target: "render", "Pinned headers: {:?}, Scrollable indices: {:?}", pinned_headers, scrollable_indices);
 
         // Calculate space used by pinned columns
         let mut pinned_width = 0;
@@ -5536,10 +5541,14 @@ impl EnhancedTuiApp {
         // Build final list of visible columns (pinned + scrollable viewport)
         let mut visible_columns: Vec<(usize, String)> = Vec::new();
         visible_columns.extend(pinned_headers.iter().cloned());
+        debug!(target: "render", "Added {} pinned columns to visible_columns", pinned_headers.len());
+
         for i in viewport_start..viewport_end {
             let idx = scrollable_indices[i];
             visible_columns.push((idx, headers[idx].clone()));
         }
+        debug!(target: "render", "Final visible_columns ({}): {:?}", visible_columns.len(), 
+            visible_columns.iter().map(|(_, name)| name.as_str()).collect::<Vec<_>>());
 
         // Calculate viewport dimensions
         let terminal_height = area.height as usize;
@@ -5615,12 +5624,16 @@ impl EnhancedTuiApp {
             // Check if this column is pinned using DataView
             // Note: 'header' already contains the column name from visible_columns
             let pinned_indicator = if let Some(dataview) = self.buffer().get_dataview() {
-                if dataview.get_pinned_column_names().contains(header) {
+                let pinned_names = dataview.get_pinned_column_names();
+                debug!(target: "render", "Checking if '{}' is pinned. Pinned columns: {:?}", header, pinned_names);
+                if pinned_names.contains(header) {
+                    debug!(target: "render", "Column '{}' IS pinned - adding 📌 indicator", header);
                     " 📌"
                 } else {
                     ""
                 }
             } else {
+                debug!(target: "render", "No DataView available - cannot check pinned status");
                 ""
             };
 
