@@ -664,7 +664,7 @@ impl DataView {
         // Clear sort state
         self.sort_state.column = None;
         self.sort_state.order = SortOrder::None;
-        
+
         let row_count = self.source.row_count();
         self.base_rows = (0..row_count).collect();
 

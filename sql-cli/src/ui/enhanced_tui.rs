@@ -4320,7 +4320,7 @@ impl EnhancedTuiApp {
 
     fn toggle_sort_current_column(&mut self) {
         let column_index = self.buffer().get_current_column();
-        
+
         if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
             // Get column name for display
             let column_names = dataview.column_names();
@@ -4328,7 +4328,7 @@ impl EnhancedTuiApp {
                 .get(column_index)
                 .map(|s| s.clone())
                 .unwrap_or_else(|| format!("Column {}", column_index));
-            
+
             if let Err(e) = dataview.toggle_sort(column_index) {
                 self.buffer_mut()
                     .set_status_message(format!("Sort error: {}", e));
