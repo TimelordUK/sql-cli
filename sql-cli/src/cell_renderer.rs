@@ -1,7 +1,6 @@
 use ratatui::{
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Cell},
+    widgets::{Block, Borders},
 };
 
 use crate::config::config::CellSelectionStyle;

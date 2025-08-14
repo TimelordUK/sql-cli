@@ -1,5 +1,5 @@
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
-use crate::sql::where_ast::{ComparisonOp, WhereExpr, WhereValue};
+use crate::sql::where_ast::{WhereExpr, WhereValue};
 use anyhow::Result;
 
 /// Converts recursive_parser's WhereClause to where_ast's WhereExpr

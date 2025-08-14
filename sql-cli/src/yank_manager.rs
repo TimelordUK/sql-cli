@@ -1,6 +1,5 @@
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::BufferAPI;
-use crate::data::datatable::DataTable;
 use crate::data_exporter::DataExporter;
 use anyhow::{anyhow, Result};
 use serde_json::Value;

@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// A visual indicator that shows recent key presses with fade effect
 pub struct KeyPressIndicator {

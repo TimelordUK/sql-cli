@@ -11,10 +11,8 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::style::Color;
 use ratatui::widgets::TableState;
 use regex::Regex;
-use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tracing::debug;
 use tui_input::Input;
 
@@ -245,10 +243,7 @@ pub trait BufferAPI: Send + Sync {
     fn set_viewport_lock(&mut self, locked: bool);
     fn get_viewport_lock_row(&self) -> Option<usize>;
     fn set_viewport_lock_row(&mut self, row: Option<usize>);
-    fn get_pinned_columns(&self) -> &Vec<usize>;
-    fn add_pinned_column(&mut self, col: usize);
-    fn remove_pinned_column(&mut self, col: usize);
-    fn clear_pinned_columns(&mut self);
+    // REMOVED: pinned_columns methods - DataView handles pinned columns
     // REMOVED: hidden_columns methods - DataView handles column visibility
     fn get_column_widths(&self) -> &Vec<u16>;
     fn set_column_widths(&mut self, widths: Vec<u16>);
@@ -372,7 +367,7 @@ pub struct Buffer {
     pub column_widths: Vec<u16>,
     pub scroll_offset: (usize, usize),
     pub current_column: usize,
-    pub pinned_columns: Vec<usize>,
+    // REMOVED: pinned_columns - DataView handles this now
     // REMOVED: hidden_columns - DataView handles column visibility
     pub compact_mode: bool,
     pub viewport_lock: bool,
@@ -736,24 +731,7 @@ impl BufferAPI for Buffer {
         self.viewport_lock_row = row;
     }
 
-    fn get_pinned_columns(&self) -> &Vec<usize> {
-        &self.pinned_columns
-    }
-
-    fn add_pinned_column(&mut self, col: usize) {
-        if !self.pinned_columns.contains(&col) {
-            self.pinned_columns.push(col);
-            self.pinned_columns.sort();
-        }
-    }
-
-    fn remove_pinned_column(&mut self, col: usize) {
-        self.pinned_columns.retain(|&c| c != col);
-    }
-
-    fn clear_pinned_columns(&mut self) {
-        self.pinned_columns.clear();
-    }
+    // REMOVED: pinned_columns methods - DataView handles this now
 
     // REMOVED: hidden_columns methods implementations - DataView handles this
 
@@ -1038,7 +1016,15 @@ impl BufferAPI for Buffer {
         output.push_str(&format!("Compact Mode: {}\n", self.compact_mode));
         output.push_str(&format!("Show Row Numbers: {}\n", self.show_row_numbers));
         output.push_str(&format!("Case Insensitive: {}\n", self.case_insensitive));
-        output.push_str(&format!("Pinned Columns: {:?}\n", self.pinned_columns));
+        // Pinned columns now handled by DataView
+        if let Some(ref dataview) = self.dataview {
+            output.push_str(&format!(
+                "Pinned Columns: {:?}\n",
+                dataview.get_pinned_column_names()
+            ));
+        } else {
+            output.push_str("Pinned Columns: []\n");
+        }
         output.push_str(&format!("Column Widths: {:?}\n", self.column_widths));
         output.push_str(&format!("Viewport Lock: {}\n", self.viewport_lock));
         output.push_str(&format!(
@@ -1210,7 +1196,6 @@ impl Buffer {
             column_widths: Vec::new(),
             scroll_offset: (0, 0),
             current_column: 0,
-            pinned_columns: Vec::new(),
             compact_mode: false,
             viewport_lock: false,
             viewport_lock_row: None,
@@ -1518,7 +1503,6 @@ impl Clone for Buffer {
             column_widths: self.column_widths.clone(),
             scroll_offset: self.scroll_offset,
             current_column: self.current_column,
-            pinned_columns: self.pinned_columns.clone(),
             column_stats: self.column_stats.clone(),
             compact_mode: self.compact_mode,
             viewport_lock: self.viewport_lock,

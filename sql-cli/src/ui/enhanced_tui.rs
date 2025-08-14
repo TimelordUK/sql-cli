@@ -15,7 +15,6 @@ use crate::data::data_provider::DataProvider;
 use crate::data::data_view::DataView;
 // DataTable import removed - TUI only works with DataView
 use crate::help_text::HelpText;
-use crate::history::{CommandHistory, HistoryMatch};
 use crate::key_chord_handler::{ChordResult, KeyChordHandler};
 use crate::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::service_container::ServiceContainer;
@@ -25,9 +24,7 @@ use crate::sql_highlighter::SqlHighlighter;
 use crate::text_navigation::TextNavigator;
 use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::utils::debug_info::DebugInfo;
-use crate::utils::logging::{get_log_buffer, LogRingBuffer};
-use crate::where_ast::format_where_ast;
-use crate::where_parser::WhereParser;
+use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
 use crate::widgets::editor_widget::{BufferAction, EditorAction, EditorWidget};
@@ -44,21 +41,18 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame, Terminal,
 };
-use regex::Regex;
-use serde_json::Value;
 use std::io;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
 // Using AppMode and EditMode from sql_cli::buffer module
@@ -467,7 +461,7 @@ impl EnhancedTuiApp {
 
         // Transaction-like block for input updates
         {
-            let mut buffer = self.buffer_mut();
+            let buffer = self.buffer_mut();
             buffer.set_input_text(text.clone());
             // Also sync cursor position to end of text
             buffer.set_input_cursor_position(text.len());
@@ -2636,7 +2630,7 @@ impl EnhancedTuiApp {
             KeyCode::Esc => {
                 // Clear fuzzy filter and return to results - transaction-like block
                 let undo_state = {
-                    let mut buffer = self.buffer_mut();
+                    let buffer = self.buffer_mut();
                     buffer.set_fuzzy_filter_active(false);
                     buffer.set_fuzzy_filter_pattern(String::new());
                     buffer.set_fuzzy_filter_indices(Vec::new());
@@ -2715,7 +2709,7 @@ impl EnhancedTuiApp {
                     dataview.clear_column_search();
                 }
                 {
-                    let mut buffer = self.buffer_mut();
+                    let buffer = self.buffer_mut();
                     buffer.set_mode(AppMode::Results);
                     buffer.set_status_message("Column search cancelled".to_string());
                 }
@@ -3589,24 +3583,43 @@ impl EnhancedTuiApp {
         // Pin or unpin the current column using DataView
         let current_col = self.buffer().get_current_column();
 
-        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            if dataview.is_column_pinned(current_col) {
-                // Column is already pinned, unpin it
-                dataview.unpin_column(current_col);
-                self.buffer_mut()
-                    .set_status_message(format!("Column {} unpinned", current_col + 1));
+        // Get the column name at the current position from DataView
+        let column_name = if let Some(dataview) = self.buffer().get_dataview() {
+            let columns = dataview.column_names();
+            if current_col < columns.len() {
+                Some(columns[current_col].clone())
             } else {
-                // Try to pin the column
-                match dataview.pin_column(current_col) {
-                    Ok(_) => {
-                        self.buffer_mut()
-                            .set_status_message(format!("Column {} pinned 📌", current_col + 1));
-                    }
-                    Err(e) => {
-                        self.buffer_mut().set_status_message(e.to_string());
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(col_name) = column_name {
+            if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                // Check if this column name is already pinned
+                let pinned_names = dataview.get_pinned_column_names();
+                if pinned_names.contains(&col_name) {
+                    // Column is already pinned, unpin it
+                    dataview.unpin_column_by_name(&col_name);
+                    self.buffer_mut()
+                        .set_status_message(format!("Column '{}' unpinned", col_name));
+                } else {
+                    // Try to pin the column by name
+                    match dataview.pin_column_by_name(&col_name) {
+                        Ok(_) => {
+                            self.buffer_mut()
+                                .set_status_message(format!("Column '{}' pinned 📌", col_name));
+                        }
+                        Err(e) => {
+                            self.buffer_mut().set_status_message(e.to_string());
+                        }
                     }
                 }
             }
+        } else {
+            self.buffer_mut()
+                .set_status_message("No column to pin at current position".to_string());
         }
     }
 
@@ -4186,7 +4199,7 @@ impl EnhancedTuiApp {
 
         // Transaction-like block for multiple buffer resets
         {
-            let mut buffer = self.buffer_mut();
+            let buffer = self.buffer_mut();
             buffer.set_scroll_offset((0, 0));
             buffer.set_current_column(0);
             buffer.set_last_results_row(None); // Reset saved position for new results
@@ -5438,8 +5451,15 @@ impl EnhancedTuiApp {
         let mut pinned_headers: Vec<(usize, String)> = Vec::new();
         let mut scrollable_indices: Vec<usize> = Vec::new();
 
+        // Get pinned column names from DataView
+        let pinned_column_names = if let Some(dataview) = self.buffer().get_dataview() {
+            dataview.get_pinned_column_names()
+        } else {
+            Vec::new()
+        };
+
         for (i, header) in headers.iter().enumerate() {
-            if self.buffer().get_pinned_columns().contains(&i) {
+            if pinned_column_names.contains(header) {
                 pinned_headers.push((i, header.clone()));
             } else {
                 scrollable_indices.push(i);
@@ -5592,10 +5612,19 @@ impl EnhancedTuiApp {
                 ""
             };
 
-            // Check if this column is pinned
-            let pinned_cols = self.buffer().get_pinned_columns();
-            let pinned_indicator = if pinned_cols.contains(actual_col_index) {
-                " 📌"
+            // Check if this column is pinned using DataView
+            let pinned_indicator = if let Some(dataview) = self.buffer().get_dataview() {
+                let col_names = dataview.column_names();
+                if *actual_col_index < col_names.len() {
+                    let col_name = &col_names[*actual_col_index];
+                    if dataview.get_pinned_column_names().contains(col_name) {
+                        " 📌"
+                    } else {
+                        ""
+                    }
+                } else {
+                    ""
+                }
             } else {
                 ""
             };

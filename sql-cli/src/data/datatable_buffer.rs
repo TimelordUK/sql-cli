@@ -57,7 +57,7 @@ pub struct DataTableBuffer {
     column_widths: Vec<u16>,
     scroll_offset: (usize, usize),
     current_column: usize,
-    pinned_columns: Vec<usize>,
+    // REMOVED: pinned_columns - DataView handles this now
     compact_mode: bool,
     viewport_lock: bool,
     viewport_lock_row: Option<usize>,
@@ -126,7 +126,6 @@ impl DataTableBuffer {
             column_widths: Vec::new(),
             scroll_offset: (0, 0),
             current_column: 0,
-            pinned_columns: Vec::new(),
             compact_mode: false,
             viewport_lock: false,
             viewport_lock_row: None,
@@ -545,23 +544,7 @@ impl BufferAPI for DataTableBuffer {
         self.column_widths = widths;
     }
 
-    fn get_pinned_columns(&self) -> &Vec<usize> {
-        &self.pinned_columns
-    }
-
-    fn add_pinned_column(&mut self, col: usize) {
-        if !self.pinned_columns.contains(&col) {
-            self.pinned_columns.push(col);
-        }
-    }
-
-    fn remove_pinned_column(&mut self, col: usize) {
-        self.pinned_columns.retain(|&x| x != col);
-    }
-
-    fn clear_pinned_columns(&mut self) {
-        self.pinned_columns.clear();
-    }
+    // REMOVED: pinned_columns methods - DataView handles this now
 
     // REMOVED: hidden_columns methods - DataView handles column visibility
 

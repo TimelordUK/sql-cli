@@ -1,5 +1,5 @@
 /// Direct CSV to DataTable loader - bypasses JSON intermediate format
-use crate::data::datatable::{DataColumn, DataRow, DataTable, DataType, DataValue};
+use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use anyhow::Result;
 use csv;
 use std::fs::File;

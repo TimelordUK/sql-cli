@@ -1,9 +1,7 @@
 use anyhow::Result;
-use regex::Regex;
-use std::sync::Arc;
 
 use crate::data::data_view::DataView;
-use crate::data::datatable::{DataTable, DataValue};
+use crate::data::datatable::DataValue;
 
 /// Simple WHERE clause implementation for testing
 /// This extracts the WHERE clause as a string from the original SQL
