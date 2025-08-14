@@ -335,8 +335,6 @@ pub struct Buffer {
     pub modified: bool,
 
     // --- Data State ---
-    // REMOVED: csv_client, csv_mode, csv_table_name, cache_mode, cached_data - legacy fields
-    /// V50: DataTable is now the primary storage (no longer alongside JSON)
     pub datatable: Option<DataTable>,
     /// DataView for applying filters like hidden columns without modifying the DataTable
     pub dataview: Option<DataView>,
@@ -359,16 +357,13 @@ pub struct Buffer {
     pub filter_state: FilterState,
     pub fuzzy_filter_state: FuzzyFilterState,
     pub search_state: SearchState,
-    // column_search_state: MIGRATED to AppStateContainer
+
     pub column_stats: Option<ColumnStatistics>,
-    // REMOVED: filtered_data - DataView handles filtering
 
     // --- View State ---
     pub column_widths: Vec<u16>,
     pub scroll_offset: (usize, usize),
     pub current_column: usize,
-    // REMOVED: pinned_columns - DataView handles this now
-    // REMOVED: hidden_columns - DataView handles column visibility
     pub compact_mode: bool,
     pub viewport_lock: bool,
     pub viewport_lock_row: Option<usize>,
@@ -731,10 +726,6 @@ impl BufferAPI for Buffer {
         self.viewport_lock_row = row;
     }
 
-    // REMOVED: pinned_columns methods - DataView handles this now
-
-    // REMOVED: hidden_columns methods implementations - DataView handles this
-
     fn get_column_widths(&self) -> &Vec<u16> {
         &self.column_widths
     }
@@ -783,8 +774,6 @@ impl BufferAPI for Buffer {
     fn set_last_query_source(&mut self, source: Option<String>) {
         self.last_query_source = source;
     }
-
-    // REMOVED: CSV/Cache methods implementations - legacy data access
 
     // --- Input State ---
     fn get_input_value(&self) -> String {

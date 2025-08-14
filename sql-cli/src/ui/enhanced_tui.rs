@@ -13,7 +13,6 @@ use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_exporter::DataExporter;
 use crate::data::data_provider::DataProvider;
 use crate::data::data_view::DataView;
-// DataTable import removed - TUI only works with DataView
 use crate::help_text::HelpText;
 use crate::key_chord_handler::{ChordResult, KeyChordHandler};
 use crate::key_indicator::{format_key_for_display, KeyPressIndicator};
@@ -41,7 +40,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use fuzzy_matcher::FuzzyMatcher;
+
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout, Rect},
@@ -54,8 +53,6 @@ use std::io;
 use std::sync::Arc;
 use tracing::{debug, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
-
-// Using AppMode and EditMode from sql_cli::buffer module
 
 /// Macro for logging state changes with caller information
 /// Usage: log_state_change!(self, "field_name", old_value, new_value, "caller_function")
@@ -140,14 +137,6 @@ pub struct EnhancedTuiApp {
 }
 
 impl EnhancedTuiApp {
-    // --- State Container Access ---
-    // Helper methods for accessing the state container during migration
-
-    /// Toggle help visibility
-    fn toggle_help(&mut self) {
-        self.state_container.toggle_help();
-    }
-
     // --- Column Visibility Management ---
 
     /// Hide the currently selected column
@@ -173,9 +162,7 @@ impl EnhancedTuiApp {
 
             if col_idx < columns.len() {
                 let col_name = columns[col_idx].clone();
-
                 // Don't hide if it's the last visible column
-                // With DataView, columns.len() IS the visible count
                 if visible_count > 1 {
                     if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
                         dataview.hide_column_by_name(&col_name);
@@ -392,11 +379,6 @@ impl EnhancedTuiApp {
         }
     }
 
-    /// Set help visibility
-    fn set_help_visible(&mut self, visible: bool) {
-        self.state_container.set_help_visible(visible);
-    }
-
     /// Get jump-to-row input text
     fn get_jump_to_row_input(&self) -> String {
         self.state_container.jump_to_row().input.clone()
@@ -434,18 +416,6 @@ impl EnhancedTuiApp {
         log_state_clear!(self, "jump_to_row_input", "clear_jump_to_row_input");
     }
 
-    // Helper to get sort state from AppStateContainer
-    fn get_sort_state(&self) -> SortState {
-        let sort = self.state_container.sort();
-        SortState {
-            column: sort.column,
-            order: sort.order.clone(),
-        }
-    }
-
-    // --- Buffer Compatibility Layer ---
-    // These methods provide a gradual migration path from direct field access to BufferAPI
-
     /// Get current buffer if available (for reading)
     fn current_buffer(&self) -> Option<&dyn buffer::BufferAPI> {
         self.buffer_manager
@@ -459,8 +429,6 @@ impl EnhancedTuiApp {
         self.current_buffer()
             .expect("No buffer available - this should not happen")
     }
-
-    // Note: current_buffer_mut removed - use buffer_manager.current_mut() directly
 
     /// Get current mutable buffer (panics if none exists)
     /// Use this when we know a buffer should always exist
@@ -666,10 +634,6 @@ impl EnhancedTuiApp {
         (0, cursor)
     }
 
-    // Note: mode methods removed - use buffer directly
-
-    // get_filter_state methods REMOVED - now use state_container.filter()
-
     fn get_selection_mode(&self) -> SelectionMode {
         self.state_container.get_selection_mode()
     }
@@ -754,10 +718,8 @@ impl EnhancedTuiApp {
             input: Input::default(),
             cursor_manager: CursorManager::new(),
             data_analyzer: DataAnalyzer::new(),
-            // sql_parser: SqlParser::new(), // Not in struct anymore
             hybrid_parser: HybridParser::new(),
             config: config.clone(),
-            // command_history: CommandHistory::new().unwrap_or_default(), // MIGRATED to AppStateContainer
             sql_highlighter: SqlHighlighter::new(),
             debug_widget: DebugWidget::new(),
             editor_widget: EditorWidget::new(),
@@ -816,13 +778,6 @@ impl EnhancedTuiApp {
         // Create schema from DataTable columns
         let mut schema = std::collections::HashMap::new();
         schema.insert(table_name.clone(), datatable.column_names());
-
-        // TEMPORARY: Also create CsvApiClient for complex query support
-        // This will be removed once QueryEngine is implemented
-        let mut csv_client = CsvApiClient::new();
-        csv_client.set_case_insensitive(app.config.behavior.case_insensitive_default);
-        csv_client.load_csv(csv_path, &table_name)?;
-        info!("Created CsvApiClient as fallback for complex queries (temporary)");
 
         let (datatable_opt, schema) = (Some(datatable), schema);
 
@@ -884,8 +839,6 @@ impl EnhancedTuiApp {
                     e
                 ));
             }
-
-            // DataTable is already set directly from CSV file
         }
 
         Ok(app)
@@ -983,8 +936,6 @@ impl EnhancedTuiApp {
                     e
                 ));
             }
-
-            // DataTable is already set directly from JSON file
         }
 
         Ok(app)
@@ -1151,7 +1102,7 @@ impl EnhancedTuiApp {
                 return self.handle_expand_asterisk();
             }
             EditorAction::ShowHelp => {
-                self.set_help_visible(true);
+                self.state_container.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
                 return Ok(false);
             }
@@ -1401,10 +1352,6 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            // KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::ALT) && key.modifiers.contains(KeyModifiers::SHIFT) => {
-            //     // Alt+Shift+D - new DataTable buffer (for testing) - disabled during revert
-            //     self.new_datatable_buffer();
-            // }
             KeyCode::F(1) | KeyCode::Char('?') => {
                 // Toggle between Help mode and previous mode
                 if self.buffer().get_mode() == AppMode::Help {
@@ -1415,7 +1362,7 @@ impl EnhancedTuiApp {
                         AppMode::Command
                     };
                     self.buffer_mut().set_mode(mode);
-                    self.set_help_visible(false); // Keep state_container in sync
+                    self.state_container.set_help_visible(false);
                     self.help_widget.on_exit();
                 } else {
                     // Enter help mode
@@ -1429,7 +1376,7 @@ impl EnhancedTuiApp {
                         }
                     );
                     self.buffer_mut().set_mode(AppMode::Help);
-                    self.set_help_visible(true); // Keep state_container in sync
+                    self.state_container.set_help_visible(true);
                     self.help_widget.on_enter();
                 }
             }
@@ -1447,7 +1394,7 @@ impl EnhancedTuiApp {
                 if !query.is_empty() {
                     // Check for special commands
                     if query == ":help" {
-                        self.set_help_visible(true);
+                        self.state_container.set_help_visible(true);
                         self.buffer_mut().set_mode(AppMode::Help);
                         self.buffer_mut()
                             .set_status_message("Help Mode - Press ESC to return".to_string());
@@ -1694,9 +1641,7 @@ impl EnhancedTuiApp {
                 self.toggle_debug_mode();
             }
             KeyCode::F(6) => {
-                // V46: Demo DataTable conversion
                 self.demo_datatable_conversion();
-                // Don't switch to PrettyQuery mode immediately - let user see the DataTable message
             }
             KeyCode::F(7) => {
                 // Pretty query view (moved from F6)
@@ -1976,10 +1921,10 @@ impl EnhancedTuiApp {
                 "toggle_help" => {
                     if self.buffer().get_mode() == AppMode::Help {
                         self.buffer_mut().set_mode(AppMode::Results);
-                        self.set_help_visible(false); // Keep state_container in sync
+                        self.state_container.set_help_visible(false);
                     } else {
                         self.buffer_mut().set_mode(AppMode::Help);
-                        self.set_help_visible(true); // Keep state_container in sync
+                        self.state_container.set_help_visible(true);
                     }
                 }
                 "toggle_debug" => {
@@ -2264,7 +2209,7 @@ impl EnhancedTuiApp {
                 }
             }
             KeyCode::F(1) | KeyCode::Char('?') => {
-                self.set_help_visible(true);
+                self.state_container.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
                 self.help_widget.on_enter();
             }
@@ -2392,8 +2337,6 @@ impl EnhancedTuiApp {
             SearchMode::ColumnSearch => {
                 // Clear column search in both AppStateContainer and DataView
                 self.state_container.clear_column_search();
-
-                // Also clear DataView's column search
                 if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
                     dataview.clear_column_search();
                 }
@@ -2895,8 +2838,8 @@ impl EnhancedTuiApp {
     // Helper methods for help mode actions
     fn exit_help(&mut self) {
         self.help_widget.on_exit();
-        self.set_help_visible(false); // Keep state_container in sync
-                                      // Scroll is automatically reset when help is hidden in state_container
+        self.state_container.set_help_visible(false);
+        // Scroll is automatically reset when help is hidden in state_container
         let mode = if self.buffer().has_dataview() {
             AppMode::Results
         } else {
@@ -3465,9 +3408,6 @@ impl EnhancedTuiApp {
                 self.navigation_timings.remove(0);
             }
             self.navigation_timings.push(timing_msg.clone());
-
-            // Debug output now available in F5 view, no need for stderr
-            // eprintln!("next_row timing: {}", timing_msg);
         }
     }
 
@@ -6474,7 +6414,7 @@ impl EnhancedTuiApp {
         if !query.is_empty() {
             // Check for special commands
             if query == ":help" {
-                self.set_help_visible(true);
+                self.state_container.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
                 self.buffer_mut()
                     .set_status_message("Help Mode - Press ESC to return".to_string());
@@ -6672,15 +6612,6 @@ impl EnhancedTuiApp {
         } else {
             self.buffer_mut()
                 .set_status_message("V50: No DataTable available".to_string());
-        }
-    }
-
-    /// V50: DataTable is now the primary storage, so this is a no-op
-    fn ensure_datatable_exists(&mut self) {
-        // V50: DataTable is always created when data is loaded
-        // This function is kept for compatibility but does nothing
-        if self.buffer().has_dataview() {
-            debug!("V50: DataView already exists");
         }
     }
 
