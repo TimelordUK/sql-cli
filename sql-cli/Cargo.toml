@@ -12,6 +12,10 @@ name = "sql-cli"
 path = "src/main.rs"
 
 [[bin]]
+name = "dataview_debug"
+path = "src/bin/dataview_debug.rs"
+
+[[bin]]
 name = "test-csv"
 path = "integration_tests/test_csv.rs"
 

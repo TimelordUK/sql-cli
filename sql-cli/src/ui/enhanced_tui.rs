@@ -12,6 +12,7 @@ use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_exporter::DataExporter;
 use crate::data::data_provider::DataProvider;
+use crate::data::data_view::DataView;
 // DataTable import removed - TUI only works with DataView
 use crate::help_text::HelpText;
 use crate::history::{CommandHistory, HistoryMatch};
@@ -182,7 +183,9 @@ impl EnhancedTuiApp {
                 // Don't hide if it's the last visible column
                 // With DataView, columns.len() IS the visible count
                 if visible_count > 1 {
-                    self.buffer_mut().add_hidden_column(col_name.clone());
+                    if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                        dataview.hide_column_by_name(&col_name);
+                    }
                     debug!(
                         "Hiding column '{}', remaining visible: {}",
                         col_name,
@@ -207,10 +210,16 @@ impl EnhancedTuiApp {
 
     /// Unhide all columns
     pub fn unhide_all_columns(&mut self) {
-        let hidden_columns = self.buffer().get_hidden_columns();
+        let hidden_columns = self
+            .buffer()
+            .get_dataview()
+            .map(|v| v.get_hidden_column_names())
+            .unwrap_or_default();
         if !hidden_columns.is_empty() {
             let count = hidden_columns.len();
-            self.buffer_mut().clear_hidden_columns();
+            if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                dataview.unhide_all_columns();
+            }
 
             // Force immediate re-render to reflect the change
             debug!("Triggering immediate re-render after unhiding all columns");
@@ -1386,8 +1395,6 @@ impl EnhancedTuiApp {
                         // Already in TUI mode
                         self.buffer_mut()
                             .set_status_message("Already in TUI mode".to_string());
-                    } else if query.starts_with(":cache ") {
-                        self.handle_cache_command(&query)?;
                     } else {
                         self.buffer_mut()
                             .set_status_message(format!("Processing query: '{}'", query));
@@ -1848,7 +1855,9 @@ impl EnhancedTuiApp {
                     self.enter_search_mode(SearchMode::FuzzyFilter);
                 }
                 "sort_by_column" => {
-                    self.sort_by_column(self.buffer().get_current_column());
+                    // TODO: Add toggle logic for sort direction
+                    let ascending = true; // Default to ascending for now
+                    self.sort_by_column(self.buffer().get_current_column(), ascending);
                     return Ok(false); // Event handled, continue running
                 }
                 "show_column_stats" => self.calculate_column_statistics(),
@@ -2169,7 +2178,8 @@ impl EnhancedTuiApp {
             KeyCode::Char(c) if c.is_ascii_digit() => {
                 if let Some(digit) = c.to_digit(10) {
                     let column_index = (digit as usize).saturating_sub(1);
-                    self.sort_by_column(column_index);
+                    // TODO: Add toggle logic for sort direction
+                    self.sort_by_column(column_index, true); // Default to ascending
                 }
             }
             KeyCode::F(1) | KeyCode::Char('?') => {
@@ -2211,7 +2221,6 @@ impl EnhancedTuiApp {
                 self.state_container
                     .filter_mut()
                     .set_pattern(pattern.clone());
-                self.apply_filter();
                 debug!(target: "search", "After apply_filter, app_mode={:?}, filtered_count={}", 
                        self.buffer().get_mode(),
                 self.buffer().get_dataview().map(|v| v.row_count()).unwrap_or(0));
@@ -2366,7 +2375,7 @@ impl EnhancedTuiApp {
                             filter.pattern = pattern.clone();
                             filter.is_active = true;
                         } // filter borrow ends here
-                        self.apply_filter();
+                        self.apply_filter("");
                         debug!(target: "search", "Filter Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
                     }
                     SearchMode::FuzzyFilter => {
@@ -2463,7 +2472,7 @@ impl EnhancedTuiApp {
                         self.buffer_mut().set_filter_pattern(String::new());
                         self.buffer_mut().set_filter_active(false);
                         // Re-apply empty filter to restore all results
-                        self.apply_filter();
+                        self.apply_filter("");
                     }
                     AppMode::ColumnSearch => {
                         // Clear column search state using AppStateContainer
@@ -2587,7 +2596,7 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Enter => {
-                self.apply_filter();
+                self.apply_filter("");
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
@@ -3846,7 +3855,13 @@ impl EnhancedTuiApp {
 
     // Search and filter functions
     fn perform_search(&mut self) {
-        if let Some(data) = self.get_current_data() {
+        if let Some(dataview) = self.get_current_data() {
+            // Convert DataView rows to Vec<Vec<String>> for AppStateContainer
+            let data: Vec<Vec<String>> = (0..dataview.row_count())
+                .filter_map(|i| dataview.get_row(i))
+                .map(|row| row.values.iter().map(|v| v.to_string()).collect())
+                .collect();
+
             // Perform search using AppStateContainer
             let matches = self.state_container.perform_search(&data);
 
@@ -3915,8 +3930,9 @@ impl EnhancedTuiApp {
     }
 
     fn apply_filter(&mut self, pattern: &str) {
+        let case_insensitive = { self.buffer().is_case_insensitive() };
         if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            dataview.apply_text_filter(pattern, !self.buffer().is_case_insensitive());
+            dataview.apply_text_filter(pattern, !case_insensitive);
 
             let status = if pattern.is_empty() {
                 "Filter cleared".to_string()
@@ -4032,26 +4048,31 @@ impl EnhancedTuiApp {
 
     fn apply_fuzzy_filter(&mut self) {
         let pattern = self.buffer().get_fuzzy_filter_pattern();
+        let case_insensitive = self.buffer().is_case_insensitive();
 
-        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            let case_insensitive = self.buffer().is_case_insensitive();
+        // Apply filter and get results
+        let (match_count, indices) = if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
             dataview.apply_fuzzy_filter(&pattern, case_insensitive);
-
-            if pattern.is_empty() {
-                self.buffer_mut().set_fuzzy_filter_active(false);
-                self.buffer_mut()
-                    .set_status_message("Fuzzy filter cleared".to_string());
-            } else {
-                self.buffer_mut().set_fuzzy_filter_active(true);
-                let match_count = dataview.row_count();
-                self.buffer_mut()
-                    .set_status_message(format!("Fuzzy filter: {} matches", match_count));
-            }
-
-            // Update fuzzy filter indices for compatibility
+            let match_count = dataview.row_count();
             let indices = dataview.get_fuzzy_filter_indices();
-            self.buffer_mut().set_fuzzy_filter_indices(indices);
+            (match_count, indices)
+        } else {
+            (0, Vec::new())
+        };
+
+        // Update buffer state after releasing the borrow
+        if pattern.is_empty() {
+            self.buffer_mut().set_fuzzy_filter_active(false);
+            self.buffer_mut()
+                .set_status_message("Fuzzy filter cleared".to_string());
+        } else {
+            self.buffer_mut().set_fuzzy_filter_active(true);
+            self.buffer_mut()
+                .set_status_message(format!("Fuzzy filter: {} matches", match_count));
         }
+
+        // Update fuzzy filter indices for compatibility
+        self.buffer_mut().set_fuzzy_filter_indices(indices);
     }
 
     fn update_column_search(&mut self) {
@@ -4123,15 +4144,8 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn get_current_data(&self) -> Option<Vec<Vec<String>>> {
-        if let Some(filtered) = self.buffer().get_dataview() {
-            Some(filtered.clone())
-        } else if let Some(dataview) = self.buffer().get_dataview() {
-            // Use DataView's source for string conversion
-            Some(dataview.source().to_string_table())
-        } else {
-            None
-        }
+    fn get_current_data(&self) -> Option<&DataView> {
+        self.buffer().get_dataview()
     }
 
     fn get_row_count(&self) -> usize {
@@ -4139,9 +4153,9 @@ impl EnhancedTuiApp {
         if self.buffer().is_fuzzy_filter_active() {
             // Return the count of fuzzy filtered indices
             self.buffer().get_fuzzy_filter_indices().len()
-        } else if let Some(filtered) = self.buffer().get_dataview() {
+        } else if let Some(dataview) = self.buffer().get_dataview() {
             // Return count from WHERE clause or other filters
-            filtered.len()
+            dataview.row_count()
         } else if let Some(provider) = self.get_data_provider() {
             // Use DataProvider trait for data access (migration step)
             provider.get_row_count()
@@ -4157,7 +4171,7 @@ impl EnhancedTuiApp {
         if self.buffer().is_fuzzy_filter_active() {
             return self.buffer().get_fuzzy_filter_indices().len();
         } else if let Some(filtered) = self.buffer().get_dataview() {
-            return filtered.len();
+            return filtered.row_count();
         }
 
         // Use DataProvider for unfiltered data
@@ -4167,9 +4181,6 @@ impl EnhancedTuiApp {
             0
         }
     }
-
-    // Removed get_current_data_mut - sorting now uses immutable data and clones when needed
-    // Removed convert_json_to_strings - moved to DataExporter module
 
     fn reset_table_state(&mut self) {
         self.state_container.set_table_selected_row(Some(0));
@@ -4204,9 +4215,6 @@ impl EnhancedTuiApp {
             buffer.set_fuzzy_filter_active(false);
             buffer.set_fuzzy_filter_indices(Vec::new());
         };
-
-        // Clear filtered data
-        self.buffer_mut().set_filtered_data(None);
     }
 
     fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
@@ -4532,8 +4540,9 @@ impl EnhancedTuiApp {
                         // Update the appropriate filter/search state
                         match self.buffer().get_mode() {
                             AppMode::Filter => {
-                                self.state_container.filter_mut().pattern = self.get_input_text();
-                                self.apply_filter();
+                                let pattern = self.get_input_text();
+                                self.state_container.filter_mut().pattern = pattern.clone();
+                                self.apply_filter(&pattern);
                             }
                             AppMode::FuzzyFilter => {
                                 let input_text = self.get_input_text();
@@ -4993,7 +5002,6 @@ impl EnhancedTuiApp {
             AppMode::History => (Style::default().fg(Color::Magenta), Color::Magenta),
             AppMode::Debug => (Style::default().fg(Color::Yellow), Color::Yellow),
             AppMode::PrettyQuery => (Style::default().fg(Color::Green), Color::Green),
-            AppMode::CacheList => (Style::default().fg(Color::Cyan), Color::Cyan),
             AppMode::JumpToRow => (Style::default().fg(Color::Magenta), Color::Magenta),
             AppMode::ColumnStats => (Style::default().fg(Color::Cyan), Color::Cyan),
         };
@@ -5055,14 +5063,6 @@ impl EnhancedTuiApp {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 buffer_name,
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ));
-        } else if self.buffer().is_csv_mode() && !self.buffer().get_table_name().is_empty() {
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                self.buffer().get_table_name(),
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
@@ -5158,7 +5158,7 @@ impl EnhancedTuiApp {
                             }
 
                             // Show hidden columns count if any
-                            let hidden_count = self.buffer().get_hidden_columns().len();
+                            let hidden_count = dataview.get_hidden_column_names().len();
                             if hidden_count > 0 {
                                 spans.push(Span::raw(" | "));
                                 spans.push(Span::styled(
@@ -5286,19 +5286,6 @@ impl EnhancedTuiApp {
             };
             spans.push(Span::raw(format!("{} ", icon)));
             spans.push(Span::styled(label, Style::default().fg(color)));
-        } else if self.buffer().is_csv_mode() {
-            spans.push(Span::raw(" | "));
-            spans.push(Span::raw(&self.config.display.icons.file));
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                format!("CSV: {}", self.buffer().get_table_name()),
-                Style::default().fg(Color::Green),
-            ));
-        } else if self.buffer().is_cache_mode() {
-            spans.push(Span::raw(" | "));
-            spans.push(Span::raw(&self.config.display.icons.cache));
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled("CACHE", Style::default().fg(Color::Cyan)));
         }
 
         // Global indicators (shown when active)
@@ -5368,11 +5355,9 @@ impl EnhancedTuiApp {
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 "Enter:Apply | Esc:Cancel"
             }
-            AppMode::Help
-            | AppMode::Debug
-            | AppMode::PrettyQuery
-            | AppMode::CacheList
-            | AppMode::ColumnStats => "Esc:Close",
+            AppMode::Help | AppMode::Debug | AppMode::PrettyQuery | AppMode::ColumnStats => {
+                "Esc:Close"
+            }
             AppMode::History => "Enter:Select | Esc:Cancel",
             AppMode::JumpToRow => "Enter:Jump | Esc:Cancel",
         };
@@ -5438,7 +5423,13 @@ impl EnhancedTuiApp {
             headers.len()
         );
         debug!("Column headers: {:?}", headers);
-        debug!("Buffer has {} hidden columns", self.buffer().get().len());
+        debug!(
+            "Buffer has {} hidden columns",
+            self.buffer()
+                .get_dataview()
+                .map(|v| v.get_hidden_column_names().len())
+                .unwrap_or(0)
+        );
 
         // Calculate visible columns for virtual scrolling based on actual widths
         let terminal_width = area.width as usize;
@@ -6103,7 +6094,7 @@ impl EnhancedTuiApp {
                 if let Ok(row_num) = self.get_jump_to_row_input().parse::<usize>() {
                     if row_num > 0 {
                         let target_row = row_num - 1; // Convert to 0-based index
-                        let max_row = self.get_current_data().map(|d| d.len()).unwrap_or(0);
+                        let max_row = self.get_current_data().map(|d| d.row_count()).unwrap_or(0);
 
                         if target_row < max_row {
                             // Calculate centered viewport position
@@ -6739,13 +6730,14 @@ impl EnhancedTuiApp {
                 ));
 
                 // Add WHERE clause AST if needed
+                /*
                 if query.to_lowercase().contains(" where ") {
                     let where_ast_info = match self.parse_where_clause_ast(&query) {
                             Ok(ast_str) => ast_str,
                             Err(e) => format!("\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {}\n", e)
                         };
                     debug_info.push_str(&where_ast_info);
-                }
+                }*/
 
                 // Add key chord handler debug info
                 debug_info.push_str("\n");

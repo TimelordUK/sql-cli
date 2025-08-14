@@ -153,7 +153,7 @@ pub struct ColumnStatistics {
 /// BufferAPI trait - defines the interface for interacting with buffer state
 /// This abstraction allows the TUI to work with buffer state without knowing
 /// the implementation details, enabling gradual migration and testing
-pub trait BufferAPI {
+pub trait BufferAPI: Send + Sync {
     // --- Identity ---
     fn get_id(&self) -> usize;
     // --- Query ---

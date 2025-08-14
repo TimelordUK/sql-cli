@@ -39,69 +39,58 @@ impl DebugInfo {
         debug_info.push_str(&input_state);
 
         // Add dataset information
-        let dataset_info = if buffer.is_csv_mode() {
-            if let Some(csv_client) = buffer.get_csv_client() {
-                if let Some(schema) = csv_client.get_schema() {
-                    let (table_name, columns) = schema
-                        .iter()
-                        .next()
-                        .map(|(t, c)| (t.as_str(), c.clone()))
-                        .unwrap_or(("unknown", vec![]));
-                    format!(
-                        "\n========== DATASET INFO ==========\n\
-                        Mode: CSV\n\
-                        Table Name: {}\n\
-                        Columns ({}): {}\n",
-                        table_name,
-                        columns.len(),
-                        columns.join(", ")
-                    )
-                } else {
-                    "\n========== DATASET INFO ==========\nMode: CSV\nNo schema available\n"
-                        .to_string()
-                }
-            } else {
-                "\n========== DATASET INFO ==========\nMode: CSV\nNo CSV client initialized\n"
-                    .to_string()
-            }
-        } else {
+        let dataset_info = if let Some(dataview) = buffer.get_dataview() {
+            let table_name = dataview.source().name.clone();
+            let columns = dataview.column_names();
             format!(
                 "\n========== DATASET INFO ==========\n\
-                Mode: API ({})\n\
-                Table: trade_deal\n\
-                Default Columns: {}\n",
-                api_url,
-                "id, platformOrderId, tradeDate, executionSide, quantity, price, counterparty, ..."
+                Table Name: {}\n\
+                Visible Columns ({}): {}\n\
+                Hidden Columns: {}\n",
+                table_name,
+                columns.len(),
+                columns.join(", "),
+                dataview.get_hidden_column_names().len()
             )
+        } else {
+            "\n========== DATASET INFO ==========\nNo DataView available\n".to_string()
         };
         debug_info.push_str(&dataset_info);
 
         // Add current data statistics
-        let data_stats = format!(
-            "\n========== CURRENT DATA ==========\n\
-            Total Rows Loaded: {}\n\
-            Filtered Rows: {}\n\
-            Current Column: {}\n\
-            Sort State: {}\n",
-            buffer.get_datatable().map(|d| d.row_count()).unwrap_or(0),
-            buffer.get_filtered_data().map(|d| d.len()).unwrap_or(0),
-            buffer.get_current_column(),
-            match sort_state {
-                SortState {
-                    column: Some(col),
-                    order,
-                } => format!(
-                    "Column {} - {}",
-                    col,
-                    match order {
-                        SortOrder::Ascending => "Ascending",
-                        SortOrder::Descending => "Descending",
-                        SortOrder::None => "None",
-                    }
-                ),
-                _ => "None".to_string(),
-            }
-        );
+        let data_stats = if let Some(dataview) = buffer.get_dataview() {
+            let total_rows = dataview.source().row_count();
+            let filtered_rows = dataview.row_count();
+            format!(
+                "\n========== CURRENT DATA ==========\n\
+                Total Rows Loaded: {}\n\
+                Filtered Rows: {}\n\
+                Has Filter: {}\n\
+                Current Column: {}\n\
+                Sort State: {}\n",
+                total_rows,
+                filtered_rows,
+                dataview.has_filter(),
+                buffer.get_current_column(),
+                match sort_state {
+                    SortState {
+                        column: Some(col),
+                        order,
+                    } => format!(
+                        "Column {} - {}",
+                        col,
+                        match order {
+                            SortOrder::Ascending => "Ascending",
+                            SortOrder::Descending => "Descending",
+                            SortOrder::None => "None",
+                        }
+                    ),
+                    _ => "None".to_string(),
+                }
+            )
+        } else {
+            "\n========== CURRENT DATA ==========\nNo DataView available\n".to_string()
+        };
         debug_info.push_str(&data_stats);
 
         // Add status line info
@@ -111,15 +100,11 @@ impl DebugInfo {
             Case Insensitive: {}\n\
             Compact Mode: {}\n\
             Viewport Lock: {}\n\
-            CSV Mode: {}\n\
-            Cache Mode: {}\n\
             Data Source: {}\n",
             buffer.get_mode(),
             buffer.is_case_insensitive(),
             buffer.is_compact_mode(),
             buffer.is_viewport_lock(),
-            buffer.is_csv_mode(),
-            buffer.is_cache_mode(),
             buffer.get_last_query_source().unwrap_or("None".to_string()),
         );
         debug_info.push_str(&status_line_info);
@@ -193,8 +178,8 @@ impl DebugInfo {
             if buffer.is_filter_active() {
                 context.push_str(&format!("\nFILTER:\n"));
                 context.push_str(&format!("- Pattern: {}\n", buffer.get_filter_pattern()));
-                if let Some(filtered) = buffer.get_filtered_data() {
-                    context.push_str(&format!("- Filtered rows: {}\n", filtered.len()));
+                if let Some(dataview) = buffer.get_dataview() {
+                    context.push_str(&format!("- Filtered rows: {}\n", dataview.row_count()));
                 }
             }
 
@@ -365,8 +350,8 @@ impl DebugInfo {
             summary.push(format!("{} rows", datatable.row_count()));
 
             if buffer.is_filter_active() {
-                if let Some(filtered) = buffer.get_filtered_data() {
-                    summary.push(format!("{} filtered", filtered.len()));
+                if let Some(dataview) = buffer.get_dataview() {
+                    summary.push(format!("{} filtered", dataview.row_count()));
                 }
             }
 

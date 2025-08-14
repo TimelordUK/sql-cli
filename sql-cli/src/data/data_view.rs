@@ -4,6 +4,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+use crate::data::data_provider::DataProvider;
 use crate::data::datatable::{DataRow, DataTable, DataValue};
 
 /// A view over a DataTable that can filter, sort, and project columns
@@ -33,6 +34,13 @@ pub struct DataView {
 
     /// Active filter pattern (if any)
     filter_pattern: Option<String>,
+
+    /// Column search state
+    column_search_pattern: Option<String>,
+    /// Matching columns for column search (index, name)
+    matching_columns: Vec<(usize, String)>,
+    /// Current column search match index
+    current_column_match: usize,
 }
 
 impl DataView {
@@ -52,6 +60,9 @@ impl DataView {
             base_rows: all_rows,
             base_columns: all_columns,
             filter_pattern: None,
+            column_search_pattern: None,
+            matching_columns: Vec::new(),
+            current_column_match: 0,
         }
     }
 
@@ -472,6 +483,102 @@ impl DataView {
         &self.visible_rows
     }
 
+    // ========== Column Search Methods ==========
+
+    /// Start or update column search with a pattern
+    pub fn search_columns(&mut self, pattern: &str) {
+        self.column_search_pattern = if pattern.is_empty() {
+            None
+        } else {
+            Some(pattern.to_string())
+        };
+
+        if pattern.is_empty() {
+            self.matching_columns.clear();
+            self.current_column_match = 0;
+            return;
+        }
+
+        // Search through visible columns
+        let pattern_lower = pattern.to_lowercase();
+        self.matching_columns = self
+            .visible_columns
+            .iter()
+            .enumerate()
+            .filter_map(|(visible_idx, &source_idx)| {
+                let col_name = &self.source.columns[source_idx].name;
+                if col_name.to_lowercase().contains(&pattern_lower) {
+                    Some((visible_idx, col_name.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Reset to first match
+        self.current_column_match = 0;
+    }
+
+    /// Clear column search
+    pub fn clear_column_search(&mut self) {
+        self.column_search_pattern = None;
+        self.matching_columns.clear();
+        self.current_column_match = 0;
+    }
+
+    /// Go to next column search match
+    pub fn next_column_match(&mut self) -> Option<usize> {
+        if self.matching_columns.is_empty() {
+            return None;
+        }
+
+        self.current_column_match = (self.current_column_match + 1) % self.matching_columns.len();
+        Some(self.matching_columns[self.current_column_match].0)
+    }
+
+    /// Go to previous column search match
+    pub fn prev_column_match(&mut self) -> Option<usize> {
+        if self.matching_columns.is_empty() {
+            return None;
+        }
+
+        if self.current_column_match == 0 {
+            self.current_column_match = self.matching_columns.len() - 1;
+        } else {
+            self.current_column_match -= 1;
+        }
+        Some(self.matching_columns[self.current_column_match].0)
+    }
+
+    /// Get current column search pattern
+    pub fn column_search_pattern(&self) -> Option<&str> {
+        self.column_search_pattern.as_deref()
+    }
+
+    /// Get matching columns from search
+    pub fn get_matching_columns(&self) -> &[(usize, String)] {
+        &self.matching_columns
+    }
+
+    /// Get current column match index
+    pub fn current_column_match_index(&self) -> usize {
+        self.current_column_match
+    }
+
+    /// Get current column match (visible column index)
+    pub fn get_current_column_match(&self) -> Option<usize> {
+        if self.matching_columns.is_empty() {
+            None
+        } else {
+            Some(self.matching_columns[self.current_column_match].0)
+        }
+    }
+
+    /// Check if column search is active
+    pub fn has_column_search(&self) -> bool {
+        self.column_search_pattern.is_some()
+    }
+
     /// Export the visible data as JSON
     /// Returns an array of objects where each object represents a row
     pub fn to_json(&self) -> Value {
@@ -554,5 +661,39 @@ impl DataView {
         }
 
         Ok(tsv_output)
+    }
+}
+
+// Implement DataProvider for compatibility during migration
+// This allows DataView to be used where DataProvider is expected
+impl DataProvider for DataView {
+    fn get_row(&self, index: usize) -> Option<Vec<String>> {
+        self.get_row(index)
+            .map(|row| row.values.iter().map(|v| v.to_string()).collect())
+    }
+
+    fn get_column_names(&self) -> Vec<String> {
+        self.column_names()
+    }
+
+    fn get_row_count(&self) -> usize {
+        self.row_count()
+    }
+
+    fn get_column_count(&self) -> usize {
+        self.column_count()
+    }
+}
+
+// Also implement Debug for DataView to satisfy DataProvider requirements
+impl std::fmt::Debug for DataView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataView")
+            .field("source_name", &self.source.name)
+            .field("visible_rows", &self.visible_rows.len())
+            .field("visible_columns", &self.visible_columns.len())
+            .field("has_filter", &self.filter_pattern.is_some())
+            .field("has_column_search", &self.column_search_pattern.is_some())
+            .finish()
     }
 }
