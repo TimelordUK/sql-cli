@@ -2309,8 +2309,13 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_fuzzy_filter_active(false);
             }
             SearchMode::ColumnSearch => {
-                // Use AppStateContainer to clear column search
+                // Clear column search in both AppStateContainer and DataView
                 self.state_container.clear_column_search();
+
+                // Also clear DataView's column search
+                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                    dataview.clear_column_search();
+                }
 
                 // All column search state is now managed by AppStateContainer
             }
@@ -2705,6 +2710,10 @@ impl EnhancedTuiApp {
 
                 // Cancel column search and return to results
                 self.state_container.clear_column_search();
+                // Clear DataView's column search
+                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                    dataview.clear_column_search();
+                }
                 {
                     let mut buffer = self.buffer_mut();
                     buffer.set_mode(AppMode::Results);
@@ -2712,13 +2721,27 @@ impl EnhancedTuiApp {
                 }
             }
             KeyCode::Enter => {
-                // Jump to first matching column
-                if let Some((column_index, column_name)) =
-                    self.state_container.accept_column_match()
-                {
-                    self.buffer_mut().set_current_column(column_index);
+                // Jump to current matching column from DataView
+                let (column_index, column_name) =
+                    if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                        if let Some(idx) = dataview.get_current_column_match() {
+                            let matches = dataview.get_matching_columns();
+                            let name = matches
+                                .get(dataview.current_column_match_index())
+                                .map(|(_, n)| n.clone())
+                                .unwrap_or_default();
+                            (Some(idx), Some(name))
+                        } else {
+                            (None, None)
+                        }
+                    } else {
+                        (None, None)
+                    };
+
+                if let (Some(idx), Some(name)) = (column_index, column_name) {
+                    self.buffer_mut().set_current_column(idx);
                     self.buffer_mut()
-                        .set_status_message(format!("Jumped to column: {}", column_name));
+                        .set_status_message(format!("Jumped to column: {}", name));
                 } else {
                     self.buffer_mut()
                         .set_status_message("No matching columns found".to_string());
@@ -2736,41 +2759,12 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Tab => {
-                // Next match (Tab only, not 'n' to allow typing 'n' in search)
-                if let Some((column_index, column_name)) = self.state_container.next_column_match()
-                {
-                    let (current_match, total_matches) = {
-                        let column_search = self.state_container.column_search();
-                        (
-                            column_search.current_match + 1,
-                            column_search.matching_columns.len(),
-                        )
-                    };
-                    self.buffer_mut().set_current_column(column_index);
-                    self.buffer_mut().set_status_message(format!(
-                        "Column {} of {}: {}",
-                        current_match, total_matches, column_name
-                    ));
-                }
+                // Next match using DataView
+                self.next_column_match();
             }
             KeyCode::BackTab => {
-                // Previous match (Shift+Tab only, not 'N' to allow typing 'N' in search)
-                if let Some((column_index, column_name)) =
-                    self.state_container.previous_column_match()
-                {
-                    let (current_match, total_matches) = {
-                        let column_search = self.state_container.column_search();
-                        (
-                            column_search.current_match + 1,
-                            column_search.matching_columns.len(),
-                        )
-                    };
-                    self.buffer_mut().set_current_column(column_index);
-                    self.buffer_mut().set_status_message(format!(
-                        "Column {} of {}: {}",
-                        current_match, total_matches, column_name
-                    ));
-                }
+                // Previous match using DataView
+                self.previous_column_match();
             }
             KeyCode::Backspace => {
                 let mut pattern = self.state_container.column_search().pattern.clone();
@@ -2778,6 +2772,10 @@ impl EnhancedTuiApp {
                 self.state_container.start_column_search(pattern.clone());
                 // Also update input to keep it in sync for rendering
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
+                // Update DataView's column search
+                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                    dataview.search_columns(&pattern);
+                }
                 self.update_column_search();
             }
             KeyCode::Char(c) => {
@@ -2786,6 +2784,10 @@ impl EnhancedTuiApp {
                 self.state_container.start_column_search(pattern.clone());
                 // Also update input to keep it in sync for rendering
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
+                // Update DataView's column search
+                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                    dataview.search_columns(&pattern);
+                }
                 self.update_column_search();
             }
             _ => {}
@@ -3943,28 +3945,32 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Get columns using the new unified method
-        let column_names = self.buffer().get_column_names();
-        let mut columns = Vec::new();
-        for (index, col_name) in column_names.iter().enumerate() {
-            columns.push((col_name.clone(), index));
-        }
+        // Update DataView's column search and get matches
+        let matching_columns = if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            dataview.search_columns(&pattern);
 
-        debug!(target: "search", "Got {} columns from buffer", columns.len());
-        if !columns.is_empty() {
-            debug!(target: "search", "Column names: {:?}", columns.iter().map(|(name, _)| name).collect::<Vec<_>>());
-        }
-
-        // Use AppStateContainer for column search
-        let matching_columns = self
-            .state_container
-            .update_column_search_matches(&columns, &pattern);
-        debug!(target: "search", "Found {} matching columns", matching_columns.len());
-        if !matching_columns.is_empty() {
-            for (idx, (col_idx, col_name)) in matching_columns.iter().enumerate() {
-                debug!(target: "search", "  Match {}: '{}' at index {}", idx + 1, col_name, col_idx);
+            // Get matching columns from DataView
+            let matches = dataview.get_matching_columns().to_vec();
+            debug!(target: "search", "DataView found {} matching columns", matches.len());
+            if !matches.is_empty() {
+                for (idx, (col_idx, col_name)) in matches.iter().enumerate() {
+                    debug!(target: "search", "  Match {}: '{}' at index {}", idx + 1, col_name, col_idx);
+                }
             }
-        }
+
+            // Also sync with AppStateContainer for compatibility
+            let columns: Vec<(String, usize)> = matches
+                .iter()
+                .map(|(idx, name)| (name.clone(), *idx))
+                .collect();
+            self.state_container
+                .update_column_search_matches(&columns, &pattern);
+
+            matches
+        } else {
+            debug!(target: "search", "No DataView available for column search");
+            Vec::new()
+        };
 
         if !matching_columns.is_empty() {
             // Move to first match
@@ -3995,47 +4001,50 @@ impl EnhancedTuiApp {
     }
 
     fn next_column_match(&mut self) {
-        // Use AppStateContainer for navigation
-        if let Some((col_index, col_name)) = self.state_container.next_column_match() {
-            // Get the info we need before mutating self
-            let (current_match, total_matches) = {
-                let column_search = self.state_container.column_search();
-                (
-                    column_search.current_match + 1,
-                    column_search.matching_columns.len(),
-                )
-            };
+        // Use DataView's column search navigation
+        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            if let Some(col_index) = dataview.next_column_match() {
+                // Get the column name and match info
+                let matching_columns = dataview.get_matching_columns();
+                let current_match = dataview.current_column_match_index() + 1;
+                let total_matches = matching_columns.len();
+                let col_name = matching_columns
+                    .get(dataview.current_column_match_index())
+                    .map(|(_, name)| name.clone())
+                    .unwrap_or_default();
 
-            // Now we can mutate self
-            self.state_container.set_current_column(col_index);
-            self.buffer_mut().set_current_column(col_index);
-            self.buffer_mut().set_status_message(format!(
-                "Column {}/{}: {} - Tab/Shift-Tab to navigate",
-                current_match, total_matches, col_name
-            ));
+                // Update both AppStateContainer and Buffer for compatibility
+                self.state_container.set_current_column(col_index);
+                self.buffer_mut().set_current_column(col_index);
+                self.buffer_mut().set_status_message(format!(
+                    "Column {}/{}: {} - Tab/Shift-Tab to navigate",
+                    current_match, total_matches, col_name
+                ));
+            }
         }
     }
 
     fn previous_column_match(&mut self) {
-        // Use AppStateContainer for navigation
+        // Use DataView's column search navigation
+        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            if let Some(col_index) = dataview.prev_column_match() {
+                // Get the column name and match info
+                let matching_columns = dataview.get_matching_columns();
+                let current_match = dataview.current_column_match_index() + 1;
+                let total_matches = matching_columns.len();
+                let col_name = matching_columns
+                    .get(dataview.current_column_match_index())
+                    .map(|(_, name)| name.clone())
+                    .unwrap_or_default();
 
-        if let Some((col_index, col_name)) = self.state_container.previous_column_match() {
-            // Get the info we need before mutating self
-            let (current_match, total_matches) = {
-                let column_search = self.state_container.column_search();
-                (
-                    column_search.current_match + 1,
-                    column_search.matching_columns.len(),
-                )
-            };
-
-            // Now we can mutate self
-            self.state_container.set_current_column(col_index);
-            self.buffer_mut().set_current_column(col_index);
-            self.buffer_mut().set_status_message(format!(
-                "Column {}/{}: {} - Tab/Shift-Tab to navigate",
-                current_match, total_matches, col_name
-            ));
+                // Update both AppStateContainer and Buffer for compatibility
+                self.state_container.set_current_column(col_index);
+                self.buffer_mut().set_current_column(col_index);
+                self.buffer_mut().set_status_message(format!(
+                    "Column {}/{}: {} - Tab/Shift-Tab to navigate",
+                    current_match, total_matches, col_name
+                ));
+            }
         }
     }
 
@@ -4069,26 +4078,23 @@ impl EnhancedTuiApp {
     }
 
     fn update_column_search(&mut self) {
-        // Get column headers using DataProvider - extract data in a scoped block
-        let column_data = if let Some(provider) = self.get_data_provider() {
-            let headers = provider.get_column_names();
+        // Use DataView's column search if available
+        let pattern = self.state_container.column_search().pattern.clone();
 
-            // Create columns list for AppStateContainer
-            let columns: Vec<(String, usize)> = headers
+        // Update DataView's column search
+        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            dataview.search_columns(&pattern);
+
+            // Get matching columns from DataView
+            let matching_columns = dataview.get_matching_columns();
+            let matches_len = matching_columns.len();
+
+            // Update AppStateContainer with DataView's matches for compatibility
+            let columns: Vec<(String, usize)> = matching_columns
                 .iter()
-                .enumerate()
-                .map(|(idx, name)| (name.clone(), idx))
+                .map(|(idx, name)| (name.clone(), *idx))
                 .collect();
-
-            Some((headers, columns))
-        } else {
-            None
-        };
-
-        // Now provider borrow is dropped, we can use mutable methods
-        if let Some((_headers, columns)) = column_data {
-            // Update matches in AppStateContainer
-            let pattern = self.state_container.column_search().pattern.clone();
+            // Sync AppStateContainer with DataView's matches
             self.state_container
                 .update_column_search_matches(&columns, &pattern);
 

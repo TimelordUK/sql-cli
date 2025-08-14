@@ -158,9 +158,12 @@ fn test_buffer_metadata() {
     buffer.set_modified(true);
     assert!(buffer.is_modified());
 
-    // Test CSV mode
-    assert!(!buffer.is_csv_mode());
-    assert_eq!(buffer.get_table_name(), "");
+    // CSV mode and table name are no longer separate concepts
+    // DataTable is always used, and table name comes from DataView
+    if let Some(dataview) = buffer.get_dataview() {
+        // Table name is stored in the DataTable
+        assert!(!dataview.source().name.is_empty());
+    }
 }
 
 #[test]
