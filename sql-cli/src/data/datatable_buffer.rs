@@ -5,6 +5,7 @@ use crate::buffer::{
     SortOrder, SortState,
 };
 use crate::csv_datasource::CsvApiClient;
+use crate::data::data_view::DataView;
 use crate::datatable::DataTable;
 use crate::datatable_view::{DataTableView, SortOrder as ViewSortOrder};
 use crate::input_manager::{create_single_line, InputManager};
@@ -27,6 +28,8 @@ pub struct DataTableBuffer {
 
     // --- DataTable Backend ---
     view: DataTableView,
+    // --- V51: DataView support ---
+    dataview: Option<DataView>,
 
     // --- UI State (compatible with existing Buffer) ---
     mode: AppMode,
@@ -91,6 +94,8 @@ impl DataTableBuffer {
 
             // --- DataTable Backend ---
             view,
+            // --- V51: DataView support ---
+            dataview: None,
 
             // --- UI State ---
             mode: AppMode::Command,
@@ -284,6 +289,21 @@ impl BufferAPI for DataTableBuffer {
         // V50: DataTableBuffer doesn't need QueryResponse conversion
         // It manages data through DataTableView
         Ok(())
+    }
+
+    // --- V51: DataView support ---
+    fn get_dataview(&self) -> Option<&DataView> {
+        self.dataview.as_ref()
+    }
+    fn set_dataview(&mut self, dataview: Option<DataView>) {
+        debug!(
+            "V51: Setting DataView with {} rows in DataTableBuffer",
+            dataview.as_ref().map(|v| v.row_count()).unwrap_or(0)
+        );
+        self.dataview = dataview;
+    }
+    fn has_dataview(&self) -> bool {
+        self.dataview.is_some()
     }
 
     // --- Mode and Status ---

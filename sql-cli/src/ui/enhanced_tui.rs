@@ -23,7 +23,6 @@ use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::text_navigation::TextNavigator;
 use crate::ui::key_dispatcher::KeyDispatcher;
-use crate::ui::query_engine_integration::QueryEngineIntegration;
 use crate::utils::debug_info::DebugInfo;
 use crate::utils::logging::{get_log_buffer, LogRingBuffer};
 use crate::where_ast::format_where_ast;
@@ -314,8 +313,8 @@ impl EnhancedTuiApp {
         // For now, we'll use BufferAdapter for Buffer data
         // In the future, we can check data source type and return appropriate adapter
         if let Some(buffer) = self.buffer_manager.current() {
-            // V50: Check for DataTable instead of results
-            if buffer.has_datatable() {
+            // V51: Check for DataView first, then DataTable
+            if buffer.has_dataview() || buffer.has_datatable() {
                 return Some(Box::new(BufferAdapter::new(buffer)));
             }
         }
@@ -2973,29 +2972,23 @@ impl EnhancedTuiApp {
                 crate::utils::memory_tracker::track_memory("query_engine_start");
 
                 if let Some(datatable) = self.buffer().get_datatable() {
-                    // Execute query using QueryEngine with hidden columns
-                    let result = if self.hidden_columns.is_empty() {
-                        QueryEngineIntegration::execute_query(datatable, query)
-                    } else {
-                        QueryEngineIntegration::execute_query_with_hidden_columns(
-                            datatable,
-                            query,
-                            &self.hidden_columns,
-                        )
-                    };
+                    // Execute query using QueryEngine directly with DataView (V51: No more QueryResponse!)
+                    let table_arc = Arc::new(datatable.clone());
+                    let engine = crate::data::query_engine::QueryEngine::new();
+                    let result = engine.execute(table_arc, query);
 
                     match result {
-                        Ok(response) => {
+                        Ok(mut dataview) => {
                             let duration = start_time.elapsed();
                             crate::utils::memory_tracker::track_memory("query_engine_end");
 
-                            let row_count = response.count;
-                            let col_count = response
-                                .data
-                                .first()
-                                .and_then(|v| v.as_object())
-                                .map(|obj| obj.len())
-                                .unwrap_or(0);
+                            // Apply hidden columns to the DataView
+                            for col_name in &self.hidden_columns {
+                                dataview.hide_column_by_name(col_name);
+                            }
+
+                            let row_count = dataview.row_count();
+                            let col_count = dataview.column_count();
 
                             info!(
                                 "QueryEngine query complete: {} rows, {} columns, {} ms",
@@ -3004,9 +2997,18 @@ impl EnhancedTuiApp {
                                 duration.as_millis()
                             );
 
-                            // Store the query results in the buffer
-                            // TODO: In future, store DataView directly instead of converting to JSON
-                            // For now, the buffer continues to work with JSON data from QueryResponse
+                            // Store the DataView directly in the buffer (V51: No more QueryResponse conversion!)
+                            if let Some(buffer) = self.buffer_manager.current_mut() {
+                                let buffer_id = buffer.get_id();
+                                crate::utils::memory_tracker::track_memory("before_set_dataview");
+                                buffer.set_dataview(Some(dataview));
+                                crate::utils::memory_tracker::track_memory("after_set_dataview");
+                                // Clear filtered_data since we have new query results
+                                buffer.set_filtered_data(None);
+                                info!(target: "buffer", "Stored QueryEngine DataView with {} rows in buffer {}", row_count, buffer_id);
+                            } else {
+                                warn!("No current buffer available to store QueryEngine DataView");
+                            }
 
                             // Update navigation
                             self.state_container
@@ -3020,7 +3022,7 @@ impl EnhancedTuiApp {
 
                             // Update status
                             self.buffer_mut().set_status_message(format!(
-                                "Query executed in {}ms ({} rows) - QueryEngine",
+                                "Query executed in {}ms ({} rows) - QueryEngine+DataView",
                                 duration.as_millis(),
                                 row_count
                             ));

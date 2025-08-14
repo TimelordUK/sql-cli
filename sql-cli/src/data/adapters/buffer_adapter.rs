@@ -193,8 +193,15 @@ impl<'a> Debug for BufferAdapter<'a> {
 
 impl<'a> DataProvider for BufferAdapter<'a> {
     fn get_row(&self, index: usize) -> Option<Vec<String>> {
-        // V48: Try to use DataTable first for better performance
-        if let Some(datatable) = self.buffer.get_datatable() {
+        // V51: Try DataView first (has filtering and hidden columns applied)
+        if let Some(dataview) = self.buffer.get_dataview() {
+            if let Some(row) = dataview.get_row(index) {
+                return Some(row.values.iter().map(|v| v.to_string_optimized()).collect());
+            }
+            return None;
+        }
+        // V48: Fallback to DataTable for better performance
+        else if let Some(datatable) = self.buffer.get_datatable() {
             // Removed debug logging from hot path - was causing performance issues at 20k+ rows
 
             // Check if fuzzy filter is active
@@ -242,8 +249,12 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     }
 
     fn get_column_names(&self) -> Vec<String> {
-        // V48: Use DataTable column names if available
-        if let Some(datatable) = self.buffer.get_datatable() {
+        // V51: Use DataView first (has hidden columns already applied)
+        if let Some(dataview) = self.buffer.get_dataview() {
+            return dataview.column_names();
+        }
+        // V48: Fallback to DataTable column names
+        else if let Some(datatable) = self.buffer.get_datatable() {
             let all_names = datatable.column_names();
 
             // Apply hidden columns filter
@@ -266,8 +277,12 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     }
 
     fn get_row_count(&self) -> usize {
-        // If fuzzy filter is active, return the filtered count
-        if self.buffer.is_fuzzy_filter_active() {
+        // V51: Use DataView first (has filtering already applied)
+        if let Some(dataview) = self.buffer.get_dataview() {
+            return dataview.row_count();
+        }
+        // Fallback: traditional filtering logic for DataTable
+        else if self.buffer.is_fuzzy_filter_active() {
             return self.buffer.get_fuzzy_filter_indices().len();
         } else if let Some(filtered_data) = self.buffer.get_filtered_data() {
             // Regex filter is active - return filtered count

@@ -2,6 +2,7 @@ use crate::data::datatable::{DataTable, DataValue};
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
 use anyhow::Result;
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use tracing::debug;
 
 /// Evaluates WHERE clauses from recursive_parser directly against DataTable
 pub struct RecursiveWhereEvaluator<'a> {
@@ -15,11 +16,22 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
     /// Evaluate a WHERE clause for a specific row
     pub fn evaluate(&self, where_clause: &WhereClause, row_index: usize) -> Result<bool> {
+        debug!(
+            "RecursiveWhereEvaluator: evaluate() ENTRY - row {}, {} conditions",
+            row_index,
+            where_clause.conditions.len()
+        );
+
         if where_clause.conditions.is_empty() {
+            debug!("RecursiveWhereEvaluator: evaluate() EXIT - no conditions, returning true");
             return Ok(true);
         }
 
         // Evaluate first condition
+        debug!(
+            "RecursiveWhereEvaluator: evaluate() - evaluating first condition for row {}",
+            row_index
+        );
         let mut result = self.evaluate_condition(&where_clause.conditions[0], row_index)?;
 
         // Apply connectors (AND/OR) with subsequent conditions
@@ -39,11 +51,25 @@ impl<'a> RecursiveWhereEvaluator<'a> {
     }
 
     fn evaluate_condition(&self, condition: &Condition, row_index: usize) -> Result<bool> {
-        self.evaluate_expression(&condition.expr, row_index)
+        debug!(
+            "RecursiveWhereEvaluator: evaluate_condition() ENTRY - row {}",
+            row_index
+        );
+        let result = self.evaluate_expression(&condition.expr, row_index);
+        debug!(
+            "RecursiveWhereEvaluator: evaluate_condition() EXIT - row {}, result = {:?}",
+            row_index, result
+        );
+        result
     }
 
     fn evaluate_expression(&self, expr: &SqlExpression, row_index: usize) -> Result<bool> {
-        match expr {
+        debug!(
+            "RecursiveWhereEvaluator: evaluate_expression() ENTRY - row {}, expr = {:?}",
+            row_index, expr
+        );
+
+        let result = match expr {
             SqlExpression::BinaryOp { left, op, right } => {
                 self.evaluate_binary_op(left, op, right, row_index)
             }
@@ -65,9 +91,21 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 object,
                 method,
                 args,
-            } => self.evaluate_method_call(object, method, args, row_index),
-            _ => Ok(false), // Default to false for unsupported expressions
-        }
+            } => {
+                debug!("RecursiveWhereEvaluator: evaluate_expression() - found MethodCall, delegating to evaluate_method_call");
+                self.evaluate_method_call(object, method, args, row_index)
+            }
+            _ => {
+                debug!("RecursiveWhereEvaluator: evaluate_expression() - unsupported expression type, returning false");
+                Ok(false) // Default to false for unsupported expressions
+            }
+        };
+
+        debug!(
+            "RecursiveWhereEvaluator: evaluate_expression() EXIT - row {}, result = {:?}",
+            row_index, result
+        );
+        result
     }
 
     fn evaluate_binary_op(
@@ -77,14 +115,28 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         right: &SqlExpression,
         row_index: usize,
     ) -> Result<bool> {
+        debug!(
+            "RecursiveWhereEvaluator: evaluate_binary_op() ENTRY - row {}, op = '{}'",
+            row_index, op
+        );
+
         // Get column value from left side
         let column_name = self.extract_column_name(left)?;
+        debug!(
+            "RecursiveWhereEvaluator: evaluate_binary_op() - column_name = '{}'",
+            column_name
+        );
+
         let col_index = self
             .table
             .get_column_index(&column_name)
             .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", column_name))?;
 
         let cell_value = self.table.get_value(row_index, col_index);
+        debug!(
+            "RecursiveWhereEvaluator: evaluate_binary_op() - row {} column '{}' value = {:?}",
+            row_index, column_name, cell_value
+        );
 
         // Get comparison value from right side
         let compare_value = self.extract_value(right)?;
@@ -256,6 +308,11 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         args: &[SqlExpression],
         row_index: usize,
     ) -> Result<bool> {
+        debug!(
+            "RecursiveWhereEvaluator: evaluate_method_call - object='{}', method='{}', row={}",
+            object, method, row_index
+        );
+
         // Get column value
         let col_index = self
             .table
@@ -263,6 +320,10 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
 
         let cell_value = self.table.get_value(row_index, col_index);
+        debug!(
+            "RecursiveWhereEvaluator: Row {} column '{}' value = {:?}",
+            row_index, object, cell_value
+        );
 
         match method.to_lowercase().as_str() {
             "contains" => {
@@ -273,11 +334,45 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
                 // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
-                    Some(DataValue::String(s)) => Ok(s.contains(&search_str)),
-                    Some(DataValue::Integer(n)) => Ok(n.to_string().contains(&search_str)),
-                    Some(DataValue::Float(f)) => Ok(f.to_string().contains(&search_str)),
-                    Some(DataValue::Boolean(b)) => Ok(b.to_string().contains(&search_str)),
-                    _ => Ok(false),
+                    Some(DataValue::String(s)) => {
+                        let result = s.to_lowercase().contains(&search_str.to_lowercase());
+                        // Always log for debugging - remove the row_index < 3 limit
+                        debug!("RecursiveWhereEvaluator: Row {} contains('{}') on '{}' = {} (case-insensitive)", row_index, search_str, s, result);
+                        Ok(result)
+                    }
+                    Some(DataValue::Integer(n)) => {
+                        let str_val = n.to_string();
+                        let result = str_val.contains(&search_str);
+                        if row_index < 3 {
+                            debug!("RecursiveWhereEvaluator: Row {} contains('{}') on integer '{}' = {}", row_index, search_str, str_val, result);
+                        }
+                        Ok(result)
+                    }
+                    Some(DataValue::Float(f)) => {
+                        let str_val = f.to_string();
+                        let result = str_val.contains(&search_str);
+                        if row_index < 3 {
+                            debug!(
+                                "RecursiveWhereEvaluator: Row {} contains('{}') on float '{}' = {}",
+                                row_index, search_str, str_val, result
+                            );
+                        }
+                        Ok(result)
+                    }
+                    Some(DataValue::Boolean(b)) => {
+                        let str_val = b.to_string();
+                        let result = str_val.contains(&search_str);
+                        if row_index < 3 {
+                            debug!("RecursiveWhereEvaluator: Row {} contains('{}') on boolean '{}' = {}", row_index, search_str, str_val, result);
+                        }
+                        Ok(result)
+                    }
+                    _ => {
+                        if row_index < 3 {
+                            debug!("RecursiveWhereEvaluator: Row {} contains('{}') on null/empty value = false", row_index, search_str);
+                        }
+                        Ok(false)
+                    }
                 }
             }
             "startswith" => {
@@ -288,7 +383,9 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
                 // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
-                    Some(DataValue::String(s)) => Ok(s.starts_with(&prefix)),
+                    Some(DataValue::String(s)) => {
+                        Ok(s.to_lowercase().starts_with(&prefix.to_lowercase()))
+                    }
                     Some(DataValue::Integer(n)) => Ok(n.to_string().starts_with(&prefix)),
                     Some(DataValue::Float(f)) => Ok(f.to_string().starts_with(&prefix)),
                     Some(DataValue::Boolean(b)) => Ok(b.to_string().starts_with(&prefix)),
@@ -303,7 +400,9 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
                 // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
-                    Some(DataValue::String(s)) => Ok(s.ends_with(&suffix)),
+                    Some(DataValue::String(s)) => {
+                        Ok(s.to_lowercase().ends_with(&suffix.to_lowercase()))
+                    }
                     Some(DataValue::Integer(n)) => Ok(n.to_string().ends_with(&suffix)),
                     Some(DataValue::Float(f)) => Ok(f.to_string().ends_with(&suffix)),
                     Some(DataValue::Boolean(b)) => Ok(b.to_string().ends_with(&suffix)),

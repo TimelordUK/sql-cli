@@ -172,6 +172,11 @@ pub trait BufferAPI {
     /// V50: Helper to convert QueryResponse to DataTable and store it
     fn set_results_as_datatable(&mut self, response: Option<QueryResponse>) -> Result<(), String>;
 
+    // --- V51: DataView support (direct query results) ---
+    fn get_dataview(&self) -> Option<&DataView>;
+    fn set_dataview(&mut self, dataview: Option<DataView>);
+    fn has_dataview(&self) -> bool;
+
     // --- Mode and Status ---
     fn get_mode(&self) -> AppMode;
     fn set_mode(&mut self, mode: AppMode);
@@ -485,6 +490,21 @@ impl BufferAPI for Buffer {
             self.datatable = None;
             Ok(())
         }
+    }
+
+    // --- V51: DataView support (direct query results) ---
+    fn get_dataview(&self) -> Option<&DataView> {
+        self.dataview.as_ref()
+    }
+    fn set_dataview(&mut self, dataview: Option<DataView>) {
+        debug!(
+            "V51: Setting DataView with {} rows",
+            dataview.as_ref().map(|v| v.row_count()).unwrap_or(0)
+        );
+        self.dataview = dataview;
+    }
+    fn has_dataview(&self) -> bool {
+        self.dataview.is_some()
     }
 
     // --- Mode and Status ---

@@ -36,9 +36,12 @@ impl QueryEngine {
         if let Some(where_clause) = &statement.where_clause {
             let total_rows = table.row_count();
             debug!("QueryEngine: Applying WHERE clause to {} rows", total_rows);
+            debug!("QueryEngine: WHERE clause = {:?}", where_clause);
 
             view = view.filter(|table, row_idx| {
+                debug!("QueryEngine: About to create RecursiveWhereEvaluator for row {}", row_idx);
                 let evaluator = RecursiveWhereEvaluator::new(table);
+                debug!("QueryEngine: Created RecursiveWhereEvaluator, about to call evaluate() for row {}", row_idx);
                 match evaluator.evaluate(where_clause, row_idx) {
                     Ok(result) => {
                         if row_idx < 5 {
@@ -188,5 +191,91 @@ mod tests {
             .execute(table.clone(), "SELECT * FROM users LIMIT 2")
             .unwrap();
         assert_eq!(view.row_count(), 2);
+    }
+
+    #[test]
+    fn test_type_coercion_contains() {
+        // Initialize tracing for debug output
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init();
+
+        let mut table = DataTable::new("test");
+        table.add_column(DataColumn::new("id"));
+        table.add_column(DataColumn::new("status"));
+        table.add_column(DataColumn::new("price"));
+
+        // Add test data with mixed types
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(1),
+                DataValue::String("Pending".to_string()),
+                DataValue::Float(99.99),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(2),
+                DataValue::String("Confirmed".to_string()),
+                DataValue::Float(150.50),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(3),
+                DataValue::String("Pending".to_string()),
+                DataValue::Float(75.00),
+            ]))
+            .unwrap();
+
+        let table = Arc::new(table);
+        let engine = QueryEngine::new();
+
+        println!("\n=== Testing WHERE clause with Contains ===");
+        println!("Table has {} rows", table.row_count());
+        for i in 0..table.row_count() {
+            let status = table.get_value(i, 1);
+            println!("Row {}: status = {:?}", i, status);
+        }
+
+        // Test 1: Basic string contains (should work)
+        println!("\n--- Test 1: status.Contains('pend') ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE status.Contains('pend')",
+        );
+        match result {
+            Ok(view) => {
+                println!("SUCCESS: Found {} matching rows", view.row_count());
+                assert_eq!(view.row_count(), 2); // Should find both Pending rows
+            }
+            Err(e) => {
+                panic!("Query failed: {}", e);
+            }
+        }
+
+        // Test 2: Numeric contains (should work with type coercion)
+        println!("\n--- Test 2: price.Contains('9') ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE price.Contains('9')",
+        );
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} matching rows with price containing '9'",
+                    view.row_count()
+                );
+                // Should find 99.99 row
+                assert!(view.row_count() >= 1);
+            }
+            Err(e) => {
+                panic!("Numeric coercion query failed: {}", e);
+            }
+        }
+
+        println!("\n=== All tests passed! ===");
     }
 }
