@@ -1,0 +1,15 @@
+#!/usr/bin/expect -f
+
+set timeout 5
+spawn ./target/release/sql-cli test_simple.csv
+
+# Wait for TUI to load
+sleep 1
+
+# Send :q command to quit
+send ":q\r"
+
+# Should exit
+expect eof
+
+puts "Test passed: :q alias works"

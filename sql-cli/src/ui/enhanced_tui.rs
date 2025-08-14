@@ -547,13 +547,8 @@ impl EnhancedTuiApp {
     }
 
     pub fn new_with_csv(csv_path: &str) -> Result<Self> {
-        let mut csv_client = CsvApiClient::new();
-
         // First create the app to get its config
         let mut app = Self::new(""); // Empty API URL for CSV mode
-
-        // Use the app's config for consistency
-        csv_client.set_case_insensitive(app.config.behavior.case_insensitive_default);
 
         let raw_name = std::path::Path::new(csv_path)
             .file_stem()
@@ -564,58 +559,37 @@ impl EnhancedTuiApp {
         // Sanitize the table name to be SQL-friendly
         let table_name = Self::sanitize_table_name(&raw_name);
 
-        // Check for direct DataTable loading mode (bypass JSON)
-        let use_direct_loading = std::env::var("DIRECT_DATATABLE").is_ok();
+        // Direct DataTable loading is now the default for CSV files
+        info!("Using direct DataTable loading for CSV (bypassing JSON intermediate)");
+        crate::utils::memory_tracker::track_memory("before_direct_csv_load");
 
-        let (datatable_opt, schema) = if use_direct_loading {
-            info!("Using DIRECT DataTable loading (no JSON intermediate)");
-            crate::utils::memory_tracker::track_memory("before_direct_csv_load");
+        // Load CSV directly to DataTable
+        let datatable =
+            crate::data::datatable_loaders::load_csv_to_datatable(csv_path, &table_name)?;
 
-            // Load CSV directly to DataTable
-            let datatable =
-                crate::data::datatable_loaders::load_csv_to_datatable(csv_path, &table_name)?;
+        crate::utils::memory_tracker::track_memory("after_direct_csv_load");
+        info!(
+            "Loaded {} rows directly to DataTable, memory: {} MB",
+            datatable.row_count(),
+            datatable.estimate_memory_size() / 1024 / 1024
+        );
 
-            crate::utils::memory_tracker::track_memory("after_direct_csv_load");
-            info!(
-                "Loaded {} rows directly to DataTable, memory: {} MB",
-                datatable.row_count(),
-                datatable.estimate_memory_size() / 1024 / 1024
-            );
+        // Create schema from DataTable columns
+        let mut schema = std::collections::HashMap::new();
+        schema.insert(table_name.clone(), datatable.column_names());
 
-            // Create schema from DataTable columns
-            let mut schema = std::collections::HashMap::new();
-            schema.insert(table_name.clone(), datatable.column_names());
+        let (datatable_opt, schema) = (Some(datatable), schema);
 
-            (Some(datatable), schema)
-        } else {
-            csv_client.load_csv(csv_path, &table_name)?;
-            let schema = csv_client
-                .get_schema()
-                .ok_or_else(|| anyhow::anyhow!("Failed to get CSV schema"))?;
-            (None, schema)
-        };
-
-        // Replace the default buffer with a CSV buffer
+        // Replace the default buffer with a CSV buffer using direct DataTable
         {
             // Clear all buffers and add a CSV buffer
             app.buffer_manager.clear_all();
-            let mut buffer = if let Some(datatable) = datatable_opt {
-                // Direct DataTable mode - create buffer without CSV client
-                let mut buf = buffer::Buffer::new(1);
-                buf.set_csv_mode(true);
-                buf.set_table_name(table_name.clone());
-                buf.set_datatable(Some(datatable));
-                info!("Created buffer with direct DataTable (no JSON)");
-                buf
-            } else {
-                // Legacy JSON mode
-                buffer::Buffer::from_csv(
-                    1,
-                    std::path::PathBuf::from(csv_path),
-                    csv_client,
-                    table_name.clone(),
-                )
-            };
+            // Direct DataTable mode - create buffer without CSV client
+            let mut buffer = buffer::Buffer::new(1);
+            buffer.set_csv_mode(true);
+            buffer.set_table_name(table_name.clone());
+            buffer.set_datatable(datatable_opt);
+            info!("Created buffer with direct DataTable (no JSON)");
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             buffer.set_compact_mode(app.config.display.compact_mode);
@@ -667,33 +641,15 @@ impl EnhancedTuiApp {
                 ));
             }
 
-            // V49: Try to get DataTable directly from CsvApiClient
-            if let Some(csv_client) = app.buffer().get_csv_client() {
-                if let Some(datatable) = csv_client.get_datatable() {
-                    debug!("V49: Setting DataTable directly from CsvApiClient");
-                    // Store the DataTable directly
-                    if let Some(buffer) = app.buffer_manager.current_mut() {
-                        buffer.datatable = Some(datatable);
-                        debug!("V49: DataTable set directly, bypassing JSON conversion");
-                    }
-                }
-            } else {
-                // V48: Fallback - ensure DataTable is created from JSON
-                app.ensure_datatable_exists();
-            }
+            // DataTable is already set directly from CSV file
         }
 
         Ok(app)
     }
 
     pub fn new_with_json(json_path: &str) -> Result<Self> {
-        let mut csv_client = CsvApiClient::new();
-
         // First create the app to get its config
         let mut app = Self::new(""); // Empty API URL for JSON mode
-
-        // Use the app's config for consistency
-        csv_client.set_case_insensitive(app.config.behavior.case_insensitive_default);
 
         let raw_name = std::path::Path::new(json_path)
             .file_stem()
@@ -704,23 +660,36 @@ impl EnhancedTuiApp {
         // Sanitize the table name to be SQL-friendly
         let table_name = Self::sanitize_table_name(&raw_name);
 
-        csv_client.load_json(json_path, &table_name)?;
+        // Direct DataTable loading for JSON files
+        info!("Using direct DataTable loading for JSON (bypassing intermediate format)");
+        crate::utils::memory_tracker::track_memory("before_direct_json_load");
 
-        // Get schema from JSON data
-        let schema = csv_client
-            .get_schema()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get JSON schema"))?;
+        // Load JSON directly to DataTable
+        let datatable =
+            crate::data::datatable_loaders::load_json_to_datatable(json_path, &table_name)?;
 
-        // Replace the default buffer with a JSON buffer
+        crate::utils::memory_tracker::track_memory("after_direct_json_load");
+        info!(
+            "Loaded {} rows directly to DataTable from JSON, memory: {} MB",
+            datatable.row_count(),
+            datatable.estimate_memory_size() / 1024 / 1024
+        );
+
+        // Create schema from DataTable columns
+        let mut schema = std::collections::HashMap::new();
+        schema.insert(table_name.clone(), datatable.column_names());
+
+        let datatable_opt = Some(datatable);
+
+        // Replace the default buffer with a JSON buffer using direct DataTable
         {
-            // Clear all buffers and add a JSON buffer
+            // Clear all buffers and add a buffer with DataTable
             app.buffer_manager.clear_all();
-            let mut buffer = buffer::Buffer::from_json(
-                1,
-                std::path::PathBuf::from(json_path),
-                csv_client,
-                table_name.clone(),
-            );
+            let mut buffer = buffer::Buffer::new(1);
+            buffer.set_csv_mode(true); // This flag is used for both CSV and JSON file modes
+            buffer.set_table_name(table_name.clone());
+            buffer.set_datatable(datatable_opt);
+            info!("Created buffer with direct DataTable from JSON");
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             buffer.set_compact_mode(app.config.display.compact_mode);
@@ -773,20 +742,7 @@ impl EnhancedTuiApp {
                 ));
             }
 
-            // V49: Try to get DataTable directly from CsvApiClient (also handles JSON)
-            if let Some(csv_client) = app.buffer().get_csv_client() {
-                if let Some(datatable) = csv_client.get_datatable() {
-                    debug!("V49: Setting DataTable directly from JSON loader");
-                    // Store the DataTable directly
-                    if let Some(buffer) = app.buffer_manager.current_mut() {
-                        buffer.datatable = Some(datatable);
-                        debug!("V49: DataTable set directly from JSON, bypassing conversion");
-                    }
-                }
-            } else {
-                // V48: Fallback - ensure DataTable is created from JSON
-                app.ensure_datatable_exists();
-            }
+            // DataTable is already set directly from JSON file
         }
 
         Ok(app)
@@ -2870,8 +2826,8 @@ impl EnhancedTuiApp {
                 Err(anyhow::anyhow!("No cached data loaded"))
             }
         } else if self.buffer().is_csv_mode() {
-            // Check if we have a direct DataTable (no JSON path)
-            if self.buffer().has_datatable() && std::env::var("DIRECT_DATATABLE").is_ok() {
+            // Check if we have a direct DataTable (now default for CSV)
+            if self.buffer().has_datatable() {
                 info!("Using direct DataTable query (no JSON)");
                 crate::utils::memory_tracker::track_memory("direct_query_start");
 

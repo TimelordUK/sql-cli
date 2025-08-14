@@ -1,0 +1,35 @@
+#!/usr/bin/expect -f
+
+set timeout 30
+spawn ./target/release/sql-cli test_100k.csv
+
+# Wait for TUI to load
+sleep 2
+
+# Send query
+send "SELECT * FROM test_100k\r"
+sleep 3
+
+# Navigate down 10 times
+for {set i 0} {$i < 10} {incr i} {
+    send "j"
+    sleep 0.2
+}
+
+# Navigate up 10 times  
+for {set i 0} {$i < 10} {incr i} {
+    send "k"
+    sleep 0.2
+}
+
+# Jump to end
+send "G"
+sleep 0.5
+
+# Jump to beginning
+send "g"
+sleep 0.5
+
+# Quit
+send "q"
+expect eof
