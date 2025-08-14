@@ -1,6 +1,7 @@
 use crate::api_client::QueryResponse; // V50: Still needed for conversion from API responses
 use crate::csv_datasource::CsvApiClient;
 use crate::cursor_operations::CursorOperations;
+use crate::data::data_view::DataView;
 use crate::data::datatable::DataTable;
 use crate::hybrid_parser::HybridParser;
 use crate::input_manager::{create_from_input, create_single_line, InputManager};
@@ -13,6 +14,7 @@ use regex::Regex;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::debug;
 use tui_input::Input;
 
@@ -243,6 +245,10 @@ pub trait BufferAPI {
     fn add_pinned_column(&mut self, col: usize);
     fn remove_pinned_column(&mut self, col: usize);
     fn clear_pinned_columns(&mut self);
+    fn get_hidden_columns(&self) -> &Vec<String>;
+    fn add_hidden_column(&mut self, col_name: String);
+    fn remove_hidden_column(&mut self, col_name: &str);
+    fn clear_hidden_columns(&mut self);
     fn get_column_widths(&self) -> &Vec<u16>;
     fn set_column_widths(&mut self, widths: Vec<u16>);
     fn is_case_insensitive(&self) -> bool;
@@ -352,6 +358,8 @@ pub struct Buffer {
     pub cached_data: Option<Vec<serde_json::Value>>,
     /// V50: DataTable is now the primary storage (no longer alongside JSON)
     pub datatable: Option<DataTable>,
+    /// DataView for applying filters like hidden columns without modifying the DataTable
+    pub dataview: Option<DataView>,
 
     // --- UI State ---
     pub mode: AppMode,
@@ -380,6 +388,7 @@ pub struct Buffer {
     pub scroll_offset: (usize, usize),
     pub current_column: usize,
     pub pinned_columns: Vec<usize>,
+    pub hidden_columns: Vec<String>, // Names of hidden columns
     pub compact_mode: bool,
     pub viewport_lock: bool,
     pub viewport_lock_row: Option<usize>,
@@ -721,6 +730,28 @@ impl BufferAPI for Buffer {
 
     fn clear_pinned_columns(&mut self) {
         self.pinned_columns.clear();
+    }
+
+    fn get_hidden_columns(&self) -> &Vec<String> {
+        &self.hidden_columns
+    }
+
+    fn add_hidden_column(&mut self, col_name: String) {
+        if !self.hidden_columns.contains(&col_name) {
+            self.hidden_columns.push(col_name);
+            debug!(
+                "Added hidden column, total hidden: {}",
+                self.hidden_columns.len()
+            );
+        }
+    }
+
+    fn remove_hidden_column(&mut self, col_name: &str) {
+        self.hidden_columns.retain(|c| c != col_name);
+    }
+
+    fn clear_hidden_columns(&mut self) {
+        self.hidden_columns.clear();
     }
 
     fn get_column_widths(&self) -> &Vec<u16> {
@@ -1212,6 +1243,7 @@ impl Buffer {
             // V50: Removed results field
             cached_data: None,
             datatable: None,
+            dataview: None,
 
             mode: AppMode::Command,
             edit_mode: EditMode::SingleLine,
@@ -1239,6 +1271,7 @@ impl Buffer {
             scroll_offset: (0, 0),
             current_column: 0,
             pinned_columns: Vec::new(),
+            hidden_columns: Vec::new(),
             compact_mode: false,
             viewport_lock: false,
             viewport_lock_row: None,
@@ -1537,6 +1570,7 @@ impl Clone for Buffer {
             // V50: Removed results field
             cached_data: self.cached_data.clone(),
             datatable: self.datatable.clone(),
+            dataview: self.dataview.clone(),
             mode: self.mode.clone(),
             edit_mode: self.edit_mode.clone(),
             input: self.input.clone(),
@@ -1556,6 +1590,7 @@ impl Clone for Buffer {
             scroll_offset: self.scroll_offset,
             current_column: self.current_column,
             pinned_columns: self.pinned_columns.clone(),
+            hidden_columns: self.hidden_columns.clone(),
             column_stats: self.column_stats.clone(),
             compact_mode: self.compact_mode,
             viewport_lock: self.viewport_lock,

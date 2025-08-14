@@ -161,33 +161,52 @@ impl EnhancedTuiApp {
 
     /// Hide the currently selected column
     pub fn hide_current_column(&mut self) {
+        debug!(
+            "hide_current_column called, mode={:?}",
+            self.buffer().get_mode()
+        );
         if self.buffer().get_mode() != AppMode::Results {
+            debug!("Not in Results mode, returning");
             return;
         }
 
         // Get current column index and name
         let col_idx = self.state_container.navigation().selected_column;
+        debug!("Current column index: {}", col_idx);
+
         if let Some(datatable) = self.buffer().get_datatable() {
             let columns = datatable.column_names();
+            let hidden_count = self.buffer().get_hidden_columns().len();
+            debug!(
+                "Available columns: {:?}, hidden count: {}",
+                columns, hidden_count
+            );
+
             if col_idx < columns.len() {
                 let col_name = columns[col_idx].clone();
 
                 // Don't hide if it's the last visible column
-                let visible_count = columns.len() - self.hidden_columns.len();
-                if visible_count > 1 {
-                    self.hidden_columns.push(col_name.clone());
+                let visible_count = columns.len() - hidden_count;
+                debug!("Visible columns count: {}", visible_count);
 
-                    // Re-execute the query to apply hidden columns
-                    let last_query = self.buffer().get_last_query();
-                    if !last_query.is_empty() {
-                        let _ = self.execute_query(&last_query);
-                    }
+                if visible_count > 1 {
+                    self.buffer_mut().add_hidden_column(col_name.clone());
+                    self.hidden_columns.push(col_name.clone()); // Keep local copy for QueryEngine
+                    debug!(
+                        "Hiding column '{}', total hidden: {}",
+                        col_name,
+                        hidden_count + 1
+                    );
+
+                    // Force immediate re-render to reflect the change
+                    debug!("Triggering immediate re-render after hiding column");
 
                     self.buffer_mut().set_status_message(format!(
-                        "Hidden column: '{}' (Press Ctrl+Shift+H to unhide all)",
+                        "Hidden column: '{}' (Press + or = to unhide all)",
                         col_name
                     ));
                 } else {
+                    debug!("Cannot hide last visible column");
                     self.buffer_mut()
                         .set_status_message("Cannot hide last visible column".to_string());
                 }
@@ -197,15 +216,14 @@ impl EnhancedTuiApp {
 
     /// Unhide all columns
     pub fn unhide_all_columns(&mut self) {
-        if !self.hidden_columns.is_empty() {
-            let count = self.hidden_columns.len();
-            self.hidden_columns.clear();
+        let hidden_columns = self.buffer().get_hidden_columns();
+        if !hidden_columns.is_empty() {
+            let count = hidden_columns.len();
+            self.buffer_mut().clear_hidden_columns();
+            self.hidden_columns.clear(); // Clear local copy
 
-            // Re-execute the query to show all columns
-            let last_query = self.buffer().get_last_query();
-            if !last_query.is_empty() {
-                let _ = self.execute_query(&last_query);
-            }
+            // Force immediate re-render to reflect the change
+            debug!("Triggering immediate re-render after unhiding all columns");
 
             self.buffer_mut()
                 .set_status_message(format!("Unhidden {} column(s)", count));
@@ -1354,20 +1372,6 @@ impl EnhancedTuiApp {
                     }
                 }
             }
-            // Column visibility - Ctrl+H to hide current column
-            KeyCode::Char('h')
-                if key.modifiers.contains(KeyModifiers::CONTROL)
-                    && !key.modifiers.contains(KeyModifiers::SHIFT) =>
-            {
-                self.hide_current_column();
-            }
-            // Column visibility - Ctrl+Shift+H to unhide all columns
-            KeyCode::Char('H')
-                if key.modifiers.contains(KeyModifiers::CONTROL)
-                    && key.modifiers.contains(KeyModifiers::SHIFT) =>
-            {
-                self.unhide_all_columns();
-            }
             // History navigation - Ctrl+N or Alt+Down
             KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Navigate to next command in history
@@ -1906,8 +1910,8 @@ impl EnhancedTuiApp {
         }
 
         // Fall back to direct key handling for special cases not in dispatcher
-        match key.code {
-            KeyCode::Char(' ') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+        match normalized_key.code {
+            KeyCode::Char(' ') if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Toggle viewport lock with Space (but not Ctrl+Space) - using AppStateContainer
                 self.state_container.toggle_viewport_lock();
 
@@ -1979,6 +1983,45 @@ impl EnhancedTuiApp {
                     self.buffer_mut()
                         .set_status_message("Cursor lock: OFF (cursor moves normally)".to_string());
                 }
+            }
+            // Column visibility - Ctrl+H to hide current column
+            // Note: Some terminals may intercept Ctrl+H as backspace
+            KeyCode::Char('h')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                debug!("Ctrl+H pressed in Results mode - hiding current column");
+                self.hide_current_column();
+            }
+            // Alternative: Backspace with Ctrl modifier (some terminals send this for Ctrl+H)
+            KeyCode::Backspace if normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
+                debug!("Ctrl+Backspace detected (may be Ctrl+H) - hiding current column");
+                self.hide_current_column();
+            }
+            // Alternative keybinding: Alt+H to hide column (more reliable across terminals)
+            KeyCode::Char('h') if normalized_key.modifiers.contains(KeyModifiers::ALT) => {
+                debug!("Alt+H pressed - hiding current column");
+                self.hide_current_column();
+            }
+            // Simple keybinding: minus key to hide column (only in Results mode)
+            KeyCode::Char('-') if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
+                debug!("Minus key pressed in Results mode - hiding current column");
+                self.hide_current_column();
+            }
+            // Plus key to unhide all columns (only in Results mode)
+            KeyCode::Char('+') | KeyCode::Char('=')
+                if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                debug!("Plus/equals key pressed in Results mode - unhiding all columns");
+                self.unhide_all_columns();
+            }
+            // Column visibility - Ctrl+Shift+H to unhide all columns
+            KeyCode::Char('H')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                debug!("Ctrl+Shift+H pressed in Results mode - unhiding all columns");
+                self.unhide_all_columns();
             }
             KeyCode::PageDown | KeyCode::Char('f')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
@@ -6076,8 +6119,18 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Get headers from provider
+        // Get headers from provider (which should apply hidden column filtering)
         let headers = provider.get_column_names();
+        debug!(
+            "render_table_with_provider: Got {} column headers from provider",
+            headers.len()
+        );
+        debug!("Column headers: {:?}", headers);
+        debug!(
+            "Buffer has {} hidden columns",
+            self.buffer().get_hidden_columns().len()
+        );
+
         // Calculate visible columns for virtual scrolling based on actual widths
         let terminal_width = area.width as usize;
         let available_width = terminal_width.saturating_sub(4); // Account for borders and padding

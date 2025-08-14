@@ -592,6 +592,28 @@ impl BufferAPI for DataTableBuffer {
         self.pinned_columns.clear();
     }
 
+    fn get_hidden_columns(&self) -> &Vec<String> {
+        // DataTableBuffer doesn't currently support hidden columns
+        // Return empty vector for compatibility
+        static EMPTY: Vec<String> = Vec::new();
+        &EMPTY
+    }
+
+    fn add_hidden_column(&mut self, _col_name: String) {
+        // DataTableBuffer doesn't currently support hidden columns
+        // This is a no-op for compatibility
+    }
+
+    fn remove_hidden_column(&mut self, _col_name: &str) {
+        // DataTableBuffer doesn't currently support hidden columns
+        // This is a no-op for compatibility
+    }
+
+    fn clear_hidden_columns(&mut self) {
+        // DataTableBuffer doesn't currently support hidden columns
+        // This is a no-op for compatibility
+    }
+
     fn is_compact_mode(&self) -> bool {
         self.compact_mode
     }

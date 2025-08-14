@@ -28,6 +28,35 @@ impl<'a> BufferAdapter<'a> {
         }
     }
 
+    /// Get indices of hidden columns from the buffer's hidden columns list
+    fn get_hidden_column_indices(&self) -> Vec<usize> {
+        let hidden_names = self.buffer.get_hidden_columns();
+        if hidden_names.is_empty() {
+            return Vec::new();
+        }
+
+        // Get all column names
+        if let Some(datatable) = self.buffer.get_datatable() {
+            let all_columns = datatable.column_names();
+
+            // Convert column names to indices
+            let mut indices = Vec::new();
+            for (idx, col_name) in all_columns.iter().enumerate() {
+                if hidden_names.contains(col_name) {
+                    indices.push(idx);
+                }
+            }
+
+            debug!(
+                "Hidden column indices: {:?} from names: {:?}",
+                indices, hidden_names
+            );
+            return indices;
+        }
+
+        Vec::new()
+    }
+
     /// Detect column types by sampling data
     fn detect_column_types(&self) -> Vec<DataType> {
         let column_count = self.get_column_count();
@@ -186,7 +215,24 @@ impl<'a> DataProvider for BufferAdapter<'a> {
                 // Normal path - get row directly from DataTable
                 if index < datatable.row_count() {
                     let row = &datatable.rows[index];
-                    return Some(row.values.iter().map(|v| v.to_string_optimized()).collect());
+                    // Apply hidden columns filter here
+                    let all_values: Vec<String> =
+                        row.values.iter().map(|v| v.to_string_optimized()).collect();
+
+                    // Get list of hidden column indices from buffer
+                    let hidden_cols = self.get_hidden_column_indices();
+                    if hidden_cols.is_empty() {
+                        return Some(all_values);
+                    }
+
+                    // Filter out hidden columns
+                    let visible_values: Vec<String> = all_values
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(idx, _)| !hidden_cols.contains(idx))
+                        .map(|(_, val)| val)
+                        .collect();
+                    return Some(visible_values);
                 }
             }
         }
@@ -198,7 +244,21 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     fn get_column_names(&self) -> Vec<String> {
         // V48: Use DataTable column names if available
         if let Some(datatable) = self.buffer.get_datatable() {
-            return datatable.column_names();
+            let all_names = datatable.column_names();
+
+            // Apply hidden columns filter
+            let hidden_cols = self.get_hidden_column_indices();
+            if hidden_cols.is_empty() {
+                return all_names;
+            }
+
+            // Filter out hidden columns
+            return all_names
+                .into_iter()
+                .enumerate()
+                .filter(|(idx, _)| !hidden_cols.contains(idx))
+                .map(|(_, name)| name)
+                .collect();
         }
 
         // Fallback to buffer's method (which uses JSON)
@@ -240,6 +300,7 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     }
 
     fn get_column_count(&self) -> usize {
+        // Use get_column_names which applies hidden column filtering
         self.get_column_names().len()
     }
 
