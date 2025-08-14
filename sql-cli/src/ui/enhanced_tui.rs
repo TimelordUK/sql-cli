@@ -2847,9 +2847,15 @@ impl EnhancedTuiApp {
                 info!("Using direct DataTable query (no JSON)");
                 crate::utils::memory_tracker::track_memory("direct_query_start");
 
-                // For now, just return success for SELECT * queries
+                // For now, just return success for simple SELECT * queries without WHERE/ORDER BY
                 // TODO: Implement proper SQL parsing on DataTable
-                if query.trim().to_uppercase().starts_with("SELECT *") {
+                let upper_query = query.trim().to_uppercase();
+                if upper_query.starts_with("SELECT *")
+                    && !upper_query.contains(" WHERE ")
+                    && !upper_query.contains(" ORDER BY ")
+                    && !upper_query.contains(" LIMIT ")
+                    && !upper_query.contains(" GROUP BY ")
+                {
                     // We already have the data in DataTable
                     let duration = start_time.elapsed();
                     crate::utils::memory_tracker::track_memory("direct_query_end");
