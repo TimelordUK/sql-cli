@@ -184,9 +184,9 @@ impl EnhancedTuiApp {
                 if visible_count > 1 {
                     self.buffer_mut().add_hidden_column(col_name.clone());
                     debug!(
-                        "Hiding column '{}', total hidden: {}",
+                        "Hiding column '{}', remaining visible: {}",
                         col_name,
-                        hidden_count + 1
+                        visible_count - 1
                     );
 
                     // Force immediate re-render to reflect the change
