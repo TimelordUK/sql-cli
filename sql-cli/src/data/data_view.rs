@@ -7,6 +7,32 @@ use std::sync::Arc;
 use crate::data::data_provider::DataProvider;
 use crate::data::datatable::{DataRow, DataTable, DataValue};
 
+/// Sort order for columns
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortOrder {
+    Ascending,
+    Descending,
+    None,
+}
+
+/// Sort state tracking
+#[derive(Debug, Clone)]
+pub struct SortState {
+    /// Currently sorted column index (in visible columns order)
+    pub column: Option<usize>,
+    /// Sort order
+    pub order: SortOrder,
+}
+
+impl Default for SortState {
+    fn default() -> Self {
+        Self {
+            column: None,
+            order: SortOrder::None,
+        }
+    }
+}
+
 /// A view over a DataTable that can filter, sort, and project columns
 /// without modifying the underlying data
 #[derive(Clone)]
@@ -46,6 +72,9 @@ pub struct DataView {
     pinned_columns: Vec<usize>,
     /// Maximum number of pinned columns allowed
     max_pinned_columns: usize,
+
+    /// Sort state
+    sort_state: SortState,
 }
 
 impl DataView {
@@ -70,6 +99,7 @@ impl DataView {
             current_column_match: 0,
             pinned_columns: Vec::new(),
             max_pinned_columns: 4,
+            sort_state: SortState::default(),
         }
     }
 
@@ -548,6 +578,14 @@ impl DataView {
             ));
         }
 
+        // Update sort state
+        self.sort_state.column = Some(column_index);
+        self.sort_state.order = if ascending {
+            SortOrder::Ascending
+        } else {
+            SortOrder::Descending
+        };
+
         let source = &self.source;
         self.visible_rows.sort_by(|&a, &b| {
             let val_a = source.get_value(a, column_index);
@@ -580,8 +618,53 @@ impl DataView {
         Ok(())
     }
 
+    /// Toggle sort on a column - cycles through Ascending -> Descending -> None
+    pub fn toggle_sort(&mut self, column_index: usize) -> Result<()> {
+        if column_index >= self.source.column_count() {
+            return Err(anyhow::anyhow!(
+                "Column index {} out of bounds",
+                column_index
+            ));
+        }
+
+        // Determine next sort state
+        let next_order = if self.sort_state.column == Some(column_index) {
+            // Same column - cycle through states
+            match self.sort_state.order {
+                SortOrder::None => SortOrder::Ascending,
+                SortOrder::Ascending => SortOrder::Descending,
+                SortOrder::Descending => SortOrder::None,
+            }
+        } else {
+            // Different column - start with ascending
+            SortOrder::Ascending
+        };
+
+        // Apply the sort based on the new state
+        match next_order {
+            SortOrder::Ascending => self.apply_sort(column_index, true)?,
+            SortOrder::Descending => self.apply_sort(column_index, false)?,
+            SortOrder::None => {
+                self.sort_state.column = None;
+                self.sort_state.order = SortOrder::None;
+                self.clear_sort();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get the current sort state
+    pub fn get_sort_state(&self) -> &SortState {
+        &self.sort_state
+    }
+
     /// Clear the current sort and restore original row order
     pub fn clear_sort(&mut self) {
+        // Clear sort state
+        self.sort_state.column = None;
+        self.sort_state.order = SortOrder::None;
+        
         let row_count = self.source.row_count();
         self.base_rows = (0..row_count).collect();
 

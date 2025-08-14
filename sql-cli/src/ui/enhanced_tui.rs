@@ -1917,9 +1917,8 @@ impl EnhancedTuiApp {
                     self.enter_search_mode(SearchMode::FuzzyFilter);
                 }
                 "sort_by_column" => {
-                    // TODO: Add toggle logic for sort direction
-                    let ascending = true; // Default to ascending for now
-                    self.sort_by_column(self.buffer().get_current_column(), ascending);
+                    // Use the DataView's toggle_sort for proper 3-state cycling
+                    self.toggle_sort_current_column();
                     return Ok(false); // Event handled, continue running
                 }
                 "show_column_stats" => self.calculate_column_statistics(),
@@ -2240,8 +2239,28 @@ impl EnhancedTuiApp {
             KeyCode::Char(c) if c.is_ascii_digit() => {
                 if let Some(digit) = c.to_digit(10) {
                     let column_index = (digit as usize).saturating_sub(1);
-                    // TODO: Add toggle logic for sort direction
-                    self.sort_by_column(column_index, true); // Default to ascending
+                    // Use toggle_sort for proper 3-state cycling
+                    if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                        if let Err(e) = dataview.toggle_sort(column_index) {
+                            self.buffer_mut()
+                                .set_status_message(format!("Sort error: {}", e));
+                        } else {
+                            // Get the new sort state for status message
+                            let sort_state = dataview.get_sort_state();
+                            let message = match sort_state.order {
+                                crate::data::data_view::SortOrder::Ascending => {
+                                    format!("Sorted column {} ascending", column_index + 1)
+                                }
+                                crate::data::data_view::SortOrder::Descending => {
+                                    format!("Sorted column {} descending", column_index + 1)
+                                }
+                                crate::data::data_view::SortOrder::None => {
+                                    format!("Cleared sort on column {}", column_index + 1)
+                                }
+                            };
+                            self.buffer_mut().set_status_message(message);
+                        }
+                    }
                 }
             }
             KeyCode::F(1) | KeyCode::Char('?') => {
@@ -4295,6 +4314,39 @@ impl EnhancedTuiApp {
                     column_index,
                     if ascending { "ascending" } else { "descending" }
                 ));
+            }
+        }
+    }
+
+    fn toggle_sort_current_column(&mut self) {
+        let column_index = self.buffer().get_current_column();
+        
+        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            // Get column name for display
+            let column_names = dataview.column_names();
+            let col_name = column_names
+                .get(column_index)
+                .map(|s| s.clone())
+                .unwrap_or_else(|| format!("Column {}", column_index));
+            
+            if let Err(e) = dataview.toggle_sort(column_index) {
+                self.buffer_mut()
+                    .set_status_message(format!("Sort error: {}", e));
+            } else {
+                // Get the new sort state for status message
+                let sort_state = dataview.get_sort_state();
+                let message = match sort_state.order {
+                    crate::data::data_view::SortOrder::Ascending => {
+                        format!("Sorted '{}' ascending ↑", col_name)
+                    }
+                    crate::data::data_view::SortOrder::Descending => {
+                        format!("Sorted '{}' descending ↓", col_name)
+                    }
+                    crate::data::data_view::SortOrder::None => {
+                        format!("Cleared sort on '{}'", col_name)
+                    }
+                };
+                self.buffer_mut().set_status_message(message);
             }
         }
     }
