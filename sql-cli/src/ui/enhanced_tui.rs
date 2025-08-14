@@ -23,6 +23,7 @@ use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::text_navigation::TextNavigator;
 use crate::ui::key_dispatcher::KeyDispatcher;
+use crate::ui::query_engine_integration::QueryEngineIntegration;
 use crate::utils::debug_info::DebugInfo;
 use crate::utils::logging::{get_log_buffer, LogRingBuffer};
 use crate::where_ast::format_where_ast;
@@ -2850,50 +2851,66 @@ impl EnhancedTuiApp {
                 && !upper_query.contains(" LIMIT ")
                 && !upper_query.contains(" GROUP BY ");
 
-            if self.buffer().has_datatable() && is_simple_select {
-                info!("Using direct DataTable query (no JSON)");
-                crate::utils::memory_tracker::track_memory("direct_query_start");
+            if self.buffer().has_datatable() {
+                // Use QueryEngine for all queries on DataTable
+                info!("Using QueryEngine to execute query on DataTable");
+                crate::utils::memory_tracker::track_memory("query_engine_start");
 
-                // We already have the data in DataTable
-                let duration = start_time.elapsed();
-                crate::utils::memory_tracker::track_memory("direct_query_end");
+                if let Some(datatable) = self.buffer().get_datatable() {
+                    // Execute query using QueryEngine
+                    match QueryEngineIntegration::execute_query(datatable, query) {
+                        Ok(response) => {
+                            let duration = start_time.elapsed();
+                            crate::utils::memory_tracker::track_memory("query_engine_end");
 
-                // Update navigation with DataTable info
-                let (row_count, col_count) = if let Some(datatable) = self.buffer().get_datatable()
-                {
-                    let rows = datatable.row_count();
-                    let cols = datatable.column_count();
-                    info!(
-                        "Direct DataTable query complete: {} rows, {} columns, {} ms",
-                        rows,
-                        cols,
-                        duration.as_millis()
-                    );
-                    (rows, cols)
-                } else {
-                    (0, 0)
-                };
+                            let row_count = response.count;
+                            let col_count = response
+                                .data
+                                .first()
+                                .and_then(|v| v.as_object())
+                                .map(|obj| obj.len())
+                                .unwrap_or(0);
 
-                // Now do mutable operations
-                self.state_container
-                    .navigation_mut()
-                    .update_totals(row_count, col_count);
+                            info!(
+                                "QueryEngine query complete: {} rows, {} columns, {} ms",
+                                row_count,
+                                col_count,
+                                duration.as_millis()
+                            );
 
-                // Set buffer to results mode
-                self.buffer_mut().set_mode(AppMode::Results);
-                self.buffer_mut().set_selected_row(Some(0));
-                self.state_container.set_table_selected_row(Some(0));
+                            // Store the query results in the buffer
+                            // TODO: In future, store DataView directly instead of converting to JSON
+                            // For now, the buffer continues to work with JSON data from QueryResponse
 
-                // Update status
-                self.buffer_mut().set_status_message(format!(
-                    "Query executed in {}ms ({} rows) - DIRECT DataTable mode",
-                    duration.as_millis(),
-                    row_count
-                ));
+                            // Update navigation
+                            self.state_container
+                                .navigation_mut()
+                                .update_totals(row_count, col_count);
 
-                // Early return - skip all the QueryResponse processing
-                return Ok(());
-            } else if let Some(csv_client) = self.buffer().get_csv_client() {
+                            // Set buffer to results mode
+                            self.buffer_mut().set_mode(AppMode::Results);
+                            self.buffer_mut().set_selected_row(Some(0));
+                            self.state_container.set_table_selected_row(Some(0));
+
+                            // Update status
+                            self.buffer_mut().set_status_message(format!(
+                                "Query executed in {}ms ({} rows) - QueryEngine",
+                                duration.as_millis(),
+                                row_count
+                            ));
+
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            // Fall back to CSV client if QueryEngine fails
+                            warn!("QueryEngine failed, falling back to CSV client: {}", e);
+                            // Continue to CSV client code below
+                        }
+                    }
+                }
+            }
+
+            if let Some(csv_client) = self.buffer().get_csv_client() {
                 // Legacy JSON path
                 // Convert CSV result to match the expected type
                 crate::utils::memory_tracker::track_memory("before_csv_query");
