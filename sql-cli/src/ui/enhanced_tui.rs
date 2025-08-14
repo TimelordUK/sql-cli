@@ -6741,6 +6741,76 @@ impl EnhancedTuiApp {
                     debug_info.push_str("No render timing data yet\n");
                 }
 
+                // Add viewport/scrolling information
+                if let Some(buffer) = self.buffer_manager.current() {
+                    debug_info.push_str("\n========== VIEWPORT STATE ==========\n");
+                    let (scroll_row, scroll_col) = buffer.get_scroll_offset();
+                    debug_info.push_str(&format!(
+                        "Scroll Offset: row={}, col={}\n",
+                        scroll_row, scroll_col
+                    ));
+                    debug_info.push_str(&format!(
+                        "Current Column: {}\n",
+                        buffer.get_current_column()
+                    ));
+                    debug_info
+                        .push_str(&format!("Selected Row: {:?}\n", buffer.get_selected_row()));
+                    debug_info.push_str(&format!("Viewport Lock: {}\n", buffer.is_viewport_lock()));
+                    if let Some(lock_row) = buffer.get_viewport_lock_row() {
+                        debug_info.push_str(&format!("Viewport Lock Row: {}\n", lock_row));
+                    }
+
+                    // Show visible area calculation
+                    if let Some(dataview) = buffer.get_dataview() {
+                        let total_rows = dataview.row_count();
+                        let total_cols = dataview.column_count();
+                        let visible_rows = buffer.get_last_visible_rows();
+                        debug_info.push_str(&format!("\nVisible Area:\n"));
+                        debug_info.push_str(&format!(
+                            "  Total Data: {} rows × {} columns\n",
+                            total_rows, total_cols
+                        ));
+                        debug_info
+                            .push_str(&format!("  Visible Rows in Terminal: {}\n", visible_rows));
+
+                        // Calculate what section is being viewed
+                        if total_rows > 0 && visible_rows > 0 {
+                            let start_row = scroll_row.min(total_rows.saturating_sub(1));
+                            let end_row = (scroll_row + visible_rows).min(total_rows);
+                            let percent_start =
+                                (start_row as f64 / total_rows as f64 * 100.0) as u32;
+                            let percent_end = (end_row as f64 / total_rows as f64 * 100.0) as u32;
+                            debug_info.push_str(&format!(
+                                "  Viewing rows {}-{} ({}%-{}% of data)\n",
+                                start_row + 1,
+                                end_row,
+                                percent_start,
+                                percent_end
+                            ));
+                        }
+
+                        if total_cols > 0 {
+                            let visible_cols_estimate = 10; // Estimate based on typical column widths
+                            let start_col = scroll_col.min(total_cols.saturating_sub(1));
+                            let end_col = (scroll_col + visible_cols_estimate).min(total_cols);
+                            debug_info.push_str(&format!(
+                                "  Viewing columns {}-{} of {}\n",
+                                start_col + 1,
+                                end_col,
+                                total_cols
+                            ));
+                        }
+                    }
+
+                    debug_info.push_str("\n========== VIEWPORT MANAGER ==========\n");
+                    debug_info.push_str("Status: Not Yet Integrated\n");
+                    debug_info.push_str("Future features:\n");
+                    debug_info.push_str("  - Smart column width calculation\n");
+                    debug_info.push_str("  - Viewport-based data caching\n");
+                    debug_info.push_str("  - Optimized rendering pipeline\n");
+                    debug_info.push_str("  - Window-aware scrolling\n");
+                }
+
                 // Add buffer state info
                 debug_info.push_str(&format!(
                     "\n========== BUFFER MANAGER STATE ==========\n\
