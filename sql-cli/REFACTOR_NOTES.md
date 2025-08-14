@@ -116,6 +116,7 @@ DataView
    - Key handling logic (tomorrow's priority)
    - Some direct buffer mutations
    - Mixed concerns (UI + business logic)
+   - **Code duplication**: `new_with_csv()` and `new_with_json()` are nearly identical
 
 2. **In DataView**:
    - Case sensitivity not tracked for filters
@@ -141,12 +142,41 @@ DataView
        navigation_reducer.rs
    ```
 
+## 🔨 Quick Refactors to Consider
+
+### Combine new_with_csv and new_with_json
+```rust
+enum FileType {
+    Csv,
+    Json,
+}
+
+pub fn new_with_file(file_path: &str, file_type: FileType) -> Result<Self> {
+    // Common logic for both CSV and JSON
+    let datatable = match file_type {
+        FileType::Csv => load_csv_to_datatable(file_path, &table_name)?,
+        FileType::Json => load_json_to_datatable(file_path, &table_name)?,
+    };
+    // Rest is identical...
+}
+
+// Then:
+pub fn new_with_csv(csv_path: &str) -> Result<Self> {
+    Self::new_with_file(csv_path, FileType::Csv)
+}
+
+pub fn new_with_json(json_path: &str) -> Result<Self> {
+    Self::new_with_file(json_path, FileType::Json)
+}
+```
+
 ## 💡 Key Insights from Today
 
 1. **Single Source of Truth**: Having DataView own its state (sort, filter, pinned) makes everything cleaner
 2. **Abstraction Layers**: ViewportManager proves the value of proper separation of concerns
 3. **Incremental Refactoring**: Each improvement makes the next one easier
 4. **Memory Efficiency**: Using indices instead of cloning data has massive impact
+5. **Code Duplication**: Even in refactored code, we still find duplication (CSV/JSON loaders)
 
 ---
 
