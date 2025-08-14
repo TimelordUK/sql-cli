@@ -1098,6 +1098,7 @@ impl Parser {
             Token::GreaterThan => Some(">".to_string()),
             Token::LessThanOrEqual => Some("<=".to_string()),
             Token::GreaterThanOrEqual => Some(">=".to_string()),
+            Token::Like => Some("LIKE".to_string()),
             _ => None,
         }
     }

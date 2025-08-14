@@ -25,4 +25,9 @@ pub mod datasource_trait;
 pub mod direct_csv_loader;
 
 // Query execution
+pub mod query_engine;
 pub mod query_executor;
+pub mod recursive_where_evaluator;
+pub mod simple_where;
+pub mod where_clause_converter;
+pub mod where_evaluator;
