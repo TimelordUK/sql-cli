@@ -3584,29 +3584,34 @@ impl EnhancedTuiApp {
     }
 
     fn toggle_column_pin(&mut self) {
-        // Pin or unpin the current column
+        // Pin or unpin the current column using DataView
         let current_col = self.buffer().get_current_column();
 
-        if self.buffer().get_pinned_columns().contains(&current_col) {
-            // Column is already pinned, unpin it
-            self.buffer_mut().remove_pinned_column(current_col);
-            self.buffer_mut()
-                .set_status_message(format!("Column {} unpinned", current_col + 1));
-        } else {
-            // Pin the column (max 4 pinned columns)
-            if self.buffer().get_pinned_columns().clone().len() < 4 {
-                self.buffer_mut().add_pinned_column(current_col);
+        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            if dataview.is_column_pinned(current_col) {
+                // Column is already pinned, unpin it
+                dataview.unpin_column(current_col);
                 self.buffer_mut()
-                    .set_status_message(format!("Column {} pinned 📌", current_col + 1));
+                    .set_status_message(format!("Column {} unpinned", current_col + 1));
             } else {
-                self.buffer_mut()
-                    .set_status_message("Maximum 4 pinned columns allowed".to_string());
+                // Try to pin the column
+                match dataview.pin_column(current_col) {
+                    Ok(_) => {
+                        self.buffer_mut()
+                            .set_status_message(format!("Column {} pinned 📌", current_col + 1));
+                    }
+                    Err(e) => {
+                        self.buffer_mut().set_status_message(e.to_string());
+                    }
+                }
             }
         }
     }
 
     fn clear_all_pinned_columns(&mut self) {
-        self.buffer_mut().clear_pinned_columns();
+        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            dataview.clear_pinned_columns();
+        }
         self.buffer_mut()
             .set_status_message("All columns unpinned".to_string());
     }
@@ -5134,42 +5139,42 @@ impl EnhancedTuiApp {
                             ));
 
                             // Show pinned columns count if any
-                            if !self.buffer().get_pinned_columns().clone().is_empty() {
-                                spans.push(Span::raw(" | "));
-                                spans.push(Span::styled(
-                                    format!(
-                                        "📌{}",
-                                        self.buffer().get_pinned_columns().clone().len()
-                                    ),
-                                    Style::default().fg(Color::Magenta),
-                                ));
-                            }
+                            if let Some(dataview) = self.buffer().get_dataview() {
+                                let pinned_count = dataview.get_pinned_columns().len();
+                                if pinned_count > 0 {
+                                    spans.push(Span::raw(" | "));
+                                    spans.push(Span::styled(
+                                        format!("📌{}", pinned_count),
+                                        Style::default().fg(Color::Magenta),
+                                    ));
+                                }
 
-                            // Show hidden columns count if any
-                            let hidden_count = dataview.get_hidden_column_names().len();
-                            if hidden_count > 0 {
-                                spans.push(Span::raw(" | "));
-                                spans.push(Span::styled(
-                                    format!("👁️‍🗨️{} hidden", hidden_count),
-                                    Style::default().fg(Color::DarkGray),
-                                ));
-                                spans.push(Span::raw(" "));
-                                spans.push(Span::styled(
-                                    "[- hide/+ unhide]",
-                                    Style::default()
-                                        .fg(Color::DarkGray)
-                                        .add_modifier(Modifier::DIM),
-                                ));
-                            } else {
-                                // Show hint about column hiding when no columns are hidden
-                                spans.push(Span::raw(" "));
-                                spans.push(Span::styled(
-                                    "[- to hide col]",
-                                    Style::default()
-                                        .fg(Color::DarkGray)
-                                        .add_modifier(Modifier::DIM),
-                                ));
-                            }
+                                // Show hidden columns count if any
+                                let hidden_count = dataview.get_hidden_column_names().len();
+                                if hidden_count > 0 {
+                                    spans.push(Span::raw(" | "));
+                                    spans.push(Span::styled(
+                                        format!("👁️‍🗨️{} hidden", hidden_count),
+                                        Style::default().fg(Color::DarkGray),
+                                    ));
+                                    spans.push(Span::raw(" "));
+                                    spans.push(Span::styled(
+                                        "[- hide/+ unhide]",
+                                        Style::default()
+                                            .fg(Color::DarkGray)
+                                            .add_modifier(Modifier::DIM),
+                                    ));
+                                } else {
+                                    // Show hint about column hiding when no columns are hidden
+                                    spans.push(Span::raw(" "));
+                                    spans.push(Span::styled(
+                                        "[- to hide col]",
+                                        Style::default()
+                                            .fg(Color::DarkGray)
+                                            .add_modifier(Modifier::DIM),
+                                    ));
+                                }
+                            } // Close the dataview if let
 
                             // In cell mode, show the current cell value
                             if self.get_selection_mode() == SelectionMode::Cell {
