@@ -3631,18 +3631,6 @@ impl EnhancedTuiApp {
 
             let column_name = headers[current_column].clone();
 
-            // V45: Get column type from DataProvider (cached, not computed)
-            let column_type = if let Some(provider) = self.get_data_provider() {
-                let col_type = provider.get_column_type(current_column);
-                debug!(
-                    "V45: Column {} has cached type: {:?}",
-                    current_column, col_type
-                );
-                Some(col_type)
-            } else {
-                None
-            };
-
             // Extract column data using DataProvider trait
             let data_to_analyze: Vec<String> = if let Some(provider) = self.get_data_provider() {
                 let row_count = provider.get_row_count();

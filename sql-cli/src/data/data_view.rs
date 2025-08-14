@@ -41,6 +41,11 @@ pub struct DataView {
     matching_columns: Vec<(usize, String)>,
     /// Current column search match index
     current_column_match: usize,
+
+    /// Pinned columns (always shown on left, in order)
+    pinned_columns: Vec<usize>,
+    /// Maximum number of pinned columns allowed
+    max_pinned_columns: usize,
 }
 
 impl DataView {
@@ -63,6 +68,8 @@ impl DataView {
             column_search_pattern: None,
             matching_columns: Vec::new(),
             current_column_match: 0,
+            pinned_columns: Vec::new(),
+            max_pinned_columns: 4,
         }
     }
 
@@ -73,15 +80,23 @@ impl DataView {
         self
     }
 
-    /// Hide a column by index
-    pub fn hide_column(&mut self, column_index: usize) {
+    /// Hide a column by index (cannot hide pinned columns)
+    pub fn hide_column(&mut self, column_index: usize) -> bool {
+        // Cannot hide a pinned column
+        if self.pinned_columns.contains(&column_index) {
+            return false;
+        }
+
         self.visible_columns.retain(|&idx| idx != column_index);
+        true
     }
 
-    /// Hide a column by name
-    pub fn hide_column_by_name(&mut self, column_name: &str) {
+    /// Hide a column by name (cannot hide pinned columns)
+    pub fn hide_column_by_name(&mut self, column_name: &str) -> bool {
         if let Some(col_idx) = self.source.get_column_index(column_name) {
-            self.hide_column(col_idx);
+            self.hide_column(col_idx)
+        } else {
+            false
         }
     }
 
@@ -101,41 +116,90 @@ impl DataView {
         !self.visible_columns.is_empty()
     }
 
-    /// Move a column left in the view (swap with previous column)
-    /// With wraparound: moving left from first position moves to last
-    pub fn move_column_left(&mut self, visible_column_index: usize) -> bool {
-        if visible_column_index >= self.visible_columns.len() {
+    /// Move a column left in the view (respects pinned columns)
+    /// With wraparound: moving left from first unpinned position moves to last
+    pub fn move_column_left(&mut self, display_column_index: usize) -> bool {
+        let pinned_count = self.pinned_columns.len();
+        let total_columns = pinned_count + self.visible_columns.len();
+
+        if display_column_index >= total_columns {
             return false;
         }
 
-        if visible_column_index == 0 {
-            // Wraparound: move first column to end
+        // If it's a pinned column, move within pinned area
+        if display_column_index < pinned_count {
+            if display_column_index == 0 {
+                // First pinned column - wrap to last pinned position
+                if pinned_count > 1 {
+                    let col = self.pinned_columns.remove(0);
+                    self.pinned_columns.push(col);
+                }
+            } else {
+                // Swap with previous pinned column
+                self.pinned_columns
+                    .swap(display_column_index - 1, display_column_index);
+            }
+            return true;
+        }
+
+        // It's a visible column - adjust index
+        let visible_idx = display_column_index - pinned_count;
+
+        if visible_idx >= self.visible_columns.len() {
+            return false;
+        }
+
+        if visible_idx == 0 {
+            // At first unpinned position - wrap to end
             let col = self.visible_columns.remove(0);
             self.visible_columns.push(col);
         } else {
             // Normal swap with previous
-            self.visible_columns
-                .swap(visible_column_index - 1, visible_column_index);
+            self.visible_columns.swap(visible_idx - 1, visible_idx);
         }
         true
     }
 
-    /// Move a column right in the view (swap with next column)
+    /// Move a column right in the view (respects pinned columns)
     /// With wraparound: moving right from last position moves to first
-    pub fn move_column_right(&mut self, visible_column_index: usize) -> bool {
-        let len = self.visible_columns.len();
-        if visible_column_index >= len {
+    pub fn move_column_right(&mut self, display_column_index: usize) -> bool {
+        let pinned_count = self.pinned_columns.len();
+        let total_columns = pinned_count + self.visible_columns.len();
+
+        if display_column_index >= total_columns {
             return false;
         }
 
-        if visible_column_index == len - 1 {
-            // Wraparound: move last column to beginning
+        // If it's a pinned column, move within pinned area
+        if display_column_index < pinned_count {
+            if display_column_index == pinned_count - 1 {
+                // Last pinned column - wrap to first pinned position
+                if pinned_count > 1 {
+                    let col = self.pinned_columns.pop().unwrap();
+                    self.pinned_columns.insert(0, col);
+                }
+            } else {
+                // Swap with next pinned column
+                self.pinned_columns
+                    .swap(display_column_index, display_column_index + 1);
+            }
+            return true;
+        }
+
+        // It's a visible column - adjust index
+        let visible_idx = display_column_index - pinned_count;
+
+        if visible_idx >= self.visible_columns.len() {
+            return false;
+        }
+
+        if visible_idx == self.visible_columns.len() - 1 {
+            // At last position - wrap to beginning of unpinned area
             let col = self.visible_columns.pop().unwrap();
             self.visible_columns.insert(0, col);
         } else {
             // Normal swap with next
-            self.visible_columns
-                .swap(visible_column_index, visible_column_index + 1);
+            self.visible_columns.swap(visible_idx, visible_idx + 1);
         }
         true
     }
@@ -182,6 +246,134 @@ impl DataView {
     /// Check if there are any hidden columns
     pub fn has_hidden_columns(&self) -> bool {
         self.visible_columns.len() < self.source.column_count()
+    }
+
+    // ========== Pinned Column Methods ==========
+
+    /// Pin a column (move it to the pinned area on the left)
+    pub fn pin_column(&mut self, column_index: usize) -> Result<()> {
+        // Check if we've reached the max
+        if self.pinned_columns.len() >= self.max_pinned_columns {
+            return Err(anyhow::anyhow!(
+                "Maximum {} pinned columns allowed",
+                self.max_pinned_columns
+            ));
+        }
+
+        // Check if already pinned
+        if self.pinned_columns.contains(&column_index) {
+            return Ok(()); // Already pinned, no-op
+        }
+
+        // Check if column exists in source
+        if column_index >= self.source.column_count() {
+            return Err(anyhow::anyhow!(
+                "Column index {} out of bounds",
+                column_index
+            ));
+        }
+
+        // Remove from visible columns if present
+        self.visible_columns.retain(|&idx| idx != column_index);
+
+        // Add to pinned columns
+        self.pinned_columns.push(column_index);
+
+        Ok(())
+    }
+
+    /// Pin a column by name
+    pub fn pin_column_by_name(&mut self, column_name: &str) -> Result<()> {
+        if let Some(col_idx) = self.source.get_column_index(column_name) {
+            self.pin_column(col_idx)
+        } else {
+            Err(anyhow::anyhow!("Column '{}' not found", column_name))
+        }
+    }
+
+    /// Unpin a column (move it back to regular visible columns)
+    pub fn unpin_column(&mut self, column_index: usize) -> bool {
+        if let Some(pos) = self
+            .pinned_columns
+            .iter()
+            .position(|&idx| idx == column_index)
+        {
+            self.pinned_columns.remove(pos);
+
+            // Add back to visible columns (at the beginning of non-pinned area)
+            if !self.visible_columns.contains(&column_index) {
+                self.visible_columns.insert(0, column_index);
+            }
+
+            true
+        } else {
+            false // Not pinned
+        }
+    }
+
+    /// Unpin a column by name
+    pub fn unpin_column_by_name(&mut self, column_name: &str) -> bool {
+        if let Some(col_idx) = self.source.get_column_index(column_name) {
+            self.unpin_column(col_idx)
+        } else {
+            false
+        }
+    }
+
+    /// Clear all pinned columns
+    pub fn clear_pinned_columns(&mut self) {
+        // Move all pinned columns back to visible
+        for col_idx in self.pinned_columns.drain(..) {
+            if !self.visible_columns.contains(&col_idx) {
+                self.visible_columns.push(col_idx);
+            }
+        }
+    }
+
+    /// Check if a column is pinned
+    pub fn is_column_pinned(&self, column_index: usize) -> bool {
+        self.pinned_columns.contains(&column_index)
+    }
+
+    /// Get pinned column indices
+    pub fn get_pinned_columns(&self) -> &[usize] {
+        &self.pinned_columns
+    }
+
+    /// Get the names of pinned columns
+    pub fn get_pinned_column_names(&self) -> Vec<String> {
+        let all_columns = self.source.column_names();
+        self.pinned_columns
+            .iter()
+            .filter_map(|&idx| all_columns.get(idx).cloned())
+            .collect()
+    }
+
+    /// Get display order of columns (pinned first, then visible)
+    pub fn get_display_columns(&self) -> Vec<usize> {
+        let mut result = self.pinned_columns.clone();
+        result.extend(&self.visible_columns);
+        result
+    }
+
+    /// Get display column names in order (pinned first, then visible)
+    pub fn get_display_column_names(&self) -> Vec<String> {
+        let all_columns = self.source.column_names();
+        self.get_display_columns()
+            .iter()
+            .filter_map(|&idx| all_columns.get(idx).cloned())
+            .collect()
+    }
+
+    /// Set maximum number of pinned columns
+    pub fn set_max_pinned_columns(&mut self, max: usize) {
+        self.max_pinned_columns = max;
+        // If we have too many pinned, unpin the extras from the end
+        while self.pinned_columns.len() > max {
+            if let Some(col_idx) = self.pinned_columns.pop() {
+                self.visible_columns.insert(0, col_idx);
+            }
+        }
     }
 
     /// Create a view with specific rows
@@ -415,15 +607,15 @@ impl DataView {
         }
     }
 
-    /// Get the number of visible columns
+    /// Get the number of visible columns (including pinned)
     pub fn column_count(&self) -> usize {
-        self.visible_columns.len()
+        self.pinned_columns.len() + self.visible_columns.len()
     }
 
-    /// Get column names for visible columns
+    /// Get column names for visible columns (pinned first, then regular)
     pub fn column_names(&self) -> Vec<String> {
         let all_columns = self.source.column_names();
-        self.visible_columns
+        self.get_display_columns()
             .iter()
             .filter_map(|&idx| all_columns.get(idx).cloned())
             .collect()
@@ -443,9 +635,9 @@ impl DataView {
         // Get the actual row index
         let row_idx = *self.visible_rows.get(actual_index)?;
 
-        // Build a row with only visible columns
+        // Build a row with columns in display order (pinned first, then visible)
         let mut values = Vec::new();
-        for &col_idx in &self.visible_columns {
+        for &col_idx in self.get_display_columns().iter() {
             let value = self
                 .source
                 .get_value(row_idx, col_idx)
@@ -468,14 +660,19 @@ impl DataView {
         &self.source
     }
 
-    /// Check if a column index is visible
+    /// Check if a column index is visible (either pinned or regular visible)
     pub fn is_column_visible(&self, index: usize) -> bool {
-        self.visible_columns.contains(&index)
+        self.pinned_columns.contains(&index) || self.visible_columns.contains(&index)
     }
 
-    /// Get visible column indices
+    /// Get visible column indices (not including pinned)
     pub fn visible_column_indices(&self) -> &[usize] {
         &self.visible_columns
+    }
+
+    /// Get all display column indices (pinned + visible)
+    pub fn display_column_indices(&self) -> Vec<usize> {
+        self.get_display_columns()
     }
 
     /// Get visible row indices (before limit/offset)
