@@ -1,10 +1,8 @@
 use anyhow::Result;
-use serde_json::Value;
 
 use crate::api_client::QueryResponse;
 use crate::csv_datasource::CsvApiClient;
 use crate::data::datatable::DataTable;
-use crate::data::datatable_view::DataView;
 
 /// Trait for executing SQL queries against data sources
 pub trait QueryExecutor {
@@ -54,7 +52,7 @@ impl QueryExecutor for DataTableExecutor {
             query: crate::api_client::QueryInfo {
                 select: vec!["*".to_string()],
                 where_clause: None,
-                order_by: vec![],
+                order_by: None,
             },
             source: Some("datatable".to_string()),
             table: Some(self.table_name.clone()),
