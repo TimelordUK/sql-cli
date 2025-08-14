@@ -295,6 +295,9 @@ impl BufferAPI for DataTableBuffer {
     fn get_dataview(&self) -> Option<&DataView> {
         self.dataview.as_ref()
     }
+    fn get_dataview_mut(&mut self) -> Option<&mut DataView> {
+        self.dataview.as_mut()
+    }
     fn set_dataview(&mut self, dataview: Option<DataView>) {
         debug!(
             "V51: Setting DataView with {} rows in DataTableBuffer",
