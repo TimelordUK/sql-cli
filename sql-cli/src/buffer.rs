@@ -174,6 +174,7 @@ pub trait BufferAPI {
 
     // --- V51: DataView support (direct query results) ---
     fn get_dataview(&self) -> Option<&DataView>;
+    fn get_dataview_mut(&mut self) -> Option<&mut DataView>;
     fn set_dataview(&mut self, dataview: Option<DataView>);
     fn has_dataview(&self) -> bool;
 
@@ -462,6 +463,35 @@ impl BufferAPI for Buffer {
             "V50: Setting DataTable with {} rows",
             datatable.as_ref().map(|d| d.row_count()).unwrap_or(0)
         );
+
+        // When setting a DataTable, also create a DataView for it
+        // This ensures we always have a DataView as the source of truth for column visibility
+        if let Some(dt) = &datatable {
+            let mut view = crate::data::data_view::DataView::new(std::sync::Arc::new(dt.clone()));
+
+            // Apply any existing hidden columns from the previous DataView
+            if let Some(old_view) = &self.dataview {
+                // Get list of hidden column names from old view
+                let old_all_cols = old_view.source().column_names();
+                let old_visible_cols = old_view.column_names();
+
+                for col_name in &old_all_cols {
+                    if !old_visible_cols.contains(col_name) {
+                        // This column was hidden in the old view
+                        view.hide_column_by_name(col_name);
+                    }
+                }
+            }
+            // Also apply any hidden columns from the buffer's list (for backwards compatibility)
+            for col_name in &self.hidden_columns {
+                view.hide_column_by_name(col_name);
+            }
+
+            self.dataview = Some(view);
+        } else {
+            self.dataview = None;
+        }
+
         self.datatable = datatable;
     }
 
@@ -495,6 +525,9 @@ impl BufferAPI for Buffer {
     // --- V51: DataView support (direct query results) ---
     fn get_dataview(&self) -> Option<&DataView> {
         self.dataview.as_ref()
+    }
+    fn get_dataview_mut(&mut self) -> Option<&mut DataView> {
+        self.dataview.as_mut()
     }
     fn set_dataview(&mut self, dataview: Option<DataView>) {
         debug!(
@@ -757,6 +790,13 @@ impl BufferAPI for Buffer {
     }
 
     fn add_hidden_column(&mut self, col_name: String) {
+        // Update the DataView if it exists (primary source of truth)
+        if let Some(view) = &mut self.dataview {
+            view.hide_column_by_name(&col_name);
+            debug!("Hidden column '{}' in DataView", col_name);
+        }
+
+        // Also maintain the buffer's list for backwards compatibility
         if !self.hidden_columns.contains(&col_name) {
             self.hidden_columns.push(col_name);
             debug!(
@@ -771,6 +811,16 @@ impl BufferAPI for Buffer {
     }
 
     fn clear_hidden_columns(&mut self) {
+        // Clear hidden columns in DataView (primary source)
+        if let Some(dt) = &self.datatable {
+            // Reset DataView to show all columns
+            self.dataview = Some(crate::data::data_view::DataView::new(std::sync::Arc::new(
+                dt.clone(),
+            )));
+            debug!("Reset DataView to show all columns");
+        }
+
+        // Also clear the buffer's list
         self.hidden_columns.clear();
     }
 

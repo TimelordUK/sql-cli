@@ -142,9 +142,6 @@ pub struct EnhancedTuiApp {
     // Visual enhancements
     cell_renderer: CellRenderer,
     key_indicator: KeyPressIndicator,
-
-    // View state (for DataView integration)
-    hidden_columns: Vec<String>,
 }
 
 impl EnhancedTuiApp {
@@ -190,7 +187,6 @@ impl EnhancedTuiApp {
 
                 if visible_count > 1 {
                     self.buffer_mut().add_hidden_column(col_name.clone());
-                    self.hidden_columns.push(col_name.clone()); // Keep local copy for QueryEngine
                     debug!(
                         "Hiding column '{}', total hidden: {}",
                         col_name,
@@ -219,13 +215,72 @@ impl EnhancedTuiApp {
         if !hidden_columns.is_empty() {
             let count = hidden_columns.len();
             self.buffer_mut().clear_hidden_columns();
-            self.hidden_columns.clear(); // Clear local copy
 
             // Force immediate re-render to reflect the change
             debug!("Triggering immediate re-render after unhiding all columns");
 
             self.buffer_mut()
                 .set_status_message(format!("Unhidden {} column(s)", count));
+        }
+    }
+
+    /// Move the current column left in the view
+    pub fn move_current_column_left(&mut self) {
+        if self.buffer().get_mode() != AppMode::Results {
+            return;
+        }
+
+        let col_idx = self.state_container.navigation().selected_column;
+
+        // Get the current column name from DataTable
+        if let Some(datatable) = self.buffer().get_datatable() {
+            let columns = datatable.column_names();
+            if col_idx < columns.len() {
+                let col_name = columns[col_idx].clone();
+
+                // Move the column in the DataView
+                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                    if dataview.move_column_left_by_name(&col_name) {
+                        // Move cursor left with the column
+                        if col_idx > 0 {
+                            self.state_container.navigation_mut().selected_column = col_idx - 1;
+                        }
+                        self.buffer_mut()
+                            .set_status_message(format!("Moved column '{}' left", col_name));
+                        debug!("Moved column '{}' left in DataView", col_name);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Move the current column right in the view
+    pub fn move_current_column_right(&mut self) {
+        if self.buffer().get_mode() != AppMode::Results {
+            return;
+        }
+
+        let col_idx = self.state_container.navigation().selected_column;
+
+        // Get the current column name from DataTable
+        if let Some(datatable) = self.buffer().get_datatable() {
+            let columns = datatable.column_names();
+            if col_idx < columns.len() {
+                let col_name = columns[col_idx].clone();
+
+                // Move the column in the DataView
+                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                    if dataview.move_column_right_by_name(&col_name) {
+                        // Move cursor right with the column
+                        if col_idx < columns.len() - 1 {
+                            self.state_container.navigation_mut().selected_column = col_idx + 1;
+                        }
+                        self.buffer_mut()
+                            .set_status_message(format!("Moved column '{}' right", col_name));
+                        debug!("Moved column '{}' right in DataView", col_name);
+                    }
+                }
+            }
         }
     }
 
@@ -619,7 +674,6 @@ impl EnhancedTuiApp {
                 }
                 indicator
             },
-            hidden_columns: Vec::new(),
         }
     }
 
@@ -2014,6 +2068,16 @@ impl EnhancedTuiApp {
                 debug!("Plus/equals key pressed in Results mode - unhiding all columns");
                 self.unhide_all_columns();
             }
+            // Less-than key to move column left (only in Results mode)
+            KeyCode::Char('<') if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
+                debug!("< key pressed in Results mode - moving column left");
+                self.move_current_column_left();
+            }
+            // Greater-than key to move column right (only in Results mode)
+            KeyCode::Char('>') if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
+                debug!("> key pressed in Results mode - moving column right");
+                self.move_current_column_right();
+            }
             // Column visibility - Ctrl+Shift+H to unhide all columns
             KeyCode::Char('H')
                 if key.modifiers.contains(KeyModifiers::CONTROL)
@@ -2985,8 +3049,9 @@ impl EnhancedTuiApp {
                             let duration = start_time.elapsed();
                             crate::utils::memory_tracker::track_memory("query_engine_end");
 
-                            // Apply hidden columns to the DataView
-                            for col_name in &self.hidden_columns {
+                            // Apply hidden columns to the DataView (use buffer's hidden columns, not local copy)
+                            let hidden_columns = self.buffer().get_hidden_columns();
+                            for col_name in hidden_columns {
                                 dataview.hide_column_by_name(col_name);
                             }
 
@@ -5873,6 +5938,32 @@ impl EnhancedTuiApp {
                                         self.buffer().get_pinned_columns().clone().len()
                                     ),
                                     Style::default().fg(Color::Magenta),
+                                ));
+                            }
+
+                            // Show hidden columns count if any
+                            let hidden_count = self.buffer().get_hidden_columns().len();
+                            if hidden_count > 0 {
+                                spans.push(Span::raw(" | "));
+                                spans.push(Span::styled(
+                                    format!("👁️‍🗨️{} hidden", hidden_count),
+                                    Style::default().fg(Color::DarkGray),
+                                ));
+                                spans.push(Span::raw(" "));
+                                spans.push(Span::styled(
+                                    "[- hide/+ unhide]",
+                                    Style::default()
+                                        .fg(Color::DarkGray)
+                                        .add_modifier(Modifier::DIM),
+                                ));
+                            } else {
+                                // Show hint about column hiding when no columns are hidden
+                                spans.push(Span::raw(" "));
+                                spans.push(Span::styled(
+                                    "[- to hide col]",
+                                    Style::default()
+                                        .fg(Color::DarkGray)
+                                        .add_modifier(Modifier::DIM),
                                 ));
                             }
 

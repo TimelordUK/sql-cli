@@ -54,6 +54,54 @@ impl DataView {
         }
     }
 
+    /// Move a column left in the view (swap with previous column)
+    pub fn move_column_left(&mut self, visible_column_index: usize) -> bool {
+        if visible_column_index == 0 || visible_column_index >= self.visible_columns.len() {
+            return false;
+        }
+        self.visible_columns
+            .swap(visible_column_index - 1, visible_column_index);
+        true
+    }
+
+    /// Move a column right in the view (swap with next column)
+    pub fn move_column_right(&mut self, visible_column_index: usize) -> bool {
+        if visible_column_index >= self.visible_columns.len() - 1 {
+            return false;
+        }
+        self.visible_columns
+            .swap(visible_column_index, visible_column_index + 1);
+        true
+    }
+
+    /// Move a column by name to the left
+    pub fn move_column_left_by_name(&mut self, column_name: &str) -> bool {
+        if let Some(source_idx) = self.source.get_column_index(column_name) {
+            if let Some(visible_idx) = self
+                .visible_columns
+                .iter()
+                .position(|&idx| idx == source_idx)
+            {
+                return self.move_column_left(visible_idx);
+            }
+        }
+        false
+    }
+
+    /// Move a column by name to the right
+    pub fn move_column_right_by_name(&mut self, column_name: &str) -> bool {
+        if let Some(source_idx) = self.source.get_column_index(column_name) {
+            if let Some(visible_idx) = self
+                .visible_columns
+                .iter()
+                .position(|&idx| idx == source_idx)
+            {
+                return self.move_column_right(visible_idx);
+            }
+        }
+        false
+    }
+
     /// Create a view with specific rows
     pub fn with_rows(mut self, rows: Vec<usize>) -> Self {
         self.visible_rows = rows;

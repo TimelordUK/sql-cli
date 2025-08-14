@@ -249,8 +249,9 @@ impl<'a> DataProvider for BufferAdapter<'a> {
     }
 
     fn get_column_names(&self) -> Vec<String> {
-        // V51: Use DataView first (has hidden columns already applied)
+        // V51: Use DataView first (it has hidden columns already applied)
         if let Some(dataview) = self.buffer.get_dataview() {
+            // DataView is the source of truth for column visibility
             return dataview.column_names();
         }
         // V48: Fallback to DataTable column names

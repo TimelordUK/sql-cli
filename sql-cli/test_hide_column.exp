@@ -1,0 +1,31 @@
+#!/usr/bin/expect -f
+
+set timeout 3
+spawn ./target/release/sql-cli test_datetime.csv -e "SELECT * FROM data"
+
+# Wait for initial render
+expect "rows"
+sleep 0.5
+
+# Hide the amount column (press 'h' then select column)
+send "h"
+expect "Hide column"
+send "amount\r"
+sleep 0.5
+
+# Query to filter data - should maintain hidden column
+send ":"
+expect "Enter SQL"
+send "SELECT * FROM data WHERE createdDate > DateTime(2025,1,1)\r"
+sleep 0.5
+
+# Check if column is still hidden by pressing 's' for status
+send "s"
+expect {
+    "hidden" { puts "\nSUCCESS: Column still hidden after query" }
+    timeout { puts "\nFAILED: Status not shown or column not hidden" }
+}
+
+# Exit
+send "q"
+expect eof
