@@ -4,7 +4,7 @@ use crate::buffer::{
     AppMode, BufferAPI, ColumnStatistics, EditMode, FilterState, FuzzyFilterState, SearchState,
     SortOrder, SortState,
 };
-use crate::csv_datasource::CsvApiClient;
+// REMOVED: CsvApiClient import - legacy data access
 use crate::data::data_view::DataView;
 use crate::datatable::DataTable;
 use crate::datatable_view::{DataTableView, SortOrder as ViewSortOrder};
@@ -51,7 +51,7 @@ pub struct DataTableBuffer {
     search_state: SearchState,
     column_search_state: ColumnSearchState,
     column_stats: Option<ColumnStatistics>,
-    filtered_data: Option<Vec<Vec<String>>>, // Cache for compatibility
+    // REMOVED: filtered_data - DataView handles filtering
 
     // --- View State ---
     column_widths: Vec<u16>,
@@ -120,7 +120,7 @@ impl DataTableBuffer {
             search_state: SearchState::default(),
             column_search_state: ColumnSearchState::default(),
             column_stats: None,
-            filtered_data: None,
+            // filtered_data removed - DataView handles filtering
 
             // --- View State ---
             column_widths: Vec::new(),
@@ -162,11 +162,8 @@ impl DataTableBuffer {
         Ok(buffer)
     }
 
-    /// Update the filtered data cache from the DataTableView
-    fn update_filtered_data_cache(&mut self) {
-        // Convert the view's data to the Vec<Vec<String>> format expected by the TUI
-        self.filtered_data = Some(self.view.table().to_string_table());
-
+    /// Update column widths from the DataTableView
+    fn update_column_widths(&mut self) {
         // Update column widths based on the data
         self.column_widths = self.calculate_column_widths();
     }
@@ -205,7 +202,7 @@ impl DataTableBuffer {
             };
 
             self.view.apply_sort(column, view_order);
-            self.update_filtered_data_cache();
+            self.update_column_widths();
         }
     }
 
@@ -217,10 +214,10 @@ impl DataTableBuffer {
                 None, // Search all columns for now
                 !self.case_insensitive,
             );
-            self.update_filtered_data_cache();
+            self.update_column_widths();
         } else {
             self.view.clear_filter();
-            self.update_filtered_data_cache();
+            self.update_column_widths();
         }
     }
 
@@ -394,13 +391,7 @@ impl BufferAPI for DataTableBuffer {
         self.sync_filter_to_view();
     }
 
-    fn get_filtered_data(&self) -> Option<&Vec<Vec<String>>> {
-        self.filtered_data.as_ref()
-    }
-
-    fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>) {
-        self.filtered_data = data;
-    }
+    // REMOVED: get_filtered_data/set_filtered_data - DataView handles filtering
 
     // --- Fuzzy Filter ---
     fn get_fuzzy_filter_pattern(&self) -> String {
@@ -543,50 +534,7 @@ impl BufferAPI for DataTableBuffer {
         self.last_query_source = source;
     }
 
-    // --- CSV/Data Source (Not applicable for DataTable, but required for compatibility) ---
-    fn get_csv_client(&self) -> Option<&CsvApiClient> {
-        None
-    }
-
-    fn get_csv_client_mut(&mut self) -> Option<&mut CsvApiClient> {
-        None
-    }
-
-    fn set_csv_client(&mut self, _client: Option<CsvApiClient>) {
-        // No-op for DataTableBuffer
-    }
-
-    fn is_csv_mode(&self) -> bool {
-        false
-    }
-
-    fn set_csv_mode(&mut self, _csv_mode: bool) {
-        // No-op for DataTableBuffer
-    }
-
-    fn get_table_name(&self) -> String {
-        self.view.table().name.clone()
-    }
-
-    fn set_table_name(&mut self, _table_name: String) {
-        // DataTable name is immutable in this implementation
-    }
-
-    fn is_cache_mode(&self) -> bool {
-        false
-    }
-
-    fn set_cache_mode(&mut self, _cache_mode: bool) {
-        // No-op for DataTableBuffer
-    }
-
-    fn get_cached_data(&self) -> Option<&Vec<serde_json::Value>> {
-        None
-    }
-
-    fn set_cached_data(&mut self, _data: Option<Vec<serde_json::Value>>) {
-        // No-op for DataTableBuffer
-    }
+    // REMOVED: CSV/Cache methods - legacy data access patterns
 
     // --- View State ---
     fn get_column_widths(&self) -> &Vec<u16> {
@@ -615,27 +563,7 @@ impl BufferAPI for DataTableBuffer {
         self.pinned_columns.clear();
     }
 
-    fn get_hidden_columns(&self) -> &Vec<String> {
-        // DataTableBuffer doesn't currently support hidden columns
-        // Return empty vector for compatibility
-        static EMPTY: Vec<String> = Vec::new();
-        &EMPTY
-    }
-
-    fn add_hidden_column(&mut self, _col_name: String) {
-        // DataTableBuffer doesn't currently support hidden columns
-        // This is a no-op for compatibility
-    }
-
-    fn remove_hidden_column(&mut self, _col_name: &str) {
-        // DataTableBuffer doesn't currently support hidden columns
-        // This is a no-op for compatibility
-    }
-
-    fn clear_hidden_columns(&mut self) {
-        // DataTableBuffer doesn't currently support hidden columns
-        // This is a no-op for compatibility
-    }
+    // REMOVED: hidden_columns methods - DataView handles column visibility
 
     fn is_compact_mode(&self) -> bool {
         self.compact_mode
@@ -752,9 +680,7 @@ impl BufferAPI for DataTableBuffer {
             .collect()
     }
 
-    fn has_cached_data(&self) -> bool {
-        false // DataTableBuffer doesn't use cached_data
-    }
+    // REMOVED: has_cached_data - legacy data access
 
     // --- Undo/Redo ---
     fn get_undo_stack(&self) -> &Vec<(String, usize)> {
@@ -893,7 +819,6 @@ impl BufferAPI for DataTableBuffer {
 
     fn clear_results(&mut self) {
         // Clear the DataTable or reset to empty state
-        // For now, just clear filtered data cache
-        self.filtered_data = None;
+        // DataView handles all filtering now
     }
 }

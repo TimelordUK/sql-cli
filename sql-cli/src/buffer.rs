@@ -1,5 +1,5 @@
 use crate::api_client::QueryResponse; // V50: Still needed for conversion from API responses
-use crate::csv_datasource::CsvApiClient;
+use crate::csv_datasource::CsvApiClient; // Kept for API compatibility in from_csv/from_json
 use crate::cursor_operations::CursorOperations;
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataTable;
@@ -203,8 +203,7 @@ pub trait BufferAPI {
     fn set_filter_pattern(&mut self, pattern: String);
     fn is_filter_active(&self) -> bool;
     fn set_filter_active(&mut self, active: bool);
-    fn get_filtered_data(&self) -> Option<&Vec<Vec<String>>>;
-    fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>);
+    // REMOVED: get_filtered_data/set_filtered_data - DataView handles filtering
 
     // --- Fuzzy Filter ---
     fn get_fuzzy_filter_pattern(&self) -> String;
@@ -251,10 +250,7 @@ pub trait BufferAPI {
     fn add_pinned_column(&mut self, col: usize);
     fn remove_pinned_column(&mut self, col: usize);
     fn clear_pinned_columns(&mut self);
-    fn get_hidden_columns(&self) -> &Vec<String>;
-    fn add_hidden_column(&mut self, col_name: String);
-    fn remove_hidden_column(&mut self, col_name: &str);
-    fn clear_hidden_columns(&mut self);
+    // REMOVED: hidden_columns methods - DataView handles column visibility
     fn get_column_widths(&self) -> &Vec<u16>;
     fn set_column_widths(&mut self, widths: Vec<u16>);
     fn is_case_insensitive(&self) -> bool;
@@ -271,18 +267,7 @@ pub trait BufferAPI {
     fn set_last_query_source(&mut self, source: Option<String>);
 
     // --- CSV/Data Source ---
-    fn get_csv_client(&self) -> Option<&CsvApiClient>;
-    fn get_csv_client_mut(&mut self) -> Option<&mut CsvApiClient>;
-    fn set_csv_client(&mut self, client: Option<CsvApiClient>);
-    fn is_csv_mode(&self) -> bool;
-    fn set_csv_mode(&mut self, csv_mode: bool);
-    fn get_table_name(&self) -> String;
-    fn set_table_name(&mut self, table_name: String);
-    fn is_cache_mode(&self) -> bool;
-    fn set_cache_mode(&mut self, cache_mode: bool);
-    fn get_cached_data(&self) -> Option<&Vec<Value>>;
-    fn set_cached_data(&mut self, data: Option<Vec<Value>>);
-    fn has_cached_data(&self) -> bool;
+    // REMOVED: CSV/Cache methods - legacy data access patterns
 
     // --- Input State ---
     fn get_input_value(&self) -> String;
@@ -356,12 +341,7 @@ pub struct Buffer {
     pub modified: bool,
 
     // --- Data State ---
-    pub csv_client: Option<CsvApiClient>,
-    pub csv_mode: bool,
-    pub csv_table_name: String,
-    pub cache_mode: bool,
-    // V50: Removed results field - using DataTable as primary storage
-    pub cached_data: Option<Vec<serde_json::Value>>,
+    // REMOVED: csv_client, csv_mode, csv_table_name, cache_mode, cached_data - legacy fields
     /// V50: DataTable is now the primary storage (no longer alongside JSON)
     pub datatable: Option<DataTable>,
     /// DataView for applying filters like hidden columns without modifying the DataTable
@@ -387,14 +367,14 @@ pub struct Buffer {
     pub search_state: SearchState,
     // column_search_state: MIGRATED to AppStateContainer
     pub column_stats: Option<ColumnStatistics>,
-    pub filtered_data: Option<Vec<Vec<String>>>,
+    // REMOVED: filtered_data - DataView handles filtering
 
     // --- View State ---
     pub column_widths: Vec<u16>,
     pub scroll_offset: (usize, usize),
     pub current_column: usize,
     pub pinned_columns: Vec<usize>,
-    pub hidden_columns: Vec<String>, // Names of hidden columns
+    // REMOVED: hidden_columns - DataView handles column visibility
     pub compact_mode: bool,
     pub viewport_lock: bool,
     pub viewport_lock_row: Option<usize>,
@@ -482,10 +462,7 @@ impl BufferAPI for Buffer {
                     }
                 }
             }
-            // Also apply any hidden columns from the buffer's list (for backwards compatibility)
-            for col_name in &self.hidden_columns {
-                view.hide_column_by_name(col_name);
-            }
+            // DataView now handles column visibility directly
 
             self.dataview = Some(view);
         } else {
@@ -498,7 +475,7 @@ impl BufferAPI for Buffer {
     fn set_results_as_datatable(&mut self, response: Option<QueryResponse>) -> Result<(), String> {
         if let Some(ref resp) = response {
             debug!("V50: Converting QueryResponse to DataTable");
-            let table_name = resp.table.as_deref().unwrap_or(&self.csv_table_name);
+            let table_name = resp.table.as_deref().unwrap_or("data");
             match DataTable::from_query_response(resp, table_name) {
                 Ok(datatable) => {
                     debug!(
@@ -627,13 +604,7 @@ impl BufferAPI for Buffer {
         self.filter_state.active = active;
     }
 
-    fn get_filtered_data(&self) -> Option<&Vec<Vec<String>>> {
-        self.filtered_data.as_ref()
-    }
-
-    fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>) {
-        self.filtered_data = data;
-    }
+    // REMOVED: get_filtered_data/set_filtered_data implementations
 
     // --- Fuzzy Filter ---
     fn get_fuzzy_filter_pattern(&self) -> String {
@@ -785,44 +756,7 @@ impl BufferAPI for Buffer {
         self.pinned_columns.clear();
     }
 
-    fn get_hidden_columns(&self) -> &Vec<String> {
-        &self.hidden_columns
-    }
-
-    fn add_hidden_column(&mut self, col_name: String) {
-        // Update the DataView if it exists (primary source of truth)
-        if let Some(view) = &mut self.dataview {
-            view.hide_column_by_name(&col_name);
-            debug!("Hidden column '{}' in DataView", col_name);
-        }
-
-        // Also maintain the buffer's list for backwards compatibility
-        if !self.hidden_columns.contains(&col_name) {
-            self.hidden_columns.push(col_name);
-            debug!(
-                "Added hidden column, total hidden: {}",
-                self.hidden_columns.len()
-            );
-        }
-    }
-
-    fn remove_hidden_column(&mut self, col_name: &str) {
-        self.hidden_columns.retain(|c| c != col_name);
-    }
-
-    fn clear_hidden_columns(&mut self) {
-        // Clear hidden columns in DataView (primary source)
-        if let Some(dt) = &self.datatable {
-            // Reset DataView to show all columns
-            self.dataview = Some(crate::data::data_view::DataView::new(std::sync::Arc::new(
-                dt.clone(),
-            )));
-            debug!("Reset DataView to show all columns");
-        }
-
-        // Also clear the buffer's list
-        self.hidden_columns.clear();
-    }
+    // REMOVED: hidden_columns methods implementations - DataView handles this
 
     fn get_column_widths(&self) -> &Vec<u16> {
         &self.column_widths
@@ -873,54 +807,7 @@ impl BufferAPI for Buffer {
         self.last_query_source = source;
     }
 
-    // --- CSV/Data Source ---
-    fn get_csv_client(&self) -> Option<&CsvApiClient> {
-        self.csv_client.as_ref()
-    }
-
-    fn get_csv_client_mut(&mut self) -> Option<&mut CsvApiClient> {
-        self.csv_client.as_mut()
-    }
-
-    fn set_csv_client(&mut self, client: Option<CsvApiClient>) {
-        self.csv_client = client;
-    }
-
-    fn is_csv_mode(&self) -> bool {
-        self.csv_mode
-    }
-
-    fn set_csv_mode(&mut self, csv_mode: bool) {
-        self.csv_mode = csv_mode;
-    }
-
-    fn get_table_name(&self) -> String {
-        self.csv_table_name.clone()
-    }
-
-    fn set_table_name(&mut self, table_name: String) {
-        self.csv_table_name = table_name;
-    }
-
-    fn is_cache_mode(&self) -> bool {
-        false
-    }
-
-    fn set_cache_mode(&mut self, cache_mode: bool) {
-        self.cache_mode = cache_mode;
-    }
-
-    fn get_cached_data(&self) -> Option<&Vec<Value>> {
-        self.cached_data.as_ref()
-    }
-
-    fn set_cached_data(&mut self, data: Option<Vec<Value>>) {
-        self.cached_data = data;
-    }
-
-    fn has_cached_data(&self) -> bool {
-        self.cached_data.is_some()
-    }
+    // REMOVED: CSV/Cache methods implementations - legacy data access
 
     // --- Input State ---
     fn get_input_value(&self) -> String {
@@ -962,12 +849,12 @@ impl BufferAPI for Buffer {
         self.filter_state.pattern.clear();
         self.fuzzy_filter_state.active = false;
         self.fuzzy_filter_state.pattern.clear();
-        self.filtered_data = None;
+        // DataView handles the actual filtering
     }
 
     fn get_row_count(&self) -> usize {
-        if let Some(filtered) = &self.filtered_data {
-            filtered.len()
+        if let Some(dataview) = &self.dataview {
+            dataview.row_count()
         } else if let Some(datatable) = &self.datatable {
             datatable.row_count()
         } else {
@@ -1113,10 +1000,7 @@ impl BufferAPI for Buffer {
             "Filter Pattern: '{}'\n",
             self.filter_state.pattern
         ));
-        output.push_str(&format!(
-            "Has Filtered Data: {}\n",
-            self.filtered_data.is_some()
-        ));
+        output.push_str("Filtering: Handled by DataView\n");
         output.push_str(&format!(
             "Fuzzy Filter Active: {}\n",
             self.fuzzy_filter_state.active
@@ -1162,15 +1046,8 @@ impl BufferAPI for Buffer {
             "Viewport Lock Row: {:?}\n",
             self.viewport_lock_row
         ));
-        output.push_str("\n--- CSV/Data Source ---\n");
-        output.push_str(&format!("CSV Mode: {}\n", self.csv_mode));
-        output.push_str(&format!("CSV Table Name: '{}'\n", self.csv_table_name));
-        output.push_str(&format!("Cache Mode: {}\n", self.cache_mode));
-        output.push_str(&format!("Has CSV Client: {}\n", self.csv_client.is_some()));
-        output.push_str(&format!(
-            "Has Cached Data: {}\n",
-            self.cached_data.is_some()
-        ));
+        output.push_str("\n--- Data Source ---\n");
+        output.push_str("Legacy CSV/Cache fields removed - using DataTable/DataView\n");
         output.push_str("\n--- Undo/Redo ---\n");
         output.push_str(&format!("Undo Stack Size: {}\n", self.undo_stack.len()));
         output.push_str(&format!("Redo Stack Size: {}\n", self.redo_stack.len()));
@@ -1281,7 +1158,7 @@ impl BufferAPI for Buffer {
     // --- Results Management ---
     fn clear_results(&mut self) {
         self.datatable = None;
-        self.filtered_data = None;
+        // DataView handles filtering
         self.table_state.select(None);
         self.last_results_row = None;
         self.scroll_offset = (0, 0);
@@ -1306,12 +1183,7 @@ impl Buffer {
             name: format!("[Buffer {}]", id),
             modified: false,
 
-            csv_client: None,
-            csv_mode: false,
-            csv_table_name: String::new(),
-            cache_mode: false,
-            // V50: Removed results field
-            cached_data: None,
+            // Legacy CSV/Cache fields removed
             datatable: None,
             dataview: None,
 
@@ -1335,13 +1207,11 @@ impl Buffer {
             search_state: SearchState::default(),
             // column_search_state: MIGRATED to AppStateContainer
             column_stats: None,
-            filtered_data: None,
 
             column_widths: Vec::new(),
             scroll_offset: (0, 0),
             current_column: 0,
             pinned_columns: Vec::new(),
-            hidden_columns: Vec::new(),
             compact_mode: false,
             viewport_lock: false,
             viewport_lock_row: None,
@@ -1364,8 +1234,8 @@ impl Buffer {
     pub fn from_csv(
         id: usize,
         path: PathBuf,
-        csv_client: CsvApiClient,
-        table_name: String,
+        _csv_client: CsvApiClient, // Kept for API compatibility but unused
+        _table_name: String,       // Kept for API compatibility but unused
     ) -> Self {
         let name = path
             .file_name()
@@ -1376,9 +1246,7 @@ impl Buffer {
         let mut buffer = Self::new(id);
         buffer.file_path = Some(path);
         buffer.name = name;
-        buffer.csv_client = Some(csv_client);
-        buffer.csv_mode = true;
-        buffer.csv_table_name = table_name;
+        // Legacy CSV fields removed - DataTable/DataView handles data
 
         buffer
     }
@@ -1387,8 +1255,8 @@ impl Buffer {
     pub fn from_json(
         id: usize,
         path: PathBuf,
-        csv_client: CsvApiClient,
-        table_name: String,
+        _csv_client: CsvApiClient, // Kept for API compatibility but unused
+        _table_name: String,       // Kept for API compatibility but unused
     ) -> Self {
         let name = path
             .file_name()
@@ -1399,9 +1267,7 @@ impl Buffer {
         let mut buffer = Self::new(id);
         buffer.file_path = Some(path);
         buffer.name = name;
-        buffer.csv_client = Some(csv_client);
-        buffer.csv_mode = true;
-        buffer.csv_table_name = table_name;
+        // Legacy CSV fields removed - DataTable/DataView handles data
 
         buffer
     }
@@ -1633,12 +1499,7 @@ impl Clone for Buffer {
             file_path: self.file_path.clone(),
             name: self.name.clone(),
             modified: self.modified,
-            csv_client: self.csv_client.clone(),
-            csv_mode: self.csv_mode,
-            csv_table_name: self.csv_table_name.clone(),
-            cache_mode: self.cache_mode,
-            // V50: Removed results field
-            cached_data: self.cached_data.clone(),
+            // Legacy CSV/Cache fields removed
             datatable: self.datatable.clone(),
             dataview: self.dataview.clone(),
             mode: self.mode.clone(),
@@ -1655,12 +1516,10 @@ impl Clone for Buffer {
             fuzzy_filter_state: self.fuzzy_filter_state.clone(),
             search_state: self.search_state.clone(),
             // column_search_state: MIGRATED to AppStateContainer
-            filtered_data: self.filtered_data.clone(),
             column_widths: self.column_widths.clone(),
             scroll_offset: self.scroll_offset,
             current_column: self.current_column,
             pinned_columns: self.pinned_columns.clone(),
-            hidden_columns: self.hidden_columns.clone(),
             column_stats: self.column_stats.clone(),
             compact_mode: self.compact_mode,
             viewport_lock: self.viewport_lock,
