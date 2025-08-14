@@ -8,11 +8,19 @@ use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use crate::sql::recursive_parser::{OrderByColumn, Parser, SelectStatement, SortDirection};
 
 /// Query engine that executes SQL directly on DataTable
-pub struct QueryEngine;
+pub struct QueryEngine {
+    case_insensitive: bool,
+}
 
 impl QueryEngine {
     pub fn new() -> Self {
-        Self
+        Self {
+            case_insensitive: false,
+        }
+    }
+
+    pub fn with_case_insensitive(case_insensitive: bool) -> Self {
+        Self { case_insensitive }
     }
 
     /// Execute a SQL query on a DataTable and return a DataView
@@ -39,8 +47,8 @@ impl QueryEngine {
             debug!("QueryEngine: WHERE clause = {:?}", where_clause);
 
             view = view.filter(|table, row_idx| {
-                debug!("QueryEngine: About to create RecursiveWhereEvaluator for row {}", row_idx);
-                let evaluator = RecursiveWhereEvaluator::new(table);
+                debug!("QueryEngine: About to create RecursiveWhereEvaluator for row {} (case_insensitive={})", row_idx, self.case_insensitive);
+                let evaluator = RecursiveWhereEvaluator::with_case_insensitive(table, self.case_insensitive);
                 debug!("QueryEngine: Created RecursiveWhereEvaluator, about to call evaluate() for row {}", row_idx);
                 match evaluator.evaluate(where_clause, row_idx) {
                     Ok(result) => {
@@ -277,5 +285,191 @@ mod tests {
         }
 
         println!("\n=== All tests passed! ===");
+    }
+
+    #[test]
+    fn test_not_in_clause() {
+        // Initialize tracing for debug output
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init();
+
+        let mut table = DataTable::new("test");
+        table.add_column(DataColumn::new("id"));
+        table.add_column(DataColumn::new("country"));
+
+        // Add test data
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(1),
+                DataValue::String("CA".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(2),
+                DataValue::String("US".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(3),
+                DataValue::String("UK".to_string()),
+            ]))
+            .unwrap();
+
+        let table = Arc::new(table);
+        let engine = QueryEngine::new();
+
+        println!("\n=== Testing NOT IN clause ===");
+        println!("Table has {} rows", table.row_count());
+        for i in 0..table.row_count() {
+            let country = table.get_value(i, 1);
+            println!("Row {}: country = {:?}", i, country);
+        }
+
+        // Test NOT IN clause - should exclude CA, return US and UK (2 rows)
+        println!("\n--- Test: country NOT IN ('CA') ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE country NOT IN ('CA')",
+        );
+        match result {
+            Ok(view) => {
+                println!("SUCCESS: Found {} rows not in ('CA')", view.row_count());
+                assert_eq!(view.row_count(), 2); // Should find US and UK
+            }
+            Err(e) => {
+                panic!("NOT IN query failed: {}", e);
+            }
+        }
+
+        println!("\n=== NOT IN test complete! ===");
+    }
+
+    #[test]
+    fn test_case_insensitive_in_and_not_in() {
+        // Initialize tracing for debug output
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init();
+
+        let mut table = DataTable::new("test");
+        table.add_column(DataColumn::new("id"));
+        table.add_column(DataColumn::new("country"));
+
+        // Add test data with mixed case
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(1),
+                DataValue::String("CA".to_string()), // uppercase
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(2),
+                DataValue::String("us".to_string()), // lowercase
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(3),
+                DataValue::String("UK".to_string()), // uppercase
+            ]))
+            .unwrap();
+
+        let table = Arc::new(table);
+
+        println!("\n=== Testing Case-Insensitive IN clause ===");
+        println!("Table has {} rows", table.row_count());
+        for i in 0..table.row_count() {
+            let country = table.get_value(i, 1);
+            println!("Row {}: country = {:?}", i, country);
+        }
+
+        // Test case-insensitive IN - should match 'CA' with 'ca'
+        println!("\n--- Test: country IN ('ca') with case_insensitive=true ---");
+        let engine = QueryEngine::with_case_insensitive(true);
+        let result = engine.execute(table.clone(), "SELECT * FROM test WHERE country IN ('ca')");
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows matching 'ca' (case-insensitive)",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 1); // Should find CA row
+            }
+            Err(e) => {
+                panic!("Case-insensitive IN query failed: {}", e);
+            }
+        }
+
+        // Test case-insensitive NOT IN - should exclude 'CA' when searching for 'ca'
+        println!("\n--- Test: country NOT IN ('ca') with case_insensitive=true ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE country NOT IN ('ca')",
+        );
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows not matching 'ca' (case-insensitive)",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 2); // Should find us and UK rows
+            }
+            Err(e) => {
+                panic!("Case-insensitive NOT IN query failed: {}", e);
+            }
+        }
+
+        // Test case-sensitive (default) - should NOT match 'CA' with 'ca'
+        println!("\n--- Test: country IN ('ca') with case_insensitive=false ---");
+        let engine_case_sensitive = QueryEngine::new(); // defaults to case_insensitive=false
+        let result = engine_case_sensitive
+            .execute(table.clone(), "SELECT * FROM test WHERE country IN ('ca')");
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows matching 'ca' (case-sensitive)",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 0); // Should find no rows (CA != ca)
+            }
+            Err(e) => {
+                panic!("Case-sensitive IN query failed: {}", e);
+            }
+        }
+
+        println!("\n=== Case-insensitive IN/NOT IN test complete! ===");
+    }
+
+    #[test]
+    fn test_not_in_parsing() {
+        use crate::sql::recursive_parser::Parser;
+
+        let query = "SELECT * FROM test WHERE country NOT IN ('CA')";
+        println!("\n=== Testing NOT IN parsing ===");
+        println!("Parsing query: {}", query);
+
+        let mut parser = Parser::new(query);
+        match parser.parse() {
+            Ok(statement) => {
+                println!("Parsed statement: {:#?}", statement);
+                if let Some(where_clause) = statement.where_clause {
+                    println!("WHERE conditions: {:#?}", where_clause.conditions);
+                    if let Some(first_condition) = where_clause.conditions.first() {
+                        println!("First condition expression: {:#?}", first_condition.expr);
+                    }
+                }
+            }
+            Err(e) => {
+                panic!("Parse error: {}", e);
+            }
+        }
     }
 }

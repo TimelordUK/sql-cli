@@ -768,6 +768,9 @@ impl Parser {
             };
         }
 
+        // Handle NOT IN operator - this should be handled in parse_comparison instead
+        // since NOT is a prefix operator that should be parsed before the expression
+
         Ok(left)
     }
 
@@ -832,6 +835,24 @@ impl Parser {
                 lower: Box::new(lower),
                 upper: Box::new(upper),
             });
+        }
+
+        // Handle NOT IN operator
+        if matches!(self.current_token, Token::Not) {
+            self.advance(); // consume NOT
+            if matches!(self.current_token, Token::In) {
+                self.advance(); // consume IN
+                self.consume(Token::LeftParen)?;
+                let values = self.parse_expression_list()?;
+                self.consume(Token::RightParen)?;
+
+                return Ok(SqlExpression::NotInList {
+                    expr: Box::new(left),
+                    values,
+                });
+            } else {
+                return Err("Expected IN after NOT".to_string());
+            }
         }
 
         // Handle comparison operators
@@ -1123,8 +1144,38 @@ pub enum CursorContext {
     Unknown,
 }
 
+/// Safe UTF-8 string slicing that ensures we don't slice in the middle of a character
+fn safe_slice_to(s: &str, pos: usize) -> &str {
+    if pos >= s.len() {
+        return s;
+    }
+
+    // Find the nearest valid character boundary at or before pos
+    let mut safe_pos = pos;
+    while safe_pos > 0 && !s.is_char_boundary(safe_pos) {
+        safe_pos -= 1;
+    }
+
+    &s[..safe_pos]
+}
+
+/// Safe UTF-8 string slicing from a position to the end
+fn safe_slice_from(s: &str, pos: usize) -> &str {
+    if pos >= s.len() {
+        return "";
+    }
+
+    // Find the nearest valid character boundary at or after pos
+    let mut safe_pos = pos;
+    while safe_pos < s.len() && !s.is_char_boundary(safe_pos) {
+        safe_pos += 1;
+    }
+
+    &s[safe_pos..]
+}
+
 pub fn detect_cursor_context(query: &str, cursor_pos: usize) -> (CursorContext, Option<String>) {
-    let truncated = &query[..cursor_pos];
+    let truncated = safe_slice_to(query, cursor_pos);
     let mut parser = Parser::new(truncated);
 
     // Try to parse as much as possible
@@ -1978,8 +2029,13 @@ fn analyze_statement(
     let comparison_ops = [" > ", " < ", " >= ", " <= ", " = ", " != "];
     for op in &comparison_ops {
         if let Some(op_pos) = query.rfind(op) {
-            let before_op = &query[..op_pos];
-            let after_op = &query[op_pos + op.len()..];
+            let before_op = safe_slice_to(query, op_pos);
+            let after_op_start = op_pos + op.len();
+            let after_op = if after_op_start < query.len() {
+                &query[after_op_start..]
+            } else {
+                ""
+            };
 
             // Check if we have a column name before the operator
             if let Some(col_name) = before_op.split_whitespace().last() {
@@ -2021,8 +2077,13 @@ fn analyze_statement(
         // Look for the last dot in the query
         if let Some(dot_pos) = trimmed.rfind('.') {
             // Check if we're after a column name and dot
-            let before_dot = &trimmed[..dot_pos];
-            let after_dot = &trimmed[dot_pos + 1..];
+            let before_dot = safe_slice_to(trimmed, dot_pos);
+            let after_dot_start = dot_pos + 1;
+            let after_dot = if after_dot_start < trimmed.len() {
+                &trimmed[after_dot_start..]
+            } else {
+                ""
+            };
 
             // Check if the part after dot looks like an incomplete method call
             // (not a complete method call like "Contains(...)")
@@ -2055,7 +2116,7 @@ fn analyze_statement(
 
                     if let Some(start) = found_start {
                         // Extract the full quoted identifier including quotes
-                        Some(&before_dot[start..])
+                        Some(safe_slice_from(before_dot, start))
                     } else {
                         None
                     }
@@ -2123,7 +2184,7 @@ fn analyze_statement(
 
         // Check if we have AND/OR followed by a partial word
         if let Some(and_pos) = query.to_uppercase().rfind(" AND ") {
-            let after_and = &query[and_pos + 5..];
+            let after_and = safe_slice_from(query, and_pos + 5);
             let partial = extract_partial_at_end(after_and);
             if partial.is_some() {
                 return (CursorContext::AfterLogicalOp(LogicalOp::And), partial);
@@ -2131,7 +2192,7 @@ fn analyze_statement(
         }
 
         if let Some(or_pos) = query.to_uppercase().rfind(" OR ") {
-            let after_or = &query[or_pos + 4..];
+            let after_or = safe_slice_from(query, or_pos + 4);
             let partial = extract_partial_at_end(after_or);
             if partial.is_some() {
                 return (CursorContext::AfterLogicalOp(LogicalOp::Or), partial);
@@ -2192,8 +2253,13 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
     let comparison_ops = [" > ", " < ", " >= ", " <= ", " = ", " != "];
     for op in &comparison_ops {
         if let Some(op_pos) = query.rfind(op) {
-            let before_op = &query[..op_pos];
-            let after_op = &query[op_pos + op.len()..];
+            let before_op = safe_slice_to(query, op_pos);
+            let after_op_start = op_pos + op.len();
+            let after_op = if after_op_start < query.len() {
+                &query[after_op_start..]
+            } else {
+                ""
+            };
 
             // Check if we have a column name before the operator
             if let Some(col_name) = before_op.split_whitespace().last() {
@@ -2279,7 +2345,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
 
                 if let Some(start) = found_start {
                     // Extract the full quoted identifier including quotes
-                    let result = &before_dot[start..];
+                    let result = safe_slice_from(before_dot, start);
                     #[cfg(test)]
                     {
                         if trimmed.contains("\"Last Name\"") {
@@ -2364,7 +2430,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
         // Check if cursor is after AND
         if cursor_pos >= and_pos + 5 {
             // Extract any partial word after AND
-            let after_and = &query[and_pos + 5..];
+            let after_and = safe_slice_from(query, and_pos + 5);
             let partial = extract_partial_at_end(after_and);
             return (CursorContext::AfterLogicalOp(LogicalOp::And), partial);
         }
@@ -2374,7 +2440,7 @@ fn analyze_partial(query: &str, cursor_pos: usize) -> (CursorContext, Option<Str
         // Check if cursor is after OR
         if cursor_pos >= or_pos + 4 {
             // Extract any partial word after OR
-            let after_or = &query[or_pos + 4..];
+            let after_or = safe_slice_from(query, or_pos + 4);
             let partial = extract_partial_at_end(after_or);
             return (CursorContext::AfterLogicalOp(LogicalOp::Or), partial);
         }
@@ -3194,5 +3260,37 @@ mod tests {
         assert!(ast_formatted.contains("Between"));
         assert!(ast_formatted.contains("50"));
         assert!(ast_formatted.contains("100"));
+    }
+
+    #[test]
+    fn test_utf8_boundary_safety() {
+        // Test that cursor detection doesn't panic on UTF-8 boundaries
+        let query_with_unicode = "SELECT * FROM table WHERE column = 'héllo'";
+
+        // Test various cursor positions, including ones that would be in the middle of characters
+        for pos in 0..query_with_unicode.len() + 1 {
+            // This should not panic, even if pos is in the middle of a UTF-8 character
+            let result =
+                std::panic::catch_unwind(|| detect_cursor_context(query_with_unicode, pos));
+
+            assert!(
+                result.is_ok(),
+                "Panic at position {} in query with Unicode",
+                pos
+            );
+        }
+
+        // Test with a position beyond the string length
+        let result = std::panic::catch_unwind(|| detect_cursor_context(query_with_unicode, 1000));
+        assert!(result.is_ok(), "Panic with position beyond string length");
+
+        // Test specifically with the 'é' character which is 2 bytes in UTF-8
+        let pos_in_e = query_with_unicode.find('é').unwrap() + 1; // This should be in the middle of 'é'
+        let result =
+            std::panic::catch_unwind(|| detect_cursor_context(query_with_unicode, pos_in_e));
+        assert!(
+            result.is_ok(),
+            "Panic with cursor in middle of UTF-8 character"
+        );
     }
 }

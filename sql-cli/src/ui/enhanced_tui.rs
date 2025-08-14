@@ -2974,7 +2974,10 @@ impl EnhancedTuiApp {
                 if let Some(datatable) = self.buffer().get_datatable() {
                     // Execute query using QueryEngine directly with DataView (V51: No more QueryResponse!)
                     let table_arc = Arc::new(datatable.clone());
-                    let engine = crate::data::query_engine::QueryEngine::new();
+                    let case_insensitive = self.buffer().is_case_insensitive();
+                    let engine = crate::data::query_engine::QueryEngine::with_case_insensitive(
+                        case_insensitive,
+                    );
                     let result = engine.execute(table_arc, query);
 
                     match result {

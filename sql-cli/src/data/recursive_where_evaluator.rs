@@ -7,19 +7,31 @@ use tracing::debug;
 /// Evaluates WHERE clauses from recursive_parser directly against DataTable
 pub struct RecursiveWhereEvaluator<'a> {
     table: &'a DataTable,
+    case_insensitive: bool,
 }
 
 impl<'a> RecursiveWhereEvaluator<'a> {
     pub fn new(table: &'a DataTable) -> Self {
-        Self { table }
+        Self {
+            table,
+            case_insensitive: false,
+        }
+    }
+
+    pub fn with_case_insensitive(table: &'a DataTable, case_insensitive: bool) -> Self {
+        Self {
+            table,
+            case_insensitive,
+        }
     }
 
     /// Evaluate a WHERE clause for a specific row
     pub fn evaluate(&self, where_clause: &WhereClause, row_index: usize) -> Result<bool> {
         debug!(
-            "RecursiveWhereEvaluator: evaluate() ENTRY - row {}, {} conditions",
+            "RecursiveWhereEvaluator: evaluate() ENTRY - row {}, {} conditions, case_insensitive={}",
             row_index,
-            where_clause.conditions.len()
+            where_clause.conditions.len(),
+            self.case_insensitive
         );
 
         if where_clause.conditions.is_empty() {
@@ -143,13 +155,57 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
         // Perform comparison
         match (cell_value, op.to_uppercase().as_str(), &compare_value) {
-            (Some(DataValue::String(a)), "=", ExprValue::String(b)) => Ok(a == b),
+            (Some(DataValue::String(a)), "=", ExprValue::String(b)) => {
+                debug!(
+                    "RecursiveWhereEvaluator: String comparison '{}' = '{}' (case_insensitive={})",
+                    a, b, self.case_insensitive
+                );
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() == b.to_lowercase())
+                } else {
+                    Ok(a == b)
+                }
+            }
             (Some(DataValue::String(a)), "!=", ExprValue::String(b))
-            | (Some(DataValue::String(a)), "<>", ExprValue::String(b)) => Ok(a != b),
-            (Some(DataValue::String(a)), ">", ExprValue::String(b)) => Ok(a > b),
-            (Some(DataValue::String(a)), ">=", ExprValue::String(b)) => Ok(a >= b),
-            (Some(DataValue::String(a)), "<", ExprValue::String(b)) => Ok(a < b),
-            (Some(DataValue::String(a)), "<=", ExprValue::String(b)) => Ok(a <= b),
+            | (Some(DataValue::String(a)), "<>", ExprValue::String(b)) => {
+                debug!(
+                    "RecursiveWhereEvaluator: String comparison '{}' != '{}' (case_insensitive={})",
+                    a, b, self.case_insensitive
+                );
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() != b.to_lowercase())
+                } else {
+                    Ok(a != b)
+                }
+            }
+            (Some(DataValue::String(a)), ">", ExprValue::String(b)) => {
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() > b.to_lowercase())
+                } else {
+                    Ok(a > b)
+                }
+            }
+            (Some(DataValue::String(a)), ">=", ExprValue::String(b)) => {
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() >= b.to_lowercase())
+                } else {
+                    Ok(a >= b)
+                }
+            }
+            (Some(DataValue::String(a)), "<", ExprValue::String(b)) => {
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() < b.to_lowercase())
+                } else {
+                    Ok(a < b)
+                }
+            }
+            (Some(DataValue::String(a)), "<=", ExprValue::String(b)) => {
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() <= b.to_lowercase())
+                } else {
+                    Ok(a <= b)
+                }
+            }
 
             (Some(DataValue::Integer(a)), "=", ExprValue::Number(b)) => Ok(*a as f64 == *b),
             (Some(DataValue::Integer(a)), "!=", ExprValue::Number(b))
@@ -256,7 +312,14 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         for value_expr in values {
             let compare_value = self.extract_value(value_expr)?;
             let matches = match (cell_value, &compare_value) {
-                (Some(DataValue::String(a)), ExprValue::String(b)) => a == b,
+                (Some(DataValue::String(a)), ExprValue::String(b)) => {
+                    if self.case_insensitive {
+                        debug!("RecursiveWhereEvaluator: IN list string comparison '{}' in '{}' (case_insensitive={})", a, b, self.case_insensitive);
+                        a.to_lowercase() == b.to_lowercase()
+                    } else {
+                        a == b
+                    }
+                }
                 (Some(DataValue::Integer(a)), ExprValue::Number(b)) => *a as f64 == *b,
                 (Some(DataValue::Float(a)), ExprValue::Number(b)) => (*a - b).abs() < f64::EPSILON,
                 _ => false,
