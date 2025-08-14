@@ -5613,15 +5613,10 @@ impl EnhancedTuiApp {
             };
 
             // Check if this column is pinned using DataView
+            // Note: 'header' already contains the column name from visible_columns
             let pinned_indicator = if let Some(dataview) = self.buffer().get_dataview() {
-                let col_names = dataview.column_names();
-                if *actual_col_index < col_names.len() {
-                    let col_name = &col_names[*actual_col_index];
-                    if dataview.get_pinned_column_names().contains(col_name) {
-                        " 📌"
-                    } else {
-                        ""
-                    }
+                if dataview.get_pinned_column_names().contains(header) {
+                    " 📌"
                 } else {
                     ""
                 }
