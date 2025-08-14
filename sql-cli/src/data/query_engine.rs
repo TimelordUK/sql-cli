@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::sync::Arc;
+use tracing::debug;
 
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataTable;
@@ -33,10 +34,32 @@ impl QueryEngine {
 
         // Apply WHERE clause filtering using recursive evaluator
         if let Some(where_clause) = &statement.where_clause {
+            let total_rows = table.row_count();
+            debug!("QueryEngine: Applying WHERE clause to {} rows", total_rows);
+
             view = view.filter(|table, row_idx| {
                 let evaluator = RecursiveWhereEvaluator::new(table);
-                evaluator.evaluate(where_clause, row_idx).unwrap_or(false)
+                match evaluator.evaluate(where_clause, row_idx) {
+                    Ok(result) => {
+                        if row_idx < 5 {
+                            debug!("QueryEngine: Row {} WHERE result: {}", row_idx, result);
+                        }
+                        result
+                    }
+                    Err(e) => {
+                        debug!(
+                            "QueryEngine: WHERE evaluation error for row {}: {}",
+                            row_idx, e
+                        );
+                        false
+                    }
+                }
             });
+
+            debug!(
+                "QueryEngine: After WHERE filtering, {} rows remain",
+                view.row_count()
+            );
         }
 
         // Apply column projection (SELECT clause) - do this AFTER filtering
