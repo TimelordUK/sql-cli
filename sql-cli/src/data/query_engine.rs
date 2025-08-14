@@ -449,6 +449,522 @@ mod tests {
     }
 
     #[test]
+    fn test_parentheses_in_where_clause() {
+        // Initialize tracing for debug output
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init();
+
+        let mut table = DataTable::new("test");
+        table.add_column(DataColumn::new("id"));
+        table.add_column(DataColumn::new("status"));
+        table.add_column(DataColumn::new("priority"));
+
+        // Add test data
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(1),
+                DataValue::String("Pending".to_string()),
+                DataValue::String("High".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(2),
+                DataValue::String("Complete".to_string()),
+                DataValue::String("High".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(3),
+                DataValue::String("Pending".to_string()),
+                DataValue::String("Low".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(4),
+                DataValue::String("Complete".to_string()),
+                DataValue::String("Low".to_string()),
+            ]))
+            .unwrap();
+
+        let table = Arc::new(table);
+        let engine = QueryEngine::new();
+
+        println!("\n=== Testing Parentheses in WHERE clause ===");
+        println!("Table has {} rows", table.row_count());
+        for i in 0..table.row_count() {
+            let status = table.get_value(i, 1);
+            let priority = table.get_value(i, 2);
+            println!(
+                "Row {}: status = {:?}, priority = {:?}",
+                i, status, priority
+            );
+        }
+
+        // Test OR with parentheses - should get (Pending AND High) OR (Complete AND Low)
+        println!("\n--- Test: (status = 'Pending' AND priority = 'High') OR (status = 'Complete' AND priority = 'Low') ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE (status = 'Pending' AND priority = 'High') OR (status = 'Complete' AND priority = 'Low')",
+        );
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows with parenthetical logic",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 2); // Should find rows 1 and 4
+            }
+            Err(e) => {
+                panic!("Parentheses query failed: {}", e);
+            }
+        }
+
+        println!("\n=== Parentheses test complete! ===");
+    }
+
+    #[test]
+    fn test_numeric_type_coercion() {
+        // Initialize tracing for debug output
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init();
+
+        let mut table = DataTable::new("test");
+        table.add_column(DataColumn::new("id"));
+        table.add_column(DataColumn::new("price"));
+        table.add_column(DataColumn::new("quantity"));
+
+        // Add test data with different numeric types
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(1),
+                DataValue::Float(99.50), // Contains '.'
+                DataValue::Integer(100),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(2),
+                DataValue::Float(150.0), // Contains '.' and '0'
+                DataValue::Integer(200),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(3),
+                DataValue::Integer(75), // No decimal point
+                DataValue::Integer(50),
+            ]))
+            .unwrap();
+
+        let table = Arc::new(table);
+        let engine = QueryEngine::new();
+
+        println!("\n=== Testing Numeric Type Coercion ===");
+        println!("Table has {} rows", table.row_count());
+        for i in 0..table.row_count() {
+            let price = table.get_value(i, 1);
+            let quantity = table.get_value(i, 2);
+            println!("Row {}: price = {:?}, quantity = {:?}", i, price, quantity);
+        }
+
+        // Test Contains on float values - should find rows with decimal points
+        println!("\n--- Test: price.Contains('.') ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE price.Contains('.')",
+        );
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows with decimal points in price",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 2); // Should find 99.50 and 150.0
+            }
+            Err(e) => {
+                panic!("Numeric Contains query failed: {}", e);
+            }
+        }
+
+        // Test Contains on integer values converted to string
+        println!("\n--- Test: quantity.Contains('0') ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE quantity.Contains('0')",
+        );
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows with '0' in quantity",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 2); // Should find 100 and 200
+            }
+            Err(e) => {
+                panic!("Integer Contains query failed: {}", e);
+            }
+        }
+
+        println!("\n=== Numeric type coercion test complete! ===");
+    }
+
+    #[test]
+    fn test_datetime_comparisons() {
+        // Initialize tracing for debug output
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init();
+
+        let mut table = DataTable::new("test");
+        table.add_column(DataColumn::new("id"));
+        table.add_column(DataColumn::new("created_date"));
+
+        // Add test data with date strings (as they would come from CSV)
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(1),
+                DataValue::String("2024-12-15".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(2),
+                DataValue::String("2025-01-15".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(3),
+                DataValue::String("2025-02-15".to_string()),
+            ]))
+            .unwrap();
+
+        let table = Arc::new(table);
+        let engine = QueryEngine::new();
+
+        println!("\n=== Testing DateTime Comparisons ===");
+        println!("Table has {} rows", table.row_count());
+        for i in 0..table.row_count() {
+            let date = table.get_value(i, 1);
+            println!("Row {}: created_date = {:?}", i, date);
+        }
+
+        // Test DateTime constructor comparison - should find dates after 2025-01-01
+        println!("\n--- Test: created_date > DateTime(2025,1,1) ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE created_date > DateTime(2025,1,1)",
+        );
+        match result {
+            Ok(view) => {
+                println!("SUCCESS: Found {} rows after 2025-01-01", view.row_count());
+                assert_eq!(view.row_count(), 2); // Should find 2025-01-15 and 2025-02-15
+            }
+            Err(e) => {
+                panic!("DateTime comparison query failed: {}", e);
+            }
+        }
+
+        println!("\n=== DateTime comparison test complete! ===");
+    }
+
+    #[test]
+    fn test_not_with_method_calls() {
+        // Initialize tracing for debug output
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init();
+
+        let mut table = DataTable::new("test");
+        table.add_column(DataColumn::new("id"));
+        table.add_column(DataColumn::new("status"));
+
+        // Add test data
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(1),
+                DataValue::String("Pending Review".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(2),
+                DataValue::String("Complete".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(3),
+                DataValue::String("Pending Approval".to_string()),
+            ]))
+            .unwrap();
+
+        let table = Arc::new(table);
+        let engine = QueryEngine::with_case_insensitive(true);
+
+        println!("\n=== Testing NOT with Method Calls ===");
+        println!("Table has {} rows", table.row_count());
+        for i in 0..table.row_count() {
+            let status = table.get_value(i, 1);
+            println!("Row {}: status = {:?}", i, status);
+        }
+
+        // Test NOT with Contains - should exclude rows containing "pend"
+        println!("\n--- Test: NOT status.Contains('pend') ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE NOT status.Contains('pend')",
+        );
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows NOT containing 'pend'",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 1); // Should find only "Complete"
+            }
+            Err(e) => {
+                panic!("NOT Contains query failed: {}", e);
+            }
+        }
+
+        // Test NOT with StartsWith
+        println!("\n--- Test: NOT status.StartsWith('Pending') ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE NOT status.StartsWith('Pending')",
+        );
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows NOT starting with 'Pending'",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 1); // Should find only "Complete"
+            }
+            Err(e) => {
+                panic!("NOT StartsWith query failed: {}", e);
+            }
+        }
+
+        println!("\n=== NOT with method calls test complete! ===");
+    }
+
+    #[test]
+    fn test_complex_logical_expressions() {
+        // Initialize tracing for debug output
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init();
+
+        let mut table = DataTable::new("test");
+        table.add_column(DataColumn::new("id"));
+        table.add_column(DataColumn::new("status"));
+        table.add_column(DataColumn::new("priority"));
+        table.add_column(DataColumn::new("assigned"));
+
+        // Add comprehensive test data
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(1),
+                DataValue::String("Pending".to_string()),
+                DataValue::String("High".to_string()),
+                DataValue::String("John".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(2),
+                DataValue::String("Complete".to_string()),
+                DataValue::String("High".to_string()),
+                DataValue::String("Jane".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(3),
+                DataValue::String("Pending".to_string()),
+                DataValue::String("Low".to_string()),
+                DataValue::String("John".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(4),
+                DataValue::String("In Progress".to_string()),
+                DataValue::String("Medium".to_string()),
+                DataValue::String("Jane".to_string()),
+            ]))
+            .unwrap();
+
+        let table = Arc::new(table);
+        let engine = QueryEngine::new();
+
+        println!("\n=== Testing Complex Logical Expressions ===");
+        println!("Table has {} rows", table.row_count());
+        for i in 0..table.row_count() {
+            let status = table.get_value(i, 1);
+            let priority = table.get_value(i, 2);
+            let assigned = table.get_value(i, 3);
+            println!(
+                "Row {}: status = {:?}, priority = {:?}, assigned = {:?}",
+                i, status, priority, assigned
+            );
+        }
+
+        // Test complex AND/OR logic
+        println!("\n--- Test: status = 'Pending' AND (priority = 'High' OR assigned = 'John') ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE status = 'Pending' AND (priority = 'High' OR assigned = 'John')",
+        );
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows with complex logic",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 2); // Should find rows 1 and 3 (both Pending, one High priority, both assigned to John)
+            }
+            Err(e) => {
+                panic!("Complex logic query failed: {}", e);
+            }
+        }
+
+        // Test NOT with complex expressions
+        println!("\n--- Test: NOT (status.Contains('Complete') OR priority = 'Low') ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE NOT (status.Contains('Complete') OR priority = 'Low')",
+        );
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows with NOT complex logic",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 2); // Should find rows 1 (Pending+High) and 4 (In Progress+Medium)
+            }
+            Err(e) => {
+                panic!("NOT complex logic query failed: {}", e);
+            }
+        }
+
+        println!("\n=== Complex logical expressions test complete! ===");
+    }
+
+    #[test]
+    fn test_mixed_data_types_and_edge_cases() {
+        // Initialize tracing for debug output
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init();
+
+        let mut table = DataTable::new("test");
+        table.add_column(DataColumn::new("id"));
+        table.add_column(DataColumn::new("value"));
+        table.add_column(DataColumn::new("nullable_field"));
+
+        // Add test data with mixed types and edge cases
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(1),
+                DataValue::String("123.45".to_string()),
+                DataValue::String("present".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(2),
+                DataValue::Float(678.90),
+                DataValue::Null,
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(3),
+                DataValue::Boolean(true),
+                DataValue::String("also present".to_string()),
+            ]))
+            .unwrap();
+
+        table
+            .add_row(DataRow::new(vec![
+                DataValue::Integer(4),
+                DataValue::String("false".to_string()),
+                DataValue::Null,
+            ]))
+            .unwrap();
+
+        let table = Arc::new(table);
+        let engine = QueryEngine::new();
+
+        println!("\n=== Testing Mixed Data Types and Edge Cases ===");
+        println!("Table has {} rows", table.row_count());
+        for i in 0..table.row_count() {
+            let value = table.get_value(i, 1);
+            let nullable = table.get_value(i, 2);
+            println!(
+                "Row {}: value = {:?}, nullable_field = {:?}",
+                i, value, nullable
+            );
+        }
+
+        // Test type coercion with boolean Contains
+        println!("\n--- Test: value.Contains('true') (boolean to string coercion) ---");
+        let result = engine.execute(
+            table.clone(),
+            "SELECT * FROM test WHERE value.Contains('true')",
+        );
+        match result {
+            Ok(view) => {
+                println!(
+                    "SUCCESS: Found {} rows with boolean coercion",
+                    view.row_count()
+                );
+                assert_eq!(view.row_count(), 1); // Should find the boolean true row
+            }
+            Err(e) => {
+                panic!("Boolean coercion query failed: {}", e);
+            }
+        }
+
+        // Test multiple IN values with mixed types
+        println!("\n--- Test: id IN (1, 3) ---");
+        let result = engine.execute(table.clone(), "SELECT * FROM test WHERE id IN (1, 3)");
+        match result {
+            Ok(view) => {
+                println!("SUCCESS: Found {} rows with IN clause", view.row_count());
+                assert_eq!(view.row_count(), 2); // Should find rows with id 1 and 3
+            }
+            Err(e) => {
+                panic!("Multiple IN values query failed: {}", e);
+            }
+        }
+
+        println!("\n=== Mixed data types test complete! ===");
+    }
+
+    #[test]
     fn test_not_in_parsing() {
         use crate::sql::recursive_parser::Parser;
 

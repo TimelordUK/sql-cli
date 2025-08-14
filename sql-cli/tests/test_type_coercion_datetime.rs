@@ -56,7 +56,7 @@ fn test_type_coercion_contains() {
     );
 
     let table = Arc::new(table);
-    let engine = QueryEngine;
+    let engine = QueryEngine::new();
 
     // Test float column contains decimal point
     // Note: 20.00 is formatted as "20" without decimal, so only 10.5 and 15.75 contain '.'
@@ -103,7 +103,7 @@ fn test_type_coercion_starts_ends_with() {
     );
 
     let table = Arc::new(table);
-    let engine = QueryEngine;
+    let engine = QueryEngine::new();
 
     // Test integer StartsWith
     let result = engine
@@ -151,7 +151,7 @@ fn test_datetime_comparison() {
     );
 
     let table = Arc::new(table);
-    let engine = QueryEngine;
+    let engine = QueryEngine::new();
 
     // Test DateTime constructor comparison
     let result = engine
@@ -206,7 +206,7 @@ fn test_datetime_with_time() {
     );
 
     let table = Arc::new(table);
-    let engine = QueryEngine;
+    let engine = QueryEngine::new();
 
     // Test DateTime with time comparison
     let result = engine
@@ -257,7 +257,7 @@ fn test_datetime_today() {
     );
 
     let table = Arc::new(table);
-    let engine = QueryEngine;
+    let engine = QueryEngine::new();
 
     // Test DateTimeToday comparison
     // Note: This test may be flaky depending on system timezone - using explicit DateTime instead
@@ -295,7 +295,7 @@ fn test_boolean_type_coercion() {
     );
 
     let table = Arc::new(table);
-    let engine = QueryEngine;
+    let engine = QueryEngine::new();
 
     // Test boolean contains
     let result = engine
@@ -340,7 +340,7 @@ fn test_combined_type_coercion_and_datetime() {
     );
 
     let table = Arc::new(table);
-    let engine = QueryEngine;
+    let engine = QueryEngine::new();
 
     // Complex query with both type coercion and DateTime
     let result = engine

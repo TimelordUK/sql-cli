@@ -1,0 +1,4 @@
+id,counterPartyCountry,confirmationStatus
+1,CA,Pending
+2,US,Confirmed  
+3,ca,Pending

@@ -248,44 +248,158 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
             // DateTime comparisons
             (Some(DataValue::String(date_str)), op_str, ExprValue::DateTime(dt)) => {
-                // Try to parse the string as a datetime
+                debug!(
+                    "RecursiveWhereEvaluator: DateTime comparison '{}' {} '{}' - attempting parse",
+                    date_str,
+                    op_str,
+                    dt.format("%Y-%m-%d %H:%M:%S")
+                );
+
+                // Try to parse the string as a datetime - first try ISO 8601 with UTC
                 if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
-                    match op_str {
-                        "=" => Ok(parsed_dt == *dt),
-                        "!=" | "<>" => Ok(parsed_dt != *dt),
-                        ">" => Ok(parsed_dt > *dt),
-                        ">=" => Ok(parsed_dt >= *dt),
-                        "<" => Ok(parsed_dt < *dt),
-                        "<=" => Ok(parsed_dt <= *dt),
-                        _ => Ok(false),
-                    }
-                } else if let Ok(parsed_dt) =
+                    let result = match op_str {
+                        "=" => parsed_dt == *dt,
+                        "!=" | "<>" => parsed_dt != *dt,
+                        ">" => parsed_dt > *dt,
+                        ">=" => parsed_dt >= *dt,
+                        "<" => parsed_dt < *dt,
+                        "<=" => parsed_dt <= *dt,
+                        _ => false,
+                    };
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime parsed as UTC: '{}' {} '{}' = {}",
+                        parsed_dt.format("%Y-%m-%d %H:%M:%S"),
+                        op_str,
+                        dt.format("%Y-%m-%d %H:%M:%S"),
+                        result
+                    );
+                    Ok(result)
+                }
+                // Try ISO 8601 format without timezone (assume UTC)
+                else if let Ok(parsed_dt) =
+                    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S")
+                {
+                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
+                    let result = match op_str {
+                        "=" => parsed_utc == *dt,
+                        "!=" | "<>" => parsed_utc != *dt,
+                        ">" => parsed_utc > *dt,
+                        ">=" => parsed_utc >= *dt,
+                        "<" => parsed_utc < *dt,
+                        "<=" => parsed_utc <= *dt,
+                        _ => false,
+                    };
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime parsed as ISO 8601: '{}' {} '{}' = {}",
+                        parsed_utc.format("%Y-%m-%d %H:%M:%S"),
+                        op_str,
+                        dt.format("%Y-%m-%d %H:%M:%S"),
+                        result
+                    );
+                    Ok(result)
+                }
+                // Try standard datetime format
+                else if let Ok(parsed_dt) =
                     NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S")
                 {
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    match op_str {
-                        "=" => Ok(parsed_utc == *dt),
-                        "!=" | "<>" => Ok(parsed_utc != *dt),
-                        ">" => Ok(parsed_utc > *dt),
-                        ">=" => Ok(parsed_utc >= *dt),
-                        "<" => Ok(parsed_utc < *dt),
-                        "<=" => Ok(parsed_utc <= *dt),
-                        _ => Ok(false),
-                    }
-                } else if let Ok(parsed_date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                    let result = match op_str {
+                        "=" => parsed_utc == *dt,
+                        "!=" | "<>" => parsed_utc != *dt,
+                        ">" => parsed_utc > *dt,
+                        ">=" => parsed_utc >= *dt,
+                        "<" => parsed_utc < *dt,
+                        "<=" => parsed_utc <= *dt,
+                        _ => false,
+                    };
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime parsed as standard format: '{}' {} '{}' = {}",
+                        parsed_utc.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
+                    );
+                    Ok(result)
+                }
+                // Try date-only format
+                else if let Ok(parsed_date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
                     let parsed_dt =
                         NaiveDateTime::new(parsed_date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    match op_str {
-                        "=" => Ok(parsed_utc == *dt),
-                        "!=" | "<>" => Ok(parsed_utc != *dt),
-                        ">" => Ok(parsed_utc > *dt),
-                        ">=" => Ok(parsed_utc >= *dt),
-                        "<" => Ok(parsed_utc < *dt),
-                        "<=" => Ok(parsed_utc <= *dt),
-                        _ => Ok(false),
-                    }
+                    let result = match op_str {
+                        "=" => parsed_utc == *dt,
+                        "!=" | "<>" => parsed_utc != *dt,
+                        ">" => parsed_utc > *dt,
+                        ">=" => parsed_utc >= *dt,
+                        "<" => parsed_utc < *dt,
+                        "<=" => parsed_utc <= *dt,
+                        _ => false,
+                    };
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime parsed as date-only: '{}' {} '{}' = {}",
+                        parsed_utc.format("%Y-%m-%d %H:%M:%S"),
+                        op_str,
+                        dt.format("%Y-%m-%d %H:%M:%S"),
+                        result
+                    );
+                    Ok(result)
                 } else {
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
+                        date_str
+                    );
+                    Ok(false)
+                }
+            }
+
+            // DateTime vs DateTime comparisons (when column is already parsed as DateTime)
+            (Some(DataValue::DateTime(date_str)), op_str, ExprValue::DateTime(dt)) => {
+                debug!(
+                    "RecursiveWhereEvaluator: DateTime vs DateTime comparison '{}' {} '{}' - direct comparison",
+                    date_str, op_str, dt.format("%Y-%m-%d %H:%M:%S")
+                );
+
+                // Parse the DataValue::DateTime string to DateTime<Utc>
+                if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
+                    let result = match op_str {
+                        "=" => parsed_dt == *dt,
+                        "!=" | "<>" => parsed_dt != *dt,
+                        ">" => parsed_dt > *dt,
+                        ">=" => parsed_dt >= *dt,
+                        "<" => parsed_dt < *dt,
+                        "<=" => parsed_dt <= *dt,
+                        _ => false,
+                    };
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime vs DateTime parsed successfully: '{}' {} '{}' = {}",
+                        parsed_dt.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
+                    );
+                    Ok(result)
+                }
+                // Try ISO 8601 format without timezone (assume UTC)
+                else if let Ok(parsed_dt) =
+                    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S")
+                {
+                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
+                    let result = match op_str {
+                        "=" => parsed_utc == *dt,
+                        "!=" | "<>" => parsed_utc != *dt,
+                        ">" => parsed_utc > *dt,
+                        ">=" => parsed_utc >= *dt,
+                        "<" => parsed_utc < *dt,
+                        "<=" => parsed_utc <= *dt,
+                        _ => false,
+                    };
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime vs DateTime ISO 8601: '{}' {} '{}' = {}",
+                        parsed_utc.format("%Y-%m-%d %H:%M:%S"),
+                        op_str,
+                        dt.format("%Y-%m-%d %H:%M:%S"),
+                        result
+                    );
+                    Ok(result)
+                } else {
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime vs DateTime parse FAILED for '{}' - no matching format",
+                        date_str
+                    );
                     Ok(false)
                 }
             }

@@ -15,7 +15,7 @@ impl QueryEngineIntegration {
     pub fn execute_query(table: &DataTable, query: &str) -> Result<QueryResponse> {
         // Need an Arc for QueryEngine
         let table_arc = Arc::new(table.clone());
-        let engine = QueryEngine;
+        let engine = QueryEngine::new();
         let view = engine.execute(table_arc, query)?;
 
         // Convert DataView to QueryResponse format
@@ -30,7 +30,7 @@ impl QueryEngineIntegration {
     ) -> Result<QueryResponse> {
         // Need an Arc for QueryEngine
         let table_arc = Arc::new(table.clone());
-        let engine = QueryEngine;
+        let engine = QueryEngine::new();
         let mut view = engine.execute(table_arc, query)?;
 
         // Hide the specified columns
@@ -82,7 +82,7 @@ impl QueryEngineIntegration {
 
     /// Execute query and return DataView directly (for future optimized path)
     pub fn execute_to_view(table: Arc<DataTable>, query: &str) -> Result<DataView> {
-        let engine = QueryEngine;
+        let engine = QueryEngine::new();
         engine.execute(table, query)
     }
 
