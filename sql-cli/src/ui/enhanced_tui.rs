@@ -3609,7 +3609,7 @@ impl EnhancedTuiApp {
                     match dataview.pin_column_by_name(&col_name) {
                         Ok(_) => {
                             self.buffer_mut()
-                                .set_status_message(format!("Column '{}' pinned 📌", col_name));
+                                .set_status_message(format!("Column '{}' pinned [P]", col_name));
                         }
                         Err(e) => {
                             self.buffer_mut().set_status_message(e.to_string());
@@ -5627,8 +5627,8 @@ impl EnhancedTuiApp {
                 let pinned_names = dataview.get_pinned_column_names();
                 debug!(target: "render", "Checking if '{}' is pinned. Pinned columns: {:?}", header, pinned_names);
                 if pinned_names.contains(header) {
-                    debug!(target: "render", "Column '{}' IS pinned - adding 📌 indicator", header);
-                    " 📌"
+                    debug!(target: "render", "Column '{}' IS pinned - adding [P] indicator", header);
+                    " [P]"  // Using ASCII indicator instead of emoji for better compatibility
                 } else {
                     ""
                 }
