@@ -32,3 +32,7 @@ pub mod recursive_where_evaluator;
 pub mod simple_where;
 pub mod where_clause_converter;
 pub mod where_evaluator;
+
+// Test modules
+#[cfg(test)]
+mod test_type_coercion_datetime;

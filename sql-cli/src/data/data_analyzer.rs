@@ -9,10 +9,18 @@ static DATE_PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
 fn get_date_patterns() -> &'static Vec<Regex> {
     DATE_PATTERNS.get_or_init(|| {
         vec![
-            Regex::new(r"^\d{4}-\d{2}-\d{2}").unwrap(), // YYYY-MM-DD
-            Regex::new(r"^\d{2}/\d{2}/\d{4}").unwrap(), // MM/DD/YYYY
-            Regex::new(r"^\d{2}-\d{2}-\d{4}").unwrap(), // DD-MM-YYYY
-            Regex::new(r"^\d{4}/\d{2}/\d{2}").unwrap(), // YYYY/MM/DD
+            // More strict date patterns that won't match ID strings
+            // YYYY-MM-DD (year must be 19xx or 20xx)
+            Regex::new(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$").unwrap(),
+            // MM/DD/YYYY
+            Regex::new(r"^(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/(19|20)\d{2}$").unwrap(),
+            // DD-MM-YYYY
+            Regex::new(r"^(0[1-9]|[12]\d|3[01])-(0[1-9]|1[0-2])-(19|20)\d{2}$").unwrap(),
+            // YYYY/MM/DD
+            Regex::new(r"^(19|20)\d{2}/(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])$").unwrap(),
+            // ISO 8601 with time: YYYY-MM-DDTHH:MM:SS
+            Regex::new(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T\d{2}:\d{2}:\d{2}")
+                .unwrap(),
         ]
     })
 }

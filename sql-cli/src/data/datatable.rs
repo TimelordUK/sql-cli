@@ -40,14 +40,45 @@ impl DataType {
             return DataType::Float;
         }
 
-        // Check if it looks like a date/time
-        // Simple heuristic - contains dashes or colons in expected positions
-        if (value.contains('-') && value.len() >= 8) || (value.contains(':') && value.len() >= 5) {
-            // TODO: Proper date/time parsing
+        // Check if it looks like a date/time using more strict patterns
+        // Must match common date formats, not just any string with dashes
+        if Self::looks_like_datetime(value) {
             return DataType::DateTime;
         }
 
         DataType::String
+    }
+
+    /// Check if a string looks like a datetime value
+    /// Uses strict patterns to avoid false positives with ID strings
+    fn looks_like_datetime(value: &str) -> bool {
+        // Quick length check - dates are typically 8-30 chars
+        if value.len() < 8 || value.len() > 30 {
+            return false;
+        }
+
+        // Check common date patterns with strict validation
+        // These patterns ensure we have valid date components, not just any numbers with dashes
+        let date_patterns = [
+            // YYYY-MM-DD (year must be 19xx or 20xx, month 01-12, day 01-31)
+            regex::Regex::new(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])").unwrap(),
+            // MM/DD/YYYY or MM-DD-YYYY
+            regex::Regex::new(r"^(0[1-9]|1[0-2])[/-](0[1-9]|[12]\d|3[01])[/-](19|20)\d{2}")
+                .unwrap(),
+            // DD/MM/YYYY or DD-MM-YYYY
+            regex::Regex::new(r"^(0[1-9]|[12]\d|3[01])[/-](0[1-9]|1[0-2])[/-](19|20)\d{2}")
+                .unwrap(),
+            // ISO 8601 with time
+            regex::Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}").unwrap(),
+        ];
+
+        for pattern in &date_patterns {
+            if pattern.is_match(value) {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Merge two types (for columns with mixed types)
