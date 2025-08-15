@@ -173,7 +173,7 @@ impl HelpText {
             Line::from("    yc     - Yank current column"),
             Line::from("    ya     - Yank all data"),
             Line::from("    yq     - Yank current query"),
-            Line::from("  F2/Esc   - Back to command"),
+            Line::from("  i/F2/Esc - Back to command (i=vim insert)"),
             Line::from("  q        - Quit"),
             Line::from(""),
             Line::from("EXPORT DATA 📤").style(
@@ -212,6 +212,7 @@ impl HelpText {
             Line::from("  • Press N for row numbers"),
             Line::from("  • Press : then 200 → row 200"),
             Line::from("  • Vim counts: 5j, 10k, 3h, 7l"),
+            Line::from("  • Press 'i' for vim-style insert"),
             Line::from("  • Space locks viewport"),
             Line::from("  • Columns auto-adjust width"),
             Line::from("  • Named: :cache save q1"),

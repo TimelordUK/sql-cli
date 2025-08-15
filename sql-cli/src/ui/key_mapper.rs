@@ -115,6 +115,9 @@ impl KeyMapper {
         // F2 to switch to Command mode
         mappings.insert((F(2), Mod::NONE), Action::SwitchMode(AppMode::Command));
 
+        // Vim-style 'i' for insert/input mode (switch to Command)
+        mappings.insert((Char('i'), Mod::NONE), Action::SwitchMode(AppMode::Command));
+
         // Pinning
         mappings.insert((Char('p'), Mod::NONE), Action::ToggleColumnPin);
 
