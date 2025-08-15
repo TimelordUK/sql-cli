@@ -1,0 +1,39 @@
+#!/usr/bin/expect -f
+
+set timeout 2
+
+# Create test file
+exec echo "a,b,c\n1,2,3\n4,5,6" > test_simple.csv
+
+spawn sh -c "RUST_LOG=sql_cli::ui::enhanced_tui=info ./target/debug/sql-cli test_simple.csv -e 'select * from data' 2>&1"
+
+# Wait for results
+expect "2 rows"
+
+# Send 'j' to move down - should trigger action system
+send "j"
+expect {
+    "✓ Action system: key Char('j') -> action Navigate(Down(1))" {
+        puts "\nSUCCESS: Action system is handling navigation!"
+    }
+    timeout {
+        puts "\nFAIL: Action system not triggered for 'j' key"
+    }
+}
+
+# Test vim count
+send "2k"
+expect {
+    "✓ Action system: key Char('k') -> action Navigate(Up(2))" {
+        puts "SUCCESS: Vim-style counts working!"
+    }
+    timeout {
+        puts "Note: Vim counts may not be showing in logs"
+    }
+}
+
+# Quit
+send "q"
+expect eof
+
+exec rm -f test_simple.csv

@@ -1,0 +1,22 @@
+#!/usr/bin/expect -f
+set timeout 5
+spawn ./target/release/sql-cli test_filter_logging.csv
+
+# Wait for initial load
+expect "rows" {
+    sleep 0.5
+}
+
+# Press Shift+F to start filter mode
+send "\033\[1;2P"
+expect "Filter"
+sleep 0.5
+
+# Type "partial"
+send "partial"
+sleep 1
+
+# Exit
+send "q"
+send "q"
+expect eof
