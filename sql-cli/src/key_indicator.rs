@@ -26,7 +26,7 @@ impl KeyPressIndicator {
     pub fn new() -> Self {
         Self {
             key_history: VecDeque::with_capacity(10),
-            max_keys: 5,
+            max_keys: 10, // Allow up to 10 keys but fade will naturally limit display
             fade_start_ms: 500,
             fade_duration_ms: 1500,
             enabled: false, // Off by default
@@ -50,12 +50,12 @@ impl KeyPressIndicator {
         // Add new key
         self.key_history.push_back((key, Instant::now()));
 
-        // Remove old keys
+        // Remove old keys if we exceed capacity
         while self.key_history.len() > self.max_keys {
             self.key_history.pop_front();
         }
 
-        // Remove keys that have fully faded
+        // Remove keys that have fully faded (after fade_start + fade_duration)
         let fade_complete = self.fade_start_ms + self.fade_duration_ms;
         self.key_history
             .retain(|(_, time)| time.elapsed().as_millis() < fade_complete as u128);
