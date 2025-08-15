@@ -588,11 +588,6 @@ impl EnhancedTuiApp {
               mode);
     }
 
-    // Helper to clear input
-    fn clear_input(&mut self) {
-        self.set_input_text(String::new());
-    }
-
     // Helper to handle key events in the input
     fn handle_input_key(&mut self, key: KeyEvent) -> bool {
         // For special modes that handle input directly
@@ -4202,8 +4197,6 @@ impl EnhancedTuiApp {
 
             // Get matching columns from DataView
             let matching_columns = dataview.get_matching_columns();
-            let matches_len = matching_columns.len();
-
             // Update AppStateContainer with DataView's matches for compatibility
             let columns: Vec<(String, usize)> = matching_columns
                 .iter()
@@ -4737,8 +4730,6 @@ impl EnhancedTuiApp {
         }
     }
 
-    // Removed get_filtered_json_data - moved to YankManager::convert_filtered_to_json
-
     fn get_horizontal_scroll_offset(&self) -> u16 {
         // Delegate to cursor_manager (incremental refactoring)
         let (horizontal, _vertical) = self.cursor_manager.scroll_offsets();
@@ -4863,9 +4854,6 @@ impl EnhancedTuiApp {
         self.buffer_mut()
             .set_status_message(format!("Created new buffer #{}", index + 1));
     }
-
-    // DataTable buffer creation disabled during revert
-    // fn new_datatable_buffer(&mut self) { ... }
 
     /// Debug method to dump current buffer state (disabled to prevent TUI corruption)
     #[allow(dead_code)]

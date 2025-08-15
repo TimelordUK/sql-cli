@@ -132,19 +132,63 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             row_index, op
         );
 
-        // Get column value from left side
-        let column_name = self.extract_column_name(left)?;
-        debug!(
-            "RecursiveWhereEvaluator: evaluate_binary_op() - column_name = '{}'",
-            column_name
-        );
+        // Handle left side - could be a column or a method call
+        let (cell_value, column_name) = match left {
+            SqlExpression::MethodCall {
+                object,
+                method,
+                args,
+            } => {
+                // Handle method calls that return values (like Length())
+                match method.to_lowercase().as_str() {
+                    "length" => {
+                        if !args.is_empty() {
+                            return Err(anyhow::anyhow!("Length() takes no arguments"));
+                        }
+                        let col_index = self
+                            .table
+                            .get_column_index(object)
+                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
 
-        let col_index = self
-            .table
-            .get_column_index(&column_name)
-            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", column_name))?;
+                        let value = self.table.get_value(row_index, col_index);
+                        let length_value = match value {
+                            Some(DataValue::String(s)) => Some(DataValue::Integer(s.len() as i64)),
+                            Some(DataValue::Integer(n)) => {
+                                Some(DataValue::Integer(n.to_string().len() as i64))
+                            }
+                            Some(DataValue::Float(f)) => {
+                                Some(DataValue::Integer(f.to_string().len() as i64))
+                            }
+                            _ => Some(DataValue::Integer(0)),
+                        };
+                        (length_value, format!("{}.Length()", object))
+                    }
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "Method '{}' cannot be used in comparisons",
+                            method
+                        ));
+                    }
+                }
+            }
+            _ => {
+                // Regular column reference
+                let column_name = self.extract_column_name(left)?;
+                debug!(
+                    "RecursiveWhereEvaluator: evaluate_binary_op() - column_name = '{}'",
+                    column_name
+                );
 
-        let cell_value = self.table.get_value(row_index, col_index);
+                let col_index = self
+                    .table
+                    .get_column_index(&column_name)
+                    .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", column_name))?;
+
+                let cell_value = self.table.get_value(row_index, col_index);
+                (cell_value, column_name)
+            }
+        };
+
         debug!(
             "RecursiveWhereEvaluator: evaluate_binary_op() - row {} column '{}' value = {:?}",
             row_index, column_name, cell_value
