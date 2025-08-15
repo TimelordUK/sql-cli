@@ -70,6 +70,7 @@ pub enum Action {
     ToggleColumnPin,
     HideColumn,
     UnhideAllColumns,
+    HideEmptyColumns,
     MoveColumnLeft,
     MoveColumnRight,
     ClearAllPins,

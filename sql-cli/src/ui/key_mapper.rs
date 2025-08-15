@@ -140,6 +140,7 @@ impl KeyMapper {
             (Char('H'), Mod::CONTROL | Mod::SHIFT),
             Action::UnhideAllColumns,
         );
+        mappings.insert((Char('E'), Mod::NONE), Action::HideEmptyColumns);
         mappings.insert((Left, Mod::SHIFT), Action::MoveColumnLeft);
         mappings.insert((Right, Mod::SHIFT), Action::MoveColumnRight);
         mappings.insert((Char('/'), Mod::NONE), Action::StartColumnSearch);

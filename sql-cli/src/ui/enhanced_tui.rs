@@ -614,6 +614,24 @@ impl EnhancedTuiApp {
                 self.unhide_all_columns();
                 Ok(ActionResult::Handled)
             }
+            HideEmptyColumns => {
+                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                    let count = dataview.hide_empty_columns();
+                    let message = if count > 0 {
+                        format!(
+                            "Hidden {} empty columns (press Ctrl+Shift+H to unhide)",
+                            count
+                        )
+                    } else {
+                        "No empty columns found".to_string()
+                    };
+                    self.buffer_mut().set_status_message(message);
+                } else {
+                    self.buffer_mut()
+                        .set_status_message("No data to hide columns".to_string());
+                }
+                Ok(ActionResult::Handled)
+            }
             MoveColumnLeft => {
                 self.move_current_column_left();
                 Ok(ActionResult::Handled)

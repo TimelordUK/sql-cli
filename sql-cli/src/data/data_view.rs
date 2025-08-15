@@ -169,6 +169,52 @@ impl DataView {
         }
     }
 
+    /// Detect columns that are entirely empty (NULL or empty string) in visible rows
+    pub fn detect_empty_columns(&self) -> Vec<usize> {
+        let mut empty_columns = Vec::new();
+
+        // Check each visible column
+        for &col_idx in &self.visible_columns {
+            let mut is_empty = true;
+
+            // Sample rows to check if column has any non-empty values
+            // Check all visible rows up to a reasonable limit for performance
+            let rows_to_check = self.visible_rows.len().min(1000);
+
+            for &row_idx in self.visible_rows.iter().take(rows_to_check) {
+                if let Some(value) = self.source.get_value(row_idx, col_idx) {
+                    match value {
+                        DataValue::Null => continue,
+                        DataValue::String(s) if s.is_empty() => continue,
+                        _ => {
+                            is_empty = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if is_empty {
+                empty_columns.push(col_idx);
+            }
+        }
+
+        empty_columns
+    }
+
+    /// Hide all columns that are entirely empty
+    /// Returns the number of columns hidden
+    pub fn hide_empty_columns(&mut self) -> usize {
+        let empty_columns = self.detect_empty_columns();
+        let count = empty_columns.len();
+
+        for col_idx in empty_columns {
+            self.hide_column(col_idx);
+        }
+
+        count
+    }
+
     /// Unhide all columns (restore to the base column projection)
     /// This restores to the original column selection, not necessarily all source columns
     pub fn unhide_all_columns(&mut self) {
