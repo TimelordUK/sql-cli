@@ -94,6 +94,14 @@ fn print_help() {
     );
     println!("  {}      - Use classic CLI mode", "--classic".green());
     println!("  {}       - Use simple TUI mode", "--simple".green());
+    println!(
+        "  {}         - Launch action system debugger (TUI)",
+        "--keys".green()
+    );
+    println!(
+        "  {}  - Launch action system logger (console)",
+        "--keys-simple".green()
+    );
     println!();
     println!("{}", "Commands:".yellow());
     println!("  {}  - Execute query and fetch results", "Enter".green());
@@ -160,6 +168,49 @@ fn main() -> io::Result<()> {
             }
             Err(e) => {
                 eprintln!("Error initializing config: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Check for action debugger mode
+    if args.contains(&"--keys".to_string()) || args.contains(&"--keys-simple".to_string()) {
+        let use_simple = args.contains(&"--keys-simple".to_string());
+
+        if use_simple {
+            println!("Launching Action System Logger (Simple Version)...");
+            println!("This tool shows how keys map to actions in real-time.\n");
+        } else {
+            println!("Launching Action System Debugger...");
+            println!("This interactive TUI shows key mappings, history, and state.\n");
+        }
+
+        // Import what we need for the debugger
+        use std::process::Command;
+
+        // Choose which binary to run
+        let binary_name = if use_simple {
+            "action_logger"
+        } else {
+            "action_debugger"
+        };
+
+        // Run the selected binary
+        let status =
+            Command::new(std::env::current_exe()?.parent().unwrap().join(binary_name)).status();
+
+        match status {
+            Ok(exit_status) if exit_status.success() => return Ok(()),
+            Ok(_) => {
+                eprintln!("{} exited with error", binary_name);
+                std::process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("Failed to launch {}: {}", binary_name, e);
+                eprintln!(
+                    "Make sure it's built with: cargo build --bin {}",
+                    binary_name
+                );
                 std::process::exit(1);
             }
         }

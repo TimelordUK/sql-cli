@@ -1,0 +1,95 @@
+#!/usr/bin/expect -f
+
+set timeout 3
+spawn ./target/release/sql-cli test_nav.csv -e "select * from data"
+
+# Wait for results
+expect "10 rows"
+
+# Test arrow navigation (should go through new action system)
+send "j"
+expect {
+    timeout { puts "FAIL: j key navigation didn't work"; exit 1 }
+    "Row 2 of 10"
+}
+
+send "k"
+expect {
+    timeout { puts "FAIL: k key navigation didn't work"; exit 1 }
+    "Row 1 of 10"
+}
+
+send "l"
+expect {
+    timeout { puts "FAIL: l key navigation didn't work"; exit 1 }
+    "Col 2"
+}
+
+send "h"
+expect {
+    timeout { puts "FAIL: h key navigation didn't work"; exit 1 }
+    "Col 1"
+}
+
+# Test vim-style count motions (5j should move down 5 rows)
+send "5j"
+expect {
+    timeout { puts "FAIL: 5j navigation didn't work"; exit 1 }
+    "Row 6 of 10"
+}
+
+# Test page navigation
+send "G"
+expect {
+    timeout { puts "FAIL: G navigation didn't work"; exit 1 }
+    "Row 10 of 10"
+}
+
+send "g"
+expect {
+    timeout { puts "FAIL: g navigation didn't work"; exit 1 }
+    "Row 1 of 10"
+}
+
+# Test v key for selection mode toggle
+send "v"
+expect {
+    timeout { puts "FAIL: v key didn't toggle selection mode"; exit 1 }
+    "Cell mode"
+}
+
+send "v"
+expect {
+    timeout { puts "FAIL: v key didn't toggle back"; exit 1 }
+    "Row mode"
+}
+
+# Test F1 for help
+send "\033OP"
+expect {
+    timeout { puts "FAIL: F1 didn't show help"; exit 1 }
+    "Help"
+}
+
+send "\033"
+expect "Results"
+
+# Test sort
+send "s"
+expect {
+    timeout { puts "FAIL: sort didn't work"; exit 1 }
+    -re "Sort.*ascending|Sort.*descending"
+}
+
+# Test pin column
+send "p"
+expect {
+    timeout { puts "FAIL: pin column didn't work"; exit 1 }
+    -re "Pinned column|Unpinned column"
+}
+
+# Quit
+send "q"
+expect eof
+
+puts "SUCCESS: All navigation actions work through new system!"

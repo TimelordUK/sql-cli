@@ -21,7 +21,9 @@ use crate::sql::cache::QueryCache;
 use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::text_navigation::TextNavigator;
+use crate::ui::actions::{Action, ActionContext, ActionResult};
 use crate::ui::key_dispatcher::KeyDispatcher;
+use crate::ui::key_mapper::KeyMapper;
 use crate::utils::debug_info::DebugInfo;
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
@@ -122,6 +124,7 @@ pub struct EnhancedTuiApp {
     search_modes_widget: SearchModesWidget,
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
+    key_mapper: KeyMapper,              // New action-based key mapping system
 
     // Selection and clipboard
     last_yanked: Option<(String, String)>, // (description, value) of last yanked item
@@ -447,6 +450,159 @@ impl EnhancedTuiApp {
             .expect("No buffer available - this should not happen")
     }
 
+    /// Build action context from current state
+    fn build_action_context(&self) -> ActionContext {
+        let buffer = self.buffer();
+        let nav = self.state_container.navigation();
+
+        ActionContext {
+            mode: buffer.get_mode(),
+            selection_mode: self.state_container.get_selection_mode(),
+            has_results: buffer.get_dataview().is_some(),
+            has_filter: !buffer.get_filter_pattern().is_empty()
+                || !buffer.get_fuzzy_filter_pattern().is_empty(),
+            has_search: !buffer.get_search_pattern().is_empty(),
+            row_count: buffer.get_dataview().map_or(0, |v| v.row_count()),
+            column_count: buffer.get_dataview().map_or(0, |v| v.column_count()),
+            current_row: nav.selected_row,
+            current_column: nav.selected_column,
+        }
+    }
+
+    /// Try to handle an action using the new action system
+    fn try_handle_action(
+        &mut self,
+        action: Action,
+        _context: &ActionContext,
+    ) -> Result<ActionResult> {
+        use Action::*;
+
+        // For now, we'll gradually move handlers here
+        // Starting with navigation actions that are simplest
+        match action {
+            Navigate(nav_action) => {
+                use crate::ui::actions::NavigateAction::*;
+                match nav_action {
+                    Up(count) => {
+                        for _ in 0..count {
+                            self.previous_row();
+                        }
+                        Ok(ActionResult::Handled)
+                    }
+                    Down(count) => {
+                        for _ in 0..count {
+                            self.next_row();
+                        }
+                        Ok(ActionResult::Handled)
+                    }
+                    Left(count) => {
+                        for _ in 0..count {
+                            self.move_column_left();
+                        }
+                        Ok(ActionResult::Handled)
+                    }
+                    Right(count) => {
+                        for _ in 0..count {
+                            self.move_column_right();
+                        }
+                        Ok(ActionResult::Handled)
+                    }
+                    PageUp => {
+                        self.page_up();
+                        Ok(ActionResult::Handled)
+                    }
+                    PageDown => {
+                        self.page_down();
+                        Ok(ActionResult::Handled)
+                    }
+                    Home => {
+                        self.goto_first_row();
+                        Ok(ActionResult::Handled)
+                    }
+                    End => {
+                        self.goto_last_row();
+                        Ok(ActionResult::Handled)
+                    }
+                    FirstColumn => {
+                        self.goto_first_column();
+                        Ok(ActionResult::Handled)
+                    }
+                    LastColumn => {
+                        self.goto_last_column();
+                        Ok(ActionResult::Handled)
+                    }
+                    _ => Ok(ActionResult::NotHandled),
+                }
+            }
+            ToggleSelectionMode => {
+                self.state_container.toggle_selection_mode();
+                let new_mode = self.state_container.get_selection_mode();
+                let msg = match new_mode {
+                    SelectionMode::Cell => "Cell mode - Navigate to select individual cells",
+                    SelectionMode::Row => "Row mode - Navigate to select rows",
+                    SelectionMode::Column => "Column mode - Navigate to select columns",
+                };
+                self.buffer_mut().set_status_message(msg.to_string());
+                Ok(ActionResult::Handled)
+            }
+            Quit => Ok(ActionResult::Exit),
+            ForceQuit => Ok(ActionResult::Exit),
+            ShowHelp => {
+                self.state_container.set_help_visible(true);
+                self.buffer_mut().set_mode(AppMode::Help);
+                self.help_widget.on_enter();
+                Ok(ActionResult::Handled)
+            }
+            ShowDebugInfo => {
+                // Use the existing toggle_debug_mode which generates all debug info
+                self.toggle_debug_mode();
+                Ok(ActionResult::Handled)
+            }
+            ToggleColumnPin => {
+                self.toggle_column_pin();
+                Ok(ActionResult::Handled)
+            }
+            Sort(_column_idx) => {
+                // For now, always sort by current column (like 's' key does)
+                self.toggle_sort_current_column();
+                Ok(ActionResult::Handled)
+            }
+            ExitCurrentMode => {
+                // Handle escape from Results mode
+                self.buffer_mut().set_mode(AppMode::Command);
+                Ok(ActionResult::Handled)
+            }
+            SwitchMode(target_mode) => {
+                // Switch to the specified mode
+                // For Command->Results, only switch if we have results
+                if target_mode == AppMode::Results && !_context.has_results {
+                    // Can't switch to Results mode without results
+                    self.buffer_mut().set_status_message(
+                        "No results to display. Run a query first.".to_string(),
+                    );
+                    Ok(ActionResult::Handled)
+                } else {
+                    self.buffer_mut().set_mode(target_mode.clone());
+                    let msg = match target_mode {
+                        AppMode::Command => "Command mode - Enter SQL queries",
+                        AppMode::Results => {
+                            "Results mode - Navigate with arrows/hjkl, Tab for command"
+                        }
+                        _ => "",
+                    };
+                    if !msg.is_empty() {
+                        self.buffer_mut().set_status_message(msg.to_string());
+                    }
+                    Ok(ActionResult::Handled)
+                }
+            }
+            _ => {
+                // Action not yet implemented in new system
+                Ok(ActionResult::NotHandled)
+            }
+        }
+    }
+
     /// Get a DataProvider view of the current buffer
     /// This allows using the new trait-based data access pattern
     fn get_data_provider(&self) -> Option<Box<dyn DataProvider + '_>> {
@@ -739,6 +895,7 @@ impl EnhancedTuiApp {
             search_modes_widget: SearchModesWidget::new(),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
+            key_mapper: KeyMapper::new(),
             last_yanked: None,
             // CSV fields now in Buffer
             buffer_manager,
@@ -1023,6 +1180,33 @@ impl EnhancedTuiApp {
         self.state_container.log_key_press(normalized, action);
 
         let normalized_key = normalized;
+
+        // Try the new action system first (for Tab to switch modes)
+        let action_context = self.build_action_context();
+        if let Some(action) = self
+            .key_mapper
+            .map_key(normalized_key.clone(), &action_context)
+        {
+            info!(
+                "✓ Action system (Command): key {:?} -> action {:?}",
+                normalized_key.code, action
+            );
+            if let Ok(result) = self.try_handle_action(action, &action_context) {
+                match result {
+                    ActionResult::Handled => {
+                        debug!("Action handled by new system in Command mode");
+                        return Ok(false);
+                    }
+                    ActionResult::Exit => {
+                        return Ok(true);
+                    }
+                    ActionResult::NotHandled => {
+                        // Fall through to existing handling
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         // NEW: Try editor widget first for high-level actions
         let key_dispatcher = self.key_dispatcher.clone();
@@ -1648,6 +1832,45 @@ impl EnhancedTuiApp {
             .log_key_press(normalized, action.clone());
 
         let normalized_key = normalized;
+
+        // Try the new action system first
+        let action_context = self.build_action_context();
+        if let Some(action) = self
+            .key_mapper
+            .map_key(normalized_key.clone(), &action_context)
+        {
+            info!(
+                "✓ Action system: key {:?} -> action {:?}",
+                normalized_key.code, action
+            );
+            if let Ok(result) = self.try_handle_action(action, &action_context) {
+                match result {
+                    ActionResult::Handled => {
+                        debug!("Action handled by new system");
+                        return Ok(false);
+                    }
+                    ActionResult::Exit => {
+                        debug!("Action requested exit");
+                        return Ok(true);
+                    }
+                    ActionResult::SwitchMode(mode) => {
+                        debug!("Action requested mode switch to {:?}", mode);
+                        self.buffer_mut().set_mode(mode);
+                        return Ok(false);
+                    }
+                    ActionResult::Error(err) => {
+                        warn!("Action error: {}", err);
+                        self.buffer_mut()
+                            .set_status_message(format!("Error: {}", err));
+                        return Ok(false);
+                    }
+                    ActionResult::NotHandled => {
+                        // Fall through to existing handling
+                        debug!("Action not handled, falling back to legacy system");
+                    }
+                }
+            }
+        }
 
         // Debug uppercase G specifically
         if matches!(key.code, KeyCode::Char('G')) {

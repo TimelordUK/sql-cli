@@ -1,0 +1,35 @@
+#!/bin/bash
+
+echo "==============================================="
+echo "       SQL CLI Action System Debugger"
+echo "==============================================="
+echo ""
+echo "This tool shows how keys map to actions in real-time."
+echo ""
+echo "Try these keys to see the mapping:"
+echo "  • j, k, h, l    - Basic navigation"
+echo "  • 5j, 10k       - Vim-style counts"
+echo "  • Up/Down/Left  - Arrow keys"
+echo "  • PageUp/Down   - Page navigation"
+echo "  • Home/End      - Jump navigation"
+echo "  • v             - Toggle selection mode"
+echo "  • p             - Pin column action"
+echo "  • s             - Sort action"
+echo "  • F1            - Help action"
+echo "  • F5            - Debug action"
+echo "  • Esc           - Exit mode"
+echo "  • q             - Quit"
+echo ""
+echo "The debugger shows:"
+echo "  • Current mode and selection mode"
+echo "  • Count buffer (for vim-style counts)"
+echo "  • Action history (what each key mapped to)"
+echo "  • Raw key history"
+echo ""
+echo "Press Enter to start the debugger..."
+read
+
+./target/debug/action_debugger
+
+echo ""
+echo "Debugger exited."

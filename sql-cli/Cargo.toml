@@ -16,6 +16,14 @@ name = "dataview_debug"
 path = "src/bin/dataview_debug.rs"
 
 [[bin]]
+name = "action_debugger"
+path = "src/bin/action_debugger.rs"
+
+[[bin]]
+name = "action_logger"
+path = "src/bin/action_logger.rs"
+
+[[bin]]
 name = "test-csv"
 path = "integration_tests/test_csv.rs"
 
