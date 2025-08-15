@@ -1324,7 +1324,7 @@ impl EnhancedTuiApp {
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             buffer.set_compact_mode(app.config.display.compact_mode);
             buffer.set_show_row_numbers(app.config.display.show_row_numbers);
-            
+
             // Apply auto-hide empty columns if configured
             if app.config.behavior.hide_empty_columns {
                 if let Some(dataview) = buffer.get_dataview_mut() {
