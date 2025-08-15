@@ -66,10 +66,16 @@ pub enum Action {
     Yank(YankTarget),
     Paste,
 
+    // Column operations
+    ToggleColumnPin,
+    HideColumn,
+    UnhideAllColumns,
+    MoveColumnLeft,
+    MoveColumnRight,
+    ClearAllPins,
+
     // Data operations
     Sort(Option<usize>), // None = current column
-    ToggleColumnPin,
-    ClearAllPins,
     StartFilter,
     StartFuzzyFilter,
     ApplyFilter(String),

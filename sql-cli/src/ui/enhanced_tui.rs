@@ -606,6 +606,33 @@ impl EnhancedTuiApp {
                 self.toggle_sort_current_column();
                 Ok(ActionResult::Handled)
             }
+            HideColumn => {
+                self.hide_current_column();
+                Ok(ActionResult::Handled)
+            }
+            UnhideAllColumns => {
+                self.unhide_all_columns();
+                Ok(ActionResult::Handled)
+            }
+            MoveColumnLeft => {
+                self.move_current_column_left();
+                Ok(ActionResult::Handled)
+            }
+            MoveColumnRight => {
+                self.move_current_column_right();
+                Ok(ActionResult::Handled)
+            }
+            ClearAllPins => {
+                self.clear_all_pinned_columns();
+                Ok(ActionResult::Handled)
+            }
+            StartColumnSearch => {
+                self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                self.input = tui_input::Input::default();
+                self.buffer_mut()
+                    .set_status_message("Search columns (Enter to select):".to_string());
+                Ok(ActionResult::Handled)
+            }
             ExitCurrentMode => {
                 // Handle escape from Results mode
                 self.buffer_mut().set_mode(AppMode::Command);
@@ -2473,55 +2500,10 @@ impl EnhancedTuiApp {
                         .set_status_message("Cursor lock: OFF (cursor moves normally)".to_string());
                 }
             }
-            // Column visibility - Ctrl+H to hide current column
-            // Note: Some terminals may intercept Ctrl+H as backspace
-            KeyCode::Char('h')
-                if key.modifiers.contains(KeyModifiers::CONTROL)
-                    && !key.modifiers.contains(KeyModifiers::SHIFT) =>
-            {
-                debug!("Ctrl+H pressed in Results mode - hiding current column");
-                self.hide_current_column();
-            }
-            // Alternative: Backspace with Ctrl modifier (some terminals send this for Ctrl+H)
-            KeyCode::Backspace if normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
-                debug!("Ctrl+Backspace detected (may be Ctrl+H) - hiding current column");
-                self.hide_current_column();
-            }
-            // Alternative keybinding: Alt+H to hide column (more reliable across terminals)
-            KeyCode::Char('h') if normalized_key.modifiers.contains(KeyModifiers::ALT) => {
-                debug!("Alt+H pressed - hiding current column");
-                self.hide_current_column();
-            }
-            // Simple keybinding: minus key to hide column (only in Results mode)
-            KeyCode::Char('-') if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
-                debug!("Minus key pressed in Results mode - hiding current column");
-                self.hide_current_column();
-            }
-            // Plus key to unhide all columns (only in Results mode)
-            KeyCode::Char('+') | KeyCode::Char('=')
-                if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                debug!("Plus/equals key pressed in Results mode - unhiding all columns");
-                self.unhide_all_columns();
-            }
-            // Less-than key to move column left (only in Results mode)
-            KeyCode::Char('<') if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
-                debug!("< key pressed in Results mode - moving column left");
-                self.move_current_column_left();
-            }
-            // Greater-than key to move column right (only in Results mode)
-            KeyCode::Char('>') if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
-                debug!("> key pressed in Results mode - moving column right");
-                self.move_current_column_right();
-            }
-            // Column visibility - Ctrl+Shift+H to unhide all columns
-            KeyCode::Char('H')
-                if key.modifiers.contains(KeyModifiers::CONTROL)
-                    && key.modifiers.contains(KeyModifiers::SHIFT) =>
-            {
-                debug!("Ctrl+Shift+H pressed in Results mode - unhiding all columns");
-                self.unhide_all_columns();
-            }
+            // Column operations are now handled by the action system
+            // - 'H' to hide column
+            // - Ctrl+Shift+H to unhide all columns
+            // - Shift+Left/Right to move columns
             KeyCode::PageDown | KeyCode::Char('f')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {

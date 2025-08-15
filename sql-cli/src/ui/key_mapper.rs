@@ -133,8 +133,16 @@ impl KeyMapper {
             Action::SwitchModeWithCursor(AppMode::Command, CursorPosition::End),
         );
 
-        // Pinning
+        // Column operations
         mappings.insert((Char('p'), Mod::NONE), Action::ToggleColumnPin);
+        mappings.insert((Char('H'), Mod::NONE), Action::HideColumn);
+        mappings.insert(
+            (Char('H'), Mod::CONTROL | Mod::SHIFT),
+            Action::UnhideAllColumns,
+        );
+        mappings.insert((Left, Mod::SHIFT), Action::MoveColumnLeft);
+        mappings.insert((Right, Mod::SHIFT), Action::MoveColumnRight);
+        mappings.insert((Char('/'), Mod::NONE), Action::StartColumnSearch);
 
         // Sorting
         mappings.insert((Char('s'), Mod::NONE), Action::Sort(None));
