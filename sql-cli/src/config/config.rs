@@ -79,6 +79,9 @@ pub struct BehaviorConfig {
 
     /// Maximum history entries
     pub max_history_entries: usize,
+
+    /// Automatically hide empty/null columns on data load
+    pub hide_empty_columns: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,6 +207,7 @@ impl Default for BehaviorConfig {
             cache_dir: None,
             enable_history: true,
             max_history_entries: 1000,
+            hide_empty_columns: false,
         }
     }
 }
@@ -340,6 +344,9 @@ enable_history = true
 
 # Maximum number of history entries to keep
 max_history_entries = 1000
+
+# Automatically hide empty/null columns when data is loaded (can be toggled with 'E' key)
+hide_empty_columns = false
 
 [theme]
 # Color scheme: "default", "dark", "light", "solarized"

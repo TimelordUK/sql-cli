@@ -1372,6 +1372,21 @@ impl EnhancedTuiApp {
                     schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
                     e
                 ));
+            } else {
+                // Query executed successfully, check if we should auto-hide empty columns
+                if app.config.behavior.hide_empty_columns {
+                    if let Some(dataview) = app.buffer_mut().get_dataview_mut() {
+                        let count = dataview.hide_empty_columns();
+                        if count > 0 {
+                            app.buffer_mut().set_status_message(format!(
+                                "{} loaded: table '{}' - auto-hidden {} empty columns (press Ctrl+Shift+H to unhide)",
+                                file_type_str,
+                                table_name,
+                                count
+                            ));
+                        }
+                    }
+                }
             }
         }
 
