@@ -4689,6 +4689,27 @@ impl AppStateContainer {
                         // Convert to '>' character without SHIFT for consistency
                         KeyEvent::new(KeyCode::Char('>'), KeyModifiers::NONE)
                     }
+                    // Handle Windows specific case where column movement comes as '>' and '<' WITH SHIFT
+                    KeyCode::Char('<') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        if let Some(ref debug_service) = *self.debug_service.borrow() {
+                            debug_service.info(
+                                "KeyNormalize",
+                                format!("Windows: Shift+'<' -> '<' character for column movement"),
+                            );
+                        }
+                        // Remove SHIFT modifier to normalize for column movement
+                        KeyEvent::new(KeyCode::Char('<'), KeyModifiers::NONE)
+                    }
+                    KeyCode::Char('>') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        if let Some(ref debug_service) = *self.debug_service.borrow() {
+                            debug_service.info(
+                                "KeyNormalize",
+                                format!("Windows: Shift+'>' -> '>' character for column movement"),
+                            );
+                        }
+                        // Remove SHIFT modifier to normalize for column movement
+                        KeyEvent::new(KeyCode::Char('>'), KeyModifiers::NONE)
+                    }
                     _ => key,
                 }
             }
