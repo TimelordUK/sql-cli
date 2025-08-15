@@ -2359,34 +2359,8 @@ impl EnhancedTuiApp {
             KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.export_to_json();
             }
-            // Number keys for direct column sorting
-            KeyCode::Char(c) if c.is_ascii_digit() => {
-                if let Some(digit) = c.to_digit(10) {
-                    let column_index = (digit as usize).saturating_sub(1);
-                    // Use toggle_sort for proper 3-state cycling
-                    if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-                        if let Err(e) = dataview.toggle_sort(column_index) {
-                            self.buffer_mut()
-                                .set_status_message(format!("Sort error: {}", e));
-                        } else {
-                            // Get the new sort state for status message
-                            let sort_state = dataview.get_sort_state();
-                            let message = match sort_state.order {
-                                crate::data::data_view::SortOrder::Ascending => {
-                                    format!("Sorted column {} ascending", column_index + 1)
-                                }
-                                crate::data::data_view::SortOrder::Descending => {
-                                    format!("Sorted column {} descending", column_index + 1)
-                                }
-                                crate::data::data_view::SortOrder::None => {
-                                    format!("Cleared sort on column {}", column_index + 1)
-                                }
-                            };
-                            self.buffer_mut().set_status_message(message);
-                        }
-                    }
-                }
-            }
+            // Number keys now handled by action system for vim counts (5j, 3k, etc.)
+            // Direct column sorting moved to 's' key + column navigation
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.state_container.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
