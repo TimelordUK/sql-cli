@@ -129,7 +129,7 @@ fn main() -> io::Result<()> {
                     // No mapping
                     println!("│ {:6} │ (no mapping in Results mode)", key_str);
                 }
-                
+
                 // Flush stdout to ensure each line appears immediately
                 io::stdout().flush().unwrap();
 
