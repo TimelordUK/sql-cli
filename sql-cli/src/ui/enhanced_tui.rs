@@ -3425,6 +3425,9 @@ impl EnhancedTuiApp {
                 // Store the new DataView in buffer
                 self.buffer_mut().set_dataview(Some(new_dataview));
 
+                // Calculate optimal column widths for the new data
+                self.calculate_optimal_column_widths();
+
                 // Update status
                 self.buffer_mut().set_status_message(format!(
                     "Query executed: {} rows, {} columns ({} ms)",
@@ -4812,10 +4815,34 @@ impl EnhancedTuiApp {
             let headers = dataview.column_names();
             let mut widths = Vec::with_capacity(headers.len());
 
+            // Get terminal width to calculate better max_width
+            let terminal_width = crossterm::terminal::size()
+                .map(|(w, _)| w as usize)
+                .unwrap_or(80);
+
             // Use compact mode settings
             let compact = self.buffer().is_compact_mode();
             let min_width = if compact { 4 } else { 6 };
-            let max_width = if compact { 20 } else { 30 };
+
+            // Calculate dynamic max_width based on terminal size and column count
+            // Reserve some space for borders, scrollbars, etc (about 10 chars)
+            let available_width = terminal_width.saturating_sub(10);
+            let visible_cols = headers.len().min(12); // Estimate visible columns
+
+            // Allow columns to use more space on wide terminals
+            // But still have a reasonable max to prevent single columns from dominating
+            let dynamic_max = if visible_cols > 0 {
+                (available_width / visible_cols).max(30).min(80)
+            } else {
+                30
+            };
+
+            let max_width = if compact {
+                dynamic_max.min(40)
+            } else {
+                dynamic_max
+            };
+
             let padding = if compact { 1 } else { 2 };
 
             // PERF FIX: Only convert viewport rows to strings, not entire table!
@@ -6062,9 +6089,26 @@ impl EnhancedTuiApp {
 
         // Calculate space used by pinned columns
         let mut pinned_width = 0;
-        // PERF TEST: Commenting out get_column_widths() call to test performance
-        // let column_widths = provider.get_column_widths();
-        let column_widths = vec![15; headers.len()]; // Use fixed width for now
+        // Get actual column widths from provider or calculate them
+        let column_widths = if self.buffer().get_column_widths().is_empty() {
+            // If no calculated widths, estimate based on terminal width
+            let terminal_width = area.width as usize;
+            let available = terminal_width.saturating_sub(4);
+            let visible_cols = headers.len().min(12);
+            let estimated_width = if visible_cols > 0 {
+                (available / visible_cols).clamp(10, 50)
+            } else {
+                20
+            };
+            vec![estimated_width; headers.len()]
+        } else {
+            // Use calculated widths from buffer
+            self.buffer()
+                .get_column_widths()
+                .iter()
+                .map(|&w| w as usize)
+                .collect()
+        };
         for &(idx, _) in &pinned_headers {
             if idx < column_widths.len() {
                 pinned_width += column_widths[idx];

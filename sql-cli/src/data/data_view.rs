@@ -1340,6 +1340,54 @@ impl DataProvider for DataView {
     fn get_column_count(&self) -> usize {
         self.column_count()
     }
+
+    fn get_column_widths(&self) -> Vec<usize> {
+        // Calculate column widths based on visible data
+        let mut widths = vec![0; self.column_count()];
+
+        // Start with column name widths
+        for (i, name) in self.column_names().iter().enumerate() {
+            widths[i] = name.len();
+        }
+
+        // Sample visible rows for width calculation
+        // Only check first 100 visible rows for performance
+        let sample_size = 100.min(self.row_count());
+        for row_idx in 0..sample_size {
+            if let Some(row) = self.get_row(row_idx) {
+                for (col_idx, value) in row.values.iter().enumerate() {
+                    if col_idx < widths.len() {
+                        let display_len = value.to_string().len();
+                        widths[col_idx] = widths[col_idx].max(display_len);
+                    }
+                }
+            }
+        }
+
+        // Get terminal width to apply smart limits
+        let terminal_width = crossterm::terminal::size()
+            .map(|(w, _)| w as usize)
+            .unwrap_or(120);
+
+        // Calculate a reasonable max width based on terminal size
+        // Reserve space for borders, scrollbars, etc
+        let available_width = terminal_width.saturating_sub(10);
+        let visible_cols = self.visible_columns.len().min(10);
+
+        // Dynamic max width: divide available space, but cap at 80 chars
+        let dynamic_max = if visible_cols > 0 {
+            (available_width / visible_cols).min(80).max(20)
+        } else {
+            40
+        };
+
+        // Apply max width limit but ensure minimum readability
+        for width in &mut widths {
+            *width = (*width).clamp(6, dynamic_max);
+        }
+
+        widths
+    }
 }
 
 // Also implement Debug for DataView to satisfy DataProvider requirements
