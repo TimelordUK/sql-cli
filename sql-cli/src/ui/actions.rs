@@ -5,6 +5,29 @@ use crate::app_state_container::SelectionMode;
 use crate::buffer::AppMode;
 use anyhow::Result;
 
+/// Where to position the cursor when switching to Command mode
+#[derive(Debug, Clone, PartialEq)]
+pub enum CursorPosition {
+    /// Keep cursor at current position
+    Current,
+    /// Move cursor to end of input
+    End,
+    /// Move cursor after a specific SQL clause
+    AfterClause(SqlClause),
+}
+
+/// SQL clauses that can be targeted for cursor positioning
+#[derive(Debug, Clone, PartialEq)]
+pub enum SqlClause {
+    Select,
+    From,
+    Where,
+    OrderBy,
+    GroupBy,
+    Having,
+    Limit,
+}
+
 /// All possible actions that can be triggered in the UI
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
@@ -13,6 +36,7 @@ pub enum Action {
 
     // Mode switching
     SwitchMode(AppMode),
+    SwitchModeWithCursor(AppMode, CursorPosition),
     ToggleSelectionMode,
     ExitCurrentMode,
 

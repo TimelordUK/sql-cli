@@ -1,0 +1,80 @@
+#!/usr/bin/expect -f
+
+set timeout 5
+spawn ./target/release/sql-cli test_edit.csv
+
+# Wait for the app to start
+expect "SELECT * FROM data"
+
+# Test 1: Basic character input
+send "WHERE "
+expect "WHERE"
+
+# Test 2: Backspace
+send "\177"
+expect "WHER"
+
+# Test 3: Cursor movement - Home (Ctrl+A)
+send "\001"
+sleep 0.1
+
+# Test 4: Cursor movement - End (Ctrl+E)
+send "\005"
+sleep 0.1
+
+# Test 5: Delete word backward (Ctrl+W)
+send "\027"
+expect "SELECT * FROM"
+
+# Test 6: Type new text
+send " name = 'Alice'"
+expect "name = 'Alice'"
+
+# Test 7: Clear line (Ctrl+U)
+send "\025"
+expect "SELECT * FROM data"
+
+# Test 8: Type a query
+send "SELECT name FROM data"
+expect "SELECT name FROM data"
+
+# Test 9: Move cursor left with arrow
+send "\033\[D"
+send "\033\[D"
+send "\033\[D"
+send "\033\[D"
+sleep 0.1
+
+# Test 10: Insert text in middle
+send "WHERE id = 1 "
+expect "WHERE id = 1"
+
+# Test 11: Execute query
+send "\r"
+
+# Wait for results
+expect {
+    "Alice" { puts "\nTest PASSED: Query executed and results shown" }
+    timeout { puts "\nTest FAILED: Query did not execute properly" }
+}
+
+# Test 12: Switch to Results mode with F2
+send "\033OP"
+sleep 0.5
+
+# Test 13: Switch back to Command mode with i (vim-style)
+send "i"
+expect "SELECT"
+
+# Test 14: Undo (Ctrl+Z)
+send "\032"
+sleep 0.1
+
+# Test 15: Paste (Ctrl+V) - won't work in terminal but tests the key handling
+send "\026"
+sleep 0.1
+
+# Exit
+send "\003"
+
+expect eof

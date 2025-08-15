@@ -5,7 +5,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 
 use crate::buffer::AppMode;
-use crate::ui::actions::{Action, ActionContext, NavigateAction, YankTarget};
+use crate::ui::actions::{
+    Action, ActionContext, CursorPosition, NavigateAction, SqlClause, YankTarget,
+};
 
 /// Maps keyboard input to actions based on context
 pub struct KeyMapper {
@@ -17,6 +19,9 @@ pub struct KeyMapper {
 
     /// Vim-style count buffer for motions
     count_buffer: String,
+
+    /// Buffer for multi-character vim commands (e.g., 'wa', 'oa')
+    vim_command_buffer: String,
 }
 
 impl KeyMapper {
@@ -25,6 +30,7 @@ impl KeyMapper {
             global_mappings: HashMap::new(),
             mode_mappings: HashMap::new(),
             count_buffer: String::new(),
+            vim_command_buffer: String::new(),
         };
 
         mapper.init_global_mappings();
@@ -115,8 +121,17 @@ impl KeyMapper {
         // F2 to switch to Command mode
         mappings.insert((F(2), Mod::NONE), Action::SwitchMode(AppMode::Command));
 
-        // Vim-style 'i' for insert/input mode (switch to Command)
-        mappings.insert((Char('i'), Mod::NONE), Action::SwitchMode(AppMode::Command));
+        // Vim-style 'i' for insert/input mode (switch to Command at current position)
+        mappings.insert(
+            (Char('i'), Mod::NONE),
+            Action::SwitchModeWithCursor(AppMode::Command, CursorPosition::Current),
+        );
+
+        // Vim-style 'a' for append mode (switch to Command at end)
+        mappings.insert(
+            (Char('a'), Mod::NONE),
+            Action::SwitchModeWithCursor(AppMode::Command, CursorPosition::End),
+        );
 
         // Pinning
         mappings.insert((Char('p'), Mod::NONE), Action::ToggleColumnPin);
@@ -184,12 +199,70 @@ impl KeyMapper {
 
     /// Map a key event to an action based on current context
     pub fn map_key(&mut self, key: KeyEvent, context: &ActionContext) -> Option<Action> {
-        // Handle vim-style counts (e.g., "5j" for moving down 5 lines)
+        // Handle vim-style counts and commands in Results mode
         if context.mode == AppMode::Results {
             if let KeyCode::Char(c) = key.code {
-                if c.is_ascii_digit() && key.modifiers.is_empty() {
-                    self.count_buffer.push(c);
-                    return None; // Collecting count, no action yet
+                if key.modifiers.is_empty() {
+                    // Check if we're building a vim command
+                    if !self.vim_command_buffer.is_empty() {
+                        // We have a pending command, check for valid combinations
+                        let command = format!("{}{}", self.vim_command_buffer, c);
+                        let action = match command.as_str() {
+                            "wa" => {
+                                // Append after WHERE clause
+                                self.vim_command_buffer.clear();
+                                Some(Action::SwitchModeWithCursor(
+                                    AppMode::Command,
+                                    CursorPosition::AfterClause(SqlClause::Where),
+                                ))
+                            }
+                            "oa" => {
+                                // Append after ORDER BY clause
+                                self.vim_command_buffer.clear();
+                                Some(Action::SwitchModeWithCursor(
+                                    AppMode::Command,
+                                    CursorPosition::AfterClause(SqlClause::OrderBy),
+                                ))
+                            }
+                            "sa" => {
+                                // Append after SELECT clause
+                                self.vim_command_buffer.clear();
+                                Some(Action::SwitchModeWithCursor(
+                                    AppMode::Command,
+                                    CursorPosition::AfterClause(SqlClause::Select),
+                                ))
+                            }
+                            "ga" => {
+                                // Append after GROUP BY clause
+                                self.vim_command_buffer.clear();
+                                Some(Action::SwitchModeWithCursor(
+                                    AppMode::Command,
+                                    CursorPosition::AfterClause(SqlClause::GroupBy),
+                                ))
+                            }
+                            _ => {
+                                // Invalid command, clear buffer
+                                self.vim_command_buffer.clear();
+                                None
+                            }
+                        };
+
+                        if action.is_some() {
+                            return action;
+                        }
+                    }
+
+                    // Check if this starts a vim command sequence
+                    if matches!(c, 'w' | 'o' | 's' | 'g') {
+                        self.vim_command_buffer.push(c);
+                        return None; // Collecting command, no action yet
+                    }
+
+                    // Check for digits (vim counts)
+                    if c.is_ascii_digit() {
+                        self.count_buffer.push(c);
+                        return None; // Collecting count, no action yet
+                    }
                 }
             }
         }
@@ -261,9 +334,10 @@ impl KeyMapper {
         }
     }
 
-    /// Clear any pending state (like count buffer)
+    /// Clear any pending state (like count buffer and vim command buffer)
     pub fn clear_pending(&mut self) {
         self.count_buffer.clear();
+        self.vim_command_buffer.clear();
     }
 
     /// Check if we're collecting a count
@@ -437,5 +511,76 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         let action = mapper.map_key(key, &context);
         assert_eq!(action, Some(Action::ExecuteQuery));
+    }
+
+    #[test]
+    fn test_vim_style_append_modes() {
+        let mut mapper = KeyMapper::new();
+        let context = ActionContext {
+            mode: AppMode::Results,
+            selection_mode: SelectionMode::Row,
+            has_results: true,
+            has_filter: false,
+            has_search: false,
+            row_count: 100,
+            column_count: 10,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        // Test 'i' for insert at current
+        let key = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(
+            action,
+            Some(Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::Current
+            ))
+        );
+
+        // Test 'a' for append at end
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(
+            action,
+            Some(Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::End
+            ))
+        );
+
+        // Test 'wa' for append after WHERE
+        let key_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE);
+        let action_w = mapper.map_key(key_w, &context);
+        assert_eq!(action_w, None); // 'w' starts collecting command
+
+        let key_a = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        let action_wa = mapper.map_key(key_a, &context);
+        assert_eq!(
+            action_wa,
+            Some(Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::AfterClause(SqlClause::Where)
+            ))
+        );
+
+        // Reset mapper for next test
+        mapper.clear_pending();
+
+        // Test 'oa' for append after ORDER BY
+        let key_o = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE);
+        let action_o = mapper.map_key(key_o, &context);
+        assert_eq!(action_o, None); // 'o' starts collecting command
+
+        let key_a = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        let action_oa = mapper.map_key(key_a, &context);
+        assert_eq!(
+            action_oa,
+            Some(Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::AfterClause(SqlClause::OrderBy)
+            ))
+        );
     }
 }

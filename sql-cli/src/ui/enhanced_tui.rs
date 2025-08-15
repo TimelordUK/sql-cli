@@ -637,6 +637,111 @@ impl EnhancedTuiApp {
                     Ok(ActionResult::Handled)
                 }
             }
+            SwitchModeWithCursor(target_mode, cursor_position) => {
+                use crate::ui::actions::{CursorPosition, SqlClause};
+
+                // Switch to the target mode
+                self.buffer_mut().set_mode(target_mode.clone());
+
+                // Position the cursor based on the requested position
+                match cursor_position {
+                    CursorPosition::Current => {
+                        // Keep cursor where it is (do nothing)
+                    }
+                    CursorPosition::End => {
+                        // Move cursor to end of input
+                        let text_len = self.buffer().get_input_text().len();
+                        self.buffer_mut().set_input_cursor_position(text_len);
+                    }
+                    CursorPosition::AfterClause(clause) => {
+                        // Use the SQL parser to find the clause position
+                        let input_text = self.buffer().get_input_text();
+
+                        // Use the lexer to tokenize with positions
+                        use crate::sql::recursive_parser::Lexer;
+                        let mut lexer = Lexer::new(&input_text);
+                        let tokens = lexer.tokenize_all_with_positions();
+
+                        // Find the position after the specified clause
+                        let mut cursor_pos = None;
+                        for i in 0..tokens.len() {
+                            let (_, end_pos, ref token) = tokens[i];
+
+                            // Check if this token matches the clause we're looking for
+                            use crate::sql::recursive_parser::Token;
+                            let clause_matched = match (&clause, token) {
+                                (SqlClause::Select, Token::Select) => true,
+                                (SqlClause::From, Token::From) => true,
+                                (SqlClause::Where, Token::Where) => true,
+                                (SqlClause::OrderBy, Token::OrderBy) => true,
+                                (SqlClause::GroupBy, Token::GroupBy) => true,
+                                (SqlClause::Having, Token::Having) => true,
+                                (SqlClause::Limit, Token::Limit) => true,
+                                _ => false,
+                            };
+
+                            if clause_matched {
+                                // Find the end of this clause (before the next keyword or end of query)
+                                let mut clause_end = end_pos;
+
+                                // Skip to the next significant token after the clause keyword
+                                for j in (i + 1)..tokens.len() {
+                                    let (_, token_end, ref next_token) = tokens[j];
+
+                                    // Stop at the next SQL clause keyword
+                                    match next_token {
+                                        Token::Select
+                                        | Token::From
+                                        | Token::Where
+                                        | Token::OrderBy
+                                        | Token::GroupBy
+                                        | Token::Having
+                                        | Token::Limit => break,
+                                        _ => clause_end = token_end,
+                                    }
+                                }
+
+                                cursor_pos = Some(clause_end);
+                                break;
+                            }
+                        }
+
+                        // If we found the clause, position cursor after it
+                        // If not found, append at the end with the clause
+                        if let Some(pos) = cursor_pos {
+                            self.buffer_mut().set_input_cursor_position(pos);
+                        } else {
+                            // Clause not found, append it at the end
+                            let text_len = self.buffer().get_input_text().len();
+                            let clause_text = match clause {
+                                SqlClause::Where => " WHERE ",
+                                SqlClause::OrderBy => " ORDER BY ",
+                                SqlClause::GroupBy => " GROUP BY ",
+                                SqlClause::Having => " HAVING ",
+                                SqlClause::Limit => " LIMIT ",
+                                SqlClause::Select => "SELECT ",
+                                SqlClause::From => " FROM ",
+                            };
+
+                            let mut new_text = self.buffer().get_input_text();
+                            new_text.push_str(clause_text);
+                            self.buffer_mut().set_input_text(new_text.clone());
+                            self.buffer_mut().set_input_cursor_position(new_text.len());
+                        }
+                    }
+                }
+
+                // Update status message
+                let msg = match target_mode {
+                    AppMode::Command => "Command mode - Enter SQL queries",
+                    _ => "",
+                };
+                if !msg.is_empty() {
+                    self.buffer_mut().set_status_message(msg.to_string());
+                }
+
+                Ok(ActionResult::Handled)
+            }
 
             // Editing actions - only work in Command mode
             MoveCursorLeft => {
