@@ -92,6 +92,12 @@ macro_rules! log_state_clear {
     };
 }
 
+/// File type enum for unified file loading
+enum FileType {
+    Csv,
+    Json,
+}
+
 pub struct EnhancedTuiApp {
     // State container - manages all state
     state_container: std::sync::Arc<AppStateContainer>,
@@ -130,6 +136,9 @@ pub struct EnhancedTuiApp {
     // Cache
     query_cache: Option<QueryCache>,
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
+
+    // Data source tracking
+    data_source: Option<String>, // e.g., "trades.csv", "data.json", "https://api.example.com"
 
     // Visual enhancements
     cell_renderer: CellRenderer,
@@ -656,6 +665,13 @@ impl EnhancedTuiApp {
             Config::default()
         });
 
+        // Store API URL as data source if provided
+        let data_source = if !api_url.is_empty() {
+            Some(api_url.to_string())
+        } else {
+            None
+        };
+
         // Log initialization
         if let Some(logger) = dual_logging::get_dual_logger() {
             logger.log(
@@ -731,6 +747,7 @@ impl EnhancedTuiApp {
             render_timings: Vec::new(),
             query_cache: QueryCache::new().ok(),
             log_buffer: dual_logging::get_dual_logger().map(|logger| logger.ring_buffer().clone()),
+            data_source,
             cell_renderer: CellRenderer::new(config.theme.cell_selection_style.clone()),
             key_indicator: {
                 let mut indicator = KeyPressIndicator::new();
@@ -743,107 +760,22 @@ impl EnhancedTuiApp {
     }
 
     pub fn new_with_csv(csv_path: &str) -> Result<Self> {
-        // First create the app to get its config
-        let mut app = Self::new(""); // Empty API URL for CSV mode
-
-        let raw_name = std::path::Path::new(csv_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("data")
-            .to_string();
-
-        // Sanitize the table name to be SQL-friendly
-        let table_name = Self::sanitize_table_name(&raw_name);
-
-        // Direct DataTable loading is now the default for CSV files
-        info!("Using direct DataTable loading for CSV (bypassing JSON intermediate)");
-        crate::utils::memory_tracker::track_memory("before_direct_csv_load");
-
-        // Load CSV directly to DataTable
-        let datatable =
-            crate::data::datatable_loaders::load_csv_to_datatable(csv_path, &table_name)?;
-
-        crate::utils::memory_tracker::track_memory("after_direct_csv_load");
-        info!(
-            "Loaded {} rows directly to DataTable, memory: {} MB",
-            datatable.row_count(),
-            datatable.estimate_memory_size() / 1024 / 1024
-        );
-
-        // Create schema from DataTable columns
-        let mut schema = std::collections::HashMap::new();
-        schema.insert(table_name.clone(), datatable.column_names());
-
-        let (datatable_opt, schema) = (Some(datatable), schema);
-
-        // Replace the default buffer with a CSV buffer using direct DataTable
-        {
-            // Clear all buffers and add a CSV buffer
-            app.buffer_manager.clear_all();
-            // Direct DataTable mode - create buffer with both DataTable and CSV client
-            let mut buffer = buffer::Buffer::new(1);
-            buffer.set_datatable(datatable_opt);
-            info!("Created buffer with direct DataTable and CSV client fallback");
-            // Apply config settings to the buffer - use app's config
-            buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
-            buffer.set_compact_mode(app.config.display.compact_mode);
-            buffer.set_show_row_numbers(app.config.display.show_row_numbers);
-
-            info!(target: "buffer", "Configured CSV buffer with: compact_mode={}, case_insensitive={}, show_row_numbers={}",
-                  app.config.display.compact_mode,
-                  app.config.behavior.case_insensitive_default,
-                  app.config.display.show_row_numbers);
-            app.buffer_manager.add_buffer(buffer);
-        }
-
-        // Update parser with CSV columns
-        if let Some(columns) = schema.get(&table_name) {
-            // Update the parser with CSV columns
-            app.hybrid_parser
-                .update_single_table(table_name.clone(), columns.clone());
-            let display_msg = if raw_name != table_name {
-                format!(
-                    "CSV loaded: '{}' as table '{}' with {} columns",
-                    raw_name,
-                    table_name,
-                    columns.len()
-                )
-            } else {
-                format!(
-                    "CSV loaded: table '{}' with {} columns",
-                    table_name,
-                    columns.len()
-                )
-            };
-            app.buffer_mut().set_status_message(display_msg);
-        }
-
-        // Auto-execute SELECT * FROM table_name to show data immediately (if configured)
-        let auto_query = format!("SELECT * FROM {}", table_name);
-
-        // Populate the input field with the query for easy editing
-        app.set_input_text(auto_query.clone());
-
-        if app.config.behavior.auto_execute_on_load {
-            if let Err(e) = app.execute_query(&auto_query) {
-                // If auto-query fails, just log it in status but don't fail the load
-                app.buffer_mut().set_status_message(format!(
-                    "CSV loaded: table '{}' ({} columns) - Note: {}",
-                    table_name,
-                    schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
-                    e
-                ));
-            }
-        }
-
-        Ok(app)
+        Self::new_with_file(csv_path, FileType::Csv)
     }
 
     pub fn new_with_json(json_path: &str) -> Result<Self> {
-        // First create the app to get its config
-        let mut app = Self::new(""); // Empty API URL for JSON mode
+        Self::new_with_file(json_path, FileType::Json)
+    }
 
-        let raw_name = std::path::Path::new(json_path)
+    /// Unified function for loading both CSV and JSON files
+    fn new_with_file(file_path: &str, file_type: FileType) -> Result<Self> {
+        // First create the app to get its config
+        let mut app = Self::new(""); // Empty API URL for file mode
+
+        // Store the data source
+        app.data_source = Some(file_path.to_string());
+
+        let raw_name = std::path::Path::new(file_path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("data")
@@ -852,18 +784,33 @@ impl EnhancedTuiApp {
         // Sanitize the table name to be SQL-friendly
         let table_name = Self::sanitize_table_name(&raw_name);
 
-        // Direct DataTable loading for JSON files
-        info!("Using direct DataTable loading for JSON (bypassing intermediate format)");
-        crate::utils::memory_tracker::track_memory("before_direct_json_load");
+        // Direct DataTable loading
+        let (file_type_str, memory_before, memory_after) = match file_type {
+            FileType::Csv => ("CSV", "before_direct_csv_load", "after_direct_csv_load"),
+            FileType::Json => ("JSON", "before_direct_json_load", "after_direct_json_load"),
+        };
 
-        // Load JSON directly to DataTable
-        let datatable =
-            crate::data::datatable_loaders::load_json_to_datatable(json_path, &table_name)?;
-
-        crate::utils::memory_tracker::track_memory("after_direct_json_load");
         info!(
-            "Loaded {} rows directly to DataTable from JSON, memory: {} MB",
+            "Using direct DataTable loading for {} (bypassing intermediate format)",
+            file_type_str
+        );
+        crate::utils::memory_tracker::track_memory(memory_before);
+
+        // Load file directly to DataTable
+        let datatable = match file_type {
+            FileType::Csv => {
+                crate::data::datatable_loaders::load_csv_to_datatable(file_path, &table_name)?
+            }
+            FileType::Json => {
+                crate::data::datatable_loaders::load_json_to_datatable(file_path, &table_name)?
+            }
+        };
+
+        crate::utils::memory_tracker::track_memory(memory_after);
+        info!(
+            "Loaded {} rows directly to DataTable from {}, memory: {} MB",
             datatable.row_count(),
+            file_type_str,
             datatable.estimate_memory_size() / 1024 / 1024
         );
 
@@ -873,41 +820,43 @@ impl EnhancedTuiApp {
 
         let datatable_opt = Some(datatable);
 
-        // Replace the default buffer with a JSON buffer using direct DataTable
+        // Replace the default buffer with a file buffer using direct DataTable
         {
             // Clear all buffers and add a buffer with DataTable
             app.buffer_manager.clear_all();
             let mut buffer = buffer::Buffer::new(1);
             buffer.set_datatable(datatable_opt);
-            info!("Created buffer with direct DataTable and CSV client fallback");
+            info!("Created buffer with direct DataTable");
+
             // Apply config settings to the buffer - use app's config
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             buffer.set_compact_mode(app.config.display.compact_mode);
             buffer.set_show_row_numbers(app.config.display.show_row_numbers);
 
-            info!(target: "buffer", "Configured CSV buffer with: compact_mode={}, case_insensitive={}, show_row_numbers={}",
+            info!(target: "buffer", "Configured {} buffer with: compact_mode={}, case_insensitive={}, show_row_numbers={}",
+                  file_type_str,
                   app.config.display.compact_mode,
                   app.config.behavior.case_insensitive_default,
                   app.config.display.show_row_numbers);
             app.buffer_manager.add_buffer(buffer);
         }
 
-        // Buffer state is now initialized
-
-        // Update parser with JSON columns
+        // Update parser with file columns
         if let Some(columns) = schema.get(&table_name) {
             app.hybrid_parser
                 .update_single_table(table_name.clone(), columns.clone());
             let display_msg = if raw_name != table_name {
                 format!(
-                    "JSON loaded: '{}' as table '{}' with {} columns",
+                    "{} loaded: '{}' as table '{}' with {} columns",
+                    file_type_str,
                     raw_name,
                     table_name,
                     columns.len()
                 )
             } else {
                 format!(
-                    "JSON loaded: table '{}' with {} columns",
+                    "{} loaded: table '{}' with {} columns",
+                    file_type_str,
                     table_name,
                     columns.len()
                 )
@@ -925,7 +874,8 @@ impl EnhancedTuiApp {
             if let Err(e) = app.execute_query(&auto_query) {
                 // If auto-query fails, just log it in status but don't fail the load
                 app.buffer_mut().set_status_message(format!(
-                    "JSON loaded: table '{}' ({} columns) - Note: {}",
+                    "{} loaded: table '{}' ({} columns) - Note: {}",
+                    file_type_str,
                     table_name,
                     schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
                     e
@@ -2136,6 +2086,17 @@ impl EnhancedTuiApp {
             KeyCode::Char('S') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.calculate_column_statistics();
             }
+            // Toggle selection mode with 'v' (vim-like visual mode)
+            KeyCode::Char('v') => {
+                self.state_container.toggle_selection_mode();
+                let new_mode = self.state_container.get_selection_mode();
+                let msg = match new_mode {
+                    SelectionMode::Cell => "Cell mode - Navigate to select individual cells",
+                    SelectionMode::Row => "Row mode - Navigate to select rows",
+                    SelectionMode::Column => "Column mode - Navigate to select columns",
+                };
+                self.buffer_mut().set_status_message(msg.to_string());
+            }
             // Clipboard operations (vim-like yank)
             KeyCode::Char('y') => {
                 let selection_mode = self.get_selection_mode();
@@ -2216,7 +2177,8 @@ impl EnhancedTuiApp {
     }
 
     fn execute_search_action(&mut self, mode: SearchMode, pattern: String) {
-        debug!(target: "search", "execute_search_action called: mode={:?}, pattern='{}', current_app_mode={:?}", mode, pattern, self.buffer().get_mode());
+        debug!(target: "search", "execute_search_action called: mode={:?}, pattern='{}', current_app_mode={:?}, thread={:?}", 
+               mode, pattern, self.buffer().get_mode(), std::thread::current().id());
         match mode {
             SearchMode::Search => {
                 debug!(target: "search", "Executing search with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
@@ -2234,7 +2196,8 @@ impl EnhancedTuiApp {
                        matches_count);
             }
             SearchMode::Filter => {
-                debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
+                debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}, thread={:?}", 
+                       pattern, self.buffer().get_mode(), std::thread::current().id());
                 debug!(target: "search", "Filter: case_insensitive={}, current results count={}", 
                        self.buffer().is_case_insensitive(),
                        self.buffer().get_dataview().map(|v| v.source().row_count()).unwrap_or(0));
@@ -2242,6 +2205,7 @@ impl EnhancedTuiApp {
                 self.state_container
                     .filter_mut()
                     .set_pattern(pattern.clone());
+                self.apply_filter(&pattern); // <-- Actually apply the filter!
                 debug!(target: "search", "After apply_filter, app_mode={:?}, filtered_count={}", 
                        self.buffer().get_mode(),
                 self.buffer().get_dataview().map(|v| v.row_count()).unwrap_or(0));
@@ -2399,7 +2363,7 @@ impl EnhancedTuiApp {
                             filter.pattern = pattern.clone();
                             filter.is_active = true;
                         } // filter borrow ends here
-                        self.apply_filter("");
+                        self.apply_filter(&pattern); // Use the actual pattern, not empty string
                         debug!(target: "search", "Filter Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
                     }
                     SearchMode::FuzzyFilter => {
@@ -2622,7 +2586,9 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Results);
             }
             KeyCode::Enter => {
-                self.apply_filter("");
+                // Keep the filter applied with the current pattern
+                let pattern = self.state_container.filter().pattern.clone();
+                self.apply_filter(&pattern);
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
@@ -4044,17 +4010,49 @@ impl EnhancedTuiApp {
     }
 
     fn apply_filter(&mut self, pattern: &str) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // Simple re-entrancy detection without macros
+        static FILTER_DEPTH: AtomicUsize = AtomicUsize::new(0);
+        let depth = FILTER_DEPTH.fetch_add(1, Ordering::SeqCst);
+        if depth > 0 {
+            eprintln!(
+                "WARNING: apply_filter re-entrancy detected! depth={}, pattern='{}', thread={:?}",
+                depth,
+                pattern,
+                std::thread::current().id()
+            );
+        }
+
+        info!(
+            "Applying filter: '{}' on thread {:?}",
+            pattern,
+            std::thread::current().id()
+        );
         let case_insensitive = { self.buffer().is_case_insensitive() };
+
         if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            let rows_before = dataview.row_count();
+            info!("Rows before filter: {}", rows_before);
+
             dataview.apply_text_filter(pattern, !case_insensitive);
+
+            let rows_after = dataview.row_count();
+            info!("Rows after filter: {}", rows_after);
 
             let status = if pattern.is_empty() {
                 "Filter cleared".to_string()
             } else {
-                format!("Filter applied: {} matches", dataview.row_count())
+                format!("Filter applied: '{}' - {} matches", pattern, rows_after)
             };
+            info!("Filter status: {}", status);
             self.buffer_mut().set_status_message(status);
+        } else {
+            warn!("No DataView available for filtering");
         }
+
+        // Decrement re-entrancy counter
+        FILTER_DEPTH.fetch_sub(1, Ordering::SeqCst);
     }
     fn search_columns(&mut self) {
         let pattern = self.state_container.column_search().pattern.clone();
@@ -4168,6 +4166,10 @@ impl EnhancedTuiApp {
     }
 
     fn apply_fuzzy_filter(&mut self) {
+        info!(
+            "apply_fuzzy_filter called on thread {:?}",
+            std::thread::current().id()
+        );
         let pattern = self.buffer().get_fuzzy_filter_pattern();
         let case_insensitive = self.buffer().is_case_insensitive();
 
@@ -5173,6 +5175,27 @@ impl EnhancedTuiApp {
             Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
         ));
 
+        // Show data source
+        if let Some(ref source) = self.data_source {
+            spans.push(Span::raw(" "));
+            let source_display = if source.starts_with("http://") || source.starts_with("https://")
+            {
+                // For API endpoints, show a shortened version
+                format!("[API: {}]", source.split('/').nth(2).unwrap_or("unknown"))
+            } else {
+                // For files, show just the filename
+                let filename = std::path::Path::new(source)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(source);
+                format!("[{}]", filename)
+            };
+            spans.push(Span::styled(
+                source_display,
+                Style::default().fg(Color::Cyan),
+            ));
+        }
+
         // Show buffer information
         {
             let index = self.buffer_manager.current_index();
@@ -5753,28 +5776,37 @@ impl EnhancedTuiApp {
                 ""
             };
 
-            // Check if this column is pinned using DataView
-            // Note: 'header' already contains the column name from visible_columns
-            let pinned_indicator = if let Some(dataview) = self.buffer().get_dataview() {
-                let pinned_names = dataview.get_pinned_column_names();
-                debug!(target: "render", "Checking if '{}' is pinned. Pinned columns: {:?}", header, pinned_names);
-                if pinned_names.contains(header) {
-                    debug!(target: "render", "Column '{}' IS pinned - adding [P] indicator", header);
-                    " [P]"  // Using ASCII indicator instead of emoji for better compatibility
-                } else {
-                    ""
-                }
+            // No longer need [P] indicator since we use blue background for pinned columns
+            let pinned_indicator = "";
+
+            // Check if this column is pinned to determine styling
+            let is_pinned = if let Some(dataview) = self.buffer().get_dataview() {
+                dataview.get_pinned_column_names().contains(header)
             } else {
-                debug!(target: "render", "No DataView available - cannot check pinned status");
-                ""
+                false
             };
 
-            let mut style = Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD);
+            let mut style = if is_pinned {
+                // Pinned columns get a distinctive blue background with white text
+                Style::default()
+                    .bg(Color::Blue)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                // Regular columns keep the cyan color
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            };
 
             if *actual_col_index == self.buffer().get_current_column() {
-                style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+                if is_pinned {
+                    // Current pinned column gets yellow text on blue background
+                    style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+                } else {
+                    // Current regular column gets yellow text
+                    style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+                }
             }
 
             Cell::from(format!(
@@ -5823,6 +5855,16 @@ impl EnhancedTuiApp {
                     .map(|(actual_col, _)| *actual_col == current_column)
                     .unwrap_or(false);
 
+                // Check if this column is pinned
+                let is_pinned = visible_columns
+                    .get(col_idx)
+                    .and_then(|(_, col_name)| {
+                        self.buffer()
+                            .get_dataview()
+                            .map(|dv| dv.get_pinned_column_names().contains(col_name))
+                    })
+                    .unwrap_or(false);
+
                 let mut cell = Cell::from(val.clone());
 
                 // Check if THIS SPECIFIC CELL contains the fuzzy filter match
@@ -5861,17 +5903,47 @@ impl EnhancedTuiApp {
                     }
                 }
 
-                if is_current_row && is_selected_column {
-                    // Crosshair cell - both row and column selected (overrides fuzzy highlight)
+                // Get the current selection mode to determine styling
+                let selection_mode = self.state_container.get_selection_mode();
+
+                if selection_mode == SelectionMode::Cell && is_current_row && is_selected_column {
+                    // Cell mode: Only highlight the specific cell at the crosshair
                     cell.style(
                         Style::default()
                             .bg(Color::Yellow)
                             .fg(Color::Black)
                             .add_modifier(Modifier::BOLD),
                     )
+                } else if selection_mode == SelectionMode::Row && is_current_row {
+                    // Row mode: Highlight the entire row (this cell is part of the selected row)
+                    // But still show column highlight if it's the current column
+                    if is_selected_column {
+                        // Crosshair cell in row mode
+                        cell.style(
+                            Style::default()
+                                .bg(Color::Yellow)
+                                .fg(Color::Black)
+                                .add_modifier(Modifier::BOLD),
+                        )
+                    } else if is_pinned {
+                        // Pinned column in selected row
+                        cell.style(Style::default().bg(Color::Rgb(60, 80, 120)))
+                    } else {
+                        // Regular column in selected row
+                        cell.style(Style::default().bg(Color::Rgb(70, 70, 70)))
+                    }
                 } else if is_selected_column {
-                    // Column highlight
-                    cell.style(Style::default().bg(Color::Rgb(50, 50, 50)))
+                    // Column highlight (not in current row)
+                    if is_pinned {
+                        // Selected pinned column - slightly brighter blue background
+                        cell.style(Style::default().bg(Color::Rgb(40, 60, 100)))
+                    } else {
+                        // Selected regular column
+                        cell.style(Style::default().bg(Color::Rgb(50, 50, 50)))
+                    }
+                } else if is_pinned {
+                    // Pinned column data gets a very subtle blue tint
+                    cell.style(Style::default().bg(Color::Rgb(20, 30, 50)))
                 } else {
                     cell
                 }

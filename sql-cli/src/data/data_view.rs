@@ -3,6 +3,7 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use tracing::info;
 
 use crate::data::data_provider::DataProvider;
 use crate::data::datatable::{DataRow, DataTable, DataValue};
@@ -435,7 +436,15 @@ impl DataView {
 
     /// Apply a text filter to the view (filters visible rows)
     pub fn apply_text_filter(&mut self, pattern: &str, case_sensitive: bool) {
+        info!(
+            "DataView::apply_text_filter - pattern='{}', case_sensitive={}, thread={:?}",
+            pattern,
+            case_sensitive,
+            std::thread::current().id()
+        );
+
         if pattern.is_empty() {
+            info!("DataView::apply_text_filter - empty pattern, clearing filter");
             self.clear_filter();
             return;
         }
@@ -450,21 +459,54 @@ impl DataView {
             pattern.to_string()
         };
 
+        info!(
+            "DataView::apply_text_filter - searching for '{}' in {} base rows",
+            pattern_lower,
+            self.base_rows.len()
+        );
+
+        let mut matched_count = 0;
+        let mut checked_count = 0;
+
         self.visible_rows = self
             .base_rows
             .iter()
             .copied()
             .filter(|&row_idx| {
+                checked_count += 1;
+
                 // Check if any cell in the row contains the pattern
                 if let Some(row) = self.source.get_row(row_idx) {
+                    // Log first few rows for debugging
+                    if checked_count <= 3 {
+                        let preview = row
+                            .values
+                            .iter()
+                            .take(5)
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        info!(
+                            "DataView::apply_text_filter - row {} preview: {}",
+                            row_idx, preview
+                        );
+                    }
+
                     for value in &row.values {
                         let text = value.to_string();
                         let text_to_match = if !case_sensitive {
                             text.to_lowercase()
                         } else {
-                            text
+                            text.clone()
                         };
                         if text_to_match.contains(&pattern_lower) {
+                            matched_count += 1;
+                            if checked_count <= 3 {
+                                info!(
+                                    "DataView::apply_text_filter - MATCH in row {} cell: '{}'",
+                                    row_idx, text
+                                );
+                            }
                             return true;
                         }
                     }
@@ -472,6 +514,15 @@ impl DataView {
                 false
             })
             .collect();
+
+        info!(
+            "DataView::apply_text_filter - checked {} rows, matched {} rows",
+            checked_count, matched_count
+        );
+        info!(
+            "DataView::apply_text_filter - final visible rows: {}",
+            self.visible_rows.len()
+        );
     }
 
     /// Clear the filter and restore all base rows
@@ -493,7 +544,15 @@ impl DataView {
     /// Apply a fuzzy filter to the view
     /// Supports both fuzzy matching and exact matching (when pattern starts with ')
     pub fn apply_fuzzy_filter(&mut self, pattern: &str, case_insensitive: bool) {
+        info!(
+            "DataView::apply_fuzzy_filter - pattern='{}', case_insensitive={}, thread={:?}",
+            pattern,
+            case_insensitive,
+            std::thread::current().id()
+        );
+
         if pattern.is_empty() {
+            info!("DataView::apply_fuzzy_filter - empty pattern, clearing filter");
             self.clear_filter();
             return;
         }
