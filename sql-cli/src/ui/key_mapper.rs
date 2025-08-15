@@ -362,4 +362,80 @@ mod tests {
         let action = mapper.map_key(key, &context);
         assert_eq!(action, Some(Action::ShowHelp));
     }
+
+    #[test]
+    fn test_command_mode_editing_actions() {
+        let mut mapper = KeyMapper::new();
+        let context = ActionContext {
+            mode: AppMode::Command,
+            selection_mode: SelectionMode::Row,
+            has_results: false,
+            has_filter: false,
+            has_search: false,
+            row_count: 0,
+            column_count: 0,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        // Test character input
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::InsertChar('a')));
+
+        // Test uppercase character
+        let key = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::InsertChar('A')));
+
+        // Test backspace
+        let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::Backspace));
+
+        // Test delete
+        let key = KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::Delete));
+
+        // Test cursor movement - left
+        let key = KeyEvent::new(KeyCode::Left, KeyModifiers::NONE);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::MoveCursorLeft));
+
+        // Test cursor movement - right
+        let key = KeyEvent::new(KeyCode::Right, KeyModifiers::NONE);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::MoveCursorRight));
+
+        // Test Ctrl+A (home)
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::MoveCursorHome));
+
+        // Test Ctrl+E (end)
+        let key = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::MoveCursorEnd));
+
+        // Test Ctrl+U (clear line)
+        let key = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::ClearLine));
+
+        // Test Ctrl+W (delete word backward)
+        let key = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::DeleteWordBackward));
+
+        // Test Ctrl+Z (undo)
+        let key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::Undo));
+
+        // Test Enter (execute query)
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::ExecuteQuery));
+    }
 }
