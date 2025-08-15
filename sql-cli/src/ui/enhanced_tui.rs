@@ -571,6 +571,30 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_mode(AppMode::Command);
                 Ok(ActionResult::Handled)
             }
+            SwitchMode(target_mode) => {
+                // Switch to the specified mode
+                // For Command->Results, only switch if we have results
+                if target_mode == AppMode::Results && !_context.has_results {
+                    // Can't switch to Results mode without results
+                    self.buffer_mut().set_status_message(
+                        "No results to display. Run a query first.".to_string(),
+                    );
+                    Ok(ActionResult::Handled)
+                } else {
+                    self.buffer_mut().set_mode(target_mode.clone());
+                    let msg = match target_mode {
+                        AppMode::Command => "Command mode - Enter SQL queries",
+                        AppMode::Results => {
+                            "Results mode - Navigate with arrows/hjkl, Tab for command"
+                        }
+                        _ => "",
+                    };
+                    if !msg.is_empty() {
+                        self.buffer_mut().set_status_message(msg.to_string());
+                    }
+                    Ok(ActionResult::Handled)
+                }
+            }
             _ => {
                 // Action not yet implemented in new system
                 Ok(ActionResult::NotHandled)
@@ -1155,6 +1179,33 @@ impl EnhancedTuiApp {
         self.state_container.log_key_press(normalized, action);
 
         let normalized_key = normalized;
+
+        // Try the new action system first (for Tab to switch modes)
+        let action_context = self.build_action_context();
+        if let Some(action) = self
+            .key_mapper
+            .map_key(normalized_key.clone(), &action_context)
+        {
+            info!(
+                "✓ Action system (Command): key {:?} -> action {:?}",
+                normalized_key.code, action
+            );
+            if let Ok(result) = self.try_handle_action(action, &action_context) {
+                match result {
+                    ActionResult::Handled => {
+                        debug!("Action handled by new system in Command mode");
+                        return Ok(false);
+                    }
+                    ActionResult::Exit => {
+                        return Ok(true);
+                    }
+                    ActionResult::NotHandled => {
+                        // Fall through to existing handling
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         // NEW: Try editor widget first for high-level actions
         let key_dispatcher = self.key_dispatcher.clone();
@@ -1795,11 +1846,6 @@ impl EnhancedTuiApp {
                 match result {
                     ActionResult::Handled => {
                         debug!("Action handled by new system");
-                        // Temporary: Show status to confirm action system is working
-                        self.buffer_mut().set_status_message(format!(
-                            "✓ Action system handled: {:?}",
-                            normalized_key.code
-                        ));
                         return Ok(false);
                     }
                     ActionResult::Exit => {
