@@ -112,8 +112,8 @@ impl KeyMapper {
         mappings.insert((Esc, Mod::NONE), Action::ExitCurrentMode);
         mappings.insert((Char('q'), Mod::NONE), Action::Quit);
 
-        // Tab to switch to Command mode
-        mappings.insert((Tab, Mod::NONE), Action::SwitchMode(AppMode::Command));
+        // F2 to switch to Command mode
+        mappings.insert((F(2), Mod::NONE), Action::SwitchMode(AppMode::Command));
 
         // Pinning
         mappings.insert((Char('p'), Mod::NONE), Action::ToggleColumnPin);
@@ -135,8 +135,8 @@ impl KeyMapper {
         // Execute query
         mappings.insert((Enter, Mod::NONE), Action::ExecuteQuery);
 
-        // Tab to switch back to Results mode (if results exist)
-        mappings.insert((Tab, Mod::NONE), Action::SwitchMode(AppMode::Results));
+        // F2 to switch back to Results mode (if results exist)
+        mappings.insert((F(2), Mod::NONE), Action::SwitchMode(AppMode::Results));
 
         // Clear line
         mappings.insert((Char('u'), Mod::CONTROL), Action::ClearLine);

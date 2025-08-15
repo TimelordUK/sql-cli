@@ -1,28 +1,30 @@
-# Tab Key Mode Switching
+# F2 Key Mode Switching
 
 ## Overview
-Tab key now provides natural switching between Command and Results modes, making navigation more intuitive.
+F2 key provides natural switching between Command and Results modes, keeping Tab free for auto-completion.
 
 ## How It Works
 
 ### In Results Mode
-- **Tab** → Switch to Command mode (focus SQL input)
+- **F2** → Switch to Command mode (focus SQL input)
 - **Arrows/hjkl** → Navigate data (stay in Results)
 - **Esc** → Also switches to Command mode (preserved for compatibility)
 - **q** → Quit application
 
 ### In Command Mode  
-- **Tab** → Switch to Results mode (if results exist)
+- **F2** → Switch to Results mode (if results exist)
+- **Tab** → Auto-complete SQL keywords
 - **Enter** → Execute query
 - **Arrows** → Navigate command history
 - **Text input** → Type SQL queries
 
 ## Benefits
 
-1. **Natural Navigation**: Similar to standard SQL tools (pgAdmin, DBeaver)
-2. **No Confusion**: Arrow keys always navigate within current mode
-3. **No Accidental Switches**: No boundary-triggered mode changes
-4. **Predictable**: Tab always toggles between the two main modes
+1. **No Conflicts**: Tab remains dedicated to auto-completion
+2. **Simple**: F2 is easy to remember and press  
+3. **No Confusion**: Arrow keys always navigate within current mode
+4. **No Accidental Switches**: No boundary-triggered mode changes
+5. **Predictable**: F2 always toggles between the two main modes
 
 ## Testing
 
@@ -33,12 +35,12 @@ Tab key now provides natural switching between Command and Results modes, making
 # Or manually
 echo "id,name\n1,Alice\n2,Bob" > test.csv
 ./target/debug/sql-cli test.csv -e "select * from data"
-# Press Tab to switch modes
+# Press F2 to switch modes, Tab to complete
 ```
 
 ## Implementation
 
-- Added Tab mapping in `KeyMapper` for both modes
+- Added F2 mapping in `KeyMapper` for both modes
 - `SwitchMode` action handles the mode transition
 - Validates that results exist before switching to Results mode
 - Shows helpful status messages on mode switch
@@ -47,10 +49,11 @@ echo "id,name\n1,Alice\n2,Bob" > test.csv
 
 Before:
 - Had to use Esc to go from Results to Command
+- Tab conflicts with auto-completion
 - Arrow keys at boundaries could be confusing
-- Less intuitive for SQL tool users
 
 After:
-- Tab naturally toggles between modes
+- F2 cleanly toggles between modes
+- Tab remains dedicated to auto-completion
 - Arrow keys always do what you expect
-- Familiar to users of other SQL tools
+- No key conflicts

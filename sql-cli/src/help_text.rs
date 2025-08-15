@@ -22,6 +22,7 @@ impl HelpText {
             ),
             Line::from("  Enter    - Execute query"),
             Line::from("  Tab      - Auto-complete"),
+            Line::from("  F2       - Switch to Results mode"),
             Line::from("  Ctrl+R   - Search history"),
             Line::from("  Ctrl+P   - Previous command in history"),
             Line::from("  Ctrl+N   - Next command in history"),
@@ -172,7 +173,7 @@ impl HelpText {
             Line::from("    yc     - Yank current column"),
             Line::from("    ya     - Yank all data"),
             Line::from("    yq     - Yank current query"),
-            Line::from("  ↑/Esc    - Back to command"),
+            Line::from("  F2/Esc   - Back to command"),
             Line::from("  q        - Quit"),
             Line::from(""),
             Line::from("EXPORT DATA 📤").style(
