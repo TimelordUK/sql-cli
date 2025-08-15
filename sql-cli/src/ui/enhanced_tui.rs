@@ -554,7 +554,8 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             ShowDebugInfo => {
-                self.buffer_mut().set_mode(AppMode::Debug);
+                // Use the existing toggle_debug_mode which generates all debug info
+                self.toggle_debug_mode();
                 Ok(ActionResult::Handled)
             }
             ToggleColumnPin => {
