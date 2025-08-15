@@ -815,8 +815,9 @@ impl DataView {
     pub fn get_all_column_names(&self) -> Vec<String> {
         let mut result = Vec::new();
         let all_source_names = self.source.column_names();
+        // Use get_display_columns() to get columns in correct order (pinned first)
         let real_column_names: Vec<String> = self
-            .visible_columns
+            .get_display_columns()
             .iter()
             .map(|&i| {
                 all_source_names
@@ -1071,18 +1072,60 @@ impl DataView {
         self.column_search_pattern.is_some()
     }
 
+    /// Get only real column names (excluding virtual columns) in display order
+    fn get_real_column_names(&self) -> Vec<String> {
+        let all_source_names = self.source.column_names();
+        let display_columns = self.get_display_columns();
+
+        display_columns
+            .iter()
+            .filter_map(|&idx| all_source_names.get(idx).cloned())
+            .collect()
+    }
+
+    /// Extract only real column values from a row (excluding virtual column values)
+    fn extract_real_values_from_row(&self, full_row: &DataRow) -> Vec<DataValue> {
+        let mut real_values = Vec::new();
+        let mut value_idx = 0;
+
+        // Count left virtual columns to skip
+        let left_virtual_count = self
+            .virtual_columns
+            .iter()
+            .filter(|vc| matches!(vc.position, VirtualColumnPosition::Left))
+            .count();
+
+        // Skip left virtual columns
+        value_idx += left_virtual_count;
+
+        // Collect real column values
+        let real_column_count = self.get_display_columns().len();
+        for _ in 0..real_column_count {
+            if value_idx < full_row.values.len() {
+                real_values.push(full_row.values[value_idx].clone());
+                value_idx += 1;
+            }
+        }
+
+        real_values
+    }
+
     /// Export the visible data as JSON
     /// Returns an array of objects where each object represents a row
     pub fn to_json(&self) -> Value {
-        let column_names = self.column_names();
+        // Use only real columns for export, not virtual columns
+        let column_names = self.get_real_column_names();
         let mut rows = Vec::new();
 
         // Iterate through visible rows
         for row_idx in 0..self.row_count() {
-            if let Some(row) = self.get_row(row_idx) {
+            if let Some(full_row) = self.get_row(row_idx) {
+                // Extract only the real column values (skip virtual columns)
+                let real_values = self.extract_real_values_from_row(&full_row);
+
                 let mut obj = serde_json::Map::new();
                 for (col_idx, col_name) in column_names.iter().enumerate() {
-                    if let Some(value) = row.values.get(col_idx) {
+                    if let Some(value) = real_values.get(col_idx) {
                         let json_value = match value {
                             DataValue::String(s) => json!(s),
                             DataValue::Integer(i) => json!(i),
@@ -1104,7 +1147,8 @@ impl DataView {
     /// Export the visible data as CSV string
     pub fn to_csv(&self) -> Result<String> {
         let mut csv_output = String::new();
-        let column_names = self.column_names();
+        // Use only real columns for export, not virtual columns
+        let column_names = self.get_real_column_names();
 
         // Write header
         csv_output.push_str(&column_names.join(","));
@@ -1112,9 +1156,11 @@ impl DataView {
 
         // Write data rows
         for row_idx in 0..self.row_count() {
-            if let Some(row) = self.get_row(row_idx) {
-                let row_strings: Vec<String> = row
-                    .values
+            if let Some(full_row) = self.get_row(row_idx) {
+                // Extract only the real column values (skip virtual columns)
+                let real_values = self.extract_real_values_from_row(&full_row);
+
+                let row_strings: Vec<String> = real_values
                     .iter()
                     .map(|v| {
                         let s = v.to_string();
@@ -1137,7 +1183,8 @@ impl DataView {
     /// Export the visible data as TSV (Tab-Separated Values) string
     pub fn to_tsv(&self) -> Result<String> {
         let mut tsv_output = String::new();
-        let column_names = self.column_names();
+        // Use only real columns for export, not virtual columns
+        let column_names = self.get_real_column_names();
 
         // Write header
         tsv_output.push_str(&column_names.join("\t"));
@@ -1145,8 +1192,11 @@ impl DataView {
 
         // Write data rows
         for row_idx in 0..self.row_count() {
-            if let Some(row) = self.get_row(row_idx) {
-                let row_strings: Vec<String> = row.values.iter().map(|v| v.to_string()).collect();
+            if let Some(full_row) = self.get_row(row_idx) {
+                // Extract only the real column values (skip virtual columns)
+                let real_values = self.extract_real_values_from_row(&full_row);
+
+                let row_strings: Vec<String> = real_values.iter().map(|v| v.to_string()).collect();
                 tsv_output.push_str(&row_strings.join("\t"));
                 tsv_output.push('\n');
             }
