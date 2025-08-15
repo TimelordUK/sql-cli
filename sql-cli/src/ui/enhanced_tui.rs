@@ -2613,6 +2613,8 @@ impl EnhancedTuiApp {
             KeyCode::Esc => {
                 // Clear filter state using AppStateContainer
                 self.state_container.filter_mut().clear();
+                // Clear the filter in DataView
+                self.apply_filter("");
                 // Restore original SQL query
                 if let Some((original_query, cursor_pos)) = self.buffer_mut().pop_undo() {
                     self.set_input_text_with_cursor(original_query, cursor_pos);
@@ -2635,6 +2637,8 @@ impl EnhancedTuiApp {
                 };
                 // Update input for rendering
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
+                // Apply the filter to the DataView
+                self.apply_filter(&pattern);
             }
             KeyCode::Char(c) => {
                 let pattern = {
@@ -2644,6 +2648,8 @@ impl EnhancedTuiApp {
                 };
                 // Update input for rendering
                 self.set_input_text_with_cursor(pattern.clone(), pattern.len());
+                // Apply the filter to the DataView
+                self.apply_filter(&pattern);
             }
             _ => {}
         }
