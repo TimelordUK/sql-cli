@@ -17,7 +17,7 @@ use tracing::debug;
 use tui_input::Input;
 
 // Re-define the types we need (these should eventually be moved to a common module)
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum AppMode {
     Command,
     Results,
