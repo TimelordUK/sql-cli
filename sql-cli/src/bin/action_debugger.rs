@@ -13,6 +13,7 @@ use ratatui::{
 };
 use sql_cli::app_state_container::SelectionMode;
 use sql_cli::buffer::AppMode;
+use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
 use sql_cli::ui::actions::{Action, ActionContext};
 use sql_cli::ui::key_mapper::KeyMapper;
 use std::collections::VecDeque;
@@ -22,11 +23,13 @@ const MAX_HISTORY: usize = 20;
 
 struct ActionDebugger {
     key_mapper: KeyMapper,
+    chord_handler: KeyChordHandler,
     action_history: VecDeque<String>,
     key_history: VecDeque<String>,
     current_mode: AppMode,
     selection_mode: SelectionMode,
     count_buffer: String,
+    chord_status: Option<String>,
     should_quit: bool,
 }
 
@@ -34,11 +37,13 @@ impl ActionDebugger {
     fn new() -> Self {
         Self {
             key_mapper: KeyMapper::new(),
+            chord_handler: KeyChordHandler::new(),
             action_history: VecDeque::new(),
             key_history: VecDeque::new(),
             current_mode: AppMode::Results,
             selection_mode: SelectionMode::Row,
             count_buffer: String::new(),
+            chord_status: None,
             should_quit: false,
         }
     }
@@ -63,6 +68,53 @@ impl ActionDebugger {
         self.key_history.push_front(key_str.clone());
         if self.key_history.len() > MAX_HISTORY {
             self.key_history.pop_back();
+        }
+
+        // Process through chord handler first (for Results mode)
+        if self.current_mode == AppMode::Results {
+            let chord_result = self.chord_handler.process_key(key);
+
+            match chord_result {
+                ChordResult::CompleteChord(action_name) => {
+                    let msg = format!(
+                        "Chord completed: '{}' → {}",
+                        self.chord_handler
+                            .format_debug_info()
+                            .lines()
+                            .find(|l| l.starts_with("Current chord:"))
+                            .unwrap_or("??"),
+                        action_name
+                    );
+                    self.action_history.push_front(msg);
+                    if self.action_history.len() > MAX_HISTORY {
+                        self.action_history.pop_back();
+                    }
+                    self.chord_status = None;
+                    return;
+                }
+                ChordResult::PartialChord(description) => {
+                    self.chord_status = Some(description);
+                    let msg = format!("Chord partial: '{}'", key_str);
+                    self.action_history.push_front(msg);
+                    if self.action_history.len() > MAX_HISTORY {
+                        self.action_history.pop_back();
+                    }
+                    return;
+                }
+                ChordResult::Cancelled => {
+                    self.chord_status = None;
+                    let msg = format!("Chord cancelled");
+                    self.action_history.push_front(msg);
+                    if self.action_history.len() > MAX_HISTORY {
+                        self.action_history.pop_back();
+                    }
+                    return;
+                }
+                ChordResult::SingleKey(_) => {
+                    self.chord_status = None;
+                    // Continue with normal key processing
+                }
+            }
         }
 
         // Check if we're collecting a count
@@ -182,6 +234,17 @@ impl ActionDebugger {
                             .fg(Color::Magenta)
                             .add_modifier(Modifier::BOLD),
                     )
+                },
+                Span::raw("  Chord: "),
+                if let Some(ref status) = self.chord_status {
+                    Span::styled(
+                        status,
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    Span::styled("(none)", Style::default().fg(Color::DarkGray))
                 },
             ]),
             Line::from(""),

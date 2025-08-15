@@ -4,6 +4,7 @@ use crossterm::{
 };
 use sql_cli::app_state_container::SelectionMode;
 use sql_cli::buffer::AppMode;
+use sql_cli::key_chord_handler::{ChordResult, KeyChordHandler};
 use sql_cli::ui::actions::{Action, ActionContext};
 use sql_cli::ui::key_mapper::KeyMapper;
 use std::io::{self, Write};
@@ -73,6 +74,7 @@ fn main() -> io::Result<()> {
     enable_raw_mode()?;
 
     let mut key_mapper = KeyMapper::new();
+    let mut chord_handler = KeyChordHandler::new();
     let mut count_display = String::new();
 
     loop {
@@ -84,6 +86,40 @@ fn main() -> io::Result<()> {
                 }
 
                 let key_str = format_key(&key);
+
+                // Debug: show if chord is active before processing
+                if chord_handler.is_chord_mode_active() {
+                    println!("│ {:6} │ [Chord active, processing...]", key_str);
+                }
+
+                // Process through chord handler first
+                let chord_result = chord_handler.process_key(key);
+
+                match chord_result {
+                    ChordResult::CompleteChord(action_name) => {
+                        println!("│ {:6} │ CHORD COMPLETE => {}", key_str, action_name);
+                        io::stdout().flush().unwrap();
+
+                        // Reset for q to quit
+                        if action_name == "quit" {
+                            break;
+                        }
+                        continue;
+                    }
+                    ChordResult::PartialChord(description) => {
+                        println!("│ {:6} │ CHORD: {}", key_str, description);
+                        io::stdout().flush().unwrap();
+                        continue;
+                    }
+                    ChordResult::Cancelled => {
+                        println!("│ {:6} │ CHORD CANCELLED", key_str);
+                        io::stdout().flush().unwrap();
+                        continue;
+                    }
+                    ChordResult::SingleKey(_) => {
+                        // Continue with normal processing
+                    }
+                }
 
                 // Build context
                 let context = ActionContext {

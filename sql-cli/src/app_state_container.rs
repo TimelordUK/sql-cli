@@ -18,7 +18,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::time::{Duration, Instant};
-use tracing::info;
+use tracing::{debug, error, info, trace};
 
 /// Platform type for key handling
 #[derive(Debug, Clone, PartialEq)]
@@ -3982,8 +3982,23 @@ impl AppStateContainer {
         let description = format!("cell at [{}, {}]", row, column);
         let size_bytes = value.len();
 
+        trace!(
+            "yank_cell: Starting clipboard write for {} ({} bytes)",
+            description,
+            size_bytes
+        );
+        trace!(
+            "yank_cell: Value preview: '{}'",
+            if value.len() > 50 {
+                &value[..50]
+            } else {
+                &value
+            }
+        );
+
         // Copy to system clipboard
         let mut system_clipboard = Clipboard::new()?;
+        trace!("yank_cell: Setting clipboard text ({} bytes)", value.len());
         system_clipboard.set_text(&value)?;
 
         // Verify clipboard write

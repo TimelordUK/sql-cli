@@ -1258,6 +1258,67 @@ impl DataView {
 
         Ok(tsv_output)
     }
+
+    /// Get all values from a specific column (respecting filters and visible rows)
+    pub fn get_column_values(&self, column_index: usize) -> Vec<String> {
+        use tracing::trace;
+
+        let mut values = Vec::new();
+        let row_count = self.row_count();
+
+        trace!(
+            "get_column_values: Getting column {} values from {} visible rows",
+            column_index,
+            row_count
+        );
+
+        for row_idx in 0..row_count {
+            // get_row already respects filters and limit/offset
+            if let Some(row) = self.get_row(row_idx) {
+                // Find the column in the display columns
+                let display_columns = self.get_display_columns();
+                if let Some(col_pos) = display_columns.iter().position(|&idx| idx == column_index) {
+                    if let Some(value) = row.values.get(col_pos) {
+                        let str_value = value
+                            .to_string()
+                            .replace('\t', "    ")
+                            .replace('\n', " ")
+                            .replace('\r', "");
+                        values.push(str_value);
+                    } else {
+                        values.push("NULL".to_string());
+                    }
+                } else {
+                    // Column not in display columns, might be hidden
+                    values.push("NULL".to_string());
+                }
+            }
+        }
+
+        trace!("get_column_values: Retrieved {} values", values.len());
+        values
+    }
+
+    /// Get a single cell value (respecting filters)
+    pub fn get_cell_value(&self, row_index: usize, column_index: usize) -> Option<String> {
+        // get_row already respects filters
+        if let Some(row) = self.get_row(row_index) {
+            let display_columns = self.get_display_columns();
+            if let Some(col_pos) = display_columns.iter().position(|&idx| idx == column_index) {
+                row.values.get(col_pos).map(|v| v.to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Get a row as string values (respecting filters)
+    pub fn get_row_values(&self, row_index: usize) -> Option<Vec<String>> {
+        self.get_row(row_index)
+            .map(|row| row.values.iter().map(|v| v.to_string()).collect())
+    }
 }
 
 // Implement DataProvider for compatibility during migration

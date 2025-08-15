@@ -3,6 +3,7 @@ use crate::buffer::BufferAPI;
 use crate::data_exporter::DataExporter;
 use anyhow::{anyhow, Result};
 use serde_json::Value;
+use tracing::trace;
 
 /// Manages clipboard operations for data yanking
 pub struct YankManager;
@@ -22,24 +23,51 @@ impl YankManager {
         row_index: usize,
         column_index: usize,
     ) -> Result<YankResult> {
-        let datatable = buffer
-            .get_datatable()
-            .ok_or_else(|| anyhow!("No DataTable available"))?;
+        // Prefer DataView when available (handles filtering)
+        let (value, header) = if let Some(dataview) = buffer.get_dataview() {
+            trace!(
+                "yank_cell: Using DataView for cell at row={}, col={}",
+                row_index,
+                column_index
+            );
 
-        let row_data = datatable
-            .get_row_as_strings(row_index)
-            .ok_or_else(|| anyhow!("Row index out of bounds"))?;
+            let value = dataview
+                .get_cell_value(row_index, column_index)
+                .unwrap_or_else(|| "NULL".to_string());
 
-        let headers = datatable.column_names();
-        let header = headers
-            .get(column_index)
-            .ok_or_else(|| anyhow!("Column index out of bounds"))?
-            .clone();
+            let headers = dataview.column_names();
+            let header = headers
+                .get(column_index)
+                .ok_or_else(|| anyhow!("Column index out of bounds"))?
+                .clone();
 
-        let value = row_data
-            .get(column_index)
-            .cloned()
-            .unwrap_or_else(|| "NULL".to_string());
+            (value, header)
+        } else if let Some(datatable) = buffer.get_datatable() {
+            trace!(
+                "yank_cell: Using DataTable for cell at row={}, col={}",
+                row_index,
+                column_index
+            );
+
+            let row_data = datatable
+                .get_row_as_strings(row_index)
+                .ok_or_else(|| anyhow!("Row index out of bounds"))?;
+
+            let headers = datatable.column_names();
+            let header = headers
+                .get(column_index)
+                .ok_or_else(|| anyhow!("Column index out of bounds"))?
+                .clone();
+
+            let value = row_data
+                .get(column_index)
+                .cloned()
+                .unwrap_or_else(|| "NULL".to_string());
+
+            (value, header)
+        } else {
+            return Err(anyhow!("No data available"));
+        };
 
         // Prepare display value
         let col_name = header.to_string();
@@ -71,13 +99,20 @@ impl YankManager {
         state_container: &AppStateContainer,
         row_index: usize,
     ) -> Result<YankResult> {
-        let datatable = buffer
-            .get_datatable()
-            .ok_or_else(|| anyhow!("No DataTable available"))?;
-
-        let row_data = datatable
-            .get_row_as_strings(row_index)
-            .ok_or_else(|| anyhow!("Row index out of bounds"))?;
+        // Prefer DataView when available (handles filtering)
+        let row_data = if let Some(dataview) = buffer.get_dataview() {
+            trace!("yank_row: Using DataView for row {}", row_index);
+            dataview
+                .get_row_values(row_index)
+                .ok_or_else(|| anyhow!("Row index out of bounds"))?
+        } else if let Some(datatable) = buffer.get_datatable() {
+            trace!("yank_row: Using DataTable for row {}", row_index);
+            datatable
+                .get_row_as_strings(row_index)
+                .ok_or_else(|| anyhow!("Row index out of bounds"))?
+        } else {
+            return Err(anyhow!("No data available"));
+        };
 
         // Convert row to tab-separated text
         let row_text = row_data.join("\t");
@@ -106,31 +141,83 @@ impl YankManager {
         state_container: &AppStateContainer,
         column_index: usize,
     ) -> Result<YankResult> {
-        let datatable = buffer
-            .get_datatable()
-            .ok_or_else(|| anyhow!("No DataTable available"))?;
+        // Prefer DataView when available (handles filtering)
+        let (column_values, header) = if let Some(dataview) = buffer.get_dataview() {
+            let headers = dataview.column_names();
+            let header = headers
+                .get(column_index)
+                .ok_or_else(|| anyhow!("Column index out of bounds"))?
+                .clone();
 
-        // Get header name
-        let headers = datatable.column_names();
-        let header = headers
-            .get(column_index)
-            .ok_or_else(|| anyhow!("Column index out of bounds"))?
-            .clone();
+            trace!(
+                "yank_column: Using DataView for column {} ({}), visible rows: {}",
+                column_index,
+                header,
+                dataview.row_count()
+            );
 
-        // Collect all values from the column
-        let mut column_values = Vec::new();
-        for row_idx in 0..datatable.row_count() {
-            if let Some(row_data) = datatable.get_row_as_strings(row_idx) {
-                let value = row_data
-                    .get(column_index)
-                    .cloned()
-                    .unwrap_or_else(|| "NULL".to_string())
-                    .replace('\t', "    ")
-                    .replace('\n', " ")
-                    .replace('\r', "");
-                column_values.push(value);
+            let values = dataview.get_column_values(column_index);
+            (values, header)
+        } else if let Some(datatable) = buffer.get_datatable() {
+            // Fall back to DataTable for legacy buffers
+            let headers = datatable.column_names();
+            let header = headers
+                .get(column_index)
+                .ok_or_else(|| anyhow!("Column index out of bounds"))?
+                .clone();
+
+            trace!(
+                "yank_column: Using DataTable for column {} ({}), total rows: {}",
+                column_index,
+                header,
+                datatable.row_count()
+            );
+
+            // Check if fuzzy filter is active
+            let mut column_values = Vec::new();
+            if buffer.is_fuzzy_filter_active() {
+                let filtered_indices = buffer.get_fuzzy_filter_indices();
+                trace!(
+                    "yank_column: Filter active, yanking {} filtered rows",
+                    filtered_indices.len()
+                );
+
+                for &row_idx in filtered_indices {
+                    if let Some(row_data) = datatable.get_row_as_strings(row_idx) {
+                        let value = row_data
+                            .get(column_index)
+                            .cloned()
+                            .unwrap_or_else(|| "NULL".to_string())
+                            .replace('\t', "    ")
+                            .replace('\n', " ")
+                            .replace('\r', "");
+                        column_values.push(value);
+                    }
+                }
+            } else {
+                trace!(
+                    "yank_column: No filter, yanking all {} rows",
+                    datatable.row_count()
+                );
+
+                for row_idx in 0..datatable.row_count() {
+                    if let Some(row_data) = datatable.get_row_as_strings(row_idx) {
+                        let value = row_data
+                            .get(column_index)
+                            .cloned()
+                            .unwrap_or_else(|| "NULL".to_string())
+                            .replace('\t', "    ")
+                            .replace('\n', " ")
+                            .replace('\r', "");
+                        column_values.push(value);
+                    }
+                }
             }
-        }
+
+            (column_values, header)
+        } else {
+            return Err(anyhow!("No data available"));
+        };
 
         // Use Windows-compatible line endings (\r\n) for better clipboard compatibility
         let column_text = column_values.join("\r\n");

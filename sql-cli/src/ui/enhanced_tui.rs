@@ -1,7 +1,7 @@
 use crate::api_client::{ApiClient, QueryResponse};
 use crate::app_state_container::{AppStateContainer, SelectionMode};
 use crate::buffer::{
-    AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder, SortState,
+    AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder,
 };
 use crate::buffer_handler::BufferHandler;
 use crate::cell_renderer::CellRenderer;
@@ -24,7 +24,6 @@ use crate::text_navigation::TextNavigator;
 use crate::ui::actions::{Action, ActionContext, ActionResult};
 use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_mapper::KeyMapper;
-use crate::utils::debug_info::DebugInfo;
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -32,7 +31,6 @@ use crate::widgets::editor_widget::{BufferAction, EditorAction, EditorWidget};
 use crate::widgets::help_widget::{HelpAction, HelpWidget};
 use crate::widgets::search_modes_widget::{SearchMode, SearchModesAction, SearchModesWidget};
 use crate::widgets::stats_widget::{StatsAction, StatsWidget};
-use crate::yank_manager::YankManager;
 use crate::{buffer, data_analyzer, dual_logging};
 use anyhow::Result;
 use crossterm::{
@@ -1414,19 +1412,50 @@ impl EnhancedTuiApp {
                         // Record key press for visual indicator
                         self.key_indicator.record_key(format_key_for_display(&key));
 
-                        let should_exit = match self.buffer().get_mode() {
-                            AppMode::Command => self.handle_command_input(key)?,
-                            AppMode::Results => self.handle_results_input(key)?,
-                            AppMode::Search
-                            | AppMode::Filter
-                            | AppMode::FuzzyFilter
-                            | AppMode::ColumnSearch => self.handle_search_modes_input(key)?,
-                            AppMode::Help => self.handle_help_input(key)?,
-                            AppMode::History => self.handle_history_input(key)?,
-                            AppMode::Debug => self.handle_debug_input(key)?,
-                            AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
-                            AppMode::JumpToRow => self.handle_jump_to_row_input(key)?,
-                            AppMode::ColumnStats => self.handle_column_stats_input(key)?,
+                        // CRITICAL: Process through chord handler FIRST for Results mode
+                        // This allows chord sequences like 'yv' to work correctly
+                        let should_exit = if self.buffer().get_mode() == AppMode::Results {
+                            // In Results mode, check chord handler first
+                            let chord_result = self.key_chord_handler.process_key(key);
+                            debug!("Chord handler returned: {:?}", chord_result);
+
+                            match chord_result {
+                                ChordResult::CompleteChord(action) => {
+                                    // Handle completed chord actions
+                                    debug!("Chord completed: {}", action);
+                                    self.handle_chord_action(&action)?
+                                }
+                                ChordResult::PartialChord(description) => {
+                                    // Update status to show chord mode
+                                    self.buffer_mut().set_status_message(description);
+                                    false // Don't exit, waiting for more keys
+                                }
+                                ChordResult::Cancelled => {
+                                    self.buffer_mut()
+                                        .set_status_message("Chord cancelled".to_string());
+                                    false
+                                }
+                                ChordResult::SingleKey(single_key) => {
+                                    // Not a chord, process normally
+                                    self.handle_results_input(single_key)?
+                                }
+                            }
+                        } else {
+                            // For other modes, process keys normally
+                            match self.buffer().get_mode() {
+                                AppMode::Command => self.handle_command_input(key)?,
+                                AppMode::Results => unreachable!(), // Handled above
+                                AppMode::Search
+                                | AppMode::Filter
+                                | AppMode::FuzzyFilter
+                                | AppMode::ColumnSearch => self.handle_search_modes_input(key)?,
+                                AppMode::Help => self.handle_help_input(key)?,
+                                AppMode::History => self.handle_history_input(key)?,
+                                AppMode::Debug => self.handle_debug_input(key)?,
+                                AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
+                                AppMode::JumpToRow => self.handle_jump_to_row_input(key)?,
+                                AppMode::ColumnStats => self.handle_column_stats_input(key)?,
+                            }
                         };
 
                         if should_exit {
@@ -2121,43 +2150,49 @@ impl EnhancedTuiApp {
 
         let normalized_key = normalized;
 
-        // Try the new action system first
-        let action_context = self.build_action_context();
-        if let Some(action) = self
-            .key_mapper
-            .map_key(normalized_key.clone(), &action_context)
-        {
-            info!(
-                "✓ Action system: key {:?} -> action {:?}",
-                normalized_key.code, action
-            );
-            if let Ok(result) = self.try_handle_action(action, &action_context) {
-                match result {
-                    ActionResult::Handled => {
-                        debug!("Action handled by new system");
-                        return Ok(false);
-                    }
-                    ActionResult::Exit => {
-                        debug!("Action requested exit");
-                        return Ok(true);
-                    }
-                    ActionResult::SwitchMode(mode) => {
-                        debug!("Action requested mode switch to {:?}", mode);
-                        self.buffer_mut().set_mode(mode);
-                        return Ok(false);
-                    }
-                    ActionResult::Error(err) => {
-                        warn!("Action error: {}", err);
-                        self.buffer_mut()
-                            .set_status_message(format!("Error: {}", err));
-                        return Ok(false);
-                    }
-                    ActionResult::NotHandled => {
-                        // Fall through to existing handling
-                        debug!("Action not handled, falling back to legacy system");
+        // CRITICAL: Check if chord mode is active FIRST
+        // If a chord is in progress, skip the action system and let the chord handler process it
+        if !self.key_chord_handler.is_chord_mode_active() {
+            // Try the new action system first (only if no chord is active)
+            let action_context = self.build_action_context();
+            if let Some(action) = self
+                .key_mapper
+                .map_key(normalized_key.clone(), &action_context)
+            {
+                info!(
+                    "✓ Action system: key {:?} -> action {:?}",
+                    normalized_key.code, action
+                );
+                if let Ok(result) = self.try_handle_action(action, &action_context) {
+                    match result {
+                        ActionResult::Handled => {
+                            debug!("Action handled by new system");
+                            return Ok(false);
+                        }
+                        ActionResult::Exit => {
+                            debug!("Action requested exit");
+                            return Ok(true);
+                        }
+                        ActionResult::SwitchMode(mode) => {
+                            debug!("Action requested mode switch to {:?}", mode);
+                            self.buffer_mut().set_mode(mode);
+                            return Ok(false);
+                        }
+                        ActionResult::Error(err) => {
+                            warn!("Action error: {}", err);
+                            self.buffer_mut()
+                                .set_status_message(format!("Error: {}", err));
+                            return Ok(false);
+                        }
+                        ActionResult::NotHandled => {
+                            // Fall through to existing handling
+                            debug!("Action not handled, falling back to legacy system");
+                        }
                     }
                 }
             }
+        } else {
+            debug!("Chord mode active - skipping action system to let chord handler process key");
         }
 
         // Debug uppercase G specifically
@@ -2182,75 +2217,8 @@ impl EnhancedTuiApp {
             return Ok(false);
         }
 
-        // Skip chord handler for uppercase single-key actions as they're not chords
-        // Note: We no longer skip 'y' in Cell mode to allow yq chord to work
-        let should_skip_chord = matches!(
-            normalized_key.code,
-            KeyCode::Char('G')
-                | KeyCode::Char('H')
-                | KeyCode::Char('M')
-                | KeyCode::Char('L')
-                | KeyCode::Char('C')
-                | KeyCode::Char('F')
-                | KeyCode::Char('S')
-                | KeyCode::Char('N')
-                | KeyCode::Char('P')
-        );
-
-        let chord_result = if should_skip_chord {
-            debug!("Skipping chord handler for key {:?}", normalized_key.code);
-            // Still log the key press even when skipping chord handler
-            self.key_chord_handler.log_key_press(&normalized_key);
-            ChordResult::SingleKey(normalized_key.clone())
-        } else {
-            // Process key through chord handler
-            self.key_chord_handler.process_key(normalized_key.clone())
-        };
-
-        // Handle chord results
-        match chord_result {
-            ChordResult::CompleteChord(action) => {
-                // Handle completed chord actions
-                match action.as_str() {
-                    "yank_row" => {
-                        self.yank_row();
-                        return Ok(false);
-                    }
-                    "yank_column" => {
-                        self.yank_column();
-                        return Ok(false);
-                    }
-                    "yank_all" => {
-                        self.yank_all();
-                        return Ok(false);
-                    }
-                    "yank_cell" => {
-                        self.yank_cell();
-                        return Ok(false);
-                    }
-                    "yank_query" => {
-                        self.yank_query();
-                        return Ok(false);
-                    }
-                    _ => {
-                        // Unknown action, continue with normal key handling
-                    }
-                }
-            }
-            ChordResult::PartialChord(description) => {
-                // Update status to show chord mode
-                self.buffer_mut().set_status_message(description);
-                return Ok(false);
-            }
-            ChordResult::Cancelled => {
-                self.buffer_mut()
-                    .set_status_message("Chord cancelled".to_string());
-                return Ok(false);
-            }
-            ChordResult::SingleKey(_) => {
-                // Continue with normal key handling
-            }
-        }
+        // NOTE: Chord handling has been moved to handle_input level
+        // This ensures chords work correctly before any other key processing
 
         // Use dispatcher to get action first
         if let Some(action) = self.key_dispatcher.get_results_action(&normalized_key) {
@@ -4974,167 +4942,163 @@ impl EnhancedTuiApp {
     }
 
     fn yank_cell(&mut self) {
-        debug!("yank_cell called");
-        if let Some(selected_row) = self.state_container.get_table_selected_row() {
-            let column = self.buffer().get_current_column();
-            debug!("Yanking cell at row={}, column={}", selected_row, column);
-            match YankManager::yank_cell(self.buffer(), &self.state_container, selected_row, column)
-            {
-                Ok(result) => {
-                    // YankManager already handled clipboard via AppStateContainer
-                    // Keep local copy for backward compatibility (will be removed later)
-                    self.last_yanked = Some((result.description.clone(), result.preview.clone()));
-                    self.set_status_message(format!("Yanked cell: {}", result.full_value));
-                }
-                Err(e) => {
-                    self.set_error_status("Failed to yank cell", e);
-                }
+        use crate::handlers::YankHandler;
+        use crate::ui::actions::{Action, YankTarget};
+
+        let action = Action::Yank(YankTarget::Cell);
+        let buffer = self.buffer();
+        let result = YankHandler::handle_yank_action(&action, buffer, &self.state_container);
+
+        match result {
+            Ok(Some(message)) => {
+                self.set_status_message(message);
             }
-        } else {
-            debug!("No row selected for yank");
+            Ok(None) => {}
+            Err(e) => {
+                self.set_error_status("Failed to yank cell", e);
+            }
         }
     }
 
     fn yank_row(&mut self) {
-        if let Some(selected_row) = self.state_container.get_table_selected_row() {
-            match YankManager::yank_row(self.buffer(), &self.state_container, selected_row) {
-                Ok(result) => {
-                    // YankManager already handled clipboard via AppStateContainer
-                    // Keep local copy for backward compatibility
-                    self.last_yanked = Some((result.description.clone(), result.preview));
-                    self.set_status_message(format!("Yanked {}", result.description));
-                }
-                Err(e) => {
-                    self.set_error_status("Failed to yank row", e);
-                }
+        use crate::handlers::YankHandler;
+        use crate::ui::actions::{Action, YankTarget};
+
+        let action = Action::Yank(YankTarget::Row);
+        let buffer = self.buffer();
+        let result = YankHandler::handle_yank_action(&action, buffer, &self.state_container);
+
+        match result {
+            Ok(Some(message)) => {
+                self.set_status_message(message);
+            }
+            Ok(None) => {}
+            Err(e) => {
+                self.set_error_status("Failed to yank row", e);
             }
         }
     }
 
     fn yank_column(&mut self) {
-        let column = self.buffer().get_current_column();
-        match YankManager::yank_column(self.buffer(), &self.state_container, column) {
-            Ok(result) => {
-                // YankManager already handled clipboard via AppStateContainer
-                // Keep local copy for backward compatibility
-                self.last_yanked = Some((result.description.clone(), result.preview));
-                self.buffer_mut()
-                    .set_status_message(format!("Yanked {}", result.description));
+        use crate::handlers::YankHandler;
+        use crate::ui::actions::{Action, YankTarget};
+
+        let action = Action::Yank(YankTarget::Column);
+        let buffer = self.buffer();
+        let result = YankHandler::handle_yank_action(&action, buffer, &self.state_container);
+
+        match result {
+            Ok(Some(message)) => {
+                self.set_status_message(message);
             }
+            Ok(None) => {}
             Err(e) => {
-                self.buffer_mut()
-                    .set_status_message(format!("Failed to yank column: {}", e));
+                self.set_error_status("Failed to yank column", e);
             }
         }
     }
 
     fn yank_all(&mut self) {
-        match YankManager::yank_all(self.buffer(), &self.state_container) {
-            Ok(result) => {
-                // YankManager already handled clipboard via AppStateContainer
-                // Keep local copy for backward compatibility
-                self.last_yanked = Some((result.description.clone(), result.preview.clone()));
-                self.buffer_mut().set_status_message(format!(
-                    "Yanked {}: {}",
-                    result.description, result.preview
-                ));
+        use crate::handlers::YankHandler;
+        use crate::ui::actions::{Action, YankTarget};
+
+        let action = Action::Yank(YankTarget::All);
+        let buffer = self.buffer();
+        let result = YankHandler::handle_yank_action(&action, buffer, &self.state_container);
+
+        match result {
+            Ok(Some(message)) => {
+                self.set_status_message(message);
             }
+            Ok(None) => {}
             Err(e) => {
+                self.set_error_status("Failed to yank all", e);
+            }
+        }
+    }
+
+    fn handle_chord_action(&mut self, action: &str) -> Result<bool> {
+        debug!("Handling chord action: {}", action);
+        match action {
+            "yank_row" => {
+                self.yank_row();
+                Ok(false)
+            }
+            "yank_column" => {
+                self.yank_column();
+                Ok(false)
+            }
+            "yank_all" => {
+                self.yank_all();
+                Ok(false)
+            }
+            "yank_cell" => {
+                debug!("Executing yank_cell from chord action");
+                self.yank_cell();
+                Ok(false)
+            }
+            "yank_query" => {
+                self.yank_query();
+                Ok(false)
+            }
+            _ => {
+                debug!("Unknown chord action: {}", action);
                 self.buffer_mut()
-                    .set_status_message(format!("Failed to yank all: {}", e));
+                    .set_status_message(format!("Unknown chord action: {}", action));
+                Ok(false)
             }
         }
     }
 
     fn yank_query(&mut self) {
-        let query = self.get_input_text();
-        if query.trim().is_empty() {
-            self.buffer_mut()
-                .set_status_message("No query to yank".to_string());
-            return;
-        }
+        use crate::handlers::YankHandler;
+        use crate::ui::actions::{Action, YankTarget};
 
-        match self.state_container.write_to_clipboard(&query) {
-            Ok(_) => {
-                let char_count = query.len();
-                let preview = if query.len() > 50 {
-                    format!("{}...", &query[..50])
-                } else {
-                    query.clone()
-                };
+        let action = Action::Yank(YankTarget::Query);
+        let buffer = self.buffer();
+        let result = YankHandler::handle_yank_action(&action, buffer, &self.state_container);
 
-                // Create status message with character count
-                let status_msg = format!("Yanked SQL ({} chars)", char_count);
-                debug!("Yanking query: {}", &status_msg);
-                self.buffer_mut().set_status_message(status_msg.clone());
-
-                // Update local last_yanked for backward compatibility
-                self.last_yanked = Some(("Query".to_string(), preview.clone()));
-
-                // Also update clipboard state for tracking
-                use crate::app_state_container::YankedItem;
-                self.state_container.clipboard_mut().last_yanked = Some(YankedItem {
-                    description: "SQL Query".to_string(),
-                    full_value: query,
-                    preview,
-                    yank_type: crate::app_state_container::YankType::Query,
-                    yanked_at: chrono::Local::now(),
-                    size_bytes: char_count,
-                });
+        match result {
+            Ok(Some(message)) => {
+                self.set_status_message(message);
             }
+            Ok(None) => {}
             Err(e) => {
-                self.buffer_mut()
-                    .set_status_message(format!("Failed to yank query: {}", e));
+                self.set_error_status("Failed to yank query", e);
             }
         }
     }
 
     /// Yank current query and results as a complete test case (Ctrl+T in debug mode)
     fn yank_as_test_case(&mut self) {
-        let test_case = DebugInfo::generate_test_case(self.buffer());
+        use crate::handlers::YankHandler;
 
-        match self.state_container.yank_test_case(test_case.clone()) {
-            Ok(_) => {
-                self.buffer_mut().set_status_message(format!(
-                    "Copied complete test case to clipboard ({} lines)",
-                    test_case.lines().count()
-                ));
-                self.last_yanked = Some((
-                    "Test Case".to_string(),
-                    format!(
-                        "{}...",
-                        test_case.lines().take(3).collect::<Vec<_>>().join("; ")
-                    ),
-                ));
+        let buffer = self.buffer();
+        let result = YankHandler::handle_yank_as_test_case(buffer, &self.state_container);
+
+        match result {
+            Ok(message) => {
+                self.set_status_message(message);
             }
             Err(e) => {
-                self.buffer_mut()
-                    .set_status_message(format!("Failed to copy test case to clipboard: {}", e));
+                self.set_error_status("Failed to copy test case", e);
             }
         }
     }
 
     /// Yank debug dump with context for manual test creation (Shift+Y in debug mode)
     fn yank_debug_with_context(&mut self) {
-        let debug_context = DebugInfo::generate_debug_context(self.buffer());
+        use crate::handlers::YankHandler;
 
-        match self
-            .state_container
-            .yank_debug_context(debug_context.clone())
-        {
-            Ok(_) => {
-                self.buffer_mut().set_status_message(format!(
-                    "Copied debug context to clipboard ({} lines)",
-                    debug_context.lines().count()
-                ));
-                self.last_yanked = Some((
-                    "Debug Context".to_string(),
-                    "Query context with data for test creation".to_string(),
-                ));
+        let buffer = self.buffer();
+        let result = YankHandler::handle_yank_debug_context(buffer, &self.state_container);
+
+        match result {
+            Ok(message) => {
+                self.set_status_message(message);
             }
             Err(e) => {
-                self.buffer_mut()
-                    .set_status_message(format!("Failed to copy debug context: {}", e));
+                self.set_error_status("Failed to copy debug context", e);
             }
         }
     }

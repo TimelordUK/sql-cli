@@ -2,6 +2,7 @@ use chrono::Local;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use tracing::debug;
 
 /// Represents a chord sequence (e.g., "yy", "gg", "dd")
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -135,6 +136,11 @@ impl KeyChordHandler {
     }
 
     fn process_key_internal(&mut self, key: KeyEvent) -> ChordResult {
+        debug!(
+            "process_key_internal: key={:?}, current_chord={:?}",
+            key, self.current_chord
+        );
+
         // Add key to current chord
         self.current_chord.push(key.clone());
 
@@ -145,18 +151,26 @@ impl KeyChordHandler {
 
         // Check for exact match
         let current = ChordSequence::new(self.current_chord.clone());
+        debug!("Checking for exact match with chord: {:?}", current);
+        debug!(
+            "Registered chords: {:?}",
+            self.chord_map.keys().collect::<Vec<_>>()
+        );
         if let Some(action) = self.chord_map.get(&current) {
+            debug!("Found exact match! Action: {}", action);
             let result = ChordResult::CompleteChord(action.clone());
             self.reset_chord();
             return result;
         }
 
         // Check for partial matches
+        debug!("Checking for partial matches...");
         let has_partial = self.chord_map.keys().any(|chord| {
             chord.keys.len() > self.current_chord.len()
                 && chord.keys[..self.current_chord.len()] == self.current_chord[..]
         });
 
+        debug!("has_partial = {}", has_partial);
         if has_partial {
             // Build description of possible completions
             let possible: Vec<String> = self
