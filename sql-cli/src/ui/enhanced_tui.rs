@@ -563,14 +563,19 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             ToggleRowNumbers => {
-                let current_mode = self.buffer().is_show_row_numbers();
-                self.buffer_mut().set_show_row_numbers(!current_mode);
-                let message = if !current_mode {
-                    "Row numbers enabled"
+                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                    let was_enabled = dataview.has_row_numbers();
+                    dataview.toggle_row_numbers();
+                    let message = if !was_enabled {
+                        "Row numbers enabled"
+                    } else {
+                        "Row numbers disabled"
+                    };
+                    self.buffer_mut().set_status_message(message.to_string());
                 } else {
-                    "Row numbers disabled"
-                };
-                self.buffer_mut().set_status_message(message.to_string());
+                    self.buffer_mut()
+                        .set_status_message("No data to show row numbers for".to_string());
+                }
                 Ok(ActionResult::Handled)
             }
             ToggleCompactMode => {

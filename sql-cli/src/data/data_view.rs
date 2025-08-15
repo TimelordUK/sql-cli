@@ -25,6 +25,40 @@ pub struct SortState {
     pub order: SortOrder,
 }
 
+/// Position where virtual columns can be inserted
+#[derive(Debug, Clone, PartialEq)]
+pub enum VirtualColumnPosition {
+    /// Before all real columns (leftmost)
+    Left,
+    /// After all real columns (rightmost)  
+    Right,
+    /// At specific column index
+    Index(usize),
+}
+
+/// A virtual column that generates values dynamically
+#[derive(Clone)]
+pub struct VirtualColumn {
+    /// Column name
+    pub name: String,
+    /// Function that generates cell value for a given row index
+    pub generator: Arc<dyn Fn(usize) -> String + Send + Sync>,
+    /// Preferred width for the column
+    pub width: Option<usize>,
+    /// Position where this column should appear
+    pub position: VirtualColumnPosition,
+}
+
+impl std::fmt::Debug for VirtualColumn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VirtualColumn")
+            .field("name", &self.name)
+            .field("width", &self.width)
+            .field("position", &self.position)
+            .finish()
+    }
+}
+
 impl Default for SortState {
     fn default() -> Self {
         Self {
@@ -76,6 +110,9 @@ pub struct DataView {
 
     /// Sort state
     sort_state: SortState,
+
+    /// Virtual columns that generate dynamic content
+    virtual_columns: Vec<VirtualColumn>,
 }
 
 impl DataView {
@@ -101,6 +138,7 @@ impl DataView {
             pinned_columns: Vec::new(),
             max_pinned_columns: 4,
             sort_state: SortState::default(),
+            virtual_columns: Vec::new(),
         }
     }
 
@@ -736,6 +774,91 @@ impl DataView {
         }
     }
 
+    // === Virtual Column Management ===
+
+    /// Add a virtual column to the view
+    pub fn add_virtual_column(&mut self, virtual_column: VirtualColumn) {
+        self.virtual_columns.push(virtual_column);
+    }
+
+    /// Add a row number virtual column
+    pub fn add_row_numbers(&mut self, position: VirtualColumnPosition) {
+        let row_num_column = VirtualColumn {
+            name: "#".to_string(),
+            generator: Arc::new(|row_index| format!("{}", row_index + 1)),
+            width: Some(4), // Room for 4-digit row numbers by default
+            position,
+        };
+        self.add_virtual_column(row_num_column);
+    }
+
+    /// Remove all virtual columns of a specific type by name
+    pub fn remove_virtual_columns(&mut self, name: &str) {
+        self.virtual_columns.retain(|col| col.name != name);
+    }
+
+    /// Toggle row numbers on/off
+    pub fn toggle_row_numbers(&mut self) {
+        if self.virtual_columns.iter().any(|col| col.name == "#") {
+            self.remove_virtual_columns("#");
+        } else {
+            self.add_row_numbers(VirtualColumnPosition::Left);
+        }
+    }
+
+    /// Check if row numbers are currently shown
+    pub fn has_row_numbers(&self) -> bool {
+        self.virtual_columns.iter().any(|col| col.name == "#")
+    }
+
+    /// Get all column names including virtual columns in display order
+    pub fn get_all_column_names(&self) -> Vec<String> {
+        let mut result = Vec::new();
+        let all_source_names = self.source.column_names();
+        let real_column_names: Vec<String> = self
+            .visible_columns
+            .iter()
+            .map(|&i| {
+                all_source_names
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("col_{}", i))
+            })
+            .collect();
+
+        // Insert virtual columns at their specified positions
+        let mut virtual_left = Vec::new();
+        let mut virtual_right = Vec::new();
+        let mut virtual_indexed = Vec::new();
+
+        for vcol in &self.virtual_columns {
+            match vcol.position {
+                VirtualColumnPosition::Left => virtual_left.push(vcol.name.clone()),
+                VirtualColumnPosition::Right => virtual_right.push(vcol.name.clone()),
+                VirtualColumnPosition::Index(idx) => virtual_indexed.push((idx, vcol.name.clone())),
+            }
+        }
+
+        // Add left virtual columns
+        result.extend(virtual_left);
+
+        // Add real columns with indexed virtual columns interspersed
+        for (i, real_name) in real_column_names.into_iter().enumerate() {
+            // Add any virtual columns that should appear at this index
+            for (idx, vname) in &virtual_indexed {
+                if *idx == i {
+                    result.push(vname.clone());
+                }
+            }
+            result.push(real_name);
+        }
+
+        // Add right virtual columns
+        result.extend(virtual_right);
+
+        result
+    }
+
     /// Get the number of visible rows
     pub fn row_count(&self) -> usize {
         let count = self.visible_rows.len();
@@ -749,21 +872,17 @@ impl DataView {
         }
     }
 
-    /// Get the number of visible columns (including pinned)
+    /// Get the number of visible columns (including pinned and virtual)
     pub fn column_count(&self) -> usize {
-        self.pinned_columns.len() + self.visible_columns.len()
+        self.pinned_columns.len() + self.visible_columns.len() + self.virtual_columns.len()
     }
 
-    /// Get column names for visible columns (pinned first, then regular)
+    /// Get column names for visible columns (including virtual columns in correct positions)
     pub fn column_names(&self) -> Vec<String> {
-        let all_columns = self.source.column_names();
-        self.get_display_columns()
-            .iter()
-            .filter_map(|&idx| all_columns.get(idx).cloned())
-            .collect()
+        self.get_all_column_names()
     }
 
-    /// Get a row by index (respecting limit/offset)
+    /// Get a row by index (respecting limit/offset) including virtual columns
     pub fn get_row(&self, index: usize) -> Option<DataRow> {
         let actual_index = index + self.offset;
 
@@ -777,16 +896,50 @@ impl DataView {
         // Get the actual row index
         let row_idx = *self.visible_rows.get(actual_index)?;
 
-        // Build a row with columns in display order (pinned first, then visible)
+        // Build a row with all columns (real + virtual) in display order
         let mut values = Vec::new();
+
+        // Get real column values
+        let mut real_values = Vec::new();
         for &col_idx in self.get_display_columns().iter() {
             let value = self
                 .source
                 .get_value(row_idx, col_idx)
                 .cloned()
                 .unwrap_or(DataValue::Null);
-            values.push(value);
+            real_values.push(value);
         }
+
+        // Organize virtual columns by position
+        let mut virtual_left = Vec::new();
+        let mut virtual_right = Vec::new();
+        let mut virtual_indexed = Vec::new();
+
+        for vcol in &self.virtual_columns {
+            let virtual_value = DataValue::String((vcol.generator)(row_idx));
+            match vcol.position {
+                VirtualColumnPosition::Left => virtual_left.push(virtual_value),
+                VirtualColumnPosition::Right => virtual_right.push(virtual_value),
+                VirtualColumnPosition::Index(idx) => virtual_indexed.push((idx, virtual_value)),
+            }
+        }
+
+        // Add left virtual columns
+        values.extend(virtual_left);
+
+        // Add real columns with indexed virtual columns interspersed
+        for (i, real_value) in real_values.into_iter().enumerate() {
+            // Add any virtual columns that should appear at this index
+            for (idx, vvalue) in &virtual_indexed {
+                if *idx == i {
+                    values.push(vvalue.clone());
+                }
+            }
+            values.push(real_value);
+        }
+
+        // Add right virtual columns
+        values.extend(virtual_right);
 
         Some(DataRow::new(values))
     }
