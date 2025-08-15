@@ -55,26 +55,28 @@ fn test_buffer_filtering() {
     assert_eq!(buffer.get_filter_pattern(), "");
 }
 
-#[test]
-fn test_buffer_pinned_columns() {
-    let mut buffer = Buffer::new(1);
-
-    // Add pinned columns
-    buffer.add_pinned_column(2);
-    buffer.add_pinned_column(5);
-    buffer.add_pinned_column(1);
-
-    // Should be sorted
-    assert_eq!(buffer.get_pinned_columns(), &vec![1, 2, 5]);
-
-    // Remove a column
-    buffer.remove_pinned_column(2);
-    assert_eq!(buffer.get_pinned_columns(), &vec![1, 5]);
-
-    // Clear all
-    buffer.clear_pinned_columns();
-    assert_eq!(buffer.get_pinned_columns(), &Vec::<usize>::new());
-}
+// Pinned columns functionality has been moved to DataView
+// This test is now covered in tests/test_pinned_columns.rs
+// #[test]
+// fn test_buffer_pinned_columns() {
+//     let mut buffer = Buffer::new(1);
+//
+//     // Add pinned columns
+//     buffer.add_pinned_column(2);
+//     buffer.add_pinned_column(5);
+//     buffer.add_pinned_column(1);
+//
+//     // Should be sorted
+//     assert_eq!(buffer.get_pinned_columns(), &vec![1, 2, 5]);
+//
+//     // Remove a column
+//     buffer.remove_pinned_column(2);
+//     assert_eq!(buffer.get_pinned_columns(), &vec![1, 5]);
+//
+//     // Clear all
+//     buffer.clear_pinned_columns();
+//     assert_eq!(buffer.get_pinned_columns(), &Vec::<usize>::new());
+// }
 
 #[test]
 fn test_buffer_results() {
