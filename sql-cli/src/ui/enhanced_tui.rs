@@ -1324,12 +1324,23 @@ impl EnhancedTuiApp {
             buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
             buffer.set_compact_mode(app.config.display.compact_mode);
             buffer.set_show_row_numbers(app.config.display.show_row_numbers);
+            
+            // Apply auto-hide empty columns if configured
+            if app.config.behavior.hide_empty_columns {
+                if let Some(dataview) = buffer.get_dataview_mut() {
+                    let count = dataview.hide_empty_columns();
+                    if count > 0 {
+                        info!("Auto-hidden {} empty columns based on config", count);
+                    }
+                }
+            }
 
-            info!(target: "buffer", "Configured {} buffer with: compact_mode={}, case_insensitive={}, show_row_numbers={}",
+            info!(target: "buffer", "Configured {} buffer with: compact_mode={}, case_insensitive={}, show_row_numbers={}, hide_empty_columns={}",
                   file_type_str,
                   app.config.display.compact_mode,
                   app.config.behavior.case_insensitive_default,
-                  app.config.display.show_row_numbers);
+                  app.config.display.show_row_numbers,
+                  app.config.behavior.hide_empty_columns);
             app.buffer_manager.add_buffer(buffer);
         }
 
@@ -1372,21 +1383,6 @@ impl EnhancedTuiApp {
                     schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
                     e
                 ));
-            } else {
-                // Query executed successfully, check if we should auto-hide empty columns
-                if app.config.behavior.hide_empty_columns {
-                    if let Some(dataview) = app.buffer_mut().get_dataview_mut() {
-                        let count = dataview.hide_empty_columns();
-                        if count > 0 {
-                            app.buffer_mut().set_status_message(format!(
-                                "{} loaded: table '{}' - auto-hidden {} empty columns (press Ctrl+Shift+H to unhide)",
-                                file_type_str,
-                                table_name,
-                                count
-                            ));
-                        }
-                    }
-                }
             }
         }
 
