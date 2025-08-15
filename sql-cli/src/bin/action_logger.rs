@@ -6,7 +6,7 @@ use sql_cli::app_state_container::SelectionMode;
 use sql_cli::buffer::AppMode;
 use sql_cli::ui::actions::{Action, ActionContext};
 use sql_cli::ui::key_mapper::KeyMapper;
-use std::io;
+use std::io::{self, Write};
 
 fn format_key(key: &KeyEvent) -> String {
     let mut result = String::new();
@@ -129,6 +129,9 @@ fn main() -> io::Result<()> {
                     // No mapping
                     println!("│ {:6} │ (no mapping in Results mode)", key_str);
                 }
+                
+                // Flush stdout to ensure each line appears immediately
+                io::stdout().flush().unwrap();
 
                 // Check for quit
                 if matches!(action, Some(Action::Quit) | Some(Action::ForceQuit)) {
