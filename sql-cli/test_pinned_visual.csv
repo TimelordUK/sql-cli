@@ -1,6 +1,0 @@
-id,name,department,salary,location,status
-1,Alice,Engineering,100000,NYC,Active
-2,Bob,Sales,80000,LA,Active
-3,Charlie,Marketing,75000,Chicago,Inactive
-4,David,Engineering,95000,NYC,Active
-5,Eve,HR,70000,Boston,Active

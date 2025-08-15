@@ -1,6 +1,0 @@
-id,confirmationStatus,amount
-1,Pending,100.50
-2,Confirmed,200.25
-3,Pending,150.00
-4,Confirmed,75.75
-5,Processing,300.10

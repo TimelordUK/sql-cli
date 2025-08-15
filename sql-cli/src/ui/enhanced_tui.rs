@@ -2182,22 +2182,20 @@ impl EnhancedTuiApp {
             return Ok(false);
         }
 
-        // In cell mode, skip chord handler for 'y' key - handle it directly
-        // Also skip uppercase single-key actions as they're not chords
-        let should_skip_chord = (matches!(self.get_selection_mode(), SelectionMode::Cell)
-            && matches!(normalized_key.code, KeyCode::Char('y')))
-            || matches!(
-                normalized_key.code,
-                KeyCode::Char('G')
-                    | KeyCode::Char('H')
-                    | KeyCode::Char('M')
-                    | KeyCode::Char('L')
-                    | KeyCode::Char('C')
-                    | KeyCode::Char('F')
-                    | KeyCode::Char('S')
-                    | KeyCode::Char('N')
-                    | KeyCode::Char('P')
-            );
+        // Skip chord handler for uppercase single-key actions as they're not chords
+        // Note: We no longer skip 'y' in Cell mode to allow yq chord to work
+        let should_skip_chord = matches!(
+            normalized_key.code,
+            KeyCode::Char('G')
+                | KeyCode::Char('H')
+                | KeyCode::Char('M')
+                | KeyCode::Char('L')
+                | KeyCode::Char('C')
+                | KeyCode::Char('F')
+                | KeyCode::Char('S')
+                | KeyCode::Char('N')
+                | KeyCode::Char('P')
+        );
 
         let chord_result = if should_skip_chord {
             debug!("Skipping chord handler for key {:?}", normalized_key.code);
@@ -4751,12 +4749,17 @@ impl EnhancedTuiApp {
         let column_index = self.buffer().get_current_column();
 
         if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            // Get column name for display
+            // Get column name for display (using the visual column layout)
             let column_names = dataview.column_names();
             let col_name = column_names
                 .get(column_index)
                 .map(|s| s.clone())
                 .unwrap_or_else(|| format!("Column {}", column_index));
+
+            debug!(
+                "toggle_sort_current_column: cursor_position={}, column_name={}",
+                column_index, col_name
+            );
 
             if let Err(e) = dataview.toggle_sort(column_index) {
                 self.buffer_mut()
@@ -7292,6 +7295,68 @@ impl EnhancedTuiApp {
 
                         // Show row information
                         debug_info.push_str(&format!("\nVisible Rows: {}\n", dataview.row_count()));
+
+                        // Show internal visible_columns array (source column indices)
+                        debug_info.push_str("\n--- Internal State ---\n");
+
+                        // Get the visible_columns indices from DataView
+                        let visible_indices = dataview.get_visible_column_indices();
+                        debug_info
+                            .push_str(&format!("visible_columns array: {:?}\n", visible_indices));
+
+                        // Show pinned columns
+                        let pinned_names = dataview.get_pinned_column_names();
+                        if !pinned_names.is_empty() {
+                            debug_info
+                                .push_str(&format!("Pinned Columns ({}):\n", pinned_names.len()));
+                            for (idx, name) in pinned_names.iter().enumerate() {
+                                // Find source index for this pinned column
+                                let source_idx =
+                                    dataview.source().get_column_index(name).unwrap_or(999);
+                                debug_info.push_str(&format!(
+                                    "  [{}] {} (source_idx: {})\n",
+                                    idx, name, source_idx
+                                ));
+                            }
+                        } else {
+                            debug_info.push_str("Pinned Columns: None\n");
+                        }
+
+                        // Show sort state
+                        let sort_state = dataview.get_sort_state();
+                        match sort_state.order {
+                            crate::data::data_view::SortOrder::None => {
+                                debug_info.push_str("Sort State: None\n");
+                            }
+                            crate::data::data_view::SortOrder::Ascending => {
+                                if let Some(col_idx) = sort_state.column {
+                                    let col_name = visible_columns
+                                        .get(col_idx)
+                                        .map(|s| s.as_str())
+                                        .unwrap_or("unknown");
+                                    debug_info.push_str(&format!(
+                                        "Sort State: Column {} ('{}') Ascending ↑\n",
+                                        col_idx, col_name
+                                    ));
+                                } else {
+                                    debug_info.push_str("Sort State: Ascending (no column)\n");
+                                }
+                            }
+                            crate::data::data_view::SortOrder::Descending => {
+                                if let Some(col_idx) = sort_state.column {
+                                    let col_name = visible_columns
+                                        .get(col_idx)
+                                        .map(|s| s.as_str())
+                                        .unwrap_or("unknown");
+                                    debug_info.push_str(&format!(
+                                        "Sort State: Column {} ('{}') Descending ↓\n",
+                                        col_idx, col_name
+                                    ));
+                                } else {
+                                    debug_info.push_str("Sort State: Descending (no column)\n");
+                                }
+                            }
+                        }
 
                         // Show if columns have been reordered
                         // Use the DataView's source to get original column order
