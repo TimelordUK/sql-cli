@@ -63,23 +63,31 @@ impl<'a> RecursiveWhereEvaluator<'a> {
     }
 
     fn evaluate_condition(&self, condition: &Condition, row_index: usize) -> Result<bool> {
-        debug!(
-            "RecursiveWhereEvaluator: evaluate_condition() ENTRY - row {}",
-            row_index
-        );
+        // Only log first few rows to avoid performance impact
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: evaluate_condition() ENTRY - row {}",
+                row_index
+            );
+        }
         let result = self.evaluate_expression(&condition.expr, row_index);
-        debug!(
-            "RecursiveWhereEvaluator: evaluate_condition() EXIT - row {}, result = {:?}",
-            row_index, result
-        );
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: evaluate_condition() EXIT - row {}, result = {:?}",
+                row_index, result
+            );
+        }
         result
     }
 
     fn evaluate_expression(&self, expr: &SqlExpression, row_index: usize) -> Result<bool> {
-        debug!(
-            "RecursiveWhereEvaluator: evaluate_expression() ENTRY - row {}, expr = {:?}",
-            row_index, expr
-        );
+        // Only log first few rows to avoid performance impact
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: evaluate_expression() ENTRY - row {}, expr = {:?}",
+                row_index, expr
+            );
+        }
 
         let result = match expr {
             SqlExpression::BinaryOp { left, op, right } => {
@@ -104,19 +112,25 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 method,
                 args,
             } => {
-                debug!("RecursiveWhereEvaluator: evaluate_expression() - found MethodCall, delegating to evaluate_method_call");
+                if row_index < 3 {
+                    debug!("RecursiveWhereEvaluator: evaluate_expression() - found MethodCall, delegating to evaluate_method_call");
+                }
                 self.evaluate_method_call(object, method, args, row_index)
             }
             _ => {
-                debug!("RecursiveWhereEvaluator: evaluate_expression() - unsupported expression type, returning false");
+                if row_index < 3 {
+                    debug!("RecursiveWhereEvaluator: evaluate_expression() - unsupported expression type, returning false");
+                }
                 Ok(false) // Default to false for unsupported expressions
             }
         };
 
-        debug!(
-            "RecursiveWhereEvaluator: evaluate_expression() EXIT - row {}, result = {:?}",
-            row_index, result
-        );
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: evaluate_expression() EXIT - row {}, result = {:?}",
+                row_index, result
+            );
+        }
         result
     }
 
@@ -127,10 +141,13 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         right: &SqlExpression,
         row_index: usize,
     ) -> Result<bool> {
-        debug!(
-            "RecursiveWhereEvaluator: evaluate_binary_op() ENTRY - row {}, op = '{}'",
-            row_index, op
-        );
+        // Only log first few rows to avoid performance impact
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: evaluate_binary_op() ENTRY - row {}, op = '{}'",
+                row_index, op
+            );
+        }
 
         // Handle left side - could be a column or a method call
         let (cell_value, column_name) = match left {
@@ -174,76 +191,84 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             _ => {
                 // Regular column reference
                 let column_name = self.extract_column_name(left)?;
-                debug!(
-                    "RecursiveWhereEvaluator: evaluate_binary_op() - column_name = '{}'",
-                    column_name
-                );
+                if row_index < 3 {
+                    debug!(
+                        "RecursiveWhereEvaluator: evaluate_binary_op() - column_name = '{}'",
+                        column_name
+                    );
+                }
 
                 let col_index = self
                     .table
                     .get_column_index(&column_name)
                     .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", column_name))?;
 
-                let cell_value = self.table.get_value(row_index, col_index);
+                let cell_value = self.table.get_value(row_index, col_index).cloned();
                 (cell_value, column_name)
             }
         };
 
-        debug!(
-            "RecursiveWhereEvaluator: evaluate_binary_op() - row {} column '{}' value = {:?}",
-            row_index, column_name, cell_value
-        );
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: evaluate_binary_op() - row {} column '{}' value = {:?}",
+                row_index, column_name, cell_value
+            );
+        }
 
         // Get comparison value from right side
         let compare_value = self.extract_value(right)?;
 
         // Perform comparison
         match (cell_value, op.to_uppercase().as_str(), &compare_value) {
-            (Some(DataValue::String(a)), "=", ExprValue::String(b)) => {
-                debug!(
-                    "RecursiveWhereEvaluator: String comparison '{}' = '{}' (case_insensitive={})",
-                    a, b, self.case_insensitive
-                );
+            (Some(DataValue::String(ref a)), "=", ExprValue::String(b)) => {
+                if row_index < 3 {
+                    debug!(
+                        "RecursiveWhereEvaluator: String comparison '{}' = '{}' (case_insensitive={})",
+                        a, b, self.case_insensitive
+                    );
+                }
                 if self.case_insensitive {
                     Ok(a.to_lowercase() == b.to_lowercase())
                 } else {
                     Ok(a == b)
                 }
             }
-            (Some(DataValue::String(a)), "!=", ExprValue::String(b))
-            | (Some(DataValue::String(a)), "<>", ExprValue::String(b)) => {
-                debug!(
-                    "RecursiveWhereEvaluator: String comparison '{}' != '{}' (case_insensitive={})",
-                    a, b, self.case_insensitive
-                );
+            (Some(DataValue::String(ref a)), "!=", ExprValue::String(b))
+            | (Some(DataValue::String(ref a)), "<>", ExprValue::String(b)) => {
+                if row_index < 3 {
+                    debug!(
+                        "RecursiveWhereEvaluator: String comparison '{}' != '{}' (case_insensitive={})",
+                        a, b, self.case_insensitive
+                    );
+                }
                 if self.case_insensitive {
                     Ok(a.to_lowercase() != b.to_lowercase())
                 } else {
                     Ok(a != b)
                 }
             }
-            (Some(DataValue::String(a)), ">", ExprValue::String(b)) => {
+            (Some(DataValue::String(ref a)), ">", ExprValue::String(b)) => {
                 if self.case_insensitive {
                     Ok(a.to_lowercase() > b.to_lowercase())
                 } else {
                     Ok(a > b)
                 }
             }
-            (Some(DataValue::String(a)), ">=", ExprValue::String(b)) => {
+            (Some(DataValue::String(ref a)), ">=", ExprValue::String(b)) => {
                 if self.case_insensitive {
                     Ok(a.to_lowercase() >= b.to_lowercase())
                 } else {
                     Ok(a >= b)
                 }
             }
-            (Some(DataValue::String(a)), "<", ExprValue::String(b)) => {
+            (Some(DataValue::String(ref a)), "<", ExprValue::String(b)) => {
                 if self.case_insensitive {
                     Ok(a.to_lowercase() < b.to_lowercase())
                 } else {
                     Ok(a < b)
                 }
             }
-            (Some(DataValue::String(a)), "<=", ExprValue::String(b)) => {
+            (Some(DataValue::String(ref a)), "<=", ExprValue::String(b)) => {
                 if self.case_insensitive {
                     Ok(a.to_lowercase() <= b.to_lowercase())
                 } else {
@@ -251,28 +276,28 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
             }
 
-            (Some(DataValue::Integer(a)), "=", ExprValue::Number(b)) => Ok(*a as f64 == *b),
+            (Some(DataValue::Integer(a)), "=", ExprValue::Number(b)) => Ok(a as f64 == *b),
             (Some(DataValue::Integer(a)), "!=", ExprValue::Number(b))
-            | (Some(DataValue::Integer(a)), "<>", ExprValue::Number(b)) => Ok(*a as f64 != *b),
-            (Some(DataValue::Integer(a)), ">", ExprValue::Number(b)) => Ok(*a as f64 > *b),
-            (Some(DataValue::Integer(a)), ">=", ExprValue::Number(b)) => Ok(*a as f64 >= *b),
-            (Some(DataValue::Integer(a)), "<", ExprValue::Number(b)) => Ok((*a as f64) < *b),
-            (Some(DataValue::Integer(a)), "<=", ExprValue::Number(b)) => Ok(*a as f64 <= *b),
+            | (Some(DataValue::Integer(a)), "<>", ExprValue::Number(b)) => Ok(a as f64 != *b),
+            (Some(DataValue::Integer(a)), ">", ExprValue::Number(b)) => Ok(a as f64 > *b),
+            (Some(DataValue::Integer(a)), ">=", ExprValue::Number(b)) => Ok(a as f64 >= *b),
+            (Some(DataValue::Integer(a)), "<", ExprValue::Number(b)) => Ok((a as f64) < *b),
+            (Some(DataValue::Integer(a)), "<=", ExprValue::Number(b)) => Ok(a as f64 <= *b),
 
             (Some(DataValue::Float(a)), "=", ExprValue::Number(b)) => {
-                Ok((*a - b).abs() < f64::EPSILON)
+                Ok((a - b).abs() < f64::EPSILON)
             }
             (Some(DataValue::Float(a)), "!=", ExprValue::Number(b))
             | (Some(DataValue::Float(a)), "<>", ExprValue::Number(b)) => {
-                Ok((*a - b).abs() >= f64::EPSILON)
+                Ok((a - b).abs() >= f64::EPSILON)
             }
-            (Some(DataValue::Float(a)), ">", ExprValue::Number(b)) => Ok(*a > *b),
-            (Some(DataValue::Float(a)), ">=", ExprValue::Number(b)) => Ok(*a >= *b),
-            (Some(DataValue::Float(a)), "<", ExprValue::Number(b)) => Ok(*a < *b),
-            (Some(DataValue::Float(a)), "<=", ExprValue::Number(b)) => Ok(*a <= *b),
+            (Some(DataValue::Float(a)), ">", ExprValue::Number(b)) => Ok(a > *b),
+            (Some(DataValue::Float(a)), ">=", ExprValue::Number(b)) => Ok(a >= *b),
+            (Some(DataValue::Float(a)), "<", ExprValue::Number(b)) => Ok(a < *b),
+            (Some(DataValue::Float(a)), "<=", ExprValue::Number(b)) => Ok(a <= *b),
 
             // LIKE operator
-            (Some(DataValue::String(text)), "LIKE", ExprValue::String(pattern)) => {
+            (Some(DataValue::String(ref text)), "LIKE", ExprValue::String(pattern)) => {
                 let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
                 let regex = regex::RegexBuilder::new(&format!("^{}$", regex_pattern))
                     .case_insensitive(true)
@@ -291,13 +316,15 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             (Some(_), "IS NOT", ExprValue::Null) => Ok(true),
 
             // DateTime comparisons
-            (Some(DataValue::String(date_str)), op_str, ExprValue::DateTime(dt)) => {
-                debug!(
-                    "RecursiveWhereEvaluator: DateTime comparison '{}' {} '{}' - attempting parse",
-                    date_str,
-                    op_str,
-                    dt.format("%Y-%m-%d %H:%M:%S")
-                );
+            (Some(DataValue::String(ref date_str)), op_str, ExprValue::DateTime(dt)) => {
+                if row_index < 3 {
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime comparison '{}' {} '{}' - attempting parse",
+                        date_str,
+                        op_str,
+                        dt.format("%Y-%m-%d %H:%M:%S")
+                    );
+                }
 
                 // Try to parse the string as a datetime - first try ISO 8601 with UTC
                 if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
@@ -310,13 +337,15 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         "<=" => parsed_dt <= *dt,
                         _ => false,
                     };
-                    debug!(
-                        "RecursiveWhereEvaluator: DateTime parsed as UTC: '{}' {} '{}' = {}",
-                        parsed_dt.format("%Y-%m-%d %H:%M:%S"),
-                        op_str,
-                        dt.format("%Y-%m-%d %H:%M:%S"),
-                        result
-                    );
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parsed as UTC: '{}' {} '{}' = {}",
+                            parsed_dt.format("%Y-%m-%d %H:%M:%S"),
+                            op_str,
+                            dt.format("%Y-%m-%d %H:%M:%S"),
+                            result
+                        );
+                    }
                     Ok(result)
                 }
                 // Try ISO 8601 format without timezone (assume UTC)
@@ -333,13 +362,15 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         "<=" => parsed_utc <= *dt,
                         _ => false,
                     };
-                    debug!(
-                        "RecursiveWhereEvaluator: DateTime parsed as ISO 8601: '{}' {} '{}' = {}",
-                        parsed_utc.format("%Y-%m-%d %H:%M:%S"),
-                        op_str,
-                        dt.format("%Y-%m-%d %H:%M:%S"),
-                        result
-                    );
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parsed as ISO 8601: '{}' {} '{}' = {}",
+                            parsed_utc.format("%Y-%m-%d %H:%M:%S"),
+                            op_str,
+                            dt.format("%Y-%m-%d %H:%M:%S"),
+                            result
+                        );
+                    }
                     Ok(result)
                 }
                 // Try standard datetime format
@@ -356,10 +387,12 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         "<=" => parsed_utc <= *dt,
                         _ => false,
                     };
-                    debug!(
-                        "RecursiveWhereEvaluator: DateTime parsed as standard format: '{}' {} '{}' = {}",
-                        parsed_utc.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
-                    );
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parsed as standard format: '{}' {} '{}' = {}",
+                            parsed_utc.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
+                        );
+                    }
                     Ok(result)
                 }
                 // Try date-only format
@@ -376,29 +409,35 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         "<=" => parsed_utc <= *dt,
                         _ => false,
                     };
-                    debug!(
-                        "RecursiveWhereEvaluator: DateTime parsed as date-only: '{}' {} '{}' = {}",
-                        parsed_utc.format("%Y-%m-%d %H:%M:%S"),
-                        op_str,
-                        dt.format("%Y-%m-%d %H:%M:%S"),
-                        result
-                    );
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parsed as date-only: '{}' {} '{}' = {}",
+                            parsed_utc.format("%Y-%m-%d %H:%M:%S"),
+                            op_str,
+                            dt.format("%Y-%m-%d %H:%M:%S"),
+                            result
+                        );
+                    }
                     Ok(result)
                 } else {
-                    debug!(
-                        "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
-                        date_str
-                    );
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
+                            date_str
+                        );
+                    }
                     Ok(false)
                 }
             }
 
             // DateTime vs DateTime comparisons (when column is already parsed as DateTime)
-            (Some(DataValue::DateTime(date_str)), op_str, ExprValue::DateTime(dt)) => {
-                debug!(
-                    "RecursiveWhereEvaluator: DateTime vs DateTime comparison '{}' {} '{}' - direct comparison",
-                    date_str, op_str, dt.format("%Y-%m-%d %H:%M:%S")
-                );
+            (Some(DataValue::DateTime(ref date_str)), op_str, ExprValue::DateTime(dt)) => {
+                if row_index < 3 {
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime vs DateTime comparison '{}' {} '{}' - direct comparison",
+                        date_str, op_str, dt.format("%Y-%m-%d %H:%M:%S")
+                    );
+                }
 
                 // Parse the DataValue::DateTime string to DateTime<Utc>
                 if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
@@ -411,10 +450,12 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         "<=" => parsed_dt <= *dt,
                         _ => false,
                     };
-                    debug!(
-                        "RecursiveWhereEvaluator: DateTime vs DateTime parsed successfully: '{}' {} '{}' = {}",
-                        parsed_dt.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
-                    );
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime vs DateTime parsed successfully: '{}' {} '{}' = {}",
+                            parsed_dt.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
+                        );
+                    }
                     Ok(result)
                 }
                 // Try ISO 8601 format without timezone (assume UTC)
@@ -431,19 +472,23 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         "<=" => parsed_utc <= *dt,
                         _ => false,
                     };
-                    debug!(
-                        "RecursiveWhereEvaluator: DateTime vs DateTime ISO 8601: '{}' {} '{}' = {}",
-                        parsed_utc.format("%Y-%m-%d %H:%M:%S"),
-                        op_str,
-                        dt.format("%Y-%m-%d %H:%M:%S"),
-                        result
-                    );
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime vs DateTime ISO 8601: '{}' {} '{}' = {}",
+                            parsed_utc.format("%Y-%m-%d %H:%M:%S"),
+                            op_str,
+                            dt.format("%Y-%m-%d %H:%M:%S"),
+                            result
+                        );
+                    }
                     Ok(result)
                 } else {
-                    debug!(
-                        "RecursiveWhereEvaluator: DateTime vs DateTime parse FAILED for '{}' - no matching format",
-                        date_str
-                    );
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime vs DateTime parse FAILED for '{}' - no matching format",
+                            date_str
+                        );
+                    }
                     Ok(false)
                 }
             }
@@ -465,14 +510,16 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             .get_column_index(&column_name)
             .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", column_name))?;
 
-        let cell_value = self.table.get_value(row_index, col_index);
+        let cell_value = self.table.get_value(row_index, col_index).cloned();
 
         for value_expr in values {
             let compare_value = self.extract_value(value_expr)?;
-            let matches = match (cell_value, &compare_value) {
+            let matches = match (cell_value.as_ref(), &compare_value) {
                 (Some(DataValue::String(a)), ExprValue::String(b)) => {
                     if self.case_insensitive {
-                        debug!("RecursiveWhereEvaluator: IN list string comparison '{}' in '{}' (case_insensitive={})", a, b, self.case_insensitive);
+                        if row_index < 3 {
+                            debug!("RecursiveWhereEvaluator: IN list string comparison '{}' in '{}' (case_insensitive={})", a, b, self.case_insensitive);
+                        }
                         a.to_lowercase() == b.to_lowercase()
                     } else {
                         a == b
@@ -504,18 +551,18 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             .get_column_index(&column_name)
             .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", column_name))?;
 
-        let cell_value = self.table.get_value(row_index, col_index);
+        let cell_value = self.table.get_value(row_index, col_index).cloned();
         let lower_value = self.extract_value(lower)?;
         let upper_value = self.extract_value(upper)?;
 
         match (cell_value, &lower_value, &upper_value) {
             (Some(DataValue::Integer(n)), ExprValue::Number(l), ExprValue::Number(u)) => {
-                Ok(*n as f64 >= *l && *n as f64 <= *u)
+                Ok(n as f64 >= *l && n as f64 <= *u)
             }
             (Some(DataValue::Float(n)), ExprValue::Number(l), ExprValue::Number(u)) => {
-                Ok(*n >= *l && *n <= *u)
+                Ok(n >= *l && n <= *u)
             }
-            (Some(DataValue::String(s)), ExprValue::String(l), ExprValue::String(u)) => {
+            (Some(DataValue::String(ref s)), ExprValue::String(l), ExprValue::String(u)) => {
                 Ok(s >= l && s <= u)
             }
             _ => Ok(false),
@@ -529,10 +576,12 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         args: &[SqlExpression],
         row_index: usize,
     ) -> Result<bool> {
-        debug!(
-            "RecursiveWhereEvaluator: evaluate_method_call - object='{}', method='{}', row={}",
-            object, method, row_index
-        );
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: evaluate_method_call - object='{}', method='{}', row={}",
+                object, method, row_index
+            );
+        }
 
         // Get column value
         let col_index = self
@@ -540,11 +589,13 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             .get_column_index(object)
             .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
 
-        let cell_value = self.table.get_value(row_index, col_index);
-        debug!(
-            "RecursiveWhereEvaluator: Row {} column '{}' value = {:?}",
-            row_index, object, cell_value
-        );
+        let cell_value = self.table.get_value(row_index, col_index).cloned();
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: Row {} column '{}' value = {:?}",
+                row_index, object, cell_value
+            );
+        }
 
         match method.to_lowercase().as_str() {
             "contains" => {
@@ -552,13 +603,17 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     return Err(anyhow::anyhow!("Contains requires exactly 1 argument"));
                 }
                 let search_str = self.extract_string_value(&args[0])?;
+                // Pre-compute lowercase once instead of for every row
+                let search_lower = search_str.to_lowercase();
 
                 // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
-                    Some(DataValue::String(s)) => {
-                        let result = s.to_lowercase().contains(&search_str.to_lowercase());
-                        // Always log for debugging - remove the row_index < 3 limit
-                        debug!("RecursiveWhereEvaluator: Row {} contains('{}') on '{}' = {} (case-insensitive)", row_index, search_str, s, result);
+                    Some(DataValue::String(ref s)) => {
+                        let result = s.to_lowercase().contains(&search_lower);
+                        // Only log first few rows to avoid performance impact
+                        if row_index < 3 {
+                            debug!("RecursiveWhereEvaluator: Row {} contains('{}') on '{}' = {} (case-insensitive)", row_index, search_str, s, result);
+                        }
                         Ok(result)
                     }
                     Some(DataValue::Integer(n)) => {
@@ -604,7 +659,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
                 // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
-                    Some(DataValue::String(s)) => {
+                    Some(DataValue::String(ref s)) => {
                         Ok(s.to_lowercase().starts_with(&prefix.to_lowercase()))
                     }
                     Some(DataValue::Integer(n)) => Ok(n.to_string().starts_with(&prefix)),
@@ -621,7 +676,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
                 // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
-                    Some(DataValue::String(s)) => {
+                    Some(DataValue::String(ref s)) => {
                         Ok(s.to_lowercase().ends_with(&suffix.to_lowercase()))
                     }
                     Some(DataValue::Integer(n)) => Ok(n.to_string().ends_with(&suffix)),

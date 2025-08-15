@@ -119,6 +119,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "time", "local
 
 [dev-dependencies]
 tempfile = "3.8"
+criterion = "0.5"
+
+[[bench]]
+name = "where_evaluation"
+harness = false
 
 [profile.dev]
 opt-level = 0       # No optimization for debugging
