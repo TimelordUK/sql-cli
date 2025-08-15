@@ -2994,6 +2994,7 @@ impl EnhancedTuiApp {
         let start_time = std::time::Instant::now();
 
         // 3. Execute query on DataView
+        let query_start = std::time::Instant::now();
         let result = if let Some(dataview) = self.buffer().get_dataview() {
             // Get the DataTable Arc (should add source_arc() method to DataView to avoid cloning)
             let table_arc = Arc::new(dataview.source().clone());
@@ -3006,6 +3007,8 @@ impl EnhancedTuiApp {
         } else {
             return Err(anyhow::anyhow!("No data loaded"));
         };
+        let query_duration = query_start.elapsed();
+        info!("Query execution took {:?}", query_duration);
 
         // 4. Handle result
         match result {

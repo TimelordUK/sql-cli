@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::sync::Arc;
-use tracing::debug;
+use std::time::Instant;
+use tracing::{debug, info};
 
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataTable;
@@ -25,14 +26,31 @@ impl QueryEngine {
 
     /// Execute a SQL query on a DataTable and return a DataView
     pub fn execute(&self, table: Arc<DataTable>, sql: &str) -> Result<DataView> {
+        let start_time = Instant::now();
+
         // Parse the SQL query
+        let parse_start = Instant::now();
         let mut parser = Parser::new(sql);
         let statement = parser
             .parse()
             .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+        let parse_duration = parse_start.elapsed();
 
         // Convert SelectStatement to DataView operations
-        self.build_view(table, statement)
+        let build_start = Instant::now();
+        let result = self.build_view(table, statement)?;
+        let build_duration = build_start.elapsed();
+
+        let total_duration = start_time.elapsed();
+        info!(
+            "Query execution complete: parse={:?}, build={:?}, total={:?}, rows={}",
+            parse_duration,
+            build_duration,
+            total_duration,
+            result.row_count()
+        );
+
+        Ok(result)
     }
 
     /// Build a DataView from a parsed SQL statement
@@ -46,31 +64,41 @@ impl QueryEngine {
             debug!("QueryEngine: Applying WHERE clause to {} rows", total_rows);
             debug!("QueryEngine: WHERE clause = {:?}", where_clause);
 
+            let filter_start = Instant::now();
             view = view.filter(|table, row_idx| {
-                debug!("QueryEngine: About to create RecursiveWhereEvaluator for row {} (case_insensitive={})", row_idx, self.case_insensitive);
-                let evaluator = RecursiveWhereEvaluator::with_case_insensitive(table, self.case_insensitive);
-                debug!("QueryEngine: Created RecursiveWhereEvaluator, about to call evaluate() for row {}", row_idx);
+                // Only log for first few rows to avoid performance impact
+                if row_idx < 3 {
+                    debug!("QueryEngine: Evaluating WHERE clause for row {}", row_idx);
+                }
+                let evaluator =
+                    RecursiveWhereEvaluator::with_case_insensitive(table, self.case_insensitive);
                 match evaluator.evaluate(where_clause, row_idx) {
                     Ok(result) => {
-                        if row_idx < 5 {
+                        if row_idx < 3 {
                             debug!("QueryEngine: Row {} WHERE result: {}", row_idx, result);
                         }
                         result
                     }
                     Err(e) => {
-                        debug!(
-                            "QueryEngine: WHERE evaluation error for row {}: {}",
-                            row_idx, e
-                        );
+                        if row_idx < 3 {
+                            debug!(
+                                "QueryEngine: WHERE evaluation error for row {}: {}",
+                                row_idx, e
+                            );
+                        }
                         false
                     }
                 }
             });
-
-            debug!(
-                "QueryEngine: After WHERE filtering, {} rows remain",
-                view.row_count()
+            let filter_duration = filter_start.elapsed();
+            info!(
+                "WHERE clause filtering: {} rows -> {} rows in {:?}",
+                total_rows,
+                view.row_count(),
+                filter_duration
             );
+
+            // Debug log moved to info level above with timing
         }
 
         // Apply column projection (SELECT clause) - do this AFTER filtering

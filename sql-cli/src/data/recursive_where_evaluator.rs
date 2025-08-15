@@ -27,23 +27,30 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
     /// Evaluate a WHERE clause for a specific row
     pub fn evaluate(&self, where_clause: &WhereClause, row_index: usize) -> Result<bool> {
-        debug!(
-            "RecursiveWhereEvaluator: evaluate() ENTRY - row {}, {} conditions, case_insensitive={}",
-            row_index,
-            where_clause.conditions.len(),
-            self.case_insensitive
-        );
+        // Only log for first few rows to avoid performance impact
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: evaluate() ENTRY - row {}, {} conditions, case_insensitive={}",
+                row_index,
+                where_clause.conditions.len(),
+                self.case_insensitive
+            );
+        }
 
         if where_clause.conditions.is_empty() {
-            debug!("RecursiveWhereEvaluator: evaluate() EXIT - no conditions, returning true");
+            if row_index < 3 {
+                debug!("RecursiveWhereEvaluator: evaluate() EXIT - no conditions, returning true");
+            }
             return Ok(true);
         }
 
         // Evaluate first condition
-        debug!(
-            "RecursiveWhereEvaluator: evaluate() - evaluating first condition for row {}",
-            row_index
-        );
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: evaluate() - evaluating first condition for row {}",
+                row_index
+            );
+        }
         let mut result = self.evaluate_condition(&where_clause.conditions[0], row_index)?;
 
         // Apply connectors (AND/OR) with subsequent conditions
