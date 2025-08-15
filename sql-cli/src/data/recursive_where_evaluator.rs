@@ -321,7 +321,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
                 // Try ISO 8601 format without timezone (assume UTC)
                 else if let Ok(parsed_dt) =
-                    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S")
+                    NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%dT%H:%M:%S")
                 {
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
                     let result = match op_str {
@@ -344,7 +344,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
                 // Try standard datetime format
                 else if let Ok(parsed_dt) =
-                    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S")
+                    NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%d %H:%M:%S")
                 {
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
                     let result = match op_str {
@@ -363,7 +363,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     Ok(result)
                 }
                 // Try date-only format
-                else if let Ok(parsed_date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                else if let Ok(parsed_date) = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
                     let parsed_dt =
                         NaiveDateTime::new(parsed_date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
@@ -419,7 +419,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
                 // Try ISO 8601 format without timezone (assume UTC)
                 else if let Ok(parsed_dt) =
-                    NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S")
+                    NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%dT%H:%M:%S")
                 {
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
                     let result = match op_str {
