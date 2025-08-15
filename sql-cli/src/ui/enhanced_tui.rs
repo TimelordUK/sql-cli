@@ -562,6 +562,42 @@ impl EnhancedTuiApp {
                 self.toggle_column_pin();
                 Ok(ActionResult::Handled)
             }
+            ToggleRowNumbers => {
+                let current_mode = self.buffer().is_show_row_numbers();
+                self.buffer_mut().set_show_row_numbers(!current_mode);
+                let message = if !current_mode {
+                    "Row numbers enabled"
+                } else {
+                    "Row numbers disabled"
+                };
+                self.buffer_mut().set_status_message(message.to_string());
+                Ok(ActionResult::Handled)
+            }
+            ToggleCompactMode => {
+                let current_mode = self.buffer().is_compact_mode();
+                self.buffer_mut().set_compact_mode(!current_mode);
+                let message = if !current_mode {
+                    "Compact mode enabled"
+                } else {
+                    "Compact mode disabled"
+                };
+                self.buffer_mut().set_status_message(message.to_string());
+                Ok(ActionResult::Handled)
+            }
+            StartJumpToRow => {
+                self.buffer_mut().set_mode(AppMode::JumpToRow);
+                self.clear_jump_to_row_input();
+
+                // Set jump-to-row state as active
+                let container_ptr = Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
+                unsafe {
+                    (*container_ptr).jump_to_row_mut().is_active = true;
+                }
+
+                self.buffer_mut()
+                    .set_status_message("Enter row number (1-based):".to_string());
+                Ok(ActionResult::Handled)
+            }
             Sort(_column_idx) => {
                 // For now, always sort by current column (like 's' key does)
                 self.toggle_sort_current_column();

@@ -121,6 +121,13 @@ impl KeyMapper {
         // Sorting
         mappings.insert((Char('s'), Mod::NONE), Action::Sort(None));
 
+        // View toggles
+        mappings.insert((Char('N'), Mod::NONE), Action::ToggleRowNumbers);
+        mappings.insert((Char('C'), Mod::NONE), Action::ToggleCompactMode);
+
+        // Jump to row
+        mappings.insert((Char(':'), Mod::NONE), Action::StartJumpToRow);
+
         self.mode_mappings.insert(AppMode::Results, mappings);
     }
 

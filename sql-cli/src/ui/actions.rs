@@ -51,6 +51,9 @@ pub enum Action {
     RefreshView,
     ShowHelp,
     ShowDebugInfo,
+    ToggleRowNumbers,
+    ToggleCompactMode,
+    StartJumpToRow,
 
     // Application control
     Quit,
