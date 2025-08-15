@@ -24,6 +24,20 @@ pub enum Action {
     Undo,
     Redo,
 
+    // Cursor movement
+    MoveCursorLeft,
+    MoveCursorRight,
+    MoveCursorHome,
+    MoveCursorEnd,
+    MoveCursorWordLeft,
+    MoveCursorWordRight,
+
+    // Text deletion
+    DeleteWordBackward,
+    DeleteWordForward,
+    DeleteToLineStart,
+    DeleteToLineEnd,
+
     // Clipboard/Yank operations
     Yank(YankTarget),
     Paste,

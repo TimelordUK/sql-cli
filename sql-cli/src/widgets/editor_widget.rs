@@ -68,77 +68,11 @@ impl EditorWidget {
         // Log the key event
         trace!(target: "input", "Key: {:?} Modifiers: {:?}", key.code, key.modifiers);
 
-        // Handle cursor movement actions directly in the widget
-        // Only include operations that are available through BufferAPI trait
-        match (&key.code, key.modifiers) {
-            (KeyCode::Char('a'), KeyModifiers::CONTROL) | (KeyCode::Home, KeyModifiers::NONE) => {
-                // Ctrl+A or Home: Move to line start
-                buffer.set_input_cursor_position(0);
-                return Ok(EditorAction::Continue);
-            }
-            (KeyCode::Char('e'), KeyModifiers::CONTROL) | (KeyCode::End, KeyModifiers::NONE) => {
-                // Ctrl+E or End: Move to line end
-                let text_len = buffer.get_input_text().chars().count();
-                buffer.set_input_cursor_position(text_len);
-                return Ok(EditorAction::Continue);
-            }
-            (KeyCode::Left, KeyModifiers::NONE) => {
-                // Left arrow: Move cursor left
-                let current_pos = buffer.get_input_cursor_position();
-                if current_pos > 0 {
-                    buffer.set_input_cursor_position(current_pos - 1);
-                }
-                return Ok(EditorAction::Continue);
-            }
-            (KeyCode::Right, KeyModifiers::NONE) => {
-                // Right arrow: Move cursor right
-                let current_pos = buffer.get_input_cursor_position();
-                let text_len = buffer.get_input_text().chars().count();
-                if current_pos < text_len {
-                    buffer.set_input_cursor_position(current_pos + 1);
-                }
-                return Ok(EditorAction::Continue);
-            }
-            (KeyCode::Backspace, KeyModifiers::NONE) => {
-                // Backspace: Delete character before cursor
-                let current_pos = buffer.get_input_cursor_position();
-                if current_pos > 0 {
-                    buffer.save_state_for_undo();
-                    let mut text = buffer.get_input_text();
-                    let mut chars: Vec<char> = text.chars().collect();
-                    if current_pos <= chars.len() {
-                        chars.remove(current_pos - 1);
-                        text = chars.iter().collect();
-                        buffer.set_input_text(text);
-                        buffer.set_input_cursor_position(current_pos - 1);
-                    }
-                }
-                return Ok(EditorAction::Continue);
-            }
-            (KeyCode::Delete, KeyModifiers::NONE) => {
-                // Delete: Delete character at cursor
-                let current_pos = buffer.get_input_cursor_position();
-                let mut text = buffer.get_input_text();
-                let chars_len = text.chars().count();
-                if current_pos < chars_len {
-                    buffer.save_state_for_undo();
-                    let mut chars: Vec<char> = text.chars().collect();
-                    chars.remove(current_pos);
-                    text = chars.iter().collect();
-                    buffer.set_input_text(text);
-                    // Cursor position stays the same
-                }
-                return Ok(EditorAction::Continue);
-            }
-            (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
-                // Ctrl+Z: Undo last operation
-                buffer.perform_undo();
-                return Ok(EditorAction::Continue);
-            }
-            _ => {
-                // Continue to dispatcher and other logic
-            }
-        }
+        // The basic editing operations are now handled by the action system
+        // EditorWidget now focuses on higher-level operations that require special handling
+
+        // Note: Basic cursor movement, text editing (backspace, delete, character insert),
+        // and undo/redo are now handled through the action system in enhanced_tui.rs
 
         // Try dispatcher for high-level actions
         if let Some(action) = key_dispatcher.get_command_action(&key) {

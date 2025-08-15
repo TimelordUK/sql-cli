@@ -637,6 +637,148 @@ impl EnhancedTuiApp {
                     Ok(ActionResult::Handled)
                 }
             }
+
+            // Editing actions - only work in Command mode
+            MoveCursorLeft => {
+                if _context.mode == AppMode::Command {
+                    let buffer = self.buffer_mut();
+                    let pos = buffer.get_input_cursor_position();
+                    if pos > 0 {
+                        buffer.set_input_cursor_position(pos - 1);
+                    }
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+            MoveCursorRight => {
+                if _context.mode == AppMode::Command {
+                    let buffer = self.buffer_mut();
+                    let pos = buffer.get_input_cursor_position();
+                    let text_len = buffer.get_input_text().chars().count();
+                    if pos < text_len {
+                        buffer.set_input_cursor_position(pos + 1);
+                    }
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+            MoveCursorHome => {
+                if _context.mode == AppMode::Command {
+                    self.buffer_mut().set_input_cursor_position(0);
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+            MoveCursorEnd => {
+                if _context.mode == AppMode::Command {
+                    let text_len = self.buffer().get_input_text().chars().count();
+                    self.buffer_mut().set_input_cursor_position(text_len);
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+            Backspace => {
+                if _context.mode == AppMode::Command {
+                    let buffer = self.buffer_mut();
+                    let pos = buffer.get_input_cursor_position();
+                    if pos > 0 {
+                        buffer.save_state_for_undo();
+                        let mut text = buffer.get_input_text();
+                        let mut chars: Vec<char> = text.chars().collect();
+                        if pos <= chars.len() {
+                            chars.remove(pos - 1);
+                            text = chars.iter().collect();
+                            buffer.set_input_text(text);
+                            buffer.set_input_cursor_position(pos - 1);
+                        }
+                    }
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+            Delete => {
+                if _context.mode == AppMode::Command {
+                    let buffer = self.buffer_mut();
+                    let pos = buffer.get_input_cursor_position();
+                    let mut text = buffer.get_input_text();
+                    let chars_len = text.chars().count();
+                    if pos < chars_len {
+                        buffer.save_state_for_undo();
+                        let mut chars: Vec<char> = text.chars().collect();
+                        chars.remove(pos);
+                        text = chars.iter().collect();
+                        buffer.set_input_text(text);
+                    }
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+            ClearLine => {
+                if _context.mode == AppMode::Command {
+                    let buffer = self.buffer_mut();
+                    buffer.save_state_for_undo();
+                    buffer.set_input_text(String::new());
+                    buffer.set_input_cursor_position(0);
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+            Undo => {
+                if _context.mode == AppMode::Command {
+                    self.buffer_mut().perform_undo();
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+            Redo => {
+                if _context.mode == AppMode::Command {
+                    self.buffer_mut().perform_redo();
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+            ExecuteQuery => {
+                if _context.mode == AppMode::Command {
+                    // Delegate to existing execute query logic
+                    self.handle_execute_query()?;
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+            InsertChar(c) => {
+                if _context.mode == AppMode::Command {
+                    let buffer = self.buffer_mut();
+                    buffer.save_state_for_undo();
+                    let pos = buffer.get_input_cursor_position();
+                    let mut text = buffer.get_input_text();
+                    let mut chars: Vec<char> = text.chars().collect();
+                    chars.insert(pos, c);
+                    text = chars.iter().collect();
+                    buffer.set_input_text(text);
+                    buffer.set_input_cursor_position(pos + 1);
+
+                    // Clear completion state when typing
+                    self.state_container.clear_completion();
+
+                    // Handle completion
+                    self.handle_completion();
+
+                    Ok(ActionResult::Handled)
+                } else {
+                    Ok(ActionResult::NotHandled)
+                }
+            }
+
             _ => {
                 // Action not yet implemented in new system
                 Ok(ActionResult::NotHandled)

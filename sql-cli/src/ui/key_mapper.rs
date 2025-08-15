@@ -155,6 +155,30 @@ impl KeyMapper {
         mappings.insert((Char('z'), Mod::CONTROL), Action::Undo);
         mappings.insert((Char('y'), Mod::CONTROL), Action::Redo);
 
+        // Cursor movement
+        mappings.insert((Left, Mod::NONE), Action::MoveCursorLeft);
+        mappings.insert((Right, Mod::NONE), Action::MoveCursorRight);
+        mappings.insert((Home, Mod::NONE), Action::MoveCursorHome);
+        mappings.insert((End, Mod::NONE), Action::MoveCursorEnd);
+        mappings.insert((Char('a'), Mod::CONTROL), Action::MoveCursorHome);
+        mappings.insert((Char('e'), Mod::CONTROL), Action::MoveCursorEnd);
+        mappings.insert((Left, Mod::CONTROL), Action::MoveCursorWordLeft);
+        mappings.insert((Right, Mod::CONTROL), Action::MoveCursorWordRight);
+        mappings.insert((Char('b'), Mod::ALT), Action::MoveCursorWordLeft);
+        mappings.insert((Char('f'), Mod::ALT), Action::MoveCursorWordRight);
+
+        // Text editing
+        mappings.insert((Backspace, Mod::NONE), Action::Backspace);
+        mappings.insert((Delete, Mod::NONE), Action::Delete);
+        mappings.insert((Char('w'), Mod::CONTROL), Action::DeleteWordBackward);
+        mappings.insert((Char('d'), Mod::ALT), Action::DeleteWordForward);
+        mappings.insert((Char('k'), Mod::CONTROL), Action::DeleteToLineEnd);
+        mappings.insert((F(9), Mod::NONE), Action::DeleteToLineEnd); // F9 alternative
+        mappings.insert((F(10), Mod::NONE), Action::DeleteToLineStart); // F10 alternative
+
+        // Clipboard operations
+        mappings.insert((Char('v'), Mod::CONTROL), Action::Paste);
+
         self.mode_mappings.insert(AppMode::Command, mappings);
     }
 
@@ -202,6 +226,16 @@ impl KeyMapper {
         if let Some(mode_mappings) = self.mode_mappings.get(&context.mode) {
             if let Some(action) = mode_mappings.get(&key_combo) {
                 return Some(action.clone());
+            }
+        }
+
+        // Handle regular character input in Command mode
+        if context.mode == AppMode::Command {
+            if let KeyCode::Char(c) = key.code {
+                if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
+                    // Regular character input
+                    return Some(Action::InsertChar(c));
+                }
             }
         }
 
