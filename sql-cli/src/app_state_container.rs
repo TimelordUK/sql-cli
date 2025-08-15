@@ -4628,46 +4628,76 @@ impl AppStateContainer {
 
     /// Normalize a key event for platform-specific differences
     /// This handles cases like Windows sending Shift+$ instead of just $
+    /// and platform differences in how Shift+Arrow keys are reported
     pub fn normalize_key(&self, key: KeyEvent) -> KeyEvent {
         let platform = Platform::detect();
 
-        // On Windows, special characters like $ and ^ come with SHIFT modifier
-        // but the key dispatcher expects them without SHIFT
-        if platform == Platform::Windows {
-            match key.code {
-                KeyCode::Char('$')
-                | KeyCode::Char('^')
-                | KeyCode::Char(':')
-                | KeyCode::Char('!')
-                | KeyCode::Char('@')
-                | KeyCode::Char('#')
-                | KeyCode::Char('%')
-                | KeyCode::Char('&')
-                | KeyCode::Char('*')
-                | KeyCode::Char('(')
-                | KeyCode::Char(')') => {
-                    // Remove SHIFT modifier for these characters on Windows
-                    let mut normalized_modifiers = key.modifiers;
-                    normalized_modifiers.remove(KeyModifiers::SHIFT);
+        // Handle platform-specific key differences
+        match platform {
+            Platform::Windows => {
+                match key.code {
+                    // Special characters that come with SHIFT modifier on Windows
+                    KeyCode::Char('$')
+                    | KeyCode::Char('^')
+                    | KeyCode::Char(':')
+                    | KeyCode::Char('!')
+                    | KeyCode::Char('@')
+                    | KeyCode::Char('#')
+                    | KeyCode::Char('%')
+                    | KeyCode::Char('&')
+                    | KeyCode::Char('*')
+                    | KeyCode::Char('(')
+                    | KeyCode::Char(')') => {
+                        // Remove SHIFT modifier for these characters on Windows
+                        let mut normalized_modifiers = key.modifiers;
+                        normalized_modifiers.remove(KeyModifiers::SHIFT);
 
-                    if let Some(ref debug_service) = *self.debug_service.borrow() {
-                        if normalized_modifiers != key.modifiers {
+                        if let Some(ref debug_service) = *self.debug_service.borrow() {
+                            if normalized_modifiers != key.modifiers {
+                                debug_service.info(
+                                    "KeyNormalize",
+                                    format!(
+                                        "Windows key normalization: {:?} with {:?} -> {:?}",
+                                        key.code, key.modifiers, normalized_modifiers
+                                    ),
+                                );
+                            }
+                        }
+
+                        KeyEvent::new(key.code, normalized_modifiers)
+                    }
+                    // On Windows, Shift+Arrow might come as actual arrow keys with SHIFT
+                    KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        if let Some(ref debug_service) = *self.debug_service.borrow() {
+                            debug_service.info(
+                                "KeyNormalize",
+                                format!("Windows: Shift+Left -> '<' character for column movement"),
+                            );
+                        }
+                        // Convert to '<' character without SHIFT for consistency
+                        KeyEvent::new(KeyCode::Char('<'), KeyModifiers::NONE)
+                    }
+                    KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        if let Some(ref debug_service) = *self.debug_service.borrow() {
                             debug_service.info(
                                 "KeyNormalize",
                                 format!(
-                                    "Windows key normalization: {:?} with {:?} -> {:?}",
-                                    key.code, key.modifiers, normalized_modifiers
+                                    "Windows: Shift+Right -> '>' character for column movement"
                                 ),
                             );
                         }
+                        // Convert to '>' character without SHIFT for consistency
+                        KeyEvent::new(KeyCode::Char('>'), KeyModifiers::NONE)
                     }
-
-                    KeyEvent::new(key.code, normalized_modifiers)
+                    _ => key,
                 }
-                _ => key,
             }
-        } else {
-            key
+            Platform::Linux | Platform::MacOS => {
+                // On Unix-like systems, Shift+Arrow keys typically come as '>' and '<' characters
+                // No additional normalization needed for these platforms currently
+                key
+            }
+            Platform::Unknown => key,
         }
     }
 

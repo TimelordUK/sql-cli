@@ -173,9 +173,17 @@ impl DataView {
     pub fn detect_empty_columns(&self) -> Vec<usize> {
         let mut empty_columns = Vec::new();
 
+        // Get column names once to avoid borrowing issues
+        let column_names = self.source.column_names();
+
         // Check each visible column
         for &col_idx in &self.visible_columns {
+            let column_name = column_names
+                .get(col_idx)
+                .map(|s| s.as_str())
+                .unwrap_or("unknown");
             let mut is_empty = true;
+            let mut sample_values = Vec::new();
 
             // Sample rows to check if column has any non-empty values
             // Check all visible rows up to a reasonable limit for performance
@@ -183,9 +191,19 @@ impl DataView {
 
             for &row_idx in self.visible_rows.iter().take(rows_to_check) {
                 if let Some(value) = self.source.get_value(row_idx, col_idx) {
+                    // Collect first few values for debugging
+                    if sample_values.len() < 3 {
+                        sample_values.push(format!("{:?}", value));
+                    }
+
                     match value {
                         DataValue::Null => continue,
                         DataValue::String(s) if s.is_empty() => continue,
+                        DataValue::String(s) if s.trim().is_empty() => continue, // Handle whitespace-only
+                        DataValue::String(s) if s.eq_ignore_ascii_case("null") => continue, // Handle "null" strings
+                        DataValue::String(s) if s == "NULL" => continue, // Handle "NULL" strings
+                        DataValue::String(s) if s == "nil" => continue,  // Handle "nil" strings
+                        DataValue::String(s) if s == "undefined" => continue, // Handle "undefined" strings
                         _ => {
                             is_empty = false;
                             break;
@@ -195,10 +213,28 @@ impl DataView {
             }
 
             if is_empty {
+                tracing::debug!(
+                    "Column '{}' (idx {}) detected as empty. Sample values: {:?}",
+                    column_name,
+                    col_idx,
+                    sample_values
+                );
                 empty_columns.push(col_idx);
+            } else {
+                tracing::debug!(
+                    "Column '{}' (idx {}) has non-empty values. Sample values: {:?}",
+                    column_name,
+                    col_idx,
+                    sample_values
+                );
             }
         }
 
+        tracing::info!(
+            "Detected {} empty columns out of {} visible columns",
+            empty_columns.len(),
+            self.visible_columns.len()
+        );
         empty_columns
     }
 

@@ -140,9 +140,14 @@ impl KeyMapper {
             (Char('H'), Mod::CONTROL | Mod::SHIFT),
             Action::UnhideAllColumns,
         );
-        mappings.insert((Char('E'), Mod::NONE), Action::HideEmptyColumns);
+        // Handle both lowercase and uppercase 'e' for hide empty columns
+        mappings.insert((Char('e'), Mod::NONE), Action::HideEmptyColumns);
+        mappings.insert((Char('E'), Mod::SHIFT), Action::HideEmptyColumns);
         mappings.insert((Left, Mod::SHIFT), Action::MoveColumnLeft);
         mappings.insert((Right, Mod::SHIFT), Action::MoveColumnRight);
+        // Also support < and > characters for column movement (more intuitive)
+        mappings.insert((Char('<'), Mod::NONE), Action::MoveColumnLeft);
+        mappings.insert((Char('>'), Mod::NONE), Action::MoveColumnRight);
         mappings.insert((Char('/'), Mod::NONE), Action::StartColumnSearch);
 
         // Sorting

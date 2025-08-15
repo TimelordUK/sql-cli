@@ -615,8 +615,11 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             HideEmptyColumns => {
+                tracing::info!("HideEmptyColumns action triggered");
                 if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                    tracing::debug!("DataView available, checking for empty columns");
                     let count = dataview.hide_empty_columns();
+                    tracing::info!("Hidden {} empty columns", count);
                     let message = if count > 0 {
                         format!(
                             "Hidden {} empty columns (press Ctrl+Shift+H to unhide)",
@@ -627,6 +630,7 @@ impl EnhancedTuiApp {
                     };
                     self.buffer_mut().set_status_message(message);
                 } else {
+                    tracing::warn!("No DataView available to hide columns");
                     self.buffer_mut()
                         .set_status_message("No data to hide columns".to_string());
                 }
