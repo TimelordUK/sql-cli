@@ -6646,16 +6646,13 @@ impl EnhancedTuiApp {
         // Build final list of visible columns
         let mut visible_columns: Vec<(usize, String)> = Vec::new();
 
-        if !visible_column_indices.is_empty() {
-            // ViewportManager now returns indices that correspond to its own ordered headers
-            // Build visible_columns by taking headers in the order ViewportManager determined
-            let ordered_headers = headers; // ViewportManager already provided ordered headers
-            for &idx in &visible_column_indices {
-                if idx < ordered_headers.len() {
-                    visible_columns.push((idx, ordered_headers[idx].clone()));
-                }
+        if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+            // Ask ViewportManager for all visible columns (includes pinned + scrollable)
+            let viewport_columns = viewport_manager.get_visible_columns();
+            for (idx, col_name) in viewport_columns.iter().enumerate() {
+                visible_columns.push((idx, col_name.clone()));
             }
-            debug!(target: "render", "Using ViewportManager ordered layout: {} columns", visible_columns.len());
+            debug!(target: "render", "Using ViewportManager layout: {} columns from viewport", visible_columns.len());
         } else {
             // Fallback to old calculation if ViewportManager not available
             visible_columns.extend(pinned_headers.iter().cloned());
