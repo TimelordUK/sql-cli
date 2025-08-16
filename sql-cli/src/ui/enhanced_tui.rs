@@ -4659,6 +4659,30 @@ impl EnhancedTuiApp {
             self.state_container.set_current_column(first_match_index);
             self.buffer_mut().set_current_column(first_match_index);
 
+            // Update viewport to show the first match using ViewportManager
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                    let viewport_changed = viewport_manager.set_current_column(first_match_index);
+
+                    // Sync navigation state with updated viewport
+                    if viewport_changed {
+                        let new_viewport = viewport_manager.viewport_cols().clone();
+                        let pinned_count = if let Some(dv) = self.buffer().get_dataview() {
+                            dv.get_pinned_columns().len()
+                        } else {
+                            0
+                        };
+                        let scrollable_offset = new_viewport.start.saturating_sub(pinned_count);
+                        self.state_container.navigation_mut().scroll_offset.1 = scrollable_offset;
+
+                        debug!(target: "navigation", 
+                            "Column search initial: Jumped to column {} '{}', viewport adjusted to {:?}", 
+                            first_match_index, first_match_name, new_viewport);
+                    }
+                }
+            }
+
             debug!(target: "search", "Setting current column to index {} ('{}')", 
                    first_match_index, first_match_name);
             let status_msg = format!(
