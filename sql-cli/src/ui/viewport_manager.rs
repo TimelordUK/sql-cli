@@ -949,6 +949,41 @@ impl ViewportManager {
         self.dataview.column_names()
     }
 
+    /// Get structured information about visible columns for rendering
+    /// Returns (visible_indices, pinned_indices, scrollable_indices)
+    pub fn get_visible_columns_info(
+        &mut self,
+        available_width: u16,
+    ) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
+        debug!(target: "viewport_manager", 
+               "get_visible_columns_info CALLED with width={}, current_viewport={:?}", 
+               available_width, self.viewport_cols);
+
+        // Get all visible column indices
+        let visible_indices = self.calculate_visible_column_indices(available_width);
+
+        // Get pinned column indices from DataView
+        let pinned_columns = self.dataview.get_pinned_columns();
+
+        // Split visible columns into pinned and scrollable
+        let mut pinned_visible = Vec::new();
+        let mut scrollable_visible = Vec::new();
+
+        for &idx in &visible_indices {
+            if pinned_columns.contains(&idx) {
+                pinned_visible.push(idx);
+            } else {
+                scrollable_visible.push(idx);
+            }
+        }
+
+        debug!(target: "viewport_manager", 
+               "get_visible_columns_info: {} visible ({} pinned, {} scrollable)",
+               visible_indices.len(), pinned_visible.len(), scrollable_visible.len());
+
+        (visible_indices, pinned_visible, scrollable_visible)
+    }
+
     /// Calculate the actual X positions in terminal coordinates for visible columns
     /// Returns (column_indices, x_positions) where x_positions[i] is the starting x position for column_indices[i]
     pub fn calculate_column_x_positions(&mut self, available_width: u16) -> (Vec<usize>, Vec<u16>) {
@@ -1843,8 +1878,8 @@ impl ViewportManager {
         let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
 
         debug!(target: "viewport_manager", 
-               "set_current_column: column={}, pinned_count={}, current_viewport={:?}", 
-               column, pinned_count, self.viewport_cols);
+               "set_current_column ENTRY: column={}, pinned_count={}, current_viewport={:?}, terminal_width={}", 
+               column, pinned_count, self.viewport_cols, terminal_width);
 
         // Check if column is already visible
         if column < pinned_count {
@@ -1876,8 +1911,8 @@ impl ViewportManager {
         let is_visible = visible_columns.contains(&column);
 
         debug!(target: "viewport_manager", 
-               "set_current_column: column={}, visible_columns={:?}, is_visible={}", 
-               column, visible_columns, is_visible);
+               "set_current_column CHECK: column={}, viewport={:?}, visible_columns={:?}, is_visible={}", 
+               column, self.viewport_cols, visible_columns, is_visible);
 
         if is_visible {
             debug!(target: "viewport_manager", "Column {} already visible in {:?}, no adjustment needed", column, self.viewport_cols);
@@ -1885,8 +1920,12 @@ impl ViewportManager {
         }
 
         // Column is not visible, need to adjust viewport
+        debug!(target: "viewport_manager", "Column {} NOT visible, calculating new offset", column);
         let new_scroll_offset = self.calculate_scroll_offset_for_column(column, pinned_count);
         let old_scroll_offset = self.viewport_cols.start;
+
+        debug!(target: "viewport_manager", "Calculated new_scroll_offset={}, old_scroll_offset={}", 
+               new_scroll_offset, old_scroll_offset);
 
         if new_scroll_offset != old_scroll_offset {
             // Update viewport to new position

@@ -1349,8 +1349,18 @@ impl EnhancedTuiApp {
 
             // Initialize ViewportManager with the DataView
             if let Some(dataview) = buffer.get_dataview() {
-                *app.viewport_manager.borrow_mut() =
-                    Some(ViewportManager::new(Arc::new(dataview.clone())));
+                let mut new_viewport_manager = ViewportManager::new(Arc::new(dataview.clone()));
+
+                // Update terminal size from current terminal
+                if let Ok((width, height)) = crossterm::terminal::size() {
+                    new_viewport_manager.update_terminal_size(width, height);
+                    debug!(
+                        "Updated new ViewportManager terminal size: {}x{}",
+                        width, height
+                    );
+                }
+
+                *app.viewport_manager.borrow_mut() = Some(new_viewport_manager);
                 debug!("ViewportManager initialized with DataView from loaded file");
             }
 
@@ -2897,6 +2907,14 @@ impl EnhancedTuiApp {
                         if let Some((col_idx, col_name)) = column_info {
                             self.state_container.set_current_column(col_idx);
                             self.buffer_mut().set_current_column(col_idx);
+
+                            // Update ViewportManager to ensure the column is visible
+                            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                            if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                                viewport_manager.set_current_column(col_idx);
+                            }
+                            drop(viewport_manager_borrow);
+
                             self.buffer_mut()
                                 .set_status_message(format!("Jumped to column: {}", col_name));
                         }
@@ -5028,6 +5046,15 @@ impl EnhancedTuiApp {
                 } else {
                     let (column_index, column_name) = matching_columns[0].clone();
                     self.buffer_mut().set_current_column(column_index);
+                    self.state_container.set_current_column(column_index);
+
+                    // Update ViewportManager to ensure the column is visible
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                        viewport_manager.set_current_column(column_index);
+                    }
+                    drop(viewport_manager_borrow);
+
                     self.buffer_mut().set_status_message(format!(
                         "Column 1 of {}: {} (Tab=next, Enter=select)",
                         matches_len, column_name
@@ -5269,6 +5296,15 @@ impl EnhancedTuiApp {
 
             // Create new ViewportManager with the new DataView
             let mut new_viewport_manager = ViewportManager::new(Arc::new(dv));
+
+            // Update terminal size from current terminal
+            if let Ok((width, height)) = crossterm::terminal::size() {
+                new_viewport_manager.update_terminal_size(width, height);
+                debug!(
+                    "Updated new ViewportManager terminal size: {}x{}",
+                    width, height
+                );
+            }
 
             // Set the current column position to ensure proper viewport initialization
             // This is crucial for SELECT queries that subset columns
@@ -6539,14 +6575,14 @@ impl EnhancedTuiApp {
         let terminal_width = area.width as usize;
         let available_width = terminal_width.saturating_sub(4); // Account for borders and padding
 
-        // Update ViewportManager with current terminal dimensions and scroll position if available
+        // Update ViewportManager with current terminal dimensions
+        // Don't use buffer's scroll offset - let ViewportManager manage its own viewport based on current_column
         {
             let mut viewport_opt = self.viewport_manager.borrow_mut();
             if let Some(ref mut viewport_manager) = *viewport_opt {
-                let (row_offset, col_offset) = self.buffer().get_scroll_offset();
-                viewport_manager.set_viewport(
-                    row_offset,
-                    col_offset,
+                // Only update terminal size, not viewport position
+                // The viewport position should be managed by set_current_column calls
+                viewport_manager.update_terminal_size(
                     area.width.saturating_sub(4) as u16,
                     area.height.saturating_sub(6) as u16,
                 );
@@ -6561,28 +6597,30 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Split columns into pinned and scrollable
-        let mut pinned_headers: Vec<(usize, String)> = Vec::new();
-        let mut scrollable_indices: Vec<usize> = Vec::new();
-
-        // Get pinned column names from DataView
-        let pinned_column_names = if let Some(dataview) = self.buffer().get_dataview() {
-            let names = dataview.get_pinned_column_names();
-            debug!(target: "render", "Got {} pinned column names from DataView: {:?}", names.len(), names);
-            names
-        } else {
-            debug!(target: "render", "No DataView available - no pinned columns");
-            Vec::new()
+        // Get structured column information from ViewportManager (single source of truth)
+        let (visible_indices, pinned_indices, scrollable_indices) = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            let viewport_manager = viewport_manager_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for rendering");
+            viewport_manager.get_visible_columns_info(available_width as u16)
         };
 
-        for (i, header) in headers.iter().enumerate() {
-            if pinned_column_names.contains(header) {
-                debug!(target: "render", "Column {} ('{}') is pinned - adding to pinned_headers", i, header);
-                pinned_headers.push((i, header.clone()));
-            } else {
-                scrollable_indices.push(i);
+        debug!(target: "render", "ViewportManager column info: {} visible, {} pinned, {} scrollable",
+               visible_indices.len(), pinned_indices.len(), scrollable_indices.len());
+        debug!(target: "render", "Visible indices: {:?}", visible_indices);
+        debug!(target: "render", "Pinned indices: {:?}", pinned_indices);
+        debug!(target: "render", "Scrollable indices: {:?}", scrollable_indices);
+
+        // Build pinned headers from the indices
+        let mut pinned_headers: Vec<(usize, String)> = Vec::new();
+        for &idx in &pinned_indices {
+            if idx < headers.len() {
+                pinned_headers.push((idx, headers[idx].clone()));
+                debug!(target: "render", "Column {} ('{}') is pinned", idx, headers[idx]);
             }
         }
+
         debug!(target: "render", "Pinned headers: {:?}, Scrollable indices: {:?}", pinned_headers, scrollable_indices);
 
         // Calculate space used by pinned columns
@@ -6627,23 +6665,13 @@ impl EnhancedTuiApp {
         // Calculate how many scrollable columns can fit in remaining space
         let remaining_width = available_width.saturating_sub(pinned_width);
 
-        // If we have ViewportManager, let it calculate which columns should be visible
-        let visible_column_indices = if let Some(ref mut viewport_manager) =
-            *self.viewport_manager.borrow_mut()
-        {
-            // First update the viewport manager with the current column scroll position
+        // Update viewport manager with current scroll position
+        if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
             // Note: scroll_offset.1 is a scrollable column offset, we need to convert to absolute
             let scrollable_offset = self.state_container.navigation().scroll_offset.1;
-            let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
-                dataview.get_pinned_columns().len()
-            } else {
-                0
-            };
+            let pinned_count = pinned_indices.len();
             let absolute_col_offset = scrollable_offset + pinned_count;
             viewport_manager.update_column_viewport(absolute_col_offset, available_width as u16);
-
-            // Now get the optimized column layout respecting current viewport
-            let indices = viewport_manager.calculate_visible_column_indices(available_width as u16);
 
             // Log efficiency metrics for debugging
             let efficiency = viewport_manager.calculate_efficiency_metrics(available_width as u16);
@@ -6654,88 +6682,18 @@ impl EnhancedTuiApp {
                     efficiency.wasted_space,
                     efficiency.columns_that_could_fit.len()
                 );
+        }
 
-            indices
-        } else {
-            Vec::new()
-        };
-
-        // Build final list of visible columns
+        // Build final list of visible columns using the indices we already got from ViewportManager
         let mut visible_columns: Vec<(usize, String)> = Vec::new();
 
-        if !visible_column_indices.is_empty() {
-            // ViewportManager now returns indices that correspond to its own ordered headers
-            // Build visible_columns by taking headers in the order ViewportManager determined
-            let ordered_headers = headers; // ViewportManager already provided ordered headers
-            for &idx in &visible_column_indices {
-                if idx < ordered_headers.len() {
-                    visible_columns.push((idx, ordered_headers[idx].clone()));
-                }
-            }
-            debug!(target: "render", "Using ViewportManager ordered layout: {} columns", visible_columns.len());
-        } else {
-            // Fallback to old calculation if ViewportManager not available
-            visible_columns.extend(pinned_headers.iter().cloned());
-            debug!(target: "render", "Added {} pinned columns to visible_columns", pinned_headers.len());
-
-            // Calculate how many scrollable columns can fit
-            let max_visible_scrollable_cols = if !column_widths.is_empty() {
-                let mut width_used = 0;
-                let mut cols_that_fit = 0;
-
-                for &idx in &scrollable_indices {
-                    if idx >= headers.len() {
-                        break;
-                    }
-                    let col_width = if idx < column_widths.len() {
-                        column_widths[idx]
-                    } else {
-                        15
-                    };
-                    if width_used + col_width <= remaining_width {
-                        width_used += col_width;
-                        cols_that_fit += 1;
-                    } else {
-                        break;
-                    }
-                }
-                cols_that_fit.max(1)
-            } else {
-                // Fallback if no calculated widths
-                let avg_col_width = 15;
-                (remaining_width / avg_col_width).max(1)
-            };
-
-            // Calculate viewport for scrollable columns based on current_column
-            let current_in_scrollable = scrollable_indices
-                .iter()
-                .position(|&x| x == self.buffer().get_current_column());
-            let viewport_start = if let Some(pos) = current_in_scrollable {
-                if pos < max_visible_scrollable_cols / 2 {
-                    0
-                } else if pos + max_visible_scrollable_cols / 2 >= scrollable_indices.len() {
-                    scrollable_indices
-                        .len()
-                        .saturating_sub(max_visible_scrollable_cols)
-                } else {
-                    pos.saturating_sub(max_visible_scrollable_cols / 2)
-                }
-            } else {
-                // Current column is pinned, use scroll offset from navigation state
-                self.state_container.navigation().scroll_offset.1.min(
-                    scrollable_indices
-                        .len()
-                        .saturating_sub(max_visible_scrollable_cols),
-                )
-            };
-            let viewport_end =
-                (viewport_start + max_visible_scrollable_cols).min(scrollable_indices.len());
-
-            for i in viewport_start..viewport_end {
-                let idx = scrollable_indices[i];
+        // Always use ViewportManager's indices - it's the single source of truth
+        for &idx in &visible_indices {
+            if idx < headers.len() {
                 visible_columns.push((idx, headers[idx].clone()));
             }
         }
+        debug!(target: "render", "Using ViewportManager layout: {} columns", visible_columns.len());
 
         debug!(target: "render", "Final visible_columns ({}): {:?}", visible_columns.len(), 
             visible_columns.iter().map(|(_, name)| name.as_str()).collect::<Vec<_>>());
@@ -6815,11 +6773,7 @@ impl EnhancedTuiApp {
             let pinned_indicator = "";
 
             // Check if this column is pinned to determine styling
-            let is_pinned = if let Some(dataview) = self.buffer().get_dataview() {
-                dataview.get_pinned_column_names().contains(header)
-            } else {
-                false
-            };
+            let is_pinned = pinned_indices.contains(actual_col_index);
 
             let mut style = if is_pinned {
                 // Pinned columns get a distinctive blue background with white text
