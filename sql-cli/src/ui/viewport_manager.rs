@@ -31,6 +31,19 @@ pub struct NavigationResult {
     pub viewport_changed: bool,
 }
 
+/// Result of a row navigation operation (Page Up/Down, etc.)
+#[derive(Debug, Clone)]
+pub struct RowNavigationResult {
+    /// The new row position
+    pub row_position: usize,
+    /// The new viewport scroll offset for rows
+    pub row_scroll_offset: usize,
+    /// Human-readable description of the operation
+    pub description: String,
+    /// Whether the operation changed the viewport
+    pub viewport_changed: bool,
+}
+
 /// Minimum column width in characters
 const MIN_COL_WIDTH: u16 = 3;
 /// Maximum column width in characters  
@@ -116,6 +129,36 @@ impl ViewportManager {
             self.terminal_height = height;
             self.cache_dirty = true;
         }
+    }
+
+    /// Update viewport size based on terminal dimensions
+    /// Returns the calculated visible rows for the results area
+    pub fn update_terminal_size(&mut self, terminal_width: u16, terminal_height: u16) -> usize {
+        // Match the actual layout calculation:
+        // - Input area: 3 rows
+        // - Status bar: 3 rows
+        // - Results area gets the rest
+        let input_height = 3;
+        let status_height = 3;
+        let results_area_height =
+            (terminal_height as usize).saturating_sub(input_height + status_height);
+
+        // Now match EXACTLY what the render function does:
+        // - 1 row for top border
+        // - 1 row for header
+        // - 1 row for bottom border
+        let visible_rows = results_area_height.saturating_sub(3).max(10);
+
+        // Update our stored terminal dimensions
+        self.terminal_width = terminal_width;
+        self.terminal_height = terminal_height;
+
+        debug!(target: "navigation",
+            "ViewportManager::update_terminal_size - terminal: {}x{}, visible_rows: {}",
+            terminal_width, terminal_height, visible_rows
+        );
+
+        visible_rows
     }
 
     /// Scroll viewport by relative amount
@@ -1202,6 +1245,91 @@ impl ViewportManager {
         NavigationResult {
             column_position: new_column,
             scroll_offset: self.viewport_cols.start,
+            description,
+            viewport_changed,
+        }
+    }
+
+    /// Navigate one page down in the data
+    pub fn page_down(&mut self, current_row: usize, total_rows: usize) -> RowNavigationResult {
+        // Calculate visible rows (viewport height)
+        let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
+
+        debug!(target: "viewport_manager", 
+               "page_down: current_row={}, total_rows={}, visible_rows={}, current_viewport_rows={:?}", 
+               current_row, total_rows, visible_rows, self.viewport_rows);
+
+        // Calculate new row position (move down by one page)
+        let new_row = (current_row + visible_rows).min(total_rows.saturating_sub(1));
+
+        // Calculate new scroll offset to keep new position visible
+        let old_scroll_offset = self.viewport_rows.start;
+        let new_scroll_offset = if new_row >= self.viewport_rows.start + visible_rows {
+            // Need to scroll down
+            (new_row + 1).saturating_sub(visible_rows)
+        } else {
+            // Keep current scroll
+            old_scroll_offset
+        };
+
+        // Update viewport
+        self.viewport_rows = new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
+        let viewport_changed = new_scroll_offset != old_scroll_offset;
+
+        let description = format!(
+            "Page down: row {} → {} (of {})",
+            current_row + 1,
+            new_row + 1,
+            total_rows
+        );
+
+        debug!(target: "viewport_manager", 
+               "page_down result: new_row={}, scroll_offset={}→{}, viewport_changed={}", 
+               new_row, old_scroll_offset, new_scroll_offset, viewport_changed);
+
+        RowNavigationResult {
+            row_position: new_row,
+            row_scroll_offset: new_scroll_offset,
+            description,
+            viewport_changed,
+        }
+    }
+
+    /// Navigate one page up in the data
+    pub fn page_up(&mut self, current_row: usize, _total_rows: usize) -> RowNavigationResult {
+        // Calculate visible rows (viewport height)
+        let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
+
+        debug!(target: "viewport_manager", 
+               "page_up: current_row={}, visible_rows={}, current_viewport_rows={:?}", 
+               current_row, visible_rows, self.viewport_rows);
+
+        // Calculate new row position (move up by one page)
+        let new_row = current_row.saturating_sub(visible_rows);
+
+        // Calculate new scroll offset to keep new position visible
+        let old_scroll_offset = self.viewport_rows.start;
+        let new_scroll_offset = if new_row < self.viewport_rows.start {
+            // Need to scroll up
+            new_row
+        } else {
+            // Keep current scroll
+            old_scroll_offset
+        };
+
+        // Update viewport
+        self.viewport_rows = new_scroll_offset..(new_scroll_offset + visible_rows);
+        let viewport_changed = new_scroll_offset != old_scroll_offset;
+
+        let description = format!("Page up: row {} → {}", current_row + 1, new_row + 1);
+
+        debug!(target: "viewport_manager", 
+               "page_up result: new_row={}, scroll_offset={}→{}, viewport_changed={}", 
+               new_row, old_scroll_offset, new_scroll_offset, viewport_changed);
+
+        RowNavigationResult {
+            row_position: new_row,
+            row_scroll_offset: new_scroll_offset,
             description,
             viewport_changed,
         }
