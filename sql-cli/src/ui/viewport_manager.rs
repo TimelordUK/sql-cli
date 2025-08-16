@@ -370,6 +370,39 @@ impl ViewportManager {
             self.dataview.column_count()
         );
 
+        // Check if all columns can fit by calculating total width
+        let total_cols = self.dataview.column_count();
+        let mut total_width_needed = 0u16;
+        for col_idx in 0..total_cols {
+            let width = self
+                .column_widths
+                .get(col_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+            total_width_needed += width + separator_width;
+        }
+
+        // Determine the range of columns to process
+        let process_range = if total_width_needed <= available_width {
+            // All columns fit! Use optimal layout instead of restricted viewport
+            tracing::trace!(
+                "All columns fit ({}w needed, {}w available) - using optimal layout 0..{}",
+                total_width_needed,
+                available_width,
+                total_cols
+            );
+            0..total_cols
+        } else {
+            // Not all columns fit, use current viewport
+            tracing::trace!(
+                "Using viewport range {:?} = columns {} to {}",
+                self.viewport_cols,
+                self.viewport_cols.start,
+                self.viewport_cols.end.saturating_sub(1)
+            );
+            self.viewport_cols.clone()
+        };
+
         // First, add pinned columns
         let pinned = self.dataview.get_pinned_columns();
         for &col_idx in pinned {
@@ -393,14 +426,8 @@ impl ViewportManager {
         // Track which columns we've skipped due to width
         let mut skipped_columns: Vec<(usize, u16)> = Vec::new();
 
-        // Then add regular columns from viewport
-        tracing::trace!(
-            "Processing viewport range {:?} = columns {} to {}",
-            self.viewport_cols,
-            self.viewport_cols.start,
-            self.viewport_cols.end - 1
-        );
-        for col_idx in self.viewport_cols.clone() {
+        // Then add regular columns from determined range
+        for col_idx in process_range {
             // Skip if already added as pinned
             if pinned.contains(&col_idx) {
                 continue;

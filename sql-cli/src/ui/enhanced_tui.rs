@@ -4933,6 +4933,24 @@ impl EnhancedTuiApp {
             self.buffer_mut().set_fuzzy_filter_active(true);
             self.buffer_mut()
                 .set_status_message(format!("Fuzzy filter: {} matches", match_count));
+
+            // Coordinate viewport with fuzzy filter results
+            // Reset to first match to avoid confusion where last match appears first in viewport
+            if match_count > 0 {
+                // Get current column offset before modifying buffer
+                let col_offset = self.buffer().get_scroll_offset().1;
+
+                // Reset to first row of filtered results
+                self.buffer_mut().set_selected_row(Some(0));
+                self.buffer_mut().set_scroll_offset((0, col_offset));
+
+                // Update navigation state to be consistent
+                self.state_container.set_table_selected_row(Some(0));
+                self.state_container.navigation_mut().scroll_offset.0 = 0;
+
+                debug!(target: "fuzzy_filter", 
+                      "Reset viewport to first match: {} total matches", match_count);
+            }
         }
 
         // Update fuzzy filter indices for compatibility
