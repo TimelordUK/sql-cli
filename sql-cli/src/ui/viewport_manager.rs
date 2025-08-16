@@ -1825,6 +1825,25 @@ impl ViewportManager {
             return false;
         }
 
+        // Check if we're in optimal layout mode (all columns fit)
+        let total_cols = self.dataview.column_count();
+        let mut total_width_needed = 0u16;
+        for col_idx in 0..total_cols {
+            let width = self
+                .column_widths
+                .get(col_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+            total_width_needed += width + 1; // +1 for separator
+        }
+
+        if total_width_needed <= terminal_width {
+            // All columns fit - no viewport adjustment needed, all columns are visible
+            debug!(target: "viewport_manager", 
+                   "Column {} in optimal layout mode (all columns fit), no adjustment needed", column);
+            return false;
+        }
+
         let visible_columns = self.calculate_visible_column_indices(terminal_width);
         let is_visible = visible_columns.contains(&column);
 
