@@ -1403,7 +1403,7 @@ impl ViewportManager {
                 new_position, wrapped_to_end, column_name
             );
 
-            // If column wrapped to end, adjust viewport to show it
+            // Adjust viewport to keep the moved column visible
             if wrapped_to_end {
                 // Calculate optimal offset to show the last column
                 let optimal_offset = self.calculate_optimal_offset_for_last_column(
@@ -1414,6 +1414,33 @@ impl ViewportManager {
                     self.viewport_cols, optimal_offset, self.dataview.column_count()
                 );
                 self.viewport_cols = optimal_offset..self.dataview.column_count();
+            } else {
+                // Check if the new position is outside the current viewport
+                if !self.viewport_cols.contains(&new_position) {
+                    // Column moved outside viewport, adjust to show it
+                    let terminal_width = self.terminal_width.saturating_sub(4);
+
+                    // Calculate how many columns we can fit starting from the new position
+                    let columns_that_fit =
+                        self.calculate_columns_that_fit(new_position, terminal_width);
+
+                    // Adjust viewport to show the column at its new position
+                    let new_start = if new_position < self.viewport_cols.start {
+                        // Column moved to the left, scroll left
+                        new_position
+                    } else {
+                        // Column moved to the right (shouldn't happen in move_left, but handle it)
+                        new_position.saturating_sub(columns_that_fit - 1)
+                    };
+
+                    let new_end = (new_start + columns_that_fit).min(self.dataview.column_count());
+                    self.viewport_cols = new_start..new_end;
+
+                    debug!(target: "viewport_manager",
+                        "Column moved outside viewport! Adjusting viewport to {}..{} to show column {} at position {}",
+                        new_start, new_end, column_name, new_position
+                    );
+                }
             }
 
             ColumnReorderResult {
@@ -1480,7 +1507,7 @@ impl ViewportManager {
                 .map(|s| s.as_str())
                 .unwrap_or("?");
 
-            // If column wrapped to beginning, reset viewport to show it
+            // Adjust viewport to keep the moved column visible
             if wrapped_to_beginning {
                 // Reset viewport to start
                 self.viewport_cols = 0..self.dataview.column_count().min(20); // Show first ~20 columns or all if less
@@ -1488,6 +1515,33 @@ impl ViewportManager {
                     "Column wrapped to beginning, resetting viewport to show column {} at position {}",
                     column_name, new_position
                 );
+            } else {
+                // Check if the new position is outside the current viewport
+                if !self.viewport_cols.contains(&new_position) {
+                    // Column moved outside viewport, adjust to show it
+                    let terminal_width = self.terminal_width.saturating_sub(4);
+
+                    // Calculate how many columns we can fit
+                    let columns_that_fit =
+                        self.calculate_columns_that_fit(new_position, terminal_width);
+
+                    // Adjust viewport to show the column at its new position
+                    let new_start = if new_position > self.viewport_cols.end {
+                        // Column moved to the right, scroll right
+                        new_position.saturating_sub(columns_that_fit - 1)
+                    } else {
+                        // Column moved to the left (shouldn't happen in move_right, but handle it)
+                        new_position
+                    };
+
+                    let new_end = (new_start + columns_that_fit).min(self.dataview.column_count());
+                    self.viewport_cols = new_start..new_end;
+
+                    debug!(target: "viewport_manager",
+                        "Column moved outside viewport! Adjusting viewport to {}..{} to show column {} at position {}",
+                        new_start, new_end, column_name, new_position
+                    );
+                }
             }
 
             ColumnReorderResult {
