@@ -236,83 +236,35 @@ impl EnhancedTuiApp {
 
         let col_idx = self.state_container.navigation().selected_column;
 
-        // Get the current column name from DataView (not DataTable!)
-        // This ensures we use the view's current column order
-        if let Some(dataview) = self.buffer().get_dataview() {
-            let columns = dataview.column_names();
-            if col_idx < columns.len() {
-                let col_name = columns[col_idx].clone();
+        // Use ViewportManager for column reordering
+        let result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            let viewport_manager = viewport_manager_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for column reordering");
+            viewport_manager.reorder_column_left(col_idx)
+        };
 
-                // Get pinned columns count to respect boundaries
-                let pinned_count = dataview.get_pinned_columns().len();
+        if result.success {
+            // Update navigation state with new position
+            self.state_container.navigation_mut().selected_column = result.new_column_position;
+            self.buffer_mut()
+                .set_current_column(result.new_column_position);
 
-                // Move the column in the DataView
-                if let Some(dataview_mut) = self.buffer_mut().get_dataview_mut() {
-                    // Use the visible column index directly
-                    if dataview_mut.move_column_left(col_idx) {
-                        // Cursor follows the column to its new position
-                        // This allows pressing < multiple times to move the same column
-                        if col_idx == 0 {
-                            // Column wrapped to end, cursor follows to last position
-                            let new_col_count = dataview_mut.column_count();
-                            if new_col_count > 0 {
-                                let new_position = new_col_count - 1;
-                                self.state_container.navigation_mut().selected_column =
-                                    new_position;
-                                self.buffer_mut().set_current_column(new_position);
-
-                                // Adjust scroll offset to make sure the column is visible
-                                let scroll_offset = self.buffer().get_scroll_offset();
-                                let visible_cols = 10; // Approximate visible columns
-                                if new_position >= scroll_offset.1 + visible_cols {
-                                    // Column is off screen to the right, scroll to show it
-                                    let new_scroll = new_position.saturating_sub(visible_cols - 1);
-                                    self.buffer_mut()
-                                        .set_scroll_offset((scroll_offset.0, new_scroll));
-                                }
-                            }
-                            self.buffer_mut()
-                                .set_status_message(format!("Moved column '{}' to end", col_name));
-                        } else if col_idx - 1 < pinned_count && pinned_count > 0 {
-                            // The column would move into pinned area, so it wraps to end instead
-                            let new_col_count = dataview_mut.column_count();
-                            if new_col_count > 0 {
-                                let new_position = new_col_count - 1;
-                                self.state_container.navigation_mut().selected_column =
-                                    new_position;
-                                self.buffer_mut().set_current_column(new_position);
-
-                                // Adjust scroll offset to make sure the column is visible
-                                let scroll_offset = self.buffer().get_scroll_offset();
-                                let visible_cols = 10; // Approximate visible columns
-                                if new_position >= scroll_offset.1 + visible_cols {
-                                    // Column is off screen to the right, scroll to show it
-                                    let new_scroll = new_position.saturating_sub(visible_cols - 1);
-                                    self.buffer_mut()
-                                        .set_scroll_offset((scroll_offset.0, new_scroll));
-                                }
-                            }
-                            self.buffer_mut().set_status_message(format!(
-                                "Moved column '{}' to end (skipped pinned)",
-                                col_name
-                            ));
-                        } else {
-                            // Normal move left, cursor follows to new position
-                            let new_position = col_idx - 1;
-                            self.state_container.navigation_mut().selected_column = new_position;
-                            self.buffer_mut().set_current_column(new_position);
-                            self.buffer_mut()
-                                .set_status_message(format!("Moved column '{}' left", col_name));
-                        }
-                        debug!(
-                            "Moved column '{}' left in DataView (from {} to {})",
-                            col_name,
-                            col_idx,
-                            self.state_container.navigation().selected_column
-                        );
-                    }
-                }
+            // ViewportManager will handle viewport scrolling via set_current_column
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                let viewport_manager = viewport_manager_borrow
+                    .as_mut()
+                    .expect("ViewportManager must exist for column positioning");
+                viewport_manager.set_current_column(result.new_column_position);
             }
+
+            // Set status message
+            self.buffer_mut()
+                .set_status_message(result.description.clone());
+
+            debug!(target: "navigation", "Column reordered left: {}", result.description);
         }
     }
 
@@ -324,76 +276,35 @@ impl EnhancedTuiApp {
 
         let col_idx = self.state_container.navigation().selected_column;
 
-        // Get the current column name from DataView (not DataTable!)
-        // This ensures we use the view's current column order
-        if let Some(dataview) = self.buffer().get_dataview() {
-            let columns = dataview.column_names();
-            if col_idx < columns.len() {
-                let col_name = columns[col_idx].clone();
-                let col_count = columns.len();
+        // Use ViewportManager for column reordering
+        let result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            let viewport_manager = viewport_manager_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for column reordering");
+            viewport_manager.reorder_column_right(col_idx)
+        };
 
-                // Get pinned columns count to respect boundaries
-                let pinned_count = dataview.get_pinned_columns().len();
+        if result.success {
+            // Update navigation state with new position
+            self.state_container.navigation_mut().selected_column = result.new_column_position;
+            self.buffer_mut()
+                .set_current_column(result.new_column_position);
 
-                // Move the column in the DataView
-                if let Some(dataview_mut) = self.buffer_mut().get_dataview_mut() {
-                    // Use the visible column index directly
-                    if dataview_mut.move_column_right(col_idx) {
-                        // Cursor follows the column to its new position
-                        // This allows pressing > multiple times to move the same column
-                        if col_idx == col_count - 1 {
-                            // Column wrapped to beginning
-                            // If there are pinned columns, cursor goes to first non-pinned position
-                            let new_position = if pinned_count > 0 {
-                                pinned_count // First non-pinned column
-                            } else {
-                                0 // No pinned columns, go to start
-                            };
-                            self.state_container.navigation_mut().selected_column = new_position;
-                            self.buffer_mut().set_current_column(new_position);
-
-                            // Reset scroll offset to beginning to show the column
-                            let scroll_offset = self.buffer().get_scroll_offset();
-                            self.buffer_mut().set_scroll_offset((scroll_offset.0, 0));
-
-                            self.buffer_mut().set_status_message(format!(
-                                "Moved column '{}' to {}",
-                                col_name,
-                                if pinned_count > 0 {
-                                    "after pinned columns"
-                                } else {
-                                    "beginning"
-                                }
-                            ));
-                        } else {
-                            // Normal move right, cursor follows to new position
-                            let new_position = col_idx + 1;
-                            self.state_container.navigation_mut().selected_column = new_position;
-                            self.buffer_mut().set_current_column(new_position);
-
-                            // Adjust scroll offset if needed to keep column visible
-                            let scroll_offset = self.buffer().get_scroll_offset();
-                            let visible_cols = 10; // Approximate visible columns
-                            if new_position >= scroll_offset.1 + visible_cols {
-                                // Column is off screen to the right, scroll to show it
-                                let new_scroll = new_position.saturating_sub(visible_cols - 1);
-                                self.buffer_mut()
-                                    .set_scroll_offset((scroll_offset.0, new_scroll));
-                            }
-
-                            self.buffer_mut()
-                                .set_status_message(format!("Moved column '{}' right", col_name));
-                        }
-                        debug!(
-                            "Moved column '{}' right in DataView (from {} to {}, pinned={})",
-                            col_name,
-                            col_idx,
-                            self.state_container.navigation().selected_column,
-                            pinned_count
-                        );
-                    }
-                }
+            // ViewportManager will handle viewport scrolling via set_current_column
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                let viewport_manager = viewport_manager_borrow
+                    .as_mut()
+                    .expect("ViewportManager must exist for column positioning");
+                viewport_manager.set_current_column(result.new_column_position);
             }
+
+            // Set status message
+            self.buffer_mut()
+                .set_status_message(result.description.clone());
+
+            debug!(target: "navigation", "Column reordered right: {}", result.description);
         }
     }
 

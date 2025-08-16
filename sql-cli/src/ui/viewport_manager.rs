@@ -44,6 +44,17 @@ pub struct RowNavigationResult {
     pub viewport_changed: bool,
 }
 
+/// Result of a column reordering operation
+#[derive(Debug, Clone)]
+pub struct ColumnReorderResult {
+    /// The new column position after reordering
+    pub new_column_position: usize,
+    /// Human-readable description of the operation
+    pub description: String,
+    /// Whether the reordering was successful
+    pub success: bool,
+}
+
 /// Minimum column width in characters
 const MIN_COL_WIDTH: u16 = 3;
 /// Maximum column width in characters  
@@ -1332,6 +1343,124 @@ impl ViewportManager {
             row_scroll_offset: new_scroll_offset,
             description,
             viewport_changed,
+        }
+    }
+
+    /// Move the current column left in the display order (swap with previous column)
+    pub fn reorder_column_left(&mut self, current_column: usize) -> ColumnReorderResult {
+        // Get the current column count
+        let column_count = self.dataview.column_count();
+
+        if current_column >= column_count {
+            return ColumnReorderResult {
+                new_column_position: current_column,
+                description: "Invalid column position".to_string(),
+                success: false,
+            };
+        }
+
+        // Get pinned columns count to respect boundaries
+        let pinned_count = self.dataview.get_pinned_columns().len();
+
+        // Delegate to DataView's move_column_left - it handles pinned column logic
+        let dataview_mut = Arc::get_mut(&mut self.dataview)
+            .expect("ViewportManager should have exclusive access to DataView during reordering");
+
+        let success = dataview_mut.move_column_left(current_column);
+
+        if success {
+            self.invalidate_cache(); // Column order changed, need to recalculate widths
+
+            // Determine new cursor position
+            let new_position = if current_column == 0 {
+                // Column wrapped to end
+                column_count - 1
+            } else if current_column == pinned_count && pinned_count > 0 {
+                // First unpinned column wrapped to end
+                column_count - 1
+            } else {
+                // Normal swap with previous
+                current_column - 1
+            };
+
+            let column_names = self.dataview.column_names();
+            let column_name = column_names
+                .get(new_position)
+                .map(|s| s.as_str())
+                .unwrap_or("?");
+
+            ColumnReorderResult {
+                new_column_position: new_position,
+                description: format!("Moved column '{}' left", column_name),
+                success: true,
+            }
+        } else {
+            ColumnReorderResult {
+                new_column_position: current_column,
+                description: "Cannot move column left".to_string(),
+                success: false,
+            }
+        }
+    }
+
+    /// Move the current column right in the display order (swap with next column)
+    pub fn reorder_column_right(&mut self, current_column: usize) -> ColumnReorderResult {
+        // Get the current column count
+        let column_count = self.dataview.column_count();
+
+        if current_column >= column_count {
+            return ColumnReorderResult {
+                new_column_position: current_column,
+                description: "Invalid column position".to_string(),
+                success: false,
+            };
+        }
+
+        // Get pinned columns count to respect boundaries
+        let pinned_count = self.dataview.get_pinned_columns().len();
+
+        // Delegate to DataView's move_column_right - it handles pinned column logic
+        let dataview_mut = Arc::get_mut(&mut self.dataview)
+            .expect("ViewportManager should have exclusive access to DataView during reordering");
+
+        let success = dataview_mut.move_column_right(current_column);
+
+        if success {
+            self.invalidate_cache(); // Column order changed, need to recalculate widths
+
+            // Determine new cursor position
+            let new_position = if current_column == column_count - 1 {
+                // Column wrapped to beginning
+                if pinned_count > 0 {
+                    pinned_count // First non-pinned column
+                } else {
+                    0 // No pinned columns, go to start
+                }
+            } else if current_column == pinned_count - 1 && pinned_count > 0 {
+                // Last pinned column wrapped to first pinned
+                0
+            } else {
+                // Normal swap with next
+                current_column + 1
+            };
+
+            let column_names = self.dataview.column_names();
+            let column_name = column_names
+                .get(new_position)
+                .map(|s| s.as_str())
+                .unwrap_or("?");
+
+            ColumnReorderResult {
+                new_column_position: new_position,
+                description: format!("Moved column '{}' right", column_name),
+                success: true,
+            }
+        } else {
+            ColumnReorderResult {
+                new_column_position: current_column,
+                description: "Cannot move column right".to_string(),
+                success: false,
+            }
         }
     }
 
