@@ -4695,6 +4695,32 @@ impl EnhancedTuiApp {
                 // Update both AppStateContainer and Buffer for compatibility
                 self.state_container.set_current_column(col_index);
                 self.buffer_mut().set_current_column(col_index);
+
+                // Update viewport to show the column using ViewportManager
+                {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                        let viewport_changed = viewport_manager.set_current_column(col_index);
+
+                        // Sync navigation state with updated viewport
+                        if viewport_changed {
+                            let new_viewport = viewport_manager.viewport_cols().clone();
+                            let pinned_count = if let Some(dv) = self.buffer().get_dataview() {
+                                dv.get_pinned_columns().len()
+                            } else {
+                                0
+                            };
+                            let scrollable_offset = new_viewport.start.saturating_sub(pinned_count);
+                            self.state_container.navigation_mut().scroll_offset.1 =
+                                scrollable_offset;
+
+                            debug!(target: "navigation", 
+                                "Column search: Jumped to column {} '{}', viewport adjusted to {:?}", 
+                                col_index, col_name, new_viewport);
+                        }
+                    }
+                }
+
                 self.buffer_mut().set_status_message(format!(
                     "Column {}/{}: {} - Tab/Shift-Tab to navigate",
                     current_match, total_matches, col_name
@@ -4719,6 +4745,32 @@ impl EnhancedTuiApp {
                 // Update both AppStateContainer and Buffer for compatibility
                 self.state_container.set_current_column(col_index);
                 self.buffer_mut().set_current_column(col_index);
+
+                // Update viewport to show the column using ViewportManager
+                {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                        let viewport_changed = viewport_manager.set_current_column(col_index);
+
+                        // Sync navigation state with updated viewport
+                        if viewport_changed {
+                            let new_viewport = viewport_manager.viewport_cols().clone();
+                            let pinned_count = if let Some(dv) = self.buffer().get_dataview() {
+                                dv.get_pinned_columns().len()
+                            } else {
+                                0
+                            };
+                            let scrollable_offset = new_viewport.start.saturating_sub(pinned_count);
+                            self.state_container.navigation_mut().scroll_offset.1 =
+                                scrollable_offset;
+
+                            debug!(target: "navigation", 
+                                "Column search (prev): Jumped to column {} '{}', viewport adjusted to {:?}", 
+                                col_index, col_name, new_viewport);
+                        }
+                    }
+                }
+
                 self.buffer_mut().set_status_message(format!(
                     "Column {}/{}: {} - Tab/Shift-Tab to navigate",
                     current_match, total_matches, col_name
