@@ -237,34 +237,40 @@ impl EnhancedTuiApp {
         let col_idx = self.state_container.navigation().selected_column;
 
         // Use ViewportManager for column reordering
-        let result = {
+        let (result, new_viewport_cols) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for column reordering");
-            viewport_manager.reorder_column_left(col_idx)
+            let result = viewport_manager.reorder_column_left(col_idx);
+            let new_viewport = viewport_manager.viewport_cols().clone();
+            (result, new_viewport)
         };
 
         if result.success {
-            // Update navigation state with new position
-            self.state_container.navigation_mut().selected_column = result.new_column_position;
+            // Update navigation state with new position and viewport
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.selected_column = result.new_column_position;
+                // Convert absolute viewport start to scrollable offset
+                let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
+                    dataview.get_pinned_columns().len()
+                } else {
+                    0
+                };
+                let scrollable_offset = new_viewport_cols.start.saturating_sub(pinned_count);
+                nav.scroll_offset.1 = scrollable_offset;
+            }
+
             self.buffer_mut()
                 .set_current_column(result.new_column_position);
-
-            // ViewportManager will handle viewport scrolling via set_current_column
-            {
-                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                let viewport_manager = viewport_manager_borrow
-                    .as_mut()
-                    .expect("ViewportManager must exist for column positioning");
-                viewport_manager.set_current_column(result.new_column_position);
-            }
 
             // Set status message
             self.buffer_mut()
                 .set_status_message(result.description.clone());
 
-            debug!(target: "navigation", "Column reordered left: {}", result.description);
+            debug!(target: "navigation", "Column reordered left: {}, viewport updated to {:?}", 
+                result.description, new_viewport_cols);
         }
     }
 
@@ -277,34 +283,40 @@ impl EnhancedTuiApp {
         let col_idx = self.state_container.navigation().selected_column;
 
         // Use ViewportManager for column reordering
-        let result = {
+        let (result, new_viewport_cols) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for column reordering");
-            viewport_manager.reorder_column_right(col_idx)
+            let result = viewport_manager.reorder_column_right(col_idx);
+            let new_viewport = viewport_manager.viewport_cols().clone();
+            (result, new_viewport)
         };
 
         if result.success {
-            // Update navigation state with new position
-            self.state_container.navigation_mut().selected_column = result.new_column_position;
+            // Update navigation state with new position and viewport
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.selected_column = result.new_column_position;
+                // Convert absolute viewport start to scrollable offset
+                let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
+                    dataview.get_pinned_columns().len()
+                } else {
+                    0
+                };
+                let scrollable_offset = new_viewport_cols.start.saturating_sub(pinned_count);
+                nav.scroll_offset.1 = scrollable_offset;
+            }
+
             self.buffer_mut()
                 .set_current_column(result.new_column_position);
-
-            // ViewportManager will handle viewport scrolling via set_current_column
-            {
-                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                let viewport_manager = viewport_manager_borrow
-                    .as_mut()
-                    .expect("ViewportManager must exist for column positioning");
-                viewport_manager.set_current_column(result.new_column_position);
-            }
 
             // Set status message
             self.buffer_mut()
                 .set_status_message(result.description.clone());
 
-            debug!(target: "navigation", "Column reordered right: {}", result.description);
+            debug!(target: "navigation", "Column reordered right: {}, viewport updated to {:?}", 
+                result.description, new_viewport_cols);
         }
     }
 

@@ -1348,6 +1348,11 @@ impl ViewportManager {
 
     /// Move the current column left in the display order (swap with previous column)
     pub fn reorder_column_left(&mut self, current_column: usize) -> ColumnReorderResult {
+        debug!(target: "viewport_manager",
+            "reorder_column_left: current_column={}, viewport={:?}",
+            current_column, self.viewport_cols
+        );
+
         // Get the current column count
         let column_count = self.dataview.column_count();
 
@@ -1362,6 +1367,11 @@ impl ViewportManager {
         // Get pinned columns count to respect boundaries
         let pinned_count = self.dataview.get_pinned_columns().len();
 
+        debug!(target: "viewport_manager",
+            "Before move: column_count={}, pinned_count={}, current_column={}",
+            column_count, pinned_count, current_column
+        );
+
         // Delegate to DataView's move_column_left - it handles pinned column logic
         let dataview_mut = Arc::get_mut(&mut self.dataview)
             .expect("ViewportManager should have exclusive access to DataView during reordering");
@@ -1371,12 +1381,11 @@ impl ViewportManager {
         if success {
             self.invalidate_cache(); // Column order changed, need to recalculate widths
 
-            // Determine new cursor position
-            let new_position = if current_column == 0 {
+            // Determine new cursor position based on the move operation
+            let wrapped_to_end =
+                current_column == 0 || (current_column == pinned_count && pinned_count > 0);
+            let new_position = if wrapped_to_end {
                 // Column wrapped to end
-                column_count - 1
-            } else if current_column == pinned_count && pinned_count > 0 {
-                // First unpinned column wrapped to end
                 column_count - 1
             } else {
                 // Normal swap with previous
@@ -1388,6 +1397,24 @@ impl ViewportManager {
                 .get(new_position)
                 .map(|s| s.as_str())
                 .unwrap_or("?");
+
+            debug!(target: "viewport_manager",
+                "After move: new_position={}, wrapped_to_end={}, column_name={}",
+                new_position, wrapped_to_end, column_name
+            );
+
+            // If column wrapped to end, adjust viewport to show it
+            if wrapped_to_end {
+                // Calculate optimal offset to show the last column
+                let optimal_offset = self.calculate_optimal_offset_for_last_column(
+                    self.terminal_width.saturating_sub(4),
+                );
+                debug!(target: "viewport_manager",
+                    "Column wrapped to end! Adjusting viewport from {:?} to {}..{}",
+                    self.viewport_cols, optimal_offset, self.dataview.column_count()
+                );
+                self.viewport_cols = optimal_offset..self.dataview.column_count();
+            }
 
             ColumnReorderResult {
                 new_column_position: new_position,
@@ -1428,7 +1455,10 @@ impl ViewportManager {
         if success {
             self.invalidate_cache(); // Column order changed, need to recalculate widths
 
-            // Determine new cursor position
+            // Determine new cursor position and if wrapping occurred
+            let wrapped_to_beginning = current_column == column_count - 1
+                || (current_column == pinned_count - 1 && pinned_count > 0);
+
             let new_position = if current_column == column_count - 1 {
                 // Column wrapped to beginning
                 if pinned_count > 0 {
@@ -1449,6 +1479,16 @@ impl ViewportManager {
                 .get(new_position)
                 .map(|s| s.as_str())
                 .unwrap_or("?");
+
+            // If column wrapped to beginning, reset viewport to show it
+            if wrapped_to_beginning {
+                // Reset viewport to start
+                self.viewport_cols = 0..self.dataview.column_count().min(20); // Show first ~20 columns or all if less
+                debug!(target: "viewport_manager",
+                    "Column wrapped to beginning, resetting viewport to show column {} at position {}",
+                    column_name, new_position
+                );
+            }
 
             ColumnReorderResult {
                 new_column_position: new_position,
