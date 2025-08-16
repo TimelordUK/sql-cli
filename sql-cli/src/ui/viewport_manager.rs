@@ -949,6 +949,37 @@ impl ViewportManager {
         self.dataview.column_names()
     }
 
+    /// Get structured information about visible columns for rendering
+    /// Returns (visible_indices, pinned_indices, scrollable_indices)
+    pub fn get_visible_columns_info(
+        &mut self,
+        available_width: u16,
+    ) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
+        // Get all visible column indices
+        let visible_indices = self.calculate_visible_column_indices(available_width);
+
+        // Get pinned column indices from DataView
+        let pinned_columns = self.dataview.get_pinned_columns();
+
+        // Split visible columns into pinned and scrollable
+        let mut pinned_visible = Vec::new();
+        let mut scrollable_visible = Vec::new();
+
+        for &idx in &visible_indices {
+            if pinned_columns.contains(&idx) {
+                pinned_visible.push(idx);
+            } else {
+                scrollable_visible.push(idx);
+            }
+        }
+
+        debug!(target: "viewport_manager", 
+               "get_visible_columns_info: {} visible ({} pinned, {} scrollable)",
+               visible_indices.len(), pinned_visible.len(), scrollable_visible.len());
+
+        (visible_indices, pinned_visible, scrollable_visible)
+    }
+
     /// Calculate the actual X positions in terminal coordinates for visible columns
     /// Returns (column_indices, x_positions) where x_positions[i] is the starting x position for column_indices[i]
     pub fn calculate_column_x_positions(&mut self, available_width: u16) -> (Vec<usize>, Vec<u16>) {

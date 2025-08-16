@@ -6561,28 +6561,31 @@ impl EnhancedTuiApp {
             }
         }
 
-        // Split columns into pinned and scrollable
-        let mut pinned_headers: Vec<(usize, String)> = Vec::new();
-        let mut scrollable_indices: Vec<usize> = Vec::new();
-
-        // Get pinned column names from DataView
-        let pinned_column_names = if let Some(dataview) = self.buffer().get_dataview() {
-            let names = dataview.get_pinned_column_names();
-            debug!(target: "render", "Got {} pinned column names from DataView: {:?}", names.len(), names);
-            names
-        } else {
-            debug!(target: "render", "No DataView available - no pinned columns");
-            Vec::new()
-        };
-
-        for (i, header) in headers.iter().enumerate() {
-            if pinned_column_names.contains(header) {
-                debug!(target: "render", "Column {} ('{}') is pinned - adding to pinned_headers", i, header);
-                pinned_headers.push((i, header.clone()));
+        // Get structured column information from ViewportManager (single source of truth)
+        let (visible_indices, pinned_indices, scrollable_indices) =
+            if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                viewport_manager.get_visible_columns_info(available_width as u16)
             } else {
-                scrollable_indices.push(i);
+                // Fallback if no ViewportManager
+                debug!(target: "render", "No ViewportManager available - using fallback");
+                (Vec::new(), Vec::new(), Vec::new())
+            };
+
+        debug!(target: "render", "ViewportManager column info: {} visible, {} pinned, {} scrollable",
+               visible_indices.len(), pinned_indices.len(), scrollable_indices.len());
+        debug!(target: "render", "Visible indices: {:?}", visible_indices);
+        debug!(target: "render", "Pinned indices: {:?}", pinned_indices);
+        debug!(target: "render", "Scrollable indices: {:?}", scrollable_indices);
+
+        // Build pinned headers from the indices
+        let mut pinned_headers: Vec<(usize, String)> = Vec::new();
+        for &idx in &pinned_indices {
+            if idx < headers.len() {
+                pinned_headers.push((idx, headers[idx].clone()));
+                debug!(target: "render", "Column {} ('{}') is pinned", idx, headers[idx]);
             }
         }
+
         debug!(target: "render", "Pinned headers: {:?}, Scrollable indices: {:?}", pinned_headers, scrollable_indices);
 
         // Calculate space used by pinned columns
@@ -6627,23 +6630,13 @@ impl EnhancedTuiApp {
         // Calculate how many scrollable columns can fit in remaining space
         let remaining_width = available_width.saturating_sub(pinned_width);
 
-        // If we have ViewportManager, let it calculate which columns should be visible
-        let visible_column_indices = if let Some(ref mut viewport_manager) =
-            *self.viewport_manager.borrow_mut()
-        {
-            // First update the viewport manager with the current column scroll position
+        // Update viewport manager with current scroll position
+        if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
             // Note: scroll_offset.1 is a scrollable column offset, we need to convert to absolute
             let scrollable_offset = self.state_container.navigation().scroll_offset.1;
-            let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
-                dataview.get_pinned_columns().len()
-            } else {
-                0
-            };
+            let pinned_count = pinned_indices.len();
             let absolute_col_offset = scrollable_offset + pinned_count;
             viewport_manager.update_column_viewport(absolute_col_offset, available_width as u16);
-
-            // Now get the optimized column layout respecting current viewport
-            let indices = viewport_manager.calculate_visible_column_indices(available_width as u16);
 
             // Log efficiency metrics for debugging
             let efficiency = viewport_manager.calculate_efficiency_metrics(available_width as u16);
@@ -6654,25 +6647,19 @@ impl EnhancedTuiApp {
                     efficiency.wasted_space,
                     efficiency.columns_that_could_fit.len()
                 );
+        }
 
-            indices
-        } else {
-            Vec::new()
-        };
-
-        // Build final list of visible columns
+        // Build final list of visible columns using the indices we already got from ViewportManager
         let mut visible_columns: Vec<(usize, String)> = Vec::new();
 
-        if !visible_column_indices.is_empty() {
-            // ViewportManager now returns indices that correspond to its own ordered headers
-            // Build visible_columns by taking headers in the order ViewportManager determined
-            let ordered_headers = headers; // ViewportManager already provided ordered headers
-            for &idx in &visible_column_indices {
-                if idx < ordered_headers.len() {
-                    visible_columns.push((idx, ordered_headers[idx].clone()));
+        if !visible_indices.is_empty() {
+            // Use the visible_indices we got from ViewportManager earlier
+            for &idx in &visible_indices {
+                if idx < headers.len() {
+                    visible_columns.push((idx, headers[idx].clone()));
                 }
             }
-            debug!(target: "render", "Using ViewportManager ordered layout: {} columns", visible_columns.len());
+            debug!(target: "render", "Using ViewportManager layout: {} columns", visible_columns.len());
         } else {
             // Fallback to old calculation if ViewportManager not available
             visible_columns.extend(pinned_headers.iter().cloned());
@@ -6815,11 +6802,7 @@ impl EnhancedTuiApp {
             let pinned_indicator = "";
 
             // Check if this column is pinned to determine styling
-            let is_pinned = if let Some(dataview) = self.buffer().get_dataview() {
-                dataview.get_pinned_column_names().contains(header)
-            } else {
-                false
-            };
+            let is_pinned = pinned_indices.contains(actual_col_index);
 
             let mut style = if is_pinned {
                 // Pinned columns get a distinctive blue background with white text
