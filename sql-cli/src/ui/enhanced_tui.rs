@@ -1892,6 +1892,10 @@ impl EnhancedTuiApp {
                     }
                     return Ok(false);
                 }
+                "paste_from_clipboard" => {
+                    self.paste_from_clipboard();
+                    return Ok(false);
+                }
                 _ => {} // Fall through to hardcoded handling
             }
         }
