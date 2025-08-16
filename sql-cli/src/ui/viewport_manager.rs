@@ -955,6 +955,10 @@ impl ViewportManager {
         &mut self,
         available_width: u16,
     ) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
+        debug!(target: "viewport_manager", 
+               "get_visible_columns_info CALLED with width={}, current_viewport={:?}", 
+               available_width, self.viewport_cols);
+
         // Get all visible column indices
         let visible_indices = self.calculate_visible_column_indices(available_width);
 
@@ -1874,7 +1878,7 @@ impl ViewportManager {
         let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
 
         debug!(target: "viewport_manager", 
-               "set_current_column: column={}, pinned_count={}, current_viewport={:?}, terminal_width={}", 
+               "set_current_column ENTRY: column={}, pinned_count={}, current_viewport={:?}, terminal_width={}", 
                column, pinned_count, self.viewport_cols, terminal_width);
 
         // Check if column is already visible
@@ -1907,8 +1911,8 @@ impl ViewportManager {
         let is_visible = visible_columns.contains(&column);
 
         debug!(target: "viewport_manager", 
-               "set_current_column: column={}, visible_columns={:?}, is_visible={}", 
-               column, visible_columns, is_visible);
+               "set_current_column CHECK: column={}, viewport={:?}, visible_columns={:?}, is_visible={}", 
+               column, self.viewport_cols, visible_columns, is_visible);
 
         if is_visible {
             debug!(target: "viewport_manager", "Column {} already visible in {:?}, no adjustment needed", column, self.viewport_cols);
@@ -1916,8 +1920,12 @@ impl ViewportManager {
         }
 
         // Column is not visible, need to adjust viewport
+        debug!(target: "viewport_manager", "Column {} NOT visible, calculating new offset", column);
         let new_scroll_offset = self.calculate_scroll_offset_for_column(column, pinned_count);
         let old_scroll_offset = self.viewport_cols.start;
+
+        debug!(target: "viewport_manager", "Calculated new_scroll_offset={}, old_scroll_offset={}", 
+               new_scroll_offset, old_scroll_offset);
 
         if new_scroll_offset != old_scroll_offset {
             // Update viewport to new position

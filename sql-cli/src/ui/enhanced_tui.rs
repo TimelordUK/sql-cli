@@ -6575,14 +6575,14 @@ impl EnhancedTuiApp {
         let terminal_width = area.width as usize;
         let available_width = terminal_width.saturating_sub(4); // Account for borders and padding
 
-        // Update ViewportManager with current terminal dimensions and scroll position if available
+        // Update ViewportManager with current terminal dimensions
+        // Don't use buffer's scroll offset - let ViewportManager manage its own viewport based on current_column
         {
             let mut viewport_opt = self.viewport_manager.borrow_mut();
             if let Some(ref mut viewport_manager) = *viewport_opt {
-                let (row_offset, col_offset) = self.buffer().get_scroll_offset();
-                viewport_manager.set_viewport(
-                    row_offset,
-                    col_offset,
+                // Only update terminal size, not viewport position
+                // The viewport position should be managed by set_current_column calls
+                viewport_manager.update_terminal_size(
                     area.width.saturating_sub(4) as u16,
                     area.height.saturating_sub(6) as u16,
                 );
