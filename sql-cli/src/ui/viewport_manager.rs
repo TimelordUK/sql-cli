@@ -127,8 +127,13 @@ impl ViewportManager {
             ..row_offset
                 .saturating_add(height as usize)
                 .min(self.dataview.row_count());
-        let new_cols = col_offset
-            ..col_offset
+
+        // Always include pinned columns in viewport (start from 0 if there are pinned columns)
+        let pinned_count = self.dataview.get_pinned_columns().len();
+        let actual_col_start = if pinned_count > 0 { 0 } else { col_offset };
+
+        let new_cols = actual_col_start
+            ..actual_col_start
                 .saturating_add(width as usize)
                 .min(self.dataview.column_count());
 

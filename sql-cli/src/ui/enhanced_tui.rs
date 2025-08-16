@@ -6794,15 +6794,15 @@ impl EnhancedTuiApp {
                 ""
             };
 
-            // No longer need [P] indicator since we use blue background for pinned columns
-            let pinned_indicator = "";
-
             // Check if this column is pinned to determine styling
             let is_pinned = if let Some(dataview) = self.buffer().get_dataview() {
                 dataview.get_pinned_column_names().contains(header)
             } else {
                 false
             };
+
+            // Add [P] indicator for pinned columns for better visibility
+            let pinned_indicator = if is_pinned { " [P]" } else { "" };
 
             let mut style = if is_pinned {
                 // Pinned columns get a distinctive blue background with white text
