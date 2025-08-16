@@ -2897,6 +2897,14 @@ impl EnhancedTuiApp {
                         if let Some((col_idx, col_name)) = column_info {
                             self.state_container.set_current_column(col_idx);
                             self.buffer_mut().set_current_column(col_idx);
+
+                            // Update ViewportManager to ensure the column is visible
+                            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                            if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                                viewport_manager.set_current_column(col_idx);
+                            }
+                            drop(viewport_manager_borrow);
+
                             self.buffer_mut()
                                 .set_status_message(format!("Jumped to column: {}", col_name));
                         }
@@ -5028,6 +5036,15 @@ impl EnhancedTuiApp {
                 } else {
                     let (column_index, column_name) = matching_columns[0].clone();
                     self.buffer_mut().set_current_column(column_index);
+                    self.state_container.set_current_column(column_index);
+
+                    // Update ViewportManager to ensure the column is visible
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                        viewport_manager.set_current_column(column_index);
+                    }
+                    drop(viewport_manager_borrow);
+
                     self.buffer_mut().set_status_message(format!(
                         "Column 1 of {}: {} (Tab=next, Enter=select)",
                         matches_len, column_name
