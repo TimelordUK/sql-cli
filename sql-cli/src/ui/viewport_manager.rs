@@ -1874,8 +1874,8 @@ impl ViewportManager {
         let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
 
         debug!(target: "viewport_manager", 
-               "set_current_column: column={}, pinned_count={}, current_viewport={:?}", 
-               column, pinned_count, self.viewport_cols);
+               "set_current_column: column={}, pinned_count={}, current_viewport={:?}, terminal_width={}", 
+               column, pinned_count, self.viewport_cols, terminal_width);
 
         // Check if column is already visible
         if column < pinned_count {
