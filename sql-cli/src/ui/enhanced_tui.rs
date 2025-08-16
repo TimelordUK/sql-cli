@@ -5202,9 +5202,27 @@ impl EnhancedTuiApp {
     /// Update ViewportManager when DataView changes
     fn update_viewport_manager(&mut self, dataview: Option<DataView>) {
         if let Some(dv) = dataview {
-            // Create or update ViewportManager with the new DataView
-            *self.viewport_manager.borrow_mut() = Some(ViewportManager::new(Arc::new(dv)));
-            debug!("ViewportManager updated with new DataView");
+            // Get current column position to preserve it
+            let current_column = self.buffer().get_current_column();
+
+            // Create new ViewportManager with the new DataView
+            let mut new_viewport_manager = ViewportManager::new(Arc::new(dv));
+
+            // Set the current column position to ensure proper viewport initialization
+            // This is crucial for SELECT queries that subset columns
+            if current_column < new_viewport_manager.dataview().column_count() {
+                new_viewport_manager.set_current_column(current_column);
+            } else {
+                // If current column is out of bounds, reset to first column
+                new_viewport_manager.set_current_column(0);
+                self.buffer_mut().set_current_column(0);
+            }
+
+            *self.viewport_manager.borrow_mut() = Some(new_viewport_manager);
+            debug!(
+                "ViewportManager updated with new DataView, current_column={}",
+                current_column
+            );
         } else {
             // Clear ViewportManager if no DataView
             *self.viewport_manager.borrow_mut() = None;
