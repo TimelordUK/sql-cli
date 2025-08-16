@@ -3924,167 +3924,126 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_left(&mut self) {
-        // Get pinned columns from DataView to respect boundaries
-        let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
-            let count = dataview.get_pinned_columns().len();
-            debug!(target: "navigation", "move_column_left: {} pinned columns", count);
-            count
+        // Use ViewportManager for column navigation
+        let current_column = self.buffer().get_current_column();
+        let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
+        {
+            Some(viewport_manager.navigate_column_left(current_column))
         } else {
-            0
+            None
         };
 
-        let current_column = self.buffer().get_current_column();
-        debug!(target: "navigation", "move_column_left: current_column={}, pinned_count={}", current_column, pinned_count);
+        if let Some(nav_result) = nav_result {
+            debug!(target: "navigation", "move_column_left: ViewportManager result: {:?}", nav_result);
 
-        // Calculate new column, skipping over pinned columns
-        let new_column = if current_column > pinned_count {
-            // We're in the scrollable area, move left normally
-            current_column - 1
-        } else if current_column == pinned_count && pinned_count > 0 {
-            // We're at the boundary, wrap to the end
+            // Update cursor_manager for table navigation (incremental step)
+            self.cursor_manager.move_table_left();
+
+            // Apply navigation result to TUI state
+            self.buffer_mut()
+                .set_current_column(nav_result.column_position);
+
+            // Sync with navigation state in AppStateContainer
+            self.state_container.navigation_mut().selected_column = nav_result.column_position;
+
+            // Update scroll offset if viewport changed
+            if nav_result.viewport_changed {
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.1 = nav_result.scroll_offset;
+                self.buffer_mut().set_scroll_offset(offset);
+                self.state_container.navigation_mut().scroll_offset = offset;
+            }
+
+            // Set status message
+            let column_num = nav_result.column_position + 1;
+            self.buffer_mut()
+                .set_status_message(format!("Column {} selected", column_num));
+        } else {
+            debug!(target: "navigation", "move_column_left: ViewportManager not available, fallback to basic navigation");
+
+            // Fallback: basic navigation without viewport optimization
+            let current_column = self.buffer().get_current_column();
+            if current_column > 0 {
+                let new_column = current_column - 1;
+                self.cursor_manager.move_table_left();
+                self.buffer_mut().set_current_column(new_column);
+                self.state_container.navigation_mut().selected_column = new_column;
+
+                let column_num = new_column + 1;
+                self.buffer_mut()
+                    .set_status_message(format!("Column {} selected", column_num));
+            }
+        }
+    }
+
+    fn move_column_right(&mut self) {
+        // Use ViewportManager for column navigation
+        let current_column = self.buffer().get_current_column();
+        let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
+        {
+            Some(viewport_manager.navigate_column_right(current_column))
+        } else {
+            None
+        };
+
+        if let Some(nav_result) = nav_result {
+            debug!(target: "navigation", "move_column_right: input_column={}, ViewportManager result: {:?}", current_column, nav_result);
+
+            // Get max columns for cursor_manager
             let max_columns = if let Some(provider) = self.get_data_provider() {
                 provider.get_column_count()
             } else {
                 0
             };
-            if max_columns > 0 {
-                max_columns - 1
-            } else {
-                current_column
-            }
-        } else {
-            // We're in pinned area (shouldn't happen), stay at boundary
-            pinned_count
-        };
-
-        debug!(target: "navigation", "move_column_left: new_column={}", new_column);
-
-        // Update cursor_manager for table navigation (incremental step)
-        self.cursor_manager.move_table_left();
-
-        // Update the column position
-        self.buffer_mut().set_current_column(new_column);
-
-        // Sync with navigation state in AppStateContainer
-        self.state_container.navigation_mut().selected_column = new_column;
-
-        // Update scroll offset to ensure the new column is visible
-        let mut offset = self.buffer().get_scroll_offset();
-        if new_column >= pinned_count {
-            // Calculate the column index within scrollable columns
-            let scrollable_column_index = new_column - pinned_count;
-
-            // Determine if we need to scroll the viewport
-            let current_offset = offset.1;
-
-            // Estimate how many columns can fit (rough estimate, viewport manager will optimize)
-            let estimated_visible_cols = 15; // Conservative estimate
-
-            // If the new column would be outside the current viewport, scroll
-            if scrollable_column_index < current_offset {
-                // Column is to the left of viewport, scroll left
-                offset.1 = scrollable_column_index;
-            } else if scrollable_column_index >= current_offset + estimated_visible_cols {
-                // Column is to the right of viewport, scroll right (shouldn't happen when moving left)
-                offset.1 = scrollable_column_index - estimated_visible_cols + 1;
-            }
-            // Otherwise, keep the current offset (column is already visible)
-
-            debug!(target: "navigation", "move_column_left: column {} -> scroll offset {}", scrollable_column_index, offset.1);
-        } else {
-            // In pinned area, no scroll needed
-            offset.1 = 0;
-        }
-
-        self.buffer_mut().set_scroll_offset(offset);
-        self.state_container.navigation_mut().scroll_offset = offset;
-
-        let column_num = new_column + 1;
-        self.buffer_mut()
-            .set_status_message(format!("Column {} selected", column_num));
-    }
-
-    fn move_column_right(&mut self) {
-        // Get pinned columns from DataView to respect boundaries
-        let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
-            let count = dataview.get_pinned_columns().len();
-            debug!(target: "navigation", "move_column_right: {} pinned columns", count);
-            count
-        } else {
-            0
-        };
-
-        // Use DataProvider trait to get column count
-        let max_columns = if let Some(provider) = self.get_data_provider() {
-            provider.get_column_count()
-        } else {
-            0
-        };
-
-        let current_column = self.buffer().get_current_column();
-        debug!(target: "navigation", "move_column_right: current_column={}, pinned_count={}, max_columns={}", 
-               current_column, pinned_count, max_columns);
-
-        if max_columns > 0 {
-            // Calculate new column, skipping over pinned columns
-            let new_column = if current_column < pinned_count {
-                // We're in pinned area (shouldn't happen), jump to first scrollable column
-                pinned_count
-            } else if current_column + 1 < max_columns {
-                // Normal move right
-                current_column + 1
-            } else {
-                // At the end, wrap to first scrollable column (skip pinned)
-                pinned_count
-            };
-
-            debug!(target: "navigation", "move_column_right: new_column={}", new_column);
 
             // Update cursor_manager for table navigation (incremental step)
             self.cursor_manager.move_table_right(max_columns);
 
-            // Update the column position
-            self.buffer_mut().set_current_column(new_column);
+            // Apply navigation result to TUI state
+            self.buffer_mut()
+                .set_current_column(nav_result.column_position);
 
             // Sync with navigation state in AppStateContainer
-            self.state_container.navigation_mut().selected_column = new_column;
+            self.state_container.navigation_mut().selected_column = nav_result.column_position;
 
-            // Update scroll offset to ensure the new column is visible
-            // The scroll offset represents the leftmost visible scrollable column
-            let mut offset = self.buffer().get_scroll_offset();
-            if new_column >= pinned_count {
-                // Calculate the column index within scrollable columns
-                let scrollable_column_index = new_column - pinned_count;
-
-                // Determine if we need to scroll the viewport
-                // We want to keep the cursor visible while minimizing scrolling
-                let current_offset = offset.1;
-
-                // Estimate how many columns can fit (rough estimate, viewport manager will optimize)
-                let estimated_visible_cols = 15; // Conservative estimate
-
-                // If the new column would be outside the current viewport, scroll
-                if scrollable_column_index >= current_offset + estimated_visible_cols {
-                    // Column is to the right of viewport, scroll right
-                    offset.1 = scrollable_column_index - estimated_visible_cols + 1;
-                } else if scrollable_column_index < current_offset {
-                    // Column is to the left of viewport, scroll left
-                    offset.1 = scrollable_column_index;
-                }
-                // Otherwise, keep the current offset (column is already visible)
-
-                debug!(target: "navigation", "move_column_right: column {} -> scroll offset {}", scrollable_column_index, offset.1);
-            } else {
-                // In pinned area, no scroll needed
-                offset.1 = 0;
+            // Update scroll offset if viewport changed
+            if nav_result.viewport_changed {
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.1 = nav_result.scroll_offset;
+                self.buffer_mut().set_scroll_offset(offset);
+                self.state_container.navigation_mut().scroll_offset = offset;
             }
 
-            self.buffer_mut().set_scroll_offset(offset);
-            self.state_container.navigation_mut().scroll_offset = offset;
-
-            let column_num = new_column + 1;
+            // Set status message
+            let column_num = nav_result.column_position + 1;
             self.buffer_mut()
                 .set_status_message(format!("Column {} selected", column_num));
+        } else {
+            debug!(target: "navigation", "move_column_right: ViewportManager not available, fallback to basic navigation");
+
+            // Fallback: basic navigation without viewport optimization
+            let max_columns = if let Some(provider) = self.get_data_provider() {
+                provider.get_column_count()
+            } else {
+                0
+            };
+
+            if max_columns > 0 {
+                let current_column = self.buffer().get_current_column();
+                let new_column = if current_column + 1 < max_columns {
+                    current_column + 1
+                } else {
+                    0 // Wrap to first column
+                };
+
+                self.cursor_manager.move_table_right(max_columns);
+                self.buffer_mut().set_current_column(new_column);
+                self.state_container.navigation_mut().selected_column = new_column;
+
+                let column_num = new_column + 1;
+                self.buffer_mut()
+                    .set_status_message(format!("Column {} selected", column_num));
+            }
         }
     }
 
@@ -4208,6 +4167,10 @@ impl EnhancedTuiApp {
         } // nav borrow ends here
 
         self.state_container.set_table_selected_row(Some(0));
+
+        // Sync with buffer's table state so it shows in rendering
+        self.buffer_mut().set_selected_row(Some(0));
+
         let offset = {
             let mut offset = self.buffer().get_scroll_offset();
             offset.0 = 0; // Reset viewport to top
@@ -4310,6 +4273,11 @@ impl EnhancedTuiApp {
                         }
                     }
                 }
+
+                // Update ViewportManager with the modified DataView
+                if let Some(updated_dataview) = self.buffer().get_dataview() {
+                    self.update_viewport_manager(Some(updated_dataview.clone()));
+                }
             }
         } else {
             self.buffer_mut()
@@ -4323,6 +4291,11 @@ impl EnhancedTuiApp {
         }
         self.buffer_mut()
             .set_status_message("All columns unpinned".to_string());
+
+        // Update ViewportManager with the modified DataView
+        if let Some(updated_dataview) = self.buffer().get_dataview() {
+            self.update_viewport_manager(Some(updated_dataview.clone()));
+        }
     }
 
     fn calculate_column_statistics(&mut self) {
@@ -4509,6 +4482,10 @@ impl EnhancedTuiApp {
             }
 
             self.state_container.set_table_selected_row(Some(last_row));
+
+            // Sync with buffer's table state so it shows in rendering
+            self.buffer_mut().set_selected_row(Some(last_row));
+
             // Position viewport to show the last row at the bottom
             let visible_rows = self.buffer().get_last_visible_rows();
             let mut offset = self.buffer().get_scroll_offset();
@@ -5993,6 +5970,26 @@ impl EnhancedTuiApp {
                         Style::default().fg(Color::DarkGray),
                     ));
 
+                    // Add actual terminal cursor position if we can calculate it
+                    if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                        let available_width = area.width.saturating_sub(4) as u16;
+                        if let Some(x_pos) = viewport_manager.get_column_x_position(
+                            self.buffer().get_current_column(),
+                            available_width,
+                        ) {
+                            // Add 2 for left border and padding, add 3 for header rows
+                            let terminal_x = x_pos + 2;
+                            let terminal_y = (selected as u16)
+                                .saturating_sub(self.buffer().get_scroll_offset().0 as u16)
+                                + 3;
+                            spans.push(Span::raw(" "));
+                            spans.push(Span::styled(
+                                format!("[{}x{}]", terminal_x, terminal_y),
+                                Style::default().fg(Color::DarkGray),
+                            ));
+                        }
+                    }
+
                     // Column information
                     if let Some(dataview) = self.buffer().get_dataview() {
                         let headers = dataview.column_names();
@@ -6296,13 +6293,18 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Get headers from provider (which should apply hidden column filtering)
-        let headers = provider.get_column_names();
+        // Get headers from ViewportManager (single source of truth)
+        let headers = if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+            viewport_manager.get_column_names_ordered()
+        } else {
+            // Fallback to provider if ViewportManager not available
+            provider.get_column_names()
+        };
         debug!(
-            "render_table_with_provider: Got {} column headers from provider",
+            "render_table_with_provider: Got {} column headers from ViewportManager",
             headers.len()
         );
-        debug!("Column headers: {:?}", headers);
+        debug!("ViewportManager headers: {:?}", headers);
         debug!(
             "Buffer has {} hidden columns",
             self.buffer()
@@ -6418,7 +6420,7 @@ impl EnhancedTuiApp {
             let absolute_col_offset = scrollable_offset + pinned_count;
             viewport_manager.update_column_viewport(absolute_col_offset, available_width as u16);
 
-            // Now get the optimized column layout
+            // Now get the optimized column layout respecting current viewport
             let indices = viewport_manager.calculate_visible_column_indices(available_width as u16);
 
             // Log efficiency metrics for debugging
@@ -6440,13 +6442,15 @@ impl EnhancedTuiApp {
         let mut visible_columns: Vec<(usize, String)> = Vec::new();
 
         if !visible_column_indices.is_empty() {
-            // Use the optimized column layout from ViewportManager
+            // ViewportManager now returns indices that correspond to its own ordered headers
+            // Build visible_columns by taking headers in the order ViewportManager determined
+            let ordered_headers = headers; // ViewportManager already provided ordered headers
             for &idx in &visible_column_indices {
-                if idx < headers.len() {
-                    visible_columns.push((idx, headers[idx].clone()));
+                if idx < ordered_headers.len() {
+                    visible_columns.push((idx, ordered_headers[idx].clone()));
                 }
             }
-            debug!(target: "render", "Using ViewportManager optimized layout: {} columns", visible_columns.len());
+            debug!(target: "render", "Using ViewportManager ordered layout: {} columns", visible_columns.len());
         } else {
             // Fallback to old calculation if ViewportManager not available
             visible_columns.extend(pinned_headers.iter().cloned());
@@ -7739,6 +7743,53 @@ impl EnhancedTuiApp {
                         nav_state.scroll_offset.0, nav_state.scroll_offset.1
                     ));
 
+                    // Add detailed viewport tracking info
+                    if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+                        let vp_range = viewport_manager.get_viewport_range();
+                        debug_info.push_str(&format!("\n--- VIEWPORT TRACKING ---\n"));
+                        debug_info.push_str(&format!(
+                            "ViewportManager Range: {:?} (columns {} to {})\n",
+                            vp_range,
+                            vp_range.start,
+                            if vp_range.end > 0 {
+                                vp_range.end - 1
+                            } else {
+                                0
+                            }
+                        ));
+                        debug_info.push_str(&format!(
+                            "Current column {} is {} viewport {:?}\n",
+                            current_column,
+                            if current_column >= vp_range.start && current_column < vp_range.end {
+                                "WITHIN"
+                            } else {
+                                "OUTSIDE"
+                            },
+                            vp_range
+                        ));
+
+                        // Check what would happen if we moved right
+                        let next_column = current_column + 1;
+                        debug_info.push_str(&format!(
+                            "Next column {} would be {} viewport\n",
+                            next_column,
+                            if next_column >= vp_range.start && next_column < vp_range.end {
+                                "WITHIN"
+                            } else {
+                                "OUTSIDE (should trigger scroll)"
+                            }
+                        ));
+                    } else {
+                        debug_info.push_str("\n--- VIEWPORT TRACKING ---\n");
+                        debug_info.push_str("ViewportManager not available\n");
+                    }
+
+                    // Add navigation call history
+                    debug_info.push_str(&format!("\n--- NAVIGATION CALL FLOW ---\n"));
+                    debug_info.push_str("Last navigation actions:\n");
+                    // This will be populated by actual navigation calls
+                    debug_info.push_str("(Enable RUST_LOG=sql_cli::ui::viewport_manager=debug,navigation=debug to see flow)\n");
+
                     // Show pinned column info for navigation context
                     if let Some(dataview) = self.buffer().get_dataview() {
                         let pinned_count = dataview.get_pinned_columns().len();
@@ -7760,6 +7811,50 @@ impl EnhancedTuiApp {
                         } else {
                             debug_info.push_str(&format!("Current Position: SCROLLABLE area (column {}, scrollable index {})\n", 
                                 current_column, current_column - pinned_count));
+                        }
+
+                        // Show display column order
+                        let display_columns = dataview.get_display_columns();
+                        debug_info.push_str(&format!("\n--- COLUMN ORDERING ---\n"));
+                        debug_info.push_str(&format!(
+                            "Display column order (first 10): {:?}\n",
+                            &display_columns[..display_columns.len().min(10)]
+                        ));
+                        if display_columns.len() > 10 {
+                            debug_info.push_str(&format!(
+                                "... and {} more columns\n",
+                                display_columns.len() - 10
+                            ));
+                        }
+
+                        // Find current column in display order
+                        if let Some(display_idx) = display_columns
+                            .iter()
+                            .position(|&idx| idx == current_column)
+                        {
+                            debug_info.push_str(&format!(
+                                "Current column {} is at display index {}/{}\n",
+                                current_column,
+                                display_idx,
+                                display_columns.len()
+                            ));
+
+                            // Show what happens on next move
+                            if display_idx + 1 < display_columns.len() {
+                                let next_col = display_columns[display_idx + 1];
+                                debug_info.push_str(&format!(
+                                    "Next 'l' press should move to column {} (display index {})\n",
+                                    next_col,
+                                    display_idx + 1
+                                ));
+                            } else {
+                                debug_info.push_str("Next 'l' press should wrap to first column\n");
+                            }
+                        } else {
+                            debug_info.push_str(&format!(
+                                "WARNING: Current column {} not found in display order!\n",
+                                current_column
+                            ));
                         }
                     }
                     debug_info.push_str("==========================================\n");

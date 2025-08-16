@@ -69,6 +69,11 @@ pub struct ViewportManager {
 }
 
 impl ViewportManager {
+    /// Get the current viewport range
+    pub fn get_viewport_range(&self) -> std::ops::Range<usize> {
+        self.viewport_cols.clone()
+    }
+
     /// Create a new ViewportManager for a DataView
     pub fn new(dataview: Arc<DataView>) -> Self {
         let col_count = dataview.column_count();
@@ -335,6 +340,12 @@ impl ViewportManager {
         let mut skipped_columns: Vec<(usize, u16)> = Vec::new();
 
         // Then add regular columns from viewport
+        tracing::trace!(
+            "Processing viewport range {:?} = columns {} to {}",
+            self.viewport_cols,
+            self.viewport_cols.start,
+            self.viewport_cols.end - 1
+        );
         for col_idx in self.viewport_cols.clone() {
             // Skip if already added as pinned
             if pinned.contains(&col_idx) {
@@ -389,23 +400,34 @@ impl ViewportManager {
                 }
             }
 
-            // Then check ALL columns beyond viewport that might fit
-            for col_idx in self.viewport_cols.end..self.dataview.column_count() {
-                // Skip if already visible or pinned
-                if visible_indices.contains(&col_idx) || pinned.contains(&col_idx) {
-                    continue;
-                }
+            // DISABLED: Don't look beyond viewport for efficiency - it breaks column order
+            // The optimization below would add column 42 when we should be showing columns in order
+            // // Then check ALL columns beyond viewport that might fit
+            // tracing::trace!(
+            //     "Looking for additional columns from {} to {} (beyond viewport end)",
+            //     self.viewport_cols.end,
+            //     self.dataview.column_count() - 1
+            // );
+            // for col_idx in self.viewport_cols.end..self.dataview.column_count() {
+            //     // Skip if already visible or pinned
+            //     if visible_indices.contains(&col_idx) || pinned.contains(&col_idx) {
+            //         tracing::trace!("Skipping column {} - already visible or pinned", col_idx);
+            //         continue;
+            //     }
 
-                let width = self
-                    .column_widths
-                    .get(col_idx)
-                    .copied()
-                    .unwrap_or(DEFAULT_COL_WIDTH);
+            //     let width = self
+            //         .column_widths
+            //         .get(col_idx)
+            //         .copied()
+            //         .unwrap_or(DEFAULT_COL_WIDTH);
 
-                if width + separator_width <= remaining_width {
-                    candidates.push((col_idx, width));
-                }
-            }
+            //     if width + separator_width <= remaining_width {
+            //         candidates.push((col_idx, width));
+            //         tracing::trace!("Column {} ({}w) is candidate for extra space", col_idx, width);
+            //     } else {
+            //         tracing::trace!("Column {} ({}w) too wide for remaining {}w", col_idx, width, remaining_width);
+            //     }
+            // }
 
             if !candidates.is_empty() {
                 tracing::trace!(
@@ -829,6 +851,98 @@ impl ViewportManager {
         output
     }
 
+    /// Get column names in DataView's preferred order (pinned first, then display order)
+    /// This should be the single source of truth for column ordering from TUI perspective
+    pub fn get_column_names_ordered(&self) -> Vec<String> {
+        self.dataview.column_names()
+    }
+
+    /// Calculate the actual X positions in terminal coordinates for visible columns
+    /// Returns (column_indices, x_positions) where x_positions[i] is the starting x position for column_indices[i]
+    pub fn calculate_column_x_positions(&mut self, available_width: u16) -> (Vec<usize>, Vec<u16>) {
+        let visible_indices = self.calculate_visible_column_indices(available_width);
+        let mut x_positions = Vec::new();
+        let mut current_x = 0u16;
+        let separator_width = 1u16;
+
+        for &col_idx in &visible_indices {
+            x_positions.push(current_x);
+            let width = self
+                .column_widths
+                .get(col_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+            current_x += width + separator_width;
+        }
+
+        (visible_indices, x_positions)
+    }
+
+    /// Get the X position in terminal coordinates for a specific column (if visible)
+    pub fn get_column_x_position(&mut self, column: usize, available_width: u16) -> Option<u16> {
+        let (indices, positions) = self.calculate_column_x_positions(available_width);
+        indices
+            .iter()
+            .position(|&idx| idx == column)
+            .and_then(|pos| positions.get(pos).copied())
+    }
+
+    /// Get visible column indices that fit in available width, preserving DataView's order
+    pub fn calculate_visible_column_indices_ordered(&mut self, available_width: u16) -> Vec<usize> {
+        if self.cache_dirty {
+            self.recalculate_column_widths();
+        }
+
+        // Get DataView's preferred column order (pinned first)
+        let ordered_columns = self.dataview.get_display_columns();
+        let mut visible_indices = Vec::new();
+        let mut used_width = 0u16;
+        let separator_width = 1u16;
+
+        tracing::trace!(
+            "ViewportManager: Starting ordered column layout. Available width: {}w, DataView order: {:?}",
+            available_width,
+            ordered_columns
+        );
+
+        // Process columns in DataView's order (pinned first, then display order)
+        for &col_idx in &ordered_columns {
+            let width = self
+                .column_widths
+                .get(col_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+
+            if used_width + width + separator_width <= available_width {
+                visible_indices.push(col_idx);
+                used_width += width + separator_width;
+                tracing::trace!(
+                    "Added column {} in DataView order: {}w (total used: {}w)",
+                    col_idx,
+                    width,
+                    used_width
+                );
+            } else {
+                tracing::trace!(
+                    "Skipped column {} ({}w) - would exceed available width",
+                    col_idx,
+                    width
+                );
+                break; // Stop when we run out of space, maintaining order
+            }
+        }
+
+        tracing::trace!(
+            "Final ordered layout: {} columns visible {:?}, {}w used of {}w",
+            visible_indices.len(),
+            visible_indices,
+            used_width,
+            available_width
+        );
+
+        visible_indices
+    }
+
     /// Calculate viewport efficiency metrics
     pub fn calculate_efficiency_metrics(&mut self, available_width: u16) -> ViewportEfficiency {
         // Get the visible columns
@@ -943,6 +1057,260 @@ impl ViewportManager {
             scroll_offset: new_scroll_offset,
             description,
             viewport_changed,
+        }
+    }
+
+    /// Navigate one column to the left with intelligent wrapping and scrolling
+    /// This method handles everything: column movement, viewport tracking, and scrolling
+    pub fn navigate_column_left(&mut self, current_column: usize) -> NavigationResult {
+        // Get the DataView's display order (pinned columns first, then others)
+        let display_columns = self.dataview.get_display_columns();
+        let total_display_columns = display_columns.len();
+
+        debug!(target: "viewport_manager", 
+               "navigate_column_left: current={}, total_display={}, display_order={:?}", 
+               current_column, total_display_columns, display_columns);
+
+        // Find current column in the display order
+        let current_display_index = display_columns
+            .iter()
+            .position(|&col_idx| col_idx == current_column)
+            .unwrap_or(0);
+
+        debug!(target: "viewport_manager", 
+               "navigate_column_left: current_column={} found at display_index={}", 
+               current_column, current_display_index);
+
+        // Calculate new display position (move left in display order)
+        let new_display_index = if current_display_index > 0 {
+            current_display_index - 1
+        } else {
+            // Wrap to last column
+            if total_display_columns > 0 {
+                total_display_columns - 1
+            } else {
+                0
+            }
+        };
+
+        // Get the actual column index from display order
+        let new_column = display_columns
+            .get(new_display_index)
+            .copied()
+            .unwrap_or(current_column);
+
+        let old_scroll_offset = self.viewport_cols.start;
+
+        // Don't pre-extend viewport - let set_current_column handle all viewport adjustments
+        // This avoids the issue where we extend the viewport, then set_current_column thinks
+        // the column is already visible and doesn't scroll
+        debug!(target: "viewport_manager", 
+               "navigate_column_left: moving to new_column={}, current viewport={:?}", 
+               new_column, self.viewport_cols);
+
+        // Use set_current_column to handle viewport adjustment automatically
+        let viewport_changed = self.set_current_column(new_column);
+
+        let column_names = self.dataview.column_names();
+        let column_name = column_names
+            .get(new_display_index)
+            .map(|s| s.as_str())
+            .unwrap_or("unknown");
+        let description = format!(
+            "Navigate left to column '{}' ({})",
+            column_name,
+            new_display_index + 1
+        );
+
+        debug!(target: "viewport_manager", 
+               "navigate_column_left: {}→{} (display_index: {}→{}), scroll: {}→{}, viewport_changed={}", 
+               current_column, new_column, current_display_index, new_display_index,
+               old_scroll_offset, self.viewport_cols.start, viewport_changed);
+
+        NavigationResult {
+            column_position: new_column,
+            scroll_offset: self.viewport_cols.start,
+            description,
+            viewport_changed,
+        }
+    }
+
+    /// Navigate one column to the right with intelligent wrapping and scrolling
+    pub fn navigate_column_right(&mut self, current_column: usize) -> NavigationResult {
+        // Get the DataView's display order (pinned columns first, then others)
+        let display_columns = self.dataview.get_display_columns();
+        let total_display_columns = display_columns.len();
+
+        debug!(target: "viewport_manager", 
+               "navigate_column_right ENTRY: current={}, viewport={:?}, total_display={}", 
+               current_column, self.viewport_cols, total_display_columns);
+
+        // Find current column in the display order
+        let current_display_index = display_columns
+            .iter()
+            .position(|&col_idx| col_idx == current_column)
+            .unwrap_or(0);
+
+        debug!(target: "viewport_manager", 
+               "navigate_column_right: current_column={} found at display_index={}", 
+               current_column, current_display_index);
+
+        // Calculate new display position (move right in display order)
+        let new_display_index = if current_display_index + 1 < total_display_columns {
+            current_display_index + 1
+        } else {
+            // Wrap to first column (could be pinned or first scrollable)
+            0
+        };
+
+        // Get the actual column index from display order
+        let new_column = display_columns
+            .get(new_display_index)
+            .copied()
+            .unwrap_or(current_column);
+
+        let old_scroll_offset = self.viewport_cols.start;
+
+        // Ensure the viewport includes the target column before checking visibility
+        // This fixes the range issue where column N is not included in range start..N
+        // Don't pre-extend viewport - let set_current_column handle all viewport adjustments
+        // This avoids the issue where we extend the viewport, then set_current_column thinks
+        // the column is already visible and doesn't scroll
+        debug!(target: "viewport_manager", 
+               "navigate_column_right: moving to new_column={}, current viewport={:?}", 
+               new_column, self.viewport_cols);
+
+        // Use set_current_column to handle viewport adjustment automatically
+        let viewport_changed = self.set_current_column(new_column);
+
+        let column_names = self.dataview.column_names();
+        let column_name = column_names
+            .get(new_display_index)
+            .map(|s| s.as_str())
+            .unwrap_or("unknown");
+        let description = format!(
+            "Navigate right to column '{}' ({})",
+            column_name,
+            new_display_index + 1
+        );
+
+        debug!(target: "viewport_manager", 
+               "navigate_column_right EXIT: {}→{} (display_index: {}→{}), viewport: {:?}, scroll: {}→{}, viewport_changed={}", 
+               current_column, new_column, current_display_index, new_display_index,
+               self.viewport_cols, old_scroll_offset, self.viewport_cols.start, viewport_changed);
+
+        NavigationResult {
+            column_position: new_column,
+            scroll_offset: self.viewport_cols.start,
+            description,
+            viewport_changed,
+        }
+    }
+
+    /// Update the current column position and automatically adjust viewport if needed
+    /// This should be called whenever the user navigates to a new column
+    pub fn set_current_column(&mut self, column: usize) -> bool {
+        let pinned_count = self.dataview.get_pinned_columns().len();
+        let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
+
+        debug!(target: "viewport_manager", 
+               "set_current_column: column={}, pinned_count={}, current_viewport={:?}", 
+               column, pinned_count, self.viewport_cols);
+
+        // Check if column is already visible
+        if column < pinned_count {
+            // Pinned column, always visible
+            debug!(target: "viewport_manager", "Column {} is pinned, no viewport adjustment needed", column);
+            return false;
+        }
+
+        let visible_columns = self.calculate_visible_column_indices(terminal_width);
+        let is_visible = visible_columns.contains(&column);
+
+        debug!(target: "viewport_manager", 
+               "set_current_column: column={}, visible_columns={:?}, is_visible={}", 
+               column, visible_columns, is_visible);
+
+        if is_visible {
+            debug!(target: "viewport_manager", "Column {} already visible in {:?}, no adjustment needed", column, self.viewport_cols);
+            return false;
+        }
+
+        // Column is not visible, need to adjust viewport
+        let new_scroll_offset = self.calculate_scroll_offset_for_column(column, pinned_count);
+        let old_scroll_offset = self.viewport_cols.start;
+
+        if new_scroll_offset != old_scroll_offset {
+            // Update viewport to new position
+            let visible_columns_at_offset = self
+                .calculate_visible_column_indices_with_offset(terminal_width, new_scroll_offset);
+            let new_end = if !visible_columns_at_offset.is_empty() {
+                visible_columns_at_offset
+                    .last()
+                    .copied()
+                    .unwrap_or(new_scroll_offset)
+                    + 1
+            } else {
+                new_scroll_offset + 1
+            };
+
+            self.viewport_cols = new_scroll_offset..new_end;
+            self.cache_dirty = true; // Mark cache as dirty since viewport changed
+
+            debug!(target: "viewport_manager", 
+                   "Adjusted viewport for column {}: {}→{} (viewport: {:?})", 
+                   column, old_scroll_offset, new_scroll_offset, self.viewport_cols);
+
+            return true;
+        }
+
+        false
+    }
+
+    /// Calculate visible columns with a specific scroll offset (for viewport tracking)
+    fn calculate_visible_column_indices_with_offset(
+        &mut self,
+        available_width: u16,
+        scroll_offset: usize,
+    ) -> Vec<usize> {
+        // Temporarily update viewport to calculate with new offset
+        let original_viewport = self.viewport_cols.clone();
+        self.viewport_cols = scroll_offset..scroll_offset + 50; // Temporary large range
+
+        let visible_columns = self.calculate_visible_column_indices(available_width);
+
+        // Restore original viewport
+        self.viewport_cols = original_viewport;
+
+        visible_columns
+    }
+
+    /// Calculate the optimal scroll offset to keep a column visible
+    /// This replaces the hardcoded estimates in TUI with proper viewport calculations
+    fn calculate_scroll_offset_for_column(&mut self, column: usize, pinned_count: usize) -> usize {
+        if column < pinned_count {
+            // Column is pinned, no scroll needed
+            return 0;
+        }
+
+        let scrollable_column_index = column - pinned_count;
+        let current_offset = self.viewport_cols.start;
+
+        // Get actual visible column count from our viewport calculations
+        let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
+        let visible_columns = self.calculate_visible_column_indices(terminal_width);
+        let visible_count = visible_columns.len();
+
+        // Smart scrolling logic
+        if scrollable_column_index < current_offset {
+            // Column is to the left of viewport, scroll left to show it
+            scrollable_column_index
+        } else if visible_count > 0 && scrollable_column_index >= current_offset + visible_count {
+            // Column is to the right of viewport, scroll right to show it
+            scrollable_column_index.saturating_sub(visible_count - 1)
+        } else {
+            // Column is already visible, keep current offset
+            current_offset
         }
     }
 }
