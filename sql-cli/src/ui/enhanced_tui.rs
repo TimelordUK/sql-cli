@@ -3913,10 +3913,14 @@ impl EnhancedTuiApp {
 
     fn move_column_left(&mut self) {
         // Use ViewportManager for column navigation
-        let current_column = self.buffer().get_current_column();
+        let current_display_pos = self.buffer().get_current_column();
         let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
         {
-            Some(viewport_manager.navigate_column_left(current_column))
+            debug!(target: "enhanced_tui", 
+                   "move_column_left: current logical display_pos={}", 
+                   current_display_pos);
+
+            Some(viewport_manager.navigate_column_left(current_display_pos))
         } else {
             None
         };
@@ -3927,11 +3931,15 @@ impl EnhancedTuiApp {
             // Update cursor_manager for table navigation (incremental step)
             self.cursor_manager.move_table_left();
 
-            // Apply navigation result to TUI state
+            debug!(target: "enhanced_tui", 
+                   "move_column_left: storing logical display_pos={} in Buffer", 
+                   nav_result.column_position);
+
+            // Apply navigation result to TUI state (using logical display position)
             self.buffer_mut()
                 .set_current_column(nav_result.column_position);
 
-            // Sync with navigation state in AppStateContainer
+            // Sync with navigation state in AppStateContainer (using logical display position)
             self.state_container.navigation_mut().selected_column = nav_result.column_position;
 
             // Update scroll offset if viewport changed
@@ -3966,16 +3974,20 @@ impl EnhancedTuiApp {
 
     fn move_column_right(&mut self) {
         // Use ViewportManager for column navigation
-        let current_column = self.buffer().get_current_column();
+        let current_display_pos = self.buffer().get_current_column();
         let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
         {
-            Some(viewport_manager.navigate_column_right(current_column))
+            debug!(target: "enhanced_tui", 
+                   "move_column_right: current logical display_pos={}", 
+                   current_display_pos);
+
+            Some(viewport_manager.navigate_column_right(current_display_pos))
         } else {
             None
         };
 
         if let Some(nav_result) = nav_result {
-            debug!(target: "navigation", "move_column_right: input_column={}, ViewportManager result: {:?}", current_column, nav_result);
+            debug!(target: "navigation", "move_column_right: input_display_pos={}, ViewportManager result: {:?}", current_display_pos, nav_result);
 
             // Get max columns for cursor_manager
             let max_columns = if let Some(provider) = self.get_data_provider() {
@@ -3987,11 +3999,15 @@ impl EnhancedTuiApp {
             // Update cursor_manager for table navigation (incremental step)
             self.cursor_manager.move_table_right(max_columns);
 
-            // Apply navigation result to TUI state
+            debug!(target: "enhanced_tui", 
+                   "move_column_right: storing logical display_pos={} in Buffer", 
+                   nav_result.column_position);
+
+            // Apply navigation result to TUI state (using logical display position)
             self.buffer_mut()
                 .set_current_column(nav_result.column_position);
 
-            // Sync with navigation state in AppStateContainer
+            // Sync with navigation state in AppStateContainer (using logical display position)
             self.state_container.navigation_mut().selected_column = nav_result.column_position;
 
             // Update scroll offset if viewport changed
@@ -4226,13 +4242,14 @@ impl EnhancedTuiApp {
 
     fn toggle_column_pin(&mut self) {
         // Pin or unpin the current column using DataView
-        let current_col = self.buffer().get_current_column();
+        let current_display_pos = self.buffer().get_current_column();
 
-        // Get the column name at the current position from DataView
+        // Convert logical display position to DataTable index to get column name
         let column_name = if let Some(dataview) = self.buffer().get_dataview() {
-            let columns = dataview.column_names();
-            if current_col < columns.len() {
-                Some(columns[current_col].clone())
+            let display_columns = dataview.get_display_columns();
+            if let Some(&datatable_idx) = display_columns.get(current_display_pos) {
+                let all_columns = dataview.column_names();
+                all_columns.get(datatable_idx).cloned()
             } else {
                 None
             }
@@ -5022,39 +5039,43 @@ impl EnhancedTuiApp {
     }
 
     fn toggle_sort_current_column(&mut self) {
-        let column_index = self.buffer().get_current_column();
+        let current_display_pos = self.buffer().get_current_column();
 
         if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            // Get column name for display (using the visual column layout)
-            let column_names = dataview.column_names();
-            let col_name = column_names
-                .get(column_index)
-                .map(|s| s.clone())
-                .unwrap_or_else(|| format!("Column {}", column_index));
+            // Convert logical display position to DataTable index for sorting
+            let display_columns = dataview.get_display_columns();
+            if let Some(&datatable_idx) = display_columns.get(current_display_pos) {
+                // Get column name for display
+                let column_names = dataview.column_names();
+                let col_name = column_names
+                    .get(datatable_idx)
+                    .map(|s| s.clone())
+                    .unwrap_or_else(|| format!("Column {}", datatable_idx));
 
-            debug!(
-                "toggle_sort_current_column: cursor_position={}, column_name={}",
-                column_index, col_name
-            );
+                debug!(
+                    "toggle_sort_current_column: display_pos={}, datatable_idx={}, column_name={}",
+                    current_display_pos, datatable_idx, col_name
+                );
 
-            if let Err(e) = dataview.toggle_sort(column_index) {
-                self.buffer_mut()
-                    .set_status_message(format!("Sort error: {}", e));
-            } else {
-                // Get the new sort state for status message
-                let sort_state = dataview.get_sort_state();
-                let message = match sort_state.order {
-                    crate::data::data_view::SortOrder::Ascending => {
-                        format!("Sorted '{}' ascending ↑", col_name)
-                    }
-                    crate::data::data_view::SortOrder::Descending => {
-                        format!("Sorted '{}' descending ↓", col_name)
-                    }
-                    crate::data::data_view::SortOrder::None => {
-                        format!("Cleared sort on '{}'", col_name)
-                    }
-                };
-                self.buffer_mut().set_status_message(message);
+                if let Err(e) = dataview.toggle_sort(datatable_idx) {
+                    self.buffer_mut()
+                        .set_status_message(format!("Sort error: {}", e));
+                } else {
+                    // Get the new sort state for status message
+                    let sort_state = dataview.get_sort_state();
+                    let message = match sort_state.order {
+                        crate::data::data_view::SortOrder::Ascending => {
+                            format!("Sorted '{}' ascending ↑", col_name)
+                        }
+                        crate::data::data_view::SortOrder::Descending => {
+                            format!("Sorted '{}' descending ↓", col_name)
+                        }
+                        crate::data::data_view::SortOrder::None => {
+                            format!("Cleared sort on '{}'", col_name)
+                        }
+                    };
+                    self.buffer_mut().set_status_message(message);
+                }
             }
         }
     }
