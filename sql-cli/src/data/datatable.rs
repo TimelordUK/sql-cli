@@ -633,7 +633,7 @@ impl DataTable {
             self.rows.len()
         ));
 
-        for column in &self.columns {
+        for (idx, column) in self.columns.iter().enumerate() {
             let type_str = match &column.data_type {
                 DataType::String => "String",
                 DataType::Integer => "Integer",
@@ -656,8 +656,8 @@ impl DataTable {
             };
 
             summary.push_str(&format!(
-                "  - {} : {} ({}{})\n",
-                column.name, type_str, nullable_str, null_info
+                "  [{:3}] {} : {} ({}{})\n",
+                idx, column.name, type_str, nullable_str, null_info
             ));
         }
 

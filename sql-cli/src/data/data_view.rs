@@ -1401,6 +1401,74 @@ impl DataView {
         self.get_row(row_index)
             .map(|row| row.values.iter().map(|v| v.to_string()).collect())
     }
+
+    /// Get column index mapping for debugging
+    /// Returns a mapping of visible column index -> (column name, datatable index)
+    pub fn get_column_index_mapping(&self) -> Vec<(usize, String, usize)> {
+        let mut mappings = Vec::new();
+
+        for (visible_idx, &datatable_idx) in self.visible_columns.iter().enumerate() {
+            if let Some(column) = self.source.columns.get(datatable_idx) {
+                mappings.push((visible_idx, column.name.clone(), datatable_idx));
+            }
+        }
+
+        mappings
+    }
+
+    /// Get debug information about column visibility and ordering
+    pub fn get_column_debug_info(&self) -> String {
+        let mut info = String::new();
+        info.push_str("Column Mapping (Visible → DataTable):\n");
+
+        let total_columns = self.source.columns.len();
+        let visible_count = self.visible_columns.len();
+        let hidden_count = total_columns - visible_count;
+
+        info.push_str(&format!(
+            "Total: {} columns, Visible: {}, Hidden: {}\n\n",
+            total_columns, visible_count, hidden_count
+        ));
+
+        // Show visible columns with their mappings
+        for (visible_idx, &datatable_idx) in self.visible_columns.iter().enumerate() {
+            if let Some(column) = self.source.columns.get(datatable_idx) {
+                let pinned_marker = if self.pinned_columns.contains(&datatable_idx) {
+                    " [PINNED]"
+                } else {
+                    ""
+                };
+                info.push_str(&format!(
+                    "  V[{:3}] → DT[{:3}] : {}{}\n",
+                    visible_idx, datatable_idx, column.name, pinned_marker
+                ));
+            }
+        }
+
+        // Show hidden columns if any
+        if hidden_count > 0 {
+            info.push_str("\nHidden Columns:\n");
+            for (idx, column) in self.source.columns.iter().enumerate() {
+                if !self.visible_columns.contains(&idx) {
+                    info.push_str(&format!("  DT[{:3}] : {}\n", idx, column.name));
+                }
+            }
+        }
+
+        // Show pinned columns summary
+        if !self.pinned_columns.is_empty() {
+            info.push_str(&format!("\nPinned Columns: {:?}\n", self.pinned_columns));
+        }
+
+        // Show column order changes if any
+        let is_reordered = self.visible_columns.windows(2).any(|w| w[0] > w[1]);
+
+        if is_reordered {
+            info.push_str("\n⚠️ Column order has been modified from original DataTable order\n");
+        }
+
+        info
+    }
 }
 
 // Implement DataProvider for compatibility during migration

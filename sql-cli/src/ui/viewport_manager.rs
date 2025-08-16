@@ -601,6 +601,12 @@ impl ViewportManager {
         &self.dataview
     }
 
+    /// Get a cloned copy of the underlying DataView (for syncing with Buffer)
+    /// This is a temporary solution until we refactor Buffer to use Arc<DataView>
+    pub fn clone_dataview(&self) -> DataView {
+        (*self.dataview).clone()
+    }
+
     /// Calculate the optimal scroll offset to show the last column
     /// This backtracks from the end to find the best viewport position
     pub fn calculate_optimal_offset_for_last_column(&mut self, available_width: u16) -> usize {
@@ -1346,6 +1352,97 @@ impl ViewportManager {
         }
     }
 
+    /// Navigate to the last row in the data (like vim 'G' command)
+    pub fn navigate_to_last_row(&mut self, total_rows: usize) -> RowNavigationResult {
+        if total_rows == 0 {
+            return RowNavigationResult {
+                row_position: 0,
+                row_scroll_offset: 0,
+                description: "No rows to navigate".to_string(),
+                viewport_changed: false,
+            };
+        }
+
+        // Calculate visible rows (viewport height)
+        let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
+
+        // The last row index
+        let last_row = total_rows - 1;
+
+        // Calculate scroll offset to show the last row at the bottom of the viewport
+        // We want the last row visible, so scroll to position it at the bottom
+        let new_scroll_offset = last_row.saturating_sub(visible_rows - 1);
+
+        debug!(target: "viewport_manager", 
+               "navigate_to_last_row: total_rows={}, last_row={}, visible_rows={}, new_scroll_offset={}", 
+               total_rows, last_row, visible_rows, new_scroll_offset);
+
+        // Check if viewport actually changed
+        let old_scroll_offset = self.viewport_rows.start;
+        let viewport_changed = new_scroll_offset != old_scroll_offset;
+
+        // Update viewport to show the last rows
+        self.viewport_rows = new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
+
+        let description = format!("Jumped to last row ({}/{})", last_row + 1, total_rows);
+
+        debug!(target: "viewport_manager", 
+               "navigate_to_last_row result: row={}, scroll_offset={}→{}, viewport_changed={}", 
+               last_row, old_scroll_offset, new_scroll_offset, viewport_changed);
+
+        RowNavigationResult {
+            row_position: last_row,
+            row_scroll_offset: new_scroll_offset,
+            description,
+            viewport_changed,
+        }
+    }
+
+    /// Navigate to the first row in the data (like vim 'gg' command)
+    pub fn navigate_to_first_row(&mut self, total_rows: usize) -> RowNavigationResult {
+        if total_rows == 0 {
+            return RowNavigationResult {
+                row_position: 0,
+                row_scroll_offset: 0,
+                description: "No rows to navigate".to_string(),
+                viewport_changed: false,
+            };
+        }
+
+        // Calculate visible rows (viewport height)
+        let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
+
+        // First row is always 0
+        let first_row = 0;
+
+        // Scroll offset should be 0 to show the first row at the top
+        let new_scroll_offset = 0;
+
+        debug!(target: "viewport_manager", 
+               "navigate_to_first_row: total_rows={}, visible_rows={}", 
+               total_rows, visible_rows);
+
+        // Check if viewport actually changed
+        let old_scroll_offset = self.viewport_rows.start;
+        let viewport_changed = new_scroll_offset != old_scroll_offset;
+
+        // Update viewport to show the first rows
+        self.viewport_rows = 0..visible_rows.min(total_rows);
+
+        let description = format!("Jumped to first row (1/{})", total_rows);
+
+        debug!(target: "viewport_manager", 
+               "navigate_to_first_row result: row=0, scroll_offset={}→0, viewport_changed={}", 
+               old_scroll_offset, viewport_changed);
+
+        RowNavigationResult {
+            row_position: first_row,
+            row_scroll_offset: new_scroll_offset,
+            description,
+            viewport_changed,
+        }
+    }
+
     /// Move the current column left in the display order (swap with previous column)
     pub fn reorder_column_left(&mut self, current_column: usize) -> ColumnReorderResult {
         debug!(target: "viewport_manager",
@@ -1556,6 +1653,124 @@ impl ViewportManager {
                 success: false,
             }
         }
+    }
+
+    /// Hide the specified column
+    /// Returns true if the column was hidden, false if it couldn't be hidden
+    pub fn hide_column(&mut self, column_index: usize) -> bool {
+        debug!(target: "viewport_manager", "hide_column: column_index={}", column_index);
+
+        // Get mutable access to DataView
+        let dataview_mut = Arc::get_mut(&mut self.dataview).expect(
+            "ViewportManager should have exclusive access to DataView during column operations",
+        );
+
+        // Hide the column in DataView
+        let success = dataview_mut.hide_column(column_index);
+
+        if success {
+            self.invalidate_cache(); // Column visibility changed, need to recalculate widths
+
+            // Adjust viewport if necessary
+            let column_count = self.dataview.column_count();
+            if self.viewport_cols.end > column_count {
+                self.viewport_cols.end = column_count;
+            }
+            if self.viewport_cols.start >= column_count && column_count > 0 {
+                self.viewport_cols.start = column_count - 1;
+            }
+
+            debug!(target: "viewport_manager", "Column {} hidden successfully", column_index);
+        } else {
+            debug!(target: "viewport_manager", "Failed to hide column {} (might be pinned)", column_index);
+        }
+
+        success
+    }
+
+    /// Hide a column by name
+    /// Returns true if the column was hidden, false if it couldn't be hidden
+    pub fn hide_column_by_name(&mut self, column_name: &str) -> bool {
+        debug!(target: "viewport_manager", "hide_column_by_name: column_name={}", column_name);
+
+        // Get mutable access to DataView
+        let dataview_mut = Arc::get_mut(&mut self.dataview).expect(
+            "ViewportManager should have exclusive access to DataView during column operations",
+        );
+
+        // Hide the column in DataView
+        let success = dataview_mut.hide_column_by_name(column_name);
+
+        if success {
+            self.invalidate_cache(); // Column visibility changed, need to recalculate widths
+
+            // Adjust viewport if necessary
+            let column_count = self.dataview.column_count();
+            if self.viewport_cols.end > column_count {
+                self.viewport_cols.end = column_count;
+            }
+            if self.viewport_cols.start >= column_count && column_count > 0 {
+                self.viewport_cols.start = column_count - 1;
+            }
+
+            debug!(target: "viewport_manager", "Column '{}' hidden successfully", column_name);
+        } else {
+            debug!(target: "viewport_manager", "Failed to hide column '{}' (might be pinned or not found)", column_name);
+        }
+
+        success
+    }
+
+    /// Hide all empty columns
+    /// Returns the number of columns hidden
+    pub fn hide_empty_columns(&mut self) -> usize {
+        debug!(target: "viewport_manager", "hide_empty_columns called");
+
+        // Get mutable access to DataView
+        let dataview_mut = Arc::get_mut(&mut self.dataview).expect(
+            "ViewportManager should have exclusive access to DataView during column operations",
+        );
+
+        // Hide empty columns in DataView
+        let count = dataview_mut.hide_empty_columns();
+
+        if count > 0 {
+            self.invalidate_cache(); // Column visibility changed, need to recalculate widths
+
+            // Adjust viewport if necessary
+            let column_count = self.dataview.column_count();
+            if self.viewport_cols.end > column_count {
+                self.viewport_cols.end = column_count;
+            }
+            if self.viewport_cols.start >= column_count && column_count > 0 {
+                self.viewport_cols.start = column_count - 1;
+            }
+
+            debug!(target: "viewport_manager", "Hidden {} empty columns", count);
+        }
+
+        count
+    }
+
+    /// Unhide all columns
+    pub fn unhide_all_columns(&mut self) {
+        debug!(target: "viewport_manager", "unhide_all_columns called");
+
+        // Get mutable access to DataView
+        let dataview_mut = Arc::get_mut(&mut self.dataview).expect(
+            "ViewportManager should have exclusive access to DataView during column operations",
+        );
+
+        // Unhide all columns in DataView
+        dataview_mut.unhide_all_columns();
+
+        self.invalidate_cache(); // Column visibility changed, need to recalculate widths
+
+        // Reset viewport to show first columns
+        let column_count = self.dataview.column_count();
+        self.viewport_cols = 0..column_count.min(20); // Show first ~20 columns or all if less
+
+        debug!(target: "viewport_manager", "All columns unhidden, viewport reset to {:?}", self.viewport_cols);
     }
 
     /// Update the current column position and automatically adjust viewport if needed

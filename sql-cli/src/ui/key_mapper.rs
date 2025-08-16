@@ -135,12 +135,14 @@ impl KeyMapper {
 
         // Column operations
         mappings.insert((Char('p'), Mod::NONE), Action::ToggleColumnPin);
-        mappings.insert((Char('H'), Mod::NONE), Action::HideColumn);
+        mappings.insert((Char('-'), Mod::NONE), Action::HideColumn); // '-' to hide column
         mappings.insert(
             (Char('H'), Mod::CONTROL | Mod::SHIFT),
             Action::UnhideAllColumns,
         );
-        // Handle both lowercase and uppercase 'e' for hide empty columns
+        mappings.insert((Char('+'), Mod::NONE), Action::UnhideAllColumns); // '+' to unhide all
+        mappings.insert((Char('='), Mod::NONE), Action::UnhideAllColumns); // '=' to unhide all (easier than shift+= for +)
+                                                                           // Handle both lowercase and uppercase 'e' for hide empty columns
         mappings.insert((Char('e'), Mod::NONE), Action::HideEmptyColumns);
         mappings.insert((Char('E'), Mod::SHIFT), Action::HideEmptyColumns);
         mappings.insert((Left, Mod::SHIFT), Action::MoveColumnLeft);

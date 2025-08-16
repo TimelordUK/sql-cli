@@ -172,59 +172,101 @@ impl EnhancedTuiApp {
         let col_idx = self.state_container.navigation().selected_column;
         debug!("Current column index: {}", col_idx);
 
-        if let Some(dataview) = self.buffer().get_dataview() {
-            let columns = dataview.column_names();
-            // DataView already tracks hidden columns, so visible count is just the current count
-            let visible_count = columns.len();
-            debug!("Visible columns: {:?}, count: {}", columns, visible_count);
+        // Use ViewportManager to hide the column
+        let (success, col_name, visible_count, updated_dataview) = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                // Get column name before hiding
+                let columns = viewport_manager.dataview().column_names();
+                let visible_count = columns.len();
 
-            if col_idx < columns.len() {
-                let col_name = columns[col_idx].clone();
-                // Don't hide if it's the last visible column
-                if visible_count > 1 {
-                    if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-                        dataview.hide_column_by_name(&col_name);
+                if col_idx < columns.len() {
+                    let col_name = columns[col_idx].clone();
+                    // Don't hide if it's the last visible column
+                    if visible_count > 1 {
+                        let success = viewport_manager.hide_column(col_idx);
+                        let updated_dataview = if success {
+                            Some(viewport_manager.clone_dataview())
+                        } else {
+                            None
+                        };
+                        (success, Some(col_name), visible_count, updated_dataview)
+                    } else {
+                        (false, Some(col_name), visible_count, None)
                     }
-                    debug!(
-                        "Hiding column '{}', remaining visible: {}",
-                        col_name,
-                        visible_count - 1
-                    );
-
-                    // Force immediate re-render to reflect the change
-                    debug!("Triggering immediate re-render after hiding column");
-
-                    self.buffer_mut().set_status_message(format!(
-                        "Hidden column: '{}' (Press + or = to unhide all)",
-                        col_name
-                    ));
                 } else {
-                    debug!("Cannot hide last visible column");
-                    self.buffer_mut()
-                        .set_status_message("Cannot hide last visible column".to_string());
+                    (false, None, visible_count, None)
                 }
+            } else {
+                (false, None, 0, None)
+            }
+        };
+
+        if success {
+            // Sync the updated DataView back to the Buffer
+            if let Some(updated_dataview) = updated_dataview {
+                self.buffer_mut().set_dataview(Some(updated_dataview));
+            }
+
+            if let Some(col_name) = col_name {
+                debug!(
+                    "Hiding column '{}', remaining visible: {}",
+                    col_name,
+                    visible_count - 1
+                );
+
+                // Force immediate re-render to reflect the change
+                debug!("Triggering immediate re-render after hiding column");
+
+                self.buffer_mut().set_status_message(format!(
+                    "Hidden column: '{}' (Press + or = to unhide all)",
+                    col_name
+                ));
+            }
+        } else if let Some(col_name) = col_name {
+            if visible_count <= 1 {
+                debug!("Cannot hide last visible column");
+                self.buffer_mut()
+                    .set_status_message("Cannot hide last visible column".to_string());
+            } else {
+                debug!("Failed to hide column '{}' (might be pinned)", col_name);
+                self.buffer_mut()
+                    .set_status_message(format!("Cannot hide column '{}' (pinned)", col_name));
             }
         }
     }
 
     /// Unhide all columns
     pub fn unhide_all_columns(&mut self) {
-        let hidden_columns = self
-            .buffer()
-            .get_dataview()
-            .map(|v| v.get_hidden_column_names())
-            .unwrap_or_default();
-        if !hidden_columns.is_empty() {
-            let count = hidden_columns.len();
-            if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-                dataview.unhide_all_columns();
-            }
+        // Use ViewportManager to unhide all columns
+        let (hidden_count, updated_dataview) = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                // Get hidden column count before unhiding
+                let hidden_columns = viewport_manager.dataview().get_hidden_column_names();
+                let count = hidden_columns.len();
 
+                if count > 0 {
+                    viewport_manager.unhide_all_columns();
+                    (count, Some(viewport_manager.clone_dataview()))
+                } else {
+                    (count, None)
+                }
+            } else {
+                (0, None)
+            }
+        };
+
+        if hidden_count > 0 {
+            // Sync the updated DataView back to the Buffer
+            if let Some(updated_dataview) = updated_dataview {
+                self.buffer_mut().set_dataview(Some(updated_dataview));
+            }
             // Force immediate re-render to reflect the change
             debug!("Triggering immediate re-render after unhiding all columns");
 
             self.buffer_mut()
-                .set_status_message(format!("Unhidden {} column(s)", count));
+                .set_status_message(format!("Unhidden {} column(s)", hidden_count));
         }
     }
 
@@ -237,17 +279,21 @@ impl EnhancedTuiApp {
         let col_idx = self.state_container.navigation().selected_column;
 
         // Use ViewportManager for column reordering
-        let (result, new_viewport_cols) = {
+        let (result, new_viewport_cols, updated_dataview) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for column reordering");
             let result = viewport_manager.reorder_column_left(col_idx);
             let new_viewport = viewport_manager.viewport_cols().clone();
-            (result, new_viewport)
+            // Get the updated DataView to sync back to Buffer
+            let updated_dataview = viewport_manager.clone_dataview();
+            (result, new_viewport, updated_dataview)
         };
 
         if result.success {
+            // Sync the updated DataView back to the Buffer
+            self.buffer_mut().set_dataview(Some(updated_dataview));
             // Update navigation state with new position and viewport
             {
                 let mut nav = self.state_container.navigation_mut();
@@ -283,17 +329,21 @@ impl EnhancedTuiApp {
         let col_idx = self.state_container.navigation().selected_column;
 
         // Use ViewportManager for column reordering
-        let (result, new_viewport_cols) = {
+        let (result, new_viewport_cols, updated_dataview) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for column reordering");
             let result = viewport_manager.reorder_column_right(col_idx);
             let new_viewport = viewport_manager.viewport_cols().clone();
-            (result, new_viewport)
+            // Get the updated DataView to sync back to Buffer
+            let updated_dataview = viewport_manager.clone_dataview();
+            (result, new_viewport, updated_dataview)
         };
 
         if result.success {
+            // Sync the updated DataView back to the Buffer
+            self.buffer_mut().set_dataview(Some(updated_dataview));
             // Update navigation state with new position and viewport
             {
                 let mut nav = self.state_container.navigation_mut();
@@ -547,24 +597,39 @@ impl EnhancedTuiApp {
             }
             HideEmptyColumns => {
                 tracing::info!("HideEmptyColumns action triggered");
-                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-                    tracing::debug!("DataView available, checking for empty columns");
-                    let count = dataview.hide_empty_columns();
-                    tracing::info!("Hidden {} empty columns", count);
-                    let message = if count > 0 {
-                        format!(
-                            "Hidden {} empty columns (press Ctrl+Shift+H to unhide)",
-                            count
-                        )
+
+                // Use ViewportManager to hide empty columns
+                let (count, updated_dataview) = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        tracing::debug!("ViewportManager available, checking for empty columns");
+                        let count = viewport_manager.hide_empty_columns();
+                        if count > 0 {
+                            (count, Some(viewport_manager.clone_dataview()))
+                        } else {
+                            (count, None)
+                        }
                     } else {
-                        "No empty columns found".to_string()
-                    };
-                    self.buffer_mut().set_status_message(message);
-                } else {
-                    tracing::warn!("No DataView available to hide columns");
-                    self.buffer_mut()
-                        .set_status_message("No data to hide columns".to_string());
+                        tracing::warn!("No ViewportManager available to hide columns");
+                        (0, None)
+                    }
+                };
+
+                // Sync the updated DataView back to the Buffer if columns were hidden
+                if let Some(updated_dataview) = updated_dataview {
+                    self.buffer_mut().set_dataview(Some(updated_dataview));
                 }
+
+                tracing::info!("Hidden {} empty columns", count);
+                let message = if count > 0 {
+                    format!(
+                        "Hidden {} empty columns (press Ctrl+Shift+H to unhide)",
+                        count
+                    )
+                } else {
+                    "No empty columns found".to_string()
+                };
+                self.buffer_mut().set_status_message(message);
                 Ok(ActionResult::Handled)
             }
             MoveColumnLeft => {
@@ -4386,30 +4451,68 @@ impl EnhancedTuiApp {
     fn goto_last_row(&mut self) {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
-            let last_row = total_rows - 1;
-            // Update NavigationState
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.jump_to_last_row();
+            // Use ViewportManager for navigation if available
+            let viewport_result = {
+                let mut viewport_manager_ref = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport_manager) = *viewport_manager_ref {
+                    Some(viewport_manager.navigate_to_last_row(total_rows))
+                } else {
+                    None
+                }
+            }; // viewport_manager borrow is dropped here
+
+            if let Some(result) = viewport_result {
+                // Update NavigationState
+                {
+                    let mut nav = self.state_container.navigation_mut();
+                    nav.jump_to_last_row();
+                }
+
+                // Update selected row
+                self.state_container
+                    .set_table_selected_row(Some(result.row_position));
+                self.buffer_mut()
+                    .set_selected_row(Some(result.row_position));
+
+                // Update scroll offset from ViewportManager's calculation
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.0 = result.row_scroll_offset;
+                self.buffer_mut().set_scroll_offset(offset);
+
+                // Set status message from ViewportManager's description
+                self.buffer_mut().set_status_message(result.description);
+
+                debug!(target: "navigation", "goto_last_row via ViewportManager: row={}, scroll={}, viewport_changed={}", 
+                       result.row_position, result.row_scroll_offset, result.viewport_changed);
+            } else {
+                // Fallback to old implementation if ViewportManager not available
+                let last_row = total_rows - 1;
+                // Update NavigationState
+                {
+                    let mut nav = self.state_container.navigation_mut();
+                    nav.jump_to_last_row();
+                }
+
+                self.state_container.set_table_selected_row(Some(last_row));
+
+                // Sync with buffer's table state so it shows in rendering
+                self.buffer_mut().set_selected_row(Some(last_row));
+
+                // Position viewport to show the last row at the bottom
+                let visible_rows = self.buffer().get_last_visible_rows();
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.0 = last_row.saturating_sub(visible_rows - 1);
+                self.buffer_mut().set_scroll_offset(offset);
+
+                // Set status to confirm action
+                self.buffer_mut().set_status_message(format!(
+                    "Jumped to last row ({}/{})",
+                    last_row + 1,
+                    total_rows
+                ));
+
+                warn!(target: "navigation", "goto_last_row: ViewportManager not available, using fallback");
             }
-
-            self.state_container.set_table_selected_row(Some(last_row));
-
-            // Sync with buffer's table state so it shows in rendering
-            self.buffer_mut().set_selected_row(Some(last_row));
-
-            // Position viewport to show the last row at the bottom
-            let visible_rows = self.buffer().get_last_visible_rows();
-            let mut offset = self.buffer().get_scroll_offset();
-            offset.0 = last_row.saturating_sub(visible_rows - 1);
-            self.buffer_mut().set_scroll_offset(offset);
-
-            // Set status to confirm action
-            self.buffer_mut().set_status_message(format!(
-                "Jumped to last row ({}/{})",
-                last_row + 1,
-                total_rows
-            ));
         }
     }
 
@@ -7547,12 +7650,22 @@ impl EnhancedTuiApp {
                     if let Some(dataview) = buffer.get_dataview() {
                         debug_info.push_str("\n========== DATAVIEW STATE ==========\n");
 
-                        // Show visible columns in order
+                        // Add the detailed column mapping info
+                        debug_info.push_str(&dataview.get_column_debug_info());
+                        debug_info.push_str("\n");
+
+                        // Show visible columns in order with both indices
                         let visible_columns = dataview.column_names();
-                        debug_info
-                            .push_str(&format!("Visible Columns ({}):\n", visible_columns.len()));
-                        for (idx, col_name) in visible_columns.iter().enumerate() {
-                            debug_info.push_str(&format!("  [{}] {}\n", idx, col_name));
+                        let column_mappings = dataview.get_column_index_mapping();
+                        debug_info.push_str(&format!(
+                            "Visible Columns ({}) with Index Mapping:\n",
+                            visible_columns.len()
+                        ));
+                        for (visible_idx, col_name, datatable_idx) in &column_mappings {
+                            debug_info.push_str(&format!(
+                                "  V[{:3}] → DT[{:3}] : {}\n",
+                                visible_idx, datatable_idx, col_name
+                            ));
                         }
 
                         // Show row information
