@@ -1459,6 +1459,50 @@ impl Buffer {
         self.status_message = "No SELECT * pattern found to expand".to_string();
         false
     }
+
+    /// Expand SELECT * to only visible column names
+    pub fn expand_asterisk_visible(&mut self) -> bool {
+        let query = self.input_manager.get_text();
+        let query_upper = query.to_uppercase();
+
+        // Find SELECT * pattern
+        if let Some(select_pos) = query_upper.find("SELECT") {
+            if let Some(star_pos) = query_upper[select_pos..].find("*") {
+                let star_abs_pos = select_pos + star_pos;
+
+                // Get visible columns from the DataView
+                if let Some(dataview) = &self.dataview {
+                    let visible_columns = dataview.get_display_column_names();
+
+                    if !visible_columns.is_empty() {
+                        // Build the replacement with visible columns only
+                        let columns_str = visible_columns.join(", ");
+
+                        // Replace * with the column list
+                        let before_star = &query[..star_abs_pos];
+                        let after_star = &query[star_abs_pos + 1..];
+                        let new_query = format!("{}{}{}", before_star, columns_str, after_star);
+
+                        // Update the input
+                        self.input_manager.set_text(new_query.clone());
+                        self.input_manager.set_cursor_position(new_query.len());
+                        self.sync_from_input_manager();
+
+                        self.status_message =
+                            format!("Expanded * to {} visible columns", visible_columns.len());
+                        return true;
+                    } else {
+                        self.status_message = "No visible columns available".to_string();
+                    }
+                } else {
+                    self.status_message = "No data loaded to expand from".to_string();
+                }
+            }
+        }
+
+        self.status_message = "No SELECT * pattern found to expand".to_string();
+        false
+    }
 }
 
 // Manual Clone implementation for Buffer due to Box<dyn InputManager>

@@ -120,6 +120,10 @@ impl KeyDispatcher {
             "expand_asterisk".into(),
         );
         self.command_map.insert(
+            KeyBinding::with_alt(KeyCode::Char('x')),
+            "expand_asterisk_visible".into(),
+        );
+        self.command_map.insert(
             KeyBinding::with_ctrl(KeyCode::Char('r')),
             "search_history".into(),
         );

@@ -1788,6 +1788,19 @@ impl EnhancedTuiApp {
                     }
                     return Ok(false);
                 }
+                "expand_asterisk_visible" => {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        if buffer.expand_asterisk_visible() {
+                            // Sync for rendering if needed
+                            if buffer.get_edit_mode() == EditMode::SingleLine {
+                                let text = buffer.get_input_text();
+                                let cursor = buffer.get_input_cursor_position();
+                                self.set_input_text_with_cursor(text, cursor);
+                            }
+                        }
+                    }
+                    return Ok(false);
+                }
                 // "move_to_line_start" and "move_to_line_end" now handled by editor_widget
                 "delete_word_backward" => {
                     if let Some(buffer) = self.buffer_manager.current_mut() {

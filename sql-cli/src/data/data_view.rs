@@ -149,21 +149,36 @@ impl DataView {
         self
     }
 
-    /// Hide a column by index (cannot hide pinned columns)
-    pub fn hide_column(&mut self, column_index: usize) -> bool {
-        // Cannot hide a pinned column
-        if self.pinned_columns.contains(&column_index) {
-            return false;
-        }
+    /// Hide a column by display index (cannot hide pinned columns)
+    pub fn hide_column(&mut self, display_index: usize) -> bool {
+        // Get the actual source column index from the display index
+        if let Some(&source_column_index) = self.visible_columns.get(display_index) {
+            // Cannot hide a pinned column
+            if self.pinned_columns.contains(&source_column_index) {
+                return false;
+            }
 
-        self.visible_columns.retain(|&idx| idx != column_index);
-        true
+            // Remove the column at the display index position
+            self.visible_columns.remove(display_index);
+            true
+        } else {
+            false
+        }
     }
 
     /// Hide a column by name (cannot hide pinned columns)
     pub fn hide_column_by_name(&mut self, column_name: &str) -> bool {
-        if let Some(col_idx) = self.source.get_column_index(column_name) {
-            self.hide_column(col_idx)
+        if let Some(source_idx) = self.source.get_column_index(column_name) {
+            // Find the display index for this source column
+            if let Some(display_idx) = self
+                .visible_columns
+                .iter()
+                .position(|&idx| idx == source_idx)
+            {
+                self.hide_column(display_idx)
+            } else {
+                false // Column not visible
+            }
         } else {
             false
         }
@@ -395,8 +410,18 @@ impl DataView {
 
     // ========== Pinned Column Methods ==========
 
-    /// Pin a column (move it to the pinned area on the left)
-    pub fn pin_column(&mut self, column_index: usize) -> Result<()> {
+    /// Pin a column by display index (move it to the pinned area on the left)
+    pub fn pin_column(&mut self, display_index: usize) -> Result<()> {
+        // Get the actual source column index from the display index
+        let source_column_index = if let Some(&idx) = self.visible_columns.get(display_index) {
+            idx
+        } else {
+            return Err(anyhow::anyhow!(
+                "Display index {} out of bounds",
+                display_index
+            ));
+        };
+
         // Check if we've reached the max
         if self.pinned_columns.len() >= self.max_pinned_columns {
             return Err(anyhow::anyhow!(
@@ -406,20 +431,12 @@ impl DataView {
         }
 
         // Check if already pinned
-        if self.pinned_columns.contains(&column_index) {
+        if self.pinned_columns.contains(&source_column_index) {
             return Ok(()); // Already pinned, no-op
         }
 
-        // Check if column exists in source
-        if column_index >= self.source.column_count() {
-            return Err(anyhow::anyhow!(
-                "Column index {} out of bounds",
-                column_index
-            ));
-        }
-
         // Add to pinned columns
-        self.pinned_columns.push(column_index);
+        self.pinned_columns.push(source_column_index);
 
         // Rebuild visible_columns to reflect pinned layout: pinned columns first, then unpinned
         self.rebuild_visible_columns();
@@ -449,35 +466,58 @@ impl DataView {
 
     /// Pin a column by name
     pub fn pin_column_by_name(&mut self, column_name: &str) -> Result<()> {
-        if let Some(col_idx) = self.source.get_column_index(column_name) {
-            self.pin_column(col_idx)
+        if let Some(source_idx) = self.source.get_column_index(column_name) {
+            // Find the display index for this source column
+            if let Some(display_idx) = self
+                .visible_columns
+                .iter()
+                .position(|&idx| idx == source_idx)
+            {
+                self.pin_column(display_idx)
+            } else {
+                Err(anyhow::anyhow!("Column '{}' not visible", column_name))
+            }
         } else {
             Err(anyhow::anyhow!("Column '{}' not found", column_name))
         }
     }
 
-    /// Unpin a column (move it back to regular visible columns)
-    pub fn unpin_column(&mut self, column_index: usize) -> bool {
-        if let Some(pos) = self
-            .pinned_columns
-            .iter()
-            .position(|&idx| idx == column_index)
-        {
-            self.pinned_columns.remove(pos);
+    /// Unpin a column by display index (move it back to regular visible columns)
+    pub fn unpin_column(&mut self, display_index: usize) -> bool {
+        // Get the actual source column index from the display index
+        if let Some(&source_column_index) = self.visible_columns.get(display_index) {
+            if let Some(pos) = self
+                .pinned_columns
+                .iter()
+                .position(|&idx| idx == source_column_index)
+            {
+                self.pinned_columns.remove(pos);
 
-            // Rebuild visible_columns to reflect new layout
-            self.rebuild_visible_columns();
+                // Rebuild visible_columns to reflect new layout
+                self.rebuild_visible_columns();
 
-            true
+                true
+            } else {
+                false // Not pinned
+            }
         } else {
-            false // Not pinned
+            false // Invalid display index
         }
     }
 
     /// Unpin a column by name
     pub fn unpin_column_by_name(&mut self, column_name: &str) -> bool {
-        if let Some(col_idx) = self.source.get_column_index(column_name) {
-            self.unpin_column(col_idx)
+        if let Some(source_idx) = self.source.get_column_index(column_name) {
+            // Find the display index for this source column
+            if let Some(display_idx) = self
+                .visible_columns
+                .iter()
+                .position(|&idx| idx == source_idx)
+            {
+                self.unpin_column(display_idx)
+            } else {
+                false // Column not visible
+            }
         } else {
             false
         }
@@ -493,9 +533,13 @@ impl DataView {
         }
     }
 
-    /// Check if a column is pinned
-    pub fn is_column_pinned(&self, column_index: usize) -> bool {
-        self.pinned_columns.contains(&column_index)
+    /// Check if a column at display index is pinned
+    pub fn is_column_pinned(&self, display_index: usize) -> bool {
+        if let Some(&source_column_index) = self.visible_columns.get(display_index) {
+            self.pinned_columns.contains(&source_column_index)
+        } else {
+            false
+        }
     }
 
     /// Get pinned column indices

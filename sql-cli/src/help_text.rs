@@ -28,7 +28,8 @@ impl HelpText {
             Line::from("  Ctrl+N   - Next command in history"),
             Line::from("  Alt+↑    - Previous command (alternative)"),
             Line::from("  Alt+↓    - Next command (alternative)"),
-            Line::from("  Ctrl+X   - Expand SELECT * to columns"),
+            Line::from("  Ctrl+X   - Expand SELECT * to all columns"),
+            Line::from("  Alt+X    - Expand SELECT * to visible columns only"),
             Line::from("  F3       - (Multi-line mode removed)"),
             Line::from(""),
             Line::from("NAVIGATION").style(
