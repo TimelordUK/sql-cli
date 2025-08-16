@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 /// ViewportManager - A window into the DataView
 ///
 /// This manages the visible portion of data for rendering, handling:
@@ -24,6 +23,10 @@ const MIN_COL_WIDTH: u16 = 3;
 const MAX_COL_WIDTH: u16 = 50;
 /// Default column width if no data
 const DEFAULT_COL_WIDTH: u16 = 15;
+/// Padding to add to column widths
+const COLUMN_PADDING: u16 = 2;
+/// Max ratio of header width to data width (to prevent huge columns for long headers with short data)
+const MAX_HEADER_TO_DATA_RATIO: f32 = 1.5;
 
 /// Manages the visible viewport into a DataView
 pub struct ViewportManager {
@@ -201,6 +204,7 @@ impl ViewportManager {
     }
 
     /// Recalculate column widths based on visible data
+    /// Prioritizes data width over header width to maximize visible information
     fn recalculate_column_widths(&mut self) {
         let col_count = self.dataview.column_count();
         self.column_widths.resize(col_count, DEFAULT_COL_WIDTH);
@@ -210,10 +214,13 @@ impl ViewportManager {
 
         // Calculate width for each column based on header and visible data
         for col_idx in 0..col_count {
-            // Start with header width
+            // Track header width separately
             let header_width = headers.get(col_idx).map(|h| h.len() as u16).unwrap_or(0);
 
-            let mut max_width = header_width;
+            // Track actual data width
+            let mut max_data_width = 0u16;
+            let mut total_data_width = 0u64;
+            let mut data_samples = 0u32;
 
             // Sample visible rows (limit sampling for performance)
             let sample_size = 100.min(self.viewport_rows.len());
@@ -225,7 +232,7 @@ impl ViewportManager {
 
             for (i, row_idx) in self.viewport_rows.clone().enumerate() {
                 // Sample every nth row for performance
-                if i % sample_step != 0 && i != 0 {
+                if i % sample_step != 0 && i != 0 && i != self.viewport_rows.len() - 1 {
                     continue;
                 }
 
@@ -233,24 +240,47 @@ impl ViewportManager {
                     if col_idx < row.values.len() {
                         let cell_str = row.values[col_idx].to_string();
                         let cell_width = cell_str.len() as u16;
-                        max_width = max_width.max(cell_width);
+
+                        max_data_width = max_data_width.max(cell_width);
+                        total_data_width += cell_width as u64;
+                        data_samples += 1;
 
                         // Early exit if we hit max width
-                        if max_width >= MAX_COL_WIDTH {
+                        if max_data_width >= MAX_COL_WIDTH {
                             break;
                         }
                     }
                 }
             }
 
+            // Calculate optimal width
+            let optimal_width = if data_samples > 0 {
+                // Use the maximum data width we found
+                let data_based_width = max_data_width + COLUMN_PADDING;
+
+                // If header is significantly longer than data, cap it
+                if header_width > max_data_width {
+                    let max_allowed_header =
+                        (max_data_width as f32 * MAX_HEADER_TO_DATA_RATIO) as u16;
+                    data_based_width.max(header_width.min(max_allowed_header))
+                } else {
+                    // Header fits within data width, use data width
+                    data_based_width.max(header_width)
+                }
+            } else {
+                // No data, use header width with some default
+                header_width.max(DEFAULT_COL_WIDTH)
+            };
+
             // Apply constraints
-            self.column_widths[col_idx] = max_width.clamp(MIN_COL_WIDTH, MAX_COL_WIDTH);
+            self.column_widths[col_idx] = optimal_width.clamp(MIN_COL_WIDTH, MAX_COL_WIDTH);
         }
 
         self.cache_dirty = false;
     }
 
     /// Calculate optimal column layout for available width
+    /// This is the key method that determines how many columns we can fit
     pub fn calculate_visible_column_indices(&mut self, available_width: u16) -> Vec<usize> {
         if self.cache_dirty {
             self.recalculate_column_widths();
@@ -258,17 +288,37 @@ impl ViewportManager {
 
         let mut visible_indices = Vec::new();
         let mut used_width = 0u16;
+        let separator_width = 1u16; // Width of column separator
+
+        tracing::trace!(
+            "ViewportManager: Starting column layout calculation. Available width: {}w, viewport cols: {:?}, total cols: {}",
+            available_width,
+            self.viewport_cols,
+            self.dataview.column_count()
+        );
 
         // First, add pinned columns
         let pinned = self.dataview.get_pinned_columns();
         for &col_idx in pinned {
-            let width = self.column_widths[col_idx];
-            if used_width + width + 1 <= available_width {
-                // +1 for separator
+            let width = self
+                .column_widths
+                .get(col_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+            if used_width + width + separator_width <= available_width {
                 visible_indices.push(col_idx);
-                used_width += width + 1;
+                used_width += width + separator_width;
+                tracing::trace!(
+                    "Added pinned column {}: {}w (total used: {}w)",
+                    col_idx,
+                    width,
+                    used_width
+                );
             }
         }
+
+        // Track which columns we've skipped due to width
+        let mut skipped_columns: Vec<(usize, u16)> = Vec::new();
 
         // Then add regular columns from viewport
         for col_idx in self.viewport_cols.clone() {
@@ -277,21 +327,662 @@ impl ViewportManager {
                 continue;
             }
 
-            let width = self.column_widths[col_idx];
-            if used_width + width + 1 <= available_width {
+            let width = self
+                .column_widths
+                .get(col_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+
+            if used_width + width + separator_width <= available_width {
                 visible_indices.push(col_idx);
-                used_width += width + 1;
+                used_width += width + separator_width;
+                tracing::trace!(
+                    "Added column {}: {}w (total used: {}w)",
+                    col_idx,
+                    width,
+                    used_width
+                );
             } else {
-                break; // No more space
+                // Track this skipped column
+                skipped_columns.push((col_idx, width));
+                tracing::trace!(
+                    "Skipped column {} ({}w) - would exceed available width",
+                    col_idx,
+                    width
+                );
             }
         }
 
+        // Now check if we have significant unused space and can fit more columns
+        let remaining_width = available_width.saturating_sub(used_width);
+
+        tracing::trace!(
+            "After initial pass: {}w used, {}w remaining. {} columns visible, {} skipped",
+            used_width,
+            remaining_width,
+            visible_indices.len(),
+            skipped_columns.len()
+        );
+
+        if remaining_width > MIN_COL_WIDTH + separator_width {
+            // Look for ANY columns (not just from viewport) that could fit
+            let mut candidates: Vec<(usize, u16)> = Vec::new();
+
+            // First check skipped columns from viewport
+            for &(col_idx, width) in &skipped_columns {
+                if width + separator_width <= remaining_width {
+                    candidates.push((col_idx, width));
+                }
+            }
+
+            // Then check ALL columns beyond viewport that might fit
+            for col_idx in self.viewport_cols.end..self.dataview.column_count() {
+                // Skip if already visible or pinned
+                if visible_indices.contains(&col_idx) || pinned.contains(&col_idx) {
+                    continue;
+                }
+
+                let width = self
+                    .column_widths
+                    .get(col_idx)
+                    .copied()
+                    .unwrap_or(DEFAULT_COL_WIDTH);
+
+                if width + separator_width <= remaining_width {
+                    candidates.push((col_idx, width));
+                }
+            }
+
+            if !candidates.is_empty() {
+                tracing::trace!(
+                    "Found {} candidate columns that could fit in {}w remaining space",
+                    candidates.len(),
+                    remaining_width
+                );
+
+                // Sort candidates by width (narrowest first) to maximize columns fitted
+                candidates.sort_by_key(|&(_, width)| width);
+
+                // Try to fit as many columns as possible
+                let mut space_left = remaining_width;
+                let mut added_columns = Vec::new();
+
+                for (idx, width) in candidates {
+                    if width + separator_width <= space_left {
+                        visible_indices.push(idx);
+                        used_width += width + separator_width;
+                        space_left -= width + separator_width;
+                        added_columns.push((idx, width));
+                    }
+                }
+
+                if !added_columns.is_empty() {
+                    tracing::trace!(
+                        "Added {} extra columns to fill space: {:?}. Reduced waste from {}w to {}w",
+                        added_columns.len(),
+                        added_columns,
+                        remaining_width,
+                        space_left
+                    );
+                }
+            } else {
+                tracing::trace!(
+                    "No columns found that could fit in {}w remaining space",
+                    remaining_width
+                );
+            }
+        }
+
+        // Sort visible indices to maintain proper column order
+        visible_indices.sort_unstable();
+
+        tracing::trace!(
+            "Final layout: {} columns visible {:?}, {}w used of {}w ({}% efficiency)",
+            visible_indices.len(),
+            visible_indices,
+            used_width,
+            available_width,
+            (used_width as f32 / available_width as f32 * 100.0) as u8
+        );
+
         visible_indices
+    }
+
+    /// Calculate how many columns we can fit starting from a given column index
+    /// This helps determine optimal scrolling positions
+    pub fn calculate_columns_that_fit(&mut self, start_col: usize, available_width: u16) -> usize {
+        if self.cache_dirty {
+            self.recalculate_column_widths();
+        }
+
+        let mut used_width = 0u16;
+        let mut column_count = 0usize;
+        let separator_width = 1u16;
+
+        for col_idx in start_col..self.dataview.column_count() {
+            let width = self
+                .column_widths
+                .get(col_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+            if used_width + width + separator_width <= available_width {
+                used_width += width + separator_width;
+                column_count += 1;
+            } else {
+                break;
+            }
+        }
+
+        column_count.max(1) // Always show at least one column
+    }
+
+    /// Get calculated widths for specific columns
+    /// This is useful for rendering when we know which columns will be displayed
+    pub fn get_column_widths_for(&mut self, column_indices: &[usize]) -> Vec<u16> {
+        if self.cache_dirty {
+            self.recalculate_column_widths();
+        }
+
+        column_indices
+            .iter()
+            .map(|&idx| {
+                self.column_widths
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(DEFAULT_COL_WIDTH)
+            })
+            .collect()
+    }
+
+    /// Update viewport for column scrolling
+    /// This recalculates column widths based on newly visible columns
+    pub fn update_column_viewport(&mut self, start_col: usize, available_width: u16) {
+        let col_count = self.calculate_columns_that_fit(start_col, available_width);
+        let end_col = (start_col + col_count).min(self.dataview.column_count());
+
+        if self.viewport_cols.start != start_col || self.viewport_cols.end != end_col {
+            self.viewport_cols = start_col..end_col;
+            self.cache_dirty = true;
+        }
     }
 
     /// Get a reference to the underlying DataView
     pub fn dataview(&self) -> &DataView {
         &self.dataview
+    }
+
+    /// Calculate the optimal scroll offset to show the last column
+    /// This backtracks from the end to find the best viewport position
+    pub fn calculate_optimal_offset_for_last_column(&mut self, available_width: u16) -> usize {
+        if self.cache_dirty {
+            self.recalculate_column_widths();
+        }
+
+        let total_cols = self.dataview.column_count();
+        if total_cols == 0 {
+            return 0;
+        }
+
+        let pinned = self.dataview.get_pinned_columns();
+        let pinned_count = pinned.len();
+
+        // Calculate how much width is used by pinned columns
+        let mut pinned_width = 0u16;
+        let separator_width = 1u16;
+        for &col_idx in pinned {
+            let width = self
+                .column_widths
+                .get(col_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+            pinned_width += width + separator_width;
+        }
+
+        // Available width for scrollable columns
+        let available_for_scrollable = available_width.saturating_sub(pinned_width);
+
+        // Start by including the last column
+        let last_col_idx = total_cols - 1;
+        let last_col_width = self
+            .column_widths
+            .get(last_col_idx)
+            .copied()
+            .unwrap_or(DEFAULT_COL_WIDTH);
+
+        tracing::debug!(
+            "Starting calculation: last_col_idx={}, width={}w, available={}w",
+            last_col_idx,
+            last_col_width,
+            available_for_scrollable
+        );
+
+        let mut accumulated_width = last_col_width + separator_width;
+        let mut best_offset = last_col_idx;
+
+        // Now work backwards from the second-to-last column to find how many more we can fit
+        for col_idx in (pinned_count..last_col_idx).rev() {
+            let width = self
+                .column_widths
+                .get(col_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+
+            let width_with_separator = width + separator_width;
+
+            if accumulated_width + width_with_separator <= available_for_scrollable {
+                // This column fits, keep going backwards
+                accumulated_width += width_with_separator;
+                best_offset = col_idx;
+                tracing::trace!(
+                    "Column {} fits ({}w), accumulated={}w, new offset={}",
+                    col_idx,
+                    width,
+                    accumulated_width,
+                    best_offset
+                );
+            } else {
+                // This column doesn't fit, we found our optimal offset
+                // The offset should be the next column (since this one doesn't fit)
+                best_offset = col_idx + 1;
+                tracing::trace!(
+                    "Column {} doesn't fit ({}w would make {}w total), stopping at offset {}",
+                    col_idx,
+                    width,
+                    accumulated_width + width_with_separator,
+                    best_offset
+                );
+                break;
+            }
+        }
+
+        // Ensure we don't go below the first scrollable column
+        best_offset = best_offset.max(pinned_count);
+
+        // Now verify that starting from best_offset, we can actually see the last column
+        // This is the critical check we were missing!
+        let mut test_width = 0u16;
+        let mut can_see_last = false;
+        for test_idx in best_offset..=last_col_idx {
+            let width = self
+                .column_widths
+                .get(test_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+            test_width += width + separator_width;
+
+            if test_width > available_for_scrollable {
+                // We can't fit all columns from best_offset to last_col_idx
+                // Need to adjust offset forward
+                tracing::warn!(
+                    "Offset {} doesn't show last column! Need {}w but have {}w",
+                    best_offset,
+                    test_width,
+                    available_for_scrollable
+                );
+                // Move offset forward until last column fits
+                best_offset = best_offset + 1;
+                can_see_last = false;
+                break;
+            }
+            if test_idx == last_col_idx {
+                can_see_last = true;
+            }
+        }
+
+        // If we still can't see the last column, keep adjusting
+        while !can_see_last && best_offset < total_cols {
+            test_width = 0;
+            for test_idx in best_offset..=last_col_idx {
+                let width = self
+                    .column_widths
+                    .get(test_idx)
+                    .copied()
+                    .unwrap_or(DEFAULT_COL_WIDTH);
+                test_width += width + separator_width;
+
+                if test_width > available_for_scrollable {
+                    best_offset = best_offset + 1;
+                    break;
+                }
+                if test_idx == last_col_idx {
+                    can_see_last = true;
+                }
+            }
+        }
+
+        // Convert to scrollable column index (subtract pinned count)
+        let scrollable_offset = best_offset.saturating_sub(pinned_count);
+
+        tracing::debug!(
+            "Final offset for last column: absolute={}, scrollable={}, fits {} columns, last col width: {}w, verified last col visible: {}",
+            best_offset,
+            scrollable_offset,
+            total_cols - best_offset,
+            last_col_width,
+            can_see_last
+        );
+
+        scrollable_offset
+    }
+
+    /// Debug dump of ViewportManager state for F5 diagnostics
+    pub fn debug_dump(&mut self, available_width: u16) -> String {
+        if self.cache_dirty {
+            self.recalculate_column_widths();
+        }
+
+        let mut output = String::new();
+        output.push_str("========== VIEWPORT MANAGER DEBUG ==========\n");
+
+        let total_cols = self.dataview.column_count();
+        let pinned = self.dataview.get_pinned_columns();
+        let pinned_count = pinned.len();
+
+        output.push_str(&format!("Total columns: {}\n", total_cols));
+        output.push_str(&format!("Pinned columns: {:?}\n", pinned));
+        output.push_str(&format!("Available width: {}w\n", available_width));
+        output.push_str(&format!("Current viewport: {:?}\n", self.viewport_cols));
+        output.push_str("\n");
+
+        // Show column widths
+        output.push_str("Column widths:\n");
+        for (idx, &width) in self.column_widths.iter().enumerate() {
+            if idx >= 20 && idx < total_cols - 10 {
+                if idx == 20 {
+                    output.push_str("  ... (showing only first 20 and last 10)\n");
+                }
+                continue;
+            }
+            output.push_str(&format!("  [{}] {}w\n", idx, width));
+        }
+        output.push_str("\n");
+
+        // Test optimal offset calculation step by step
+        output.push_str("=== OPTIMAL OFFSET CALCULATION ===\n");
+        let last_col_idx = total_cols - 1;
+        let last_col_width = self.column_widths.get(last_col_idx).copied().unwrap_or(15);
+
+        // Calculate available width for scrollable columns
+        let separator_width = 1u16;
+        let mut pinned_width = 0u16;
+        for &col_idx in pinned {
+            let width = self.column_widths.get(col_idx).copied().unwrap_or(15);
+            pinned_width += width + separator_width;
+        }
+        let available_for_scrollable = available_width.saturating_sub(pinned_width);
+
+        output.push_str(&format!(
+            "Last column: {} (width: {}w)\n",
+            last_col_idx, last_col_width
+        ));
+        output.push_str(&format!("Pinned width: {}w\n", pinned_width));
+        output.push_str(&format!(
+            "Available for scrollable: {}w\n",
+            available_for_scrollable
+        ));
+        output.push_str("\n");
+
+        // Simulate the calculation
+        let mut accumulated_width = last_col_width + separator_width;
+        let mut best_offset = last_col_idx;
+
+        output.push_str("Backtracking from last column:\n");
+        output.push_str(&format!(
+            "  Start: column {} = {}w (accumulated: {}w)\n",
+            last_col_idx, last_col_width, accumulated_width
+        ));
+
+        for col_idx in (pinned_count..last_col_idx).rev() {
+            let width = self.column_widths.get(col_idx).copied().unwrap_or(15);
+            let width_with_sep = width + separator_width;
+
+            if accumulated_width + width_with_sep <= available_for_scrollable {
+                accumulated_width += width_with_sep;
+                best_offset = col_idx;
+                output.push_str(&format!(
+                    "  Column {} fits: {}w (accumulated: {}w, offset: {})\n",
+                    col_idx, width, accumulated_width, best_offset
+                ));
+            } else {
+                output.push_str(&format!(
+                    "  Column {} doesn't fit: {}w (would make {}w > {}w)\n",
+                    col_idx,
+                    width,
+                    accumulated_width + width_with_sep,
+                    available_for_scrollable
+                ));
+                best_offset = col_idx + 1;
+                break;
+            }
+        }
+
+        output.push_str(&format!(
+            "\nCalculated offset: {} (absolute)\n",
+            best_offset
+        ));
+
+        // Now verify this offset actually works
+        output.push_str("\n=== VERIFICATION ===\n");
+        let mut verify_width = 0u16;
+        let mut can_show_last = true;
+
+        for test_idx in best_offset..=last_col_idx {
+            let width = self.column_widths.get(test_idx).copied().unwrap_or(15);
+            verify_width += width + separator_width;
+
+            output.push_str(&format!(
+                "  Column {}: {}w (running total: {}w)\n",
+                test_idx, width, verify_width
+            ));
+
+            if verify_width > available_for_scrollable {
+                output.push_str(&format!(
+                    "    ❌ EXCEEDS LIMIT! {}w > {}w\n",
+                    verify_width, available_for_scrollable
+                ));
+                if test_idx == last_col_idx {
+                    can_show_last = false;
+                    output.push_str("    ❌ LAST COLUMN NOT VISIBLE!\n");
+                }
+                break;
+            }
+
+            if test_idx == last_col_idx {
+                output.push_str("    ✅ LAST COLUMN VISIBLE!\n");
+            }
+        }
+
+        output.push_str(&format!(
+            "\nVerification result: last column visible = {}\n",
+            can_show_last
+        ));
+
+        // Show what the current viewport actually shows
+        output.push_str("\n=== CURRENT VIEWPORT RESULT ===\n");
+        let visible_indices = self.calculate_visible_column_indices(available_width);
+        output.push_str(&format!("Visible columns: {:?}\n", visible_indices));
+        output.push_str(&format!(
+            "Last visible column: {}\n",
+            visible_indices.last().copied().unwrap_or(0)
+        ));
+        output.push_str(&format!(
+            "Shows last column ({}): {}\n",
+            last_col_idx,
+            visible_indices.contains(&last_col_idx)
+        ));
+
+        output.push_str("============================================\n");
+        output
+    }
+
+    /// Calculate viewport efficiency metrics
+    pub fn calculate_efficiency_metrics(&mut self, available_width: u16) -> ViewportEfficiency {
+        // Get the visible columns
+        let visible_indices = self.calculate_visible_column_indices(available_width);
+
+        // Calculate total width used
+        let mut used_width = 0u16;
+        let separator_width = 1u16;
+
+        for &col_idx in &visible_indices {
+            let width = self
+                .column_widths
+                .get(col_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+            used_width += width + separator_width;
+        }
+
+        // Remove the last separator since it's not needed after the last column
+        if !visible_indices.is_empty() {
+            used_width = used_width.saturating_sub(separator_width);
+        }
+
+        let wasted_space = available_width.saturating_sub(used_width);
+
+        // Find the next column that didn't fit
+        let next_column_width = if !visible_indices.is_empty() {
+            let last_visible = *visible_indices.last().unwrap();
+            if last_visible + 1 < self.column_widths.len() {
+                Some(self.column_widths[last_visible + 1])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Find ALL columns that COULD fit in the wasted space
+        let mut columns_that_could_fit = Vec::new();
+        if wasted_space > MIN_COL_WIDTH + separator_width {
+            for (idx, &width) in self.column_widths.iter().enumerate() {
+                // Skip already visible columns
+                if !visible_indices.contains(&idx) {
+                    if width + separator_width <= wasted_space {
+                        columns_that_could_fit.push((idx, width));
+                    }
+                }
+            }
+        }
+
+        let efficiency_percent = if available_width > 0 {
+            ((used_width as f32 / available_width as f32) * 100.0) as u8
+        } else {
+            0
+        };
+
+        ViewportEfficiency {
+            available_width,
+            used_width,
+            wasted_space,
+            efficiency_percent,
+            visible_columns: visible_indices.len(),
+            column_widths: visible_indices
+                .iter()
+                .map(|&idx| {
+                    self.column_widths
+                        .get(idx)
+                        .copied()
+                        .unwrap_or(DEFAULT_COL_WIDTH)
+                })
+                .collect(),
+            next_column_width,
+            columns_that_could_fit,
+        }
+    }
+}
+
+/// Viewport efficiency metrics
+#[derive(Debug, Clone)]
+pub struct ViewportEfficiency {
+    pub available_width: u16,
+    pub used_width: u16,
+    pub wasted_space: u16,
+    pub efficiency_percent: u8,
+    pub visible_columns: usize,
+    pub column_widths: Vec<u16>,
+    pub next_column_width: Option<u16>, // Width of the next column that didn't fit
+    pub columns_that_could_fit: Vec<(usize, u16)>, // Columns that could fit in wasted space
+}
+
+impl ViewportEfficiency {
+    /// Format as a compact status line message
+    pub fn to_status_string(&self) -> String {
+        format!(
+            "Viewport: {}w used of {}w ({}% efficient, {} cols, {}w wasted)",
+            self.used_width,
+            self.available_width,
+            self.efficiency_percent,
+            self.visible_columns,
+            self.wasted_space
+        )
+    }
+
+    /// Format as detailed debug info
+    pub fn to_debug_string(&self) -> String {
+        let avg_width = if !self.column_widths.is_empty() {
+            self.column_widths.iter().sum::<u16>() / self.column_widths.len() as u16
+        } else {
+            0
+        };
+
+        // Show what efficiency we could get by fitting more columns
+        let mut efficiency_analysis = String::new();
+        if let Some(next_width) = self.next_column_width {
+            efficiency_analysis.push_str(&format!(
+                "\n\n  Next column needs: {}w (+1 separator)",
+                next_width
+            ));
+            if next_width + 1 <= self.wasted_space {
+                efficiency_analysis.push_str(" ✓ FITS!");
+            } else {
+                efficiency_analysis.push_str(&format!(" ✗ Too wide (have {}w)", self.wasted_space));
+            }
+        }
+
+        if !self.columns_that_could_fit.is_empty() {
+            efficiency_analysis.push_str(&format!(
+                "\n  Columns that COULD fit in {}w:",
+                self.wasted_space
+            ));
+            for (idx, width) in
+                &self.columns_that_could_fit[..self.columns_that_could_fit.len().min(5)]
+            {
+                efficiency_analysis.push_str(&format!("\n    - Column {}: {}w", idx, width));
+            }
+            if self.columns_that_could_fit.len() > 5 {
+                efficiency_analysis.push_str(&format!(
+                    "\n    ... and {} more",
+                    self.columns_that_could_fit.len() - 5
+                ));
+            }
+        }
+
+        // Calculate hypothetical efficiencies
+        efficiency_analysis.push_str("\n\n  Hypothetical efficiencies:");
+        for extra in 1..=3 {
+            let hypothetical_used =
+                self.used_width + (extra * (avg_width + 1)).min(self.wasted_space);
+            let hypothetical_eff =
+                ((hypothetical_used as f32 / self.available_width as f32) * 100.0) as u8;
+            let hypothetical_wasted = self.available_width.saturating_sub(hypothetical_used);
+            efficiency_analysis.push_str(&format!(
+                "\n    +{} cols ({}w each): {}% efficiency, {}w wasted",
+                extra, avg_width, hypothetical_eff, hypothetical_wasted
+            ));
+        }
+
+        format!(
+            "Viewport Efficiency:\n  Available: {}w\n  Used: {}w\n  Wasted: {}w\n  Efficiency: {}%\n  Columns: {} visible\n  Widths: {:?}\n  Avg Width: {}w{}",
+            self.available_width,
+            self.used_width,
+            self.wasted_space,
+            self.efficiency_percent,
+            self.visible_columns,
+            self.column_widths,
+            avg_width,
+            efficiency_analysis
+        )
     }
 }
 

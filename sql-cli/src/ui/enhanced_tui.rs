@@ -25,6 +25,7 @@ use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
+use crate::ui::viewport_manager::{ViewportEfficiency, ViewportManager};
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -41,6 +42,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use std::cell::RefCell;
 
 use ratatui::{
     backend::{Backend, CrosstermBackend},
@@ -146,6 +148,10 @@ pub struct EnhancedTuiApp {
     cell_renderer: CellRenderer,
     key_indicator: KeyPressIndicator,
     key_sequence_renderer: KeySequenceRenderer,
+
+    // Viewport management (RefCell for interior mutability during render)
+    viewport_manager: RefCell<Option<ViewportManager>>,
+    viewport_efficiency: RefCell<Option<ViewportEfficiency>>,
 }
 
 impl EnhancedTuiApp {
@@ -1257,6 +1263,8 @@ impl EnhancedTuiApp {
                 }
                 renderer
             },
+            viewport_manager: RefCell::new(None), // Will be initialized when DataView is set
+            viewport_efficiency: RefCell::new(None),
         }
     }
 
@@ -1350,6 +1358,14 @@ impl EnhancedTuiApp {
                   app.config.behavior.case_insensitive_default,
                   app.config.display.show_row_numbers,
                   app.config.behavior.hide_empty_columns);
+
+            // Initialize ViewportManager with the DataView
+            if let Some(dataview) = buffer.get_dataview() {
+                *app.viewport_manager.borrow_mut() =
+                    Some(ViewportManager::new(Arc::new(dataview.clone())));
+                debug!("ViewportManager initialized with DataView from loaded file");
+            }
+
             app.buffer_manager.add_buffer(buffer);
         }
 
@@ -3476,7 +3492,10 @@ impl EnhancedTuiApp {
                 let col_count = new_dataview.column_count();
 
                 // Store the new DataView in buffer
-                self.buffer_mut().set_dataview(Some(new_dataview));
+                self.buffer_mut().set_dataview(Some(new_dataview.clone()));
+
+                // Update ViewportManager with the new DataView
+                self.update_viewport_manager(Some(new_dataview));
 
                 // Calculate optimal column widths for the new data
                 self.calculate_optimal_column_widths();
@@ -3947,11 +3966,36 @@ impl EnhancedTuiApp {
         // Sync with navigation state in AppStateContainer
         self.state_container.navigation_mut().selected_column = new_column;
 
+        // Update scroll offset to ensure the new column is visible
         let mut offset = self.buffer().get_scroll_offset();
         if new_column >= pinned_count {
-            offset.1 = (new_column - pinned_count).saturating_sub(10); // Keep some context
+            // Calculate the column index within scrollable columns
+            let scrollable_column_index = new_column - pinned_count;
+
+            // Determine if we need to scroll the viewport
+            let current_offset = offset.1;
+
+            // Estimate how many columns can fit (rough estimate, viewport manager will optimize)
+            let estimated_visible_cols = 15; // Conservative estimate
+
+            // If the new column would be outside the current viewport, scroll
+            if scrollable_column_index < current_offset {
+                // Column is to the left of viewport, scroll left
+                offset.1 = scrollable_column_index;
+            } else if scrollable_column_index >= current_offset + estimated_visible_cols {
+                // Column is to the right of viewport, scroll right (shouldn't happen when moving left)
+                offset.1 = scrollable_column_index - estimated_visible_cols + 1;
+            }
+            // Otherwise, keep the current offset (column is already visible)
+
+            debug!(target: "navigation", "move_column_left: column {} -> scroll offset {}", scrollable_column_index, offset.1);
+        } else {
+            // In pinned area, no scroll needed
+            offset.1 = 0;
         }
+
         self.buffer_mut().set_scroll_offset(offset);
+        self.state_container.navigation_mut().scroll_offset = offset;
 
         let column_num = new_column + 1;
         self.buffer_mut()
@@ -4003,15 +4047,38 @@ impl EnhancedTuiApp {
             // Sync with navigation state in AppStateContainer
             self.state_container.navigation_mut().selected_column = new_column;
 
+            // Update scroll offset to ensure the new column is visible
+            // The scroll offset represents the leftmost visible scrollable column
             let mut offset = self.buffer().get_scroll_offset();
             if new_column >= pinned_count {
-                // Adjust scroll to keep column visible, accounting for pinned columns
-                let visible_column = new_column - pinned_count;
-                if visible_column > 10 {
-                    offset.1 = visible_column - 10; // Keep some columns visible before
+                // Calculate the column index within scrollable columns
+                let scrollable_column_index = new_column - pinned_count;
+
+                // Determine if we need to scroll the viewport
+                // We want to keep the cursor visible while minimizing scrolling
+                let current_offset = offset.1;
+
+                // Estimate how many columns can fit (rough estimate, viewport manager will optimize)
+                let estimated_visible_cols = 15; // Conservative estimate
+
+                // If the new column would be outside the current viewport, scroll
+                if scrollable_column_index >= current_offset + estimated_visible_cols {
+                    // Column is to the right of viewport, scroll right
+                    offset.1 = scrollable_column_index - estimated_visible_cols + 1;
+                } else if scrollable_column_index < current_offset {
+                    // Column is to the left of viewport, scroll left
+                    offset.1 = scrollable_column_index;
                 }
+                // Otherwise, keep the current offset (column is already visible)
+
+                debug!(target: "navigation", "move_column_right: column {} -> scroll offset {}", scrollable_column_index, offset.1);
+            } else {
+                // In pinned area, no scroll needed
+                offset.1 = 0;
             }
+
             self.buffer_mut().set_scroll_offset(offset);
+            self.state_container.navigation_mut().scroll_offset = offset;
 
             let column_num = new_column + 1;
             self.buffer_mut()
@@ -4034,9 +4101,14 @@ impl EnhancedTuiApp {
         // Sync with navigation state in AppStateContainer
         self.state_container.navigation_mut().selected_column = first_col;
 
+        // Reset scroll offset to beginning to show the first columns
         let mut offset = self.buffer().get_scroll_offset();
-        offset.1 = 0;
+        offset.1 = 0; // Start viewport at the beginning
         self.buffer_mut().set_scroll_offset(offset);
+        self.state_container.navigation_mut().scroll_offset = offset;
+
+        debug!(target: "navigation", "goto_first_column: reset scroll offset to 0");
+
         self.buffer_mut()
             .set_status_message("First column selected".to_string());
     }
@@ -4056,14 +4128,48 @@ impl EnhancedTuiApp {
             // Sync with navigation state in AppStateContainer
             self.state_container.navigation_mut().selected_column = last_column;
 
-            // Update horizontal scroll to show the last column
-            // This ensures the last column is visible in the viewport
+            // Use ViewportManager to calculate the optimal scroll offset
+            let optimal_offset = if let Some(ref mut viewport_manager) =
+                *self.viewport_manager.borrow_mut()
+            {
+                // Get terminal width for calculation (same as rendering: subtract 4 for borders)
+                let terminal_width = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80);
+                let available_width = terminal_width.saturating_sub(4);
+
+                // Calculate the optimal offset that shows the most columns while keeping last column visible
+                let offset =
+                    viewport_manager.calculate_optimal_offset_for_last_column(available_width);
+
+                debug!(target: "navigation", "goto_last_column: using ViewportManager optimal offset {}", offset);
+                offset
+            } else {
+                // Fallback if no viewport manager
+                let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
+                    dataview.get_pinned_columns().len()
+                } else {
+                    0
+                };
+
+                if last_column >= pinned_count {
+                    // Simple fallback: just set to a high value
+                    let total_scrollable_cols = max_columns - pinned_count;
+                    total_scrollable_cols.saturating_sub(1)
+                } else {
+                    0
+                }
+            };
+
+            // Set the scroll offset
             let mut offset = self.buffer().get_scroll_offset();
-            let column = self.buffer().get_current_column();
-            offset.1 = column.saturating_sub(5); // Keep some context
+            offset.1 = optimal_offset;
+
+            debug!(target: "navigation", "goto_last_column: column {} -> scroll offset {}", last_column, optimal_offset);
+
             self.buffer_mut().set_scroll_offset(offset);
+            self.state_container.navigation_mut().scroll_offset = offset;
+
             self.buffer_mut()
-                .set_status_message(format!("Last column selected ({})", column + 1));
+                .set_status_message(format!("Last column selected ({})", last_column + 1));
         }
     }
 
@@ -4947,28 +5053,72 @@ impl EnhancedTuiApp {
         }
     }
 
+    /// Update ViewportManager when DataView changes
+    fn update_viewport_manager(&mut self, dataview: Option<DataView>) {
+        if let Some(dv) = dataview {
+            // Create or update ViewportManager with the new DataView
+            *self.viewport_manager.borrow_mut() = Some(ViewportManager::new(Arc::new(dv)));
+            debug!("ViewportManager updated with new DataView");
+        } else {
+            // Clear ViewportManager if no DataView
+            *self.viewport_manager.borrow_mut() = None;
+            debug!("ViewportManager cleared (no DataView)");
+        }
+    }
+
     fn calculate_optimal_column_widths(&mut self) {
-        // Use DataProvider trait to get column widths
-        let widths_u16 = if let Some(provider) = self.get_data_provider() {
-            let widths = provider.get_column_widths();
-            if !widths.is_empty() {
-                // Convert usize to u16 for buffer compatibility
-                Some(
-                    widths
-                        .iter()
-                        .map(|&w| w.min(u16::MAX as usize) as u16)
-                        .collect::<Vec<u16>>(),
-                )
+        // Get the current scroll offset before borrowing viewport_manager
+        let (_, col_offset) = self.buffer().get_scroll_offset();
+
+        // If we have a ViewportManager, use it for smart column width calculation
+        let widths_from_viewport = {
+            let mut viewport_opt = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_opt {
+                // Get terminal dimensions (approximate - will be updated in render)
+                let terminal_width = 100u16; // Default, will be updated in render
+
+                // Update viewport with current column offset
+                // Note: col_offset from get_scroll_offset() is a scrollable offset, convert to absolute
+                let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
+                    dataview.get_pinned_columns().len()
+                } else {
+                    0
+                };
+                let absolute_offset = col_offset + pinned_count;
+                viewport_manager.update_column_viewport(absolute_offset, terminal_width);
+
+                // Get optimized column widths from ViewportManager
+                Some(viewport_manager.get_column_widths().to_vec())
             } else {
                 None
             }
-        } else {
-            None
         };
 
-        // Now the provider borrow is dropped, we can mutably borrow self
-        if let Some(widths) = widths_u16 {
+        if let Some(widths) = widths_from_viewport {
             self.buffer_mut().set_column_widths(widths);
+        } else {
+            // Fallback to old method using DataProvider
+            let widths_u16 = if let Some(provider) = self.get_data_provider() {
+                let widths = provider.get_column_widths();
+                if !widths.is_empty() {
+                    // Convert usize to u16 for buffer compatibility
+                    Some(
+                        widths
+                            .iter()
+                            .map(|&w| w.min(u16::MAX as usize) as u16)
+                            .collect::<Vec<u16>>(),
+                    )
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Now the provider borrow is dropped, we can mutably borrow self
+            if let Some(widths) = widths_u16 {
+                self.buffer_mut().set_column_widths(widths);
+            }
         }
     }
 
@@ -5893,6 +6043,28 @@ impl EnhancedTuiApp {
                         }
                     }
 
+                    // Viewport efficiency indicator (only show if viewport manager is active)
+                    if let Some(ref efficiency) = *self.viewport_efficiency.borrow() {
+                        spans.push(Span::raw(" | "));
+                        let efficiency_color = if efficiency.efficiency_percent >= 90 {
+                            Color::Green
+                        } else if efficiency.efficiency_percent >= 75 {
+                            Color::Yellow
+                        } else {
+                            Color::Red
+                        };
+                        spans.push(Span::styled(
+                            format!("{}% eff", efficiency.efficiency_percent),
+                            Style::default().fg(efficiency_color),
+                        ));
+                        if efficiency.wasted_space > 10 {
+                            spans.push(Span::styled(
+                                format!(" ({}w lost)", efficiency.wasted_space),
+                                Style::default().fg(Color::DarkGray),
+                            ));
+                        }
+                    }
+
                     // Filter indicators
                     if self.buffer().is_fuzzy_filter_active() {
                         spans.push(Span::raw(" | "));
@@ -6116,6 +6288,28 @@ impl EnhancedTuiApp {
         let terminal_width = area.width as usize;
         let available_width = terminal_width.saturating_sub(4); // Account for borders and padding
 
+        // Update ViewportManager with current terminal dimensions and scroll position if available
+        {
+            let mut viewport_opt = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_opt {
+                let (row_offset, col_offset) = self.buffer().get_scroll_offset();
+                viewport_manager.set_viewport(
+                    row_offset,
+                    col_offset,
+                    area.width.saturating_sub(4) as u16,
+                    area.height.saturating_sub(6) as u16,
+                );
+
+                // Recalculate column widths based on current viewport
+                let _ = viewport_manager.get_column_widths(); // This triggers recalculation if needed
+
+                // Calculate and store efficiency metrics
+                let efficiency =
+                    viewport_manager.calculate_efficiency_metrics(available_width as u16);
+                *self.viewport_efficiency.borrow_mut() = Some(efficiency);
+            }
+        }
+
         // Split columns into pinned and scrollable
         let mut pinned_headers: Vec<(usize, String)> = Vec::new();
         let mut scrollable_indices: Vec<usize> = Vec::new();
@@ -6142,26 +6336,35 @@ impl EnhancedTuiApp {
 
         // Calculate space used by pinned columns
         let mut pinned_width = 0;
-        // Get actual column widths from provider or calculate them
-        let column_widths = if self.buffer().get_column_widths().is_empty() {
-            // If no calculated widths, estimate based on terminal width
-            let terminal_width = area.width as usize;
-            let available = terminal_width.saturating_sub(4);
-            let visible_cols = headers.len().min(12);
-            let estimated_width = if visible_cols > 0 {
-                (available / visible_cols).clamp(10, 50)
+
+        // Get column widths - prefer ViewportManager's smart widths
+        let column_widths =
+            if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                // Use ViewportManager's smart column widths
+                viewport_manager
+                    .get_column_widths()
+                    .iter()
+                    .map(|&w| w as usize)
+                    .collect()
+            } else if self.buffer().get_column_widths().is_empty() {
+                // If no calculated widths, estimate based on terminal width
+                let terminal_width = area.width as usize;
+                let available = terminal_width.saturating_sub(4);
+                let visible_cols = headers.len().min(12);
+                let estimated_width = if visible_cols > 0 {
+                    (available / visible_cols).clamp(10, 50)
+                } else {
+                    20
+                };
+                vec![estimated_width; headers.len()]
             } else {
-                20
+                // Use calculated widths from buffer
+                self.buffer()
+                    .get_column_widths()
+                    .iter()
+                    .map(|&w| w as usize)
+                    .collect()
             };
-            vec![estimated_width; headers.len()]
-        } else {
-            // Use calculated widths from buffer
-            self.buffer()
-                .get_column_widths()
-                .iter()
-                .map(|&w| w as usize)
-                .collect()
-        };
         for &(idx, _) in &pinned_headers {
             if idx < column_widths.len() {
                 pinned_width += column_widths[idx];
@@ -6172,67 +6375,115 @@ impl EnhancedTuiApp {
 
         // Calculate how many scrollable columns can fit in remaining space
         let remaining_width = available_width.saturating_sub(pinned_width);
-        let max_visible_scrollable_cols = if !column_widths.is_empty() {
-            let mut width_used = 0;
-            let mut cols_that_fit = 0;
 
-            for &idx in &scrollable_indices {
-                if idx >= headers.len() {
-                    break;
-                }
-                let col_width = if idx < column_widths.len() {
-                    column_widths[idx]
-                } else {
-                    15
-                };
-                if width_used + col_width <= remaining_width {
-                    width_used += col_width;
-                    cols_that_fit += 1;
-                } else {
-                    break;
-                }
-            }
-            cols_that_fit.max(1)
-        } else {
-            // Fallback if no calculated widths
-            let avg_col_width = 15;
-            (remaining_width / avg_col_width).max(1)
-        };
-
-        // Calculate viewport for scrollable columns based on current_column
-        let current_in_scrollable = scrollable_indices
-            .iter()
-            .position(|&x| x == self.buffer().get_current_column());
-        let viewport_start = if let Some(pos) = current_in_scrollable {
-            if pos < max_visible_scrollable_cols / 2 {
-                0
-            } else if pos + max_visible_scrollable_cols / 2 >= scrollable_indices.len() {
-                scrollable_indices
-                    .len()
-                    .saturating_sub(max_visible_scrollable_cols)
+        // If we have ViewportManager, let it calculate which columns should be visible
+        let visible_column_indices = if let Some(ref mut viewport_manager) =
+            *self.viewport_manager.borrow_mut()
+        {
+            // First update the viewport manager with the current column scroll position
+            // Note: scroll_offset.1 is a scrollable column offset, we need to convert to absolute
+            let scrollable_offset = self.state_container.navigation().scroll_offset.1;
+            let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
+                dataview.get_pinned_columns().len()
             } else {
-                pos.saturating_sub(max_visible_scrollable_cols / 2)
-            }
+                0
+            };
+            let absolute_col_offset = scrollable_offset + pinned_count;
+            viewport_manager.update_column_viewport(absolute_col_offset, available_width as u16);
+
+            // Now get the optimized column layout
+            let indices = viewport_manager.calculate_visible_column_indices(available_width as u16);
+
+            // Log efficiency metrics for debugging
+            let efficiency = viewport_manager.calculate_efficiency_metrics(available_width as u16);
+            tracing::debug!(
+                    "Column layout: {}% efficient, {} cols visible, {}w wasted (could fit {} more cols)",
+                    efficiency.efficiency_percent,
+                    efficiency.visible_columns,
+                    efficiency.wasted_space,
+                    efficiency.columns_that_could_fit.len()
+                );
+
+            indices
         } else {
-            // Current column is pinned, use scroll offset from navigation state
-            self.state_container.navigation().scroll_offset.1.min(
-                scrollable_indices
-                    .len()
-                    .saturating_sub(max_visible_scrollable_cols),
-            )
+            Vec::new()
         };
-        let viewport_end =
-            (viewport_start + max_visible_scrollable_cols).min(scrollable_indices.len());
 
-        // Build final list of visible columns (pinned + scrollable viewport)
+        // Build final list of visible columns
         let mut visible_columns: Vec<(usize, String)> = Vec::new();
-        visible_columns.extend(pinned_headers.iter().cloned());
-        debug!(target: "render", "Added {} pinned columns to visible_columns", pinned_headers.len());
 
-        for i in viewport_start..viewport_end {
-            let idx = scrollable_indices[i];
-            visible_columns.push((idx, headers[idx].clone()));
+        if !visible_column_indices.is_empty() {
+            // Use the optimized column layout from ViewportManager
+            for &idx in &visible_column_indices {
+                if idx < headers.len() {
+                    visible_columns.push((idx, headers[idx].clone()));
+                }
+            }
+            debug!(target: "render", "Using ViewportManager optimized layout: {} columns", visible_columns.len());
+        } else {
+            // Fallback to old calculation if ViewportManager not available
+            visible_columns.extend(pinned_headers.iter().cloned());
+            debug!(target: "render", "Added {} pinned columns to visible_columns", pinned_headers.len());
+
+            // Calculate how many scrollable columns can fit
+            let max_visible_scrollable_cols = if !column_widths.is_empty() {
+                let mut width_used = 0;
+                let mut cols_that_fit = 0;
+
+                for &idx in &scrollable_indices {
+                    if idx >= headers.len() {
+                        break;
+                    }
+                    let col_width = if idx < column_widths.len() {
+                        column_widths[idx]
+                    } else {
+                        15
+                    };
+                    if width_used + col_width <= remaining_width {
+                        width_used += col_width;
+                        cols_that_fit += 1;
+                    } else {
+                        break;
+                    }
+                }
+                cols_that_fit.max(1)
+            } else {
+                // Fallback if no calculated widths
+                let avg_col_width = 15;
+                (remaining_width / avg_col_width).max(1)
+            };
+
+            // Calculate viewport for scrollable columns based on current_column
+            let current_in_scrollable = scrollable_indices
+                .iter()
+                .position(|&x| x == self.buffer().get_current_column());
+            let viewport_start = if let Some(pos) = current_in_scrollable {
+                if pos < max_visible_scrollable_cols / 2 {
+                    0
+                } else if pos + max_visible_scrollable_cols / 2 >= scrollable_indices.len() {
+                    scrollable_indices
+                        .len()
+                        .saturating_sub(max_visible_scrollable_cols)
+                } else {
+                    pos.saturating_sub(max_visible_scrollable_cols / 2)
+                }
+            } else {
+                // Current column is pinned, use scroll offset from navigation state
+                self.state_container.navigation().scroll_offset.1.min(
+                    scrollable_indices
+                        .len()
+                        .saturating_sub(max_visible_scrollable_cols),
+                )
+            };
+            let viewport_end =
+                (viewport_start + max_visible_scrollable_cols).min(scrollable_indices.len());
+
+            for i in viewport_start..viewport_end {
+                let idx = scrollable_indices[i];
+                visible_columns.push((idx, headers[idx].clone()));
+            }
         }
+
         debug!(target: "render", "Final visible_columns ({}): {:?}", visible_columns.len(), 
             visible_columns.iter().map(|(_, name)| name.as_str()).collect::<Vec<_>>());
 
@@ -7441,13 +7692,17 @@ impl EnhancedTuiApp {
                         }
                     }
 
-                    debug_info.push_str("\n========== VIEWPORT MANAGER ==========\n");
-                    debug_info.push_str("Status: Not Yet Integrated\n");
-                    debug_info.push_str("Future features:\n");
-                    debug_info.push_str("  - Smart column width calculation\n");
-                    debug_info.push_str("  - Viewport-based data caching\n");
-                    debug_info.push_str("  - Optimized rendering pipeline\n");
-                    debug_info.push_str("  - Window-aware scrolling\n");
+                    // Add ViewportManager debug info if available
+                    if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                        let terminal_width =
+                            crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80);
+                        // Use the same width calculation as actual rendering (subtract 4 for borders)
+                        let available_width = terminal_width.saturating_sub(4);
+                        debug_info.push_str(&viewport_manager.debug_dump(available_width));
+                    } else {
+                        debug_info.push_str("\n========== VIEWPORT MANAGER ==========\n");
+                        debug_info.push_str("Status: Not Available\n");
+                    }
                 }
 
                 // Add buffer state info
@@ -7470,6 +7725,13 @@ impl EnhancedTuiApp {
                         };
                     debug_info.push_str(&where_ast_info);
                 }*/
+
+                // Add viewport efficiency metrics
+                if let Some(ref efficiency) = *self.viewport_efficiency.borrow() {
+                    debug_info.push_str("\n========== VIEWPORT EFFICIENCY ==========\n");
+                    debug_info.push_str(&efficiency.to_debug_string());
+                    debug_info.push_str("\n==========================================\n");
+                }
 
                 // Add key chord handler debug info
                 debug_info.push_str("\n");
