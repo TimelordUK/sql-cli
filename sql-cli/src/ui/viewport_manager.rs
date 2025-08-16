@@ -391,6 +391,11 @@ impl ViewportManager {
                 available_width,
                 total_cols
             );
+
+            // Update viewport state to match optimal layout
+            self.viewport_cols = 0..total_cols;
+            tracing::trace!("Updated viewport_cols to optimal range: 0..{}", total_cols);
+
             0..total_cols
         } else {
             // Not all columns fit, use current viewport
@@ -1229,8 +1234,8 @@ impl ViewportManager {
         let total_display_columns = display_columns.len();
 
         debug!(target: "viewport_manager", 
-               "navigate_column_right ENTRY: current={}, viewport={:?}, total_display={}", 
-               current_column, self.viewport_cols, total_display_columns);
+               "navigate_column_right ENTRY: current_col={}, display_columns={:?}, total={}", 
+               current_column, display_columns, total_display_columns);
 
         // Find current column in the display order
         let current_display_index = display_columns
@@ -1239,14 +1244,14 @@ impl ViewportManager {
             .unwrap_or(0);
 
         debug!(target: "viewport_manager", 
-               "navigate_column_right: current_column={} found at display_index={}", 
+               "navigate_column_right: current_column={} maps to display_index={}", 
                current_column, current_display_index);
 
         // Calculate new display position (move right in display order)
         let new_display_index = if current_display_index + 1 < total_display_columns {
             current_display_index + 1
         } else {
-            // Wrap to first column (could be pinned or first scrollable)
+            // Wrap to first column
             0
         };
 
@@ -1254,7 +1259,10 @@ impl ViewportManager {
         let new_column = display_columns
             .get(new_display_index)
             .copied()
-            .unwrap_or(current_column);
+            .unwrap_or_else(|| {
+                // Fallback: if something goes wrong, just wrap to first column
+                display_columns.get(0).copied().unwrap_or(0)
+            });
 
         let old_scroll_offset = self.viewport_cols.start;
 
