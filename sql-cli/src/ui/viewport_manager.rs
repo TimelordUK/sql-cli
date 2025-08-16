@@ -384,7 +384,7 @@ impl ViewportManager {
 
         // Determine the range of columns to process
         let process_range = if total_width_needed <= available_width {
-            // All columns fit! Use optimal layout instead of restricted viewport
+            // All columns fit! Use optimal layout
             tracing::trace!(
                 "All columns fit ({}w needed, {}w available) - using optimal layout 0..{}",
                 total_width_needed,
@@ -1227,27 +1227,47 @@ impl ViewportManager {
         }
     }
 
+    /// Convert a DataTable column index to logical display index
+    pub fn datatable_to_display_index(&self, datatable_column: usize) -> Option<usize> {
+        let display_columns = self.dataview.get_display_columns();
+        display_columns
+            .iter()
+            .position(|&col| col == datatable_column)
+    }
+
+    /// Convert a logical display index to DataTable column index
+    pub fn display_index_to_datatable(&self, display_index: usize) -> Option<usize> {
+        let display_columns = self.dataview.get_display_columns();
+        display_columns.get(display_index).copied()
+    }
+
     /// Navigate one column to the right with intelligent wrapping and scrolling
+    /// Accepts either DataTable column index or logical display index, auto-detects which
     pub fn navigate_column_right(&mut self, current_column: usize) -> NavigationResult {
-        // Get the DataView's display order (pinned columns first, then others)
         let display_columns = self.dataview.get_display_columns();
         let total_display_columns = display_columns.len();
 
         debug!(target: "viewport_manager", 
-               "navigate_column_right ENTRY: current_col={}, display_columns={:?}, total={}", 
-               current_column, display_columns, total_display_columns);
+               "navigate_column_right ENTRY: current_column={}, display_columns={:?}", 
+               current_column, display_columns);
 
-        // Find current column in the display order
-        let current_display_index = display_columns
-            .iter()
-            .position(|&col_idx| col_idx == current_column)
-            .unwrap_or(0);
+        // Convert DataTable column index to logical display index
+        let current_display_index = self
+            .datatable_to_display_index(current_column)
+            .unwrap_or_else(|| {
+                // If not found in display columns, treat as display index directly
+                if current_column < total_display_columns {
+                    current_column
+                } else {
+                    0 // Fallback to first column
+                }
+            });
 
         debug!(target: "viewport_manager", 
-               "navigate_column_right: current_column={} maps to display_index={}", 
+               "navigate_column_right: datatable_column={} → display_index={}", 
                current_column, current_display_index);
 
-        // Calculate new display position (move right in display order)
+        // Calculate new display position (move right with wrapping)
         let new_display_index = if current_display_index + 1 < total_display_columns {
             current_display_index + 1
         } else {
@@ -1255,14 +1275,18 @@ impl ViewportManager {
             0
         };
 
-        // Get the actual column index from display order
+        // Get the actual DataTable column index for the new position
         let new_column = display_columns
             .get(new_display_index)
             .copied()
             .unwrap_or_else(|| {
-                // Fallback: if something goes wrong, just wrap to first column
+                // Fallback: if something goes wrong, use first column
                 display_columns.get(0).copied().unwrap_or(0)
             });
+
+        debug!(target: "viewport_manager", 
+               "navigate_column_right: display_index {}→{}, datatable_column={}", 
+               current_display_index, new_display_index, new_column);
 
         let old_scroll_offset = self.viewport_cols.start;
 
