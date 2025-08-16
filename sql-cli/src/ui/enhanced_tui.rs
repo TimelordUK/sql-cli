@@ -5042,41 +5042,47 @@ impl EnhancedTuiApp {
         let current_display_pos = self.buffer().get_current_column();
 
         if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            // Convert logical display position to DataTable index for sorting
+            // DataView.toggle_sort expects VISIBLE column index (logical display position)
+            // Get column name for display
             let display_columns = dataview.get_display_columns();
-            if let Some(&datatable_idx) = display_columns.get(current_display_pos) {
-                // Get column name for display
+            let col_name = if let Some(&datatable_idx) = display_columns.get(current_display_pos) {
                 let column_names = dataview.column_names();
-                let col_name = column_names
+                column_names
                     .get(datatable_idx)
                     .map(|s| s.clone())
-                    .unwrap_or_else(|| format!("Column {}", datatable_idx));
+                    .unwrap_or_else(|| format!("Column {}", datatable_idx))
+            } else {
+                format!("Column {}", current_display_pos)
+            };
 
-                debug!(
-                    "toggle_sort_current_column: display_pos={}, datatable_idx={}, column_name={}",
-                    current_display_pos, datatable_idx, col_name
-                );
+            debug!(
+                "toggle_sort_current_column: display_pos={}, column_name={}",
+                current_display_pos, col_name
+            );
 
-                if let Err(e) = dataview.toggle_sort(datatable_idx) {
-                    self.buffer_mut()
-                        .set_status_message(format!("Sort error: {}", e));
-                } else {
-                    // Get the new sort state for status message
-                    let sort_state = dataview.get_sort_state();
-                    let message = match sort_state.order {
-                        crate::data::data_view::SortOrder::Ascending => {
-                            format!("Sorted '{}' ascending ↑", col_name)
-                        }
-                        crate::data::data_view::SortOrder::Descending => {
-                            format!("Sorted '{}' descending ↓", col_name)
-                        }
-                        crate::data::data_view::SortOrder::None => {
-                            format!("Cleared sort on '{}'", col_name)
-                        }
-                    };
-                    self.buffer_mut().set_status_message(message);
-                }
+            if let Err(e) = dataview.toggle_sort(current_display_pos) {
+                self.buffer_mut()
+                    .set_status_message(format!("Sort error: {}", e));
+            } else {
+                // Get the new sort state for status message
+                let sort_state = dataview.get_sort_state();
+                let message = match sort_state.order {
+                    crate::data::data_view::SortOrder::Ascending => {
+                        format!("Sorted '{}' ascending ↑", col_name)
+                    }
+                    crate::data::data_view::SortOrder::Descending => {
+                        format!("Sorted '{}' descending ↓", col_name)
+                    }
+                    crate::data::data_view::SortOrder::None => {
+                        format!("Cleared sort on '{}'", col_name)
+                    }
+                };
+                self.buffer_mut().set_status_message(message);
             }
+        } else {
+            // Could not find display position in DataTable
+            self.buffer_mut()
+                .set_status_message("Error: Invalid column position".to_string());
         }
     }
 
