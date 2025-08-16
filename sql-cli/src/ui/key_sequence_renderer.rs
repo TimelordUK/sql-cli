@@ -84,8 +84,8 @@ impl KeySequenceRenderer {
     }
 
     /// Set chord mode with available completions
-    pub fn set_chord_mode(&mut self, description: &str) {
-        self.chord_mode = Some(description.to_string());
+    pub fn set_chord_mode(&mut self, description: Option<String>) {
+        self.chord_mode = description;
     }
 
     /// Clear chord mode

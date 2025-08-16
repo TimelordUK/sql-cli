@@ -13,9 +13,23 @@
 ///             → Renderer (pixels on screen)
 use std::ops::Range;
 use std::sync::Arc;
+use tracing::debug;
 
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataRow;
+
+/// Result of a navigation operation
+#[derive(Debug, Clone)]
+pub struct NavigationResult {
+    /// The new column position
+    pub column_position: usize,
+    /// The new scroll offset
+    pub scroll_offset: usize,
+    /// Human-readable description of the operation
+    pub description: String,
+    /// Whether the operation changed the viewport
+    pub viewport_changed: bool,
+}
 
 /// Minimum column width in characters
 const MIN_COL_WIDTH: u16 = 3;
@@ -888,6 +902,47 @@ impl ViewportManager {
                 .collect(),
             next_column_width,
             columns_that_could_fit,
+        }
+    }
+
+    /// Navigate to the first column (first scrollable column after pinned columns)
+    /// This centralizes the logic for first column navigation
+    pub fn navigate_to_first_column(&mut self) -> NavigationResult {
+        // Get pinned column count from dataview
+        let pinned_count = self.dataview.get_pinned_columns().len();
+        let pinned_names = self.dataview.get_pinned_column_names();
+
+        // First scrollable column is at index = pinned_count
+        let first_scrollable_column = pinned_count;
+
+        // Reset viewport to beginning (scroll offset = 0)
+        let new_scroll_offset = 0;
+        let old_scroll_offset = self.viewport_cols.start;
+
+        // Update our internal viewport state
+        self.viewport_cols = new_scroll_offset..self.viewport_cols.end;
+
+        // Create description
+        let description = if pinned_count > 0 {
+            format!(
+                "First scrollable column selected (after {} pinned: {:?})",
+                pinned_count, pinned_names
+            )
+        } else {
+            "First column selected".to_string()
+        };
+
+        let viewport_changed = old_scroll_offset != new_scroll_offset;
+
+        debug!(target: "viewport_manager", 
+               "navigate_to_first_column: pinned={}, first_scrollable={}, scroll_offset={}->{}",
+               pinned_count, first_scrollable_column, old_scroll_offset, new_scroll_offset);
+
+        NavigationResult {
+            column_position: first_scrollable_column,
+            scroll_offset: new_scroll_offset,
+            description,
+            viewport_changed,
         }
     }
 }

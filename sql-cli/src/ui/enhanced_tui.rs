@@ -1520,9 +1520,11 @@ impl EnhancedTuiApp {
                                     // Update chord mode in renderer with available completions
                                     // Extract the completions from the description
                                     if description.contains("y=row") {
-                                        self.key_sequence_renderer.set_chord_mode("y(a,c,q,r,v)");
+                                        self.key_sequence_renderer
+                                            .set_chord_mode(Some("y(a,c,q,r,v)".to_string()));
                                     } else {
-                                        self.key_sequence_renderer.set_chord_mode(&description);
+                                        self.key_sequence_renderer
+                                            .set_chord_mode(Some(description.clone()));
                                     }
                                     false // Don't exit, waiting for more keys
                                 }
@@ -4087,30 +4089,55 @@ impl EnhancedTuiApp {
     }
 
     fn goto_first_column(&mut self) {
-        // Get pinned columns from DataView to respect boundaries
-        let first_col = if let Some(dataview) = self.buffer().get_dataview() {
-            let pinned_count = dataview.get_pinned_columns().len();
-            debug!(target: "navigation", "goto_first_column: {} pinned columns, jumping to first scrollable", pinned_count);
-            pinned_count // Jump to first scrollable column, not pinned
+        // Use ViewportManager for centralized navigation logic
+        let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
+        {
+            Some(viewport_manager.navigate_to_first_column())
         } else {
-            0
+            None
         };
 
-        self.buffer_mut().set_current_column(first_col);
+        if let Some(nav_result) = nav_result {
+            debug!(target: "navigation", "goto_first_column: ViewportManager result: {:?}", nav_result);
 
-        // Sync with navigation state in AppStateContainer
-        self.state_container.navigation_mut().selected_column = first_col;
+            // Apply the navigation result to our state
+            self.buffer_mut()
+                .set_current_column(nav_result.column_position);
+            self.state_container.navigation_mut().selected_column = nav_result.column_position;
 
-        // Reset scroll offset to beginning to show the first columns
-        let mut offset = self.buffer().get_scroll_offset();
-        offset.1 = 0; // Start viewport at the beginning
-        self.buffer_mut().set_scroll_offset(offset);
-        self.state_container.navigation_mut().scroll_offset = offset;
+            // Update scroll offset
+            let mut offset = self.buffer().get_scroll_offset();
+            offset.1 = nav_result.scroll_offset;
+            self.buffer_mut().set_scroll_offset(offset);
+            self.state_container.navigation_mut().scroll_offset = offset;
 
-        debug!(target: "navigation", "goto_first_column: reset scroll offset to 0");
+            // Use the description from ViewportManager
+            self.buffer_mut().set_status_message(nav_result.description);
 
-        self.buffer_mut()
-            .set_status_message("First column selected".to_string());
+            debug!(target: "navigation", "goto_first_column: column={}, scroll_offset={}, viewport_changed={}", 
+                   nav_result.column_position, nav_result.scroll_offset, nav_result.viewport_changed);
+        } else {
+            // Fallback to old logic if no ViewportManager
+            debug!(target: "navigation", "goto_first_column: No ViewportManager available, using fallback");
+            let first_col = if let Some(dataview) = self.buffer().get_dataview() {
+                let pinned_count = dataview.get_pinned_columns().len();
+                debug!(target: "navigation", "goto_first_column: {} pinned columns, jumping to first scrollable", pinned_count);
+                pinned_count
+            } else {
+                0
+            };
+
+            self.buffer_mut().set_current_column(first_col);
+            self.state_container.navigation_mut().selected_column = first_col;
+
+            let mut offset = self.buffer().get_scroll_offset();
+            offset.1 = 0;
+            self.buffer_mut().set_scroll_offset(offset);
+            self.state_container.navigation_mut().scroll_offset = offset;
+
+            self.buffer_mut()
+                .set_status_message("First column selected".to_string());
+        }
     }
 
     fn goto_last_column(&mut self) {
@@ -7691,6 +7718,51 @@ impl EnhancedTuiApp {
                             ));
                         }
                     }
+
+                    // Add Navigation debug info
+                    debug_info.push_str("\n========== NAVIGATION DEBUG ==========\n");
+                    let current_column = self.buffer().get_current_column();
+                    let scroll_offset = self.buffer().get_scroll_offset();
+                    let nav_state = self.state_container.navigation();
+
+                    debug_info.push_str(&format!("Buffer Column Position: {}\n", current_column));
+                    debug_info.push_str(&format!(
+                        "Buffer Scroll Offset: row={}, col={}\n",
+                        scroll_offset.0, scroll_offset.1
+                    ));
+                    debug_info.push_str(&format!(
+                        "NavigationState Column: {}\n",
+                        nav_state.selected_column
+                    ));
+                    debug_info.push_str(&format!(
+                        "NavigationState Scroll: row={}, col={}\n",
+                        nav_state.scroll_offset.0, nav_state.scroll_offset.1
+                    ));
+
+                    // Show pinned column info for navigation context
+                    if let Some(dataview) = self.buffer().get_dataview() {
+                        let pinned_count = dataview.get_pinned_columns().len();
+                        let pinned_names = dataview.get_pinned_column_names();
+                        debug_info.push_str(&format!("Pinned Column Count: {}\n", pinned_count));
+                        if !pinned_names.is_empty() {
+                            debug_info
+                                .push_str(&format!("Pinned Column Names: {:?}\n", pinned_names));
+                        }
+                        debug_info
+                            .push_str(&format!("First Scrollable Column: {}\n", pinned_count));
+
+                        // Show if current column is in pinned or scrollable area
+                        if current_column < pinned_count {
+                            debug_info.push_str(&format!(
+                                "Current Position: PINNED area (column {})\n",
+                                current_column
+                            ));
+                        } else {
+                            debug_info.push_str(&format!("Current Position: SCROLLABLE area (column {}, scrollable index {})\n", 
+                                current_column, current_column - pinned_count));
+                        }
+                    }
+                    debug_info.push_str("==========================================\n");
 
                     // Add ViewportManager debug info if available
                     if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
