@@ -1,5 +1,6 @@
 use crate::api_client::QueryResponse;
 use crate::data::data_provider::DataProvider;
+use crate::data::type_inference::{InferredType, TypeInference};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -21,64 +22,26 @@ pub enum DataType {
 impl DataType {
     /// Infer type from a string value
     pub fn infer_from_string(value: &str) -> Self {
-        if value.is_empty() || value.eq_ignore_ascii_case("null") {
+        // Handle explicit null string
+        if value.eq_ignore_ascii_case("null") {
             return DataType::Null;
         }
 
-        // Try parsing as boolean
-        if value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("false") {
-            return DataType::Boolean;
+        // Use the shared type inference logic
+        match TypeInference::infer_from_string(value) {
+            InferredType::Null => DataType::Null,
+            InferredType::Boolean => DataType::Boolean,
+            InferredType::Integer => DataType::Integer,
+            InferredType::Float => DataType::Float,
+            InferredType::DateTime => DataType::DateTime,
+            InferredType::String => DataType::String,
         }
-
-        // Try parsing as integer
-        if value.parse::<i64>().is_ok() {
-            return DataType::Integer;
-        }
-
-        // Try parsing as float
-        if value.parse::<f64>().is_ok() {
-            return DataType::Float;
-        }
-
-        // Check if it looks like a date/time using more strict patterns
-        // Must match common date formats, not just any string with dashes
-        if Self::looks_like_datetime(value) {
-            return DataType::DateTime;
-        }
-
-        DataType::String
     }
 
     /// Check if a string looks like a datetime value
-    /// Uses strict patterns to avoid false positives with ID strings
+    /// Delegates to shared type inference logic
     fn looks_like_datetime(value: &str) -> bool {
-        // Quick length check - dates are typically 8-30 chars
-        if value.len() < 8 || value.len() > 30 {
-            return false;
-        }
-
-        // Check common date patterns with strict validation
-        // These patterns ensure we have valid date components, not just any numbers with dashes
-        let date_patterns = [
-            // YYYY-MM-DD (year must be 19xx or 20xx, month 01-12, day 01-31)
-            regex::Regex::new(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])").unwrap(),
-            // MM/DD/YYYY or MM-DD-YYYY
-            regex::Regex::new(r"^(0[1-9]|1[0-2])[/-](0[1-9]|[12]\d|3[01])[/-](19|20)\d{2}")
-                .unwrap(),
-            // DD/MM/YYYY or DD-MM-YYYY
-            regex::Regex::new(r"^(0[1-9]|[12]\d|3[01])[/-](0[1-9]|1[0-2])[/-](19|20)\d{2}")
-                .unwrap(),
-            // ISO 8601 with time
-            regex::Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}").unwrap(),
-        ];
-
-        for pattern in &date_patterns {
-            if pattern.is_match(value) {
-                return true;
-            }
-        }
-
-        false
+        TypeInference::looks_like_datetime(value)
     }
 
     /// Merge two types (for columns with mixed types)

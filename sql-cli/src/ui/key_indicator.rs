@@ -29,7 +29,7 @@ impl KeyPressIndicator {
             max_keys: 10, // Allow up to 10 keys but fade will naturally limit display
             fade_start_ms: 500,
             fade_duration_ms: 1500,
-            enabled: false, // Off by default
+            enabled: true, // Enable by default for better debugging
         }
     }
 

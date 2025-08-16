@@ -146,7 +146,7 @@ impl Default for DisplayConfig {
             show_row_numbers: false,
             compact_mode: false,
             icons: IconConfig::default(),
-            show_key_indicator: false, // Default off, enable in config
+            show_key_indicator: true, // Default on for better debugging
         }
     }
 }
@@ -207,7 +207,7 @@ impl Default for BehaviorConfig {
             cache_dir: None,
             enable_history: true,
             max_history_entries: 1000,
-            hide_empty_columns: false,
+            hide_empty_columns: true, // Default to true for cleaner display with large datasets
         }
     }
 }
@@ -302,6 +302,9 @@ show_row_numbers = false
 # Use compact mode by default (less padding, more data visible)
 compact_mode = false
 
+# Show key press indicator on status line (useful for debugging)
+show_key_indicator = true
+
 # Icon configuration
 # These are automatically set to ASCII when use_glyphs = false
 [display.icons]
@@ -346,7 +349,7 @@ enable_history = true
 max_history_entries = 1000
 
 # Automatically hide empty/null columns when data is loaded (can be toggled with 'E' key)
-hide_empty_columns = false
+hide_empty_columns = true
 
 [theme]
 # Color scheme: "default", "dark", "light", "solarized"

@@ -4,7 +4,6 @@ use crate::buffer::{
     AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder,
 };
 use crate::buffer_handler::BufferHandler;
-use crate::cell_renderer::CellRenderer;
 use crate::config::config::Config;
 use crate::cursor_manager::CursorManager;
 use crate::data::adapters::BufferAdapter;
@@ -14,16 +13,18 @@ use crate::data::data_exporter::DataExporter;
 use crate::data::data_provider::DataProvider;
 use crate::data::data_view::DataView;
 use crate::help_text::HelpText;
-use crate::key_chord_handler::{ChordResult, KeyChordHandler};
-use crate::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::service_container::ServiceContainer;
 use crate::sql::cache::QueryCache;
 use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::text_navigation::TextNavigator;
 use crate::ui::actions::{Action, ActionContext, ActionResult};
+use crate::ui::cell_renderer::CellRenderer;
+use crate::ui::key_chord_handler::{ChordResult, KeyChordHandler};
 use crate::ui::key_dispatcher::KeyDispatcher;
+use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
+use crate::ui::key_sequence_renderer::KeySequenceRenderer;
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -144,6 +145,7 @@ pub struct EnhancedTuiApp {
     // Visual enhancements
     cell_renderer: CellRenderer,
     key_indicator: KeyPressIndicator,
+    key_sequence_renderer: KeySequenceRenderer,
 }
 
 impl EnhancedTuiApp {
@@ -1248,6 +1250,13 @@ impl EnhancedTuiApp {
                 }
                 indicator
             },
+            key_sequence_renderer: {
+                let mut renderer = KeySequenceRenderer::new();
+                if config.display.show_key_indicator {
+                    renderer.set_enabled(true);
+                }
+                renderer
+            },
         }
     }
 
@@ -1470,7 +1479,9 @@ impl EnhancedTuiApp {
                         }
 
                         // Record key press for visual indicator
-                        self.key_indicator.record_key(format_key_for_display(&key));
+                        let key_display = format_key_for_display(&key);
+                        self.key_indicator.record_key(key_display.clone());
+                        self.key_sequence_renderer.record_key(key_display);
 
                         // CRITICAL: Process through chord handler FIRST for Results mode
                         // This allows chord sequences like 'yv' to work correctly
@@ -1483,16 +1494,27 @@ impl EnhancedTuiApp {
                                 ChordResult::CompleteChord(action) => {
                                     // Handle completed chord actions
                                     debug!("Chord completed: {}", action);
+                                    // Clear chord mode in renderer
+                                    self.key_sequence_renderer.clear_chord_mode();
                                     self.handle_chord_action(&action)?
                                 }
                                 ChordResult::PartialChord(description) => {
                                     // Update status to show chord mode
-                                    self.buffer_mut().set_status_message(description);
+                                    self.buffer_mut().set_status_message(description.clone());
+                                    // Update chord mode in renderer with available completions
+                                    // Extract the completions from the description
+                                    if description.contains("y=row") {
+                                        self.key_sequence_renderer.set_chord_mode("y(a,c,q,r,v)");
+                                    } else {
+                                        self.key_sequence_renderer.set_chord_mode(&description);
+                                    }
                                     false // Don't exit, waiting for more keys
                                 }
                                 ChordResult::Cancelled => {
                                     self.buffer_mut()
                                         .set_status_message("Chord cancelled".to_string());
+                                    // Clear chord mode in renderer
+                                    self.key_sequence_renderer.clear_chord_mode();
                                     false
                                 }
                                 ChordResult::SingleKey(single_key) => {
@@ -2057,6 +2079,7 @@ impl EnhancedTuiApp {
                 // Toggle key press indicator
                 let enabled = !self.key_indicator.enabled;
                 self.key_indicator.set_enabled(enabled);
+                self.key_sequence_renderer.set_enabled(enabled);
                 self.buffer_mut().set_status_message(format!(
                     "Key press indicator {}",
                     if enabled { "enabled" } else { "disabled" }
@@ -2147,7 +2170,7 @@ impl EnhancedTuiApp {
                 self.toggle_debug_mode();
             }
             KeyCode::F(6) => {
-                self.demo_datatable_conversion();
+                // F6 is now available for future use
             }
             KeyCode::F(7) => {
                 // Pretty query view (moved from F6)
@@ -2260,16 +2283,13 @@ impl EnhancedTuiApp {
             debug!("Detected uppercase G key press!");
         }
 
-        // Handle F6 for DataTable demo (V46)
-        if matches!(key.code, KeyCode::F(6)) {
-            self.demo_datatable_conversion();
-            return Ok(false);
-        }
+        // F6 is now available for future use
 
         // Handle F12 for key indicator toggle
         if matches!(key.code, KeyCode::F(12)) {
             let enabled = !self.key_indicator.enabled;
             self.key_indicator.set_enabled(enabled);
+            self.key_sequence_renderer.set_enabled(enabled);
             self.buffer_mut().set_status_message(format!(
                 "Key press indicator {}",
                 if enabled { "enabled" } else { "disabled" }
@@ -6023,9 +6043,9 @@ impl EnhancedTuiApp {
             AppMode::JumpToRow => "Enter:Jump | Esc:Cancel",
         };
 
-        // Add key press indicator if enabled
-        if self.key_indicator.enabled {
-            let key_display = self.key_indicator.to_string();
+        // Add key press indicator using smart sequence renderer
+        if self.key_sequence_renderer.has_content() {
+            let key_display = self.key_sequence_renderer.get_display();
             if !key_display.is_empty() {
                 spans.push(Span::raw(" | Keys: "));
                 spans.push(Span::styled(
@@ -7101,100 +7121,6 @@ impl EnhancedTuiApp {
             })
     }
 
-    #[cfg(not(target_os = "linux"))]
-    fn get_process_memory_kb() -> Option<usize> {
-        None
-    }
-
-    /// V46: Demonstrate DataTable conversion
-    fn demo_datatable_conversion(&mut self) {
-        // V47: Collect all data before any mutable borrows to avoid borrow checker issues
-        let (has_datatable, datatable_info, json_size) = {
-            let buffer = self.buffer();
-
-            let datatable_info = if let Some(dataview) = buffer.get_dataview() {
-                let datatable = dataview.source();
-                // Log column types
-                for (idx, column) in datatable.columns.iter().enumerate() {
-                    debug!(
-                        "V47: Column {}: {} ({:?}, nullable: {}, nulls: {})",
-                        idx, column.name, column.data_type, column.nullable, column.null_count
-                    );
-                }
-
-                let dump = datatable.debug_dump();
-                debug!("V47 DataTable dump:\n{}", dump);
-
-                Some((
-                    datatable.row_count(),
-                    datatable.column_count(),
-                    datatable.estimate_memory_size(),
-                ))
-            } else {
-                None
-            };
-
-            // V50: JSON size is no longer applicable - DataTable is primary storage
-            let json_size: Option<usize> = None;
-
-            (buffer.has_dataview(), datatable_info, json_size)
-        };
-
-        // Now handle the results with mutable borrows
-        if let Some((row_count, col_count, datatable_size)) = datatable_info {
-            info!(
-                "V47: Using stored DataTable: {} rows x {} columns",
-                row_count, col_count
-            );
-
-            // Get actual process memory
-            let process_memory = Self::get_process_memory_kb();
-
-            let message = if let Some(json_size) = json_size {
-                if let Some(mem_kb) = process_memory {
-                    format!(
-                        "V47: {} rows × {} cols | JSON ~{}KB, DataTable ~{}KB | Process total: {}MB",
-                        row_count,
-                        col_count,
-                        json_size / 1024,
-                        datatable_size / 1024,
-                        mem_kb / 1024
-                    )
-                } else {
-                    format!(
-                        "V47: DataTable stored! {} rows, {} cols. Memory: JSON ~{}KB vs DataTable ~{}KB",
-                        row_count,
-                        col_count,
-                        json_size / 1024,
-                        datatable_size / 1024
-                    )
-                }
-            } else {
-                if let Some(mem_kb) = process_memory {
-                    format!(
-                        "V47: {} rows × {} cols | DataTable ~{}KB | Process total: {}MB",
-                        row_count,
-                        col_count,
-                        datatable_size / 1024,
-                        mem_kb / 1024
-                    )
-                } else {
-                    format!(
-                        "V47: DataTable stored! {} rows, {} cols. Memory: ~{}KB",
-                        row_count,
-                        col_count,
-                        datatable_size / 1024
-                    )
-                }
-            };
-
-            self.buffer_mut().set_status_message(message);
-        } else {
-            self.buffer_mut()
-                .set_status_message("V50: No DataTable available".to_string());
-        }
-    }
-
     fn toggle_debug_mode(&mut self) {
         // First, collect all the data we need without any mutable borrows
         let (
@@ -7268,33 +7194,25 @@ impl EnhancedTuiApp {
                         query.clone()
                     };
 
-                // Generate debug info directly without buffer reference
-                let mut debug_info = self
-                    .hybrid_parser
-                    .get_detailed_debug_info(&query_for_parser, query_for_parser.len());
+                // Generate debug info using helper methods
+                let mut debug_info = self.debug_generate_parser_info(&query_for_parser);
 
                 // Add comprehensive buffer state
-                debug_info.push_str(&format!(
-                    "\n========== BUFFER STATE ==========\n\
-                    Current Mode: {:?}\n\
-                    Last Executed Query: '{}'\n\
-                    Input Text: '{}'\n\
-                    Input Cursor: {}\n\
-                    Visual Cursor: {}\n",
-                    previous_mode, last_query, input_text, cursor_pos, visual_cursor
+                debug_info.push_str(&self.debug_generate_buffer_state(
+                    previous_mode,
+                    &last_query,
+                    &input_text,
+                    cursor_pos,
+                    visual_cursor,
                 ));
 
                 // Add results state if in Results mode
-                if results_count > 0 {
-                    debug_info.push_str(&format!(
-                        "\n========== RESULTS STATE ==========\n\
-                            Total Rows: {}\n\
-                            Filtered Rows: {}\n\
-                            Selected Row: {:?}\n\
-                            Current Column: {}\n",
-                        results_count, filtered_count, selected_row, current_column
-                    ));
-                }
+                debug_info.push_str(&self.debug_generate_results_state(
+                    results_count,
+                    filtered_count,
+                    selected_row,
+                    current_column,
+                ));
 
                 // Add DataTable schema information
                 if let Some(buffer) = self.buffer_manager.current() {
@@ -7412,12 +7330,7 @@ impl EnhancedTuiApp {
                 }
 
                 // Add memory tracking history
-                debug_info.push_str("\n========== MEMORY USAGE ==========\n");
-                debug_info.push_str(&format!(
-                    "Current Memory: {} MB\n",
-                    crate::utils::memory_tracker::get_memory_mb()
-                ));
-                debug_info.push_str(&crate::utils::memory_tracker::format_memory_history());
+                debug_info.push_str(&self.debug_generate_memory_info());
 
                 // Add navigation timing statistics
                 debug_info.push_str("\n========== NAVIGATION TIMING ==========\n");
@@ -7434,32 +7347,7 @@ impl EnhancedTuiApp {
                         let total_ms: f64 = self
                             .navigation_timings
                             .iter()
-                            .filter_map(|s| {
-                                // Extract total time from the timing string
-                                if let Some(total_pos) = s.find("total=") {
-                                    let after_total = &s[total_pos + 6..];
-                                    if let Some(end_pos) =
-                                        after_total.find(',').or_else(|| after_total.find(')'))
-                                    {
-                                        let time_str = &after_total[..end_pos];
-                                        // Parse duration - expecting format like "123.456µs" or "1.234ms"
-                                        if let Some(us_pos) = time_str.find("µs") {
-                                            time_str[..us_pos]
-                                                .parse::<f64>()
-                                                .ok()
-                                                .map(|us| us / 1000.0)
-                                        } else if let Some(ms_pos) = time_str.find("ms") {
-                                            time_str[..ms_pos].parse::<f64>().ok()
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                }
-                            })
+                            .filter_map(|s| self.debug_extract_timing(s))
                             .sum();
                         let avg_ms = total_ms / self.navigation_timings.len() as f64;
                         debug_info.push_str(&format!("Average navigation time: {:.3}ms\n", avg_ms));
@@ -7483,37 +7371,7 @@ impl EnhancedTuiApp {
                         let total_ms: f64 = self
                             .render_timings
                             .iter()
-                            .filter_map(|s| {
-                                // Extract total time from the timing string
-                                if let Some(total_pos) = s.find("total=") {
-                                    let after_total = &s[total_pos + 6..];
-                                    if let Some(end_pos) =
-                                        after_total.find(',').or_else(|| after_total.find(')'))
-                                    {
-                                        let time_str = &after_total[..end_pos];
-                                        // Parse duration
-                                        if let Some(us_pos) = time_str.find("µs") {
-                                            time_str[..us_pos]
-                                                .parse::<f64>()
-                                                .ok()
-                                                .map(|us| us / 1000.0)
-                                        } else if let Some(ms_pos) = time_str.find("ms") {
-                                            time_str[..ms_pos].parse::<f64>().ok()
-                                        } else if let Some(s_pos) = time_str.find("s") {
-                                            time_str[..s_pos]
-                                                .parse::<f64>()
-                                                .ok()
-                                                .map(|s| s * 1000.0)
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                }
-                            })
+                            .filter_map(|s| self.debug_extract_timing(s))
                             .sum();
                         let avg_ms = total_ms / self.render_timings.len() as f64;
                         debug_info.push_str(&format!("Average render time: {:.3}ms\n", avg_ms));
@@ -7664,42 +7522,10 @@ impl EnhancedTuiApp {
                 }
 
                 // Add trace logs from ring buffer
-                debug_info.push_str("\n========== TRACE LOGS ==========\n");
-                debug_info.push_str("(Most recent at bottom, last 100 entries)\n");
-                if let Some(ref log_buffer) = self.log_buffer {
-                    let recent_logs = log_buffer.get_recent(100);
-                    for entry in recent_logs {
-                        debug_info.push_str(&entry.format_for_display());
-                        debug_info.push('\n');
-                    }
-                    debug_info.push_str(&format!("Total log entries: {}\n", log_buffer.len()));
-                } else {
-                    debug_info.push_str("Log buffer not initialized\n");
-                }
-                debug_info.push_str("================================\n");
+                debug_info.push_str(&self.debug_generate_trace_logs());
 
                 // Add DebugService logs (our StateManager logs!)
-                if let Some(ref services) = self.service_container {
-                    debug_info.push_str("\n========== STATE CHANGE LOGS ==========\n");
-                    debug_info.push_str("(Most recent at bottom, from DebugService)\n");
-                    let debug_entries = services.debug_service.get_entries();
-                    let recent = debug_entries.iter().rev().take(50).rev(); // Last 50 entries
-                    for entry in recent {
-                        debug_info.push_str(&format!(
-                            "[{}] {:?} [{}]: {}\n",
-                            entry.timestamp, entry.level, entry.component, entry.message
-                        ));
-                    }
-                    debug_info.push_str(&format!(
-                        "Total state change entries: {}\n",
-                        debug_entries.len()
-                    ));
-                    debug_info.push_str("================================\n");
-                } else {
-                    debug_info.push_str("\n========== STATE CHANGE LOGS ==========\n");
-                    debug_info.push_str("DebugService not available (service_container is None)\n");
-                    debug_info.push_str("================================\n");
-                }
+                debug_info.push_str(&self.debug_generate_state_logs());
 
                 // Add AppStateContainer debug dump if available
                 {
@@ -7707,6 +7533,108 @@ impl EnhancedTuiApp {
                     debug_info.push_str(&self.state_container.debug_dump());
                     debug_info.push_str("\n");
                 }
+
+                // Add KeySequenceRenderer debug info
+                debug_info.push_str("\n========== KEY SEQUENCE RENDERER ==========\n");
+                debug_info.push_str(&format!(
+                    "Enabled: {}\n",
+                    self.key_sequence_renderer.is_enabled()
+                ));
+                debug_info.push_str(&format!(
+                    "Has Content: {}\n",
+                    self.key_sequence_renderer.has_content()
+                ));
+                debug_info.push_str(&format!(
+                    "Display String: '{}'\n",
+                    self.key_sequence_renderer.get_display()
+                ));
+
+                // Show detailed state if enabled
+                if self.key_sequence_renderer.is_enabled() {
+                    debug_info.push_str(&format!(
+                        "Chord Mode: {:?}\n",
+                        self.key_sequence_renderer.get_chord_mode()
+                    ));
+                    debug_info.push_str(&format!(
+                        "Key History Size: {}\n",
+                        self.key_sequence_renderer.sequence_count()
+                    ));
+                    let sequences = self.key_sequence_renderer.get_sequences();
+                    if !sequences.is_empty() {
+                        debug_info.push_str("Recent Keys:\n");
+                        for (key, count) in sequences {
+                            debug_info.push_str(&format!("  - '{}' ({} times)\n", key, count));
+                        }
+                    }
+                }
+                debug_info.push_str("==========================================\n");
+
+                // Add configuration display
+                debug_info.push_str("\n========== CONFIGURATION ==========\n");
+                debug_info.push_str("[display]\n");
+                debug_info.push_str(&format!(
+                    "  use_glyphs = {}\n",
+                    self.config.display.use_glyphs
+                ));
+                debug_info.push_str(&format!(
+                    "  show_row_numbers = {}\n",
+                    self.config.display.show_row_numbers
+                ));
+                debug_info.push_str(&format!(
+                    "  compact_mode = {}\n",
+                    self.config.display.compact_mode
+                ));
+                debug_info.push_str(&format!(
+                    "  show_key_indicator = {}\n",
+                    self.config.display.show_key_indicator
+                ));
+
+                debug_info.push_str("\n[behavior]\n");
+                debug_info.push_str(&format!(
+                    "  auto_execute_on_load = {}\n",
+                    self.config.behavior.auto_execute_on_load
+                ));
+                debug_info.push_str(&format!(
+                    "  case_insensitive_default = {}\n",
+                    self.config.behavior.case_insensitive_default
+                ));
+                debug_info.push_str(&format!(
+                    "  max_display_rows = {}\n",
+                    self.config.behavior.max_display_rows
+                ));
+                debug_info.push_str(&format!(
+                    "  enable_history = {}\n",
+                    self.config.behavior.enable_history
+                ));
+                debug_info.push_str(&format!(
+                    "  max_history_entries = {}\n",
+                    self.config.behavior.max_history_entries
+                ));
+                debug_info.push_str(&format!(
+                    "  hide_empty_columns = {}\n",
+                    self.config.behavior.hide_empty_columns
+                ));
+
+                debug_info.push_str("\n[keybindings]\n");
+                debug_info.push_str(&format!(
+                    "  vim_mode = {}\n",
+                    self.config.keybindings.vim_mode
+                ));
+
+                debug_info.push_str("\n[theme]\n");
+                debug_info.push_str(&format!(
+                    "  color_scheme = {}\n",
+                    self.config.theme.color_scheme
+                ));
+                debug_info.push_str(&format!(
+                    "  rainbow_parentheses = {}\n",
+                    self.config.theme.rainbow_parentheses
+                ));
+                debug_info.push_str(&format!(
+                    "  syntax_highlighting = {}\n",
+                    self.config.theme.syntax_highlighting
+                ));
+                debug_info.push_str("==========================================\n");
 
                 // Set the final content in debug widget
                 self.debug_widget.set_content(debug_info.clone());
@@ -7725,6 +7653,139 @@ impl EnhancedTuiApp {
                     }
                 }
             }
+        }
+    }
+
+    // ==================== Debug Helper Methods ====================
+    // These are kept in the TUI to avoid regressions from moving data access
+
+    /// Generate the parser debug section
+    fn debug_generate_parser_info(&self, query: &str) -> String {
+        self.hybrid_parser
+            .get_detailed_debug_info(query, query.len())
+    }
+
+    /// Generate the buffer state debug section
+    fn debug_generate_buffer_state(
+        &self,
+        previous_mode: AppMode,
+        last_query: &str,
+        input_text: &str,
+        cursor_pos: usize,
+        visual_cursor: usize,
+    ) -> String {
+        format!(
+            "\n========== BUFFER STATE ==========\n\
+            Current Mode: {:?}\n\
+            Last Executed Query: '{}'\n\
+            Input Text: '{}'\n\
+            Input Cursor: {}\n\
+            Visual Cursor: {}\n",
+            previous_mode, last_query, input_text, cursor_pos, visual_cursor
+        )
+    }
+
+    /// Generate the results state debug section
+    fn debug_generate_results_state(
+        &self,
+        results_count: usize,
+        filtered_count: usize,
+        selected_row: Option<usize>,
+        current_column: usize,
+    ) -> String {
+        if results_count == 0 {
+            return String::new();
+        }
+
+        format!(
+            "\n========== RESULTS STATE ==========\n\
+            Total Rows: {}\n\
+            Filtered Rows: {}\n\
+            Selected Row: {:?}\n\
+            Current Column: {}\n",
+            results_count, filtered_count, selected_row, current_column
+        )
+    }
+
+    /// Generate memory usage debug section
+    fn debug_generate_memory_info(&self) -> String {
+        format!(
+            "\n========== MEMORY USAGE ==========\n\
+            Current Memory: {} MB\n{}",
+            crate::utils::memory_tracker::get_memory_mb(),
+            crate::utils::memory_tracker::format_memory_history()
+        )
+    }
+
+    /// Generate the trace logs debug section
+    fn debug_generate_trace_logs(&self) -> String {
+        let mut debug_info = String::from("\n========== TRACE LOGS ==========\n");
+        debug_info.push_str("(Most recent at bottom, last 100 entries)\n");
+
+        if let Some(ref log_buffer) = self.log_buffer {
+            let recent_logs = log_buffer.get_recent(100);
+            for entry in recent_logs {
+                debug_info.push_str(&entry.format_for_display());
+                debug_info.push('\n');
+            }
+            debug_info.push_str(&format!("Total log entries: {}\n", log_buffer.len()));
+        } else {
+            debug_info.push_str("Log buffer not initialized\n");
+        }
+        debug_info.push_str("================================\n");
+
+        debug_info
+    }
+
+    /// Generate the state change logs debug section
+    fn debug_generate_state_logs(&self) -> String {
+        let mut debug_info = String::new();
+
+        if let Some(ref services) = self.service_container {
+            debug_info.push_str("\n========== STATE CHANGE LOGS ==========\n");
+            debug_info.push_str("(Most recent at bottom, from DebugService)\n");
+            let debug_entries = services.debug_service.get_entries();
+            let recent = debug_entries.iter().rev().take(50).rev();
+            for entry in recent {
+                debug_info.push_str(&format!(
+                    "[{}] {:?} [{}]: {}\n",
+                    entry.timestamp, entry.level, entry.component, entry.message
+                ));
+            }
+            debug_info.push_str(&format!(
+                "Total state change entries: {}\n",
+                debug_entries.len()
+            ));
+            debug_info.push_str("================================\n");
+        } else {
+            debug_info.push_str("\n========== STATE CHANGE LOGS ==========\n");
+            debug_info.push_str("DebugService not available (service_container is None)\n");
+            debug_info.push_str("================================\n");
+        }
+
+        debug_info
+    }
+
+    /// Extract time in milliseconds from a timing string
+    fn debug_extract_timing(&self, s: &str) -> Option<f64> {
+        if let Some(total_pos) = s.find("total=") {
+            let after_total = &s[total_pos + 6..];
+            if let Some(end_pos) = after_total.find(',').or_else(|| after_total.find(')')) {
+                let time_str = &after_total[..end_pos];
+                if let Some(us_pos) = time_str.find("µs") {
+                    time_str[..us_pos].parse::<f64>().ok().map(|us| us / 1000.0)
+                } else if let Some(ms_pos) = time_str.find("ms") {
+                    time_str[..ms_pos].parse::<f64>().ok()
+                } else if let Some(s_pos) = time_str.find('s') {
+                    time_str[..s_pos].parse::<f64>().ok().map(|s| s * 1000.0)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 

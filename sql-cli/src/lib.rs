@@ -16,7 +16,7 @@ pub mod api_client;
 pub mod buffer;
 pub mod buffer_handler;
 // pub mod cache; // Moved to sql/
-pub mod cell_renderer;
+// pub mod cell_renderer; // Moved to ui/
 // pub mod config; // Moved to config module
 // pub mod csv_datasource; // Moved to data/
 // pub mod csv_fixes; // Moved to data/
@@ -45,7 +45,7 @@ pub mod history_protection;
 // pub mod history_widget; // Moved to widgets/
 // pub mod hybrid_parser; // Moved to sql/
 pub mod input_manager;
-pub mod key_indicator;
+// pub mod key_indicator; // Moved to ui/
 // pub mod logging; // Moved to utils/
 // pub mod modern_input; // Removed - experimental
 // pub mod modern_tui; // Moved to ui/
@@ -73,7 +73,8 @@ pub mod cursor_manager;
 pub mod help_text;
 pub mod history_manager;
 // pub mod key_bindings; // Moved to config/
-pub mod key_chord_handler;
+// pub mod key_chord_handler; // Moved to ui/
+// pub mod key_sequence_renderer; // Moved to ui/
 // pub mod key_dispatcher; // Moved to ui/
 pub mod search_filter;
 pub mod text_navigation;

@@ -1,29 +1,6 @@
-use regex::Regex;
+use crate::data::type_inference::{InferredType, TypeInference};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::OnceLock;
-
-// Compile regex patterns once and reuse them
-static DATE_PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
-
-fn get_date_patterns() -> &'static Vec<Regex> {
-    DATE_PATTERNS.get_or_init(|| {
-        vec![
-            // More strict date patterns that won't match ID strings
-            // YYYY-MM-DD (year must be 19xx or 20xx)
-            Regex::new(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$").unwrap(),
-            // MM/DD/YYYY
-            Regex::new(r"^(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/(19|20)\d{2}$").unwrap(),
-            // DD-MM-YYYY
-            Regex::new(r"^(0[1-9]|[12]\d|3[01])-(0[1-9]|1[0-2])-(19|20)\d{2}$").unwrap(),
-            // YYYY/MM/DD
-            Regex::new(r"^(19|20)\d{2}/(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])$").unwrap(),
-            // ISO 8601 with time: YYYY-MM-DDTHH:MM:SS
-            Regex::new(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T\d{2}:\d{2}:\d{2}")
-                .unwrap(),
-        ]
-    })
-}
 
 /// Analyzes data for statistics, column widths, and other metrics
 /// Extracted from the monolithic enhanced_tui.rs
@@ -248,67 +225,25 @@ impl DataAnalyzer {
 
     /// Detect type of a single value
     fn detect_single_value_type(&self, value: &str) -> ColumnType {
-        if value.is_empty() {
-            return ColumnType::Unknown;
-        }
-
-        // Check in order of likelihood/performance
-        if value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("false") {
-            ColumnType::Boolean
-        } else if value.parse::<i64>().is_ok() {
-            ColumnType::Integer
-        } else if value.parse::<f64>().is_ok() {
-            ColumnType::Float
-        } else if self.looks_like_date_fast(value) {
-            ColumnType::Date
-        } else {
-            ColumnType::String
+        // Use the shared type inference logic
+        match TypeInference::infer_from_string(value) {
+            InferredType::Null => ColumnType::Unknown,
+            InferredType::Boolean => ColumnType::Boolean,
+            InferredType::Integer => ColumnType::Integer,
+            InferredType::Float => ColumnType::Float,
+            InferredType::DateTime => ColumnType::Date,
+            InferredType::String => ColumnType::String,
         }
     }
 
-    /// Check if a string looks like a date using pre-compiled regex patterns
+    /// Check if a string looks like a date
     fn looks_like_date_fast(&self, value: &str) -> bool {
-        // Simple heuristics for date detection
-        if value.len() < 8 || value.len() > 30 {
-            return false;
-        }
-
-        // Use pre-compiled regex patterns
-        let patterns = get_date_patterns();
-        for pattern in patterns {
-            if pattern.is_match(value) {
-                return true;
-            }
-        }
-
-        false
+        TypeInference::looks_like_datetime(value)
     }
 
     /// Check if a string looks like a date
     fn looks_like_date(&self, value: &str) -> bool {
-        // Simple heuristics for date detection
-        if value.len() < 8 || value.len() > 30 {
-            return false;
-        }
-
-        // Check for common date patterns
-        let date_patterns = [
-            r"\d{4}-\d{2}-\d{2}", // YYYY-MM-DD
-            r"\d{2}/\d{2}/\d{4}", // MM/DD/YYYY
-            r"\d{2}-\d{2}-\d{4}", // DD-MM-YYYY
-            r"\d{4}/\d{2}/\d{2}", // YYYY/MM/DD
-        ];
-
-        for pattern in &date_patterns {
-            if regex::Regex::new(pattern)
-                .map(|re| re.is_match(value))
-                .unwrap_or(false)
-            {
-                return true;
-            }
-        }
-
-        false
+        TypeInference::looks_like_datetime(value)
     }
 
     /// Calculate optimal column widths for display
