@@ -147,17 +147,19 @@ impl ViewportManager {
     /// Navigate up one row
     pub fn navigate_row_up(&mut self) -> RowNavigationResult {
         let total_rows = self.dataview.row_count();
-        let new_row = if self.crosshair_row > 0 {
-            self.crosshair_row - 1
-        } else {
-            // Wrap to last row
-            if total_rows > 0 {
-                total_rows - 1
-            } else {
-                0
-            }
-        };
 
+        // Vim-like behavior: don't wrap, stay at boundary
+        if self.crosshair_row == 0 {
+            // Already at first row, don't move
+            return RowNavigationResult {
+                row_position: 0,
+                row_scroll_offset: self.viewport_rows.start,
+                description: "Already at first row".to_string(),
+                viewport_changed: false,
+            };
+        }
+
+        let new_row = self.crosshair_row - 1;
         self.crosshair_row = new_row;
 
         // Adjust viewport if needed
@@ -179,13 +181,20 @@ impl ViewportManager {
     /// Navigate down one row
     pub fn navigate_row_down(&mut self) -> RowNavigationResult {
         let total_rows = self.dataview.row_count();
-        let new_row = if self.crosshair_row + 1 < total_rows {
-            self.crosshair_row + 1
-        } else {
-            // Wrap to first row
-            0
-        };
 
+        // Vim-like behavior: don't wrap, stay at boundary
+        if self.crosshair_row + 1 >= total_rows {
+            // Already at last row, don't move
+            let last_row = total_rows.saturating_sub(1);
+            return RowNavigationResult {
+                row_position: last_row,
+                row_scroll_offset: self.viewport_rows.start,
+                description: "Already at last row".to_string(),
+                viewport_changed: false,
+            };
+        }
+
+        let new_row = self.crosshair_row + 1;
         self.crosshair_row = new_row;
 
         // Adjust viewport if needed
@@ -1512,16 +1521,19 @@ impl ViewportManager {
                current_display_index);
 
         // Calculate new display position (move left in display order)
-        let new_display_index = if current_display_index > 0 {
-            current_display_index - 1
-        } else {
-            // Wrap to last column
-            if total_display_columns > 0 {
-                total_display_columns - 1
-            } else {
-                0
-            }
-        };
+        // Vim-like behavior: don't wrap, stay at boundary
+        if current_display_index == 0 {
+            // Already at first column, don't move
+            let first_datatable_column = display_columns.get(0).copied().unwrap_or(0);
+            return NavigationResult {
+                column_position: first_datatable_column,
+                scroll_offset: self.viewport_cols.start,
+                description: "Already at first column".to_string(),
+                viewport_changed: false,
+            };
+        }
+
+        let new_display_index = current_display_index - 1;
 
         // Get the actual DataTable column index from display order for internal operations
         let new_datatable_column = display_columns
@@ -1609,13 +1621,24 @@ impl ViewportManager {
                "navigate_column_right: using display_index={}", 
                current_display_index);
 
-        // Calculate new display position (move right with wrapping)
-        let new_display_index = if current_display_index + 1 < total_display_columns {
-            current_display_index + 1
-        } else {
-            // Wrap to first column
-            0
-        };
+        // Calculate new display position (move right without wrapping)
+        // Vim-like behavior: don't wrap, stay at boundary
+        if current_display_index + 1 >= total_display_columns {
+            // Already at last column, don't move
+            let last_display_index = total_display_columns.saturating_sub(1);
+            let last_datatable_column = display_columns
+                .get(last_display_index)
+                .copied()
+                .unwrap_or(0);
+            return NavigationResult {
+                column_position: last_datatable_column,
+                scroll_offset: self.viewport_cols.start,
+                description: "Already at last column".to_string(),
+                viewport_changed: false,
+            };
+        }
+
+        let new_display_index = current_display_index + 1;
 
         // Get the actual DataTable column index for the new position (for internal operations)
         let new_datatable_column = display_columns
