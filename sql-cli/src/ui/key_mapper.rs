@@ -90,6 +90,17 @@ impl KeyMapper {
             (PageDown, Mod::NONE),
             Action::Navigate(NavigateAction::PageDown),
         );
+
+        // Ctrl+F/B for page navigation (vim style)
+        mappings.insert(
+            (Char('f'), Mod::CONTROL),
+            Action::Navigate(NavigateAction::PageDown),
+        );
+        mappings.insert(
+            (Char('b'), Mod::CONTROL),
+            Action::Navigate(NavigateAction::PageUp),
+        );
+
         mappings.insert((Home, Mod::NONE), Action::Navigate(NavigateAction::Home));
         mappings.insert((End, Mod::NONE), Action::Navigate(NavigateAction::End));
 
@@ -110,6 +121,15 @@ impl KeyMapper {
             (Char('l'), Mod::NONE),
             Action::Navigate(NavigateAction::Right(1)),
         );
+
+        // Arrow keys (same as vim navigation)
+        mappings.insert((Left, Mod::NONE), Action::Navigate(NavigateAction::Left(1)));
+        mappings.insert(
+            (Right, Mod::NONE),
+            Action::Navigate(NavigateAction::Right(1)),
+        );
+        mappings.insert((Down, Mod::NONE), Action::Navigate(NavigateAction::Down(1)));
+        mappings.insert((Up, Mod::NONE), Action::SwitchMode(AppMode::Command)); // Up exits to Command mode
 
         // Selection mode toggle
         mappings.insert((Char('v'), Mod::NONE), Action::ToggleSelectionMode);
@@ -200,6 +220,7 @@ impl KeyMapper {
         // Cursor movement
         mappings.insert((Left, Mod::NONE), Action::MoveCursorLeft);
         mappings.insert((Right, Mod::NONE), Action::MoveCursorRight);
+        mappings.insert((Down, Mod::NONE), Action::SwitchMode(AppMode::Results)); // Down enters Results mode
         mappings.insert((Home, Mod::NONE), Action::MoveCursorHome);
         mappings.insert((End, Mod::NONE), Action::MoveCursorEnd);
         mappings.insert((Char('a'), Mod::CONTROL), Action::MoveCursorHome);
