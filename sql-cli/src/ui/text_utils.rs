@@ -12,19 +12,47 @@ pub fn extract_partial_word_at_cursor(query: &str, cursor_pos: usize) -> Option<
     let mut start = cursor_pos;
     let end = cursor_pos;
 
-    // Check if we might be in a quoted identifier
+    // Check if we might be in a quoted identifier by scanning backwards
     let mut in_quote = false;
 
-    // Find start of word (go backward)
+    // First, check if we're inside quotes by looking for an opening quote before cursor
+    for i in (0..cursor_pos).rev() {
+        if i < chars.len() {
+            if chars[i] == '"' {
+                // Found a potential opening quote
+                // Check if there's a closing quote after cursor or not
+                let mut found_closing = false;
+                for j in cursor_pos..chars.len() {
+                    if chars[j] == '"' {
+                        found_closing = true;
+                        break;
+                    }
+                }
+                // If no closing quote found, or cursor is before the closing quote, we're in a quoted identifier
+                if !found_closing || cursor_pos <= chars.len() {
+                    in_quote = true;
+                    start = i;
+                    break;
+                }
+            }
+        }
+    }
+
+    // If we found an opening quote, include everything up to cursor
+    if in_quote {
+        // Convert back to byte positions
+        let start_byte = chars[..start].iter().map(|c| c.len_utf8()).sum();
+        let end_byte = chars[..end].iter().map(|c| c.len_utf8()).sum();
+
+        if start_byte < end_byte {
+            return Some(query[start_byte..end_byte].to_string());
+        }
+    }
+
+    // Otherwise, find start of word normally (go backward)
     while start > 0 {
         let prev_char = chars[start - 1];
-        if prev_char == '"' {
-            // Found a quote, include it and stop
-            start -= 1;
-            in_quote = true;
-            break;
-        } else if prev_char.is_alphanumeric() || prev_char == '_' || (prev_char == ' ' && in_quote)
-        {
+        if prev_char.is_alphanumeric() || prev_char == '_' {
             start -= 1;
         } else {
             break;
