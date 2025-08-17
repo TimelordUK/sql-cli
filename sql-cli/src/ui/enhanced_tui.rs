@@ -3971,20 +3971,31 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_left(&mut self) {
-        // Use ViewportManager for column navigation - Buffer now stores display index
-        let current_display_pos = self.buffer().get_current_column();
+        // Buffer stores DataTable index, but ViewportManager expects visual index
+        let current_datatable_col = self.buffer().get_current_column();
+
+        // Convert DataTable index to visual index
+        let current_visual_pos = if let Some(dataview) = self.buffer().get_dataview() {
+            let display_columns = dataview.get_display_columns();
+            display_columns
+                .iter()
+                .position(|&col| col == current_datatable_col)
+                .unwrap_or(0)
+        } else {
+            0
+        };
 
         debug!(target: "navigation", 
-               "move_column_left START: display_pos={}", 
-               current_display_pos);
+               "move_column_left START: datatable_col={}, visual_pos={}", 
+               current_datatable_col, current_visual_pos);
 
         let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
         {
             debug!(target: "enhanced_tui", 
-                   "move_column_left: calling ViewportManager with display_pos={}", 
-                   current_display_pos);
+                   "move_column_left: calling ViewportManager with visual_pos={}", 
+                   current_visual_pos);
 
-            Some(viewport_manager.navigate_column_left(current_display_pos))
+            Some(viewport_manager.navigate_column_left(current_visual_pos))
         } else {
             None
         };
@@ -4041,20 +4052,31 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_right(&mut self) {
-        // Use ViewportManager for column navigation - Buffer now stores display index
-        let current_display_pos = self.buffer().get_current_column();
+        // Buffer stores DataTable index, but ViewportManager expects visual index
+        let current_datatable_col = self.buffer().get_current_column();
+
+        // Convert DataTable index to visual index
+        let current_visual_pos = if let Some(dataview) = self.buffer().get_dataview() {
+            let display_columns = dataview.get_display_columns();
+            display_columns
+                .iter()
+                .position(|&col| col == current_datatable_col)
+                .unwrap_or(0)
+        } else {
+            0
+        };
 
         debug!(target: "navigation", 
-               "move_column_right START: display_pos={}", 
-               current_display_pos);
+               "move_column_right START: datatable_col={}, visual_pos={}", 
+               current_datatable_col, current_visual_pos);
 
         let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
         {
             debug!(target: "enhanced_tui", 
-                   "move_column_right: calling ViewportManager with display_pos={}", 
-                   current_display_pos);
+                   "move_column_right: calling ViewportManager with visual_pos={}", 
+                   current_visual_pos);
 
-            Some(viewport_manager.navigate_column_right(current_display_pos))
+            Some(viewport_manager.navigate_column_right(current_visual_pos))
         } else {
             None
         };

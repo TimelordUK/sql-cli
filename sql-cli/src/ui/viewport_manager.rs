@@ -1325,7 +1325,7 @@ impl ViewportManager {
                old_scroll_offset, self.viewport_cols.start, viewport_changed);
 
         NavigationResult {
-            column_position: new_display_index, // RETURN LOGICAL DISPLAY POSITION, NOT DATATABLE INDEX
+            column_position: new_datatable_column, // Return DataTable index for Buffer
             scroll_offset: self.viewport_cols.start,
             description,
             viewport_changed,
@@ -1426,7 +1426,7 @@ impl ViewportManager {
                self.viewport_cols, old_scroll_offset, self.viewport_cols.start, viewport_changed);
 
         NavigationResult {
-            column_position: new_display_index, // RETURN LOGICAL DISPLAY POSITION, NOT DATATABLE INDEX
+            column_position: new_datatable_column, // Return DataTable index for Buffer
             scroll_offset: self.viewport_cols.start,
             description,
             viewport_changed,
