@@ -276,15 +276,15 @@ impl EnhancedTuiApp {
             return;
         }
 
-        let col_idx = self.state_container.navigation().selected_column;
-
-        // Use ViewportManager for column reordering
+        // Use ViewportManager for column reordering - use its own crosshair position
         let (result, new_viewport_cols, updated_dataview) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for column reordering");
-            let result = viewport_manager.reorder_column_left(col_idx);
+            // Use ViewportManager's crosshair position, not NavigationState's
+            let current_col = viewport_manager.get_crosshair_col();
+            let result = viewport_manager.reorder_column_left(current_col);
             let new_viewport = viewport_manager.viewport_cols().clone();
             // Get the updated DataView to sync back to Buffer
             let updated_dataview = viewport_manager.clone_dataview();
@@ -326,15 +326,15 @@ impl EnhancedTuiApp {
             return;
         }
 
-        let col_idx = self.state_container.navigation().selected_column;
-
-        // Use ViewportManager for column reordering
+        // Use ViewportManager for column reordering - use its own crosshair position
         let (result, new_viewport_cols, updated_dataview) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for column reordering");
-            let result = viewport_manager.reorder_column_right(col_idx);
+            // Use ViewportManager's crosshair position, not NavigationState's
+            let current_col = viewport_manager.get_crosshair_col();
+            let result = viewport_manager.reorder_column_right(current_col);
             let new_viewport = viewport_manager.viewport_cols().clone();
             // Get the updated DataView to sync back to Buffer
             let updated_dataview = viewport_manager.clone_dataview();

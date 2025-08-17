@@ -2511,6 +2511,9 @@ impl ViewportManager {
                 }
             }
 
+            // Update crosshair to follow the moved column
+            self.crosshair_col = new_position;
+
             ColumnReorderResult {
                 new_column_position: new_position,
                 description: format!("Moved column '{}' left", column_name),
@@ -2611,6 +2614,9 @@ impl ViewportManager {
                     );
                 }
             }
+
+            // Update crosshair to follow the moved column
+            self.crosshair_col = new_position;
 
             ColumnReorderResult {
                 new_column_position: new_position,
