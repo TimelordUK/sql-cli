@@ -74,6 +74,8 @@ pub enum Action {
     MoveColumnLeft,
     MoveColumnRight,
     ClearAllPins,
+    NextColumn,
+    PreviousColumn,
 
     // Data operations
     Sort(Option<usize>), // None = current column
@@ -99,6 +101,11 @@ pub enum Action {
     ToggleRowNumbers,
     ToggleCompactMode,
     StartJumpToRow,
+    NavigateToViewportTop,
+    NavigateToViewportMiddle,
+    NavigateToViewportBottom,
+    ToggleCursorLock,
+    ToggleViewportLock,
 
     // Application control
     Quit,

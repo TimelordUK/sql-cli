@@ -582,6 +582,148 @@ impl EnhancedTuiApp {
                     .set_status_message("Enter row number (1-based):".to_string());
                 Ok(ActionResult::Handled)
             }
+            NavigateToViewportTop => {
+                // Use ViewportManager's H command
+                let result = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        Some(viewport_manager.navigate_to_viewport_top())
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(result) = result {
+                    // Update Buffer with the new row position
+                    self.buffer_mut()
+                        .set_selected_row(Some(result.row_position));
+                    // Update viewport if changed
+                    if result.viewport_changed {
+                        let mut offset = self.buffer().get_scroll_offset();
+                        offset.0 = result.row_scroll_offset;
+                        self.buffer_mut().set_scroll_offset(offset);
+                    }
+                    // Also update AppStateContainer for consistency
+                    self.state_container.navigation_mut().selected_row = result.row_position;
+                    if result.viewport_changed {
+                        self.state_container.navigation_mut().scroll_offset.0 =
+                            result.row_scroll_offset;
+                    }
+                }
+                Ok(ActionResult::Handled)
+            }
+            NavigateToViewportMiddle => {
+                // Use ViewportManager's M command
+                let result = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        Some(viewport_manager.navigate_to_viewport_middle())
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(result) = result {
+                    // Update Buffer with the new row position
+                    self.buffer_mut()
+                        .set_selected_row(Some(result.row_position));
+                    // Update viewport if changed
+                    if result.viewport_changed {
+                        let mut offset = self.buffer().get_scroll_offset();
+                        offset.0 = result.row_scroll_offset;
+                        self.buffer_mut().set_scroll_offset(offset);
+                    }
+                    // Also update AppStateContainer for consistency
+                    self.state_container.navigation_mut().selected_row = result.row_position;
+                    if result.viewport_changed {
+                        self.state_container.navigation_mut().scroll_offset.0 =
+                            result.row_scroll_offset;
+                    }
+                }
+                Ok(ActionResult::Handled)
+            }
+            NavigateToViewportBottom => {
+                // Use ViewportManager's L command
+                let result = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        Some(viewport_manager.navigate_to_viewport_bottom())
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(result) = result {
+                    // Update Buffer with the new row position
+                    self.buffer_mut()
+                        .set_selected_row(Some(result.row_position));
+                    // Update viewport if changed
+                    if result.viewport_changed {
+                        let mut offset = self.buffer().get_scroll_offset();
+                        offset.0 = result.row_scroll_offset;
+                        self.buffer_mut().set_scroll_offset(offset);
+                    }
+                    // Also update AppStateContainer for consistency
+                    self.state_container.navigation_mut().selected_row = result.row_position;
+                    if result.viewport_changed {
+                        self.state_container.navigation_mut().scroll_offset.0 =
+                            result.row_scroll_offset;
+                    }
+                }
+                Ok(ActionResult::Handled)
+            }
+            ToggleCursorLock => {
+                // Toggle cursor lock in ViewportManager
+                let is_locked = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        viewport_manager.toggle_cursor_lock();
+                        Some(viewport_manager.is_cursor_locked())
+                    } else {
+                        None
+                    }
+                }; // Borrow is dropped here
+
+                if let Some(is_locked) = is_locked {
+                    let msg = if is_locked {
+                        "Cursor lock ON - cursor stays in viewport position while scrolling"
+                    } else {
+                        "Cursor lock OFF"
+                    };
+                    self.buffer_mut().set_status_message(msg.to_string());
+                }
+                Ok(ActionResult::Handled)
+            }
+            ToggleViewportLock => {
+                // Toggle viewport lock in ViewportManager
+                let is_locked = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        viewport_manager.toggle_viewport_lock();
+                        Some(viewport_manager.is_viewport_locked())
+                    } else {
+                        None
+                    }
+                }; // Borrow is dropped here
+
+                if let Some(is_locked) = is_locked {
+                    let msg = if is_locked {
+                        "Viewport lock ON - navigation constrained to current viewport"
+                    } else {
+                        "Viewport lock OFF"
+                    };
+                    self.buffer_mut().set_status_message(msg.to_string());
+                }
+                Ok(ActionResult::Handled)
+            }
+            NextColumn => {
+                self.move_column_right();
+                Ok(ActionResult::Handled)
+            }
+            PreviousColumn => {
+                self.move_column_left();
+                Ok(ActionResult::Handled)
+            }
             Sort(_column_idx) => {
                 // For now, always sort by current column (like 's' key does)
                 self.toggle_sort_current_column();
