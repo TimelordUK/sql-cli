@@ -4909,7 +4909,7 @@ impl EnhancedTuiApp {
     fn next_column_match(&mut self) {
         // Use DataView's column search navigation
         if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            if let Some(col_index) = dataview.next_column_match() {
+            if let Some(visual_idx) = dataview.next_column_match() {
                 // Get the column name and match info
                 let matching_columns = dataview.get_matching_columns();
                 let current_match = dataview.current_column_match_index() + 1;
@@ -4919,15 +4919,25 @@ impl EnhancedTuiApp {
                     .map(|(_, name)| name.clone())
                     .unwrap_or_default();
 
-                // Update both AppStateContainer and Buffer for compatibility
-                self.state_container.set_current_column(col_index);
-                self.buffer_mut().set_current_column(col_index);
+                // Convert visual index to DataTable index for Buffer/AppStateContainer
+                // (they still use DataTable indices for now)
+                let display_columns = dataview.get_display_columns();
+                let datatable_idx = if visual_idx < display_columns.len() {
+                    display_columns[visual_idx]
+                } else {
+                    visual_idx // Fallback
+                };
+
+                // Update both AppStateContainer and Buffer with DataTable index (for legacy compatibility)
+                self.state_container.set_current_column(datatable_idx);
+                self.buffer_mut().set_current_column(datatable_idx);
 
                 // Update viewport to show the column using ViewportManager
+                // ViewportManager's set_current_column now expects VISUAL index
                 {
                     let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
                     if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
-                        let viewport_changed = viewport_manager.set_current_column(col_index);
+                        let viewport_changed = viewport_manager.set_current_column(visual_idx);
 
                         // Sync navigation state with updated viewport
                         if viewport_changed {
@@ -4942,8 +4952,8 @@ impl EnhancedTuiApp {
                                 scrollable_offset;
 
                             debug!(target: "navigation", 
-                                "Column search: Jumped to column {} '{}', viewport adjusted to {:?}", 
-                                col_index, col_name, new_viewport);
+                                "Column search: Jumped to visual column {} (datatable: {}) '{}', viewport adjusted to {:?}", 
+                                visual_idx, datatable_idx, col_name, new_viewport);
                         }
                     }
                 }
@@ -4959,7 +4969,7 @@ impl EnhancedTuiApp {
     fn previous_column_match(&mut self) {
         // Use DataView's column search navigation
         if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            if let Some(col_index) = dataview.prev_column_match() {
+            if let Some(visual_idx) = dataview.prev_column_match() {
                 // Get the column name and match info
                 let matching_columns = dataview.get_matching_columns();
                 let current_match = dataview.current_column_match_index() + 1;
@@ -4969,15 +4979,25 @@ impl EnhancedTuiApp {
                     .map(|(_, name)| name.clone())
                     .unwrap_or_default();
 
-                // Update both AppStateContainer and Buffer for compatibility
-                self.state_container.set_current_column(col_index);
-                self.buffer_mut().set_current_column(col_index);
+                // Convert visual index to DataTable index for Buffer/AppStateContainer
+                // (they still use DataTable indices for now)
+                let display_columns = dataview.get_display_columns();
+                let datatable_idx = if visual_idx < display_columns.len() {
+                    display_columns[visual_idx]
+                } else {
+                    visual_idx // Fallback
+                };
+
+                // Update both AppStateContainer and Buffer with DataTable index (for legacy compatibility)
+                self.state_container.set_current_column(datatable_idx);
+                self.buffer_mut().set_current_column(datatable_idx);
 
                 // Update viewport to show the column using ViewportManager
+                // ViewportManager's set_current_column now expects VISUAL index
                 {
                     let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
                     if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
-                        let viewport_changed = viewport_manager.set_current_column(col_index);
+                        let viewport_changed = viewport_manager.set_current_column(visual_idx);
 
                         // Sync navigation state with updated viewport
                         if viewport_changed {
@@ -4992,8 +5012,8 @@ impl EnhancedTuiApp {
                                 scrollable_offset;
 
                             debug!(target: "navigation", 
-                                "Column search (prev): Jumped to column {} '{}', viewport adjusted to {:?}", 
-                                col_index, col_name, new_viewport);
+                                "Column search (prev): Jumped to visual column {} (datatable: {}) '{}', viewport adjusted to {:?}", 
+                                visual_idx, datatable_idx, col_name, new_viewport);
                         }
                     }
                 }

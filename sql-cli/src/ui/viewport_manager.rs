@@ -1940,29 +1940,29 @@ impl ViewportManager {
     }
 
     /// Update the current column position and automatically adjust viewport if needed
-    /// This should be called whenever the user navigates to a new column
-    pub fn set_current_column(&mut self, column: usize) -> bool {
-        let pinned_count = self.dataview.get_pinned_columns().len();
+    /// This takes a VISUAL column index (0, 1, 2... in display order)
+    pub fn set_current_column(&mut self, visual_column: usize) -> bool {
         let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
+        let total_visual_columns = self.dataview.get_display_columns().len();
 
         debug!(target: "viewport_manager", 
-               "set_current_column ENTRY: column={}, pinned_count={}, current_viewport={:?}, terminal_width={}", 
-               column, pinned_count, self.viewport_cols, terminal_width);
+               "set_current_column ENTRY: visual_column={}, current_viewport={:?}, terminal_width={}, total_visual={}", 
+               visual_column, self.viewport_cols, terminal_width, total_visual_columns);
 
-        // Check if column is already visible
-        if column < pinned_count {
-            // Pinned column, always visible
-            debug!(target: "viewport_manager", "Column {} is pinned, no viewport adjustment needed", column);
+        // Validate the visual column
+        if visual_column >= total_visual_columns {
+            debug!(target: "viewport_manager", "Visual column {} out of bounds (max {})", visual_column, total_visual_columns);
             return false;
         }
 
         // Check if we're in optimal layout mode (all columns fit)
-        let total_cols = self.dataview.column_count();
+        // This needs to calculate based on visual columns
+        let display_columns = self.dataview.get_display_columns();
         let mut total_width_needed = 0u16;
-        for col_idx in 0..total_cols {
+        for &dt_idx in &display_columns {
             let width = self
                 .column_widths
-                .get(col_idx)
+                .get(dt_idx)
                 .copied()
                 .unwrap_or(DEFAULT_COL_WIDTH);
             total_width_needed += width + 1; // +1 for separator
@@ -1971,50 +1971,59 @@ impl ViewportManager {
         if total_width_needed <= terminal_width {
             // All columns fit - no viewport adjustment needed, all columns are visible
             debug!(target: "viewport_manager", 
-                   "Column {} in optimal layout mode (all columns fit), no adjustment needed", column);
+                   "Visual column {} in optimal layout mode (all columns fit), no adjustment needed", visual_column);
             return false;
         }
 
-        let visible_columns = self.calculate_visible_column_indices(terminal_width);
-        let is_visible = visible_columns.contains(&column);
+        // Check if the visual column is already visible in the viewport
+        let is_visible = self.viewport_cols.contains(&visual_column);
 
         debug!(target: "viewport_manager", 
-               "set_current_column CHECK: column={}, viewport={:?}, visible_columns={:?}, is_visible={}", 
-               column, self.viewport_cols, visible_columns, is_visible);
+               "set_current_column CHECK: visual_column={}, viewport={:?}, is_visible={}", 
+               visual_column, self.viewport_cols, is_visible);
 
         if is_visible {
-            debug!(target: "viewport_manager", "Column {} already visible in {:?}, no adjustment needed", column, self.viewport_cols);
+            debug!(target: "viewport_manager", "Visual column {} already visible in viewport {:?}, no adjustment needed", 
+                   visual_column, self.viewport_cols);
             return false;
         }
 
         // Column is not visible, need to adjust viewport
-        debug!(target: "viewport_manager", "Column {} NOT visible, calculating new offset", column);
-        let new_scroll_offset = self.calculate_scroll_offset_for_column(column, pinned_count);
+        debug!(target: "viewport_manager", "Visual column {} NOT visible, calculating new offset", visual_column);
+        let new_scroll_offset = self.calculate_scroll_offset_for_visual_column(visual_column);
         let old_scroll_offset = self.viewport_cols.start;
 
         debug!(target: "viewport_manager", "Calculated new_scroll_offset={}, old_scroll_offset={}", 
                new_scroll_offset, old_scroll_offset);
 
         if new_scroll_offset != old_scroll_offset {
-            // Update viewport to new position
-            let visible_columns_at_offset = self
-                .calculate_visible_column_indices_with_offset(terminal_width, new_scroll_offset);
-            let new_end = if !visible_columns_at_offset.is_empty() {
-                visible_columns_at_offset
-                    .last()
+            // Calculate how many columns fit from the new offset
+            let display_columns = self.dataview.get_display_columns();
+            let mut new_end = new_scroll_offset;
+            let mut used_width = 0u16;
+            let separator_width = 1u16;
+
+            for visual_idx in new_scroll_offset..display_columns.len() {
+                let dt_idx = display_columns[visual_idx];
+                let width = self
+                    .column_widths
+                    .get(dt_idx)
                     .copied()
-                    .unwrap_or(new_scroll_offset)
-                    + 1
-            } else {
-                new_scroll_offset + 1
-            };
+                    .unwrap_or(DEFAULT_COL_WIDTH);
+                if used_width + width + separator_width <= terminal_width {
+                    used_width += width + separator_width;
+                    new_end = visual_idx + 1;
+                } else {
+                    break;
+                }
+            }
 
             self.viewport_cols = new_scroll_offset..new_end;
             self.cache_dirty = true; // Mark cache as dirty since viewport changed
 
             debug!(target: "viewport_manager", 
-                   "Adjusted viewport for column {}: {}→{} (viewport: {:?})", 
-                   column, old_scroll_offset, new_scroll_offset, self.viewport_cols);
+                   "Adjusted viewport for visual column {}: offset {}→{} (viewport: {:?})", 
+                   visual_column, old_scroll_offset, new_scroll_offset, self.viewport_cols);
 
             return true;
         }
@@ -2023,6 +2032,7 @@ impl ViewportManager {
     }
 
     /// Calculate visible columns with a specific scroll offset (for viewport tracking)
+    /// Returns visual column indices that would be visible with the given offset
     fn calculate_visible_column_indices_with_offset(
         &mut self,
         available_width: u16,
@@ -2030,7 +2040,8 @@ impl ViewportManager {
     ) -> Vec<usize> {
         // Temporarily update viewport to calculate with new offset
         let original_viewport = self.viewport_cols.clone();
-        self.viewport_cols = scroll_offset..scroll_offset + 50; // Temporary large range
+        let total_visual_columns = self.dataview.get_display_columns().len();
+        self.viewport_cols = scroll_offset..(scroll_offset + 50).min(total_visual_columns);
 
         let visible_columns = self.calculate_visible_column_indices(available_width);
 
@@ -2040,29 +2051,39 @@ impl ViewportManager {
         visible_columns
     }
 
-    /// Calculate the optimal scroll offset to keep a column visible
-    /// This replaces the hardcoded estimates in TUI with proper viewport calculations
-    fn calculate_scroll_offset_for_column(&mut self, column: usize, pinned_count: usize) -> usize {
-        if column < pinned_count {
-            // Column is pinned, no scroll needed
-            return 0;
+    /// Calculate the optimal scroll offset to keep a visual column visible
+    fn calculate_scroll_offset_for_visual_column(&mut self, visual_column: usize) -> usize {
+        let current_offset = self.viewport_cols.start;
+        let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
+
+        // Calculate how many columns fit from current offset
+        let display_columns = self.dataview.get_display_columns();
+        let mut columns_that_fit = 0;
+        let mut used_width = 0u16;
+        let separator_width = 1u16;
+
+        for visual_idx in current_offset..display_columns.len() {
+            let dt_idx = display_columns[visual_idx];
+            let width = self
+                .column_widths
+                .get(dt_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+            if used_width + width + separator_width <= terminal_width {
+                used_width += width + separator_width;
+                columns_that_fit += 1;
+            } else {
+                break;
+            }
         }
 
-        let scrollable_column_index = column - pinned_count;
-        let current_offset = self.viewport_cols.start;
-
-        // Get actual visible column count from our viewport calculations
-        let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
-        let visible_columns = self.calculate_visible_column_indices(terminal_width);
-        let visible_count = visible_columns.len();
-
-        // Smart scrolling logic
-        if scrollable_column_index < current_offset {
+        // Smart scrolling logic in visual space
+        if visual_column < current_offset {
             // Column is to the left of viewport, scroll left to show it
-            scrollable_column_index
-        } else if visible_count > 0 && scrollable_column_index >= current_offset + visible_count {
+            visual_column
+        } else if columns_that_fit > 0 && visual_column >= current_offset + columns_that_fit {
             // Column is to the right of viewport, scroll right to show it
-            scrollable_column_index.saturating_sub(visible_count - 1)
+            visual_column.saturating_sub(columns_that_fit - 1)
         } else {
             // Column is already visible, keep current offset
             current_offset
