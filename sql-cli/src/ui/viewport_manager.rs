@@ -102,10 +102,18 @@ impl ViewportManager {
     pub fn new(dataview: Arc<DataView>) -> Self {
         let col_count = dataview.column_count();
 
+        // Initialize with a reasonable default viewport that shows first columns
+        // This will be updated when terminal size is known
+        let initial_viewport_cols = if col_count > 0 {
+            0..col_count.min(20) // Show up to 20 columns initially
+        } else {
+            0..0
+        };
+
         Self {
             dataview,
             viewport_rows: 0..0,
-            viewport_cols: 0..0,
+            viewport_cols: initial_viewport_cols,
             terminal_width: 80,
             terminal_height: 24,
             column_widths: vec![DEFAULT_COL_WIDTH; col_count],
@@ -408,12 +416,21 @@ impl ViewportManager {
             self.viewport_cols.clone()
         };
 
-        // First, add pinned columns
+        // Get the display columns to know which ones are actually visible (not hidden)
+        let display_columns = self.dataview.get_display_columns();
+
+        // First, add pinned columns (but only if they're not hidden)
         let pinned = self.dataview.get_pinned_columns();
         debug!(target: "viewport_manager", 
                "Processing pinned columns: {:?} (DataView says pinned: {:?})", 
                pinned, self.dataview.get_pinned_column_names());
         for &col_idx in pinned {
+            // Skip if hidden
+            if !display_columns.contains(&col_idx) {
+                tracing::trace!("Skipping pinned column {} - hidden", col_idx);
+                continue;
+            }
+
             let width = self
                 .column_widths
                 .get(col_idx)
@@ -436,6 +453,12 @@ impl ViewportManager {
 
         // Then add regular columns from determined range
         for col_idx in process_range {
+            // Skip if hidden (not in display_columns)
+            if !display_columns.contains(&col_idx) {
+                tracing::trace!("Skipping column {} - hidden", col_idx);
+                continue;
+            }
+
             // Skip if already added as pinned
             if pinned.contains(&col_idx) {
                 continue;
@@ -644,13 +667,15 @@ impl ViewportManager {
 
     /// Calculate the optimal scroll offset to show the last column
     /// This backtracks from the end to find the best viewport position
+    /// Returns the scroll offset in terms of scrollable columns (excluding pinned)
     pub fn calculate_optimal_offset_for_last_column(&mut self, available_width: u16) -> usize {
         if self.cache_dirty {
             self.recalculate_column_widths();
         }
 
-        let total_cols = self.dataview.column_count();
-        if total_cols == 0 {
+        // Get the display columns (visible columns only, in display order)
+        let display_columns = self.dataview.get_display_columns();
+        if display_columns.is_empty() {
             return 0;
         }
 
@@ -672,8 +697,19 @@ impl ViewportManager {
         // Available width for scrollable columns
         let available_for_scrollable = available_width.saturating_sub(pinned_width);
 
-        // Start by including the last column
-        let last_col_idx = total_cols - 1;
+        // Get scrollable columns only (display columns minus pinned)
+        let scrollable_columns: Vec<usize> = display_columns
+            .iter()
+            .filter(|&&col| !pinned.contains(&col))
+            .copied()
+            .collect();
+
+        if scrollable_columns.is_empty() {
+            return 0;
+        }
+
+        // Get the last scrollable column
+        let last_col_idx = *scrollable_columns.last().unwrap();
         let last_col_width = self
             .column_widths
             .get(last_col_idx)
@@ -681,17 +717,18 @@ impl ViewportManager {
             .unwrap_or(DEFAULT_COL_WIDTH);
 
         tracing::debug!(
-            "Starting calculation: last_col_idx={}, width={}w, available={}w",
+            "Starting calculation: last_col_idx={}, width={}w, available={}w, scrollable_cols={}",
             last_col_idx,
             last_col_width,
-            available_for_scrollable
+            available_for_scrollable,
+            scrollable_columns.len()
         );
 
         let mut accumulated_width = last_col_width + separator_width;
-        let mut best_offset = last_col_idx;
+        let mut best_offset = scrollable_columns.len() - 1; // Start with last scrollable column
 
-        // Now work backwards from the second-to-last column to find how many more we can fit
-        for col_idx in (pinned_count..last_col_idx).rev() {
+        // Now work backwards through scrollable columns to find how many more we can fit
+        for (idx, &col_idx) in scrollable_columns.iter().enumerate().rev().skip(1) {
             let width = self
                 .column_widths
                 .get(col_idx)
@@ -703,10 +740,11 @@ impl ViewportManager {
             if accumulated_width + width_with_separator <= available_for_scrollable {
                 // This column fits, keep going backwards
                 accumulated_width += width_with_separator;
-                best_offset = col_idx;
+                best_offset = idx; // Use the index in scrollable_columns
                 tracing::trace!(
-                    "Column {} fits ({}w), accumulated={}w, new offset={}",
+                    "Column {} (idx {}) fits ({}w), accumulated={}w, new offset={}",
                     col_idx,
+                    idx,
                     width,
                     accumulated_width,
                     best_offset
@@ -714,7 +752,7 @@ impl ViewportManager {
             } else {
                 // This column doesn't fit, we found our optimal offset
                 // The offset should be the next column (since this one doesn't fit)
-                best_offset = col_idx + 1;
+                best_offset = idx + 1;
                 tracing::trace!(
                     "Column {} doesn't fit ({}w would make {}w total), stopping at offset {}",
                     col_idx,
@@ -726,23 +764,24 @@ impl ViewportManager {
             }
         }
 
-        // Ensure we don't go below the first scrollable column
-        best_offset = best_offset.max(pinned_count);
+        // best_offset is now the index within scrollable_columns
+        // We need to return it as is (it's already the scroll offset for scrollable columns)
 
         // Now verify that starting from best_offset, we can actually see the last column
         // This is the critical check we were missing!
         let mut test_width = 0u16;
         let mut can_see_last = false;
-        for test_idx in best_offset..=last_col_idx {
+        for idx in best_offset..scrollable_columns.len() {
+            let col_idx = scrollable_columns[idx];
             let width = self
                 .column_widths
-                .get(test_idx)
+                .get(col_idx)
                 .copied()
                 .unwrap_or(DEFAULT_COL_WIDTH);
             test_width += width + separator_width;
 
             if test_width > available_for_scrollable {
-                // We can't fit all columns from best_offset to last_col_idx
+                // We can't fit all columns from best_offset to last
                 // Need to adjust offset forward
                 tracing::warn!(
                     "Offset {} doesn't show last column! Need {}w but have {}w",
@@ -755,18 +794,19 @@ impl ViewportManager {
                 can_see_last = false;
                 break;
             }
-            if test_idx == last_col_idx {
+            if idx == scrollable_columns.len() - 1 {
                 can_see_last = true;
             }
         }
 
         // If we still can't see the last column, keep adjusting
-        while !can_see_last && best_offset < total_cols {
+        while !can_see_last && best_offset < scrollable_columns.len() {
             test_width = 0;
-            for test_idx in best_offset..=last_col_idx {
+            for idx in best_offset..scrollable_columns.len() {
+                let col_idx = scrollable_columns[idx];
                 let width = self
                     .column_widths
-                    .get(test_idx)
+                    .get(col_idx)
                     .copied()
                     .unwrap_or(DEFAULT_COL_WIDTH);
                 test_width += width + separator_width;
@@ -775,25 +815,22 @@ impl ViewportManager {
                     best_offset = best_offset + 1;
                     break;
                 }
-                if test_idx == last_col_idx {
+                if idx == scrollable_columns.len() - 1 {
                     can_see_last = true;
                 }
             }
         }
 
-        // Convert to scrollable column index (subtract pinned count)
-        let scrollable_offset = best_offset.saturating_sub(pinned_count);
-
+        // best_offset is already in terms of scrollable columns
         tracing::debug!(
-            "Final offset for last column: absolute={}, scrollable={}, fits {} columns, last col width: {}w, verified last col visible: {}",
+            "Final offset for last column: scrollable_offset={}, fits {} columns, last col width: {}w, verified last col visible: {}",
             best_offset,
-            scrollable_offset,
-            total_cols - best_offset,
+            scrollable_columns.len() - best_offset,
             last_col_width,
             can_see_last
         );
 
-        scrollable_offset
+        best_offset
     }
 
     /// Debug dump of ViewportManager state for F5 diagnostics
@@ -968,7 +1005,7 @@ impl ViewportManager {
         // Sort visible indices according to DataView's display order (pinned first)
         let display_order = self.dataview.get_display_columns();
         let mut visible_indices = Vec::new();
-        
+
         // Add columns in DataView's preferred order, but only if they're in the viewport
         for &col_idx in &display_order {
             if viewport_indices.contains(&col_idx) {
@@ -994,7 +1031,7 @@ impl ViewportManager {
         debug!(target: "viewport_manager", 
                "get_visible_columns_info: viewport={:?} -> ordered={:?} ({} pinned, {} scrollable)",
                viewport_indices, visible_indices, pinned_visible.len(), scrollable_visible.len());
-        
+
         debug!(target: "viewport_manager", 
                "RENDERER DEBUG: viewport_indices={:?}, display_order={:?}, visible_indices={:?}",
                viewport_indices, display_order, visible_indices);
@@ -1090,12 +1127,49 @@ impl ViewportManager {
 
     /// Convert a DataTable column index to its display position within the current visible columns
     /// Returns None if the column is not currently visible
-    pub fn get_display_position_for_datatable_column(&mut self, datatable_column: usize, available_width: u16) -> Option<usize> {
+    pub fn get_display_position_for_datatable_column(
+        &mut self,
+        datatable_column: usize,
+        available_width: u16,
+    ) -> Option<usize> {
         let visible_columns_info = self.get_visible_columns_info(available_width);
         let visible_indices = visible_columns_info.0;
-        
+
         // Find the position of the datatable column in the visible columns list
-        visible_indices.iter().position(|&col| col == datatable_column)
+        let position = visible_indices
+            .iter()
+            .position(|&col| col == datatable_column);
+
+        debug!(target: "viewport_manager",
+               "get_display_position_for_datatable_column: datatable_column={}, visible_indices={:?}, position={:?}",
+               datatable_column, visible_indices, position);
+
+        position
+    }
+
+    /// Get the exact crosshair column position for rendering
+    /// This is the single source of truth for which column should be highlighted
+    /// For now, current_column is still a DataTable index (due to Buffer storing DataTable indices)
+    /// This converts it to the correct display position
+    pub fn get_crosshair_column(
+        &mut self,
+        current_datatable_column: usize,
+        available_width: u16,
+    ) -> Option<usize> {
+        // Get visible columns
+        let visible_columns_info = self.get_visible_columns_info(available_width);
+        let visible_indices = visible_columns_info.0;
+
+        // Find where this DataTable column appears in the visible columns
+        let position = visible_indices
+            .iter()
+            .position(|&col| col == current_datatable_column);
+
+        debug!(target: "viewport_manager",
+               "CROSSHAIR: current_datatable_column={}, visible_indices={:?}, crosshair_position={:?}",
+               current_datatable_column, visible_indices, position);
+
+        position
     }
 
     /// Calculate viewport efficiency metrics

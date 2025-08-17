@@ -3952,11 +3952,11 @@ impl EnhancedTuiApp {
     fn move_column_left(&mut self) {
         // Use ViewportManager for column navigation - Buffer now stores display index
         let current_display_pos = self.buffer().get_current_column();
-        
+
         debug!(target: "navigation", 
                "move_column_left START: display_pos={}", 
                current_display_pos);
-        
+
         let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
         {
             debug!(target: "enhanced_tui", 
@@ -3981,7 +3981,7 @@ impl EnhancedTuiApp {
             debug!(target: "navigation", 
                    "move_column_left END: storing display_pos={} in Buffer", 
                    nav_result.column_position);
-            
+
             // Apply navigation result to TUI state (using display index)
             self.buffer_mut()
                 .set_current_column(nav_result.column_position);
@@ -4022,11 +4022,11 @@ impl EnhancedTuiApp {
     fn move_column_right(&mut self) {
         // Use ViewportManager for column navigation - Buffer now stores display index
         let current_display_pos = self.buffer().get_current_column();
-        
+
         debug!(target: "navigation", 
                "move_column_right START: display_pos={}", 
                current_display_pos);
-        
+
         let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
         {
             debug!(target: "enhanced_tui", 
@@ -4157,26 +4157,55 @@ impl EnhancedTuiApp {
 
     fn goto_last_column(&mut self) {
         // Use DataProvider trait to get column count
+        // This gets the count of VISIBLE columns (after hiding)
         let max_columns = if let Some(provider) = self.get_data_provider() {
             provider.get_column_count()
         } else {
             0
         };
 
+        // Get the last visible column's display position (not DataTable index)
+        let (last_column_datatable_idx, last_column_display_pos) = if let Some(dataview) =
+            self.buffer().get_dataview()
+        {
+            // Get the display columns which maps to actual DataTable indices
+            let display_columns = dataview.get_display_columns();
+            debug!(target: "navigation", "goto_last_column: display_columns = {:?}", display_columns);
+            if !display_columns.is_empty() {
+                // The last element is the DataTable index, but we need the display position
+                let last_datatable_idx = *display_columns.last().unwrap();
+                // The display position is the index in the array (length - 1)
+                let last_display_pos = display_columns.len() - 1;
+                debug!(target: "navigation", "goto_last_column: last DataTable index = {}, display position = {}", 
+                       last_datatable_idx, last_display_pos);
+                (last_datatable_idx, last_display_pos)
+            } else {
+                (0, 0)
+            }
+        } else if max_columns > 0 {
+            (max_columns - 1, max_columns - 1)
+        } else {
+            (0, 0)
+        };
+
         if max_columns > 0 {
-            let last_column = max_columns - 1;
-            self.buffer_mut().set_current_column(last_column);
+            // Buffer stores DataTable index actually - we need to use that
+            self.buffer_mut()
+                .set_current_column(last_column_datatable_idx);
 
             // Sync with navigation state in AppStateContainer
-            self.state_container.navigation_mut().selected_column = last_column;
+            self.state_container.navigation_mut().selected_column = last_column_datatable_idx;
 
-            // Use ViewportManager to calculate the optimal scroll offset
+            // Use ViewportManager to handle the navigation to last column
             let optimal_offset = if let Some(ref mut viewport_manager) =
                 *self.viewport_manager.borrow_mut()
             {
                 // Get terminal width for calculation (same as rendering: subtract 4 for borders)
                 let terminal_width = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80);
                 let available_width = terminal_width.saturating_sub(4);
+
+                // First, set the current column in ViewportManager to ensure viewport includes it
+                viewport_manager.set_current_column(last_column_datatable_idx);
 
                 // Calculate the optimal offset that shows the most columns while keeping last column visible
                 let offset =
@@ -4192,7 +4221,7 @@ impl EnhancedTuiApp {
                     0
                 };
 
-                if last_column >= pinned_count {
+                if last_column_datatable_idx >= pinned_count {
                     // Simple fallback: just set to a high value
                     let total_scrollable_cols = max_columns - pinned_count;
                     total_scrollable_cols.saturating_sub(1)
@@ -4205,13 +4234,15 @@ impl EnhancedTuiApp {
             let mut offset = self.buffer().get_scroll_offset();
             offset.1 = optimal_offset;
 
-            debug!(target: "navigation", "goto_last_column: column {} -> scroll offset {}", last_column, optimal_offset);
+            debug!(target: "navigation", "goto_last_column: column {} -> scroll offset {}", last_column_datatable_idx, optimal_offset);
 
             self.buffer_mut().set_scroll_offset(offset);
             self.state_container.navigation_mut().scroll_offset = offset;
 
-            self.buffer_mut()
-                .set_status_message(format!("Last column selected ({})", last_column + 1));
+            self.buffer_mut().set_status_message(format!(
+                "Last column selected ({})",
+                last_column_datatable_idx + 1
+            ));
         }
     }
 
@@ -6615,12 +6646,20 @@ impl EnhancedTuiApp {
         }
 
         // Get structured column information from ViewportManager (single source of truth)
-        let (visible_indices, pinned_indices, scrollable_indices) = {
+        // Also get the crosshair position ONCE for both headers and cells
+        let (visible_indices, pinned_indices, scrollable_indices, crosshair_column_position) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for rendering");
-            viewport_manager.get_visible_columns_info(available_width as u16)
+            let info = viewport_manager.get_visible_columns_info(available_width as u16);
+
+            // Get crosshair position while we have the borrow
+            let current_datatable_column = self.buffer().get_current_column();
+            let crosshair_pos = viewport_manager
+                .get_crosshair_column(current_datatable_column, available_width as u16);
+
+            (info.0, info.1, info.2, crosshair_pos)
         };
 
         debug!(target: "render", "ViewportManager column info: {} visible, {} pinned, {} scrollable",
@@ -6767,75 +6806,71 @@ impl EnhancedTuiApp {
         }
 
         // Add data headers
-        header_cells.extend(visible_columns.iter().enumerate().map(|(col_idx, (actual_col_index, header))| {
-            // Get sort indicator from AppStateContainer if available
-            let sort_indicator = {
-                let sort = self.state_container.sort();
-                if let Some(col) = sort.column {
-                    if col == *actual_col_index {
-                        match sort.order {
-                            SortOrder::Ascending => " ↑",
-                            SortOrder::Descending => " ↓",
-                            SortOrder::None => "",
+        header_cells.extend(visible_columns.iter().enumerate().map(
+            |(col_idx, (actual_col_index, header))| {
+                // Get sort indicator from AppStateContainer if available
+                let sort_indicator = {
+                    let sort = self.state_container.sort();
+                    if let Some(col) = sort.column {
+                        if col == *actual_col_index {
+                            match sort.order {
+                                SortOrder::Ascending => " ↑",
+                                SortOrder::Descending => " ↓",
+                                SortOrder::None => "",
+                            }
+                        } else {
+                            ""
                         }
                     } else {
                         ""
                     }
+                };
+
+                // Check if this is the current column by comparing display positions
+                // The header is being rendered at position col_idx in the visible_columns array
+                // Use the pre-computed crosshair position (single source of truth)
+                let column_indicator = if Some(col_idx) == crosshair_column_position {
+                    " [*]"
                 } else {
                     ""
-                }
-            };
+                };
 
-            // Check if this is the current column by comparing display positions
-            // The header is being rendered at position col_idx in the visible_columns array
-            // Use ViewportManager to convert DataTable column index to display position
-            let current_datatable_column = self.buffer().get_current_column();
-            let current_display_position = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
-                viewport_manager.get_display_position_for_datatable_column(current_datatable_column, available_width as u16)
-            } else {
-                None
-            };
-            let column_indicator = if Some(col_idx) == current_display_position {
-                " [*]"
-            } else {
-                ""
-            };
+                // No longer need [P] indicator since we use blue background for pinned columns
+                let pinned_indicator = "";
 
-            // No longer need [P] indicator since we use blue background for pinned columns
-            let pinned_indicator = "";
+                // Check if this column is pinned to determine styling
+                let is_pinned = pinned_indices.contains(actual_col_index);
 
-            // Check if this column is pinned to determine styling
-            let is_pinned = pinned_indices.contains(actual_col_index);
-
-            let mut style = if is_pinned {
-                // Pinned columns get a distinctive blue background with white text
-                Style::default()
-                    .bg(Color::Blue)
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                // Regular columns keep the cyan color
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            };
-
-            if col_idx == self.buffer().get_current_column() {
-                if is_pinned {
-                    // Current pinned column gets yellow text on blue background
-                    style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+                let mut style = if is_pinned {
+                    // Pinned columns get a distinctive blue background with white text
+                    Style::default()
+                        .bg(Color::Blue)
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    // Current regular column gets yellow text
-                    style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
-                }
-            }
+                    // Regular columns keep the cyan color
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                };
 
-            Cell::from(format!(
-                "{}{}{}{}",
-                header, sort_indicator, column_indicator, pinned_indicator
-            ))
-            .style(style)
-        }));
+                if Some(col_idx) == crosshair_column_position {
+                    if is_pinned {
+                        // Current pinned column gets yellow text on blue background
+                        style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+                    } else {
+                        // Current regular column gets yellow text
+                        style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+                    }
+                }
+
+                Cell::from(format!(
+                    "{}{}{}{}",
+                    header, sort_indicator, column_indicator, pinned_indicator
+                ))
+                .style(style)
+            },
+        ));
 
         let header = Row::new(header_cells);
 
@@ -6853,13 +6888,7 @@ impl EnhancedTuiApp {
             }
 
             // Add data cells with column highlighting
-            let current_datatable_column = self.state_container.navigation().selected_column;
-            // Use ViewportManager to convert DataTable column index to display position
-            let current_display_position = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
-                viewport_manager.get_display_position_for_datatable_column(current_datatable_column, available_width as u16)
-            } else {
-                None
-            };
+            // Use the pre-computed crosshair position (single source of truth)
             let selected_row = self.state_container.navigation().selected_row;
             let is_current_row = row_viewport_start + i == selected_row;
 
@@ -6877,7 +6906,7 @@ impl EnhancedTuiApp {
 
             cells.extend(row_data.iter().enumerate().map(|(col_idx, val)| {
                 // Check if this column matches the selected column (using display positions)
-                let is_selected_column = Some(col_idx) == current_display_position;
+                let is_selected_column = Some(col_idx) == crosshair_column_position;
 
                 // Check if this column is pinned
                 let is_pinned = visible_columns
