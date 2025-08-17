@@ -1548,8 +1548,20 @@ impl ViewportManager {
         let new_scroll_offset = 0;
         let old_scroll_offset = self.viewport_cols.start;
 
+        // Recalculate the entire viewport to show columns starting from new_scroll_offset
+        let visible_indices = self
+            .calculate_visible_column_indices_with_offset(self.terminal_width, new_scroll_offset);
+        let viewport_end = if let Some(&last_idx) = visible_indices.last() {
+            last_idx + 1
+        } else {
+            new_scroll_offset + 1
+        };
+
         // Update our internal viewport state
-        self.viewport_cols = new_scroll_offset..self.viewport_cols.end;
+        self.viewport_cols = new_scroll_offset..viewport_end;
+
+        // Update crosshair to first scrollable column
+        self.crosshair_col = first_scrollable_column;
 
         // Create description
         let description = if pinned_count > 0 {
@@ -1564,8 +1576,8 @@ impl ViewportManager {
         let viewport_changed = old_scroll_offset != new_scroll_offset;
 
         debug!(target: "viewport_manager", 
-               "navigate_to_first_column: pinned={}, first_scrollable={}, scroll_offset={}->{}",
-               pinned_count, first_scrollable_column, old_scroll_offset, new_scroll_offset);
+               "navigate_to_first_column: pinned={}, first_scrollable={}, crosshair_col={}, scroll_offset={}->{}",
+               pinned_count, first_scrollable_column, self.crosshair_col, old_scroll_offset, new_scroll_offset);
 
         NavigationResult {
             column_position: first_scrollable_column,
@@ -1647,8 +1659,17 @@ impl ViewportManager {
         let old_scroll_offset = self.viewport_cols.start;
         let viewport_changed = old_scroll_offset != new_scroll_offset;
 
+        // Recalculate the entire viewport to show columns starting from new_scroll_offset
+        let visible_indices = self
+            .calculate_visible_column_indices_with_offset(self.terminal_width, new_scroll_offset);
+        let viewport_end = if let Some(&last_idx) = visible_indices.last() {
+            last_idx + 1
+        } else {
+            new_scroll_offset + 1
+        };
+
         // Update our internal viewport state
-        self.viewport_cols = new_scroll_offset..self.viewport_cols.end;
+        self.viewport_cols = new_scroll_offset..viewport_end;
 
         debug!(target: "viewport_manager", 
                "navigate_to_last_column: last_visual={}, scroll_offset={}->{}",
