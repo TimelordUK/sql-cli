@@ -2555,7 +2555,7 @@ impl ViewportManager {
 
             // Determine new cursor position and if wrapping occurred
             let wrapped_to_beginning = current_column == column_count - 1
-                || (current_column == pinned_count - 1 && pinned_count > 0);
+                || (pinned_count > 0 && current_column == pinned_count - 1);
 
             let new_position = if current_column == column_count - 1 {
                 // Column wrapped to beginning
@@ -2564,7 +2564,7 @@ impl ViewportManager {
                 } else {
                     0 // No pinned columns, go to start
                 }
-            } else if current_column == pinned_count - 1 && pinned_count > 0 {
+            } else if pinned_count > 0 && current_column == pinned_count - 1 {
                 // Last pinned column wrapped to first pinned
                 0
             } else {
@@ -3143,5 +3143,187 @@ mod tests {
         viewport.scroll_by(-5, 1);
         assert_eq!(viewport.viewport_rows(), 5..29);
         assert_eq!(viewport.viewport_cols(), 1..3);
+    }
+
+    // Comprehensive navigation and column operation tests
+
+    #[test]
+    fn test_navigate_to_last_and_first_column() {
+        let dataview = create_test_dataview();
+        let mut vm = ViewportManager::new(dataview);
+        vm.update_terminal_size(120, 40);
+
+        // Navigate to last column
+        let result = vm.navigate_to_last_column();
+        assert_eq!(vm.get_crosshair_col(), 2); // We have 3 columns (0-2)
+        assert_eq!(result.column_position, 2);
+
+        // Navigate back to first column
+        let result = vm.navigate_to_first_column();
+        assert_eq!(vm.get_crosshair_col(), 0);
+        assert_eq!(result.column_position, 0);
+    }
+
+    #[test]
+    fn test_column_reorder_right_with_crosshair() {
+        let dataview = create_test_dataview();
+        let mut vm = ViewportManager::new(dataview);
+        vm.update_terminal_size(120, 40);
+
+        // Start at column 0 (id)
+        vm.crosshair_col = 0;
+
+        // Move column right (swap id with name)
+        let result = vm.reorder_column_right(0);
+        assert!(result.success);
+        assert_eq!(result.new_column_position, 1);
+        assert_eq!(vm.get_crosshair_col(), 1); // Crosshair follows the moved column
+
+        // Verify column order changed
+        let headers = vm.dataview.column_names();
+        assert_eq!(headers[0], "name"); // name is now at position 0
+        assert_eq!(headers[1], "id"); // id is now at position 1
+    }
+
+    #[test]
+    fn test_column_reorder_left_with_crosshair() {
+        let dataview = create_test_dataview();
+        let mut vm = ViewportManager::new(dataview);
+        vm.update_terminal_size(120, 40);
+
+        // Start at column 1 (name)
+        vm.crosshair_col = 1;
+
+        // Move column left (swap name with id)
+        let result = vm.reorder_column_left(1);
+        assert!(result.success);
+        assert_eq!(result.new_column_position, 0);
+        assert_eq!(vm.get_crosshair_col(), 0); // Crosshair follows the moved column
+    }
+
+    #[test]
+    fn test_hide_column_adjusts_crosshair() {
+        let dataview = create_test_dataview();
+        let mut vm = ViewportManager::new(dataview);
+        vm.update_terminal_size(120, 40);
+
+        // Test hiding column that crosshair is on
+        vm.crosshair_col = 1; // On "name" column
+        let success = vm.hide_column(1);
+        assert!(success);
+        // Crosshair stays at index 1, which now points to "amount"
+        assert_eq!(vm.get_crosshair_col(), 1);
+        assert_eq!(vm.dataview.column_count(), 2); // Only 2 visible columns now
+
+        // Test hiding last column when crosshair is on it
+        vm.crosshair_col = 1; // On last visible column now
+        let success = vm.hide_column(1);
+        assert!(success);
+        assert_eq!(vm.get_crosshair_col(), 0); // Moved to previous column
+        assert_eq!(vm.dataview.column_count(), 1); // Only 1 visible column
+    }
+
+    #[test]
+    fn test_goto_line_centers_viewport() {
+        let dataview = create_test_dataview();
+        let mut vm = ViewportManager::new(dataview);
+        vm.update_terminal_size(120, 40);
+
+        // Jump to row 50
+        let result = vm.goto_line(50);
+        assert_eq!(result.row_position, 50);
+        assert_eq!(vm.get_crosshair_row(), 50);
+
+        // Verify viewport is centered around target row
+        let visible_rows = 34; // 40 - 6 for headers/status
+        let expected_offset = 50 - (visible_rows / 2);
+        assert_eq!(result.row_scroll_offset, expected_offset);
+    }
+
+    #[test]
+    fn test_page_navigation() {
+        let dataview = create_test_dataview();
+        let mut vm = ViewportManager::new(dataview);
+        vm.update_terminal_size(120, 40);
+
+        // Test page down
+        let initial_row = vm.get_crosshair_row();
+        let result = vm.page_down();
+        assert!(result.row_position > initial_row);
+        assert_eq!(vm.get_crosshair_row(), result.row_position);
+
+        // Test page up to return
+        vm.page_down(); // Go down more
+        vm.page_down();
+        let prev_position = vm.get_crosshair_row();
+        let result = vm.page_up();
+        assert!(result.row_position < prev_position); // Should have moved up
+    }
+
+    #[test]
+    fn test_cursor_lock_mode() {
+        let dataview = create_test_dataview();
+        let mut vm = ViewportManager::new(dataview);
+        vm.update_terminal_size(120, 40);
+
+        // Enable cursor lock
+        vm.toggle_cursor_lock();
+        assert!(vm.is_cursor_locked());
+
+        // Move down with cursor lock - viewport position should stay same
+        let initial_viewport_position = vm.get_crosshair_row() - vm.viewport_rows.start;
+        let result = vm.navigate_row_down();
+
+        // With cursor lock, viewport should scroll but cursor stays at same viewport position
+        if result.viewport_changed {
+            let new_viewport_position = vm.get_crosshair_row() - vm.viewport_rows.start;
+            assert_eq!(initial_viewport_position, new_viewport_position);
+        }
+    }
+
+    #[test]
+    fn test_viewport_lock_prevents_scrolling() {
+        let dataview = create_test_dataview();
+        let mut vm = ViewportManager::new(dataview);
+        vm.update_terminal_size(120, 40);
+
+        // Enable viewport lock
+        vm.toggle_viewport_lock();
+        assert!(vm.is_viewport_locked());
+
+        // Try to navigate - viewport should not change
+        let initial_viewport = vm.viewport_rows.clone();
+        let result = vm.navigate_row_down();
+
+        // Viewport should remain the same
+        assert_eq!(vm.viewport_rows, initial_viewport);
+        // Viewport lock should prevent scrolling
+        assert!(!result.viewport_changed);
+    }
+
+    #[test]
+    fn test_h_m_l_viewport_navigation() {
+        let dataview = create_test_dataview();
+        let mut vm = ViewportManager::new(dataview);
+        vm.update_terminal_size(120, 40);
+
+        // Move down to establish a viewport
+        for _ in 0..20 {
+            vm.navigate_row_down();
+        }
+
+        // Test H (top of viewport)
+        let result = vm.navigate_to_viewport_top();
+        assert_eq!(vm.get_crosshair_row(), vm.viewport_rows.start);
+
+        // Test L (bottom of viewport)
+        let result = vm.navigate_to_viewport_bottom();
+        assert_eq!(vm.get_crosshair_row(), vm.viewport_rows.end - 1);
+
+        // Test M (middle of viewport)
+        let result = vm.navigate_to_viewport_middle();
+        let expected_middle =
+            vm.viewport_rows.start + (vm.viewport_rows.end - vm.viewport_rows.start) / 2;
+        assert_eq!(vm.get_crosshair_row(), expected_middle);
     }
 }
