@@ -582,6 +582,53 @@ impl EnhancedTuiApp {
                     .set_status_message("Enter row number (1-based):".to_string());
                 Ok(ActionResult::Handled)
             }
+            ExportToCsv => {
+                self.export_to_csv();
+                Ok(ActionResult::Handled)
+            }
+            ExportToJson => {
+                self.export_to_json();
+                Ok(ActionResult::Handled)
+            }
+            ClearFilter => {
+                // Check if we have an active filter to clear
+                if let Some(dataview) = self.buffer().get_dataview() {
+                    if dataview.has_filter() {
+                        // Clear the filter
+                        if let Some(dataview_mut) = self.buffer_mut().get_dataview_mut() {
+                            dataview_mut.clear_filter();
+                            self.buffer_mut()
+                                .set_status_message("Filter cleared".to_string());
+                        }
+                    } else {
+                        self.buffer_mut()
+                            .set_status_message("No active filter to clear".to_string());
+                    }
+                } else {
+                    self.buffer_mut()
+                        .set_status_message("No data loaded".to_string());
+                }
+                Ok(ActionResult::Handled)
+            }
+            ToggleCaseInsensitive => {
+                let current = self.buffer().is_case_insensitive();
+                self.buffer_mut().set_case_insensitive(!current);
+                self.buffer_mut().set_status_message(format!(
+                    "Case-insensitive string comparisons: {}",
+                    if !current { "ON" } else { "OFF" }
+                ));
+                Ok(ActionResult::Handled)
+            }
+            ToggleKeyIndicator => {
+                let enabled = !self.key_indicator.enabled;
+                self.key_indicator.set_enabled(enabled);
+                self.key_sequence_renderer.set_enabled(enabled);
+                self.buffer_mut().set_status_message(format!(
+                    "Key press indicator {}",
+                    if enabled { "enabled" } else { "disabled" }
+                ));
+                Ok(ActionResult::Handled)
+            }
             NavigateToViewportTop => {
                 // Use ViewportManager's H command
                 let result = {

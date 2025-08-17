@@ -76,6 +76,8 @@ pub enum Action {
     ClearAllPins,
     NextColumn,
     PreviousColumn,
+    ToggleCompactMode,
+    ToggleRowNumbers,
 
     // Data operations
     Sort(Option<usize>), // None = current column
@@ -83,6 +85,8 @@ pub enum Action {
     StartFuzzyFilter,
     ApplyFilter(String),
     ClearFilter,
+    ExportToCsv,
+    ExportToJson,
 
     // Search operations
     StartSearch,
@@ -98,14 +102,14 @@ pub enum Action {
     RefreshView,
     ShowHelp,
     ShowDebugInfo,
-    ToggleRowNumbers,
-    ToggleCompactMode,
     StartJumpToRow,
     NavigateToViewportTop,
     NavigateToViewportMiddle,
     NavigateToViewportBottom,
     ToggleCursorLock,
     ToggleViewportLock,
+    ToggleCaseInsensitive,
+    ToggleKeyIndicator,
 
     // Application control
     Quit,

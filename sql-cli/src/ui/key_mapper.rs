@@ -159,8 +159,19 @@ impl KeyMapper {
         mappings.insert((Char('N'), Mod::NONE), Action::ToggleRowNumbers);
         mappings.insert((Char('C'), Mod::NONE), Action::ToggleCompactMode);
 
+        // Export operations
+        mappings.insert((Char('x'), Mod::CONTROL), Action::ExportToCsv);
+        mappings.insert((Char('j'), Mod::CONTROL), Action::ExportToJson);
+
+        // Clear filter (when filter is active)
+        mappings.insert((Char('C'), Mod::SHIFT), Action::ClearFilter);
+
         // Jump to row
         mappings.insert((Char(':'), Mod::NONE), Action::StartJumpToRow);
+
+        // F-key actions
+        mappings.insert((F(8), Mod::NONE), Action::ToggleCaseInsensitive);
+        mappings.insert((F(12), Mod::NONE), Action::ToggleKeyIndicator);
 
         self.mode_mappings.insert(AppMode::Results, mappings);
     }
@@ -209,6 +220,10 @@ impl KeyMapper {
 
         // Clipboard operations
         mappings.insert((Char('v'), Mod::CONTROL), Action::Paste);
+
+        // F-key actions (also available in Command mode)
+        mappings.insert((F(8), Mod::NONE), Action::ToggleCaseInsensitive);
+        mappings.insert((F(12), Mod::NONE), Action::ToggleKeyIndicator);
 
         self.mode_mappings.insert(AppMode::Command, mappings);
     }
