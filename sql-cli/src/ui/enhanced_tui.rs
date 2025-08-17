@@ -3764,8 +3764,23 @@ impl EnhancedTuiApp {
                 // Store the new DataView in buffer
                 self.buffer_mut().set_dataview(Some(new_dataview.clone()));
 
-                // Update ViewportManager with the new DataView
-                self.update_viewport_manager(Some(new_dataview));
+                // Apply auto-hide empty columns if configured
+                if self.config.behavior.hide_empty_columns {
+                    if let Some(dataview_mut) = self.buffer_mut().get_dataview_mut() {
+                        let count = dataview_mut.hide_empty_columns();
+                        if count > 0 {
+                            info!("Auto-hidden {} empty columns after query execution", count);
+                        }
+                    }
+                }
+
+                // Update ViewportManager with the new DataView (after potential column hiding)
+                let final_dataview = self
+                    .buffer()
+                    .get_dataview()
+                    .cloned()
+                    .unwrap_or(new_dataview);
+                self.update_viewport_manager(Some(final_dataview));
 
                 // Update NavigationState with data dimensions
                 self.state_container.update_data_size(row_count, col_count);
