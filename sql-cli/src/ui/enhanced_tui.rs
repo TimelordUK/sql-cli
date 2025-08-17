@@ -5004,7 +5004,7 @@ impl EnhancedTuiApp {
             // Move to first match - the index from DataView is already a VISUAL index
             let first_match_visual_idx = matching_columns[0].0;
             let first_match_name = &matching_columns[0].1;
-            
+
             // Convert visual index to DataTable index for Buffer/AppStateContainer (legacy compatibility)
             let datatable_idx = if let Some(dataview) = self.buffer().get_dataview() {
                 let display_columns = dataview.get_display_columns();
@@ -5025,7 +5025,8 @@ impl EnhancedTuiApp {
             {
                 let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
                 if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
-                    let viewport_changed = viewport_manager.set_current_column(first_match_visual_idx);
+                    let viewport_changed =
+                        viewport_manager.set_current_column(first_match_visual_idx);
 
                     // Sync navigation state with updated viewport
                     if viewport_changed {

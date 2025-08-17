@@ -2794,6 +2794,10 @@ impl ViewportManager {
             return false;
         }
 
+        // Update the crosshair position
+        self.crosshair_col = visual_column;
+        debug!(target: "viewport_manager", "Updated crosshair_col to {}", visual_column);
+
         // Check if we're in optimal layout mode (all columns fit)
         // This needs to calculate based on visual columns
         let display_columns = self.dataview.get_display_columns();
