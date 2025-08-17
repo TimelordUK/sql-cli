@@ -122,14 +122,14 @@ impl KeyMapper {
             Action::Navigate(NavigateAction::Right(1)),
         );
 
-        // Arrow keys (same as vim navigation)
+        // Arrow keys (same as vim navigation - no mode switching)
         mappings.insert((Left, Mod::NONE), Action::Navigate(NavigateAction::Left(1)));
         mappings.insert(
             (Right, Mod::NONE),
             Action::Navigate(NavigateAction::Right(1)),
         );
         mappings.insert((Down, Mod::NONE), Action::Navigate(NavigateAction::Down(1)));
-        mappings.insert((Up, Mod::NONE), Action::SwitchMode(AppMode::Command)); // Up exits to Command mode
+        mappings.insert((Up, Mod::NONE), Action::Navigate(NavigateAction::Up(1))); // Up navigates up, bounded at row 0
 
         // Selection mode toggle
         mappings.insert((Char('v'), Mod::NONE), Action::ToggleSelectionMode);
