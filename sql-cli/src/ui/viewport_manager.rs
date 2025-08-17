@@ -1927,8 +1927,75 @@ impl ViewportManager {
                "page_down: current_row={}, total_rows={}, visible_rows={}, current_viewport_rows={:?}", 
                current_row, total_rows, visible_rows, self.viewport_rows);
 
+        // Check viewport lock first - prevent scrolling entirely
+        if self.viewport_lock {
+            debug!(target: "viewport_manager", 
+                   "page_down: Viewport locked, moving within current viewport");
+            // In viewport lock mode, move to bottom of current viewport
+            let new_row = self
+                .viewport_rows
+                .end
+                .saturating_sub(1)
+                .min(total_rows.saturating_sub(1));
+            self.crosshair_row = new_row;
+            return RowNavigationResult {
+                row_position: new_row,
+                row_scroll_offset: self.viewport_rows.start,
+                description: format!(
+                    "Page down within locked viewport: row {} → {}",
+                    current_row + 1,
+                    new_row + 1
+                ),
+                viewport_changed: false,
+            };
+        }
+
+        // Check cursor lock - scroll viewport but keep cursor at same relative position
+        if self.cursor_lock {
+            if let Some(lock_position) = self.cursor_lock_position {
+                debug!(target: "viewport_manager", 
+                       "page_down: Cursor locked at position {}", lock_position);
+
+                // Calculate new viewport position
+                let old_scroll_offset = self.viewport_rows.start;
+                let max_scroll = total_rows.saturating_sub(visible_rows);
+                let new_scroll_offset = (old_scroll_offset + visible_rows).min(max_scroll);
+
+                if new_scroll_offset == old_scroll_offset {
+                    // Can't scroll further
+                    return RowNavigationResult {
+                        row_position: self.crosshair_row,
+                        row_scroll_offset: old_scroll_offset,
+                        description: "Already at bottom".to_string(),
+                        viewport_changed: false,
+                    };
+                }
+
+                // Update viewport
+                self.viewport_rows =
+                    new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
+
+                // Keep crosshair at same relative position
+                self.crosshair_row =
+                    (new_scroll_offset + lock_position).min(total_rows.saturating_sub(1));
+
+                return RowNavigationResult {
+                    row_position: self.crosshair_row,
+                    row_scroll_offset: new_scroll_offset,
+                    description: format!(
+                        "Page down with cursor lock (viewport {} → {})",
+                        old_scroll_offset + 1,
+                        new_scroll_offset + 1
+                    ),
+                    viewport_changed: true,
+                };
+            }
+        }
+
+        // Normal page down behavior
         // Calculate new row position (move down by one page)
         let new_row = (current_row + visible_rows).min(total_rows.saturating_sub(1));
+        self.crosshair_row = new_row;
 
         // Calculate new scroll offset to keep new position visible
         let old_scroll_offset = self.viewport_rows.start;
@@ -1964,7 +2031,7 @@ impl ViewportManager {
     }
 
     /// Navigate one page up in the data
-    pub fn page_up(&mut self, current_row: usize, _total_rows: usize) -> RowNavigationResult {
+    pub fn page_up(&mut self, current_row: usize, total_rows: usize) -> RowNavigationResult {
         // Calculate visible rows (viewport height)
         let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
 
@@ -1972,8 +2039,69 @@ impl ViewportManager {
                "page_up: current_row={}, visible_rows={}, current_viewport_rows={:?}", 
                current_row, visible_rows, self.viewport_rows);
 
+        // Check viewport lock first - prevent scrolling entirely
+        if self.viewport_lock {
+            debug!(target: "viewport_manager", 
+                   "page_up: Viewport locked, moving within current viewport");
+            // In viewport lock mode, move to top of current viewport
+            let new_row = self.viewport_rows.start;
+            self.crosshair_row = new_row;
+            return RowNavigationResult {
+                row_position: new_row,
+                row_scroll_offset: self.viewport_rows.start,
+                description: format!(
+                    "Page up within locked viewport: row {} → {}",
+                    current_row + 1,
+                    new_row + 1
+                ),
+                viewport_changed: false,
+            };
+        }
+
+        // Check cursor lock - scroll viewport but keep cursor at same relative position
+        if self.cursor_lock {
+            if let Some(lock_position) = self.cursor_lock_position {
+                debug!(target: "viewport_manager", 
+                       "page_up: Cursor locked at position {}", lock_position);
+
+                // Calculate new viewport position
+                let old_scroll_offset = self.viewport_rows.start;
+                let new_scroll_offset = old_scroll_offset.saturating_sub(visible_rows);
+
+                if new_scroll_offset == old_scroll_offset {
+                    // Can't scroll further
+                    return RowNavigationResult {
+                        row_position: self.crosshair_row,
+                        row_scroll_offset: old_scroll_offset,
+                        description: "Already at top".to_string(),
+                        viewport_changed: false,
+                    };
+                }
+
+                // Update viewport
+                self.viewport_rows =
+                    new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
+
+                // Keep crosshair at same relative position
+                self.crosshair_row = new_scroll_offset + lock_position;
+
+                return RowNavigationResult {
+                    row_position: self.crosshair_row,
+                    row_scroll_offset: new_scroll_offset,
+                    description: format!(
+                        "Page up with cursor lock (viewport {} → {})",
+                        old_scroll_offset + 1,
+                        new_scroll_offset + 1
+                    ),
+                    viewport_changed: true,
+                };
+            }
+        }
+
+        // Normal page up behavior
         // Calculate new row position (move up by one page)
         let new_row = current_row.saturating_sub(visible_rows);
+        self.crosshair_row = new_row;
 
         // Calculate new scroll offset to keep new position visible
         let old_scroll_offset = self.viewport_rows.start;
@@ -1986,7 +2114,7 @@ impl ViewportManager {
         };
 
         // Update viewport
-        self.viewport_rows = new_scroll_offset..(new_scroll_offset + visible_rows);
+        self.viewport_rows = new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
         let viewport_changed = new_scroll_offset != old_scroll_offset;
 
         let description = format!("Page up: row {} → {}", current_row + 1, new_row + 1);
