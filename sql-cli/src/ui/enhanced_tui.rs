@@ -4622,58 +4622,13 @@ impl EnhancedTuiApp {
     }
 
     fn page_down(&mut self) {
-        let total_rows = self.get_row_count();
-        if total_rows > 0 {
-            let current = self.state_container.get_table_selected_row().unwrap_or(0);
-
-            // Use ViewportManager for page navigation - get result and drop borrow
-            let result = {
-                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                let viewport_manager = viewport_manager_borrow
-                    .as_mut()
-                    .expect("ViewportManager must exist for page navigation");
-                viewport_manager.page_down(current, total_rows)
-            }; // Borrow of viewport_manager dropped here
-
-            // Update state with results
-            self.state_container
-                .set_table_selected_row(Some(result.row_position));
-
-            // Sync with buffer's table state
-            self.buffer_mut()
-                .set_selected_row(Some(result.row_position));
-
-            // Update scroll offset
-            let col_offset = self.buffer().get_scroll_offset().1;
-            self.buffer_mut()
-                .set_scroll_offset((result.row_scroll_offset, col_offset));
-
-            // Update navigation state
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.selected_row = result.row_position;
-                nav.scroll_offset.0 = result.row_scroll_offset;
-            }
-
-            // Set status message
-            self.buffer_mut().set_status_message(result.description);
-
-            debug!(target: "navigation", "Page down via ViewportManager: row {} → {}", 
-                   current + 1, result.row_position + 1);
-        }
-    }
-
-    fn page_up(&mut self) {
-        let total_rows = self.get_row_count();
-        let current = self.state_container.get_table_selected_row().unwrap_or(0);
-
         // Use ViewportManager for page navigation - get result and drop borrow
         let result = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for page navigation");
-            viewport_manager.page_up(current, total_rows)
+            viewport_manager.page_down()
         }; // Borrow of viewport_manager dropped here
 
         // Update state with results
@@ -4699,8 +4654,45 @@ impl EnhancedTuiApp {
         // Set status message
         self.buffer_mut().set_status_message(result.description);
 
-        debug!(target: "navigation", "Page up via ViewportManager: row {} → {}", 
-                   current + 1, result.row_position + 1);
+        debug!(target: "navigation", "Page down via ViewportManager to row {}", 
+                   result.row_position + 1);
+    }
+
+    fn page_up(&mut self) {
+        // Use ViewportManager for page navigation - get result and drop borrow
+        let result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            let viewport_manager = viewport_manager_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for page navigation");
+            viewport_manager.page_up()
+        }; // Borrow of viewport_manager dropped here
+
+        // Update state with results
+        self.state_container
+            .set_table_selected_row(Some(result.row_position));
+
+        // Sync with buffer's table state
+        self.buffer_mut()
+            .set_selected_row(Some(result.row_position));
+
+        // Update scroll offset
+        let col_offset = self.buffer().get_scroll_offset().1;
+        self.buffer_mut()
+            .set_scroll_offset((result.row_scroll_offset, col_offset));
+
+        // Update navigation state
+        {
+            let mut nav = self.state_container.navigation_mut();
+            nav.selected_row = result.row_position;
+            nav.scroll_offset.0 = result.row_scroll_offset;
+        }
+
+        // Set status message
+        self.buffer_mut().set_status_message(result.description);
+
+        debug!(target: "navigation", "Page up via ViewportManager to row {}", 
+                   result.row_position + 1);
     }
 
     // Search and filter functions

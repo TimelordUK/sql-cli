@@ -1919,13 +1919,14 @@ impl ViewportManager {
     }
 
     /// Navigate one page down in the data
-    pub fn page_down(&mut self, current_row: usize, total_rows: usize) -> RowNavigationResult {
+    pub fn page_down(&mut self) -> RowNavigationResult {
+        let total_rows = self.dataview.row_count();
         // Calculate visible rows (viewport height)
         let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
 
         debug!(target: "viewport_manager", 
-               "page_down: current_row={}, total_rows={}, visible_rows={}, current_viewport_rows={:?}", 
-               current_row, total_rows, visible_rows, self.viewport_rows);
+               "page_down: crosshair_row={}, total_rows={}, visible_rows={}, current_viewport_rows={:?}", 
+               self.crosshair_row, total_rows, visible_rows, self.viewport_rows);
 
         // Check viewport lock first - prevent scrolling entirely
         if self.viewport_lock {
@@ -1943,7 +1944,7 @@ impl ViewportManager {
                 row_scroll_offset: self.viewport_rows.start,
                 description: format!(
                     "Page down within locked viewport: row {} → {}",
-                    current_row + 1,
+                    self.crosshair_row + 1,
                     new_row + 1
                 ),
                 viewport_changed: false,
@@ -1993,8 +1994,8 @@ impl ViewportManager {
         }
 
         // Normal page down behavior
-        // Calculate new row position (move down by one page)
-        let new_row = (current_row + visible_rows).min(total_rows.saturating_sub(1));
+        // Calculate new row position (move down by one page) using ViewportManager's crosshair
+        let new_row = (self.crosshair_row + visible_rows).min(total_rows.saturating_sub(1));
         self.crosshair_row = new_row;
 
         // Calculate new scroll offset to keep new position visible
@@ -2013,7 +2014,7 @@ impl ViewportManager {
 
         let description = format!(
             "Page down: row {} → {} (of {})",
-            current_row + 1,
+            self.crosshair_row + 1,
             new_row + 1,
             total_rows
         );
@@ -2031,13 +2032,14 @@ impl ViewportManager {
     }
 
     /// Navigate one page up in the data
-    pub fn page_up(&mut self, current_row: usize, total_rows: usize) -> RowNavigationResult {
+    pub fn page_up(&mut self) -> RowNavigationResult {
+        let total_rows = self.dataview.row_count();
         // Calculate visible rows (viewport height)
         let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
 
         debug!(target: "viewport_manager", 
-               "page_up: current_row={}, visible_rows={}, current_viewport_rows={:?}", 
-               current_row, visible_rows, self.viewport_rows);
+               "page_up: crosshair_row={}, visible_rows={}, current_viewport_rows={:?}", 
+               self.crosshair_row, visible_rows, self.viewport_rows);
 
         // Check viewport lock first - prevent scrolling entirely
         if self.viewport_lock {
@@ -2051,7 +2053,7 @@ impl ViewportManager {
                 row_scroll_offset: self.viewport_rows.start,
                 description: format!(
                     "Page up within locked viewport: row {} → {}",
-                    current_row + 1,
+                    self.crosshair_row + 1,
                     new_row + 1
                 ),
                 viewport_changed: false,
@@ -2099,8 +2101,8 @@ impl ViewportManager {
         }
 
         // Normal page up behavior
-        // Calculate new row position (move up by one page)
-        let new_row = current_row.saturating_sub(visible_rows);
+        // Calculate new row position (move up by one page) using ViewportManager's crosshair
+        let new_row = self.crosshair_row.saturating_sub(visible_rows);
         self.crosshair_row = new_row;
 
         // Calculate new scroll offset to keep new position visible
@@ -2117,7 +2119,7 @@ impl ViewportManager {
         self.viewport_rows = new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
         let viewport_changed = new_scroll_offset != old_scroll_offset;
 
-        let description = format!("Page up: row {} → {}", current_row + 1, new_row + 1);
+        let description = format!("Page up: row {} → {}", self.crosshair_row + 1, new_row + 1);
 
         debug!(target: "viewport_manager", 
                "page_up result: new_row={}, scroll_offset={}→{}, viewport_changed={}", 
