@@ -90,12 +90,119 @@ pub struct ViewportManager {
 
     /// Whether cache needs recalculation
     cache_dirty: bool,
+
+    /// Crosshair position in visual coordinates (row, col)
+    /// This is the single source of truth for crosshair position
+    crosshair_row: usize,
+    crosshair_col: usize,
 }
 
 impl ViewportManager {
-    /// Get the current viewport range
+    /// Get the current viewport column range
     pub fn get_viewport_range(&self) -> std::ops::Range<usize> {
         self.viewport_cols.clone()
+    }
+
+    /// Get the current viewport row range
+    pub fn get_viewport_rows(&self) -> std::ops::Range<usize> {
+        self.viewport_rows.clone()
+    }
+
+    /// Set crosshair position in visual coordinates
+    pub fn set_crosshair(&mut self, row: usize, col: usize) {
+        self.crosshair_row = row;
+        self.crosshair_col = col;
+        debug!(target: "viewport_manager", 
+               "Crosshair set to visual position: row={}, col={}", row, col);
+    }
+
+    /// Get crosshair column position in visual coordinates
+    pub fn get_crosshair_col(&self) -> usize {
+        self.crosshair_col
+    }
+
+    /// Get crosshair row position in visual coordinates  
+    pub fn get_crosshair_row(&self) -> usize {
+        self.crosshair_row
+    }
+
+    /// Get crosshair position relative to current viewport for rendering
+    /// Returns (row_offset, col_offset) within the viewport, or None if outside
+    pub fn get_crosshair_viewport_position(&self) -> Option<(usize, usize)> {
+        // Check if crosshair is within the current viewport
+        if self.crosshair_row >= self.viewport_rows.start
+            && self.crosshair_row < self.viewport_rows.end
+            && self.crosshair_col >= self.viewport_cols.start
+            && self.crosshair_col < self.viewport_cols.end
+        {
+            Some((
+                self.crosshair_row - self.viewport_rows.start,
+                self.crosshair_col - self.viewport_cols.start,
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Navigate up one row
+    pub fn navigate_row_up(&mut self) -> RowNavigationResult {
+        let total_rows = self.dataview.row_count();
+        let new_row = if self.crosshair_row > 0 {
+            self.crosshair_row - 1
+        } else {
+            // Wrap to last row
+            if total_rows > 0 {
+                total_rows - 1
+            } else {
+                0
+            }
+        };
+
+        self.crosshair_row = new_row;
+
+        // Adjust viewport if needed
+        let viewport_changed = if new_row < self.viewport_rows.start {
+            self.viewport_rows = new_row..self.viewport_rows.end.saturating_sub(1);
+            true
+        } else {
+            false
+        };
+
+        RowNavigationResult {
+            row_position: new_row,
+            row_scroll_offset: self.viewport_rows.start,
+            description: format!("Move to row {}", new_row + 1),
+            viewport_changed,
+        }
+    }
+
+    /// Navigate down one row
+    pub fn navigate_row_down(&mut self) -> RowNavigationResult {
+        let total_rows = self.dataview.row_count();
+        let new_row = if self.crosshair_row + 1 < total_rows {
+            self.crosshair_row + 1
+        } else {
+            // Wrap to first row
+            0
+        };
+
+        self.crosshair_row = new_row;
+
+        // Adjust viewport if needed
+        let viewport_changed = if new_row >= self.viewport_rows.end {
+            let viewport_height = self.viewport_rows.end - self.viewport_rows.start;
+            self.viewport_rows = (new_row + 1).saturating_sub(viewport_height)..(new_row + 1);
+            true
+        } else {
+            false
+        };
+
+        RowNavigationResult {
+            row_position: new_row,
+            row_scroll_offset: self.viewport_rows.start,
+            description: format!("Move to row {}", new_row + 1),
+            viewport_changed,
+        }
     }
 
     /// Create a new ViewportManager for a DataView
@@ -104,6 +211,7 @@ impl ViewportManager {
         let display_columns = dataview.get_display_columns();
         let visible_col_count = display_columns.len();
         let total_col_count = dataview.source().column_count(); // Total DataTable columns for width array
+        let total_rows = dataview.row_count();
 
         // Initialize viewport in visual coordinate space
         let initial_viewport_cols = if visible_col_count > 0 {
@@ -112,9 +220,18 @@ impl ViewportManager {
             0..0
         };
 
+        // Initialize viewport rows to show first page of data
+        // Default terminal height is 24, reserve ~10 rows for UI chrome
+        let default_visible_rows = 14usize;
+        let initial_viewport_rows = if total_rows > 0 {
+            0..total_rows.min(default_visible_rows)
+        } else {
+            0..0
+        };
+
         Self {
             dataview,
-            viewport_rows: 0..0,
+            viewport_rows: initial_viewport_rows,
             viewport_cols: initial_viewport_cols,
             terminal_width: 80,
             terminal_height: 24,
@@ -122,6 +239,8 @@ impl ViewportManager {
             visible_row_cache: Vec::new(),
             cache_signature: 0,
             cache_dirty: true,
+            crosshair_row: 0,
+            crosshair_col: 0,
         }
     }
 
@@ -159,29 +278,50 @@ impl ViewportManager {
     /// Update viewport size based on terminal dimensions
     /// Returns the calculated visible rows for the results area
     pub fn update_terminal_size(&mut self, terminal_width: u16, terminal_height: u16) -> usize {
-        // Match the actual layout calculation:
-        // - Input area: 3 rows
-        // - Status bar: 3 rows
-        // - Results area gets the rest
-        let input_height = 3;
-        let status_height = 3;
-        let results_area_height =
-            (terminal_height as usize).saturating_sub(input_height + status_height);
-
-        // Now match EXACTLY what the render function does:
+        // The terminal_height passed here is already the results area height
+        // (after input and status areas have been subtracted)
+        // So we only need to subtract the borders and header
         // - 1 row for top border
         // - 1 row for header
         // - 1 row for bottom border
-        let visible_rows = results_area_height.saturating_sub(3).max(10);
+        let visible_rows = (terminal_height as usize).saturating_sub(3).max(10);
+
+        let old_viewport = self.viewport_rows.clone();
 
         // Update our stored terminal dimensions
         self.terminal_width = terminal_width;
         self.terminal_height = terminal_height;
 
-        debug!(target: "navigation",
-            "ViewportManager::update_terminal_size - terminal: {}x{}, visible_rows: {}",
-            terminal_width, terminal_height, visible_rows
-        );
+        // Only adjust viewport if terminal size actually changed AND we need to
+        // Don't reset the viewport on every render!
+        let total_rows = self.dataview.row_count();
+
+        // Check if viewport needs adjustment for the new terminal size
+        let viewport_size = self.viewport_rows.end - self.viewport_rows.start;
+        if viewport_size != visible_rows && total_rows > 0 {
+            // Terminal size changed - adjust viewport to maintain crosshair position
+            // Make sure crosshair stays visible in the viewport
+            if self.crosshair_row < self.viewport_rows.start {
+                // Crosshair is above viewport - scroll up
+                self.viewport_rows =
+                    self.crosshair_row..(self.crosshair_row + visible_rows).min(total_rows);
+            } else if self.crosshair_row >= self.viewport_rows.start + visible_rows {
+                // Crosshair is below viewport - scroll down
+                let start = self.crosshair_row.saturating_sub(visible_rows - 1);
+                self.viewport_rows = start..(start + visible_rows).min(total_rows);
+            } else {
+                // Crosshair is in viewport - just resize the viewport
+                self.viewport_rows = self.viewport_rows.start
+                    ..(self.viewport_rows.start + visible_rows).min(total_rows);
+            }
+        }
+
+        if old_viewport != self.viewport_rows {
+            debug!(target: "navigation",
+                "ViewportManager::update_terminal_size - viewport changed from {:?} to {:?}, crosshair={}, visible_rows={}",
+                old_viewport, self.viewport_rows, self.crosshair_row, visible_rows
+            );
+        }
 
         visible_rows
     }
@@ -1018,8 +1158,15 @@ impl ViewportManager {
     pub fn get_visual_display(
         &mut self,
         available_width: u16,
-        row_indices: &[usize], // The row indices to display
+        _row_indices: &[usize], // DEPRECATED - using internal viewport_rows instead
     ) -> (Vec<String>, Vec<Vec<String>>, Vec<u16>) {
+        // Use our internal viewport_rows to determine what rows to display
+        let row_indices: Vec<usize> = (self.viewport_rows.start..self.viewport_rows.end).collect();
+
+        debug!(target: "viewport_manager",
+               "get_visual_display: Using viewport_rows {:?} -> row_indices: {:?} (first 5)",
+               self.viewport_rows,
+               row_indices.iter().take(5).collect::<Vec<_>>());
         // Get ALL visual columns from DataView (already filtered for hidden columns)
         let all_headers = self.dataview.get_display_column_names();
         let total_visual_columns = all_headers.len();
@@ -1040,16 +1187,26 @@ impl ViewportManager {
         let headers: Vec<String> = all_headers[visual_start..visual_end].to_vec();
 
         // Get data from DataView in visual column order
+        // IMPORTANT: row_indices contains display row indices (0-based positions in the result set)
         let visual_rows: Vec<Vec<String>> = row_indices
             .iter()
-            .filter_map(|&row_idx| {
+            .filter_map(|&display_row_idx| {
                 // Get the full row in visual column order from DataView
-                self.dataview
-                    .get_row_visual_values(row_idx)
-                    .map(|full_row| {
-                        // Slice to just the visible columns
-                        full_row[visual_start..visual_end.min(full_row.len())].to_vec()
-                    })
+                // display_row_idx is the position in the filtered/sorted result set
+                let row_data = self.dataview.get_row_visual_values(display_row_idx);
+                if let Some(ref full_row) = row_data {
+                    // Debug first few and last few rows to track what we're actually getting
+                    if display_row_idx < 5 || display_row_idx >= 19900 {
+                        debug!(target: "viewport_manager",
+                               "DATAVIEW FETCH: display_row_idx {} -> data: {:?} (first 3 cols)",
+                               display_row_idx,
+                               full_row.iter().take(3).collect::<Vec<_>>());
+                    }
+                }
+                row_data.map(|full_row| {
+                    // Slice to just the visible columns
+                    full_row[visual_start..visual_end.min(full_row.len())].to_vec()
+                })
             })
             .collect();
 
@@ -1061,8 +1218,14 @@ impl ViewportManager {
                headers.len(), visual_rows.len());
         if let Some(first_row) = visual_rows.first() {
             debug!(target: "viewport_manager",
-                   "Alignment check: {:?}",
+                   "Alignment check (FIRST ROW): {:?}",
                    headers.iter().zip(first_row).take(5)
+                       .map(|(h, v)| format!("{}: {}", h, v)).collect::<Vec<_>>());
+        }
+        if let Some(last_row) = visual_rows.last() {
+            debug!(target: "viewport_manager",
+                   "Alignment check (LAST ROW): {:?}",
+                   headers.iter().zip(last_row).take(5)
                        .map(|(h, v)| format!("{}: {}", h, v)).collect::<Vec<_>>());
         }
 
@@ -1249,6 +1412,82 @@ impl ViewportManager {
         }
     }
 
+    /// Navigate to the last column (rightmost visible column)
+    /// This centralizes the logic for last column navigation
+    pub fn navigate_to_last_column(&mut self) -> NavigationResult {
+        // Get the display columns (visual order)
+        let display_columns = self.dataview.get_display_columns();
+        let total_visual_columns = display_columns.len();
+
+        if total_visual_columns == 0 {
+            return NavigationResult {
+                column_position: 0,
+                scroll_offset: 0,
+                description: "No columns available".to_string(),
+                viewport_changed: false,
+            };
+        }
+
+        // Last column is at visual index total_visual_columns - 1
+        let last_visual_column = total_visual_columns - 1;
+
+        // Update crosshair to last visual column
+        self.crosshair_col = last_visual_column;
+
+        // Calculate the appropriate scroll offset to make the last column visible
+        // We need to ensure the last column fits within the viewport
+        let available_width = self.terminal_width;
+        let pinned_count = self.dataview.get_pinned_columns().len();
+
+        // Calculate pinned width
+        let mut pinned_width = 0u16;
+        for i in 0..pinned_count {
+            let col_idx = display_columns[i];
+            let width = self.column_widths.get(col_idx).copied().unwrap_or(15);
+            pinned_width += width + 3; // separator width
+        }
+
+        let available_for_scrollable = available_width.saturating_sub(pinned_width);
+
+        // Calculate the optimal scroll offset to show the last column
+        let mut accumulated_width = 0u16;
+        let mut new_scroll_offset = last_visual_column;
+
+        // Work backwards from the last column to find the best scroll position
+        for visual_idx in (pinned_count..=last_visual_column).rev() {
+            let col_idx = display_columns[visual_idx];
+            let width = self.column_widths.get(col_idx).copied().unwrap_or(15);
+            accumulated_width += width + 3; // separator width
+
+            if accumulated_width > available_for_scrollable {
+                // We've exceeded available width, use the next column as scroll start
+                new_scroll_offset = visual_idx + 1;
+                break;
+            }
+            new_scroll_offset = visual_idx;
+        }
+
+        // Ensure scroll offset doesn't go below pinned columns
+        new_scroll_offset = new_scroll_offset.max(pinned_count);
+
+        let old_scroll_offset = self.viewport_cols.start;
+        let viewport_changed = old_scroll_offset != new_scroll_offset;
+
+        // Update our internal viewport state
+        self.viewport_cols = new_scroll_offset..self.viewport_cols.end;
+
+        debug!(target: "viewport_manager", 
+               "navigate_to_last_column: last_visual={}, scroll_offset={}->{}",
+               last_visual_column, old_scroll_offset, new_scroll_offset);
+
+        NavigationResult {
+            column_position: last_visual_column,
+            scroll_offset: new_scroll_offset,
+            description: format!("Last column selected (column {})", last_visual_column + 1),
+            viewport_changed,
+        }
+    }
+
     /// Navigate one column to the left with intelligent wrapping and scrolling
     /// This method handles everything: column movement, viewport tracking, and scrolling
     /// IMPORTANT: current_display_position is a logical display position (0,1,2,3...), NOT a DataTable index
@@ -1306,6 +1545,9 @@ impl ViewportManager {
 
         // Use set_current_column to handle viewport adjustment automatically (this takes DataTable index)
         let viewport_changed = self.set_current_column(new_datatable_column);
+
+        // Update crosshair to the new visual position
+        self.crosshair_col = new_display_index;
 
         let column_names = self.dataview.column_names();
         let column_name = display_columns
@@ -1407,6 +1649,9 @@ impl ViewportManager {
         debug!(target: "viewport_manager", 
                "navigate_column_right: after set_current_column({}), viewport={:?}, changed={}", 
                new_datatable_column, self.viewport_cols, viewport_changed);
+
+        // Update crosshair to the new visual position
+        self.crosshair_col = new_display_index;
 
         let column_names = self.dataview.column_names();
         let column_name = display_columns
@@ -1529,15 +1774,20 @@ impl ViewportManager {
             };
         }
 
-        // Calculate visible rows (viewport height)
-        let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
+        // Get the actual visible rows from our current viewport
+        let visible_rows = (self.terminal_height as usize).saturating_sub(3).max(10);
 
         // The last row index
         let last_row = total_rows - 1;
 
         // Calculate scroll offset to show the last row at the bottom of the viewport
-        // We want the last row visible, so scroll to position it at the bottom
-        let new_scroll_offset = last_row.saturating_sub(visible_rows - 1);
+        // We want the last row visible at the bottom, so start the viewport such that
+        // the last row appears at the last position
+        let new_scroll_offset = if total_rows > visible_rows {
+            total_rows - visible_rows
+        } else {
+            0
+        };
 
         debug!(target: "viewport_manager", 
                "navigate_to_last_row: total_rows={}, last_row={}, visible_rows={}, new_scroll_offset={}", 
@@ -1548,13 +1798,17 @@ impl ViewportManager {
         let viewport_changed = new_scroll_offset != old_scroll_offset;
 
         // Update viewport to show the last rows
-        self.viewport_rows = new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
+        self.viewport_rows = new_scroll_offset..total_rows.min(new_scroll_offset + visible_rows);
+
+        // Update crosshair to be at the last row
+        // The crosshair position is the absolute row in the data
+        self.crosshair_row = last_row;
 
         let description = format!("Jumped to last row ({}/{})", last_row + 1, total_rows);
 
         debug!(target: "viewport_manager", 
-               "navigate_to_last_row result: row={}, scroll_offset={}→{}, viewport_changed={}", 
-               last_row, old_scroll_offset, new_scroll_offset, viewport_changed);
+               "navigate_to_last_row result: row={}, crosshair_row={}, scroll_offset={}→{}, viewport_changed={}", 
+               last_row, self.crosshair_row, old_scroll_offset, new_scroll_offset, viewport_changed);
 
         RowNavigationResult {
             row_position: last_row,
@@ -1575,8 +1829,8 @@ impl ViewportManager {
             };
         }
 
-        // Calculate visible rows (viewport height)
-        let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
+        // Get the actual visible rows from our current viewport
+        let visible_rows = (self.terminal_height as usize).saturating_sub(3).max(10);
 
         // First row is always 0
         let first_row = 0;
@@ -1595,11 +1849,14 @@ impl ViewportManager {
         // Update viewport to show the first rows
         self.viewport_rows = 0..visible_rows.min(total_rows);
 
+        // Update crosshair to be at the first row
+        self.crosshair_row = first_row;
+
         let description = format!("Jumped to first row (1/{})", total_rows);
 
         debug!(target: "viewport_manager", 
-               "navigate_to_first_row result: row=0, scroll_offset={}→0, viewport_changed={}", 
-               old_scroll_offset, viewport_changed);
+               "navigate_to_first_row result: row=0, crosshair_row={}, scroll_offset={}→0, viewport_changed={}", 
+               self.crosshair_row, old_scroll_offset, viewport_changed);
 
         RowNavigationResult {
             row_position: first_row,

@@ -168,23 +168,23 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Get current column index and name
-        let col_idx = self.state_container.navigation().selected_column;
-        debug!("Current column index: {}", col_idx);
-
-        // Use ViewportManager to hide the column
+        // Use ViewportManager's crosshair position (visual coordinates) to hide the correct column
         let (success, col_name, visible_count, updated_dataview) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                // Get the visual column index from ViewportManager's crosshair
+                let visual_col_idx = viewport_manager.get_crosshair_col();
+                debug!("Hiding column at visual index: {}", visual_col_idx);
+
                 // Get column name before hiding
                 let columns = viewport_manager.dataview().column_names();
                 let visible_count = columns.len();
 
-                if col_idx < columns.len() {
-                    let col_name = columns[col_idx].clone();
+                if visual_col_idx < columns.len() {
+                    let col_name = columns[visual_col_idx].clone();
                     // Don't hide if it's the last visible column
                     if visible_count > 1 {
-                        let success = viewport_manager.hide_column(col_idx);
+                        let success = viewport_manager.hide_column(visual_col_idx);
                         let updated_dataview = if success {
                             Some(viewport_manager.clone_dataview())
                         } else {
@@ -3877,416 +3877,228 @@ impl EnhancedTuiApp {
 
     // Navigation functions
     fn next_row(&mut self) {
-        use std::time::Instant;
-        let start = Instant::now();
+        // Use ViewportManager to navigate (it manages the crosshair)
+        let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
+        {
+            Some(viewport_manager.navigate_row_down())
+        } else {
+            None
+        };
 
-        let total_rows = self.get_row_count();
-        let t1 = start.elapsed();
+        if let Some(nav_result) = nav_result {
+            // Update Buffer with the new row position
+            self.buffer_mut()
+                .set_selected_row(Some(nav_result.row_position));
 
-        if total_rows > 0 {
-            // PERF: Don't update viewport size on every navigation
-            // self.update_viewport_size();
-
-            // Get column count and time it
-            let total_cols = self.get_column_count();
-            let t2 = start.elapsed();
-
-            // Extract values we need before mutable borrows
-            let (new_row, new_scroll_offset, t3, t4) = {
-                let mut nav = self.state_container.navigation_mut();
-
-                nav.update_totals(total_rows, total_cols);
-                let t3_inner = start.elapsed();
-
-                // Move to next row
-                let result = if nav.next_row() {
-                    (
-                        Some(nav.selected_row),
-                        nav.scroll_offset,
-                        t3_inner,
-                        start.elapsed(),
-                    )
-                } else {
-                    (None, nav.scroll_offset, t3_inner, start.elapsed())
-                };
-                result
-            };
-
-            // Now we can use mutable self since we've dropped the nav borrow
-            if let Some(row) = new_row {
-                // Sync with local table_state for rendering
-                self.state_container.set_table_selected_row(Some(row));
-
-                // Sync with buffer's table state so it shows in debug and rendering
-                self.buffer_mut().set_selected_row(Some(row));
-
-                // Sync scroll offset with buffer
-                self.buffer_mut().set_scroll_offset(new_scroll_offset);
+            // Update viewport if changed
+            if nav_result.viewport_changed {
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.0 = nav_result.row_scroll_offset;
+                self.buffer_mut().set_scroll_offset(offset);
             }
 
-            let total = start.elapsed();
-
-            // Store timing for debug display (keep last 20 timings)
-            let timing_msg = format!("get_row_count={:?}, get_col_count={:?}, update_totals={:?}, nav={:?}, total={:?}, rows={}",
-                t1, t2 - t1, t3 - t2, t4 - t3, total, total_rows);
-
-            // Keep only the last 20 timings
-            if self.navigation_timings.len() >= 20 {
-                self.navigation_timings.remove(0);
+            // Also update AppStateContainer for consistency
+            self.state_container.navigation_mut().selected_row = nav_result.row_position;
+            if nav_result.viewport_changed {
+                self.state_container.navigation_mut().scroll_offset.0 =
+                    nav_result.row_scroll_offset;
             }
-            self.navigation_timings.push(timing_msg.clone());
         }
     }
 
     fn previous_row(&mut self) {
-        // Use AppStateContainer for navigation
-        // Extract values we need before mutable borrows
-        let (new_row, new_scroll_offset) = {
-            let mut nav = self.state_container.navigation_mut();
-
-            // Update totals if needed
-            let total_rows = self.get_row_count();
-            let total_cols = self.get_column_count();
-            nav.update_totals(total_rows, total_cols);
-
-            // Move to previous row
-            if nav.previous_row() {
-                (Some(nav.selected_row), nav.scroll_offset)
-            } else {
-                (None, nav.scroll_offset)
-            }
+        // Use ViewportManager to navigate (it manages the crosshair)
+        let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
+        {
+            Some(viewport_manager.navigate_row_up())
+        } else {
+            None
         };
 
-        // Now we can use mutable self since we've dropped the nav borrow
-        if let Some(row) = new_row {
-            // Sync with local table_state for rendering
-            self.state_container.set_table_selected_row(Some(row));
+        if let Some(nav_result) = nav_result {
+            // Update Buffer with the new row position
+            self.buffer_mut()
+                .set_selected_row(Some(nav_result.row_position));
 
-            // Sync with buffer's table state so it shows in debug and rendering
-            self.buffer_mut().set_selected_row(Some(row));
+            // Update viewport if changed
+            if nav_result.viewport_changed {
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.0 = nav_result.row_scroll_offset;
+                self.buffer_mut().set_scroll_offset(offset);
+            }
 
-            // Sync scroll offset with buffer
-            self.buffer_mut().set_scroll_offset(new_scroll_offset);
+            // Also update AppStateContainer for consistency
+            self.state_container.navigation_mut().selected_row = nav_result.row_position;
+            if nav_result.viewport_changed {
+                self.state_container.navigation_mut().scroll_offset.0 =
+                    nav_result.row_scroll_offset;
+            }
         }
     }
 
     fn move_column_left(&mut self) {
-        // Buffer stores DataTable index, but ViewportManager expects visual index
-        let current_datatable_col = self.buffer().get_current_column();
+        // Get navigation result from ViewportManager, then drop the borrow
+        let nav_result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            let viewport_manager = viewport_manager_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for navigation");
 
-        // Convert DataTable index to visual index
-        let current_visual_pos = if let Some(dataview) = self.buffer().get_dataview() {
-            let display_columns = dataview.get_display_columns();
-            display_columns
-                .iter()
-                .position(|&col| col == current_datatable_col)
-                .unwrap_or(0)
-        } else {
-            0
-        };
-
-        debug!(target: "navigation", 
-               "move_column_left START: datatable_col={}, visual_pos={}", 
-               current_datatable_col, current_visual_pos);
-
-        let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
-        {
-            debug!(target: "enhanced_tui", 
-                   "move_column_left: calling ViewportManager with visual_pos={}", 
-                   current_visual_pos);
-
-            Some(viewport_manager.navigate_column_left(current_visual_pos))
-        } else {
-            None
-        };
-
-        if let Some(nav_result) = nav_result {
-            debug!(target: "navigation", "move_column_left: ViewportManager result: {:?}", nav_result);
-
-            // Update cursor_manager for table navigation (incremental step)
-            self.cursor_manager.move_table_left();
-
-            debug!(target: "enhanced_tui", 
-                   "move_column_left: storing logical display_pos={} in Buffer", 
-                   nav_result.column_position);
-
+            // ViewportManager knows its current crosshair position
+            // Just tell it to move left
+            let current_visual = viewport_manager.get_crosshair_col();
             debug!(target: "navigation", 
-                   "move_column_left END: storing display_pos={} in Buffer", 
-                   nav_result.column_position);
+                   "move_column_left: current visual position from crosshair={}", 
+                   current_visual);
 
-            // Apply navigation result to TUI state (using display index)
-            self.buffer_mut()
-                .set_current_column(nav_result.column_position);
+            let result = viewport_manager.navigate_column_left(current_visual);
+            debug!(target: "navigation", "move_column_left: ViewportManager result: {:?}", result);
+            result
+        }; // viewport_manager borrow dropped here
 
-            // Sync with navigation state in AppStateContainer (using display index from ViewportManager)
-            self.state_container.navigation_mut().selected_column = nav_result.column_position;
+        // Update cursor_manager for table navigation (incremental step)
+        self.cursor_manager.move_table_left();
 
-            // Update scroll offset if viewport changed
-            if nav_result.viewport_changed {
-                let mut offset = self.buffer().get_scroll_offset();
-                offset.1 = nav_result.scroll_offset;
-                self.buffer_mut().set_scroll_offset(offset);
-                self.state_container.navigation_mut().scroll_offset = offset;
-            }
+        // Apply navigation result to TUI state (using display index)
+        self.buffer_mut()
+            .set_current_column(nav_result.column_position);
 
-            // Set status message
-            let column_num = nav_result.column_position + 1;
-            self.buffer_mut()
-                .set_status_message(format!("Column {} selected", column_num));
-        } else {
-            debug!(target: "navigation", "move_column_left: ViewportManager not available, fallback to basic navigation");
+        // Sync with navigation state in AppStateContainer
+        self.state_container.navigation_mut().selected_column = nav_result.column_position;
 
-            // Fallback: basic navigation without viewport optimization
-            let current_column = self.buffer().get_current_column();
-            if current_column > 0 {
-                let new_column = current_column - 1;
-                self.cursor_manager.move_table_left();
-                self.buffer_mut().set_current_column(new_column);
-                self.state_container.navigation_mut().selected_column = new_column;
-
-                let column_num = new_column + 1;
-                self.buffer_mut()
-                    .set_status_message(format!("Column {} selected", column_num));
-            }
-        }
-    }
-
-    fn move_column_right(&mut self) {
-        // Buffer stores DataTable index, but ViewportManager expects visual index
-        let current_datatable_col = self.buffer().get_current_column();
-
-        // Convert DataTable index to visual index
-        let current_visual_pos = if let Some(dataview) = self.buffer().get_dataview() {
-            let display_columns = dataview.get_display_columns();
-            display_columns
-                .iter()
-                .position(|&col| col == current_datatable_col)
-                .unwrap_or(0)
-        } else {
-            0
-        };
-
-        debug!(target: "navigation", 
-               "move_column_right START: datatable_col={}, visual_pos={}", 
-               current_datatable_col, current_visual_pos);
-
-        let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
-        {
-            debug!(target: "enhanced_tui", 
-                   "move_column_right: calling ViewportManager with visual_pos={}", 
-                   current_visual_pos);
-
-            Some(viewport_manager.navigate_column_right(current_visual_pos))
-        } else {
-            None
-        };
-
-        if let Some(nav_result) = nav_result {
-            debug!(target: "navigation", "move_column_right: ViewportManager returned: {:?}", nav_result);
-
-            // Get max columns for cursor_manager
-            let max_columns = if let Some(provider) = self.get_data_provider() {
-                provider.get_column_count()
-            } else {
-                0
-            };
-
-            // Update cursor_manager for table navigation (incremental step)
-            self.cursor_manager.move_table_right(max_columns);
-
-            debug!(target: "navigation", 
-                   "move_column_right END: storing display_pos={} in Buffer", 
-                   nav_result.column_position);
-
-            // Apply navigation result to TUI state (using display index)
-            self.buffer_mut()
-                .set_current_column(nav_result.column_position);
-
-            // Sync with navigation state in AppStateContainer (using display index from ViewportManager)
-            self.state_container.navigation_mut().selected_column = nav_result.column_position;
-
-            // Update scroll offset if viewport changed
-            if nav_result.viewport_changed {
-                let mut offset = self.buffer().get_scroll_offset();
-                offset.1 = nav_result.scroll_offset;
-                self.buffer_mut().set_scroll_offset(offset);
-                self.state_container.navigation_mut().scroll_offset = offset;
-            }
-
-            // Set status message
-            let column_num = nav_result.column_position + 1;
-            self.buffer_mut()
-                .set_status_message(format!("Column {} selected", column_num));
-        } else {
-            debug!(target: "navigation", "move_column_right: ViewportManager not available, fallback to basic navigation");
-
-            // Fallback: basic navigation without viewport optimization
-            let max_columns = if let Some(provider) = self.get_data_provider() {
-                provider.get_column_count()
-            } else {
-                0
-            };
-
-            if max_columns > 0 {
-                let current_column = self.buffer().get_current_column();
-                let new_column = if current_column + 1 < max_columns {
-                    current_column + 1
-                } else {
-                    0 // Wrap to first column
-                };
-
-                self.cursor_manager.move_table_right(max_columns);
-                self.buffer_mut().set_current_column(new_column);
-                self.state_container.navigation_mut().selected_column = new_column;
-
-                let column_num = new_column + 1;
-                self.buffer_mut()
-                    .set_status_message(format!("Column {} selected", column_num));
-            }
-        }
-    }
-
-    fn goto_first_column(&mut self) {
-        // Use ViewportManager for centralized navigation logic
-        let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
-        {
-            Some(viewport_manager.navigate_to_first_column())
-        } else {
-            None
-        };
-
-        if let Some(nav_result) = nav_result {
-            debug!(target: "navigation", "goto_first_column: ViewportManager result: {:?}", nav_result);
-
-            // Apply the navigation result to our state
-            self.buffer_mut()
-                .set_current_column(nav_result.column_position);
-            self.state_container.navigation_mut().selected_column = nav_result.column_position;
-
-            // Update scroll offset
+        // Update scroll offset if viewport changed
+        if nav_result.viewport_changed {
             let mut offset = self.buffer().get_scroll_offset();
             offset.1 = nav_result.scroll_offset;
             self.buffer_mut().set_scroll_offset(offset);
             self.state_container.navigation_mut().scroll_offset = offset;
-
-            // Use the description from ViewportManager
-            self.buffer_mut().set_status_message(nav_result.description);
-
-            debug!(target: "navigation", "goto_first_column: column={}, scroll_offset={}, viewport_changed={}", 
-                   nav_result.column_position, nav_result.scroll_offset, nav_result.viewport_changed);
-        } else {
-            // Fallback to old logic if no ViewportManager
-            debug!(target: "navigation", "goto_first_column: No ViewportManager available, using fallback");
-            let first_col = if let Some(dataview) = self.buffer().get_dataview() {
-                let pinned_count = dataview.get_pinned_columns().len();
-                debug!(target: "navigation", "goto_first_column: {} pinned columns, jumping to first scrollable", pinned_count);
-                pinned_count
-            } else {
-                0
-            };
-
-            self.buffer_mut().set_current_column(first_col);
-            self.state_container.navigation_mut().selected_column = first_col;
-
-            let mut offset = self.buffer().get_scroll_offset();
-            offset.1 = 0;
-            self.buffer_mut().set_scroll_offset(offset);
-            self.state_container.navigation_mut().scroll_offset = offset;
-
-            self.buffer_mut()
-                .set_status_message("First column selected".to_string());
         }
+
+        // Set status message
+        let column_num = nav_result.column_position + 1;
+        self.buffer_mut()
+            .set_status_message(format!("Column {} selected", column_num));
     }
 
-    fn goto_last_column(&mut self) {
-        // Use DataProvider trait to get column count
-        // This gets the count of VISIBLE columns (after hiding)
+    fn move_column_right(&mut self) {
+        // Get navigation result from ViewportManager, then drop the borrow
+        let nav_result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            let viewport_manager = viewport_manager_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for navigation");
+
+            // ViewportManager knows its current crosshair position
+            // Just tell it to move right
+            let current_visual = viewport_manager.get_crosshair_col();
+            debug!(target: "navigation", 
+                   "move_column_right: current visual position from crosshair={}", 
+                   current_visual);
+            let result = viewport_manager.navigate_column_right(current_visual);
+
+            debug!(target: "navigation", "move_column_right: ViewportManager returned: {:?}", result);
+            result
+        }; // viewport_manager borrow dropped here
+
+        // Get max columns for cursor_manager
         let max_columns = if let Some(provider) = self.get_data_provider() {
             provider.get_column_count()
         } else {
             0
         };
 
-        // Get the last visible column's display position (not DataTable index)
-        let (last_column_datatable_idx, last_column_display_pos) = if let Some(dataview) =
-            self.buffer().get_dataview()
-        {
-            // Get the display columns which maps to actual DataTable indices
-            let display_columns = dataview.get_display_columns();
-            debug!(target: "navigation", "goto_last_column: display_columns = {:?}", display_columns);
-            if !display_columns.is_empty() {
-                // The last element is the DataTable index, but we need the display position
-                let last_datatable_idx = *display_columns.last().unwrap();
-                // The display position is the index in the array (length - 1)
-                let last_display_pos = display_columns.len() - 1;
-                debug!(target: "navigation", "goto_last_column: last DataTable index = {}, display position = {}", 
-                       last_datatable_idx, last_display_pos);
-                (last_datatable_idx, last_display_pos)
-            } else {
-                (0, 0)
-            }
-        } else if max_columns > 0 {
-            (max_columns - 1, max_columns - 1)
-        } else {
-            (0, 0)
-        };
+        // Update cursor_manager for table navigation (incremental step)
+        self.cursor_manager.move_table_right(max_columns);
 
-        if max_columns > 0 {
-            // Buffer stores DataTable index actually - we need to use that
-            self.buffer_mut()
-                .set_current_column(last_column_datatable_idx);
+        debug!(target: "navigation", 
+               "move_column_right END: storing display_pos={} in Buffer", 
+               nav_result.column_position);
 
-            // Sync with navigation state in AppStateContainer
-            self.state_container.navigation_mut().selected_column = last_column_datatable_idx;
+        // Apply navigation result to TUI state (using display index)
+        self.buffer_mut()
+            .set_current_column(nav_result.column_position);
 
-            // Use ViewportManager to handle the navigation to last column
-            let optimal_offset = if let Some(ref mut viewport_manager) =
-                *self.viewport_manager.borrow_mut()
-            {
-                // Get terminal width for calculation (same as rendering: subtract 4 for borders)
-                let terminal_width = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80);
-                let available_width = terminal_width.saturating_sub(4);
+        // Sync with navigation state in AppStateContainer (using display index from ViewportManager)
+        self.state_container.navigation_mut().selected_column = nav_result.column_position;
 
-                // First, set the current column in ViewportManager to ensure viewport includes it
-                viewport_manager.set_current_column(last_column_datatable_idx);
-
-                // Calculate the optimal offset that shows the most columns while keeping last column visible
-                let offset =
-                    viewport_manager.calculate_optimal_offset_for_last_column(available_width);
-
-                debug!(target: "navigation", "goto_last_column: using ViewportManager optimal offset {}", offset);
-                offset
-            } else {
-                // Fallback if no viewport manager
-                let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
-                    dataview.get_pinned_columns().len()
-                } else {
-                    0
-                };
-
-                if last_column_datatable_idx >= pinned_count {
-                    // Simple fallback: just set to a high value
-                    let total_scrollable_cols = max_columns - pinned_count;
-                    total_scrollable_cols.saturating_sub(1)
-                } else {
-                    0
-                }
-            };
-
-            // Set the scroll offset
+        // Update scroll offset if viewport changed
+        if nav_result.viewport_changed {
             let mut offset = self.buffer().get_scroll_offset();
-            offset.1 = optimal_offset;
-
-            debug!(target: "navigation", "goto_last_column: column {} -> scroll offset {}", last_column_datatable_idx, optimal_offset);
-
+            offset.1 = nav_result.scroll_offset;
             self.buffer_mut().set_scroll_offset(offset);
             self.state_container.navigation_mut().scroll_offset = offset;
-
-            self.buffer_mut().set_status_message(format!(
-                "Last column selected ({})",
-                last_column_datatable_idx + 1
-            ));
         }
+
+        // Set status message
+        let column_num = nav_result.column_position + 1;
+        self.buffer_mut()
+            .set_status_message(format!("Column {} selected", column_num));
+    }
+
+    fn goto_first_column(&mut self) {
+        // Get navigation result from ViewportManager, then drop the borrow
+        let nav_result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            let viewport_manager = viewport_manager_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for navigation");
+
+            // Navigate to visual column 0 - this will update crosshair and viewport
+            let result = viewport_manager.navigate_to_first_column();
+            debug!(target: "navigation", "goto_first_column: ViewportManager result: {:?}", result);
+            result
+        }; // viewport_manager borrow dropped here
+
+        // Update Buffer with the DataTable index (for compatibility)
+        self.buffer_mut()
+            .set_current_column(nav_result.column_position);
+        self.state_container.navigation_mut().selected_column = nav_result.column_position;
+
+        // Update scroll offset if viewport changed
+        if nav_result.viewport_changed {
+            let mut offset = self.buffer().get_scroll_offset();
+            offset.1 = nav_result.scroll_offset;
+            self.buffer_mut().set_scroll_offset(offset);
+            self.state_container.navigation_mut().scroll_offset = offset;
+        }
+
+        // Use the description from ViewportManager
+        self.buffer_mut().set_status_message(nav_result.description);
+
+        debug!(target: "navigation", "goto_first_column: moved to visual column 0");
+    }
+
+    fn goto_last_column(&mut self) {
+        // Get navigation result from ViewportManager, then drop the borrow
+        let nav_result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            let viewport_manager = viewport_manager_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for navigation");
+
+            // Navigate to last visual column - this will update crosshair and viewport
+            let result = viewport_manager.navigate_to_last_column();
+            debug!(target: "navigation", "goto_last_column: ViewportManager result: {:?}", result);
+            result
+        }; // viewport_manager borrow dropped here
+
+        // Update Buffer with the DataTable index (for compatibility)
+        self.buffer_mut()
+            .set_current_column(nav_result.column_position);
+        self.state_container.navigation_mut().selected_column = nav_result.column_position;
+
+        // Update scroll offset if viewport changed
+        if nav_result.viewport_changed {
+            let mut offset = self.buffer().get_scroll_offset();
+            offset.1 = nav_result.scroll_offset;
+            self.buffer_mut().set_scroll_offset(offset);
+            self.state_container.navigation_mut().scroll_offset = offset;
+        }
+
+        // Use the description from ViewportManager
+        self.buffer_mut().set_status_message(nav_result.description);
+
+        debug!(target: "navigation", "goto_last_column: moved to last visual column");
     }
 
     fn goto_first_row(&mut self) {
@@ -4367,18 +4179,17 @@ impl EnhancedTuiApp {
     }
 
     fn toggle_column_pin(&mut self) {
-        // Pin or unpin the current column using DataView
-        let current_display_pos = self.buffer().get_current_column();
+        // Get visual column index from ViewportManager's crosshair
+        let visual_col_idx = if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+            viewport_manager.get_crosshair_col()
+        } else {
+            0
+        };
 
-        // Convert logical display position to DataTable index to get column name
+        // Get column name at visual position
         let column_name = if let Some(dataview) = self.buffer().get_dataview() {
-            let display_columns = dataview.get_display_columns();
-            if let Some(&datatable_idx) = display_columns.get(current_display_pos) {
-                let all_columns = dataview.column_names();
-                all_columns.get(datatable_idx).cloned()
-            } else {
-                None
-            }
+            let all_columns = dataview.column_names();
+            all_columns.get(visual_col_idx).cloned()
         } else {
             None
         };
@@ -4609,6 +4420,8 @@ impl EnhancedTuiApp {
                 {
                     let mut nav = self.state_container.navigation_mut();
                     nav.jump_to_last_row();
+                    // CRITICAL: Also update NavigationState scroll_offset to match ViewportManager
+                    nav.scroll_offset.0 = result.row_scroll_offset;
                 }
 
                 // Update selected row
@@ -5248,28 +5061,28 @@ impl EnhancedTuiApp {
     }
 
     fn toggle_sort_current_column(&mut self) {
-        let current_display_pos = self.buffer().get_current_column();
+        // Get visual column index from ViewportManager's crosshair
+        let visual_col_idx = if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+            viewport_manager.get_crosshair_col()
+        } else {
+            0
+        };
 
         if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            // DataView.toggle_sort expects VISIBLE column index (logical display position)
+            // DataView.toggle_sort expects VISIBLE column index
             // Get column name for display
-            let display_columns = dataview.get_display_columns();
-            let col_name = if let Some(&datatable_idx) = display_columns.get(current_display_pos) {
-                let column_names = dataview.column_names();
-                column_names
-                    .get(datatable_idx)
-                    .map(|s| s.clone())
-                    .unwrap_or_else(|| format!("Column {}", datatable_idx))
-            } else {
-                format!("Column {}", current_display_pos)
-            };
+            let column_names = dataview.column_names();
+            let col_name = column_names
+                .get(visual_col_idx)
+                .map(|s| s.clone())
+                .unwrap_or_else(|| format!("Column {}", visual_col_idx));
 
             debug!(
-                "toggle_sort_current_column: display_pos={}, column_name={}",
-                current_display_pos, col_name
+                "toggle_sort_current_column: visual_idx={}, column_name={}",
+                visual_col_idx, col_name
             );
 
-            if let Err(e) = dataview.toggle_sort(current_display_pos) {
+            if let Err(e) = dataview.toggle_sort(visual_col_idx) {
                 self.buffer_mut()
                     .set_status_message(format!("Sort error: {}", e));
             } else {
@@ -6386,20 +6199,27 @@ impl EnhancedTuiApp {
                     ));
 
                     // Add cursor coordinates (x,y) - column and row position
-                    let current_col = self.buffer().get_current_column() + 1; // Make it 1-based
+                    // Use ViewportManager's visual column position (1-based for display)
+                    let visual_col_display =
+                        if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+                            viewport_manager.get_crosshair_col() + 1
+                        } else {
+                            1
+                        };
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
-                        format!("({},{})", current_col, selected),
+                        format!("({},{})", visual_col_display, selected),
                         Style::default().fg(Color::DarkGray),
                     ));
 
                     // Add actual terminal cursor position if we can calculate it
                     if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
                         let available_width = area.width.saturating_sub(4) as u16;
-                        if let Some(x_pos) = viewport_manager.get_column_x_position(
-                            self.buffer().get_current_column(),
-                            available_width,
-                        ) {
+                        // Use ViewportManager's crosshair column position
+                        let visual_col = viewport_manager.get_crosshair_col();
+                        if let Some(x_pos) =
+                            viewport_manager.get_column_x_position(visual_col, available_width)
+                        {
                             // Add 2 for left border and padding, add 3 for header rows
                             let terminal_x = x_pos + 2;
                             let terminal_y = (selected as u16)
@@ -6416,17 +6236,45 @@ impl EnhancedTuiApp {
                     // Column information
                     if let Some(dataview) = self.buffer().get_dataview() {
                         let headers = dataview.column_names();
-                        let current_display_pos = self.buffer().get_current_column();
+
+                        // Get ViewportManager's crosshair position (visual coordinates)
+                        // and use it to get the correct column name
+                        let (visual_row, visual_col) =
+                            if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+                                (
+                                    viewport_manager.get_crosshair_row(),
+                                    viewport_manager.get_crosshair_col(),
+                                )
+                            } else {
+                                (0, 0)
+                            };
 
                         debug!(target: "render", 
-                               "Status line: display_pos={}, headers.len()={}, headers={:?}", 
-                               current_display_pos, headers.len(), headers);
+                               "Status line: headers.len()={}, headers={:?}, viewport_crosshair=(row:{}, col:{})", 
+                               headers.len(), headers, visual_row, visual_col);
 
-                        if current_display_pos < headers.len() {
+                        // Use ViewportManager's visual column index to get the correct column name
+                        if visual_col < headers.len() {
                             spans.push(Span::raw(" | Col: "));
                             spans.push(Span::styled(
-                                headers[current_display_pos].clone(),
+                                headers[visual_col].clone(),
                                 Style::default().fg(Color::Cyan),
+                            ));
+
+                            // Show ViewportManager's crosshair position and viewport size
+                            let viewport_info = if let Some(ref viewport_manager) =
+                                *self.viewport_manager.borrow()
+                            {
+                                let viewport_rows = viewport_manager.get_viewport_rows();
+                                let viewport_height = viewport_rows.end - viewport_rows.start;
+                                format!("[V:{},{} @ {}r]", visual_row, visual_col, viewport_height)
+                            } else {
+                                format!("[V:{},{}]", visual_row, visual_col)
+                            };
+                            spans.push(Span::raw(" "));
+                            spans.push(Span::styled(
+                                viewport_info,
+                                Style::default().fg(Color::Magenta),
                             ));
 
                             // Show pinned columns count if any
@@ -6475,8 +6323,21 @@ impl EnhancedTuiApp {
                                     if let Some(row_data) =
                                         dataview.source().get_row_as_strings(selected_row)
                                     {
-                                        let col_idx = self.buffer().get_current_column();
-                                        if let Some(cell_value) = row_data.get(col_idx) {
+                                        // Get visual column from ViewportManager and convert to DataTable index
+                                        let datatable_idx = if let Some(ref viewport_manager) =
+                                            *self.viewport_manager.borrow()
+                                        {
+                                            let visual_col = viewport_manager.get_crosshair_col();
+                                            let display_columns = dataview.get_display_columns();
+                                            if visual_col < display_columns.len() {
+                                                display_columns[visual_col]
+                                            } else {
+                                                0
+                                            }
+                                        } else {
+                                            self.buffer().get_current_column()
+                                        };
+                                        if let Some(cell_value) = row_data.get(datatable_idx) {
                                             // Truncate if too long
                                             let display_value = if cell_value.len() > 30 {
                                                 format!("{}...", &cell_value[..27])
@@ -6753,10 +6614,8 @@ impl EnhancedTuiApp {
             if let Some(ref mut viewport_manager) = *viewport_opt {
                 // Only update terminal size, not viewport position
                 // The viewport position should be managed by set_current_column calls
-                viewport_manager.update_terminal_size(
-                    area.width.saturating_sub(4) as u16,
-                    area.height.saturating_sub(6) as u16,
-                );
+                viewport_manager
+                    .update_terminal_size(area.width.saturating_sub(4) as u16, area.height as u16);
 
                 // Recalculate column widths based on current viewport
                 let _ = viewport_manager.get_column_widths(); // This triggers recalculation if needed
@@ -6770,30 +6629,28 @@ impl EnhancedTuiApp {
 
         // Get structured column information from ViewportManager (single source of truth)
         // Also get the crosshair position ONCE for both headers and cells
-        let (visible_indices, pinned_indices, scrollable_indices, crosshair_column_position) = {
+        let (
+            visible_indices,
+            pinned_indices,
+            scrollable_indices,
+            crosshair_column_position,
+            crosshair_column_visual,
+        ) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for rendering");
             let info = viewport_manager.get_visible_columns_info(available_width as u16);
 
-            // Get crosshair position while we have the borrow
-            // Buffer stores DataTable indices, we need to convert to visual position
-            let current_datatable_column = self.buffer().get_current_column();
-
-            // Convert DataTable index to visual position
-            let display_columns = viewport_manager.dataview().get_display_columns();
-            let current_visual_position = display_columns
-                .iter()
-                .position(|&dt_idx| dt_idx == current_datatable_column)
-                .unwrap_or(0);
-
-            debug!(target: "render", "Getting crosshair: datatable_col={} -> visual_pos={}", 
-                   current_datatable_column, current_visual_position);
+            // Get crosshair position directly from ViewportManager (which tracks it in visual coordinates)
+            let crosshair_visual = viewport_manager.get_crosshair_col();
             let crosshair_pos = viewport_manager
-                .get_crosshair_column_for_display(current_visual_position, available_width as u16);
+                .get_crosshair_viewport_position()
+                .map(|(_, col)| col);
 
-            (info.0, info.1, info.2, crosshair_pos)
+            debug!(target: "render", "ViewportManager crosshair position: {:?}", crosshair_pos);
+
+            (info.0, info.1, info.2, crosshair_pos, crosshair_visual)
         };
 
         debug!(target: "render", "ViewportManager column info: {} visible, {} pinned, {} scrollable",
@@ -6801,8 +6658,8 @@ impl EnhancedTuiApp {
         debug!(target: "render", "Visible indices: {:?}", visible_indices);
         debug!(target: "render", "Pinned indices: {:?}", pinned_indices);
         debug!(target: "render", "Scrollable indices: {:?}", scrollable_indices);
-        debug!(target: "render", "Crosshair display position: {} -> viewport position: {:?}", 
-               self.buffer().get_current_column(), crosshair_column_position);
+        debug!(target: "render", "Crosshair visual position: {} -> viewport position: {:?}", 
+               crosshair_column_visual, crosshair_column_position);
 
         // Build pinned headers from the indices - use source column names
         let source_column_names = if let Some(dataview) = self.buffer().get_dataview() {
@@ -6970,7 +6827,15 @@ impl EnhancedTuiApp {
                     // Check if this is the current column by comparing visual positions
                     // The header is being rendered at visual position in the visible_columns array
                     // Use the pre-computed crosshair position (single source of truth)
-                    let column_indicator = if Some(visual_pos) == crosshair_column_position {
+                    let is_crosshair = Some(visual_pos) == crosshair_column_position;
+
+                    // Debug logging for initial load crosshair issue
+                    if visual_pos == 0 {
+                        debug!(target: "render", 
+                               "First column check: visual_pos={}, crosshair_column_position={:?}, is_crosshair={}", 
+                               visual_pos, crosshair_column_position, is_crosshair);
+                    }
+                    let column_indicator = if is_crosshair {
                         " [*]"
                     } else {
                         ""
@@ -6996,7 +6861,7 @@ impl EnhancedTuiApp {
                             .add_modifier(Modifier::BOLD)
                     };
 
-                    if Some(visual_pos) == crosshair_column_position {
+                    if is_crosshair {
                         if is_pinned {
                             // Current pinned column gets yellow text on blue background
                             style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
@@ -8061,6 +7926,26 @@ impl EnhancedTuiApp {
                     debug_info.push_str(&format!("Viewport Lock: {}\n", buffer.is_viewport_lock()));
                     if let Some(lock_row) = buffer.get_viewport_lock_row() {
                         debug_info.push_str(&format!("Viewport Lock Row: {}\n", lock_row));
+                    }
+
+                    // Add ViewportManager crosshair position
+                    if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+                        let visual_row = viewport_manager.get_crosshair_row();
+                        let visual_col = viewport_manager.get_crosshair_col();
+                        debug_info.push_str(&format!(
+                            "ViewportManager Crosshair (visual): row={}, col={}\n",
+                            visual_row, visual_col
+                        ));
+
+                        // Also show viewport-relative position
+                        if let Some((viewport_row, viewport_col)) =
+                            viewport_manager.get_crosshair_viewport_position()
+                        {
+                            debug_info.push_str(&format!(
+                                "Crosshair in viewport (relative): row={}, col={}\n",
+                                viewport_row, viewport_col
+                            ));
+                        }
                     }
 
                     // Show visible area calculation
