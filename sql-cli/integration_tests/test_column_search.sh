@@ -1,22 +1,21 @@
-#\!/bin/bash
-# Test column search functionality
+#!/bin/bash
 
-echo "Testing column search..."
+# Test column search functionality with hidden columns
 
-# Start the TUI in background
-RUST_LOG=sql_cli::app_state_container=debug ./target/release/sql-cli test_columns.csv 2>column_search.log &
-PID=$\!
+echo "Testing column search with hidden columns..."
 
-# Wait for it to start
-sleep 2
+# Create test input: load CSV, hide some columns, then search for "order"
+cat > test_input.txt << 'EOF'
+-
+-
+-
+\
+order
 
-# Send column search commands using expect or similar
-# For now, just kill it after a bit
-sleep 3
-kill $PID 2>/dev/null
+q
+EOF
 
-# Check the logs
-echo "=== Column Search Logs ==="
-grep -i "column" column_search.log | grep -v "Column names" | head -20
+echo "Running test..."
+timeout 2s ./target/release/sql-cli test_orders.csv < test_input.txt 2>&1 | tail -50
 
-echo "=== Test complete ==="
+echo "Test complete"
