@@ -4416,12 +4416,16 @@ impl EnhancedTuiApp {
             }; // viewport_manager borrow is dropped here
 
             if let Some(result) = viewport_result {
-                // Update NavigationState
+                // Update NavigationState to match ViewportManager's result
                 {
                     let mut nav = self.state_container.navigation_mut();
-                    nav.jump_to_last_row();
-                    // CRITICAL: Also update NavigationState scroll_offset to match ViewportManager
+                    // Don't call jump_to_last_row() - it might use different total_rows
+                    // Instead, directly set to ViewportManager's calculated position
+                    nav.selected_row = result.row_position;
                     nav.scroll_offset.0 = result.row_scroll_offset;
+                    debug!(target: "crosshair", 
+                           "goto_last_row: Synced NavigationState with ViewportManager - selected_row={}, scroll_offset={}", 
+                           nav.selected_row, nav.scroll_offset.0);
                 }
 
                 // Update selected row
@@ -6898,6 +6902,14 @@ impl EnhancedTuiApp {
             // Use the pre-computed crosshair position (single source of truth)
             let selected_row = self.state_container.navigation().selected_row;
             let is_current_row = row_viewport_start + i == selected_row;
+
+            // Debug crosshair highlighting - especially for last few rows
+            let absolute_row = row_viewport_start + i;
+            if absolute_row >= row_count.saturating_sub(5) {
+                debug!(target: "crosshair", 
+                       "Row highlighting check: i={}, abs_row={}, selected_row={}, is_current={}", 
+                       i, absolute_row, selected_row, is_current_row);
+            }
 
             // Get fuzzy filter pattern for cell-level matching
             let fuzzy_pattern = if self.buffer().is_fuzzy_filter_active() {
