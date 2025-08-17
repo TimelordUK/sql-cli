@@ -4982,7 +4982,7 @@ impl EnhancedTuiApp {
             debug!(target: "search", "DataView found {} matching columns", matches.len());
             if !matches.is_empty() {
                 for (idx, (col_idx, col_name)) in matches.iter().enumerate() {
-                    debug!(target: "search", "  Match {}: '{}' at index {}", idx + 1, col_name, col_idx);
+                    debug!(target: "search", "  Match {}: '{}' at visual index {}", idx + 1, col_name, col_idx);
                 }
             }
 
@@ -5001,18 +5001,31 @@ impl EnhancedTuiApp {
         };
 
         if !matching_columns.is_empty() {
-            // Move to first match
-            let first_match_index = matching_columns[0].0;
+            // Move to first match - the index from DataView is already a VISUAL index
+            let first_match_visual_idx = matching_columns[0].0;
             let first_match_name = &matching_columns[0].1;
+            
+            // Convert visual index to DataTable index for Buffer/AppStateContainer (legacy compatibility)
+            let datatable_idx = if let Some(dataview) = self.buffer().get_dataview() {
+                let display_columns = dataview.get_display_columns();
+                if first_match_visual_idx < display_columns.len() {
+                    display_columns[first_match_visual_idx]
+                } else {
+                    first_match_visual_idx // Fallback
+                }
+            } else {
+                first_match_visual_idx
+            };
 
-            self.state_container.set_current_column(first_match_index);
-            self.buffer_mut().set_current_column(first_match_index);
+            self.state_container.set_current_column(datatable_idx);
+            self.buffer_mut().set_current_column(datatable_idx);
 
             // Update viewport to show the first match using ViewportManager
+            // ViewportManager expects VISUAL index
             {
                 let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
                 if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
-                    let viewport_changed = viewport_manager.set_current_column(first_match_index);
+                    let viewport_changed = viewport_manager.set_current_column(first_match_visual_idx);
 
                     // Sync navigation state with updated viewport
                     if viewport_changed {
@@ -5027,13 +5040,13 @@ impl EnhancedTuiApp {
 
                         debug!(target: "navigation", 
                             "Column search initial: Jumped to column {} '{}', viewport adjusted to {:?}", 
-                            first_match_index, first_match_name, new_viewport);
+                            first_match_visual_idx, first_match_name, new_viewport);
                     }
                 }
             }
 
-            debug!(target: "search", "Setting current column to index {} ('{}')", 
-                   first_match_index, first_match_name);
+            debug!(target: "search", "Setting current column to visual index {} ('{}')", 
+                   first_match_visual_idx, first_match_name);
             let status_msg = format!(
                 "Found {} columns matching '{}'. Tab/Shift-Tab to navigate.",
                 matching_columns.len(),
