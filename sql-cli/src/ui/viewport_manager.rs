@@ -96,10 +96,15 @@ pub struct ViewportManager {
     crosshair_row: usize,
     crosshair_col: usize,
 
-    /// Viewport lock state - when true, crosshair stays at same viewport position while scrolling
-    viewport_lock: bool,
+    /// Cursor lock state - when true, crosshair stays at same viewport position while scrolling
+    cursor_lock: bool,
     /// The relative position of crosshair within viewport when locked (0 = top, viewport_height-1 = bottom)
-    viewport_lock_position: Option<usize>,
+    cursor_lock_position: Option<usize>,
+
+    /// Viewport lock state - when true, prevents scrolling and constrains cursor to current viewport
+    viewport_lock: bool,
+    /// The viewport boundaries when locked (prevents scrolling beyond these)
+    viewport_lock_boundaries: Option<std::ops::Range<usize>>,
 }
 
 impl ViewportManager {
@@ -153,10 +158,35 @@ impl ViewportManager {
     pub fn navigate_row_up(&mut self) -> RowNavigationResult {
         let total_rows = self.dataview.row_count();
 
-        // Handle viewport lock mode
+        // Check viewport lock first - prevent scrolling entirely
         if self.viewport_lock {
-            if let Some(lock_position) = self.viewport_lock_position {
-                // In viewport lock mode, scroll the viewport but keep crosshair at same relative position
+            debug!(target: "viewport_manager", 
+                   "navigate_row_up: Viewport locked, crosshair={}, viewport={:?}",
+                   self.crosshair_row, self.viewport_rows);
+            // In viewport lock mode, just move cursor up within current viewport
+            if self.crosshair_row > self.viewport_rows.start {
+                self.crosshair_row -= 1;
+                return RowNavigationResult {
+                    row_position: self.crosshair_row,
+                    row_scroll_offset: self.viewport_rows.start,
+                    description: "Moved within locked viewport".to_string(),
+                    viewport_changed: false,
+                };
+            } else {
+                // Already at top of locked viewport
+                return RowNavigationResult {
+                    row_position: self.crosshair_row,
+                    row_scroll_offset: self.viewport_rows.start,
+                    description: "Moved within locked viewport".to_string(),
+                    viewport_changed: false,
+                };
+            }
+        }
+
+        // Handle cursor lock mode
+        if self.cursor_lock {
+            if let Some(lock_position) = self.cursor_lock_position {
+                // In cursor lock mode, scroll the viewport but keep crosshair at same relative position
                 if self.viewport_rows.start == 0 {
                     // Can't scroll further up
                     return RowNavigationResult {
@@ -225,10 +255,37 @@ impl ViewportManager {
     pub fn navigate_row_down(&mut self) -> RowNavigationResult {
         let total_rows = self.dataview.row_count();
 
-        // Handle viewport lock mode
+        // Check viewport lock first - prevent scrolling entirely
         if self.viewport_lock {
-            if let Some(lock_position) = self.viewport_lock_position {
-                // In viewport lock mode, scroll the viewport but keep crosshair at same relative position
+            debug!(target: "viewport_manager", 
+                   "navigate_row_down: Viewport locked, crosshair={}, viewport={:?}",
+                   self.crosshair_row, self.viewport_rows);
+            // In viewport lock mode, just move cursor down within current viewport
+            if self.crosshair_row < self.viewport_rows.end - 1
+                && self.crosshair_row < total_rows - 1
+            {
+                self.crosshair_row += 1;
+                return RowNavigationResult {
+                    row_position: self.crosshair_row,
+                    row_scroll_offset: self.viewport_rows.start,
+                    description: "Moved within locked viewport".to_string(),
+                    viewport_changed: false,
+                };
+            } else {
+                // Already at bottom of locked viewport or end of data
+                return RowNavigationResult {
+                    row_position: self.crosshair_row,
+                    row_scroll_offset: self.viewport_rows.start,
+                    description: "Moved within locked viewport".to_string(),
+                    viewport_changed: false,
+                };
+            }
+        }
+
+        // Handle cursor lock mode
+        if self.cursor_lock {
+            if let Some(lock_position) = self.cursor_lock_position {
+                // In cursor lock mode, scroll the viewport but keep crosshair at same relative position
                 let viewport_height = self.viewport_rows.end - self.viewport_rows.start;
                 let new_viewport_start =
                     (self.viewport_rows.start + 1).min(total_rows.saturating_sub(viewport_height));
@@ -332,8 +389,10 @@ impl ViewportManager {
             cache_dirty: true,
             crosshair_row: 0,
             crosshair_col: 0,
+            cursor_lock: false,
+            cursor_lock_position: None,
             viewport_lock: false,
-            viewport_lock_position: None,
+            viewport_lock_boundaries: None,
         }
     }
 
@@ -1467,6 +1526,16 @@ impl ViewportManager {
     /// Navigate to the first column (first scrollable column after pinned columns)
     /// This centralizes the logic for first column navigation
     pub fn navigate_to_first_column(&mut self) -> NavigationResult {
+        // Check viewport lock - prevent scrolling
+        if self.viewport_lock {
+            // In viewport lock mode, just move to leftmost visible column
+            self.crosshair_col = self.viewport_cols.start;
+            return NavigationResult {
+                new_position: self.crosshair_col,
+                description: "Moved to first visible column (viewport locked)".to_string(),
+                viewport_changed: false,
+            };
+        }
         // Get pinned column count from dataview
         let pinned_count = self.dataview.get_pinned_columns().len();
         let pinned_names = self.dataview.get_pinned_column_names();
@@ -1508,6 +1577,16 @@ impl ViewportManager {
     /// Navigate to the last column (rightmost visible column)
     /// This centralizes the logic for last column navigation
     pub fn navigate_to_last_column(&mut self) -> NavigationResult {
+        // Check viewport lock - prevent scrolling
+        if self.viewport_lock {
+            // In viewport lock mode, just move to rightmost visible column
+            self.crosshair_col = self.viewport_cols.end.saturating_sub(1);
+            return NavigationResult {
+                new_position: self.crosshair_col,
+                description: "Moved to last visible column (viewport locked)".to_string(),
+                viewport_changed: false,
+            };
+        }
         // Get the display columns (visual order)
         let display_columns = self.dataview.get_display_columns();
         let total_visual_columns = display_columns.len();
@@ -1585,6 +1664,30 @@ impl ViewportManager {
     /// This method handles everything: column movement, viewport tracking, and scrolling
     /// IMPORTANT: current_display_position is a logical display position (0,1,2,3...), NOT a DataTable index
     pub fn navigate_column_left(&mut self, current_display_position: usize) -> NavigationResult {
+        // Check viewport lock first - prevent scrolling entirely
+        if self.viewport_lock {
+            debug!(target: "viewport_manager", 
+                   "navigate_column_left: Viewport locked, crosshair_col={}, viewport={:?}",
+                   self.crosshair_col, self.viewport_cols);
+
+            // In viewport lock mode, just move cursor left within current viewport
+            if self.crosshair_col > self.viewport_cols.start {
+                self.crosshair_col -= 1;
+                return NavigationResult {
+                    new_position: self.crosshair_col,
+                    description: "Moved within locked viewport".to_string(),
+                    viewport_changed: false,
+                };
+            } else {
+                // Already at left edge of locked viewport
+                return NavigationResult {
+                    new_position: self.crosshair_col,
+                    description: "At left edge of locked viewport".to_string(),
+                    viewport_changed: false,
+                };
+            }
+        }
+
         // Get the DataView's display order (pinned columns first, then others)
         let display_columns = self.dataview.get_display_columns();
         let total_display_columns = display_columns.len();
@@ -1687,6 +1790,30 @@ impl ViewportManager {
     /// Navigate one column to the right with intelligent wrapping and scrolling
     /// IMPORTANT: current_display_position is a logical display position (0,1,2,3...), NOT a DataTable index
     pub fn navigate_column_right(&mut self, current_display_position: usize) -> NavigationResult {
+        // Check viewport lock first - prevent scrolling entirely
+        if self.viewport_lock {
+            debug!(target: "viewport_manager", 
+                   "navigate_column_right: Viewport locked, crosshair_col={}, viewport={:?}",
+                   self.crosshair_col, self.viewport_cols);
+
+            // In viewport lock mode, just move cursor right within current viewport
+            if self.crosshair_col < self.viewport_cols.end - 1 {
+                self.crosshair_col += 1;
+                return NavigationResult {
+                    new_position: self.crosshair_col,
+                    description: "Moved within locked viewport".to_string(),
+                    viewport_changed: false,
+                };
+            } else {
+                // Already at right edge of locked viewport
+                return NavigationResult {
+                    new_position: self.crosshair_col,
+                    description: "At right edge of locked viewport".to_string(),
+                    viewport_changed: false,
+                };
+            }
+        }
+
         let display_columns = self.dataview.get_display_columns();
         let total_display_columns = display_columns.len();
 
@@ -1872,6 +1999,22 @@ impl ViewportManager {
 
     /// Navigate to the last row in the data (like vim 'G' command)
     pub fn navigate_to_last_row(&mut self, total_rows: usize) -> RowNavigationResult {
+        // Check viewport lock - prevent scrolling
+        if self.viewport_lock {
+            // In viewport lock mode, just move to bottom of current viewport
+            let last_visible = self
+                .viewport_rows
+                .end
+                .saturating_sub(1)
+                .min(total_rows.saturating_sub(1));
+            self.crosshair_row = last_visible;
+            return RowNavigationResult {
+                row_position: self.crosshair_row,
+                row_scroll_offset: self.viewport_rows.start,
+                description: "Moved to last visible row (viewport locked)".to_string(),
+                viewport_changed: false,
+            };
+        }
         if total_rows == 0 {
             return RowNavigationResult {
                 row_position: 0,
@@ -1927,6 +2070,17 @@ impl ViewportManager {
 
     /// Navigate to the first row in the data (like vim 'gg' command)
     pub fn navigate_to_first_row(&mut self, total_rows: usize) -> RowNavigationResult {
+        // Check viewport lock - prevent scrolling
+        if self.viewport_lock {
+            // In viewport lock mode, just move to top of current viewport
+            self.crosshair_row = self.viewport_rows.start;
+            return RowNavigationResult {
+                row_position: self.crosshair_row,
+                row_scroll_offset: self.viewport_rows.start,
+                description: "Moved to first visible row (viewport locked)".to_string(),
+                viewport_changed: false,
+            };
+        }
         if total_rows == 0 {
             return RowNavigationResult {
                 row_position: 0,
@@ -2043,29 +2197,59 @@ impl ViewportManager {
     }
 
     /// Toggle viewport lock - when locked, crosshair stays at same viewport position while scrolling
+    /// Toggle cursor lock - cursor stays at same viewport position while scrolling
+    pub fn toggle_cursor_lock(&mut self) -> (bool, String) {
+        self.cursor_lock = !self.cursor_lock;
+
+        if self.cursor_lock {
+            // Calculate and store the relative position within viewport
+            let relative_position = self.crosshair_row.saturating_sub(self.viewport_rows.start);
+            self.cursor_lock_position = Some(relative_position);
+
+            let description = format!(
+                "Cursor lock: ON (locked at viewport position {})",
+                relative_position + 1
+            );
+            debug!(target: "viewport_manager", 
+                   "Cursor lock enabled: crosshair at viewport position {}", 
+                   relative_position);
+            (true, description)
+        } else {
+            self.cursor_lock_position = None;
+            let description = "Cursor lock: OFF".to_string();
+            debug!(target: "viewport_manager", "Cursor lock disabled");
+            (false, description)
+        }
+    }
+
+    /// Toggle viewport lock - prevents scrolling and constrains cursor to current viewport
     pub fn toggle_viewport_lock(&mut self) -> (bool, String) {
         self.viewport_lock = !self.viewport_lock;
 
         if self.viewport_lock {
-            // Calculate and store the relative position within viewport
-            let relative_position = self.crosshair_row.saturating_sub(self.viewport_rows.start);
-            self.viewport_lock_position = Some(relative_position);
+            // Store current viewport boundaries
+            self.viewport_lock_boundaries = Some(self.viewport_rows.clone());
 
             let description = format!(
-                "Viewport locked at position {} (row {} of viewport)",
-                self.crosshair_row + 1,
-                relative_position + 1
+                "Viewport lock: ON (no scrolling, cursor constrained to rows {}-{})",
+                self.viewport_rows.start + 1,
+                self.viewport_rows.end
             );
             debug!(target: "viewport_manager", 
-                   "Viewport lock enabled: crosshair at viewport position {}", 
-                   relative_position);
+                   "VIEWPORT LOCK ENABLED: boundaries {:?}, crosshair={}, viewport={:?}", 
+                   self.viewport_lock_boundaries, self.crosshair_row, self.viewport_rows);
             (true, description)
         } else {
-            self.viewport_lock_position = None;
-            let description = "Viewport lock disabled".to_string();
-            debug!(target: "viewport_manager", "Viewport lock disabled");
+            self.viewport_lock_boundaries = None;
+            let description = "Viewport lock: OFF (normal scrolling)".to_string();
+            debug!(target: "viewport_manager", "VIEWPORT LOCK DISABLED");
             (false, description)
         }
+    }
+
+    /// Check if cursor is locked
+    pub fn is_cursor_locked(&self) -> bool {
+        self.cursor_lock
     }
 
     /// Check if viewport is locked

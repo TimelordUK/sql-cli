@@ -2553,13 +2553,13 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_viewport_lock(is_locked);
                 self.buffer_mut().set_status_message(description);
             }
-            // 'x' also toggles viewport lock (alternative keybinding)
+            // 'x' toggles cursor lock (cursor stays at same viewport position while scrolling)
             KeyCode::Char('x') | KeyCode::Char('X') => {
-                // Toggle viewport lock using ViewportManager
+                // Toggle cursor lock using ViewportManager
                 let (is_locked, description) = {
                     let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
                     if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        viewport_manager.toggle_viewport_lock()
+                        viewport_manager.toggle_cursor_lock()
                     } else {
                         // Fallback to old behavior if no ViewportManager
                         self.state_container.toggle_viewport_lock();
@@ -2591,24 +2591,31 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_status_message(description);
             }
             KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Also support Ctrl+Space for cursor lock
-                self.state_container.toggle_cursor_lock();
-
-                // Extract values we need before mutable borrows
-                let (is_locked, lock_position) = {
-                    let navigation = self.state_container.navigation();
-                    (navigation.cursor_lock, navigation.cursor_lock_position)
+                // Ctrl+Space toggles viewport lock (prevents scrolling, cursor moves within viewport only)
+                let (is_locked, description) = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        viewport_manager.toggle_viewport_lock()
+                    } else {
+                        // Fallback to NavigationState if ViewportManager not available
+                        self.state_container.toggle_viewport_lock();
+                        let navigation = self.state_container.navigation();
+                        let is_locked = navigation.viewport_lock;
+                        let desc = if is_locked {
+                            format!(
+                                "Viewport lock: ON (no scrolling, cursor constrained to {} visible rows)",
+                                navigation.viewport_rows
+                            )
+                        } else {
+                            "Viewport lock: OFF (normal scrolling enabled)".to_string()
+                        };
+                        (is_locked, desc)
+                    }
                 };
 
-                if is_locked {
-                    self.buffer_mut().set_status_message(format!(
-                        "Cursor lock: ON (locked at visual position {})",
-                        lock_position.map_or(0, |p| p + 1)
-                    ));
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("Cursor lock: OFF (cursor moves normally)".to_string());
-                }
+                // Update buffer state and show message
+                self.buffer_mut().set_viewport_lock(is_locked);
+                self.buffer_mut().set_status_message(description);
             }
             // Column operations are now handled by the action system
             // - 'H' to hide column
