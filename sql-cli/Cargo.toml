@@ -1,6 +1,6 @@
 [package]
 name = "sql-cli"
-version = "1.26.8"
+version = "1.27.0"
 edition = "2021"
 
 [lib]
