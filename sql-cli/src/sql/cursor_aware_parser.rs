@@ -753,22 +753,53 @@ impl CursorAwareParser {
                     suggestions.extend(string_methods.into_iter().map(|s| s.to_string()));
                 }
             }
-            "numeric" => {
-                let numeric_methods = vec![
+            "numeric" | "integer" | "float" | "decimal" => {
+                // Numeric columns can use string methods via type coercion in the tree walker
+                let numeric_string_methods = vec![
+                    "Contains('')",
+                    "StartsWith('')",
+                    "EndsWith('')",
                     "ToString()",
-                    // Could add math methods here
+                    "Length",
+                    // Could add math methods here in the future
                 ];
-                suggestions.extend(numeric_methods.into_iter().map(|s| s.to_string()));
+
+                if let Some(partial) = partial_word {
+                    let partial_lower = partial.to_lowercase();
+                    for method in numeric_string_methods {
+                        if method.to_lowercase().starts_with(&partial_lower) {
+                            suggestions.push(method.to_string());
+                        }
+                    }
+                } else {
+                    suggestions.extend(numeric_string_methods.into_iter().map(|s| s.to_string()));
+                }
             }
             "datetime" => {
+                // DateTime columns can use both datetime-specific and string methods
                 let datetime_methods = vec![
                     "Year",
                     "Month",
                     "Day",
                     "ToString(\"yyyy-MM-dd\")",
                     "AddDays(1)",
+                    // String methods via coercion
+                    "Contains('')",
+                    "StartsWith('')",
+                    "EndsWith('')",
+                    "Length",
                 ];
-                suggestions.extend(datetime_methods.into_iter().map(|s| s.to_string()));
+
+                if let Some(partial) = partial_word {
+                    let partial_lower = partial.to_lowercase();
+                    for method in datetime_methods {
+                        if method.to_lowercase().starts_with(&partial_lower) {
+                            suggestions.push(method.to_string());
+                        }
+                    }
+                } else {
+                    suggestions.extend(datetime_methods.into_iter().map(|s| s.to_string()));
+                }
             }
             _ => {
                 // Default to string methods

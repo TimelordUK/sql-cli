@@ -650,6 +650,14 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         }
                         Ok(result)
                     }
+                    Some(DataValue::DateTime(dt)) => {
+                        // DateTime columns can use string methods via coercion
+                        let result = dt.contains(&search_str);
+                        if row_index < 3 {
+                            debug!("RecursiveWhereEvaluator: Row {} contains('{}') on datetime '{}' = {}", row_index, search_str, dt, result);
+                        }
+                        Ok(result)
+                    }
                     _ => {
                         if row_index < 3 {
                             debug!("RecursiveWhereEvaluator: Row {} contains('{}') on null/empty value = false", row_index, search_str);
@@ -672,6 +680,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     Some(DataValue::Integer(n)) => Ok(n.to_string().starts_with(&prefix)),
                     Some(DataValue::Float(f)) => Ok(f.to_string().starts_with(&prefix)),
                     Some(DataValue::Boolean(b)) => Ok(b.to_string().starts_with(&prefix)),
+                    Some(DataValue::DateTime(dt)) => Ok(dt.starts_with(&prefix)),
                     _ => Ok(false),
                 }
             }
@@ -689,6 +698,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     Some(DataValue::Integer(n)) => Ok(n.to_string().ends_with(&suffix)),
                     Some(DataValue::Float(f)) => Ok(f.to_string().ends_with(&suffix)),
                     Some(DataValue::Boolean(b)) => Ok(b.to_string().ends_with(&suffix)),
+                    Some(DataValue::DateTime(dt)) => Ok(dt.ends_with(&suffix)),
                     _ => Ok(false),
                 }
             }
