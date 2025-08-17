@@ -259,8 +259,19 @@ impl DataView {
         let empty_columns = self.detect_empty_columns();
         let count = empty_columns.len();
 
+        // Fix: detect_empty_columns returns source column indices,
+        // but hide_column expects display indices. We need to convert
+        // source indices to display indices or use hide_column_by_name.
+        let column_names = self.source.column_names();
         for col_idx in empty_columns {
-            self.hide_column(col_idx);
+            if let Some(column_name) = column_names.get(col_idx) {
+                tracing::debug!(
+                    "Hiding empty column '{}' (source index {})",
+                    column_name,
+                    col_idx
+                );
+                self.hide_column_by_name(column_name);
+            }
         }
 
         count
@@ -1614,5 +1625,72 @@ impl std::fmt::Debug for DataView {
             .field("has_filter", &self.filter_pattern.is_some())
             .field("has_column_search", &self.column_search_pattern.is_some())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::datatable::{DataTable, DataType, DataValue};
+
+    #[test]
+    fn test_hide_empty_columns_index_fix() {
+        // Create a test DataTable with mixed empty and non-empty columns
+        let mut table = DataTable::new();
+
+        // Add columns: name(0), empty1(1), salary(2), empty2(3), department(4)
+        table.add_column("name".to_string(), DataType::String, false);
+        table.add_column("empty1".to_string(), DataType::Null, true); // Should be hidden
+        table.add_column("salary".to_string(), DataType::Integer, false);
+        table.add_column("empty2".to_string(), DataType::Null, true); // Should be hidden
+        table.add_column("department".to_string(), DataType::String, false);
+
+        // Add test data
+        table.add_row(vec![
+            DataValue::String("John".to_string()),
+            DataValue::Null,
+            DataValue::Integer(50000),
+            DataValue::Null,
+            DataValue::String("Engineering".to_string()),
+        ]);
+
+        table.add_row(vec![
+            DataValue::String("Jane".to_string()),
+            DataValue::Null,
+            DataValue::Integer(60000),
+            DataValue::Null,
+            DataValue::String("Marketing".to_string()),
+        ]);
+
+        // Create DataView with all columns visible initially
+        let mut dataview = DataView::new(Box::new(table));
+
+        // Initial state: all 5 columns should be visible
+        assert_eq!(dataview.column_count(), 5);
+
+        // Hide empty columns - this should hide empty1(1) and empty2(3)
+        let hidden_count = dataview.hide_empty_columns();
+
+        // Should have hidden exactly 2 columns
+        assert_eq!(hidden_count, 2);
+
+        // Should now have 3 columns visible: name(0), salary(2), department(4)
+        assert_eq!(dataview.column_count(), 3);
+
+        // Get final column names
+        let final_columns: Vec<String> = (0..dataview.column_count())
+            .map(|i| dataview.get_column_name(i).unwrap_or("unknown".to_string()))
+            .collect();
+
+        // Verify the correct columns remain visible
+        assert_eq!(final_columns[0], "name");
+        assert_eq!(final_columns[1], "salary");
+        assert_eq!(final_columns[2], "department");
+
+        // Verify hidden columns
+        let hidden_columns = dataview.get_hidden_column_names();
+        assert!(hidden_columns.contains(&"empty1".to_string()));
+        assert!(hidden_columns.contains(&"empty2".to_string()));
+        assert_eq!(hidden_columns.len(), 2);
     }
 }
