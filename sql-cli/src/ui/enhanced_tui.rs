@@ -6299,10 +6299,16 @@ impl EnhancedTuiApp {
                     // Column information
                     if let Some(dataview) = self.buffer().get_dataview() {
                         let headers = dataview.column_names();
-                        if self.buffer().get_current_column() < headers.len() {
+                        let current_display_pos = self.buffer().get_current_column();
+
+                        debug!(target: "render", 
+                               "Status line: display_pos={}, headers.len()={}, headers={:?}", 
+                               current_display_pos, headers.len(), headers);
+
+                        if current_display_pos < headers.len() {
                             spans.push(Span::raw(" | Col: "));
                             spans.push(Span::styled(
-                                headers[self.buffer().get_current_column()].clone(),
+                                headers[current_display_pos].clone(),
                                 Style::default().fg(Color::Cyan),
                             ));
 
@@ -6655,9 +6661,11 @@ impl EnhancedTuiApp {
             let info = viewport_manager.get_visible_columns_info(available_width as u16);
 
             // Get crosshair position while we have the borrow
-            let current_datatable_column = self.buffer().get_current_column();
+            // IMPORTANT: Buffer now stores display positions, not DataTable indices
+            let current_display_position = self.buffer().get_current_column();
+            debug!(target: "render", "Getting crosshair for display_position={}", current_display_position);
             let crosshair_pos = viewport_manager
-                .get_crosshair_column(current_datatable_column, available_width as u16);
+                .get_crosshair_column_for_display(current_display_position, available_width as u16);
 
             (info.0, info.1, info.2, crosshair_pos)
         };
@@ -6667,6 +6675,8 @@ impl EnhancedTuiApp {
         debug!(target: "render", "Visible indices: {:?}", visible_indices);
         debug!(target: "render", "Pinned indices: {:?}", pinned_indices);
         debug!(target: "render", "Scrollable indices: {:?}", scrollable_indices);
+        debug!(target: "render", "Crosshair display position: {} -> viewport position: {:?}", 
+               self.buffer().get_current_column(), crosshair_column_position);
 
         // Build pinned headers from the indices - use source column names
         let source_column_names = if let Some(dataview) = self.buffer().get_dataview() {
@@ -6745,21 +6755,6 @@ impl EnhancedTuiApp {
                 );
         }
 
-        // Build final list of visible columns using the indices we already got from ViewportManager
-        let mut visible_columns: Vec<(usize, String)> = Vec::new();
-
-        // Always use ViewportManager's indices - it's the single source of truth
-        // Use source column names since indices are source indices
-        for &idx in &visible_indices {
-            if idx < source_column_names.len() {
-                visible_columns.push((idx, source_column_names[idx].clone()));
-            }
-        }
-        debug!(target: "render", "Using ViewportManager layout: {} columns", visible_columns.len());
-
-        debug!(target: "render", "Final visible_columns ({}): {:?}", visible_columns.len(), 
-            visible_columns.iter().map(|(_, name)| name.as_str()).collect::<Vec<_>>());
-
         // Calculate viewport dimensions
         let terminal_height = area.height as usize;
         let max_visible_rows = terminal_height.saturating_sub(3).max(10);
@@ -6773,23 +6768,41 @@ impl EnhancedTuiApp {
             .min(row_count.saturating_sub(1));
         let row_viewport_end = (row_viewport_start + max_visible_rows).min(row_count);
 
-        // Get visible rows from provider
+        // Create row indices for the visible range
         let t2 = render_start.elapsed();
-        let visible_rows =
-            provider.get_visible_rows(row_viewport_start, row_viewport_end - row_viewport_start);
+        let visible_row_indices: Vec<usize> = (row_viewport_start..row_viewport_end).collect();
         let t3 = render_start.elapsed();
 
-        // Transform to only show visible columns
-        let data_to_display: Vec<Vec<String>> = visible_rows
-            .iter()
-            .map(|row| {
-                visible_columns
-                    .iter()
-                    .map(|(idx, _)| row.get(*idx).cloned().unwrap_or_default())
-                    .collect()
-            })
-            .collect();
+        // Get the visual display data from ViewportManager
+        // This returns headers, data, and column widths already in the correct visual order
+        let (column_headers, data_to_display, column_widths_visual) = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                viewport_manager.get_visual_display(available_width as u16, &visible_row_indices)
+            } else {
+                // Fallback: get rows from provider and use all columns
+                let visible_rows = provider
+                    .get_visible_rows(row_viewport_start, row_viewport_end - row_viewport_start);
+                let headers = source_column_names.clone();
+                let widths = vec![15u16; headers.len()];
+                (headers, visible_rows, widths)
+            }
+        };
+
+        debug!(target: "render", "Got visual display: {} columns, {} rows, widths: {:?}", 
+               column_headers.len(), data_to_display.len(), column_widths_visual);
+        debug!(target: "render", "Column headers: {:?}", column_headers);
+
         let t4 = render_start.elapsed();
+
+        // Get sort state from DataView to determine which column is sorted
+        let sort_state = self
+            .buffer()
+            .get_dataview()
+            .map(|dv| dv.get_sort_state().clone());
+
+        // Get number of pinned columns - they always appear first in visual order
+        let pinned_count = pinned_indices.len();
 
         // Create header row with sort indicators and column selection
         let mut header_cells: Vec<Cell> = Vec::new();
@@ -6806,71 +6819,74 @@ impl EnhancedTuiApp {
         }
 
         // Add data headers
-        header_cells.extend(visible_columns.iter().enumerate().map(
-            |(col_idx, (actual_col_index, header))| {
-                // Get sort indicator from AppStateContainer if available
-                let sort_indicator = {
-                    let sort = self.state_container.sort();
-                    if let Some(col) = sort.column {
-                        if col == *actual_col_index {
+        // Note: visual_pos here is the visual position (0, 1, 2, 3...) with no gaps
+        header_cells.extend(
+            column_headers
+                .iter()
+                .enumerate()
+                .map(|(visual_pos, header)| {
+                    // Get sort indicator based on visual position
+                    // The sort_state.column is already in visual column space (not DataTable indices)
+                    let sort_indicator = if let Some(ref sort) = sort_state {
+                        if sort.column == Some(visual_pos) {
                             match sort.order {
-                                SortOrder::Ascending => " ↑",
-                                SortOrder::Descending => " ↓",
-                                SortOrder::None => "",
+                                crate::data::data_view::SortOrder::Ascending => " ↑",
+                                crate::data::data_view::SortOrder::Descending => " ↓",
+                                crate::data::data_view::SortOrder::None => "",
                             }
                         } else {
                             ""
                         }
                     } else {
                         ""
-                    }
-                };
+                    };
 
-                // Check if this is the current column by comparing display positions
-                // The header is being rendered at position col_idx in the visible_columns array
-                // Use the pre-computed crosshair position (single source of truth)
-                let column_indicator = if Some(col_idx) == crosshair_column_position {
-                    " [*]"
-                } else {
-                    ""
-                };
-
-                // No longer need [P] indicator since we use blue background for pinned columns
-                let pinned_indicator = "";
-
-                // Check if this column is pinned to determine styling
-                let is_pinned = pinned_indices.contains(actual_col_index);
-
-                let mut style = if is_pinned {
-                    // Pinned columns get a distinctive blue background with white text
-                    Style::default()
-                        .bg(Color::Blue)
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    // Regular columns keep the cyan color
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD)
-                };
-
-                if Some(col_idx) == crosshair_column_position {
-                    if is_pinned {
-                        // Current pinned column gets yellow text on blue background
-                        style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+                    // Check if this is the current column by comparing visual positions
+                    // The header is being rendered at visual position in the visible_columns array
+                    // Use the pre-computed crosshair position (single source of truth)
+                    let column_indicator = if Some(visual_pos) == crosshair_column_position {
+                        " [*]"
                     } else {
-                        // Current regular column gets yellow text
-                        style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
-                    }
-                }
+                        ""
+                    };
 
-                Cell::from(format!(
-                    "{}{}{}{}",
-                    header, sort_indicator, column_indicator, pinned_indicator
-                ))
-                .style(style)
-            },
-        ));
+                    // No longer need [P] indicator since we use blue background for pinned columns
+                    let pinned_indicator = "";
+
+                    // Check if this column is pinned to determine styling
+                    // Pinned columns always appear first in visual order
+                    let is_pinned = visual_pos < pinned_count;
+
+                    let mut style = if is_pinned {
+                        // Pinned columns get a distinctive blue background with white text
+                        Style::default()
+                            .bg(Color::Blue)
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        // Regular columns keep the cyan color
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD)
+                    };
+
+                    if Some(visual_pos) == crosshair_column_position {
+                        if is_pinned {
+                            // Current pinned column gets yellow text on blue background
+                            style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+                        } else {
+                            // Current regular column gets yellow text
+                            style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+                        }
+                    }
+
+                    Cell::from(format!(
+                        "{}{}{}{}",
+                        header, sort_indicator, column_indicator, pinned_indicator
+                    ))
+                    .style(style)
+                }),
+        );
 
         let header = Row::new(header_cells);
 
@@ -6904,19 +6920,13 @@ impl EnhancedTuiApp {
                 None
             };
 
-            cells.extend(row_data.iter().enumerate().map(|(col_idx, val)| {
-                // Check if this column matches the selected column (using display positions)
-                let is_selected_column = Some(col_idx) == crosshair_column_position;
+            cells.extend(row_data.iter().enumerate().map(|(visual_pos, val)| {
+                // Check if this column matches the selected column (using visual positions)
+                let is_selected_column = Some(visual_pos) == crosshair_column_position;
 
                 // Check if this column is pinned
-                let is_pinned = visible_columns
-                    .get(col_idx)
-                    .and_then(|(_, col_name)| {
-                        self.buffer()
-                            .get_dataview()
-                            .map(|dv| dv.get_pinned_column_names().contains(col_name))
-                    })
-                    .unwrap_or(false);
+                // Pinned columns always appear first in visual order
+                let is_pinned = visual_pos < pinned_count;
 
                 let mut cell = Cell::from(val.clone());
 
@@ -7023,12 +7033,8 @@ impl EnhancedTuiApp {
         }
 
         // Add widths for visible data columns
-        for (idx, _) in &visible_columns {
-            let width = if *idx < column_widths.len() {
-                column_widths[*idx] as u16
-            } else {
-                15
-            };
+        // Use the actual widths from ViewportManager
+        for &width in &column_widths_visual {
             widths.push(Constraint::Length(width.min(50))); // Cap at 50 to prevent overly wide columns
         }
 

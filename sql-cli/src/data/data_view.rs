@@ -1446,6 +1446,19 @@ impl DataView {
             .map(|row| row.values.iter().map(|v| v.to_string()).collect())
     }
 
+    /// Get row values in visual column order (only visible columns)
+    /// This returns data in the same order as get_display_column_names()
+    pub fn get_row_visual_values(&self, row_index: usize) -> Option<Vec<String>> {
+        if let Some(row) = self.get_row(row_index) {
+            // The row already has values in display order (hidden columns excluded)
+            // Just convert to strings
+            let values: Vec<String> = row.values.iter().map(|v| v.to_string()).collect();
+            Some(values)
+        } else {
+            None
+        }
+    }
+
     /// Get column index mapping for debugging
     /// Returns a mapping of visible column index -> (column name, datatable index)
     pub fn get_column_index_mapping(&self) -> Vec<(usize, String, usize)> {

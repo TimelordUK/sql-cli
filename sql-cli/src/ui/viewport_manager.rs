@@ -100,12 +100,14 @@ impl ViewportManager {
 
     /// Create a new ViewportManager for a DataView
     pub fn new(dataview: Arc<DataView>) -> Self {
-        let col_count = dataview.column_count();
+        // Get the actual visible column count (after hiding)
+        let display_columns = dataview.get_display_columns();
+        let visible_col_count = display_columns.len();
+        let total_col_count = dataview.source().column_count(); // Total DataTable columns for width array
 
-        // Initialize with a reasonable default viewport that shows first columns
-        // This will be updated when terminal size is known
-        let initial_viewport_cols = if col_count > 0 {
-            0..col_count.min(20) // Show up to 20 columns initially
+        // Initialize viewport in visual coordinate space
+        let initial_viewport_cols = if visible_col_count > 0 {
+            0..visible_col_count.min(20) // Show up to 20 visual columns initially
         } else {
             0..0
         };
@@ -116,7 +118,7 @@ impl ViewportManager {
             viewport_cols: initial_viewport_cols,
             terminal_width: 80,
             terminal_height: 24,
-            column_widths: vec![DEFAULT_COL_WIDTH; col_count],
+            column_widths: vec![DEFAULT_COL_WIDTH; total_col_count], // Size for all DataTable columns
             visible_row_cache: Vec::new(),
             cache_signature: 0,
             cache_dirty: true,
@@ -135,10 +137,14 @@ impl ViewportManager {
             ..row_offset
                 .saturating_add(height as usize)
                 .min(self.dataview.row_count());
+
+        // For columns, we need to work in visual space (visible columns only)
+        let display_columns = self.dataview.get_display_columns();
+        let visual_column_count = display_columns.len();
         let new_cols = col_offset
             ..col_offset
                 .saturating_add(width as usize)
-                .min(self.dataview.column_count());
+                .min(visual_column_count);
 
         // Check if viewport actually changed
         if new_rows != self.viewport_rows || new_cols != self.viewport_cols {
@@ -361,239 +367,73 @@ impl ViewportManager {
     }
 
     /// Calculate optimal column layout for available width
-    /// This is the key method that determines how many columns we can fit
+    /// Returns a RANGE of visual column indices (0..n) that should be displayed
+    /// This works entirely in visual coordinate space - no DataTable indices!
     pub fn calculate_visible_column_indices(&mut self, available_width: u16) -> Vec<usize> {
         if self.cache_dirty {
             self.recalculate_column_widths();
         }
 
-        let mut visible_indices = Vec::new();
-        let mut used_width = 0u16;
-        let separator_width = 1u16; // Width of column separator
-
-        tracing::trace!(
-            "ViewportManager: Starting column layout calculation. Available width: {}w, viewport cols: {:?}, total cols: {}",
-            available_width,
-            self.viewport_cols,
-            self.dataview.column_count()
-        );
-
-        // Check if all columns can fit by calculating total width
-        let total_cols = self.dataview.column_count();
-        let mut total_width_needed = 0u16;
-        for col_idx in 0..total_cols {
-            let width = self
-                .column_widths
-                .get(col_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
-            total_width_needed += width + separator_width;
-        }
-
-        // Determine the range of columns to process
-        let process_range = if total_width_needed <= available_width {
-            // All columns fit! Use optimal layout
-            tracing::trace!(
-                "All columns fit ({}w needed, {}w available) - using optimal layout 0..{}",
-                total_width_needed,
-                available_width,
-                total_cols
-            );
-
-            // Update viewport state to match optimal layout
-            self.viewport_cols = 0..total_cols;
-            tracing::trace!("Updated viewport_cols to optimal range: 0..{}", total_cols);
-
-            0..total_cols
-        } else {
-            // Not all columns fit, use current viewport
-            tracing::trace!(
-                "Using viewport range {:?} = columns {} to {}",
-                self.viewport_cols,
-                self.viewport_cols.start,
-                self.viewport_cols.end.saturating_sub(1)
-            );
-            self.viewport_cols.clone()
-        };
-
-        // Get the display columns to know which ones are actually visible (not hidden)
+        // Get the display columns from DataView (these are DataTable indices for visible columns)
         let display_columns = self.dataview.get_display_columns();
+        let total_visual_columns = display_columns.len();
 
-        // First, add pinned columns (but only if they're not hidden)
-        let pinned = self.dataview.get_pinned_columns();
-        debug!(target: "viewport_manager", 
-               "Processing pinned columns: {:?} (DataView says pinned: {:?})", 
-               pinned, self.dataview.get_pinned_column_names());
-        for &col_idx in pinned {
-            // Skip if hidden
-            if !display_columns.contains(&col_idx) {
-                tracing::trace!("Skipping pinned column {} - hidden", col_idx);
-                continue;
-            }
-
-            let width = self
-                .column_widths
-                .get(col_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
-            if used_width + width + separator_width <= available_width {
-                visible_indices.push(col_idx);
-                used_width += width + separator_width;
-                tracing::trace!(
-                    "Added pinned column {}: {}w (total used: {}w)",
-                    col_idx,
-                    width,
-                    used_width
-                );
-            }
+        if total_visual_columns == 0 {
+            return Vec::new();
         }
 
-        // Track which columns we've skipped due to width
-        let mut skipped_columns: Vec<(usize, u16)> = Vec::new();
+        let mut used_width = 0u16;
+        let separator_width = 1u16;
 
-        // Then add regular columns from determined range
-        for col_idx in process_range {
-            // Skip if hidden (not in display_columns)
-            if !display_columns.contains(&col_idx) {
-                tracing::trace!("Skipping column {} - hidden", col_idx);
-                continue;
-            }
+        // Work in visual coordinate space!
+        // Visual indices are 0, 1, 2, 3... (contiguous, no gaps)
+        let mut visual_start = self.viewport_cols.start.min(total_visual_columns);
+        let mut visual_end = visual_start;
 
-            // Skip if already added as pinned
-            if pinned.contains(&col_idx) {
-                continue;
-            }
+        debug!(target: "viewport_manager",
+               "calculate_visible_column_indices: available_width={}, total_visual_columns={}, viewport_start={}",
+               available_width, total_visual_columns, visual_start);
+
+        // Calculate how many visual columns we can fit starting from visual_start
+        for visual_idx in visual_start..total_visual_columns {
+            // Get the DataTable index for this visual position
+            let datatable_idx = display_columns[visual_idx];
 
             let width = self
                 .column_widths
-                .get(col_idx)
+                .get(datatable_idx)
                 .copied()
                 .unwrap_or(DEFAULT_COL_WIDTH);
 
             if used_width + width + separator_width <= available_width {
-                visible_indices.push(col_idx);
                 used_width += width + separator_width;
-                tracing::trace!(
-                    "Added column {}: {}w (total used: {}w)",
-                    col_idx,
-                    width,
-                    used_width
-                );
+                visual_end = visual_idx + 1;
             } else {
-                // Track this skipped column
-                skipped_columns.push((col_idx, width));
-                tracing::trace!(
-                    "Skipped column {} ({}w) - would exceed available width",
-                    col_idx,
-                    width
-                );
+                break;
             }
         }
 
-        // Now check if we have significant unused space and can fit more columns
-        let remaining_width = available_width.saturating_sub(used_width);
+        // If we couldn't fit anything, ensure we show at least one column
+        if visual_end == visual_start && visual_start < total_visual_columns {
+            visual_end = visual_start + 1;
+        }
 
-        tracing::trace!(
-            "After initial pass: {}w used, {}w remaining. {} columns visible, {} skipped",
-            used_width,
-            remaining_width,
-            visible_indices.len(),
-            skipped_columns.len()
-        );
-
-        if remaining_width > MIN_COL_WIDTH + separator_width {
-            // Look for ANY columns (not just from viewport) that could fit
-            let mut candidates: Vec<(usize, u16)> = Vec::new();
-
-            // First check skipped columns from viewport
-            for &(col_idx, width) in &skipped_columns {
-                if width + separator_width <= remaining_width {
-                    candidates.push((col_idx, width));
-                }
-            }
-
-            // DISABLED: Don't look beyond viewport for efficiency - it breaks column order
-            // The optimization below would add column 42 when we should be showing columns in order
-            // // Then check ALL columns beyond viewport that might fit
-            // tracing::trace!(
-            //     "Looking for additional columns from {} to {} (beyond viewport end)",
-            //     self.viewport_cols.end,
-            //     self.dataview.column_count() - 1
-            // );
-            // for col_idx in self.viewport_cols.end..self.dataview.column_count() {
-            //     // Skip if already visible or pinned
-            //     if visible_indices.contains(&col_idx) || pinned.contains(&col_idx) {
-            //         tracing::trace!("Skipping column {} - already visible or pinned", col_idx);
-            //         continue;
-            //     }
-
-            //     let width = self
-            //         .column_widths
-            //         .get(col_idx)
-            //         .copied()
-            //         .unwrap_or(DEFAULT_COL_WIDTH);
-
-            //     if width + separator_width <= remaining_width {
-            //         candidates.push((col_idx, width));
-            //         tracing::trace!("Column {} ({}w) is candidate for extra space", col_idx, width);
-            //     } else {
-            //         tracing::trace!("Column {} ({}w) too wide for remaining {}w", col_idx, width, remaining_width);
-            //     }
-            // }
-
-            if !candidates.is_empty() {
-                tracing::trace!(
-                    "Found {} candidate columns that could fit in {}w remaining space",
-                    candidates.len(),
-                    remaining_width
-                );
-
-                // Sort candidates by width (narrowest first) to maximize columns fitted
-                candidates.sort_by_key(|&(_, width)| width);
-
-                // Try to fit as many columns as possible
-                let mut space_left = remaining_width;
-                let mut added_columns = Vec::new();
-
-                for (idx, width) in candidates {
-                    if width + separator_width <= space_left {
-                        visible_indices.push(idx);
-                        used_width += width + separator_width;
-                        space_left -= width + separator_width;
-                        added_columns.push((idx, width));
-                    }
-                }
-
-                if !added_columns.is_empty() {
-                    tracing::trace!(
-                        "Added {} extra columns to fill space: {:?}. Reduced waste from {}w to {}w",
-                        added_columns.len(),
-                        added_columns,
-                        remaining_width,
-                        space_left
-                    );
-                }
-            } else {
-                tracing::trace!(
-                    "No columns found that could fit in {}w remaining space",
-                    remaining_width
-                );
+        // Now we need to return DataTable indices for compatibility with the renderer
+        // (until we fully refactor the renderer to work in visual space)
+        let mut result = Vec::new();
+        for visual_idx in visual_start..visual_end {
+            if visual_idx < display_columns.len() {
+                result.push(display_columns[visual_idx]);
             }
         }
 
-        // Sort visible indices to maintain proper column order
-        visible_indices.sort_unstable();
+        debug!(target: "viewport_manager",
+               "calculate_visible_column_indices RESULT: visual range {}..{} -> DataTable indices {:?}",
+               visual_start, visual_end, result);
 
-        tracing::trace!(
-            "Final layout: {} columns visible {:?}, {}w used of {}w ({}% efficiency)",
-            visible_indices.len(),
-            visible_indices,
-            used_width,
-            available_width,
-            (used_width as f32 / available_width as f32 * 100.0) as u8
-        );
+        result
 
-        visible_indices
+        // Removed the complex optimization logic - we now work with simple ranges
     }
 
     /// Calculate how many columns we can fit starting from a given column index
@@ -1168,6 +1008,126 @@ impl ViewportManager {
         debug!(target: "viewport_manager",
                "CROSSHAIR: current_datatable_column={}, visible_indices={:?}, crosshair_position={:?}",
                current_datatable_column, visible_indices, position);
+
+        position
+    }
+
+    /// Get the complete visual display data for rendering
+    /// Returns (headers, rows, widths) where everything is in visual order with no gaps
+    /// This method works entirely in visual coordinate space
+    pub fn get_visual_display(
+        &mut self,
+        available_width: u16,
+        row_indices: &[usize], // The row indices to display
+    ) -> (Vec<String>, Vec<Vec<String>>, Vec<u16>) {
+        // Get ALL visual columns from DataView (already filtered for hidden columns)
+        let all_headers = self.dataview.get_display_column_names();
+        let total_visual_columns = all_headers.len();
+
+        debug!(target: "viewport_manager",
+               "get_visual_display: {} total visual columns, viewport: {:?}",
+               total_visual_columns, self.viewport_cols);
+
+        // Determine visual range to display
+        let visual_start = self.viewport_cols.start.min(total_visual_columns);
+        let visual_end = self.viewport_cols.end.min(total_visual_columns);
+
+        debug!(target: "viewport_manager",
+               "Showing visual columns {}..{} (of {})",
+               visual_start, visual_end, total_visual_columns);
+
+        // Get headers for the visual range
+        let headers: Vec<String> = all_headers[visual_start..visual_end].to_vec();
+
+        // Get data from DataView in visual column order
+        let visual_rows: Vec<Vec<String>> = row_indices
+            .iter()
+            .filter_map(|&row_idx| {
+                // Get the full row in visual column order from DataView
+                self.dataview
+                    .get_row_visual_values(row_idx)
+                    .map(|full_row| {
+                        // Slice to just the visible columns
+                        full_row[visual_start..visual_end.min(full_row.len())].to_vec()
+                    })
+            })
+            .collect();
+
+        // For now, use default widths - we'll fix width calculation separately
+        let widths: Vec<u16> = vec![DEFAULT_COL_WIDTH; headers.len()];
+
+        debug!(target: "viewport_manager",
+               "get_visual_display RESULT: {} headers, {} rows",
+               headers.len(), visual_rows.len());
+        if let Some(first_row) = visual_rows.first() {
+            debug!(target: "viewport_manager",
+                   "Alignment check: {:?}",
+                   headers.iter().zip(first_row).take(5)
+                       .map(|(h, v)| format!("{}: {}", h, v)).collect::<Vec<_>>());
+        }
+
+        (headers, visual_rows, widths)
+    }
+
+    /// Get the column headers for the visible columns in the correct order
+    /// This ensures headers align with the data columns when columns are hidden
+    pub fn get_visible_column_headers(&self, visible_indices: &[usize]) -> Vec<String> {
+        let mut headers = Vec::new();
+
+        // Get the column names directly from the DataTable source
+        // The visible_indices are DataTable column indices, so we can use them directly
+        let source = self.dataview.source();
+        let all_column_names = source.column_names();
+
+        for &datatable_idx in visible_indices {
+            if datatable_idx < all_column_names.len() {
+                headers.push(all_column_names[datatable_idx].clone());
+            } else {
+                // Fallback for invalid indices
+                headers.push(format!("Column_{}", datatable_idx));
+            }
+        }
+
+        debug!(target: "viewport_manager", 
+               "get_visible_column_headers: indices={:?} -> headers={:?}", 
+               visible_indices, headers);
+
+        headers
+    }
+
+    /// Get crosshair column position for rendering when given a display position
+    /// This is for the new architecture where Buffer stores display positions
+    pub fn get_crosshair_column_for_display(
+        &mut self,
+        current_display_position: usize,
+        available_width: u16,
+    ) -> Option<usize> {
+        // Get the display columns order from DataView
+        let display_columns = self.dataview.get_display_columns();
+
+        // Validate the display position
+        if current_display_position >= display_columns.len() {
+            debug!(target: "viewport_manager",
+                   "CROSSHAIR DISPLAY: display_position {} out of bounds (max {})",
+                   current_display_position, display_columns.len());
+            return None;
+        }
+
+        // Get the DataTable column index for this display position
+        let datatable_column = display_columns[current_display_position];
+
+        // Get visible columns for rendering
+        let visible_columns_info = self.get_visible_columns_info(available_width);
+        let visible_indices = visible_columns_info.0;
+
+        // Find where this DataTable column appears in the visible columns
+        let position = visible_indices
+            .iter()
+            .position(|&col| col == datatable_column);
+
+        debug!(target: "viewport_manager",
+               "CROSSHAIR DISPLAY: display_pos={} -> datatable_col={} -> visible_indices={:?} -> crosshair_pos={:?}",
+               current_display_position, datatable_column, visible_indices, position);
 
         position
     }
