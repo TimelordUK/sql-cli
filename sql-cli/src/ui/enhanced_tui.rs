@@ -3245,13 +3245,21 @@ impl EnhancedTuiApp {
                 // Jump to current matching column from DataView
                 let (column_index, column_name) =
                     if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-                        if let Some(idx) = dataview.get_current_column_match() {
+                        if let Some(visual_idx) = dataview.get_current_column_match() {
                             let matches = dataview.get_matching_columns();
                             let name = matches
                                 .get(dataview.current_column_match_index())
                                 .map(|(_, n)| n.clone())
                                 .unwrap_or_default();
-                            (Some(idx), Some(name))
+
+                            // Convert visual index to DataTable index
+                            let display_columns = dataview.get_display_columns();
+                            let datatable_idx = if visual_idx < display_columns.len() {
+                                display_columns[visual_idx]
+                            } else {
+                                visual_idx // Fallback
+                            };
+                            (Some(datatable_idx), Some(name))
                         } else {
                             (None, None)
                         }
@@ -3259,8 +3267,21 @@ impl EnhancedTuiApp {
                         (None, None)
                     };
 
-                if let (Some(idx), Some(name)) = (column_index, column_name) {
-                    self.buffer_mut().set_current_column(idx);
+                if let (Some(datatable_idx), Some(name)) = (column_index, column_name) {
+                    self.buffer_mut().set_current_column(datatable_idx);
+                    self.state_container.set_current_column(datatable_idx);
+
+                    // Also need to get the visual index for ViewportManager
+                    if let Some(dataview) = self.buffer_mut().get_dataview() {
+                        if let Some(visual_idx) = dataview.get_current_column_match() {
+                            // Update ViewportManager to ensure the column is visible
+                            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                            if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                                viewport_manager.set_current_column(visual_idx);
+                            }
+                        }
+                    }
+
                     self.buffer_mut()
                         .set_status_message(format!("Jumped to column: {}", name));
                 } else {
