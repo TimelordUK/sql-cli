@@ -2657,6 +2657,28 @@ impl ViewportManager {
                 self.viewport_cols.start = column_count - 1;
             }
 
+            // Adjust crosshair if necessary
+            // If we hid the column the crosshair was on, or a column before it, adjust
+            if column_index == self.crosshair_col {
+                // We hid the current column
+                if column_count > 0 {
+                    // If we were at the last column and it's now hidden, move to the new last column
+                    // Otherwise, stay at the same index (which now points to the next column)
+                    if self.crosshair_col >= column_count {
+                        self.crosshair_col = column_count - 1;
+                    }
+                    // Note: if crosshair_col < column_count, we keep the same index,
+                    // which naturally moves us to the next column
+                } else {
+                    self.crosshair_col = 0;
+                }
+                debug!(target: "viewport_manager", "Crosshair was on hidden column, moved to {}", self.crosshair_col);
+            } else if column_index < self.crosshair_col {
+                // We hid a column before the crosshair - decrement crosshair position
+                self.crosshair_col = self.crosshair_col.saturating_sub(1);
+                debug!(target: "viewport_manager", "Hidden column was before crosshair, adjusted crosshair to {}", self.crosshair_col);
+            }
+
             debug!(target: "viewport_manager", "Column {} hidden successfully", column_index);
         } else {
             debug!(target: "viewport_manager", "Failed to hide column {} (might be pinned)", column_index);
@@ -2688,6 +2710,12 @@ impl ViewportManager {
             }
             if self.viewport_cols.start >= column_count && column_count > 0 {
                 self.viewport_cols.start = column_count - 1;
+            }
+
+            // Ensure crosshair stays within bounds after hiding
+            if self.crosshair_col >= column_count && column_count > 0 {
+                self.crosshair_col = column_count - 1;
+                debug!(target: "viewport_manager", "Adjusted crosshair to {} after hiding column", self.crosshair_col);
             }
 
             debug!(target: "viewport_manager", "Column '{}' hidden successfully", column_name);
