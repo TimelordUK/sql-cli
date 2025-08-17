@@ -5081,57 +5081,111 @@ impl EnhancedTuiApp {
         // Use DataView's column search if available
         let pattern = self.state_container.column_search().pattern.clone();
 
-        // Update DataView's column search
-        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            dataview.search_columns(&pattern);
+        // Collect all the data we need from DataView first
+        let (matching_columns, display_columns) =
+            if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                dataview.search_columns(&pattern);
 
-            // Get matching columns from DataView
-            let matching_columns = dataview.get_matching_columns();
-            // Update AppStateContainer with DataView's matches for compatibility
+                // Get matching columns from DataView - clone them to avoid borrow issues
+                let matching_columns = dataview.get_matching_columns().to_vec();
+                let display_columns = dataview.get_display_columns();
+
+                debug!(target: "column_search",
+                    "Search found {} matches, display_columns has {} entries, first 25: {:?}",
+                    matching_columns.len(), display_columns.len(),
+                    &display_columns[..display_columns.len().min(25)]
+                );
+
+                // Log the matches found
+                for (idx, (vis_idx, name)) in matching_columns.iter().enumerate() {
+                    debug!(target: "column_search",
+                    "Match {}: '{}' at visual_index={}", idx, name, vis_idx);
+                }
+
+                // Return the data we need
+                (matching_columns, display_columns)
+            } else {
+                (vec![], vec![])
+            };
+
+        // Now update AppStateContainer with the matches
+        // AppStateContainer expects DataTable indices, not visual indices
+        if !matching_columns.is_empty() {
             let columns: Vec<(String, usize)> = matching_columns
                 .iter()
-                .map(|(idx, name)| (name.clone(), *idx))
+                .map(|(visual_idx, name)| {
+                    // Convert visual index to DataTable index for AppStateContainer
+                    let datatable_idx = if *visual_idx < display_columns.len() {
+                        display_columns[*visual_idx]
+                    } else {
+                        *visual_idx // Fallback
+                    };
+                    (name.clone(), datatable_idx)
+                })
                 .collect();
-            // Sync AppStateContainer with DataView's matches
             self.state_container
                 .update_column_search_matches(&columns, &pattern);
+        }
 
-            // Update status message
-            if pattern.is_empty() {
-                self.buffer_mut()
-                    .set_status_message("Enter column name to search".to_string());
-            } else {
-                let (matching_columns, matches_len) = {
-                    let column_search = self.state_container.column_search();
-                    (
-                        column_search.matching_columns.clone(),
-                        column_search.matching_columns.len(),
-                    )
-                };
-                if matching_columns.is_empty() {
-                    self.buffer_mut()
-                        .set_status_message(format!("No columns match '{}'", pattern));
-                } else {
-                    let (column_index, column_name) = matching_columns[0].clone();
-                    self.buffer_mut().set_current_column(column_index);
-                    self.state_container.set_current_column(column_index);
-
-                    // Update ViewportManager to ensure the column is visible
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
-                        viewport_manager.set_current_column(column_index);
-                    }
-                    drop(viewport_manager_borrow);
-
-                    self.buffer_mut().set_status_message(format!(
-                        "Column 1 of {}: {} (Tab=next, Enter=select)",
-                        matches_len, column_name
-                    ));
-                }
-            }
-        } else {
+        // Update status message and current column
+        if pattern.is_empty() {
             self.buffer_mut()
-                .set_status_message("No results available for column search".to_string());
+                .set_status_message("Enter column name to search".to_string());
+        } else {
+            if matching_columns.is_empty() {
+                self.buffer_mut()
+                    .set_status_message(format!("No columns match '{}'", pattern));
+            } else {
+                let (visual_index, column_name) = matching_columns[0].clone();
+
+                // Convert visual index to DataTable index for Buffer/AppStateContainer
+                let datatable_index = if visual_index < display_columns.len() {
+                    let dt_idx = display_columns[visual_index];
+                    // Sanity check: for externalOrderId, visual_index should be 19 and dt_idx should be 20
+                    if column_name.to_lowercase().contains("order") {
+                        debug!(target: "column_search",
+                            "ORDER COLUMN DEBUG: '{}' visual_index={}, display_columns[{}]={}, expected for externalOrderId: 20",
+                            column_name, visual_index, visual_index, dt_idx
+                        );
+                    }
+                    dt_idx
+                } else {
+                    visual_index // Fallback
+                };
+
+                debug!(target: "column_search",
+                    "Column search match: '{}' at visual_index={}, display_columns.len()={}, converting to datatable_index={} (display_columns[{}]={})",
+                    column_name, visual_index, display_columns.len(), datatable_index, visual_index,
+                    if visual_index < display_columns.len() { display_columns[visual_index].to_string() } else { "OUT_OF_BOUNDS".to_string() }
+                );
+
+                // Double-check: print first few display_columns values around this index
+                if visual_index > 0 && visual_index < display_columns.len() {
+                    let start = visual_index.saturating_sub(2);
+                    let end = (visual_index + 3).min(display_columns.len());
+                    debug!(target: "column_search",
+                        "Display columns around index {}: {:?}",
+                        visual_index, &display_columns[start..end]
+                    );
+                }
+
+                self.buffer_mut().set_current_column(datatable_index);
+                self.state_container.set_current_column(datatable_index);
+
+                // Update ViewportManager to ensure the column is visible
+                // ViewportManager expects visual index
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                    viewport_manager.set_current_column(visual_index);
+                }
+                drop(viewport_manager_borrow);
+
+                self.buffer_mut().set_status_message(format!(
+                    "Column 1 of {}: {} (Tab=next, Enter=select)",
+                    matching_columns.len(),
+                    column_name
+                ));
+            }
         }
     }
 

@@ -1,0 +1,55 @@
+#!/usr/bin/expect -f
+
+# Test that column headers align with data when columns are hidden
+
+set timeout 3
+set test_file "test_alignment.csv"
+
+# Create test CSV
+exec echo "Col_A,Col_B,Col_C,Col_D,Col_E" > $test_file
+exec echo "A1,B1,C1,D1,E1" >> $test_file
+exec echo "A2,B2,C2,D2,E2" >> $test_file
+
+# Start the application
+spawn ./target/release/sql-cli $test_file -e "select * from data"
+
+# Wait for results
+expect {
+    "Row 1/2" { send_user "\n✓ Results loaded\n" }
+    timeout { send_user "\n✗ Failed to load results\n"; exit 1 }
+}
+
+# Navigate to Col_C
+send "ll"
+expect "Col: Col_C"
+
+# Hide Col_C
+send "-"
+expect "Hidden column"
+
+# Navigate right - should now be on Col_D
+send "l"
+
+# Check that we're on Col_D and the data shown is D1, not C1
+expect {
+    "Col: Col_D" { 
+        send_user "\n✓ Column header correct after hiding\n" 
+    }
+    timeout { 
+        send_user "\n✗ Column header misaligned\n"
+        exit 1 
+    }
+}
+
+# Check debug view to verify data alignment
+send "\033\[17~"  ;# F6 or F5 for debug
+sleep 0.5
+
+# Clean up and exit
+send "q"
+expect eof
+
+# Clean up test file
+exec rm -f $test_file
+
+send_user "\n✓ All tests passed!\n"

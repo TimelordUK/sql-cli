@@ -3,7 +3,7 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::data::data_provider::DataProvider;
 use crate::data::datatable::{DataRow, DataTable, DataValue};
@@ -1181,12 +1181,19 @@ impl DataView {
             .filter_map(|(visible_idx, &source_idx)| {
                 let col_name = &self.source.columns[source_idx].name;
                 if col_name.to_lowercase().contains(&pattern_lower) {
+                    debug!(target: "column_search", 
+                        "Found match: '{}' at visible_idx={}, source_idx={}", 
+                        col_name, visible_idx, source_idx);
                     Some((visible_idx, col_name.clone()))
                 } else {
                     None
                 }
             })
             .collect();
+
+        debug!(target: "column_search", 
+            "Total matches found: {}, visible_columns.len()={}, pattern='{}'", 
+            self.matching_columns.len(), self.visible_columns.len(), pattern);
 
         // Reset to first match
         self.current_column_match = 0;
