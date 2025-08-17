@@ -1531,7 +1531,8 @@ impl ViewportManager {
             // In viewport lock mode, just move to leftmost visible column
             self.crosshair_col = self.viewport_cols.start;
             return NavigationResult {
-                new_position: self.crosshair_col,
+                column_position: self.crosshair_col,
+                scroll_offset: self.viewport_cols.start,
                 description: "Moved to first visible column (viewport locked)".to_string(),
                 viewport_changed: false,
             };
@@ -1582,7 +1583,8 @@ impl ViewportManager {
             // In viewport lock mode, just move to rightmost visible column
             self.crosshair_col = self.viewport_cols.end.saturating_sub(1);
             return NavigationResult {
-                new_position: self.crosshair_col,
+                column_position: self.crosshair_col,
+                scroll_offset: self.viewport_cols.start,
                 description: "Moved to last visible column (viewport locked)".to_string(),
                 viewport_changed: false,
             };
@@ -1674,14 +1676,16 @@ impl ViewportManager {
             if self.crosshair_col > self.viewport_cols.start {
                 self.crosshair_col -= 1;
                 return NavigationResult {
-                    new_position: self.crosshair_col,
+                    column_position: self.crosshair_col,
+                    scroll_offset: self.viewport_cols.start,
                     description: "Moved within locked viewport".to_string(),
                     viewport_changed: false,
                 };
             } else {
                 // Already at left edge of locked viewport
                 return NavigationResult {
-                    new_position: self.crosshair_col,
+                    column_position: self.crosshair_col,
+                    scroll_offset: self.viewport_cols.start,
                     description: "At left edge of locked viewport".to_string(),
                     viewport_changed: false,
                 };
@@ -1800,14 +1804,16 @@ impl ViewportManager {
             if self.crosshair_col < self.viewport_cols.end - 1 {
                 self.crosshair_col += 1;
                 return NavigationResult {
-                    new_position: self.crosshair_col,
+                    column_position: self.crosshair_col,
+                    scroll_offset: self.viewport_cols.start,
                     description: "Moved within locked viewport".to_string(),
                     viewport_changed: false,
                 };
             } else {
                 // Already at right edge of locked viewport
                 return NavigationResult {
-                    new_position: self.crosshair_col,
+                    column_position: self.crosshair_col,
+                    scroll_offset: self.viewport_cols.start,
                     description: "At right edge of locked viewport".to_string(),
                     viewport_changed: false,
                 };
