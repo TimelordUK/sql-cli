@@ -2517,57 +2517,78 @@ impl EnhancedTuiApp {
         // Fall back to direct key handling for special cases not in dispatcher
         match normalized_key.code {
             KeyCode::Char(' ') if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Toggle viewport lock with Space (but not Ctrl+Space) - using AppStateContainer
-                self.state_container.toggle_viewport_lock();
-
-                // Extract values we need before mutable borrows
-                let (is_locked, lock_row, position_status) = {
-                    let navigation = self.state_container.navigation();
-                    (
-                        navigation.viewport_lock,
-                        navigation.viewport_lock_row,
-                        navigation.get_position_status(),
-                    )
+                // Toggle viewport lock using ViewportManager
+                let (is_locked, description) = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        viewport_manager.toggle_viewport_lock()
+                    } else {
+                        // Fallback to old behavior if no ViewportManager
+                        self.state_container.toggle_viewport_lock();
+                        let navigation = self.state_container.navigation();
+                        let is_locked = navigation.viewport_lock;
+                        let description = if is_locked {
+                            format!(
+                                "Viewport lock: ON (locked at row {})",
+                                navigation.viewport_lock_row.map_or(0, |r| r + 1)
+                            )
+                        } else {
+                            "Viewport lock: OFF (normal scrolling)".to_string()
+                        };
+                        (is_locked, description)
+                    }
                 };
 
-                // Update buffer state to match NavigationState
+                // Update AppStateContainer to keep it in sync (for status display)
+                {
+                    let mut navigation = self.state_container.navigation_mut();
+                    navigation.viewport_lock = is_locked;
+                    // Note: viewport_lock_row is managed by ViewportManager now
+                    if !is_locked {
+                        navigation.viewport_lock_row = None;
+                    }
+                }
+
+                // Update buffer state
                 self.buffer_mut().set_viewport_lock(is_locked);
-                self.buffer_mut().set_viewport_lock_row(lock_row);
-
-                if is_locked {
-                    self.buffer_mut().set_status_message(format!(
-                        "Viewport lock: ON (locked at row {}){}",
-                        lock_row.map_or(0, |r| r + 1),
-                        position_status
-                    ));
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("Viewport lock: OFF (normal scrolling)".to_string());
-                }
+                self.buffer_mut().set_status_message(description);
             }
-            // Note: Many terminals can't distinguish Shift+Space from Space
-            // So we support 'x' as an alternative for cursor lock
+            // 'x' also toggles viewport lock (alternative keybinding)
             KeyCode::Char('x') | KeyCode::Char('X') => {
-                // Toggle cursor lock with 'x' key - using AppStateContainer
-                self.state_container.toggle_cursor_lock();
-
-                // Extract values we need before mutable borrows
-                let (is_locked, lock_position) = {
-                    let navigation = self.state_container.navigation();
-                    (navigation.cursor_lock, navigation.cursor_lock_position)
+                // Toggle viewport lock using ViewportManager
+                let (is_locked, description) = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        viewport_manager.toggle_viewport_lock()
+                    } else {
+                        // Fallback to old behavior if no ViewportManager
+                        self.state_container.toggle_viewport_lock();
+                        let navigation = self.state_container.navigation();
+                        let is_locked = navigation.viewport_lock;
+                        let description = if is_locked {
+                            format!(
+                                "Viewport lock: ON (locked at row {})",
+                                navigation.viewport_lock_row.map_or(0, |r| r + 1)
+                            )
+                        } else {
+                            "Viewport lock: OFF (normal scrolling)".to_string()
+                        };
+                        (is_locked, description)
+                    }
                 };
 
-                // Update buffer state (we might need separate buffer fields for this)
-                // For now, we'll just show status message
-                if is_locked {
-                    self.buffer_mut().set_status_message(format!(
-                        "Cursor lock: ON (locked at visual position {})",
-                        lock_position.map_or(0, |p| p + 1)
-                    ));
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("Cursor lock: OFF (cursor moves normally)".to_string());
+                // Update AppStateContainer to keep it in sync
+                {
+                    let mut navigation = self.state_container.navigation_mut();
+                    navigation.viewport_lock = is_locked;
+                    if !is_locked {
+                        navigation.viewport_lock_row = None;
+                    }
                 }
+
+                // Update buffer state
+                self.buffer_mut().set_viewport_lock(is_locked);
+                self.buffer_mut().set_status_message(description);
             }
             KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Also support Ctrl+Space for cursor lock

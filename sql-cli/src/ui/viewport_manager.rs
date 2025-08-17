@@ -95,6 +95,11 @@ pub struct ViewportManager {
     /// This is the single source of truth for crosshair position
     crosshair_row: usize,
     crosshair_col: usize,
+
+    /// Viewport lock state - when true, crosshair stays at same viewport position while scrolling
+    viewport_lock: bool,
+    /// The relative position of crosshair within viewport when locked (0 = top, viewport_height-1 = bottom)
+    viewport_lock_position: Option<usize>,
 }
 
 impl ViewportManager {
@@ -148,6 +153,44 @@ impl ViewportManager {
     pub fn navigate_row_up(&mut self) -> RowNavigationResult {
         let total_rows = self.dataview.row_count();
 
+        // Handle viewport lock mode
+        if self.viewport_lock {
+            if let Some(lock_position) = self.viewport_lock_position {
+                // In viewport lock mode, scroll the viewport but keep crosshair at same relative position
+                if self.viewport_rows.start == 0 {
+                    // Can't scroll further up
+                    return RowNavigationResult {
+                        row_position: self.crosshair_row,
+                        row_scroll_offset: self.viewport_rows.start,
+                        description: "At top of data".to_string(),
+                        viewport_changed: false,
+                    };
+                }
+
+                let viewport_height = self.viewport_rows.end - self.viewport_rows.start;
+                let new_viewport_start = self.viewport_rows.start.saturating_sub(1);
+
+                // Update viewport
+                self.viewport_rows =
+                    new_viewport_start..(new_viewport_start + viewport_height).min(total_rows);
+
+                // Update crosshair to maintain relative position
+                self.crosshair_row = (self.viewport_rows.start + lock_position)
+                    .min(self.viewport_rows.end.saturating_sub(1));
+
+                return RowNavigationResult {
+                    row_position: self.crosshair_row,
+                    row_scroll_offset: self.viewport_rows.start,
+                    description: format!(
+                        "Scrolled up (locked at viewport row {})",
+                        lock_position + 1
+                    ),
+                    viewport_changed: true,
+                };
+            }
+        }
+
+        // Normal navigation (not locked)
         // Vim-like behavior: don't wrap, stay at boundary
         if self.crosshair_row == 0 {
             // Already at first row, don't move
@@ -182,6 +225,45 @@ impl ViewportManager {
     pub fn navigate_row_down(&mut self) -> RowNavigationResult {
         let total_rows = self.dataview.row_count();
 
+        // Handle viewport lock mode
+        if self.viewport_lock {
+            if let Some(lock_position) = self.viewport_lock_position {
+                // In viewport lock mode, scroll the viewport but keep crosshair at same relative position
+                let viewport_height = self.viewport_rows.end - self.viewport_rows.start;
+                let new_viewport_start =
+                    (self.viewport_rows.start + 1).min(total_rows.saturating_sub(viewport_height));
+
+                if new_viewport_start == self.viewport_rows.start {
+                    // Can't scroll further
+                    return RowNavigationResult {
+                        row_position: self.crosshair_row,
+                        row_scroll_offset: self.viewport_rows.start,
+                        description: "At bottom of data".to_string(),
+                        viewport_changed: false,
+                    };
+                }
+
+                // Update viewport
+                self.viewport_rows =
+                    new_viewport_start..(new_viewport_start + viewport_height).min(total_rows);
+
+                // Update crosshair to maintain relative position
+                self.crosshair_row = (self.viewport_rows.start + lock_position)
+                    .min(self.viewport_rows.end.saturating_sub(1));
+
+                return RowNavigationResult {
+                    row_position: self.crosshair_row,
+                    row_scroll_offset: self.viewport_rows.start,
+                    description: format!(
+                        "Scrolled down (locked at viewport row {})",
+                        lock_position + 1
+                    ),
+                    viewport_changed: true,
+                };
+            }
+        }
+
+        // Normal navigation (not locked)
         // Vim-like behavior: don't wrap, stay at boundary
         if self.crosshair_row + 1 >= total_rows {
             // Already at last row, don't move
@@ -250,6 +332,8 @@ impl ViewportManager {
             cache_dirty: true,
             crosshair_row: 0,
             crosshair_col: 0,
+            viewport_lock: false,
+            viewport_lock_position: None,
         }
     }
 
@@ -1956,6 +2040,37 @@ impl ViewportManager {
             description,
             viewport_changed: false, // Viewport doesn't change, only crosshair moves
         }
+    }
+
+    /// Toggle viewport lock - when locked, crosshair stays at same viewport position while scrolling
+    pub fn toggle_viewport_lock(&mut self) -> (bool, String) {
+        self.viewport_lock = !self.viewport_lock;
+
+        if self.viewport_lock {
+            // Calculate and store the relative position within viewport
+            let relative_position = self.crosshair_row.saturating_sub(self.viewport_rows.start);
+            self.viewport_lock_position = Some(relative_position);
+
+            let description = format!(
+                "Viewport locked at position {} (row {} of viewport)",
+                self.crosshair_row + 1,
+                relative_position + 1
+            );
+            debug!(target: "viewport_manager", 
+                   "Viewport lock enabled: crosshair at viewport position {}", 
+                   relative_position);
+            (true, description)
+        } else {
+            self.viewport_lock_position = None;
+            let description = "Viewport lock disabled".to_string();
+            debug!(target: "viewport_manager", "Viewport lock disabled");
+            (false, description)
+        }
+    }
+
+    /// Check if viewport is locked
+    pub fn is_viewport_locked(&self) -> bool {
+        self.viewport_lock
     }
 
     /// Move the current column left in the display order (swap with previous column)
