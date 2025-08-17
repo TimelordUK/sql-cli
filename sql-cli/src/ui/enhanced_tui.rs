@@ -4102,28 +4102,61 @@ impl EnhancedTuiApp {
     }
 
     fn goto_first_row(&mut self) {
-        // Update NavigationState
-        {
-            let mut nav = self.state_container.navigation_mut();
-            nav.jump_to_first_row();
-        } // nav borrow ends here
-
-        self.state_container.set_table_selected_row(Some(0));
-
-        // Sync with buffer's table state so it shows in rendering
-        self.buffer_mut().set_selected_row(Some(0));
-
-        let offset = {
-            let mut offset = self.buffer().get_scroll_offset();
-            offset.0 = 0; // Reset viewport to top
-            offset
-        }; // immutable borrow ends here
-        self.buffer_mut().set_scroll_offset(offset);
-
         let total_rows = self.get_row_count();
         if total_rows > 0 {
-            self.buffer_mut()
-                .set_status_message(format!("Jumped to first row (1/{})", total_rows));
+            // Use ViewportManager for navigation if available
+            let viewport_result = {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                    Some(viewport_manager.navigate_to_first_row(total_rows))
+                } else {
+                    None
+                }
+            }; // viewport_manager borrow is dropped here
+
+            if let Some(result) = viewport_result {
+                // Update NavigationState to match ViewportManager's result
+                {
+                    let mut nav = self.state_container.navigation_mut();
+                    // Don't call jump_to_first_row() - it might use different state
+                    // Instead, directly set to ViewportManager's calculated position
+                    nav.selected_row = result.row_position;
+                    nav.scroll_offset.0 = result.row_scroll_offset;
+                    debug!(target: "crosshair", 
+                           "goto_first_row: Synced NavigationState with ViewportManager - selected_row={}, scroll_offset={}", 
+                           nav.selected_row, nav.scroll_offset.0);
+                }
+
+                // Update selected row
+                self.state_container
+                    .set_table_selected_row(Some(result.row_position));
+                self.buffer_mut()
+                    .set_selected_row(Some(result.row_position));
+
+                // Update scroll offset from ViewportManager's calculation
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.0 = result.row_scroll_offset;
+                self.buffer_mut().set_scroll_offset(offset);
+
+                // Use the description from ViewportManager
+                self.buffer_mut().set_status_message(result.description);
+            } else {
+                // Fallback if no ViewportManager
+                {
+                    let mut nav = self.state_container.navigation_mut();
+                    nav.jump_to_first_row();
+                }
+
+                self.state_container.set_table_selected_row(Some(0));
+                self.buffer_mut().set_selected_row(Some(0));
+
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.0 = 0;
+                self.buffer_mut().set_scroll_offset(offset);
+
+                self.buffer_mut()
+                    .set_status_message(format!("Jumped to first row (1/{})", total_rows));
+            }
         }
     }
 
