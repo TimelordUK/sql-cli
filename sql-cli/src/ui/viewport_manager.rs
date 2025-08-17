@@ -1889,6 +1889,75 @@ impl ViewportManager {
         }
     }
 
+    /// Navigate to the top of the current viewport (H in vim)
+    pub fn navigate_to_viewport_top(&mut self) -> RowNavigationResult {
+        let top_row = self.viewport_rows.start;
+        let old_row = self.crosshair_row;
+
+        // Move crosshair to top of viewport
+        self.crosshair_row = top_row;
+
+        let description = format!("Moved to viewport top (row {})", top_row + 1);
+
+        debug!(target: "viewport_manager", 
+               "navigate_to_viewport_top: crosshair {} -> {}", 
+               old_row, self.crosshair_row);
+
+        RowNavigationResult {
+            row_position: self.crosshair_row,
+            row_scroll_offset: self.viewport_rows.start,
+            description,
+            viewport_changed: false, // Viewport doesn't change, only crosshair moves
+        }
+    }
+
+    /// Navigate to the middle of the current viewport (M in vim)
+    pub fn navigate_to_viewport_middle(&mut self) -> RowNavigationResult {
+        let viewport_height = self.viewport_rows.end - self.viewport_rows.start;
+        let middle_offset = viewport_height / 2;
+        let middle_row = self.viewport_rows.start + middle_offset;
+        let old_row = self.crosshair_row;
+
+        // Move crosshair to middle of viewport
+        self.crosshair_row = middle_row;
+
+        let description = format!("Moved to viewport middle (row {})", middle_row + 1);
+
+        debug!(target: "viewport_manager", 
+               "navigate_to_viewport_middle: crosshair {} -> {}", 
+               old_row, self.crosshair_row);
+
+        RowNavigationResult {
+            row_position: self.crosshair_row,
+            row_scroll_offset: self.viewport_rows.start,
+            description,
+            viewport_changed: false, // Viewport doesn't change, only crosshair moves
+        }
+    }
+
+    /// Navigate to the bottom of the current viewport (L in vim)
+    pub fn navigate_to_viewport_bottom(&mut self) -> RowNavigationResult {
+        // Bottom row is the last visible row in the viewport
+        let bottom_row = self.viewport_rows.end.saturating_sub(1);
+        let old_row = self.crosshair_row;
+
+        // Move crosshair to bottom of viewport
+        self.crosshair_row = bottom_row;
+
+        let description = format!("Moved to viewport bottom (row {})", bottom_row + 1);
+
+        debug!(target: "viewport_manager", 
+               "navigate_to_viewport_bottom: crosshair {} -> {}", 
+               old_row, self.crosshair_row);
+
+        RowNavigationResult {
+            row_position: self.crosshair_row,
+            row_scroll_offset: self.viewport_rows.start,
+            description,
+            viewport_changed: false, // Viewport doesn't change, only crosshair moves
+        }
+    }
+
     /// Move the current column left in the display order (swap with previous column)
     pub fn reorder_column_left(&mut self, current_column: usize) -> ColumnReorderResult {
         debug!(target: "viewport_manager",

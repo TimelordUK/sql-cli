@@ -4161,54 +4161,138 @@ impl EnhancedTuiApp {
     }
 
     fn goto_viewport_top(&mut self) {
-        let (new_row, status_msg) = {
-            let mut nav = self.state_container.navigation_mut();
-            nav.jump_to_viewport_top();
-            let row = nav.selected_row;
-            let total = nav.total_rows;
-            (
-                row,
-                format!("Jumped to viewport top (row {}/{})", row + 1, total),
-            )
-        };
+        // Use ViewportManager for navigation
+        let viewport_result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                Some(viewport_manager.navigate_to_viewport_top())
+            } else {
+                None
+            }
+        }; // viewport_manager borrow is dropped here
 
-        self.state_container.set_table_selected_row(Some(new_row));
-        self.buffer_mut().set_status_message(status_msg);
+        if let Some(result) = viewport_result {
+            // Update NavigationState to match ViewportManager's result
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.selected_row = result.row_position;
+                // Scroll offset doesn't change for viewport navigation
+            }
+
+            // Update selected row
+            self.state_container
+                .set_table_selected_row(Some(result.row_position));
+            self.buffer_mut()
+                .set_selected_row(Some(result.row_position));
+
+            // Use the description from ViewportManager
+            self.buffer_mut().set_status_message(result.description);
+        } else {
+            // Fallback if no ViewportManager
+            let (new_row, status_msg) = {
+                let mut nav = self.state_container.navigation_mut();
+                nav.jump_to_viewport_top();
+                let row = nav.selected_row;
+                let total = nav.total_rows;
+                (
+                    row,
+                    format!("Jumped to viewport top (row {}/{})", row + 1, total),
+                )
+            };
+
+            self.state_container.set_table_selected_row(Some(new_row));
+            self.buffer_mut().set_status_message(status_msg);
+        }
     }
 
     fn goto_viewport_middle(&mut self) {
-        // Jump to middle of current viewport (M in vim)
+        // Use ViewportManager for navigation
+        let viewport_result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                Some(viewport_manager.navigate_to_viewport_middle())
+            } else {
+                None
+            }
+        }; // viewport_manager borrow is dropped here
 
-        let (new_row, status_msg) = {
-            let mut nav = self.state_container.navigation_mut();
-            nav.jump_to_viewport_middle();
-            let row = nav.selected_row;
-            let total = nav.total_rows;
-            (
-                row,
-                format!("Jumped to viewport middle (row {}/{})", row + 1, total),
-            )
-        };
+        if let Some(result) = viewport_result {
+            // Update NavigationState to match ViewportManager's result
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.selected_row = result.row_position;
+                // Scroll offset doesn't change for viewport navigation
+            }
 
-        self.state_container.set_table_selected_row(Some(new_row));
-        self.buffer_mut().set_status_message(status_msg);
+            // Update selected row
+            self.state_container
+                .set_table_selected_row(Some(result.row_position));
+            self.buffer_mut()
+                .set_selected_row(Some(result.row_position));
+
+            // Use the description from ViewportManager
+            self.buffer_mut().set_status_message(result.description);
+        } else {
+            // Fallback if no ViewportManager
+            let (new_row, status_msg) = {
+                let mut nav = self.state_container.navigation_mut();
+                nav.jump_to_viewport_middle();
+                let row = nav.selected_row;
+                let total = nav.total_rows;
+                (
+                    row,
+                    format!("Jumped to viewport middle (row {}/{})", row + 1, total),
+                )
+            };
+
+            self.state_container.set_table_selected_row(Some(new_row));
+            self.buffer_mut().set_status_message(status_msg);
+        }
     }
 
     fn goto_viewport_bottom(&mut self) {
-        // Jump to bottom of current viewport (L in vim)
-        let (new_row, status_msg) = {
-            let mut nav = self.state_container.navigation_mut();
-            nav.jump_to_viewport_bottom();
-            let row = nav.selected_row;
-            let total = nav.total_rows;
-            (
-                row,
-                format!("Jumped to viewport bottom (row {}/{})", row + 1, total),
-            )
-        };
+        // Use ViewportManager for navigation
+        let viewport_result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                Some(viewport_manager.navigate_to_viewport_bottom())
+            } else {
+                None
+            }
+        }; // viewport_manager borrow is dropped here
 
-        self.state_container.set_table_selected_row(Some(new_row));
-        self.buffer_mut().set_status_message(status_msg);
+        if let Some(result) = viewport_result {
+            // Update NavigationState to match ViewportManager's result
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.selected_row = result.row_position;
+                // Scroll offset doesn't change for viewport navigation
+            }
+
+            // Update selected row
+            self.state_container
+                .set_table_selected_row(Some(result.row_position));
+            self.buffer_mut()
+                .set_selected_row(Some(result.row_position));
+
+            // Use the description from ViewportManager
+            self.buffer_mut().set_status_message(result.description);
+        } else {
+            // Fallback if no ViewportManager
+            let (new_row, status_msg) = {
+                let mut nav = self.state_container.navigation_mut();
+                nav.jump_to_viewport_bottom();
+                let row = nav.selected_row;
+                let total = nav.total_rows;
+                (
+                    row,
+                    format!("Jumped to viewport bottom (row {}/{})", row + 1, total),
+                )
+            };
+
+            self.state_container.set_table_selected_row(Some(new_row));
+            self.buffer_mut().set_status_message(status_msg);
+        }
     }
 
     fn toggle_column_pin(&mut self) {
