@@ -2873,6 +2873,58 @@ impl ViewportManager {
             current_offset
         }
     }
+
+    /// Jump to a specific line (row) with centering
+    pub fn goto_line(&mut self, target_row: usize) -> RowNavigationResult {
+        let total_rows = self.dataview.row_count();
+
+        // Clamp target row to valid range
+        let target_row = target_row.min(total_rows.saturating_sub(1));
+
+        // Calculate visible rows
+        let visible_rows = (self.terminal_height as usize).saturating_sub(6);
+
+        // Calculate scroll offset to center the target row
+        let centered_scroll_offset = if visible_rows > 0 {
+            // Try to center the row in the viewport
+            let half_viewport = visible_rows / 2;
+            if target_row > half_viewport {
+                // Can scroll up to center
+                (target_row - half_viewport).min(total_rows.saturating_sub(visible_rows))
+            } else {
+                // Target is near the top, can't center
+                0
+            }
+        } else {
+            target_row
+        };
+
+        // Update viewport
+        let old_scroll_offset = self.viewport_rows.start;
+        self.viewport_rows =
+            centered_scroll_offset..(centered_scroll_offset + visible_rows).min(total_rows);
+        let viewport_changed = centered_scroll_offset != old_scroll_offset;
+
+        // Update crosshair position
+        self.crosshair_row = target_row;
+
+        let description = format!(
+            "Jumped to row {} (centered at viewport {})",
+            target_row + 1,
+            centered_scroll_offset + 1
+        );
+
+        debug!(target: "viewport_manager", 
+               "goto_line: target_row={}, crosshair_row={}, scroll_offset={}→{}, viewport={:?}", 
+               target_row, self.crosshair_row, old_scroll_offset, centered_scroll_offset, self.viewport_rows);
+
+        RowNavigationResult {
+            row_position: target_row,
+            row_scroll_offset: centered_scroll_offset,
+            description,
+            viewport_changed,
+        }
+    }
 }
 
 /// Viewport efficiency metrics

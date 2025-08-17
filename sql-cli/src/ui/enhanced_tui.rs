@@ -1365,6 +1365,10 @@ impl EnhancedTuiApp {
 
                 *app.viewport_manager.borrow_mut() = Some(new_viewport_manager);
                 debug!("ViewportManager initialized with DataView from loaded file");
+
+                // Update NavigationState with data dimensions
+                app.state_container
+                    .update_data_size(dataview.row_count(), dataview.column_count());
             }
 
             app.buffer_manager.add_buffer(buffer);
@@ -3573,6 +3577,9 @@ impl EnhancedTuiApp {
 
                 // Update ViewportManager with the new DataView
                 self.update_viewport_manager(Some(new_dataview));
+
+                // Update NavigationState with data dimensions
+                self.state_container.update_data_size(row_count, col_count);
 
                 // Calculate optimal column widths for the new data
                 self.calculate_optimal_column_widths();
@@ -7536,29 +7543,31 @@ impl EnhancedTuiApp {
                         let max_row = self.get_current_data().map(|d| d.row_count()).unwrap_or(0);
 
                         if target_row < max_row {
-                            // Calculate centered viewport position
-                            let visible_rows = self.buffer().get_last_visible_rows();
-                            let centered_scroll_offset = if visible_rows > 0 {
-                                target_row.saturating_sub(visible_rows / 2)
-                            } else {
-                                target_row
-                            };
+                            // Use ViewportManager's goto_line to handle all navigation
+                            let result = {
+                                let mut viewport_manager_borrow =
+                                    self.viewport_manager.borrow_mut();
+                                let viewport_manager = viewport_manager_borrow
+                                    .as_mut()
+                                    .expect("ViewportManager must exist for goto line");
+                                viewport_manager.goto_line(target_row)
+                            }; // Borrow of viewport_manager dropped here
 
-                            // Update NavigationState with proper scroll offset
+                            // Sync NavigationState with ViewportManager
                             {
                                 let mut nav = self.state_container.navigation_mut();
-                                nav.jump_to_row(target_row);
-                                // Also update NavigationState's scroll offset to center the row
-                                nav.scroll_offset.0 = centered_scroll_offset;
-                                info!(target: "navigation", "Jump-to-row: set scroll_offset to {} to center row {}", centered_scroll_offset, target_row);
+                                nav.jump_to_row(result.row_position);
+                                nav.scroll_offset.0 = result.row_scroll_offset;
+                                info!(target: "navigation", "Jump-to-row: synced to ViewportManager position {} with scroll_offset {}", 
+                                    result.row_position, result.row_scroll_offset);
                             }
 
                             self.state_container
-                                .set_table_selected_row(Some(target_row));
+                                .set_table_selected_row(Some(result.row_position));
 
                             // Update buffer's scroll offset to match
                             let mut offset = self.buffer().get_scroll_offset();
-                            offset.0 = centered_scroll_offset;
+                            offset.0 = result.row_scroll_offset;
                             self.buffer_mut().set_scroll_offset(offset);
 
                             self.buffer_mut().set_status_message(format!(
