@@ -1360,6 +1360,9 @@ impl EnhancedTuiApp {
                     );
                 }
 
+                // Initialize viewport by setting current column to 0
+                new_viewport_manager.set_current_column(0);
+
                 *app.viewport_manager.borrow_mut() = Some(new_viewport_manager);
                 debug!("ViewportManager initialized with DataView from loaded file");
             }
@@ -3947,12 +3950,17 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_left(&mut self) {
-        // Use ViewportManager for column navigation
+        // Use ViewportManager for column navigation - Buffer now stores display index
         let current_display_pos = self.buffer().get_current_column();
+        
+        debug!(target: "navigation", 
+               "move_column_left START: display_pos={}", 
+               current_display_pos);
+        
         let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
         {
             debug!(target: "enhanced_tui", 
-                   "move_column_left: current logical display_pos={}", 
+                   "move_column_left: calling ViewportManager with display_pos={}", 
                    current_display_pos);
 
             Some(viewport_manager.navigate_column_left(current_display_pos))
@@ -3970,11 +3978,15 @@ impl EnhancedTuiApp {
                    "move_column_left: storing logical display_pos={} in Buffer", 
                    nav_result.column_position);
 
-            // Apply navigation result to TUI state (using logical display position)
+            debug!(target: "navigation", 
+                   "move_column_left END: storing display_pos={} in Buffer", 
+                   nav_result.column_position);
+            
+            // Apply navigation result to TUI state (using display index)
             self.buffer_mut()
                 .set_current_column(nav_result.column_position);
 
-            // Sync with navigation state in AppStateContainer (using logical display position)
+            // Sync with navigation state in AppStateContainer (using display index from ViewportManager)
             self.state_container.navigation_mut().selected_column = nav_result.column_position;
 
             // Update scroll offset if viewport changed
@@ -4008,12 +4020,17 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_right(&mut self) {
-        // Use ViewportManager for column navigation
+        // Use ViewportManager for column navigation - Buffer now stores display index
         let current_display_pos = self.buffer().get_current_column();
+        
+        debug!(target: "navigation", 
+               "move_column_right START: display_pos={}", 
+               current_display_pos);
+        
         let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
         {
             debug!(target: "enhanced_tui", 
-                   "move_column_right: current logical display_pos={}", 
+                   "move_column_right: calling ViewportManager with display_pos={}", 
                    current_display_pos);
 
             Some(viewport_manager.navigate_column_right(current_display_pos))
@@ -4022,7 +4039,7 @@ impl EnhancedTuiApp {
         };
 
         if let Some(nav_result) = nav_result {
-            debug!(target: "navigation", "move_column_right: input_display_pos={}, ViewportManager result: {:?}", current_display_pos, nav_result);
+            debug!(target: "navigation", "move_column_right: ViewportManager returned: {:?}", nav_result);
 
             // Get max columns for cursor_manager
             let max_columns = if let Some(provider) = self.get_data_provider() {
@@ -4034,15 +4051,15 @@ impl EnhancedTuiApp {
             // Update cursor_manager for table navigation (incremental step)
             self.cursor_manager.move_table_right(max_columns);
 
-            debug!(target: "enhanced_tui", 
-                   "move_column_right: storing logical display_pos={} in Buffer", 
+            debug!(target: "navigation", 
+                   "move_column_right END: storing display_pos={} in Buffer", 
                    nav_result.column_position);
 
-            // Apply navigation result to TUI state (using logical display position)
+            // Apply navigation result to TUI state (using display index)
             self.buffer_mut()
                 .set_current_column(nav_result.column_position);
 
-            // Sync with navigation state in AppStateContainer (using logical display position)
+            // Sync with navigation state in AppStateContainer (using display index from ViewportManager)
             self.state_container.navigation_mut().selected_column = nav_result.column_position;
 
             // Update scroll offset if viewport changed
@@ -6612,12 +6629,17 @@ impl EnhancedTuiApp {
         debug!(target: "render", "Pinned indices: {:?}", pinned_indices);
         debug!(target: "render", "Scrollable indices: {:?}", scrollable_indices);
 
-        // Build pinned headers from the indices
+        // Build pinned headers from the indices - use source column names
+        let source_column_names = if let Some(dataview) = self.buffer().get_dataview() {
+            dataview.source().column_names()
+        } else {
+            headers.clone()
+        };
         let mut pinned_headers: Vec<(usize, String)> = Vec::new();
         for &idx in &pinned_indices {
-            if idx < headers.len() {
-                pinned_headers.push((idx, headers[idx].clone()));
-                debug!(target: "render", "Column {} ('{}') is pinned", idx, headers[idx]);
+            if idx < source_column_names.len() {
+                pinned_headers.push((idx, source_column_names[idx].clone()));
+                debug!(target: "render", "Column {} ('{}') is pinned", idx, source_column_names[idx]);
             }
         }
 
@@ -6688,9 +6710,10 @@ impl EnhancedTuiApp {
         let mut visible_columns: Vec<(usize, String)> = Vec::new();
 
         // Always use ViewportManager's indices - it's the single source of truth
+        // Use source column names since indices are source indices
         for &idx in &visible_indices {
-            if idx < headers.len() {
-                visible_columns.push((idx, headers[idx].clone()));
+            if idx < source_column_names.len() {
+                visible_columns.push((idx, source_column_names[idx].clone()));
             }
         }
         debug!(target: "render", "Using ViewportManager layout: {} columns", visible_columns.len());
@@ -6744,7 +6767,7 @@ impl EnhancedTuiApp {
         }
 
         // Add data headers
-        header_cells.extend(visible_columns.iter().map(|(actual_col_index, header)| {
+        header_cells.extend(visible_columns.iter().enumerate().map(|(col_idx, (actual_col_index, header))| {
             // Get sort indicator from AppStateContainer if available
             let sort_indicator = {
                 let sort = self.state_container.sort();
@@ -6763,7 +6786,16 @@ impl EnhancedTuiApp {
                 }
             };
 
-            let column_indicator = if *actual_col_index == self.buffer().get_current_column() {
+            // Check if this is the current column by comparing display positions
+            // The header is being rendered at position col_idx in the visible_columns array
+            // Use ViewportManager to convert DataTable column index to display position
+            let current_datatable_column = self.buffer().get_current_column();
+            let current_display_position = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                viewport_manager.get_display_position_for_datatable_column(current_datatable_column, available_width as u16)
+            } else {
+                None
+            };
+            let column_indicator = if Some(col_idx) == current_display_position {
                 " [*]"
             } else {
                 ""
@@ -6788,7 +6820,7 @@ impl EnhancedTuiApp {
                     .add_modifier(Modifier::BOLD)
             };
 
-            if *actual_col_index == self.buffer().get_current_column() {
+            if col_idx == self.buffer().get_current_column() {
                 if is_pinned {
                     // Current pinned column gets yellow text on blue background
                     style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
@@ -6821,7 +6853,13 @@ impl EnhancedTuiApp {
             }
 
             // Add data cells with column highlighting
-            let current_column = self.state_container.navigation().selected_column;
+            let current_datatable_column = self.state_container.navigation().selected_column;
+            // Use ViewportManager to convert DataTable column index to display position
+            let current_display_position = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                viewport_manager.get_display_position_for_datatable_column(current_datatable_column, available_width as u16)
+            } else {
+                None
+            };
             let selected_row = self.state_container.navigation().selected_row;
             let is_current_row = row_viewport_start + i == selected_row;
 
@@ -6838,11 +6876,8 @@ impl EnhancedTuiApp {
             };
 
             cells.extend(row_data.iter().enumerate().map(|(col_idx, val)| {
-                // Check if this column matches the selected column in visible columns
-                let is_selected_column = visible_columns
-                    .get(col_idx)
-                    .map(|(actual_col, _)| *actual_col == current_column)
-                    .unwrap_or(false);
+                // Check if this column matches the selected column (using display positions)
+                let is_selected_column = Some(col_idx) == current_display_position;
 
                 // Check if this column is pinned
                 let is_pinned = visible_columns

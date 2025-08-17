@@ -410,6 +410,9 @@ impl ViewportManager {
 
         // First, add pinned columns
         let pinned = self.dataview.get_pinned_columns();
+        debug!(target: "viewport_manager", 
+               "Processing pinned columns: {:?} (DataView says pinned: {:?})", 
+               pinned, self.dataview.get_pinned_column_names());
         for &col_idx in pinned {
             let width = self
                 .column_widths
@@ -959,8 +962,19 @@ impl ViewportManager {
                "get_visible_columns_info CALLED with width={}, current_viewport={:?}", 
                available_width, self.viewport_cols);
 
-        // Get all visible column indices
-        let visible_indices = self.calculate_visible_column_indices(available_width);
+        // Get all visible column indices - use viewport-aware method
+        let viewport_indices = self.calculate_visible_column_indices(available_width);
+
+        // Sort visible indices according to DataView's display order (pinned first)
+        let display_order = self.dataview.get_display_columns();
+        let mut visible_indices = Vec::new();
+        
+        // Add columns in DataView's preferred order, but only if they're in the viewport
+        for &col_idx in &display_order {
+            if viewport_indices.contains(&col_idx) {
+                visible_indices.push(col_idx);
+            }
+        }
 
         // Get pinned column indices from DataView
         let pinned_columns = self.dataview.get_pinned_columns();
@@ -978,8 +992,12 @@ impl ViewportManager {
         }
 
         debug!(target: "viewport_manager", 
-               "get_visible_columns_info: {} visible ({} pinned, {} scrollable)",
-               visible_indices.len(), pinned_visible.len(), scrollable_visible.len());
+               "get_visible_columns_info: viewport={:?} -> ordered={:?} ({} pinned, {} scrollable)",
+               viewport_indices, visible_indices, pinned_visible.len(), scrollable_visible.len());
+        
+        debug!(target: "viewport_manager", 
+               "RENDERER DEBUG: viewport_indices={:?}, display_order={:?}, visible_indices={:?}",
+               viewport_indices, display_order, visible_indices);
 
         (visible_indices, pinned_visible, scrollable_visible)
     }
@@ -1068,6 +1086,16 @@ impl ViewportManager {
         );
 
         visible_indices
+    }
+
+    /// Convert a DataTable column index to its display position within the current visible columns
+    /// Returns None if the column is not currently visible
+    pub fn get_display_position_for_datatable_column(&mut self, datatable_column: usize, available_width: u16) -> Option<usize> {
+        let visible_columns_info = self.get_visible_columns_info(available_width);
+        let visible_indices = visible_columns_info.0;
+        
+        // Find the position of the datatable column in the visible columns list
+        visible_indices.iter().position(|&col| col == datatable_column)
     }
 
     /// Calculate viewport efficiency metrics
@@ -1338,7 +1366,13 @@ impl ViewportManager {
                new_datatable_column, self.viewport_cols);
 
         // Use set_current_column to handle viewport adjustment automatically (this takes DataTable index)
+        debug!(target: "viewport_manager", 
+               "navigate_column_right: before set_current_column({}), viewport={:?}", 
+               new_datatable_column, self.viewport_cols);
         let viewport_changed = self.set_current_column(new_datatable_column);
+        debug!(target: "viewport_manager", 
+               "navigate_column_right: after set_current_column({}), viewport={:?}, changed={}", 
+               new_datatable_column, self.viewport_cols, viewport_changed);
 
         let column_names = self.dataview.column_names();
         let column_name = display_columns
