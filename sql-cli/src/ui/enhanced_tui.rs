@@ -6681,11 +6681,20 @@ impl EnhancedTuiApp {
             let info = viewport_manager.get_visible_columns_info(available_width as u16);
 
             // Get crosshair position while we have the borrow
-            // IMPORTANT: Buffer now stores display positions, not DataTable indices
-            let current_display_position = self.buffer().get_current_column();
-            debug!(target: "render", "Getting crosshair for display_position={}", current_display_position);
+            // Buffer stores DataTable indices, we need to convert to visual position
+            let current_datatable_column = self.buffer().get_current_column();
+
+            // Convert DataTable index to visual position
+            let display_columns = viewport_manager.dataview().get_display_columns();
+            let current_visual_position = display_columns
+                .iter()
+                .position(|&dt_idx| dt_idx == current_datatable_column)
+                .unwrap_or(0);
+
+            debug!(target: "render", "Getting crosshair: datatable_col={} -> visual_pos={}", 
+                   current_datatable_column, current_visual_position);
             let crosshair_pos = viewport_manager
-                .get_crosshair_column_for_display(current_display_position, available_width as u16);
+                .get_crosshair_column_for_display(current_visual_position, available_width as u16);
 
             (info.0, info.1, info.2, crosshair_pos)
         };
