@@ -55,10 +55,45 @@ pub struct ColumnReorderResult {
     pub success: bool,
 }
 
+/// Column packing mode for optimizing data display
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnPackingMode {
+    /// Focus on showing full data values (up to reasonable limit)
+    /// Headers may be truncated if needed to show more data
+    DataFocus,
+    /// Focus on showing full headers
+    /// Data may be truncated if needed to show complete column names
+    HeaderFocus,
+    /// Balanced approach - compromise between header and data visibility
+    Balanced,
+}
+
+impl ColumnPackingMode {
+    /// Cycle to the next mode
+    pub fn cycle(&self) -> Self {
+        match self {
+            Self::DataFocus => Self::HeaderFocus,
+            Self::HeaderFocus => Self::Balanced,
+            Self::Balanced => Self::DataFocus,
+        }
+    }
+    
+    /// Get display name for the mode
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::DataFocus => "Data Focus",
+            Self::HeaderFocus => "Header Focus", 
+            Self::Balanced => "Balanced",
+        }
+    }
+}
+
 /// Minimum column width in characters
 const MIN_COL_WIDTH: u16 = 3;
 /// Maximum column width in characters  
 const MAX_COL_WIDTH: u16 = 50;
+/// Maximum column width for data-focused mode (can be larger)
+const MAX_COL_WIDTH_DATA_FOCUS: u16 = 100;
 /// Default column width if no data
 const DEFAULT_COL_WIDTH: u16 = 15;
 /// Padding to add to column widths
@@ -105,6 +140,9 @@ pub struct ViewportManager {
     viewport_lock: bool,
     /// The viewport boundaries when locked (prevents scrolling beyond these)
     viewport_lock_boundaries: Option<std::ops::Range<usize>>,
+    
+    /// Column packing mode for width calculation
+    packing_mode: ColumnPackingMode,
 }
 
 impl ViewportManager {
@@ -393,6 +431,7 @@ impl ViewportManager {
             cursor_lock_position: None,
             viewport_lock: false,
             viewport_lock_boundaries: None,
+            packing_mode: ColumnPackingMode::Balanced,
         }
     }
 
@@ -400,6 +439,26 @@ impl ViewportManager {
     pub fn set_dataview(&mut self, dataview: Arc<DataView>) {
         self.dataview = dataview;
         self.invalidate_cache();
+    }
+    
+    /// Get the current column packing mode
+    pub fn get_packing_mode(&self) -> ColumnPackingMode {
+        self.packing_mode
+    }
+    
+    /// Set the column packing mode and recalculate widths
+    pub fn set_packing_mode(&mut self, mode: ColumnPackingMode) {
+        if self.packing_mode != mode {
+            self.packing_mode = mode;
+            self.invalidate_cache();
+        }
+    }
+    
+    /// Cycle to the next packing mode
+    pub fn cycle_packing_mode(&mut self) -> ColumnPackingMode {
+        self.packing_mode = self.packing_mode.cycle();
+        self.invalidate_cache();
+        self.packing_mode
     }
 
     /// Update viewport position and size
@@ -582,8 +641,7 @@ impl ViewportManager {
         self.cache_dirty = true;
     }
 
-    /// Recalculate column widths based on visible data
-    /// Prioritizes data width over header width to maximize visible information
+    /// Recalculate column widths based on visible data and packing mode
     fn recalculate_column_widths(&mut self) {
         let col_count = self.dataview.column_count();
         self.column_widths.resize(col_count, DEFAULT_COL_WIDTH);
@@ -624,35 +682,69 @@ impl ViewportManager {
                         total_data_width += cell_width as u64;
                         data_samples += 1;
 
-                        // Early exit if we hit max width
-                        if max_data_width >= MAX_COL_WIDTH {
+                        // Early exit if we hit max width (depends on mode)
+                        let mode_max = match self.packing_mode {
+                            ColumnPackingMode::DataFocus => MAX_COL_WIDTH_DATA_FOCUS,
+                            _ => MAX_COL_WIDTH,
+                        };
+                        if max_data_width >= mode_max {
                             break;
                         }
                     }
                 }
             }
 
-            // Calculate optimal width
-            let optimal_width = if data_samples > 0 {
-                // Use the maximum data width we found
-                let data_based_width = max_data_width + COLUMN_PADDING;
-
-                // If header is significantly longer than data, cap it
-                if header_width > max_data_width {
-                    let max_allowed_header =
-                        (max_data_width as f32 * MAX_HEADER_TO_DATA_RATIO) as u16;
-                    data_based_width.max(header_width.min(max_allowed_header))
-                } else {
-                    // Header fits within data width, use data width
-                    data_based_width.max(header_width)
+            // Calculate optimal width based on packing mode
+            let optimal_width = match self.packing_mode {
+                ColumnPackingMode::DataFocus => {
+                    // Prioritize showing full data values
+                    if data_samples > 0 {
+                        // Use full data width (up to reasonable limit)
+                        let data_width = (max_data_width + COLUMN_PADDING)
+                            .min(MAX_COL_WIDTH_DATA_FOCUS);
+                        
+                        // Only ensure minimum space for header (can be truncated)
+                        data_width.max(MIN_COL_WIDTH)
+                    } else {
+                        header_width.max(DEFAULT_COL_WIDTH)
+                    }
                 }
-            } else {
-                // No data, use header width with some default
-                header_width.max(DEFAULT_COL_WIDTH)
+                ColumnPackingMode::HeaderFocus => {
+                    // Prioritize showing full headers
+                    let header_with_padding = header_width + COLUMN_PADDING;
+                    
+                    if data_samples > 0 {
+                        // Ensure we show the full header, but respect data if it's wider
+                        header_with_padding.max(max_data_width.min(MAX_COL_WIDTH))
+                    } else {
+                        header_with_padding
+                    }
+                }
+                ColumnPackingMode::Balanced => {
+                    // Original balanced approach
+                    if data_samples > 0 {
+                        let data_based_width = max_data_width + COLUMN_PADDING;
+
+                        if header_width > max_data_width {
+                            let max_allowed_header =
+                                (max_data_width as f32 * MAX_HEADER_TO_DATA_RATIO) as u16;
+                            data_based_width.max(header_width.min(max_allowed_header))
+                        } else {
+                            data_based_width.max(header_width)
+                        }
+                    } else {
+                        header_width.max(DEFAULT_COL_WIDTH)
+                    }
+                }
             };
 
-            // Apply constraints
-            self.column_widths[col_idx] = optimal_width.clamp(MIN_COL_WIDTH, MAX_COL_WIDTH);
+            // Apply constraints based on mode
+            let (min_width, max_width) = match self.packing_mode {
+                ColumnPackingMode::DataFocus => (MIN_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS),
+                _ => (MIN_COL_WIDTH, MAX_COL_WIDTH),
+            };
+            
+            self.column_widths[col_idx] = optimal_width.clamp(min_width, max_width);
         }
 
         self.cache_dirty = false;
