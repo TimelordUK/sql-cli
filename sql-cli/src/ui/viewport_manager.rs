@@ -3083,7 +3083,7 @@ impl ViewportEfficiency {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::datatable::{DataColumn, DataTable, DataValue};
+    use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 
     fn create_test_dataview() -> Arc<DataView> {
         let mut table = DataTable::new("test");
@@ -3329,5 +3329,138 @@ mod tests {
         let expected_middle =
             vm.viewport_rows.start + (vm.viewport_rows.end - vm.viewport_rows.start) / 2;
         assert_eq!(vm.get_crosshair_row(), expected_middle);
+    }
+
+    #[test]
+    fn test_out_of_order_column_navigation() {
+        // Create a test dataview with 12 columns
+        let mut table = DataTable::new("test");
+        for i in 0..12 {
+            table.add_column(DataColumn::new(&format!("col{}", i)));
+        }
+
+        // Add some test data
+        for row in 0..10 {
+            let mut values = Vec::new();
+            for col in 0..12 {
+                values.push(DataValue::String(format!("r{}c{}", row, col)));
+            }
+            table.add_row(DataRow::new(values)).unwrap();
+        }
+
+        // Create DataView with columns selected out of order
+        // Select columns in order: col11, col0, col5, col3, col8, col1, col10, col2, col7, col4, col9, col6
+        // This simulates a SQL query like: SELECT col11, col0, col5, ... FROM table
+        let dataview =
+            DataView::new(Arc::new(table)).with_columns(vec![11, 0, 5, 3, 8, 1, 10, 2, 7, 4, 9, 6]);
+
+        let mut vm = ViewportManager::new(Arc::new(dataview));
+        vm.update_terminal_size(200, 40); // Wide terminal to see all columns
+
+        // Test that columns appear in the order we selected them
+        let column_names = vm.dataview.column_names();
+        assert_eq!(
+            column_names[0], "col11",
+            "First visual column should be col11"
+        );
+        assert_eq!(
+            column_names[1], "col0",
+            "Second visual column should be col0"
+        );
+        assert_eq!(
+            column_names[2], "col5",
+            "Third visual column should be col5"
+        );
+
+        // Start at first visual column (col11)
+        vm.crosshair_col = 0;
+
+        // Navigate right through all columns and verify crosshair moves sequentially
+        let mut visual_positions = vec![0];
+        let mut datatable_positions = vec![];
+
+        // Record initial position
+        let display_cols = vm.dataview.get_display_columns();
+        datatable_positions.push(display_cols[0]);
+
+        // Navigate right through all columns
+        for i in 0..11 {
+            let current_visual = vm.get_crosshair_col();
+            let result = vm.navigate_column_right(current_visual);
+
+            // Crosshair should move to next visual position
+            let new_visual = vm.get_crosshair_col();
+            assert_eq!(
+                new_visual,
+                current_visual + 1,
+                "Crosshair should move from visual position {} to {}, but got {}",
+                current_visual,
+                current_visual + 1,
+                new_visual
+            );
+
+            visual_positions.push(new_visual);
+            datatable_positions.push(result.column_position);
+        }
+
+        // Verify we visited columns in sequential visual order (0,1,2,3...11)
+        assert_eq!(
+            visual_positions,
+            vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            "Crosshair should move through visual positions sequentially"
+        );
+
+        // Verify DataTable indices match our selection order
+        assert_eq!(
+            datatable_positions,
+            vec![11, 0, 5, 3, 8, 1, 10, 2, 7, 4, 9, 6],
+            "DataTable indices should match our column selection order"
+        );
+
+        // Navigate back left and verify sequential movement
+        for _i in (0..11).rev() {
+            let current_visual = vm.get_crosshair_col();
+            let _result = vm.navigate_column_left(current_visual);
+
+            // Crosshair should move to previous visual position
+            let new_visual = vm.get_crosshair_col();
+            assert_eq!(
+                new_visual,
+                current_visual - 1,
+                "Crosshair should move from visual position {} to {}, but got {}",
+                current_visual,
+                current_visual - 1,
+                new_visual
+            );
+        }
+
+        // Should be back at first column
+        assert_eq!(
+            vm.get_crosshair_col(),
+            0,
+            "Should be back at first visual column"
+        );
+
+        // Test hiding a column and verifying navigation still works
+        vm.hide_column(2); // Hide col5 (at visual position 2)
+
+        // Navigate from position 0 to what was position 3 (now position 2)
+        vm.crosshair_col = 0;
+        let _result1 = vm.navigate_column_right(0);
+        assert_eq!(vm.get_crosshair_col(), 1, "Should be at visual position 1");
+
+        let _result2 = vm.navigate_column_right(1);
+        assert_eq!(
+            vm.get_crosshair_col(),
+            2,
+            "Should be at visual position 2 after hiding"
+        );
+
+        // The column at position 2 should now be what was at position 3 (col3)
+        let visible_cols = vm.dataview.column_names();
+        assert_eq!(
+            visible_cols[2], "col3",
+            "Column at position 2 should be col3 after hiding col5"
+        );
     }
 }
