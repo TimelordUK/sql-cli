@@ -77,6 +77,74 @@ There might be inconsistency between:
 cargo test --lib test_out_of_order_column_navigation -- --nocapture
 ```
 
+## Bug Found!
+
+### The Issue
+The bug is in the ambiguous use of column indices throughout the system:
+
+1. **ViewportManager navigation methods** (`navigate_column_right`, `navigate_column_left`):
+   - Input: visual column position 
+   - Internal: Updates crosshair to new visual position correctly
+   - Output: Returns DataTable index in `column_position`
+
+2. **After navigation in EnhancedTuiApp** (lines 4203, 4258, etc.):
+   - Takes the DataTable index from `nav_result.column_position`
+   - Stores it in `buffer.current_column`
+   - Stores it in `state_container.navigation.selected_column`
+
+3. **The bug occurs when rendering/using the stored column**:
+   - `buffer.get_current_column()` returns what was stored (DataTable index)
+   - But code using it often assumes it's a visual index!
+   - Example: Line 4613 uses it as index into `headers` array (visual order)
+   - Example: Line 6706 uses it to index into row data (visual order)
+
+### Root Cause
+The `buffer.current_column` field is used ambiguously:
+- Sometimes stores visual indices
+- Sometimes stores DataTable indices  
+- No clear contract about which type it should contain
+- Code reading from it makes inconsistent assumptions
+
+## Solution Implemented
+
+The fix clarifies what type of index each component should store:
+
+1. **ViewportManager**: Already correct - tracks visual position in `crosshair_col`
+2. **Buffer**: Now stores visual index (to match how it's used in rendering)
+3. **Navigation state**: Now stores visual index (for UI consistency)
+
+### Changes Made
+
+Modified navigation methods in `EnhancedTuiApp` (`move_column_left`, `move_column_right`, `goto_first_column`, `goto_last_column`):
+
+**Before**: 
+```rust
+self.buffer_mut().set_current_column(nav_result.column_position);
+self.state_container.navigation_mut().selected_column = nav_result.column_position;
+```
+
+**After**:
+```rust
+// Get the visual position from ViewportManager after navigation
+let visual_position = {
+    let viewport_manager_borrow = self.viewport_manager.borrow();
+    viewport_manager_borrow
+        .as_ref()
+        .map(|vm| vm.get_crosshair_col())
+        .unwrap_or(0)
+};
+
+// Apply navigation result to TUI state (using visual position)
+self.buffer_mut().set_current_column(visual_position);
+self.state_container.navigation_mut().selected_column = visual_position;
+```
+
+This ensures that after navigation:
+- ViewportManager's `get_crosshair_col()` provides the visual position
+- Buffer stores the visual position (not DataTable index)
+- Navigation state stores the visual position
+- Rendering code correctly interprets the stored position as visual index
+
 ## Conclusion
 
-The ViewportManager is working correctly. The issue is likely in how other components interpret or display the navigation results. The architecture is sound - we just need to find where visual indices and DataTable indices are being confused in the rendering or state management layers.
+The ViewportManager is working correctly. The bug is in EnhancedTuiApp's handling of navigation results - it's storing DataTable indices where visual indices are expected. This causes the crosshair to "jump around" when columns are selected out of order because the rendering code interprets DataTable indices as visual positions.

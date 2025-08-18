@@ -4198,12 +4198,20 @@ impl EnhancedTuiApp {
         // Update cursor_manager for table navigation (incremental step)
         self.cursor_manager.move_table_left();
 
-        // Apply navigation result to TUI state (using display index)
-        self.buffer_mut()
-            .set_current_column(nav_result.column_position);
+        // Get the visual position from ViewportManager after navigation
+        let visual_position = {
+            let viewport_manager_borrow = self.viewport_manager.borrow();
+            viewport_manager_borrow
+                .as_ref()
+                .map(|vm| vm.get_crosshair_col())
+                .unwrap_or(0)
+        };
 
-        // Sync with navigation state in AppStateContainer
-        self.state_container.navigation_mut().selected_column = nav_result.column_position;
+        // Apply navigation result to TUI state (using visual position)
+        self.buffer_mut().set_current_column(visual_position);
+
+        // Sync with navigation state in AppStateContainer (using visual position)
+        self.state_container.navigation_mut().selected_column = visual_position;
 
         // Update scroll offset if viewport changed
         if nav_result.viewport_changed {
@@ -4214,7 +4222,7 @@ impl EnhancedTuiApp {
         }
 
         // Set status message
-        let column_num = nav_result.column_position + 1;
+        let column_num = visual_position + 1;
         self.buffer_mut()
             .set_status_message(format!("Column {} selected", column_num));
     }
@@ -4249,16 +4257,24 @@ impl EnhancedTuiApp {
         // Update cursor_manager for table navigation (incremental step)
         self.cursor_manager.move_table_right(max_columns);
 
+        // Get the visual position from ViewportManager after navigation
+        let visual_position = {
+            let viewport_manager_borrow = self.viewport_manager.borrow();
+            viewport_manager_borrow
+                .as_ref()
+                .map(|vm| vm.get_crosshair_col())
+                .unwrap_or(0)
+        };
+
         debug!(target: "navigation", 
-               "move_column_right END: storing display_pos={} in Buffer", 
-               nav_result.column_position);
+               "move_column_right END: storing visual_pos={} in Buffer", 
+               visual_position);
 
-        // Apply navigation result to TUI state (using display index)
-        self.buffer_mut()
-            .set_current_column(nav_result.column_position);
+        // Apply navigation result to TUI state (using visual position)
+        self.buffer_mut().set_current_column(visual_position);
 
-        // Sync with navigation state in AppStateContainer (using display index from ViewportManager)
-        self.state_container.navigation_mut().selected_column = nav_result.column_position;
+        // Sync with navigation state in AppStateContainer (using visual position)
+        self.state_container.navigation_mut().selected_column = visual_position;
 
         // Update scroll offset if viewport changed
         if nav_result.viewport_changed {
@@ -4269,7 +4285,7 @@ impl EnhancedTuiApp {
         }
 
         // Set status message
-        let column_num = nav_result.column_position + 1;
+        let column_num = visual_position + 1;
         self.buffer_mut()
             .set_status_message(format!("Column {} selected", column_num));
     }
@@ -4288,10 +4304,18 @@ impl EnhancedTuiApp {
             result
         }; // viewport_manager borrow dropped here
 
-        // Update Buffer with the DataTable index (for compatibility)
-        self.buffer_mut()
-            .set_current_column(nav_result.column_position);
-        self.state_container.navigation_mut().selected_column = nav_result.column_position;
+        // Get the visual position from ViewportManager after navigation
+        let visual_position = {
+            let viewport_manager_borrow = self.viewport_manager.borrow();
+            viewport_manager_borrow
+                .as_ref()
+                .map(|vm| vm.get_crosshair_col())
+                .unwrap_or(0)
+        };
+
+        // Update Buffer with the visual position
+        self.buffer_mut().set_current_column(visual_position);
+        self.state_container.navigation_mut().selected_column = visual_position;
 
         // Update scroll offset if viewport changed
         if nav_result.viewport_changed {
@@ -4321,10 +4345,18 @@ impl EnhancedTuiApp {
             result
         }; // viewport_manager borrow dropped here
 
-        // Update Buffer with the DataTable index (for compatibility)
-        self.buffer_mut()
-            .set_current_column(nav_result.column_position);
-        self.state_container.navigation_mut().selected_column = nav_result.column_position;
+        // Get the visual position from ViewportManager after navigation
+        let visual_position = {
+            let viewport_manager_borrow = self.viewport_manager.borrow();
+            viewport_manager_borrow
+                .as_ref()
+                .map(|vm| vm.get_crosshair_col())
+                .unwrap_or(0)
+        };
+
+        // Update Buffer with the visual position
+        self.buffer_mut().set_current_column(visual_position);
+        self.state_container.navigation_mut().selected_column = visual_position;
 
         // Update scroll offset if viewport changed
         if nav_result.viewport_changed {
