@@ -5498,6 +5498,15 @@ impl EnhancedTuiApp {
                     }
                 };
                 self.buffer_mut().set_status_message(message);
+
+                // Update ViewportManager with the sorted DataView to keep them in sync
+                if let Some(updated_dataview) = self.buffer().get_dataview() {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        viewport_manager.set_dataview(Arc::new(updated_dataview.clone()));
+                        debug!("Updated ViewportManager with sorted DataView");
+                    }
+                }
             }
         } else {
             // Could not find display position in DataTable
