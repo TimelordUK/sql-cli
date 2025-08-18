@@ -77,12 +77,12 @@ impl ColumnPackingMode {
             Self::Balanced => Self::DataFocus,
         }
     }
-    
+
     /// Get display name for the mode
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::DataFocus => "Data Focus",
-            Self::HeaderFocus => "Header Focus", 
+            Self::HeaderFocus => "Header Focus",
             Self::Balanced => "Balanced",
         }
     }
@@ -140,7 +140,7 @@ pub struct ViewportManager {
     viewport_lock: bool,
     /// The viewport boundaries when locked (prevents scrolling beyond these)
     viewport_lock_boundaries: Option<std::ops::Range<usize>>,
-    
+
     /// Column packing mode for width calculation
     packing_mode: ColumnPackingMode,
 }
@@ -440,12 +440,12 @@ impl ViewportManager {
         self.dataview = dataview;
         self.invalidate_cache();
     }
-    
+
     /// Get the current column packing mode
     pub fn get_packing_mode(&self) -> ColumnPackingMode {
         self.packing_mode
     }
-    
+
     /// Set the column packing mode and recalculate widths
     pub fn set_packing_mode(&mut self, mode: ColumnPackingMode) {
         if self.packing_mode != mode {
@@ -453,7 +453,7 @@ impl ViewportManager {
             self.invalidate_cache();
         }
     }
-    
+
     /// Cycle to the next packing mode
     pub fn cycle_packing_mode(&mut self) -> ColumnPackingMode {
         self.packing_mode = self.packing_mode.cycle();
@@ -700,9 +700,9 @@ impl ViewportManager {
                     // Prioritize showing full data values
                     if data_samples > 0 {
                         // Use full data width (up to reasonable limit)
-                        let data_width = (max_data_width + COLUMN_PADDING)
-                            .min(MAX_COL_WIDTH_DATA_FOCUS);
-                        
+                        let data_width =
+                            (max_data_width + COLUMN_PADDING).min(MAX_COL_WIDTH_DATA_FOCUS);
+
                         // Only ensure minimum space for header (can be truncated)
                         data_width.max(MIN_COL_WIDTH)
                     } else {
@@ -712,7 +712,7 @@ impl ViewportManager {
                 ColumnPackingMode::HeaderFocus => {
                     // Prioritize showing full headers
                     let header_with_padding = header_width + COLUMN_PADDING;
-                    
+
                     if data_samples > 0 {
                         // Ensure we show the full header, but respect data if it's wider
                         header_with_padding.max(max_data_width.min(MAX_COL_WIDTH))
@@ -743,7 +743,7 @@ impl ViewportManager {
                 ColumnPackingMode::DataFocus => (MIN_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS),
                 _ => (MIN_COL_WIDTH, MAX_COL_WIDTH),
             };
-            
+
             self.column_widths[col_idx] = optimal_width.clamp(min_width, max_width);
         }
 

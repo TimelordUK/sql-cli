@@ -25,7 +25,7 @@ use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
-use crate::ui::viewport_manager::{ViewportEfficiency, ViewportManager};
+use crate::ui::viewport_manager::{ColumnPackingMode, ViewportEfficiency, ViewportManager};
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -2854,6 +2854,19 @@ impl EnhancedTuiApp {
             // Column statistics (uppercase S only)
             KeyCode::Char('S') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.calculate_column_statistics();
+            }
+            // Cycle column packing mode with Alt-S
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::ALT) => {
+                let message = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        let new_mode = viewport_manager.cycle_packing_mode();
+                        format!("Column packing: {}", new_mode.display_name())
+                    } else {
+                        "ViewportManager not available".to_string()
+                    }
+                };
+                self.buffer_mut().set_status_message(message);
             }
             // Toggle selection mode with 'v' (vim-like visual mode)
             KeyCode::Char('v') => {
@@ -6874,9 +6887,16 @@ impl EnhancedTuiApp {
             ));
         }
 
-        if self.buffer().is_compact_mode() {
+        // Show column packing mode instead of compact mode
+        if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+            let packing_mode = viewport_manager.get_packing_mode();
             spans.push(Span::raw(" | "));
-            spans.push(Span::styled("COMPACT", Style::default().fg(Color::Green)));
+            let (text, color) = match packing_mode {
+                ColumnPackingMode::DataFocus => ("DATA", Color::Cyan),
+                ColumnPackingMode::HeaderFocus => ("HEADER", Color::Yellow),
+                ColumnPackingMode::Balanced => ("BALANCED", Color::Green),
+            };
+            spans.push(Span::styled(text, Style::default().fg(color)));
         }
 
         // Show lock status indicators
