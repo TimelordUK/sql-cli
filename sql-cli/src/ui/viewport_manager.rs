@@ -90,6 +90,8 @@ impl ColumnPackingMode {
 
 /// Minimum column width in characters
 const MIN_COL_WIDTH: u16 = 3;
+/// Minimum header width in DataFocus mode (aggressive truncation)
+const MIN_HEADER_WIDTH_DATA_FOCUS: u16 = 5;
 /// Maximum column width in characters  
 const MAX_COL_WIDTH: u16 = 50;
 /// Maximum column width for data-focused mode (can be larger)
@@ -143,6 +145,10 @@ pub struct ViewportManager {
 
     /// Column packing mode for width calculation
     packing_mode: ColumnPackingMode,
+
+    /// Debug info for column width calculations
+    /// (column_name, header_width, max_data_width_sampled, final_width, sample_count)
+    column_width_debug: Vec<(String, u16, u16, u16, u32)>,
 }
 
 impl ViewportManager {
@@ -432,6 +438,7 @@ impl ViewportManager {
             viewport_lock: false,
             viewport_lock_boundaries: None,
             packing_mode: ColumnPackingMode::Balanced,
+            column_width_debug: Vec::new(),
         }
     }
 
@@ -646,6 +653,9 @@ impl ViewportManager {
         let col_count = self.dataview.column_count();
         self.column_widths.resize(col_count, DEFAULT_COL_WIDTH);
 
+        // Clear debug info
+        self.column_width_debug.clear();
+
         // Get column headers for width calculation
         let headers = self.dataview.column_names();
 
@@ -697,16 +707,31 @@ impl ViewportManager {
             // Calculate optimal width based on packing mode
             let optimal_width = match self.packing_mode {
                 ColumnPackingMode::DataFocus => {
-                    // Prioritize showing full data values
+                    // Aggressively prioritize showing full data values
                     if data_samples > 0 {
-                        // Use full data width (up to reasonable limit)
-                        let data_width =
-                            (max_data_width + COLUMN_PADDING).min(MAX_COL_WIDTH_DATA_FOCUS);
+                        // ULTRA AGGRESSIVE for very short data (2-3 chars)
+                        // This handles currency codes (USD), country codes (US), etc.
+                        if max_data_width <= 3 {
+                            // For 2-3 char data, just use data width + padding
+                            // Don't enforce minimum header width - let it truncate heavily
+                            max_data_width + COLUMN_PADDING
+                        } else if max_data_width <= 10 && header_width > max_data_width * 2 {
+                            // Short data (4-10 chars) with long header - still aggressive
+                            // but ensure at least 5 chars for some header visibility
+                            (max_data_width + COLUMN_PADDING).max(MIN_HEADER_WIDTH_DATA_FOCUS)
+                        } else {
+                            // Normal data - use full width but don't exceed limit
+                            let data_width =
+                                (max_data_width + COLUMN_PADDING).min(MAX_COL_WIDTH_DATA_FOCUS);
 
-                        // Only ensure minimum space for header (can be truncated)
-                        data_width.max(MIN_COL_WIDTH)
+                            // Ensure at least minimum header visibility
+                            data_width.max(MIN_HEADER_WIDTH_DATA_FOCUS)
+                        }
                     } else {
-                        header_width.max(DEFAULT_COL_WIDTH)
+                        // No data samples - use header width but constrain it
+                        header_width
+                            .min(DEFAULT_COL_WIDTH)
+                            .max(MIN_HEADER_WIDTH_DATA_FOCUS)
                     }
                 }
                 ColumnPackingMode::HeaderFocus => {
@@ -744,7 +769,21 @@ impl ViewportManager {
                 _ => (MIN_COL_WIDTH, MAX_COL_WIDTH),
             };
 
-            self.column_widths[col_idx] = optimal_width.clamp(min_width, max_width);
+            let final_width = optimal_width.clamp(min_width, max_width);
+            self.column_widths[col_idx] = final_width;
+
+            // Store debug info
+            let column_name = headers
+                .get(col_idx)
+                .map(|s| s.clone())
+                .unwrap_or_else(|| format!("col_{}", col_idx));
+            self.column_width_debug.push((
+                column_name,
+                header_width,
+                max_data_width,
+                final_width,
+                data_samples,
+            ));
         }
 
         self.cache_dirty = false;
@@ -1074,10 +1113,86 @@ impl ViewportManager {
         output.push_str(&format!("Pinned columns: {:?}\n", pinned));
         output.push_str(&format!("Available width: {}w\n", available_width));
         output.push_str(&format!("Current viewport: {:?}\n", self.viewport_cols));
+        output.push_str(&format!(
+            "Packing mode: {} (Alt+S to cycle)\n",
+            self.packing_mode.display_name()
+        ));
         output.push_str("\n");
 
-        // Show column widths
-        output.push_str("Column widths:\n");
+        // Show detailed column width calculations
+        output.push_str("=== COLUMN WIDTH CALCULATIONS ===\n");
+        output.push_str(&format!("Mode: {}\n", self.packing_mode.display_name()));
+
+        // Show debug info for visible columns in viewport
+        if !self.column_width_debug.is_empty() {
+            output.push_str("Visible columns in viewport:\n");
+
+            // Only show columns that are currently visible
+            let mut visible_count = 0;
+            for col_idx in self.viewport_cols.clone() {
+                if col_idx < self.column_width_debug.len() {
+                    let (ref col_name, header_width, max_data_width, final_width, sample_count) =
+                        self.column_width_debug[col_idx];
+
+                    // Determine why this width was chosen
+                    let reason = match self.packing_mode {
+                        ColumnPackingMode::DataFocus => {
+                            if max_data_width <= 3 {
+                                format!("Ultra aggressive (data:{}≤3 chars)", max_data_width)
+                            } else if max_data_width <= 10 && header_width > max_data_width * 2 {
+                                format!(
+                                    "Aggressive truncate (data:{}≤10, header:{}>{} )",
+                                    max_data_width,
+                                    header_width,
+                                    max_data_width * 2
+                                )
+                            } else if final_width == MAX_COL_WIDTH_DATA_FOCUS {
+                                "Max width reached".to_string()
+                            } else {
+                                "Data-based width".to_string()
+                            }
+                        }
+                        ColumnPackingMode::HeaderFocus => {
+                            if final_width == header_width + COLUMN_PADDING {
+                                "Full header shown".to_string()
+                            } else if final_width == MAX_COL_WIDTH {
+                                "Max width reached".to_string()
+                            } else {
+                                "Header priority".to_string()
+                            }
+                        }
+                        ColumnPackingMode::Balanced => {
+                            if header_width > max_data_width && final_width < header_width {
+                                "Header constrained by ratio".to_string()
+                            } else {
+                                "Balanced".to_string()
+                            }
+                        }
+                    };
+
+                    output.push_str(&format!(
+                        "  [{}] \"{}\":\n    Header: {}w, Data: {}w → Final: {}w ({}, {} samples)\n",
+                        col_idx, col_name, header_width, max_data_width, final_width, reason, sample_count
+                    ));
+
+                    visible_count += 1;
+
+                    // Stop after showing 10 columns to avoid clutter
+                    if visible_count >= 10 {
+                        let remaining = self.viewport_cols.end - self.viewport_cols.start - 10;
+                        if remaining > 0 {
+                            output.push_str(&format!("  ... and {} more columns\n", remaining));
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        output.push_str("\n");
+
+        // Show column widths summary
+        output.push_str("Column width summary (all columns):\n");
         for (idx, &width) in self.column_widths.iter().enumerate() {
             if idx >= 20 && idx < total_cols - 10 {
                 if idx == 20 {
