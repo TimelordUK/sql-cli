@@ -7042,11 +7042,24 @@ impl EnhancedTuiApp {
 
             // Get crosshair position directly from ViewportManager (which tracks it in visual coordinates)
             let crosshair_visual = viewport_manager.get_crosshair_col();
-            let crosshair_pos = viewport_manager
-                .get_crosshair_viewport_position()
-                .map(|(_, col)| col);
 
-            debug!(target: "render", "ViewportManager crosshair position: {:?}", crosshair_pos);
+            // Get the DataTable column index at the crosshair display position
+            let display_order = viewport_manager.dataview().get_display_columns();
+            let crosshair_datatable_idx = if crosshair_visual < display_order.len() {
+                display_order[crosshair_visual]
+            } else {
+                0
+            };
+
+            // Find the position of the crosshair's DataTable column in the visible_indices array
+            // This tells us which rendered column should be highlighted
+            let crosshair_pos = info
+                .0
+                .iter()
+                .position(|&idx| idx == crosshair_datatable_idx);
+
+            debug!(target: "render", "ViewportManager crosshair visual={}, datatable_idx={}, position in visible_indices={:?}", 
+                   crosshair_visual, crosshair_datatable_idx, crosshair_pos);
 
             (info.0, info.1, info.2, crosshair_pos, crosshair_visual)
         };
