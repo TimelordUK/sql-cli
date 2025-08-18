@@ -153,16 +153,28 @@ impl DataAnalyzer {
             }
         }
 
-        // Build frequency map for columns with reasonable unique count
-        const MAX_UNIQUE_FOR_FREQUENCY: usize = 100;
-        if stats.unique_values <= MAX_UNIQUE_FOR_FREQUENCY && stats.unique_values > 0 {
-            let mut freq_map = std::collections::BTreeMap::new();
+        // Build frequency map - always show top 40 values even for high cardinality columns
+        const MAX_VALUES_TO_SHOW: usize = 40;
+        if stats.unique_values > 0 {
+            // Count all values first
+            let mut freq_map = std::collections::HashMap::new();
             for value in values {
                 if !value.is_empty() {
                     *freq_map.entry(value.to_string()).or_insert(0) += 1;
                 }
             }
-            stats.frequency_map = Some(freq_map);
+
+            // Sort by frequency (descending) and take top N
+            let mut freq_vec: Vec<(String, usize)> = freq_map.into_iter().collect();
+            freq_vec.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+            // Take top N values and put them in a BTreeMap for sorted display
+            let mut display_map = std::collections::BTreeMap::new();
+            for (value, count) in freq_vec.into_iter().take(MAX_VALUES_TO_SHOW) {
+                display_map.insert(value, count);
+            }
+
+            stats.frequency_map = Some(display_map);
         }
 
         // Length statistics
