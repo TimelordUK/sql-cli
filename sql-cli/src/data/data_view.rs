@@ -618,6 +618,8 @@ impl DataView {
             .into_iter()
             .filter(|&row_idx| predicate(&self.source, row_idx))
             .collect();
+        // Also update base_rows so that clearing sort preserves the filter
+        self.base_rows = self.visible_rows.clone();
         self
     }
 
@@ -879,8 +881,8 @@ impl DataView {
             }
         });
 
-        // Also update base_rows so that clearing filters preserves the sort
-        self.base_rows = self.visible_rows.clone();
+        // Don't update base_rows here - we want to preserve the filtered state
+        // base_rows should only be set by filter operations, not sort operations
 
         Ok(())
     }
@@ -952,15 +954,14 @@ impl DataView {
         self.sort_state.column = None;
         self.sort_state.order = SortOrder::None;
 
-        let row_count = self.source.row_count();
-        self.base_rows = (0..row_count).collect();
+        // Restore to base_rows (which maintains WHERE filtering)
+        // Don't reset base_rows here - it should preserve any WHERE conditions
+        self.visible_rows = self.base_rows.clone();
 
-        // Reapply any active filter
+        // Reapply any active text filter on top of the base rows
         if let Some(pattern) = self.filter_pattern.clone() {
             let case_insensitive = false; // Would need to track this
             self.apply_text_filter(&pattern, case_insensitive);
-        } else {
-            self.visible_rows = self.base_rows.clone();
         }
     }
 
