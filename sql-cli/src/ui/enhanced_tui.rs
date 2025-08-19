@@ -1322,7 +1322,8 @@ impl EnhancedTuiApp {
         // Replace spaces and other problematic characters with underscores
         // to create SQL-friendly table names
         // Examples: "Business Crime Borough Level" -> "Business_Crime_Borough_Level"
-        name.trim()
+        let sanitized: String = name
+            .trim()
             .chars()
             .map(|c| {
                 if c.is_alphanumeric() || c == '_' {
@@ -1331,7 +1332,24 @@ impl EnhancedTuiApp {
                     '_'
                 }
             })
-            .collect()
+            .collect();
+
+        // If the sanitized name is too complex (too long or has too many underscores),
+        // fall back to a simple default name
+        const MAX_LENGTH: usize = 30;
+        const MAX_UNDERSCORES: usize = 5;
+
+        let underscore_count = sanitized.chars().filter(|&c| c == '_').count();
+
+        if sanitized.len() > MAX_LENGTH || underscore_count > MAX_UNDERSCORES {
+            // Use a simple fallback name
+            "data".to_string()
+        } else if sanitized.is_empty() || sanitized.chars().all(|c| c == '_') {
+            // If the name is empty or all underscores after sanitization
+            "data".to_string()
+        } else {
+            sanitized
+        }
     }
 
     pub fn new(api_url: &str) -> Self {
