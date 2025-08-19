@@ -54,7 +54,7 @@ use ratatui::{
 };
 use std::io;
 use std::sync::Arc;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
 /// Macro for logging state changes with caller information
@@ -1706,6 +1706,15 @@ impl EnhancedTuiApp {
                             continue;
                         }
 
+                        // SAFETY: Always allow Ctrl-C to exit, regardless of app state
+                        // This prevents getting stuck in unresponsive states
+                        if key.code == KeyCode::Char('c')
+                            && key.modifiers.contains(KeyModifiers::CONTROL)
+                        {
+                            info!(target: "app", "Ctrl-C detected, forcing exit");
+                            break;
+                        }
+
                         // Record key press for visual indicator
                         let key_display = format_key_for_display(&key);
                         self.key_indicator.record_key(key_display.clone());
@@ -3084,6 +3093,11 @@ impl EnhancedTuiApp {
     }
 
     fn handle_search_modes_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // Safety check: Always allow Ctrl-C to exit regardless of state
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            return Ok(true); // Signal to quit
+        }
+
         let action = self.search_modes_widget.handle_key(key);
 
         match action {
@@ -5097,8 +5111,30 @@ impl EnhancedTuiApp {
         FILTER_DEPTH.fetch_sub(1, Ordering::SeqCst);
     }
     fn search_columns(&mut self) {
+        // Safety: Prevent infinite recursion with a static counter
+        static SEARCH_DEPTH: std::sync::atomic::AtomicUsize =
+            std::sync::atomic::AtomicUsize::new(0);
+        let depth = SEARCH_DEPTH.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Guard against excessive recursion
+        if depth > 10 {
+            error!(target: "search", "Column search depth exceeded limit, aborting to prevent infinite loop");
+            SEARCH_DEPTH.store(0, std::sync::atomic::Ordering::SeqCst);
+            return;
+        }
+
+        // Create a guard that will decrement on drop
+        struct DepthGuard;
+        impl Drop for DepthGuard {
+            fn drop(&mut self) {
+                SEARCH_DEPTH.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let _guard = DepthGuard;
+
         let pattern = self.state_container.column_search().pattern.clone();
-        debug!(target: "search", "search_columns called with pattern: '{}'", pattern);
+        debug!(target: "search", "search_columns called with pattern: '{}', depth: {}", pattern, depth);
+
         if pattern.is_empty() {
             debug!(target: "search", "Pattern is empty, skipping column search");
             return;

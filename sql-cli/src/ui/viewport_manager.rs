@@ -2005,20 +2005,6 @@ impl ViewportManager {
         }
     }
 
-    /// Convert a DataTable column index to logical display index
-    pub fn datatable_to_display_index(&self, datatable_column: usize) -> Option<usize> {
-        let display_columns = self.dataview.get_display_columns();
-        display_columns
-            .iter()
-            .position(|&col| col == datatable_column)
-    }
-
-    /// Convert a logical display index to DataTable column index
-    pub fn display_index_to_datatable(&self, display_index: usize) -> Option<usize> {
-        let display_columns = self.dataview.get_display_columns();
-        display_columns.get(display_index).copied()
-    }
-
     /// Navigate one column to the right with intelligent wrapping and scrolling
     /// IMPORTANT: current_display_position is a logical display position (0,1,2,3...), NOT a DataTable index
     pub fn navigate_column_right(&mut self, current_display_position: usize) -> NavigationResult {
