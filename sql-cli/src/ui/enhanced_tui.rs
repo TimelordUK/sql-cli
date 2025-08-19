@@ -3850,7 +3850,13 @@ impl EnhancedTuiApp {
                         Some(table_name),
                     )?;
 
-                // 6. Switch to results mode and reset navigation
+                // 6. Clear any active filters (new query should start with clean state)
+                self.buffer_mut().set_filter_pattern(String::new());
+                self.buffer_mut().set_fuzzy_filter_pattern(String::new());
+                self.buffer_mut().set_filter_active(false);
+                self.buffer_mut().set_fuzzy_filter_active(false);
+
+                // 7. Switch to results mode and reset navigation
                 self.buffer_mut().set_mode(AppMode::Results);
                 self.buffer_mut().set_selected_row(Some(0));
                 self.buffer_mut().set_current_column(0);

@@ -93,8 +93,11 @@ pub struct DataView {
     /// This preserves the original column selection if view was created with specific columns
     base_columns: Vec<usize>,
 
-    /// Active filter pattern (if any)
+    /// Active text filter pattern (if any)
     filter_pattern: Option<String>,
+
+    /// Active fuzzy filter pattern (if any) - mutually exclusive with filter_pattern
+    fuzzy_filter_pattern: Option<String>,
 
     /// Column search state
     column_search_pattern: Option<String>,
@@ -132,6 +135,7 @@ impl DataView {
             base_rows: all_rows,
             base_columns: all_columns,
             filter_pattern: None,
+            fuzzy_filter_pattern: None,
             column_search_pattern: None,
             matching_columns: Vec::new(),
             current_column_match: 0,
@@ -638,6 +642,12 @@ impl DataView {
             return;
         }
 
+        // Clear any existing fuzzy filter (filters are mutually exclusive)
+        if self.fuzzy_filter_pattern.is_some() {
+            info!("DataView::apply_text_filter - clearing existing fuzzy filter");
+            self.fuzzy_filter_pattern = None;
+        }
+
         // Store the filter pattern
         self.filter_pattern = Some(pattern.to_string());
 
@@ -714,20 +724,26 @@ impl DataView {
         );
     }
 
-    /// Clear the filter and restore all base rows
+    /// Clear all filters (both text and fuzzy) and restore all base rows
     pub fn clear_filter(&mut self) {
         self.filter_pattern = None;
+        self.fuzzy_filter_pattern = None;
         self.visible_rows = self.base_rows.clone();
     }
 
-    /// Check if a filter is active
+    /// Check if any filter is active (text or fuzzy)
     pub fn has_filter(&self) -> bool {
-        self.filter_pattern.is_some()
+        self.filter_pattern.is_some() || self.fuzzy_filter_pattern.is_some()
     }
 
-    /// Get the current filter pattern
+    /// Get the current text filter pattern
     pub fn get_filter_pattern(&self) -> Option<&str> {
         self.filter_pattern.as_deref()
+    }
+
+    /// Get the current fuzzy filter pattern
+    pub fn get_fuzzy_filter_pattern(&self) -> Option<&str> {
+        self.fuzzy_filter_pattern.as_deref()
     }
 
     /// Apply a fuzzy filter to the view
@@ -746,8 +762,14 @@ impl DataView {
             return;
         }
 
-        // Store the filter pattern
-        self.filter_pattern = Some(pattern.to_string());
+        // Clear any existing text filter (filters are mutually exclusive)
+        if self.filter_pattern.is_some() {
+            info!("DataView::apply_fuzzy_filter - clearing existing text filter");
+            self.filter_pattern = None;
+        }
+
+        // Store the fuzzy filter pattern
+        self.fuzzy_filter_pattern = Some(pattern.to_string());
 
         // Check if pattern starts with ' for exact matching
         let use_exact = pattern.starts_with('\'');
