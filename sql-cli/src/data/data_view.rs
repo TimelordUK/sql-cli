@@ -722,6 +722,18 @@ impl DataView {
             "DataView::apply_text_filter - final visible rows: {}",
             self.visible_rows.len()
         );
+
+        // Reapply sort if one was active
+        if let Some(sort_column) = self.sort_state.column {
+            if let Some(source_index) = self.visible_columns.get(sort_column) {
+                let ascending = matches!(self.sort_state.order, SortOrder::Ascending);
+                info!(
+                    "DataView::apply_text_filter - reapplying sort on column {} (ascending={})",
+                    sort_column, ascending
+                );
+                let _ = self.apply_sort_internal(*source_index, ascending);
+            }
+        }
     }
 
     /// Clear all filters (both text and fuzzy) and restore all base rows
@@ -729,6 +741,14 @@ impl DataView {
         self.filter_pattern = None;
         self.fuzzy_filter_pattern = None;
         self.visible_rows = self.base_rows.clone();
+
+        // Reapply sort if one was active
+        if let Some(sort_column) = self.sort_state.column {
+            if let Some(source_index) = self.visible_columns.get(sort_column) {
+                let ascending = matches!(self.sort_state.order, SortOrder::Ascending);
+                let _ = self.apply_sort_internal(*source_index, ascending);
+            }
+        }
     }
 
     /// Check if any filter is active (text or fuzzy)
@@ -820,6 +840,18 @@ impl DataView {
                 }
             })
             .collect();
+
+        // Reapply sort if one was active
+        if let Some(sort_column) = self.sort_state.column {
+            if let Some(source_index) = self.visible_columns.get(sort_column) {
+                let ascending = matches!(self.sort_state.order, SortOrder::Ascending);
+                info!(
+                    "DataView::apply_fuzzy_filter - reapplying sort on column {} (ascending={})",
+                    sort_column, ascending
+                );
+                let _ = self.apply_sort_internal(*source_index, ascending);
+            }
+        }
     }
 
     /// Get indices of rows that match the fuzzy filter (for compatibility)

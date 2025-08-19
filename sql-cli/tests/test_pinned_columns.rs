@@ -254,7 +254,7 @@ fn test_combined_operations() {
     view.hide_column_by_name("date");
 
     // 3. Apply sorting
-    view.apply_sort(2, false).unwrap(); // Sort by amount descending
+    view.apply_sort(1, false).unwrap(); // Sort by amount descending (visible index 1)
 
     // 4. Apply filter
     view.apply_text_filter("Active", false);
