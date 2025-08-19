@@ -1975,7 +1975,7 @@ impl ViewportManager {
                new_datatable_column, self.viewport_cols);
 
         // Use set_current_column to handle viewport adjustment automatically (this takes DataTable index)
-        let viewport_changed = self.set_current_column(new_datatable_column);
+        let viewport_changed = self.set_current_column(new_display_index);
 
         // Update crosshair to the new visual position
         self.crosshair_col = new_display_index;
@@ -2113,7 +2113,7 @@ impl ViewportManager {
         debug!(target: "viewport_manager", 
                "navigate_column_right: before set_current_column({}), viewport={:?}", 
                new_datatable_column, self.viewport_cols);
-        let viewport_changed = self.set_current_column(new_datatable_column);
+        let viewport_changed = self.set_current_column(new_display_index);
         debug!(target: "viewport_manager", 
                "navigate_column_right: after set_current_column({}), viewport={:?}, changed={}", 
                new_datatable_column, self.viewport_cols, viewport_changed);

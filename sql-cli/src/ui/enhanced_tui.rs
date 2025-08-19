@@ -7073,24 +7073,25 @@ impl EnhancedTuiApp {
             let crosshair_visual = viewport_manager.get_crosshair_col();
 
             // Get the DataTable column index at the crosshair display position
-            let display_order = viewport_manager.dataview().get_display_columns();
-            let crosshair_datatable_idx = if crosshair_visual < display_order.len() {
-                display_order[crosshair_visual]
+            let viewport_start = viewport_manager.get_viewport_range().start;
+            let crosshair_column_position = if crosshair_visual >= viewport_start
+                && crosshair_visual < viewport_manager.get_viewport_range().end
+            {
+                crosshair_visual - viewport_start
             } else {
                 0
             };
 
-            // Find the position of the crosshair's DataTable column in the visible_indices array
-            // This tells us which rendered column should be highlighted
-            let crosshair_pos = info
-                .0
-                .iter()
-                .position(|&idx| idx == crosshair_datatable_idx);
+            debug!(target: "render", "ViewportManager crosshair visual={}, crosshair_pos={}, position in visible_indices={:?}",
+                   crosshair_visual, crosshair_column_position, crosshair_column_position);
 
-            debug!(target: "render", "ViewportManager crosshair visual={}, datatable_idx={}, position in visible_indices={:?}", 
-                   crosshair_visual, crosshair_datatable_idx, crosshair_pos);
-
-            (info.0, info.1, info.2, crosshair_pos, crosshair_visual)
+            (
+                info.0,
+                info.1,
+                info.2,
+                crosshair_column_position,
+                crosshair_visual,
+            )
         };
 
         debug!(target: "render", "ViewportManager column info: {} visible, {} pinned, {} scrollable",
@@ -7267,7 +7268,7 @@ impl EnhancedTuiApp {
                     // Check if this is the current column by comparing visual positions
                     // The header is being rendered at visual position in the visible_columns array
                     // Use the pre-computed crosshair position (single source of truth)
-                    let is_crosshair = Some(visual_pos) == crosshair_column_position;
+                    let is_crosshair = visual_pos == crosshair_column_position;
 
                     // Debug logging for initial load crosshair issue
                     if visual_pos == 0 {
@@ -7361,7 +7362,7 @@ impl EnhancedTuiApp {
 
             cells.extend(row_data.iter().enumerate().map(|(visual_pos, val)| {
                 // Check if this column matches the selected column (using visual positions)
-                let is_selected_column = Some(visual_pos) == crosshair_column_position;
+                let is_selected_column = visual_pos == crosshair_column_position;
 
                 // Check if this column is pinned
                 // Pinned columns always appear first in visual order
