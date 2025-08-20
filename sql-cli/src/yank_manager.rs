@@ -24,13 +24,15 @@ impl YankManager {
         column_index: usize,
     ) -> Result<YankResult> {
         // Prefer DataView when available (handles filtering)
-        let (value, header) = if let Some(dataview) = buffer.get_dataview() {
+        let (value, header, actual_row_index) = if let Some(dataview) = buffer.get_dataview() {
             trace!(
-                "yank_cell: Using DataView for cell at row={}, col={}",
+                "yank_cell: Using DataView for cell at visual_row={}, col={}",
                 row_index,
                 column_index
             );
 
+            // The row_index here is the visual row index (e.g., row 0 in filtered view)
+            // DataView's get_cell_value already handles this correctly
             let value = dataview
                 .get_cell_value(row_index, column_index)
                 .unwrap_or_else(|| "NULL".to_string());
@@ -41,7 +43,16 @@ impl YankManager {
                 .ok_or_else(|| anyhow!("Column index out of bounds"))?
                 .clone();
 
-            (value, header)
+            // Get the actual data row index from the filtered view
+            // When filtered, we need to translate visual row to actual data row
+            let actual_row =
+                if let Some(filtered_idx) = dataview.visible_row_indices().get(row_index) {
+                    *filtered_idx
+                } else {
+                    row_index
+                };
+
+            (value, header, actual_row)
         } else if let Some(datatable) = buffer.get_datatable() {
             trace!(
                 "yank_cell: Using DataTable for cell at row={}, col={}",
@@ -64,7 +75,7 @@ impl YankManager {
                 .cloned()
                 .unwrap_or_else(|| "NULL".to_string());
 
-            (value, header)
+            (value, header, row_index)
         } else {
             return Err(anyhow!("No data available"));
         };
@@ -80,7 +91,7 @@ impl YankManager {
         // Copy to clipboard using AppStateContainer
         let clipboard_len = value.len();
         state_container.yank_cell(
-            row_index,
+            actual_row_index,
             column_index,
             value.clone(),
             display_value.clone(),
@@ -100,16 +111,27 @@ impl YankManager {
         row_index: usize,
     ) -> Result<YankResult> {
         // Prefer DataView when available (handles filtering)
-        let row_data = if let Some(dataview) = buffer.get_dataview() {
+        let (row_data, actual_row_index) = if let Some(dataview) = buffer.get_dataview() {
             trace!("yank_row: Using DataView for row {}", row_index);
-            dataview
+            let data = dataview
                 .get_row_values(row_index)
-                .ok_or_else(|| anyhow!("Row index out of bounds"))?
+                .ok_or_else(|| anyhow!("Row index out of bounds"))?;
+
+            // Get the actual data row index from the filtered view
+            let actual_row =
+                if let Some(filtered_idx) = dataview.visible_row_indices().get(row_index) {
+                    *filtered_idx
+                } else {
+                    row_index
+                };
+
+            (data, actual_row)
         } else if let Some(datatable) = buffer.get_datatable() {
             trace!("yank_row: Using DataTable for row {}", row_index);
-            datatable
+            let data = datatable
                 .get_row_as_strings(row_index)
-                .ok_or_else(|| anyhow!("Row index out of bounds"))?
+                .ok_or_else(|| anyhow!("Row index out of bounds"))?;
+            (data, row_index)
         } else {
             return Err(anyhow!("No data available"));
         };
@@ -123,7 +145,7 @@ impl YankManager {
         // Copy to clipboard using AppStateContainer
         let clipboard_len = row_text.len();
         state_container.yank_row(
-            row_index,
+            actual_row_index,
             row_text.clone(),
             format!("{} values", num_values),
         )?;

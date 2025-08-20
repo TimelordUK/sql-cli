@@ -39,7 +39,9 @@ impl YankHandler {
     fn yank_cell(buffer: &dyn BufferAPI, state_container: &AppStateContainer) -> Result<String> {
         debug!("yank_cell called");
 
-        if let Some(selected_row) = state_container.get_table_selected_row() {
+        // Use get_selected_row() instead of get_table_selected_row()
+        // because navigation.total_rows might not be updated properly
+        if let Some(selected_row) = state_container.get_selected_row() {
             let column = buffer.get_current_column();
             debug!("Yanking cell at row={}, column={}", selected_row, column);
 
@@ -53,7 +55,8 @@ impl YankHandler {
     }
 
     fn yank_row(buffer: &dyn BufferAPI, state_container: &AppStateContainer) -> Result<String> {
-        if let Some(selected_row) = state_container.get_table_selected_row() {
+        // Use get_selected_row() instead of get_table_selected_row()
+        if let Some(selected_row) = state_container.get_selected_row() {
             let result = YankManager::yank_row(buffer, state_container, selected_row)?;
             let message = format!("Yanked {}", result.description);
             Ok(message)

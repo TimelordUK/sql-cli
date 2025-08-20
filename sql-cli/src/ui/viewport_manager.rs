@@ -447,7 +447,7 @@ impl ViewportManager {
         self.dataview = dataview;
         self.invalidate_cache();
     }
-    
+
     /// Reset crosshair position to origin (0, 0)
     pub fn reset_crosshair(&mut self) {
         self.crosshair_row = 0;

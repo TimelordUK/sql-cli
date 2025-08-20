@@ -1474,21 +1474,16 @@ impl DataView {
         for row_idx in 0..row_count {
             // get_row already respects filters and limit/offset
             if let Some(row) = self.get_row(row_idx) {
-                // Find the column in the display columns
-                let display_columns = self.get_display_columns();
-                if let Some(col_pos) = display_columns.iter().position(|&idx| idx == column_index) {
-                    if let Some(value) = row.values.get(col_pos) {
-                        let str_value = value
-                            .to_string()
-                            .replace('\t', "    ")
-                            .replace('\n', " ")
-                            .replace('\r', "");
-                        values.push(str_value);
-                    } else {
-                        values.push("NULL".to_string());
-                    }
+                // column_index is the visual column index (what the user sees)
+                // row.values is already in visual column order (only display columns)
+                if let Some(value) = row.values.get(column_index) {
+                    let str_value = value
+                        .to_string()
+                        .replace('\t', "    ")
+                        .replace('\n', " ")
+                        .replace('\r', "");
+                    values.push(str_value);
                 } else {
-                    // Column not in display columns, might be hidden
                     values.push("NULL".to_string());
                 }
             }
@@ -1500,14 +1495,11 @@ impl DataView {
 
     /// Get a single cell value (respecting filters)
     pub fn get_cell_value(&self, row_index: usize, column_index: usize) -> Option<String> {
-        // get_row already respects filters
+        // get_row already respects filters and returns values in visual column order
         if let Some(row) = self.get_row(row_index) {
-            let display_columns = self.get_display_columns();
-            if let Some(col_pos) = display_columns.iter().position(|&idx| idx == column_index) {
-                row.values.get(col_pos).map(|v| v.to_string())
-            } else {
-                None
-            }
+            // column_index is the visual column index (what the user sees)
+            // row.values is already in visual column order (only display columns)
+            row.values.get(column_index).map(|v| v.to_string())
         } else {
             None
         }

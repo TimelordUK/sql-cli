@@ -103,7 +103,6 @@ enum FileType {
 
 pub struct EnhancedTuiApp {
     // State container - manages all state
-
     state_container: std::sync::Arc<AppStateContainer>,
     // Service container for dependency injection
     service_container: Option<ServiceContainer>,
@@ -601,10 +600,12 @@ impl EnhancedTuiApp {
                             self.buffer_mut()
                                 .set_status_message("Filter cleared".to_string());
                         }
-                        
+
                         // Update ViewportManager after clearing filter
                         if let Some(dataview) = self.buffer().get_dataview() {
-                            if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                            if let Some(ref mut viewport_manager) =
+                                *self.viewport_manager.borrow_mut()
+                            {
                                 viewport_manager.set_dataview(Arc::new(dataview.clone()));
                             }
                         }
@@ -5665,7 +5666,7 @@ impl EnhancedTuiApp {
             buffer.set_last_results_row(None); // Reset saved position for new results
             buffer.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
         }
-        
+
         // Reset ViewportManager if it exists
         if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
             viewport_manager.reset_crosshair();

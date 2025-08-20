@@ -185,7 +185,9 @@ impl CursorAwareParser {
             }
             CursorContext::Unknown => {
                 // Fall back to original heuristic parser
-                let query_before_cursor = &query[..cursor_pos.min(query.len())];
+                // Ensure we slice at a valid UTF-8 character boundary
+                let safe_cursor_pos = self.find_safe_boundary(query, cursor_pos.min(query.len()));
+                let query_before_cursor = &query[..safe_cursor_pos];
                 let context = self.determine_context(query_before_cursor);
                 let suggestions = self.get_suggestions_for_context(&context, &partial_word, query);
                 return ParseResult {
@@ -711,6 +713,25 @@ impl CursorAwareParser {
             // Default to string for unknown properties
             Some("string".to_string())
         }
+    }
+
+    /// Find a safe UTF-8 character boundary at or before the given position
+    fn find_safe_boundary(&self, s: &str, pos: usize) -> usize {
+        if pos >= s.len() {
+            return s.len();
+        }
+
+        // If already at a valid boundary, return it
+        if s.is_char_boundary(pos) {
+            return pos;
+        }
+
+        // Find the nearest valid character boundary before pos
+        let mut safe_pos = pos;
+        while safe_pos > 0 && !s.is_char_boundary(safe_pos) {
+            safe_pos -= 1;
+        }
+        safe_pos
     }
 
     #[cfg(test)]

@@ -902,7 +902,7 @@ impl NavigationState {
             selection_history: VecDeque::with_capacity(50), // Keep last 50 positions
         }
     }
-    
+
     /// Reset navigation state to initial values (used when executing new queries)
     pub fn reset(&mut self) {
         self.selected_row = 0;
@@ -2450,7 +2450,6 @@ impl AppStateContainer {
             cache_list: CacheListState::new(),
             column_stats: ColumnStatsState::new(),
             jump_to_row: JumpToRowState::new(),
-            navigation: RefCell::new(NavigationState::new()),
             command_history: RefCell::new(command_history),
             key_press_history: RefCell::new(KeyPressHistory::new(50)), // Keep last 50 key presses
             results: RefCell::new(ResultsState::new()),
@@ -2458,6 +2457,7 @@ impl AppStateContainer {
             chord: RefCell::new(ChordState::default()),
             undo_redo: RefCell::new(UndoRedoState::default()),
             scroll: RefCell::new(ScrollState::default()),
+            navigation: RefCell::new(NavigationState::new()),
             results_cache: ResultsCache::new(100),
             mode_stack: vec![AppMode::Command],
             debug_enabled: false,
