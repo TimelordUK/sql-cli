@@ -1392,6 +1392,7 @@ impl DataView {
                     if let Some(value) = real_values.get(col_idx) {
                         let json_value = match value {
                             DataValue::String(s) => json!(s),
+                            DataValue::InternedString(s) => json!(s.as_ref()),
                             DataValue::Integer(i) => json!(i),
                             DataValue::Float(f) => json!(f),
                             DataValue::Boolean(b) => json!(b),
