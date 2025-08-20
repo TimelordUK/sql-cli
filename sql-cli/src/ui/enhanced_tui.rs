@@ -7533,9 +7533,9 @@ impl EnhancedTuiApp {
         }
 
         // Add widths for visible data columns
-        // Use the actual widths from ViewportManager
+        // Use the actual widths from ViewportManager (already optimized)
         for &width in &column_widths_visual {
-            widths.push(Constraint::Length(width.min(50))); // Cap at 50 to prevent overly wide columns
+            widths.push(Constraint::Length(width)); // Trust the viewport manager's calculations
         }
 
         // Create the table widget

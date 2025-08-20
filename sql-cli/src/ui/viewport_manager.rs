@@ -1569,8 +1569,16 @@ impl ViewportManager {
             })
             .collect();
 
-        // For now, use default widths - we'll fix width calculation separately
-        let widths: Vec<u16> = vec![DEFAULT_COL_WIDTH; headers.len()];
+        // Get the actual calculated widths for the visible columns
+        let widths: Vec<u16> = (visual_start..visual_end)
+            .map(|idx| {
+                if idx < self.column_widths.len() {
+                    self.column_widths[idx]
+                } else {
+                    DEFAULT_COL_WIDTH
+                }
+            })
+            .collect();
 
         debug!(target: "viewport_manager",
                "get_visual_display RESULT: {} headers, {} rows",
