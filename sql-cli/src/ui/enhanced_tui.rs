@@ -5682,6 +5682,7 @@ impl EnhancedTuiApp {
         // Transaction-like block for multiple buffer resets
         {
             let buffer = self.buffer_mut();
+            buffer.set_selected_row(Some(0)); // Reset the table's selected row to 0
             buffer.set_scroll_offset((0, 0));
             buffer.set_current_column(0);
             buffer.set_last_results_row(None); // Reset saved position for new results
