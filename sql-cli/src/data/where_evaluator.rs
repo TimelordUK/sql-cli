@@ -145,8 +145,18 @@ impl<'a> WhereEvaluator<'a> {
                     (DataValue::Float(a), WhereValue::Number(b)) => compare_numbers(*a, *b, &op),
                     // String comparisons
                     (DataValue::String(a), WhereValue::String(b)) => compare_strings(a, b, &op),
+                    (DataValue::InternedString(a), WhereValue::String(b)) => {
+                        compare_strings(a, b, &op)
+                    }
                     // String to number coercion
                     (DataValue::String(a), WhereValue::Number(b)) => {
+                        if let Ok(a_num) = a.parse::<f64>() {
+                            compare_numbers(a_num, *b, &op)
+                        } else {
+                            false
+                        }
+                    }
+                    (DataValue::InternedString(a), WhereValue::Number(b)) => {
                         if let Ok(a_num) = a.parse::<f64>() {
                             compare_numbers(a_num, *b, &op)
                         } else {
@@ -245,6 +255,18 @@ impl<'a> WhereEvaluator<'a> {
 
                 Ok(regex.is_match(&s))
             }
+            Some(DataValue::InternedString(s)) => {
+                // Convert SQL LIKE pattern to regex
+                let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
+
+                // Use case-insensitive matching
+                let regex = regex::RegexBuilder::new(&format!("^{}$", regex_pattern))
+                    .case_insensitive(true)
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
+
+                Ok(regex.is_match(&s))
+            }
             _ => Ok(false),
         }
     }
@@ -260,6 +282,7 @@ impl<'a> WhereEvaluator<'a> {
         Ok(match cell_value {
             None | Some(DataValue::Null) => true,
             Some(DataValue::String(s)) => s.is_empty(),
+            Some(DataValue::InternedString(s)) => s.is_empty(),
             _ => false,
         })
     }
@@ -280,6 +303,19 @@ impl<'a> WhereEvaluator<'a> {
                     (s.to_lowercase(), pattern.to_lowercase())
                 } else {
                     (s, pattern.to_string())
+                };
+
+                Ok(match method {
+                    StringMethod::Contains => s.contains(&pattern),
+                    StringMethod::StartsWith => s.starts_with(&pattern),
+                    StringMethod::EndsWith => s.ends_with(&pattern),
+                })
+            }
+            Some(DataValue::InternedString(s)) => {
+                let (s, pattern) = if ignore_case {
+                    (s.to_lowercase(), pattern.to_lowercase())
+                } else {
+                    (s.as_ref().clone(), pattern.to_string())
                 };
 
                 Ok(match method {
@@ -311,6 +347,14 @@ impl<'a> WhereEvaluator<'a> {
                 };
                 Ok(compare_strings(&converted, value, op))
             }
+            Some(DataValue::InternedString(s)) => {
+                let converted = if to_lower {
+                    s.to_lowercase()
+                } else {
+                    s.to_uppercase()
+                };
+                Ok(compare_strings(&converted, value, op))
+            }
             _ => Ok(false),
         }
     }
@@ -329,6 +373,10 @@ impl<'a> WhereEvaluator<'a> {
                 let len = s.len() as i64;
                 Ok(compare_numbers(len as f64, length as f64, op))
             }
+            Some(DataValue::InternedString(s)) => {
+                let len = s.len() as i64;
+                Ok(compare_numbers(len as f64, length as f64, op))
+            }
             _ => Ok(false),
         }
     }
@@ -343,6 +391,7 @@ impl<'a> WhereEvaluator<'a> {
             (DataValue::Integer(a), WhereValue::Number(b)) => compare_numbers(*a as f64, *b, op),
             (DataValue::Float(a), WhereValue::Number(b)) => compare_numbers(*a, *b, op),
             (DataValue::String(a), WhereValue::String(b)) => compare_strings(a, b, op),
+            (DataValue::InternedString(a), WhereValue::String(b)) => compare_strings(a, b, op),
             _ => false,
         }
     }
@@ -350,6 +399,7 @@ impl<'a> WhereEvaluator<'a> {
     fn compare_ignore_case(&self, data_val: &DataValue, where_val: &WhereValue) -> bool {
         match (data_val, where_val) {
             (DataValue::String(a), WhereValue::String(b)) => a.eq_ignore_ascii_case(b),
+            (DataValue::InternedString(a), WhereValue::String(b)) => a.eq_ignore_ascii_case(b),
             _ => self.compare_value(data_val, where_val, &ComparisonOp::Equal),
         }
     }

@@ -177,6 +177,9 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         let value = self.table.get_value(row_index, col_index);
                         let length_value = match value {
                             Some(DataValue::String(s)) => Some(DataValue::Integer(s.len() as i64)),
+                            Some(DataValue::InternedString(s)) => {
+                                Some(DataValue::Integer(s.len() as i64))
+                            }
                             Some(DataValue::Integer(n)) => {
                                 Some(DataValue::Integer(n.to_string().len() as i64))
                             }
@@ -240,6 +243,19 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     Ok(a == b)
                 }
             }
+            (Some(DataValue::InternedString(ref a)), "=", ExprValue::String(b)) => {
+                if row_index < 3 {
+                    debug!(
+                        "RecursiveWhereEvaluator: InternedString comparison '{}' = '{}' (case_insensitive={})",
+                        a, b, self.case_insensitive
+                    );
+                }
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() == b.to_lowercase())
+                } else {
+                    Ok(a.as_ref() == b)
+                }
+            }
             (Some(DataValue::String(ref a)), "!=", ExprValue::String(b))
             | (Some(DataValue::String(ref a)), "<>", ExprValue::String(b)) => {
                 if row_index < 3 {
@@ -254,11 +270,32 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     Ok(a != b)
                 }
             }
+            (Some(DataValue::InternedString(ref a)), "!=", ExprValue::String(b))
+            | (Some(DataValue::InternedString(ref a)), "<>", ExprValue::String(b)) => {
+                if row_index < 3 {
+                    debug!(
+                        "RecursiveWhereEvaluator: InternedString comparison '{}' != '{}' (case_insensitive={})",
+                        a, b, self.case_insensitive
+                    );
+                }
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() != b.to_lowercase())
+                } else {
+                    Ok(a.as_ref() != b)
+                }
+            }
             (Some(DataValue::String(ref a)), ">", ExprValue::String(b)) => {
                 if self.case_insensitive {
                     Ok(a.to_lowercase() > b.to_lowercase())
                 } else {
                     Ok(a > b)
+                }
+            }
+            (Some(DataValue::InternedString(ref a)), ">", ExprValue::String(b)) => {
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() > b.to_lowercase())
+                } else {
+                    Ok(a.as_ref() > b)
                 }
             }
             (Some(DataValue::String(ref a)), ">=", ExprValue::String(b)) => {
@@ -268,6 +305,13 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     Ok(a >= b)
                 }
             }
+            (Some(DataValue::InternedString(ref a)), ">=", ExprValue::String(b)) => {
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() >= b.to_lowercase())
+                } else {
+                    Ok(a.as_ref() >= b)
+                }
+            }
             (Some(DataValue::String(ref a)), "<", ExprValue::String(b)) => {
                 if self.case_insensitive {
                     Ok(a.to_lowercase() < b.to_lowercase())
@@ -275,11 +319,25 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     Ok(a < b)
                 }
             }
+            (Some(DataValue::InternedString(ref a)), "<", ExprValue::String(b)) => {
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() < b.to_lowercase())
+                } else {
+                    Ok(a.as_ref() < b)
+                }
+            }
             (Some(DataValue::String(ref a)), "<=", ExprValue::String(b)) => {
                 if self.case_insensitive {
                     Ok(a.to_lowercase() <= b.to_lowercase())
                 } else {
                     Ok(a <= b)
+                }
+            }
+            (Some(DataValue::InternedString(ref a)), "<=", ExprValue::String(b)) => {
+                if self.case_insensitive {
+                    Ok(a.to_lowercase() <= b.to_lowercase())
+                } else {
+                    Ok(a.as_ref() <= b)
                 }
             }
 
@@ -311,6 +369,14 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     .build()
                     .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
                 Ok(regex.is_match(text))
+            }
+            (Some(DataValue::InternedString(ref text)), "LIKE", ExprValue::String(pattern)) => {
+                let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
+                let regex = regex::RegexBuilder::new(&format!("^{}$", regex_pattern))
+                    .case_insensitive(true)
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
+                Ok(regex.is_match(text.as_ref()))
             }
 
             // IS NULL / IS NOT NULL
@@ -404,6 +470,121 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
                 // Try date-only format
                 else if let Ok(parsed_date) = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
+                    let parsed_dt =
+                        NaiveDateTime::new(parsed_date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
+                    let result = match op_str {
+                        "=" => parsed_utc == *dt,
+                        "!=" | "<>" => parsed_utc != *dt,
+                        ">" => parsed_utc > *dt,
+                        ">=" => parsed_utc >= *dt,
+                        "<" => parsed_utc < *dt,
+                        "<=" => parsed_utc <= *dt,
+                        _ => false,
+                    };
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parsed as date-only: '{}' {} '{}' = {}",
+                            parsed_utc.format("%Y-%m-%d %H:%M:%S"),
+                            op_str,
+                            dt.format("%Y-%m-%d %H:%M:%S"),
+                            result
+                        );
+                    }
+                    Ok(result)
+                } else {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
+                            date_str
+                        );
+                    }
+                    Ok(false)
+                }
+            }
+            (Some(DataValue::InternedString(ref date_str)), op_str, ExprValue::DateTime(dt)) => {
+                if row_index < 3 {
+                    debug!(
+                        "RecursiveWhereEvaluator: DateTime comparison (interned) '{}' {} '{}' - attempting parse",
+                        date_str,
+                        op_str,
+                        dt.format("%Y-%m-%d %H:%M:%S")
+                    );
+                }
+
+                // Try to parse the string as a datetime - first try ISO 8601 with UTC
+                if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
+                    let result = match op_str {
+                        "=" => parsed_dt == *dt,
+                        "!=" | "<>" => parsed_dt != *dt,
+                        ">" => parsed_dt > *dt,
+                        ">=" => parsed_dt >= *dt,
+                        "<" => parsed_dt < *dt,
+                        "<=" => parsed_dt <= *dt,
+                        _ => false,
+                    };
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parsed as UTC: '{}' {} '{}' = {}",
+                            parsed_dt.format("%Y-%m-%d %H:%M:%S"),
+                            op_str,
+                            dt.format("%Y-%m-%d %H:%M:%S"),
+                            result
+                        );
+                    }
+                    Ok(result)
+                }
+                // Try ISO 8601 format without timezone (assume UTC)
+                else if let Ok(parsed_dt) =
+                    NaiveDateTime::parse_from_str(date_str.as_ref(), "%Y-%m-%dT%H:%M:%S")
+                {
+                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
+                    let result = match op_str {
+                        "=" => parsed_utc == *dt,
+                        "!=" | "<>" => parsed_utc != *dt,
+                        ">" => parsed_utc > *dt,
+                        ">=" => parsed_utc >= *dt,
+                        "<" => parsed_utc < *dt,
+                        "<=" => parsed_utc <= *dt,
+                        _ => false,
+                    };
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parsed as ISO 8601: '{}' {} '{}' = {}",
+                            parsed_utc.format("%Y-%m-%d %H:%M:%S"),
+                            op_str,
+                            dt.format("%Y-%m-%d %H:%M:%S"),
+                            result
+                        );
+                    }
+                    Ok(result)
+                }
+                // Try standard datetime format
+                else if let Ok(parsed_dt) =
+                    NaiveDateTime::parse_from_str(date_str.as_ref(), "%Y-%m-%d %H:%M:%S")
+                {
+                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
+                    let result = match op_str {
+                        "=" => parsed_utc == *dt,
+                        "!=" | "<>" => parsed_utc != *dt,
+                        ">" => parsed_utc > *dt,
+                        ">=" => parsed_utc >= *dt,
+                        "<" => parsed_utc < *dt,
+                        "<=" => parsed_utc <= *dt,
+                        _ => false,
+                    };
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parsed as standard format: '{}' {} '{}' = {}",
+                            parsed_utc.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
+                        );
+                    }
+                    Ok(result)
+                }
+                // Try date-only format
+                else if let Ok(parsed_date) =
+                    NaiveDate::parse_from_str(date_str.as_ref(), "%Y-%m-%d")
+                {
                     let parsed_dt =
                         NaiveDateTime::new(parsed_date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
@@ -532,6 +713,16 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         a == b
                     }
                 }
+                (Some(DataValue::InternedString(a)), ExprValue::String(b)) => {
+                    if self.case_insensitive {
+                        if row_index < 3 {
+                            debug!("RecursiveWhereEvaluator: IN list interned string comparison '{}' in '{}' (case_insensitive={})", a, b, self.case_insensitive);
+                        }
+                        a.to_lowercase() == b.to_lowercase()
+                    } else {
+                        a.as_ref() == b
+                    }
+                }
                 (Some(DataValue::Integer(a)), ExprValue::Number(b)) => *a as f64 == *b,
                 (Some(DataValue::Float(a)), ExprValue::Number(b)) => (*a - b).abs() < f64::EPSILON,
                 _ => false,
@@ -572,6 +763,11 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             (Some(DataValue::String(ref s)), ExprValue::String(l), ExprValue::String(u)) => {
                 Ok(s >= l && s <= u)
             }
+            (
+                Some(DataValue::InternedString(ref s)),
+                ExprValue::String(l),
+                ExprValue::String(u),
+            ) => Ok(s.as_ref() >= l && s.as_ref() <= u),
             _ => Ok(false),
         }
     }
@@ -620,6 +816,14 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         // Only log first few rows to avoid performance impact
                         if row_index < 3 {
                             debug!("RecursiveWhereEvaluator: Row {} contains('{}') on '{}' = {} (case-insensitive)", row_index, search_str, s, result);
+                        }
+                        Ok(result)
+                    }
+                    Some(DataValue::InternedString(ref s)) => {
+                        let result = s.to_lowercase().contains(&search_lower);
+                        // Only log first few rows to avoid performance impact
+                        if row_index < 3 {
+                            debug!("RecursiveWhereEvaluator: Row {} contains('{}') on interned '{}' = {} (case-insensitive)", row_index, search_str, s, result);
                         }
                         Ok(result)
                     }
@@ -677,6 +881,9 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     Some(DataValue::String(ref s)) => {
                         Ok(s.to_lowercase().starts_with(&prefix.to_lowercase()))
                     }
+                    Some(DataValue::InternedString(ref s)) => {
+                        Ok(s.to_lowercase().starts_with(&prefix.to_lowercase()))
+                    }
                     Some(DataValue::Integer(n)) => Ok(n.to_string().starts_with(&prefix)),
                     Some(DataValue::Float(f)) => Ok(f.to_string().starts_with(&prefix)),
                     Some(DataValue::Boolean(b)) => Ok(b.to_string().starts_with(&prefix)),
@@ -693,6 +900,9 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 // Type coercion: convert numeric values to strings for string methods
                 match cell_value {
                     Some(DataValue::String(ref s)) => {
+                        Ok(s.to_lowercase().ends_with(&suffix.to_lowercase()))
+                    }
+                    Some(DataValue::InternedString(ref s)) => {
                         Ok(s.to_lowercase().ends_with(&suffix.to_lowercase()))
                     }
                     Some(DataValue::Integer(n)) => Ok(n.to_string().ends_with(&suffix)),
