@@ -447,6 +447,14 @@ impl ViewportManager {
         self.dataview = dataview;
         self.invalidate_cache();
     }
+    
+    /// Reset crosshair position to origin (0, 0)
+    pub fn reset_crosshair(&mut self) {
+        self.crosshair_row = 0;
+        self.crosshair_col = 0;
+        self.cursor_lock = false;
+        self.cursor_lock_position = None;
+    }
 
     /// Get the current column packing mode
     pub fn get_packing_mode(&self) -> ColumnPackingMode {

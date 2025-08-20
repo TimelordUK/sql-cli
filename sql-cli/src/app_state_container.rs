@@ -902,6 +902,23 @@ impl NavigationState {
             selection_history: VecDeque::with_capacity(50), // Keep last 50 positions
         }
     }
+    
+    /// Reset navigation state to initial values (used when executing new queries)
+    pub fn reset(&mut self) {
+        self.selected_row = 0;
+        self.selected_column = 0;
+        self.scroll_offset = (0, 0);
+        // Keep viewport dimensions as they are (terminal size dependent)
+        // Reset totals will be updated when new data arrives
+        self.total_rows = 0;
+        self.total_columns = 0;
+        self.last_visible_rows = 0;
+        self.viewport_lock = false;
+        self.viewport_lock_row = None;
+        self.cursor_lock = false;
+        self.cursor_lock_position = None;
+        self.selection_history.clear();
+    }
 
     pub fn update_totals(&mut self, rows: usize, columns: usize) {
         info!(target: "navigation", "NavigationState::update_totals - rows: {} -> {}, columns: {} -> {}", 

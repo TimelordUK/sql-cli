@@ -103,6 +103,7 @@ enum FileType {
 
 pub struct EnhancedTuiApp {
     // State container - manages all state
+
     state_container: std::sync::Arc<AppStateContainer>,
     // Service container for dependency injection
     service_container: Option<ServiceContainer>,
@@ -3877,11 +3878,9 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_filter_active(false);
                 self.buffer_mut().set_fuzzy_filter_active(false);
 
-                // 7. Switch to results mode and reset navigation
+                // 7. Switch to results mode and reset navigation using centralized reset
                 self.buffer_mut().set_mode(AppMode::Results);
-                self.buffer_mut().set_selected_row(Some(0));
-                self.buffer_mut().set_current_column(0);
-                self.buffer_mut().set_scroll_offset((0, 0));
+                self.reset_table_state();
 
                 Ok(())
             }
@@ -5654,6 +5653,8 @@ impl EnhancedTuiApp {
     }
 
     fn reset_table_state(&mut self) {
+        // Reset state container navigation state using the new reset method
+        self.state_container.navigation_mut().reset();
         self.state_container.set_table_selected_row(Some(0));
 
         // Transaction-like block for multiple buffer resets
@@ -5663,6 +5664,12 @@ impl EnhancedTuiApp {
             buffer.set_current_column(0);
             buffer.set_last_results_row(None); // Reset saved position for new results
             buffer.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
+        }
+        
+        // Reset ViewportManager if it exists
+        if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+            viewport_manager.reset_crosshair();
+            debug!("Reset ViewportManager crosshair position");
         }
 
         // Clear filter state to prevent old filtered data from persisting
