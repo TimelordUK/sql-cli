@@ -451,8 +451,11 @@ impl BufferAPI for Buffer {
                     }
                 }
             }
-            // DataView now handles column visibility directly
 
+            // Optimize memory after setting up the view
+            view.shrink_to_fit();
+
+            // DataView now handles column visibility directly
             self.dataview = Some(view);
         } else {
             self.dataview = None;

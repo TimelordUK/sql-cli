@@ -1222,6 +1222,17 @@ impl DataView {
         &self.visible_rows
     }
 
+    /// Optimize memory usage by shrinking vectors to fit
+    pub fn shrink_to_fit(&mut self) {
+        self.visible_rows.shrink_to_fit();
+        self.visible_columns.shrink_to_fit();
+        self.pinned_columns.shrink_to_fit();
+        self.base_rows.shrink_to_fit();
+        self.base_columns.shrink_to_fit();
+        self.matching_columns.shrink_to_fit();
+        self.virtual_columns.shrink_to_fit();
+    }
+
     // ========== Column Search Methods ==========
 
     /// Start or update column search with a pattern

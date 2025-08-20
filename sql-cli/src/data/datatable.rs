@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 use tracing::debug;
 
 /// Represents the data type of a column
@@ -95,9 +96,10 @@ impl DataColumn {
 }
 
 /// A single cell value in the table
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DataValue {
     String(String),
+    InternedString(Arc<String>), // For repeated strings (e.g., status, trader names)
     Integer(i64),
     Float(f64),
     Boolean(bool),
@@ -141,7 +143,7 @@ impl DataValue {
 
     pub fn data_type(&self) -> DataType {
         match self {
-            DataValue::String(_) => DataType::String,
+            DataValue::String(_) | DataValue::InternedString(_) => DataType::String,
             DataValue::Integer(_) => DataType::Integer,
             DataValue::Float(_) => DataType::Float,
             DataValue::Boolean(_) => DataType::Boolean,
@@ -154,7 +156,8 @@ impl DataValue {
     /// Returns owned String for compatibility but tries to reuse existing strings
     pub fn to_string_optimized(&self) -> String {
         match self {
-            DataValue::String(s) => s.clone(),   // Clone existing string
+            DataValue::String(s) => s.clone(), // Clone existing string
+            DataValue::InternedString(s) => s.as_ref().clone(), // Clone from Rc
             DataValue::DateTime(s) => s.clone(), // Clone existing string
             DataValue::Integer(i) => i.to_string(),
             DataValue::Float(f) => f.to_string(),
@@ -174,6 +177,7 @@ impl fmt::Display for DataValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DataValue::String(s) => write!(f, "{}", s),
+            DataValue::InternedString(s) => write!(f, "{}", s),
             DataValue::Integer(i) => write!(f, "{}", i),
             DataValue::Float(fl) => write!(f, "{}", fl),
             DataValue::Boolean(b) => write!(f, "{}", b),
@@ -184,7 +188,7 @@ impl fmt::Display for DataValue {
 }
 
 /// A row of data in the table
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct DataRow {
     pub values: Vec<DataValue>,
 }
@@ -212,7 +216,7 @@ impl DataRow {
 }
 
 /// The main DataTable structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct DataTable {
     pub name: String,
     pub columns: Vec<DataColumn>,
@@ -673,6 +677,57 @@ impl DataTable {
                 (col.name.clone(), type_name, col.nullable, col.null_count)
             })
             .collect()
+    }
+
+    /// Reserve capacity for rows to avoid reallocations
+    pub fn reserve_rows(&mut self, additional: usize) {
+        self.rows.reserve(additional);
+    }
+
+    /// Shrink vectors to fit actual data (removes excess capacity)
+    pub fn shrink_to_fit(&mut self) {
+        self.rows.shrink_to_fit();
+        for column in &mut self.columns {
+            // Shrink any column-specific data if needed
+        }
+    }
+
+    /// Get actual memory usage estimate (more accurate than estimate_memory_size)
+    pub fn get_memory_usage(&self) -> usize {
+        let mut size = std::mem::size_of::<Self>();
+
+        // Account for string allocations
+        size += self.name.capacity();
+
+        // Account for columns
+        size += self.columns.capacity() * std::mem::size_of::<DataColumn>();
+        for col in &self.columns {
+            size += col.name.capacity();
+        }
+
+        // Account for rows and their capacity
+        size += self.rows.capacity() * std::mem::size_of::<DataRow>();
+
+        // Account for actual data values
+        for row in &self.rows {
+            size += row.values.capacity() * std::mem::size_of::<DataValue>();
+            for value in &row.values {
+                match value {
+                    DataValue::String(s) => size += s.capacity(),
+                    DataValue::InternedString(_) => size += std::mem::size_of::<Arc<String>>(),
+                    DataValue::DateTime(s) => size += s.capacity(),
+                    _ => {} // Other types are inline
+                }
+            }
+        }
+
+        // Account for metadata
+        size += self.metadata.capacity() * std::mem::size_of::<(String, String)>();
+        for (k, v) in &self.metadata {
+            size += k.capacity() + v.capacity();
+        }
+
+        size
     }
 }
 

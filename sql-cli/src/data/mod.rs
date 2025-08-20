@@ -18,6 +18,7 @@ pub mod datatable_loaders;
 pub mod datatable_view;
 
 // Data source modules
+pub mod advanced_csv_loader;
 pub mod csv_datasource;
 pub mod csv_fixes;
 pub mod data_analyzer;

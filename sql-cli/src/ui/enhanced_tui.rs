@@ -1510,14 +1510,35 @@ impl EnhancedTuiApp {
         crate::utils::memory_tracker::track_memory(memory_before);
 
         // Load file directly to DataTable
-        let datatable = match file_type {
+        let mut datatable = match file_type {
             FileType::Csv => {
-                crate::data::datatable_loaders::load_csv_to_datatable(file_path, &table_name)?
+                // Try advanced loader first for CSV (with string interning)
+                match crate::data::advanced_csv_loader::AdvancedCsvLoader::new()
+                    .load_csv_optimized(file_path, &table_name)
+                {
+                    Ok(dt) => {
+                        info!("Successfully loaded CSV with advanced optimizations");
+                        dt
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Advanced CSV loader failed: {}, falling back to standard loader",
+                            e
+                        );
+                        crate::data::datatable_loaders::load_csv_to_datatable(
+                            file_path,
+                            &table_name,
+                        )?
+                    }
+                }
             }
             FileType::Json => {
                 crate::data::datatable_loaders::load_json_to_datatable(file_path, &table_name)?
             }
         };
+
+        // Optimize memory after loading
+        datatable.shrink_to_fit();
 
         crate::utils::memory_tracker::track_memory(memory_after);
         info!(
