@@ -600,6 +600,13 @@ impl EnhancedTuiApp {
                             self.buffer_mut()
                                 .set_status_message("Filter cleared".to_string());
                         }
+                        
+                        // Update ViewportManager after clearing filter
+                        if let Some(dataview) = self.buffer().get_dataview() {
+                            if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                                viewport_manager.set_dataview(Arc::new(dataview.clone()));
+                            }
+                        }
                     } else {
                         self.buffer_mut()
                             .set_status_message("No active filter to clear".to_string());
@@ -5107,6 +5114,16 @@ impl EnhancedTuiApp {
             warn!("No DataView available for filtering");
         }
 
+        // Update ViewportManager with the filtered DataView
+        if let Some(dataview) = self.buffer().get_dataview() {
+            if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                viewport_manager.set_dataview(Arc::new(dataview.clone()));
+                debug!(target: "filter", 
+                       "Updated ViewportManager with filtered DataView (row_count={})", 
+                       dataview.row_count());
+            }
+        }
+
         // Decrement re-entrancy counter
         FILTER_DEPTH.fetch_sub(1, Ordering::SeqCst);
     }
@@ -5402,6 +5419,16 @@ impl EnhancedTuiApp {
 
         // Update fuzzy filter indices for compatibility
         self.buffer_mut().set_fuzzy_filter_indices(indices);
+
+        // Update ViewportManager with the filtered DataView
+        if let Some(dataview) = self.buffer().get_dataview() {
+            if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                viewport_manager.set_dataview(Arc::new(dataview.clone()));
+                debug!(target: "fuzzy_filter", 
+                       "Updated ViewportManager with filtered DataView (row_count={})", 
+                       dataview.row_count());
+            }
+        }
     }
 
     fn update_column_search(&mut self) {
