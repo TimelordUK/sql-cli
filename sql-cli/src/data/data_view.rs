@@ -920,6 +920,16 @@ impl DataView {
                     a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
                 }
                 (Some(DataValue::String(a)), Some(DataValue::String(b))) => a.cmp(&b),
+                (Some(DataValue::InternedString(a)), Some(DataValue::InternedString(b))) => {
+                    a.as_ref().cmp(b.as_ref())
+                }
+                // Handle mixed String and InternedString comparisons
+                (Some(DataValue::String(a)), Some(DataValue::InternedString(b))) => {
+                    a.cmp(b.as_ref())
+                }
+                (Some(DataValue::InternedString(a)), Some(DataValue::String(b))) => {
+                    a.as_ref().cmp(b)
+                }
                 (Some(DataValue::Boolean(a)), Some(DataValue::Boolean(b))) => a.cmp(&b),
                 (Some(DataValue::DateTime(a)), Some(DataValue::DateTime(b))) => a.cmp(&b),
                 (Some(DataValue::Null), Some(DataValue::Null)) => std::cmp::Ordering::Equal,
