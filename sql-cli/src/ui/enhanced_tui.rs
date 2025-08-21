@@ -12,6 +12,7 @@ use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_exporter::DataExporter;
 use crate::data::data_provider::DataProvider;
 use crate::data::data_view::DataView;
+use crate::debug::{DebugRegistry, MemoryTracker};
 use crate::help_text::HelpText;
 use crate::service_container::ServiceContainer;
 use crate::sql::cache::QueryCache;
@@ -118,7 +119,7 @@ pub struct EnhancedTuiApp {
 
     // command_history: CommandHistory, // MIGRATED to AppStateContainer
     sql_highlighter: SqlHighlighter,
-    debug_widget: DebugWidget,
+    pub(crate) debug_widget: DebugWidget,
     editor_widget: EditorWidget,
     stats_widget: StatsWidget,
     help_widget: HelpWidget,
@@ -131,12 +132,12 @@ pub struct EnhancedTuiApp {
     last_yanked: Option<(String, String)>, // (description, value) of last yanked item
 
     // Buffer management (new - for supporting multiple files)
-    buffer_manager: BufferManager,
+    pub(crate) buffer_manager: BufferManager,
     buffer_handler: BufferHandler, // Handles buffer operations like switching
 
     // Performance tracking
-    navigation_timings: Vec<String>, // Track last N navigation timings for debugging
-    render_timings: Vec<String>,     // Track last N render timings for debugging
+    pub(crate) navigation_timings: Vec<String>, // Track last N navigation timings for debugging
+    pub(crate) render_timings: Vec<String>,     // Track last N render timings for debugging
     // Cache
     query_cache: Option<QueryCache>,
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
@@ -150,8 +151,12 @@ pub struct EnhancedTuiApp {
     key_sequence_renderer: KeySequenceRenderer,
 
     // Viewport management (RefCell for interior mutability during render)
-    viewport_manager: RefCell<Option<ViewportManager>>,
+    pub(crate) viewport_manager: RefCell<Option<ViewportManager>>,
     viewport_efficiency: RefCell<Option<ViewportEfficiency>>,
+
+    // Debug system
+    pub(crate) debug_registry: DebugRegistry,
+    pub(crate) memory_tracker: MemoryTracker,
 }
 
 impl EnhancedTuiApp {
@@ -1125,6 +1130,31 @@ impl EnhancedTuiApp {
                 }
             }
 
+            NextSearchMatch => {
+                self.next_search_match();
+                Ok(ActionResult::Handled)
+            }
+            PreviousSearchMatch => {
+                self.previous_search_match();
+                Ok(ActionResult::Handled)
+            }
+            ShowColumnStatistics => {
+                self.calculate_column_statistics();
+                Ok(ActionResult::Handled)
+            }
+            CycleColumnPacking => {
+                let message = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        let new_mode = viewport_manager.cycle_packing_mode();
+                        format!("Column packing: {}", new_mode.display_name())
+                    } else {
+                        "ViewportManager not available".to_string()
+                    }
+                };
+                self.buffer_mut().set_status_message(message);
+                Ok(ActionResult::Handled)
+            }
             _ => {
                 // Action not yet implemented in new system
                 Ok(ActionResult::NotHandled)
@@ -1469,6 +1499,8 @@ impl EnhancedTuiApp {
             },
             viewport_manager: RefCell::new(None), // Will be initialized when DataView is set
             viewport_efficiency: RefCell::new(None),
+            debug_registry: DebugRegistry::new(),
+            memory_tracker: MemoryTracker::new(100),
         }
     }
 
@@ -2571,17 +2603,7 @@ impl EnhancedTuiApp {
 
         // F6 is now available for future use
 
-        // Handle F12 for key indicator toggle
-        if matches!(key.code, KeyCode::F(12)) {
-            let enabled = !self.key_indicator.enabled;
-            self.key_indicator.set_enabled(enabled);
-            self.key_sequence_renderer.set_enabled(enabled);
-            self.buffer_mut().set_status_message(format!(
-                "Key press indicator {}",
-                if enabled { "enabled" } else { "disabled" }
-            ));
-            return Ok(false);
-        }
+        // F12 is now handled by the action system
 
         // NOTE: Chord handling has been moved to handle_input level
         // This ensures chords work correctly before any other key processing
@@ -2766,107 +2788,7 @@ impl EnhancedTuiApp {
 
         // Fall back to direct key handling for special cases not in dispatcher
         match normalized_key.code {
-            KeyCode::Char(' ') if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Toggle viewport lock using ViewportManager
-                let (is_locked, description) = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        viewport_manager.toggle_viewport_lock()
-                    } else {
-                        // Fallback to old behavior if no ViewportManager
-                        self.state_container.toggle_viewport_lock();
-                        let navigation = self.state_container.navigation();
-                        let is_locked = navigation.viewport_lock;
-                        let description = if is_locked {
-                            format!(
-                                "Viewport lock: ON (locked at row {})",
-                                navigation.viewport_lock_row.map_or(0, |r| r + 1)
-                            )
-                        } else {
-                            "Viewport lock: OFF (normal scrolling)".to_string()
-                        };
-                        (is_locked, description)
-                    }
-                };
-
-                // Update AppStateContainer to keep it in sync (for status display)
-                {
-                    let mut navigation = self.state_container.navigation_mut();
-                    navigation.viewport_lock = is_locked;
-                    // Note: viewport_lock_row is managed by ViewportManager now
-                    if !is_locked {
-                        navigation.viewport_lock_row = None;
-                    }
-                }
-
-                // Update buffer state
-                self.buffer_mut().set_viewport_lock(is_locked);
-                self.buffer_mut().set_status_message(description);
-            }
-            // 'x' toggles cursor lock (cursor stays at same viewport position while scrolling)
-            KeyCode::Char('x') | KeyCode::Char('X') => {
-                // Toggle cursor lock using ViewportManager
-                let (is_locked, description) = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        viewport_manager.toggle_cursor_lock()
-                    } else {
-                        // Fallback to old behavior if no ViewportManager
-                        self.state_container.toggle_viewport_lock();
-                        let navigation = self.state_container.navigation();
-                        let is_locked = navigation.viewport_lock;
-                        let description = if is_locked {
-                            format!(
-                                "Viewport lock: ON (locked at row {})",
-                                navigation.viewport_lock_row.map_or(0, |r| r + 1)
-                            )
-                        } else {
-                            "Viewport lock: OFF (normal scrolling)".to_string()
-                        };
-                        (is_locked, description)
-                    }
-                };
-
-                // Update AppStateContainer to keep it in sync
-                {
-                    let mut navigation = self.state_container.navigation_mut();
-                    navigation.viewport_lock = is_locked;
-                    if !is_locked {
-                        navigation.viewport_lock_row = None;
-                    }
-                }
-
-                // Update buffer state
-                self.buffer_mut().set_viewport_lock(is_locked);
-                self.buffer_mut().set_status_message(description);
-            }
-            KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Ctrl+Space toggles viewport lock (prevents scrolling, cursor moves within viewport only)
-                let (is_locked, description) = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        viewport_manager.toggle_viewport_lock()
-                    } else {
-                        // Fallback to NavigationState if ViewportManager not available
-                        self.state_container.toggle_viewport_lock();
-                        let navigation = self.state_container.navigation();
-                        let is_locked = navigation.viewport_lock;
-                        let desc = if is_locked {
-                            format!(
-                                "Viewport lock: ON (no scrolling, cursor constrained to {} visible rows)",
-                                navigation.viewport_rows
-                            )
-                        } else {
-                            "Viewport lock: OFF (normal scrolling enabled)".to_string()
-                        };
-                        (is_locked, desc)
-                    }
-                };
-
-                // Update buffer state and show message
-                self.buffer_mut().set_viewport_lock(is_locked);
-                self.buffer_mut().set_status_message(description);
-            }
+            // Space, 'x', and Ctrl+Space are now handled by the action system
             // Column operations are now handled by the action system
             // - 'H' to hide column
             // - Ctrl+Shift+H to unhide all columns
@@ -2881,61 +2803,13 @@ impl EnhancedTuiApp {
             {
                 self.page_up();
             }
-            // Search functionality is handled by dispatcher above
-            // Removed duplicate handlers for search keys (/, \)
-            KeyCode::Char('n') => {
-                self.next_search_match();
-            }
-            KeyCode::Char('N') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                // Only for search navigation when Shift is held
-                if !self.buffer().get_search_pattern().is_empty() {
-                    self.previous_search_match();
-                } else {
-                    // Toggle row numbers display
-                    let current = self.buffer().is_show_row_numbers();
-                    self.buffer_mut().set_show_row_numbers(!current);
-                    let message = if !current {
-                        "Row numbers: ON (showing line numbers)".to_string()
-                    } else {
-                        "Row numbers: OFF".to_string()
-                    };
-                    self.buffer_mut().set_status_message(message);
-                    // Recalculate column widths with new mode
-                    self.calculate_optimal_column_widths();
-                }
-            }
+            // 'n' and 'N' search navigation are now handled by the action system
             // Filter functionality is handled by dispatcher above
             // Removed duplicate handlers for filter keys (F, f)
             // Sort functionality (lowercase s) - handled by dispatcher above
             // Removed to prevent double handling
-            // Column statistics (uppercase S only)
-            KeyCode::Char('S') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.calculate_column_statistics();
-            }
-            // Cycle column packing mode with Alt-S
-            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::ALT) => {
-                let message = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        let new_mode = viewport_manager.cycle_packing_mode();
-                        format!("Column packing: {}", new_mode.display_name())
-                    } else {
-                        "ViewportManager not available".to_string()
-                    }
-                };
-                self.buffer_mut().set_status_message(message);
-            }
-            // Toggle selection mode with 'v' (vim-like visual mode)
-            KeyCode::Char('v') => {
-                self.state_container.toggle_selection_mode();
-                let new_mode = self.state_container.get_selection_mode();
-                let msg = match new_mode {
-                    SelectionMode::Cell => "Cell mode - Navigate to select individual cells",
-                    SelectionMode::Row => "Row mode - Navigate to select rows",
-                    SelectionMode::Column => "Column mode - Navigate to select columns",
-                };
-                self.buffer_mut().set_status_message(msg.to_string());
-            }
+            // 'S' and Alt-S are now handled by the action system
+            // 'v' key is now handled by the action system
             // Clipboard operations (vim-like yank)
             KeyCode::Char('y') => {
                 let selection_mode = self.get_selection_mode();
@@ -8208,7 +8082,7 @@ impl EnhancedTuiApp {
             })
     }
 
-    fn toggle_debug_mode(&mut self) {
+    pub(crate) fn toggle_debug_mode(&mut self) {
         // First, collect all the data we need without any mutable borrows
         let (
             should_exit_debug,
@@ -8924,7 +8798,7 @@ impl EnhancedTuiApp {
     // These are kept in the TUI to avoid regressions from moving data access
 
     /// Generate the parser debug section
-    fn debug_generate_parser_info(&self, query: &str) -> String {
+    pub(crate) fn debug_generate_parser_info(&self, query: &str) -> String {
         self.hybrid_parser
             .get_detailed_debug_info(query, query.len())
     }
@@ -8982,7 +8856,7 @@ impl EnhancedTuiApp {
     }
 
     /// Generate the trace logs debug section
-    fn debug_generate_trace_logs(&self) -> String {
+    pub(crate) fn debug_generate_trace_logs(&self) -> String {
         let mut debug_info = String::from("\n========== TRACE LOGS ==========\n");
         debug_info.push_str("(Most recent at bottom, last 100 entries)\n");
 
@@ -9002,7 +8876,7 @@ impl EnhancedTuiApp {
     }
 
     /// Generate the state change logs debug section
-    fn debug_generate_state_logs(&self) -> String {
+    pub(crate) fn debug_generate_state_logs(&self) -> String {
         let mut debug_info = String::new();
 
         if let Some(ref services) = self.service_container {
@@ -9031,7 +8905,7 @@ impl EnhancedTuiApp {
     }
 
     /// Extract time in milliseconds from a timing string
-    fn debug_extract_timing(&self, s: &str) -> Option<f64> {
+    pub(crate) fn debug_extract_timing(&self, s: &str) -> Option<f64> {
         if let Some(total_pos) = s.find("total=") {
             let after_total = &s[total_pos + 6..];
             if let Some(end_pos) = after_total.find(',').or_else(|| after_total.find(')')) {
