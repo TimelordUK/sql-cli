@@ -547,19 +547,17 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             ToggleRowNumbers => {
-                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-                    let was_enabled = dataview.has_row_numbers();
-                    dataview.toggle_row_numbers();
-                    let message = if !was_enabled {
-                        "Row numbers enabled"
-                    } else {
-                        "Row numbers disabled"
-                    };
-                    self.buffer_mut().set_status_message(message.to_string());
+                // Toggle row numbers using the buffer's display option
+                let current = self.buffer().is_show_row_numbers();
+                self.buffer_mut().set_show_row_numbers(!current);
+                let message = if !current {
+                    "Row numbers: ON (showing line numbers)".to_string()
                 } else {
-                    self.buffer_mut()
-                        .set_status_message("No data to show row numbers for".to_string());
-                }
+                    "Row numbers: OFF".to_string()
+                };
+                self.buffer_mut().set_status_message(message);
+                // Recalculate column widths with new mode
+                self.calculate_optimal_column_widths();
                 Ok(ActionResult::Handled)
             }
             ToggleCompactMode => {
@@ -1135,7 +1133,13 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             PreviousSearchMatch => {
-                self.previous_search_match();
+                // Shift+N behavior: search navigation if search is active, otherwise toggle row numbers
+                if !self.buffer().get_search_pattern().is_empty() {
+                    self.previous_search_match();
+                } else {
+                    // Delegate to the ToggleRowNumbers action for consistency
+                    return self.try_handle_action(Action::ToggleRowNumbers, _context);
+                }
                 Ok(ActionResult::Handled)
             }
             ShowColumnStatistics => {
