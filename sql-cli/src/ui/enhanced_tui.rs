@@ -2921,15 +2921,40 @@ impl EnhancedTuiApp {
                     }
                     self.buffer_mut().set_current_column(col);
 
-                    // Update ViewportManager if available
+                    // Update ViewportManager and ensure match is visible
                     {
                         let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
                         if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                            // Update the actual viewport to show the first match
+                            let viewport_height = self.state_container.navigation().viewport_rows;
+                            let viewport_width = self.state_container.navigation().viewport_columns;
+                            let current_scroll = self.state_container.navigation().scroll_offset.0;
+
+                            // Calculate new scroll offset if needed to show the match
+                            let new_row_offset = if row < current_scroll {
+                                row // Match is above, scroll up
+                            } else if row >= current_scroll + viewport_height.saturating_sub(1) {
+                                row.saturating_sub(viewport_height / 2) // Match is below, center it
+                            } else {
+                                current_scroll // Already visible
+                            };
+
+                            // Update viewport to show the match
+                            viewport_manager.set_viewport(
+                                new_row_offset,
+                                0, // keep column scroll at 0 for now
+                                viewport_width as u16,
+                                viewport_height as u16,
+                            );
+
+                            // Set crosshair to match position
                             viewport_manager.set_crosshair(row, col);
+
+                            // Update navigation scroll offset
+                            let mut nav = self.state_container.navigation_mut();
+                            nav.scroll_offset.0 = new_row_offset;
                         }
                     }
-
-                    // The viewport should automatically adjust when navigating
 
                     // Update status to show we're at match 1 of N
                     self.buffer_mut().set_status_message(format!(
@@ -5014,29 +5039,46 @@ impl EnhancedTuiApp {
             }
             self.buffer_mut().set_current_column(col);
 
-            // Update ViewportManager crosshair
-            {
-                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                    viewport_manager.set_crosshair(row, col);
-                }
-            }
-
             // Ensure the row is visible in the viewport by scrolling if needed
-            {
+            let new_row_offset = {
                 let viewport_height = self.state_container.navigation().viewport_rows;
                 let current_scroll = self.state_container.navigation().scroll_offset.0; // row part of (row, col)
 
-                // Scroll if needed to keep match visible
+                // Calculate new scroll offset if needed
                 if row < current_scroll {
                     // Match is above viewport, scroll up
-                    let mut nav = self.state_container.navigation_mut();
-                    nav.scroll_offset.0 = row;
+                    row
                 } else if row >= current_scroll + viewport_height.saturating_sub(1) {
-                    // Match is below viewport, scroll down
-                    let new_scroll = row.saturating_sub(viewport_height / 2);
-                    let mut nav = self.state_container.navigation_mut();
-                    nav.scroll_offset.0 = new_scroll;
+                    // Match is below viewport, scroll down (center it)
+                    row.saturating_sub(viewport_height / 2)
+                } else {
+                    // Already visible, keep current scroll
+                    current_scroll
+                }
+            };
+
+            // Update navigation scroll offset
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.scroll_offset.0 = new_row_offset;
+            }
+
+            // Update ViewportManager crosshair and viewport
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                    // Update the actual viewport to show the new row
+                    let viewport_height = self.state_container.navigation().viewport_rows;
+                    let viewport_width = self.state_container.navigation().viewport_columns;
+                    viewport_manager.set_viewport(
+                        new_row_offset,
+                        0, // keep column scroll at 0 for now
+                        viewport_width as u16,
+                        viewport_height as u16,
+                    );
+
+                    // Now set the crosshair to the match position
+                    viewport_manager.set_crosshair(row, col);
                 }
             }
 
@@ -5070,29 +5112,46 @@ impl EnhancedTuiApp {
             }
             self.buffer_mut().set_current_column(col);
 
-            // Update ViewportManager crosshair
-            {
-                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                    viewport_manager.set_crosshair(row, col);
-                }
-            }
-
             // Ensure the row is visible in the viewport by scrolling if needed
-            {
+            let new_row_offset = {
                 let viewport_height = self.state_container.navigation().viewport_rows;
                 let current_scroll = self.state_container.navigation().scroll_offset.0; // row part of (row, col)
 
-                // Scroll if needed to keep match visible
+                // Calculate new scroll offset if needed
                 if row < current_scroll {
                     // Match is above viewport, scroll up
-                    let mut nav = self.state_container.navigation_mut();
-                    nav.scroll_offset.0 = row;
+                    row
                 } else if row >= current_scroll + viewport_height.saturating_sub(1) {
-                    // Match is below viewport, scroll down
-                    let new_scroll = row.saturating_sub(viewport_height / 2);
-                    let mut nav = self.state_container.navigation_mut();
-                    nav.scroll_offset.0 = new_scroll;
+                    // Match is below viewport, scroll down (center it)
+                    row.saturating_sub(viewport_height / 2)
+                } else {
+                    // Already visible, keep current scroll
+                    current_scroll
+                }
+            };
+
+            // Update navigation scroll offset
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.scroll_offset.0 = new_row_offset;
+            }
+
+            // Update ViewportManager crosshair and viewport
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                    // Update the actual viewport to show the new row
+                    let viewport_height = self.state_container.navigation().viewport_rows;
+                    let viewport_width = self.state_container.navigation().viewport_columns;
+                    viewport_manager.set_viewport(
+                        new_row_offset,
+                        0, // keep column scroll at 0 for now
+                        viewport_width as u16,
+                        viewport_height as u16,
+                    );
+
+                    // Now set the crosshair to the match position
+                    viewport_manager.set_crosshair(row, col);
                 }
             }
 
