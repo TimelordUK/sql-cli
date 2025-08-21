@@ -5022,6 +5022,24 @@ impl EnhancedTuiApp {
                 }
             }
 
+            // Ensure the row is visible in the viewport by scrolling if needed
+            {
+                let viewport_height = self.state_container.navigation().viewport_rows;
+                let current_scroll = self.state_container.navigation().scroll_offset.0; // row part of (row, col)
+
+                // Scroll if needed to keep match visible
+                if row < current_scroll {
+                    // Match is above viewport, scroll up
+                    let mut nav = self.state_container.navigation_mut();
+                    nav.scroll_offset.0 = row;
+                } else if row >= current_scroll + viewport_height.saturating_sub(1) {
+                    // Match is below viewport, scroll down
+                    let new_scroll = row.saturating_sub(viewport_height / 2);
+                    let mut nav = self.state_container.navigation_mut();
+                    nav.scroll_offset.0 = new_scroll;
+                }
+            }
+
             self.buffer_mut().set_current_match(Some((row, col)));
             self.buffer_mut()
                 .set_status_message(format!("Match {} of {}", current_idx, total));
@@ -5057,6 +5075,24 @@ impl EnhancedTuiApp {
                 let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
                 if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
                     viewport_manager.set_crosshair(row, col);
+                }
+            }
+
+            // Ensure the row is visible in the viewport by scrolling if needed
+            {
+                let viewport_height = self.state_container.navigation().viewport_rows;
+                let current_scroll = self.state_container.navigation().scroll_offset.0; // row part of (row, col)
+
+                // Scroll if needed to keep match visible
+                if row < current_scroll {
+                    // Match is above viewport, scroll up
+                    let mut nav = self.state_container.navigation_mut();
+                    nav.scroll_offset.0 = row;
+                } else if row >= current_scroll + viewport_height.saturating_sub(1) {
+                    // Match is below viewport, scroll down
+                    let new_scroll = row.saturating_sub(viewport_height / 2);
+                    let mut nav = self.state_container.navigation_mut();
+                    nav.scroll_offset.0 = new_scroll;
                 }
             }
 
