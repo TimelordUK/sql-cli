@@ -10,6 +10,7 @@ pub mod converters;
 pub mod data_provider;
 pub mod data_view;
 pub mod datatable;
+pub mod datavalue_compare;
 pub mod type_inference;
 
 pub mod datatable_buffer;

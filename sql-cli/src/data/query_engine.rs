@@ -110,7 +110,7 @@ impl QueryEngine {
         // Apply ORDER BY sorting
         if let Some(order_by_columns) = &statement.order_by {
             if !order_by_columns.is_empty() {
-                view = self.apply_order_by(view, &order_by_columns[0])?;
+                view = self.apply_multi_order_by(view, order_by_columns)?;
             }
         }
 
@@ -139,17 +139,29 @@ impl QueryEngine {
         Ok(indices)
     }
 
-    /// Apply ORDER BY sorting to the view
-    fn apply_order_by(&self, view: DataView, order_by: &OrderByColumn) -> Result<DataView> {
-        // Get column index
-        let col_index = view
-            .source()
-            .get_column_index(&order_by.column)
-            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", order_by.column))?;
+    /// Apply multi-column ORDER BY sorting to the view
+    fn apply_multi_order_by(
+        &self,
+        mut view: DataView,
+        order_by_columns: &[OrderByColumn],
+    ) -> Result<DataView> {
+        // Build list of (source_column_index, ascending) tuples
+        let mut sort_columns = Vec::new();
 
-        // Apply sorting
-        let ascending = matches!(order_by.direction, SortDirection::Asc);
-        view.sort_by(col_index, ascending)
+        for order_col in order_by_columns {
+            // Get column index
+            let col_index = view
+                .source()
+                .get_column_index(&order_col.column)
+                .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", order_col.column))?;
+
+            let ascending = matches!(order_col.direction, SortDirection::Asc);
+            sort_columns.push((col_index, ascending));
+        }
+
+        // Apply multi-column sorting
+        view.apply_multi_sort(&sort_columns)?;
+        Ok(view)
     }
 }
 

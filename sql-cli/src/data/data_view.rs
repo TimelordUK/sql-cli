@@ -7,6 +7,7 @@ use tracing::{debug, info};
 
 use crate::data::data_provider::DataProvider;
 use crate::data::datatable::{DataRow, DataTable, DataValue};
+use crate::data::datavalue_compare::{compare_datavalues, compare_optional_datavalues};
 
 /// Sort order for columns
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -914,29 +915,7 @@ impl DataView {
             let val_a = source.get_value(a, source_column_index);
             let val_b = source.get_value(b, source_column_index);
 
-            let cmp = match (val_a, val_b) {
-                (Some(DataValue::Integer(a)), Some(DataValue::Integer(b))) => a.cmp(&b),
-                (Some(DataValue::Float(a)), Some(DataValue::Float(b))) => {
-                    a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
-                }
-                (Some(DataValue::String(a)), Some(DataValue::String(b))) => a.cmp(&b),
-                (Some(DataValue::InternedString(a)), Some(DataValue::InternedString(b))) => {
-                    a.as_ref().cmp(b.as_ref())
-                }
-                // Handle mixed String and InternedString comparisons
-                (Some(DataValue::String(a)), Some(DataValue::InternedString(b))) => {
-                    a.cmp(b.as_ref())
-                }
-                (Some(DataValue::InternedString(a)), Some(DataValue::String(b))) => {
-                    a.as_ref().cmp(b)
-                }
-                (Some(DataValue::Boolean(a)), Some(DataValue::Boolean(b))) => a.cmp(&b),
-                (Some(DataValue::DateTime(a)), Some(DataValue::DateTime(b))) => a.cmp(&b),
-                (Some(DataValue::Null), Some(DataValue::Null)) => std::cmp::Ordering::Equal,
-                (Some(DataValue::Null), _) => std::cmp::Ordering::Less,
-                (_, Some(DataValue::Null)) => std::cmp::Ordering::Greater,
-                _ => std::cmp::Ordering::Equal,
-            };
+            let cmp = compare_optional_datavalues(val_a, val_b);
 
             if ascending {
                 cmp
@@ -947,6 +926,60 @@ impl DataView {
 
         // Don't update base_rows here - we want to preserve the filtered state
         // base_rows should only be set by filter operations, not sort operations
+
+        Ok(())
+    }
+
+    /// Apply multi-column sorting
+    /// Each tuple contains (source_column_index, ascending)
+    pub fn apply_multi_sort(&mut self, sort_columns: &[(usize, bool)]) -> Result<()> {
+        if sort_columns.is_empty() {
+            return Ok(());
+        }
+
+        // Validate all column indices first
+        for (col_idx, _) in sort_columns {
+            if *col_idx >= self.source.column_count() {
+                return Err(anyhow::anyhow!(
+                    "Source column index {} out of bounds",
+                    col_idx
+                ));
+            }
+        }
+
+        let source = &self.source;
+        self.visible_rows.sort_by(|&a, &b| {
+            // Compare by each column in order until we find a difference
+            for (col_idx, ascending) in sort_columns {
+                let val_a = source.get_value(a, *col_idx);
+                let val_b = source.get_value(b, *col_idx);
+
+                let cmp = compare_optional_datavalues(val_a, val_b);
+
+                // If values are different, return the comparison
+                if cmp != std::cmp::Ordering::Equal {
+                    return if *ascending { cmp } else { cmp.reverse() };
+                }
+                // If equal, continue to next column
+            }
+
+            // All columns are equal
+            std::cmp::Ordering::Equal
+        });
+
+        // Update sort state to reflect the primary sort column
+        if let Some((primary_col, ascending)) = sort_columns.first() {
+            // Find the visible column index for the primary sort column
+            if let Some(visible_idx) = self.visible_columns.iter().position(|&x| x == *primary_col)
+            {
+                self.sort_state.column = Some(visible_idx);
+                self.sort_state.order = if *ascending {
+                    SortOrder::Ascending
+                } else {
+                    SortOrder::Descending
+                };
+            }
+        }
 
         Ok(())
     }
