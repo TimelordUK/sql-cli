@@ -2894,6 +2894,51 @@ impl EnhancedTuiApp {
                 debug!(target: "search", "After perform_search, app_mode={:?}, matches_found={}", 
                        self.buffer().get_mode(),
                        matches_count);
+
+                // Navigate to the first match if found (like vim)
+                if matches_count > 0 {
+                    // Get the first match position (extract values to avoid borrow issues)
+                    let (row, col) = {
+                        let search_state = self.state_container.search();
+                        if let Some((row, col, _, _)) = search_state.matches.first() {
+                            (*row, *col)
+                        } else {
+                            (0, 0) // Default if no match (shouldn't happen)
+                        }
+                    }; // search_state borrow is dropped here
+
+                    debug!(target: "search", "Navigating to first match at row={}, col={}", row, col);
+
+                    // Navigate to the match position
+                    // Set the row position
+                    self.state_container.set_table_selected_row(Some(row));
+                    self.buffer_mut().set_selected_row(Some(row));
+
+                    // Set the column position
+                    {
+                        let mut nav = self.state_container.navigation_mut();
+                        nav.selected_column = col;
+                    }
+                    self.buffer_mut().set_current_column(col);
+
+                    // Update ViewportManager if available
+                    {
+                        let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                        if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                            viewport_manager.set_crosshair(row, col);
+                        }
+                    }
+
+                    // The viewport should automatically adjust when navigating
+
+                    // Update status to show we're at match 1 of N
+                    self.buffer_mut().set_status_message(format!(
+                        "Match 1/{} at row {}, col {}",
+                        matches_count,
+                        row + 1,
+                        col + 1
+                    ));
+                }
             }
             SearchMode::Filter => {
                 debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}, thread={:?}", 

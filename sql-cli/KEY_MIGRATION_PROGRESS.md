@@ -14,6 +14,8 @@
 - **Space** - Toggle viewport lock
 - **x/X** - Toggle cursor lock
 - **Ctrl+Space** - Toggle viewport lock (alternative)
+- **/** - Start search (now navigates to first match like vim)
+- **\** - Start column search
 
 ### Architecture Established:
 1. Actions defined in `src/ui/actions.rs`
@@ -88,6 +90,9 @@
 - Verify Shift+N navigates search when search is active
 - Test viewport/cursor lock operations
 - Verify F12 key indicator toggle
+- Verify / starts search and jumps to first match
+- Verify \ starts column search
+- Test n/N navigation after search
 
 ## 📅 Next Session Plan
 
@@ -106,7 +111,11 @@ Complete migration of all key handling to action system to:
 - Simplify debugging of key behavior
 
 ## 📝 Notes for Tomorrow
-- Branch `key_migration_v3` is ready for testing and merge
-- All Phase 1 keys are working through action system
-- Fixed Shift+N dual behavior issue
-- Debug trace system also included in this branch (bonus work)
+- Branch `sorting_intern_str` contains:
+  - All Phase 1 keys working through action system
+  - Fixed Shift+N dual behavior issue
+  - Fixed / search key (was breaking app)
+  - / now navigates to first match like vim
+  - Debug trace system (bonus work)
+- Ready for final testing and merge to main
+- Next: Phase 3 - Chord handler integration
