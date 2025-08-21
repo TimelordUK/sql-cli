@@ -3101,9 +3101,10 @@ impl EnhancedTuiApp {
                 match mode {
                     SearchMode::Search => {
                         debug!(target: "search", "Search Apply: Applying search with pattern '{}'", pattern);
-                        self.buffer_mut().set_search_pattern(pattern);
-                        self.perform_search();
+                        // Use execute_search_action to get the navigation to first match
+                        self.execute_search_action(SearchMode::Search, pattern);
                         debug!(target: "search", "Search Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                        // For search, we always want to exit to Results mode after applying
                     }
                     SearchMode::Filter => {
                         debug!(target: "search", "Filter Apply: Applying filter with pattern '{}'", pattern);
@@ -3158,9 +3159,11 @@ impl EnhancedTuiApp {
                     }
                 }
 
-                // Exit search mode and return to Results (except for certain cases)
-                // For ColumnSearch, we DO want to exit on Apply (Enter key)
-                if let Some((sql, cursor)) = self.search_modes_widget.exit_mode() {
+                // Exit search mode and return to Results
+                // Try to get saved SQL from widget
+                let saved_state = self.search_modes_widget.exit_mode();
+
+                if let Some((sql, cursor)) = saved_state {
                     debug!(target: "search", "Exiting search mode. Original SQL was: '{}', cursor: {}", sql, cursor);
                     debug!(target: "buffer", "Returning to Results mode, preserving last_query: '{}'", 
                            self.buffer().get_last_query());
@@ -3174,33 +3177,39 @@ impl EnhancedTuiApp {
                     } else {
                         debug!(target: "search", "No saved SQL to restore, keeping input_text as is");
                     }
-
-                    // Switch back to Results mode
-                    self.buffer_mut().set_mode(AppMode::Results);
-
-                    // Show status message
-                    let filter_msg = match mode {
-                        SearchMode::FuzzyFilter => {
-                            let query = self.buffer().get_last_query();
-                            format!(
-                                "Fuzzy filter applied. Query: '{}'. Press 'f' again to modify.",
-                                if query.len() > 30 {
-                                    format!("{}...", &query[..30])
-                                } else {
-                                    query
-                                }
-                            )
-                        }
-                        SearchMode::Filter => {
-                            "Filter applied. Press 'F' again to modify.".to_string()
-                        }
-                        SearchMode::Search => "Search applied.".to_string(),
-                        SearchMode::ColumnSearch => "Column search complete.".to_string(),
-                    };
-                    self.buffer_mut().set_status_message(filter_msg);
                 } else {
-                    self.buffer_mut().set_mode(AppMode::Results);
+                    // Widget didn't have saved state, but we still need to preserve the SQL
+                    debug!(target: "search", "No saved state from widget, keeping current SQL");
                 }
+
+                // ALWAYS switch back to Results mode after Apply for all search modes
+                self.buffer_mut().set_mode(AppMode::Results);
+
+                // Show status message
+                let filter_msg = match mode {
+                    SearchMode::FuzzyFilter => {
+                        let query = self.buffer().get_last_query();
+                        format!(
+                            "Fuzzy filter applied. Query: '{}'. Press 'f' again to modify.",
+                            if query.len() > 30 {
+                                format!("{}...", &query[..30])
+                            } else {
+                                query
+                            }
+                        )
+                    }
+                    SearchMode::Filter => "Filter applied. Press 'F' again to modify.".to_string(),
+                    SearchMode::Search => {
+                        let matches = self.state_container.search().matches.len();
+                        if matches > 0 {
+                            format!("Found {} matches. Use n/N to navigate.", matches)
+                        } else {
+                            "No matches found.".to_string()
+                        }
+                    }
+                    SearchMode::ColumnSearch => "Column search complete.".to_string(),
+                };
+                self.buffer_mut().set_status_message(filter_msg);
             }
             SearchModesAction::Cancel => {
                 // Clear the filter and restore original SQL
