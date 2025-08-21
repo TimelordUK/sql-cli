@@ -167,7 +167,11 @@ impl KeyMapper {
         // Also support < and > characters for column movement (more intuitive)
         mappings.insert((Char('<'), Mod::NONE), Action::MoveColumnLeft);
         mappings.insert((Char('>'), Mod::NONE), Action::MoveColumnRight);
-        mappings.insert((Char('/'), Mod::NONE), Action::StartColumnSearch);
+        // Search and filter operations
+        mappings.insert((Char('/'), Mod::NONE), Action::StartSearch);
+        mappings.insert((Char('\\'), Mod::NONE), Action::StartColumnSearch);
+        mappings.insert((Char('f'), Mod::NONE), Action::StartFilter);
+        mappings.insert((Char('F'), Mod::SHIFT), Action::StartFuzzyFilter);
 
         // Sorting
         mappings.insert((Char('s'), Mod::NONE), Action::Sort(None));

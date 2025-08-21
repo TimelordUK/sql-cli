@@ -845,11 +845,20 @@ impl EnhancedTuiApp {
                 self.clear_all_pinned_columns();
                 Ok(ActionResult::Handled)
             }
+            StartSearch => {
+                self.enter_search_mode(SearchMode::Search);
+                Ok(ActionResult::Handled)
+            }
             StartColumnSearch => {
-                self.buffer_mut().set_mode(AppMode::ColumnSearch);
-                self.input = tui_input::Input::default();
-                self.buffer_mut()
-                    .set_status_message("Search columns (Enter to select):".to_string());
+                self.enter_search_mode(SearchMode::ColumnSearch);
+                Ok(ActionResult::Handled)
+            }
+            StartFilter => {
+                self.enter_search_mode(SearchMode::Filter);
+                Ok(ActionResult::Handled)
+            }
+            StartFuzzyFilter => {
+                self.enter_search_mode(SearchMode::FuzzyFilter);
                 Ok(ActionResult::Handled)
             }
             ExitCurrentMode => {
