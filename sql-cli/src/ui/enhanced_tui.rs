@@ -4994,7 +4994,25 @@ impl EnhancedTuiApp {
             let search_match_index = self.state_container.search().current_match;
 
             // Now do mutable operations
+            // Set the row position
             self.state_container.set_table_selected_row(Some(row));
+            self.buffer_mut().set_selected_row(Some(row));
+
+            // Set the column position
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.selected_column = col;
+            }
+            self.buffer_mut().set_current_column(col);
+
+            // Update ViewportManager crosshair
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                    viewport_manager.set_crosshair(row, col);
+                }
+            }
+
             self.buffer_mut().set_current_match(Some((row, col)));
             self.buffer_mut()
                 .set_status_message(format!("Match {} of {}", current_idx, total));
@@ -5014,7 +5032,25 @@ impl EnhancedTuiApp {
             let search_match_index = self.state_container.search().current_match;
 
             // Now do mutable operations
+            // Set the row position
             self.state_container.set_table_selected_row(Some(row));
+            self.buffer_mut().set_selected_row(Some(row));
+
+            // Set the column position
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.selected_column = col;
+            }
+            self.buffer_mut().set_current_column(col);
+
+            // Update ViewportManager crosshair
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                    viewport_manager.set_crosshair(row, col);
+                }
+            }
+
             self.buffer_mut().set_current_match(Some((row, col)));
             self.buffer_mut()
                 .set_status_message(format!("Match {} of {}", current_idx, total));
