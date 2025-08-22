@@ -124,6 +124,7 @@ pub struct EnhancedTuiApp {
     stats_widget: StatsWidget,
     help_widget: HelpWidget,
     search_modes_widget: SearchModesWidget,
+    vim_search_manager: RefCell<crate::ui::vim_search_manager::VimSearchManager>, // Manages vim-like forward search
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
     key_mapper: KeyMapper,              // New action-based key mapping system
@@ -846,7 +847,8 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             StartSearch => {
-                self.enter_search_mode(SearchMode::Search);
+                // Use the new VimSearchManager for forward search
+                self.start_vim_search();
                 Ok(ActionResult::Handled)
             }
             StartColumnSearch => {
@@ -1138,13 +1140,16 @@ impl EnhancedTuiApp {
             }
 
             NextSearchMatch => {
-                self.next_search_match();
+                // Use VimSearchManager for search navigation
+                self.vim_search_next();
                 Ok(ActionResult::Handled)
             }
             PreviousSearchMatch => {
                 // Shift+N behavior: search navigation if search is active, otherwise toggle row numbers
-                if !self.buffer().get_search_pattern().is_empty() {
-                    self.previous_search_match();
+                if self.vim_search_manager.borrow().is_active()
+                    || self.vim_search_manager.borrow().get_pattern().is_some()
+                {
+                    self.vim_search_previous();
                 } else {
                     // Delegate to the ToggleRowNumbers action for consistency
                     return self.try_handle_action(Action::ToggleRowNumbers, _context);
@@ -1483,6 +1488,7 @@ impl EnhancedTuiApp {
             stats_widget: StatsWidget::new(),
             help_widget,
             search_modes_widget: SearchModesWidget::new(),
+            vim_search_manager: RefCell::new(crate::ui::vim_search_manager::VimSearchManager::new()),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             key_mapper: KeyMapper::new(),
@@ -2630,6 +2636,15 @@ impl EnhancedTuiApp {
             match action {
                 "quit" => return Ok(true),
                 "exit_results_mode" => {
+                    // If vim search is active, just exit search mode but stay in Results
+                    if self.vim_search_manager.borrow().is_active() {
+                        self.vim_search_manager.borrow_mut().exit_navigation();
+                        self.buffer_mut()
+                            .set_status_message("Search mode exited".to_string());
+                        return Ok(false);
+                    }
+
+                    // Otherwise, switch to Command mode as usual
                     // Save current position before switching to Command mode
                     if let Some(selected) = self.state_container.get_table_selected_row() {
                         self.buffer_mut().set_last_results_row(Some(selected));
@@ -3083,6 +3098,12 @@ impl EnhancedTuiApp {
         // Safety check: Always allow Ctrl-C to exit regardless of state
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             return Ok(true); // Signal to quit
+        }
+
+        // Use VimSearchManager for Search mode
+        if self.buffer().get_mode() == AppMode::Search {
+            self.handle_vim_search_typing(key);
+            return Ok(false);
         }
 
         let action = self.search_modes_widget.handle_key(key);
@@ -5162,6 +5183,285 @@ impl EnhancedTuiApp {
         } else {
             self.buffer_mut()
                 .set_status_message("No search matches".to_string());
+        }
+    }
+
+    // --- Vim Search Methods ---
+
+    /// Start vim-like forward search (/ key)
+    fn start_vim_search(&mut self) {
+        info!(target: "vim_search", "Starting vim search mode");
+
+        // Start search mode in VimSearchManager
+        self.vim_search_manager.borrow_mut().start_search();
+
+        // Set the app mode to Search for UI rendering
+        self.buffer_mut().set_mode(AppMode::Search);
+
+        // Clear input for new search
+        self.set_input_text_with_cursor(String::new(), 0);
+
+        // Set status message
+        self.buffer_mut().set_status_message(
+            "Search: (type to search, Enter to confirm, Esc to cancel)".to_string(),
+        );
+    }
+
+    /// Handle vim search input while typing
+    fn handle_vim_search_typing(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                // Cancel search
+                self.vim_search_manager.borrow_mut().cancel_search();
+                self.buffer_mut().set_mode(AppMode::Results);
+                self.buffer_mut()
+                    .set_status_message("Search cancelled".to_string());
+                true
+            }
+            KeyCode::Enter => {
+                // Confirm search and enter navigation mode
+                let (has_matches, crosshair_row) = {
+                    let mut viewport_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport) = *viewport_borrow {
+                        if let Some(dataview) = self.buffer().get_dataview() {
+                            let confirmed = self
+                                .vim_search_manager
+                                .borrow_mut()
+                                .confirm_search(dataview, viewport);
+
+                            // Get the crosshair row if confirmed
+                            let row = if confirmed {
+                                Some(viewport.get_crosshair_row())
+                            } else {
+                                None
+                            };
+
+                            (confirmed, row)
+                        } else {
+                            (false, None)
+                        }
+                    } else {
+                        (false, None)
+                    }
+                };
+
+                // Update selected row after dropping the viewport borrow
+                if let Some(row) = crosshair_row {
+                    self.state_container.set_table_selected_row(Some(row));
+                    self.buffer_mut().set_selected_row(Some(row));
+                }
+
+                if has_matches {
+                    // Stay in Results mode but with search active
+                    self.buffer_mut().set_mode(AppMode::Results);
+
+                    // Get match info for status
+                    let match_info = self.vim_search_manager.borrow().get_match_info();
+                    if let Some((current, total)) = match_info {
+                        self.buffer_mut().set_status_message(format!(
+                            "Found {} matches. Use n/N to navigate. Match {}/{}",
+                            total, current, total
+                        ));
+                    }
+                } else {
+                    self.buffer_mut().set_mode(AppMode::Results);
+                    self.buffer_mut()
+                        .set_status_message("Pattern not found".to_string());
+                }
+                true
+            }
+            KeyCode::Backspace => {
+                // Remove last character from search pattern
+                let mut current = self.input.value().to_string();
+                current.pop();
+                self.set_input_text_with_cursor(current.clone(), current.len());
+
+                // Update search dynamically
+                if !current.is_empty() {
+                    self.update_vim_search_pattern(current);
+                }
+                true
+            }
+            KeyCode::Char(c) => {
+                // Add character to search pattern
+                let mut current = self.input.value().to_string();
+                current.push(c);
+                self.set_input_text_with_cursor(current.clone(), current.len());
+
+                // Update search dynamically
+                self.update_vim_search_pattern(current);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Update vim search pattern and navigate to first match
+    fn update_vim_search_pattern(&mut self, pattern: String) {
+        let result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport) = *viewport_borrow {
+                if let Some(dataview) = self.buffer().get_dataview() {
+                    self.vim_search_manager.borrow_mut().update_pattern(
+                        pattern.clone(),
+                        dataview,
+                        viewport,
+                    )
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }; // Drop viewport_borrow here
+
+        // Update the buffer's selected row AFTER dropping the viewport borrow
+        if let Some(ref m) = result {
+            self.state_container.set_table_selected_row(Some(m.row));
+            self.buffer_mut().set_selected_row(Some(m.row));
+        }
+
+        // Now we can update the status without borrow conflicts
+        if let Some(first_match) = result {
+            // Update status to show we found a match
+            self.buffer_mut().set_status_message(format!(
+                "/{} - found at ({}, {})",
+                pattern,
+                first_match.row + 1,
+                first_match.col + 1
+            ));
+        } else if !pattern.is_empty() {
+            self.buffer_mut()
+                .set_status_message(format!("/{} - no matches", pattern));
+        }
+    }
+
+    /// Navigate to next vim search match (n key)
+    fn vim_search_next(&mut self) {
+        if !self.vim_search_manager.borrow().is_navigating() {
+            // Try to resume last search if not currently navigating
+            let resumed = {
+                let mut viewport_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport) = *viewport_borrow {
+                    if let Some(dataview) = self.buffer().get_dataview() {
+                        self.vim_search_manager
+                            .borrow_mut()
+                            .resume_last_search(dataview, viewport)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+
+            if !resumed {
+                self.buffer_mut()
+                    .set_status_message("No previous search pattern".to_string());
+                return;
+            }
+        }
+
+        // Navigate to next match
+        let result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport) = *viewport_borrow {
+                let search_match = self.vim_search_manager.borrow_mut().next_match(viewport);
+                if search_match.is_some() {
+                    let match_info = self.vim_search_manager.borrow().get_match_info();
+                    search_match.map(|m| (m, match_info))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }; // Drop viewport_borrow here
+
+        // Update selected row AFTER dropping the viewport borrow
+        if let Some((ref search_match, _)) = result {
+            self.state_container
+                .set_table_selected_row(Some(search_match.row));
+            self.buffer_mut().set_selected_row(Some(search_match.row));
+        }
+
+        // Update status without borrow conflicts
+        if let Some((search_match, match_info)) = result {
+            if let Some((current, total)) = match_info {
+                self.buffer_mut().set_status_message(format!(
+                    "Match {}/{} at ({}, {})",
+                    current,
+                    total,
+                    search_match.row + 1,
+                    search_match.col + 1
+                ));
+            }
+        }
+    }
+
+    /// Navigate to previous vim search match (N key)
+    fn vim_search_previous(&mut self) {
+        if !self.vim_search_manager.borrow().is_navigating() {
+            // Try to resume last search if not currently navigating
+            let resumed = {
+                let mut viewport_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport) = *viewport_borrow {
+                    if let Some(dataview) = self.buffer().get_dataview() {
+                        self.vim_search_manager
+                            .borrow_mut()
+                            .resume_last_search(dataview, viewport)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+
+            if !resumed {
+                self.buffer_mut()
+                    .set_status_message("No previous search pattern".to_string());
+                return;
+            }
+        }
+
+        // Navigate to previous match
+        let result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport) = *viewport_borrow {
+                let search_match = self
+                    .vim_search_manager
+                    .borrow_mut()
+                    .previous_match(viewport);
+                if search_match.is_some() {
+                    let match_info = self.vim_search_manager.borrow().get_match_info();
+                    search_match.map(|m| (m, match_info))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }; // Drop viewport_borrow here
+
+        // Update selected row AFTER dropping the viewport borrow
+        if let Some((ref search_match, _)) = result {
+            self.state_container
+                .set_table_selected_row(Some(search_match.row));
+            self.buffer_mut().set_selected_row(Some(search_match.row));
+        }
+
+        // Update status without borrow conflicts
+        if let Some((search_match, match_info)) = result {
+            if let Some((current, total)) = match_info {
+                self.buffer_mut().set_status_message(format!(
+                    "Match {}/{} at ({}, {})",
+                    current,
+                    total,
+                    search_match.row + 1,
+                    search_match.col + 1
+                ));
+            }
         }
     }
 

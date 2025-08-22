@@ -20,3 +20,4 @@ pub mod tui_app;
 pub mod tui_renderer;
 pub mod tui_state;
 pub mod viewport_manager;
+pub mod vim_search_manager;
