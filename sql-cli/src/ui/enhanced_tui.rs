@@ -27,7 +27,9 @@ use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
-use crate::ui::viewport_manager::{ColumnPackingMode, ViewportEfficiency, ViewportManager};
+use crate::ui::viewport_manager::{
+    ColumnPackingMode, RowNavigationResult, ViewportEfficiency, ViewportManager,
+};
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -4315,34 +4317,37 @@ impl EnhancedTuiApp {
     }
     // ========== NAVIGATION METHODS ==========
 
+    /// Helper to apply row navigation result to all state locations
+    /// This consolidates the duplicated state updates that were in every navigation method
+    fn apply_row_navigation_result(&mut self, result: RowNavigationResult) {
+        // Update Buffer's selected row
+        self.buffer_mut()
+            .set_selected_row(Some(result.row_position));
+
+        // Update scroll offset if viewport changed
+        if result.viewport_changed {
+            let mut offset = self.buffer().get_scroll_offset();
+            offset.0 = result.row_scroll_offset;
+            self.buffer_mut().set_scroll_offset(offset);
+        }
+
+        // Update AppStateContainer for consistency
+        self.state_container.navigation_mut().selected_row = result.row_position;
+        if result.viewport_changed {
+            self.state_container.navigation_mut().scroll_offset.0 = result.row_scroll_offset;
+        }
+    }
+
     // Navigation functions
     fn next_row(&mut self) {
         // Use ViewportManager to navigate (it manages the crosshair)
-        let nav_result = if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut()
-        {
-            Some(viewport_manager.navigate_row_down())
-        } else {
-            None
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            viewport_borrow.as_mut().map(|vm| vm.navigate_row_down())
         };
 
         if let Some(nav_result) = nav_result {
-            // Update Buffer with the new row position
-            self.buffer_mut()
-                .set_selected_row(Some(nav_result.row_position));
-
-            // Update viewport if changed
-            if nav_result.viewport_changed {
-                let mut offset = self.buffer().get_scroll_offset();
-                offset.0 = nav_result.row_scroll_offset;
-                self.buffer_mut().set_scroll_offset(offset);
-            }
-
-            // Also update AppStateContainer for consistency
-            self.state_container.navigation_mut().selected_row = nav_result.row_position;
-            if nav_result.viewport_changed {
-                self.state_container.navigation_mut().scroll_offset.0 =
-                    nav_result.row_scroll_offset;
-            }
+            self.apply_row_navigation_result(nav_result);
         }
     }
 
