@@ -28,7 +28,7 @@ use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
 use crate::ui::viewport_manager::{
-    ColumnPackingMode, RowNavigationResult, ViewportEfficiency, ViewportManager,
+    ColumnPackingMode, NavigationResult, RowNavigationResult, ViewportEfficiency, ViewportManager,
 };
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
@@ -4338,6 +4338,53 @@ impl EnhancedTuiApp {
         }
     }
 
+    /// Helper to apply column navigation result to all state locations
+    fn apply_column_navigation_result(&mut self, result: NavigationResult, direction: &str) {
+        // Update cursor_manager for table navigation
+        match direction {
+            "left" => {
+                self.cursor_manager.move_table_left();
+            }
+            "right" => {
+                let max_columns = if let Some(provider) = self.get_data_provider() {
+                    provider.get_column_count()
+                } else {
+                    0
+                };
+                self.cursor_manager.move_table_right(max_columns);
+            }
+            _ => {}
+        }
+
+        // Get the visual position from ViewportManager after navigation
+        let visual_position = {
+            let viewport_borrow = self.viewport_manager.borrow();
+            viewport_borrow
+                .as_ref()
+                .map(|vm| vm.get_crosshair_col())
+                .unwrap_or(0)
+        };
+
+        // Update Buffer's current column
+        self.buffer_mut().set_current_column(visual_position);
+
+        // Update AppStateContainer's navigation state
+        self.state_container.navigation_mut().selected_column = visual_position;
+
+        // Update scroll offset if viewport changed
+        if result.viewport_changed {
+            let mut offset = self.buffer().get_scroll_offset();
+            offset.1 = result.scroll_offset;
+            self.buffer_mut().set_scroll_offset(offset);
+            self.state_container.navigation_mut().scroll_offset = offset;
+        }
+
+        // Set status message
+        let column_num = visual_position + 1;
+        self.buffer_mut()
+            .set_status_message(format!("Column {} selected", column_num));
+    }
+
     // Navigation functions
     fn next_row(&mut self) {
         // Use ViewportManager to navigate (it manages the crosshair)
@@ -4364,118 +4411,31 @@ impl EnhancedTuiApp {
     }
 
     fn move_column_left(&mut self) {
-        // Get navigation result from ViewportManager, then drop the borrow
+        // Get navigation result from ViewportManager
         let nav_result = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            let viewport_manager = viewport_manager_borrow
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            let vm = viewport_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for navigation");
-
-            // ViewportManager knows its current crosshair position
-            // Just tell it to move left
-            let current_visual = viewport_manager.get_crosshair_col();
-            debug!(target: "navigation", 
-                   "move_column_left: current visual position from crosshair={}", 
-                   current_visual);
-
-            let result = viewport_manager.navigate_column_left(current_visual);
-            debug!(target: "navigation", "move_column_left: ViewportManager result: {:?}", result);
-            result
-        }; // viewport_manager borrow dropped here
-
-        // Update cursor_manager for table navigation (incremental step)
-        self.cursor_manager.move_table_left();
-
-        // Get the visual position from ViewportManager after navigation
-        let visual_position = {
-            let viewport_manager_borrow = self.viewport_manager.borrow();
-            viewport_manager_borrow
-                .as_ref()
-                .map(|vm| vm.get_crosshair_col())
-                .unwrap_or(0)
+            let current_visual = vm.get_crosshair_col();
+            vm.navigate_column_left(current_visual)
         };
 
-        // Apply navigation result to TUI state (using visual position)
-        self.buffer_mut().set_current_column(visual_position);
-
-        // Sync with navigation state in AppStateContainer (using visual position)
-        self.state_container.navigation_mut().selected_column = visual_position;
-
-        // Update scroll offset if viewport changed
-        if nav_result.viewport_changed {
-            let mut offset = self.buffer().get_scroll_offset();
-            offset.1 = nav_result.scroll_offset;
-            self.buffer_mut().set_scroll_offset(offset);
-            self.state_container.navigation_mut().scroll_offset = offset;
-        }
-
-        // Set status message
-        let column_num = visual_position + 1;
-        self.buffer_mut()
-            .set_status_message(format!("Column {} selected", column_num));
+        self.apply_column_navigation_result(nav_result, "left");
     }
 
     fn move_column_right(&mut self) {
-        // Get navigation result from ViewportManager, then drop the borrow
+        // Get navigation result from ViewportManager
         let nav_result = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            let viewport_manager = viewport_manager_borrow
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            let vm = viewport_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for navigation");
-
-            // ViewportManager knows its current crosshair position
-            // Just tell it to move right
-            let current_visual = viewport_manager.get_crosshair_col();
-            debug!(target: "navigation", 
-                   "move_column_right: current visual position from crosshair={}", 
-                   current_visual);
-            let result = viewport_manager.navigate_column_right(current_visual);
-
-            debug!(target: "navigation", "move_column_right: ViewportManager returned: {:?}", result);
-            result
-        }; // viewport_manager borrow dropped here
-
-        // Get max columns for cursor_manager
-        let max_columns = if let Some(provider) = self.get_data_provider() {
-            provider.get_column_count()
-        } else {
-            0
+            let current_visual = vm.get_crosshair_col();
+            vm.navigate_column_right(current_visual)
         };
 
-        // Update cursor_manager for table navigation (incremental step)
-        self.cursor_manager.move_table_right(max_columns);
-
-        // Get the visual position from ViewportManager after navigation
-        let visual_position = {
-            let viewport_manager_borrow = self.viewport_manager.borrow();
-            viewport_manager_borrow
-                .as_ref()
-                .map(|vm| vm.get_crosshair_col())
-                .unwrap_or(0)
-        };
-
-        debug!(target: "navigation", 
-               "move_column_right END: storing visual_pos={} in Buffer", 
-               visual_position);
-
-        // Apply navigation result to TUI state (using visual position)
-        self.buffer_mut().set_current_column(visual_position);
-
-        // Sync with navigation state in AppStateContainer (using visual position)
-        self.state_container.navigation_mut().selected_column = visual_position;
-
-        // Update scroll offset if viewport changed
-        if nav_result.viewport_changed {
-            let mut offset = self.buffer().get_scroll_offset();
-            offset.1 = nav_result.scroll_offset;
-            self.buffer_mut().set_scroll_offset(offset);
-            self.state_container.navigation_mut().scroll_offset = offset;
-        }
-
-        // Set status message
-        let column_num = visual_position + 1;
-        self.buffer_mut()
-            .set_status_message(format!("Column {} selected", column_num));
+        self.apply_column_navigation_result(nav_result, "right");
     }
 
     fn goto_first_column(&mut self) {
