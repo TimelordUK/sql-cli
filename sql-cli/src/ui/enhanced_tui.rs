@@ -12,6 +12,7 @@ use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_exporter::DataExporter;
 use crate::data::data_provider::DataProvider;
 use crate::data::data_view::DataView;
+use crate::debug::{DebugRegistry, MemoryTracker};
 use crate::help_text::HelpText;
 use crate::service_container::ServiceContainer;
 use crate::sql::cache::QueryCache;
@@ -118,11 +119,12 @@ pub struct EnhancedTuiApp {
 
     // command_history: CommandHistory, // MIGRATED to AppStateContainer
     sql_highlighter: SqlHighlighter,
-    debug_widget: DebugWidget,
+    pub(crate) debug_widget: DebugWidget,
     editor_widget: EditorWidget,
     stats_widget: StatsWidget,
     help_widget: HelpWidget,
     search_modes_widget: SearchModesWidget,
+    vim_search_manager: RefCell<crate::ui::vim_search_manager::VimSearchManager>, // Manages vim-like forward search
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
     key_mapper: KeyMapper,              // New action-based key mapping system
@@ -131,12 +133,12 @@ pub struct EnhancedTuiApp {
     last_yanked: Option<(String, String)>, // (description, value) of last yanked item
 
     // Buffer management (new - for supporting multiple files)
-    buffer_manager: BufferManager,
+    pub(crate) buffer_manager: BufferManager,
     buffer_handler: BufferHandler, // Handles buffer operations like switching
 
     // Performance tracking
-    navigation_timings: Vec<String>, // Track last N navigation timings for debugging
-    render_timings: Vec<String>,     // Track last N render timings for debugging
+    pub(crate) navigation_timings: Vec<String>, // Track last N navigation timings for debugging
+    pub(crate) render_timings: Vec<String>,     // Track last N render timings for debugging
     // Cache
     query_cache: Option<QueryCache>,
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
@@ -150,8 +152,12 @@ pub struct EnhancedTuiApp {
     key_sequence_renderer: KeySequenceRenderer,
 
     // Viewport management (RefCell for interior mutability during render)
-    viewport_manager: RefCell<Option<ViewportManager>>,
+    pub(crate) viewport_manager: RefCell<Option<ViewportManager>>,
     viewport_efficiency: RefCell<Option<ViewportEfficiency>>,
+
+    // Debug system
+    pub(crate) debug_registry: DebugRegistry,
+    pub(crate) memory_tracker: MemoryTracker,
 }
 
 impl EnhancedTuiApp {
@@ -542,19 +548,17 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             ToggleRowNumbers => {
-                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-                    let was_enabled = dataview.has_row_numbers();
-                    dataview.toggle_row_numbers();
-                    let message = if !was_enabled {
-                        "Row numbers enabled"
-                    } else {
-                        "Row numbers disabled"
-                    };
-                    self.buffer_mut().set_status_message(message.to_string());
+                // Toggle row numbers using the buffer's display option
+                let current = self.buffer().is_show_row_numbers();
+                self.buffer_mut().set_show_row_numbers(!current);
+                let message = if !current {
+                    "Row numbers: ON (showing line numbers)".to_string()
                 } else {
-                    self.buffer_mut()
-                        .set_status_message("No data to show row numbers for".to_string());
-                }
+                    "Row numbers: OFF".to_string()
+                };
+                self.buffer_mut().set_status_message(message);
+                // Recalculate column widths with new mode
+                self.calculate_optimal_column_widths();
                 Ok(ActionResult::Handled)
             }
             ToggleCompactMode => {
@@ -842,11 +846,21 @@ impl EnhancedTuiApp {
                 self.clear_all_pinned_columns();
                 Ok(ActionResult::Handled)
             }
+            StartSearch => {
+                // Use the new VimSearchManager for forward search
+                self.start_vim_search();
+                Ok(ActionResult::Handled)
+            }
             StartColumnSearch => {
-                self.buffer_mut().set_mode(AppMode::ColumnSearch);
-                self.input = tui_input::Input::default();
-                self.buffer_mut()
-                    .set_status_message("Search columns (Enter to select):".to_string());
+                self.enter_search_mode(SearchMode::ColumnSearch);
+                Ok(ActionResult::Handled)
+            }
+            StartFilter => {
+                self.enter_search_mode(SearchMode::Filter);
+                Ok(ActionResult::Handled)
+            }
+            StartFuzzyFilter => {
+                self.enter_search_mode(SearchMode::FuzzyFilter);
                 Ok(ActionResult::Handled)
             }
             ExitCurrentMode => {
@@ -1125,6 +1139,40 @@ impl EnhancedTuiApp {
                 }
             }
 
+            NextSearchMatch => {
+                // Use VimSearchManager for search navigation
+                self.vim_search_next();
+                Ok(ActionResult::Handled)
+            }
+            PreviousSearchMatch => {
+                // Shift+N behavior: search navigation if search is active, otherwise toggle row numbers
+                if self.vim_search_manager.borrow().is_active()
+                    || self.vim_search_manager.borrow().get_pattern().is_some()
+                {
+                    self.vim_search_previous();
+                } else {
+                    // Delegate to the ToggleRowNumbers action for consistency
+                    return self.try_handle_action(Action::ToggleRowNumbers, _context);
+                }
+                Ok(ActionResult::Handled)
+            }
+            ShowColumnStatistics => {
+                self.calculate_column_statistics();
+                Ok(ActionResult::Handled)
+            }
+            CycleColumnPacking => {
+                let message = {
+                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                        let new_mode = viewport_manager.cycle_packing_mode();
+                        format!("Column packing: {}", new_mode.display_name())
+                    } else {
+                        "ViewportManager not available".to_string()
+                    }
+                };
+                self.buffer_mut().set_status_message(message);
+                Ok(ActionResult::Handled)
+            }
             _ => {
                 // Action not yet implemented in new system
                 Ok(ActionResult::NotHandled)
@@ -1440,6 +1488,7 @@ impl EnhancedTuiApp {
             stats_widget: StatsWidget::new(),
             help_widget,
             search_modes_widget: SearchModesWidget::new(),
+            vim_search_manager: RefCell::new(crate::ui::vim_search_manager::VimSearchManager::new()),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             key_mapper: KeyMapper::new(),
@@ -1469,6 +1518,8 @@ impl EnhancedTuiApp {
             },
             viewport_manager: RefCell::new(None), // Will be initialized when DataView is set
             viewport_efficiency: RefCell::new(None),
+            debug_registry: DebugRegistry::new(),
+            memory_tracker: MemoryTracker::new(100),
         }
     }
 
@@ -2571,17 +2622,7 @@ impl EnhancedTuiApp {
 
         // F6 is now available for future use
 
-        // Handle F12 for key indicator toggle
-        if matches!(key.code, KeyCode::F(12)) {
-            let enabled = !self.key_indicator.enabled;
-            self.key_indicator.set_enabled(enabled);
-            self.key_sequence_renderer.set_enabled(enabled);
-            self.buffer_mut().set_status_message(format!(
-                "Key press indicator {}",
-                if enabled { "enabled" } else { "disabled" }
-            ));
-            return Ok(false);
-        }
+        // F12 is now handled by the action system
 
         // NOTE: Chord handling has been moved to handle_input level
         // This ensures chords work correctly before any other key processing
@@ -2595,6 +2636,15 @@ impl EnhancedTuiApp {
             match action {
                 "quit" => return Ok(true),
                 "exit_results_mode" => {
+                    // If vim search is active, just exit search mode but stay in Results
+                    if self.vim_search_manager.borrow().is_active() {
+                        self.vim_search_manager.borrow_mut().exit_navigation();
+                        self.buffer_mut()
+                            .set_status_message("Search mode exited".to_string());
+                        return Ok(false);
+                    }
+
+                    // Otherwise, switch to Command mode as usual
                     // Save current position before switching to Command mode
                     if let Some(selected) = self.state_container.get_table_selected_row() {
                         self.buffer_mut().set_last_results_row(Some(selected));
@@ -2766,107 +2816,7 @@ impl EnhancedTuiApp {
 
         // Fall back to direct key handling for special cases not in dispatcher
         match normalized_key.code {
-            KeyCode::Char(' ') if !normalized_key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Toggle viewport lock using ViewportManager
-                let (is_locked, description) = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        viewport_manager.toggle_viewport_lock()
-                    } else {
-                        // Fallback to old behavior if no ViewportManager
-                        self.state_container.toggle_viewport_lock();
-                        let navigation = self.state_container.navigation();
-                        let is_locked = navigation.viewport_lock;
-                        let description = if is_locked {
-                            format!(
-                                "Viewport lock: ON (locked at row {})",
-                                navigation.viewport_lock_row.map_or(0, |r| r + 1)
-                            )
-                        } else {
-                            "Viewport lock: OFF (normal scrolling)".to_string()
-                        };
-                        (is_locked, description)
-                    }
-                };
-
-                // Update AppStateContainer to keep it in sync (for status display)
-                {
-                    let mut navigation = self.state_container.navigation_mut();
-                    navigation.viewport_lock = is_locked;
-                    // Note: viewport_lock_row is managed by ViewportManager now
-                    if !is_locked {
-                        navigation.viewport_lock_row = None;
-                    }
-                }
-
-                // Update buffer state
-                self.buffer_mut().set_viewport_lock(is_locked);
-                self.buffer_mut().set_status_message(description);
-            }
-            // 'x' toggles cursor lock (cursor stays at same viewport position while scrolling)
-            KeyCode::Char('x') | KeyCode::Char('X') => {
-                // Toggle cursor lock using ViewportManager
-                let (is_locked, description) = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        viewport_manager.toggle_cursor_lock()
-                    } else {
-                        // Fallback to old behavior if no ViewportManager
-                        self.state_container.toggle_viewport_lock();
-                        let navigation = self.state_container.navigation();
-                        let is_locked = navigation.viewport_lock;
-                        let description = if is_locked {
-                            format!(
-                                "Viewport lock: ON (locked at row {})",
-                                navigation.viewport_lock_row.map_or(0, |r| r + 1)
-                            )
-                        } else {
-                            "Viewport lock: OFF (normal scrolling)".to_string()
-                        };
-                        (is_locked, description)
-                    }
-                };
-
-                // Update AppStateContainer to keep it in sync
-                {
-                    let mut navigation = self.state_container.navigation_mut();
-                    navigation.viewport_lock = is_locked;
-                    if !is_locked {
-                        navigation.viewport_lock_row = None;
-                    }
-                }
-
-                // Update buffer state
-                self.buffer_mut().set_viewport_lock(is_locked);
-                self.buffer_mut().set_status_message(description);
-            }
-            KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Ctrl+Space toggles viewport lock (prevents scrolling, cursor moves within viewport only)
-                let (is_locked, description) = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        viewport_manager.toggle_viewport_lock()
-                    } else {
-                        // Fallback to NavigationState if ViewportManager not available
-                        self.state_container.toggle_viewport_lock();
-                        let navigation = self.state_container.navigation();
-                        let is_locked = navigation.viewport_lock;
-                        let desc = if is_locked {
-                            format!(
-                                "Viewport lock: ON (no scrolling, cursor constrained to {} visible rows)",
-                                navigation.viewport_rows
-                            )
-                        } else {
-                            "Viewport lock: OFF (normal scrolling enabled)".to_string()
-                        };
-                        (is_locked, desc)
-                    }
-                };
-
-                // Update buffer state and show message
-                self.buffer_mut().set_viewport_lock(is_locked);
-                self.buffer_mut().set_status_message(description);
-            }
+            // Space, 'x', and Ctrl+Space are now handled by the action system
             // Column operations are now handled by the action system
             // - 'H' to hide column
             // - Ctrl+Shift+H to unhide all columns
@@ -2881,61 +2831,13 @@ impl EnhancedTuiApp {
             {
                 self.page_up();
             }
-            // Search functionality is handled by dispatcher above
-            // Removed duplicate handlers for search keys (/, \)
-            KeyCode::Char('n') => {
-                self.next_search_match();
-            }
-            KeyCode::Char('N') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                // Only for search navigation when Shift is held
-                if !self.buffer().get_search_pattern().is_empty() {
-                    self.previous_search_match();
-                } else {
-                    // Toggle row numbers display
-                    let current = self.buffer().is_show_row_numbers();
-                    self.buffer_mut().set_show_row_numbers(!current);
-                    let message = if !current {
-                        "Row numbers: ON (showing line numbers)".to_string()
-                    } else {
-                        "Row numbers: OFF".to_string()
-                    };
-                    self.buffer_mut().set_status_message(message);
-                    // Recalculate column widths with new mode
-                    self.calculate_optimal_column_widths();
-                }
-            }
+            // 'n' and 'N' search navigation are now handled by the action system
             // Filter functionality is handled by dispatcher above
             // Removed duplicate handlers for filter keys (F, f)
             // Sort functionality (lowercase s) - handled by dispatcher above
             // Removed to prevent double handling
-            // Column statistics (uppercase S only)
-            KeyCode::Char('S') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.calculate_column_statistics();
-            }
-            // Cycle column packing mode with Alt-S
-            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::ALT) => {
-                let message = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        let new_mode = viewport_manager.cycle_packing_mode();
-                        format!("Column packing: {}", new_mode.display_name())
-                    } else {
-                        "ViewportManager not available".to_string()
-                    }
-                };
-                self.buffer_mut().set_status_message(message);
-            }
-            // Toggle selection mode with 'v' (vim-like visual mode)
-            KeyCode::Char('v') => {
-                self.state_container.toggle_selection_mode();
-                let new_mode = self.state_container.get_selection_mode();
-                let msg = match new_mode {
-                    SelectionMode::Cell => "Cell mode - Navigate to select individual cells",
-                    SelectionMode::Row => "Row mode - Navigate to select rows",
-                    SelectionMode::Column => "Column mode - Navigate to select columns",
-                };
-                self.buffer_mut().set_status_message(msg.to_string());
-            }
+            // 'S' and Alt-S are now handled by the action system
+            // 'v' key is now handled by the action system
             // Clipboard operations (vim-like yank)
             KeyCode::Char('y') => {
                 let selection_mode = self.get_selection_mode();
@@ -3007,6 +2909,76 @@ impl EnhancedTuiApp {
                 debug!(target: "search", "After perform_search, app_mode={:?}, matches_found={}", 
                        self.buffer().get_mode(),
                        matches_count);
+
+                // Navigate to the first match if found (like vim)
+                if matches_count > 0 {
+                    // Get the first match position (extract values to avoid borrow issues)
+                    let (row, col) = {
+                        let search_state = self.state_container.search();
+                        if let Some((row, col, _, _)) = search_state.matches.first() {
+                            (*row, *col)
+                        } else {
+                            (0, 0) // Default if no match (shouldn't happen)
+                        }
+                    }; // search_state borrow is dropped here
+
+                    debug!(target: "search", "Navigating to first match at row={}, col={}", row, col);
+
+                    // Navigate to the match position
+                    // Set the row position
+                    self.state_container.set_table_selected_row(Some(row));
+                    self.buffer_mut().set_selected_row(Some(row));
+
+                    // Set the column position
+                    {
+                        let mut nav = self.state_container.navigation_mut();
+                        nav.selected_column = col;
+                    }
+                    self.buffer_mut().set_current_column(col);
+
+                    // Update ViewportManager and ensure match is visible
+                    {
+                        let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                        if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                            // Update the actual viewport to show the first match
+                            let viewport_height = self.state_container.navigation().viewport_rows;
+                            let viewport_width = self.state_container.navigation().viewport_columns;
+                            let current_scroll = self.state_container.navigation().scroll_offset.0;
+
+                            // Calculate new scroll offset if needed to show the match
+                            let new_row_offset = if row < current_scroll {
+                                row // Match is above, scroll up
+                            } else if row >= current_scroll + viewport_height.saturating_sub(1) {
+                                row.saturating_sub(viewport_height / 2) // Match is below, center it
+                            } else {
+                                current_scroll // Already visible
+                            };
+
+                            // Update viewport to show the match
+                            viewport_manager.set_viewport(
+                                new_row_offset,
+                                0, // keep column scroll at 0 for now
+                                viewport_width as u16,
+                                viewport_height as u16,
+                            );
+
+                            // Set crosshair to match position
+                            viewport_manager.set_crosshair(row, col);
+
+                            // Update navigation scroll offset
+                            let mut nav = self.state_container.navigation_mut();
+                            nav.scroll_offset.0 = new_row_offset;
+                        }
+                    }
+
+                    // Update status to show we're at match 1 of N
+                    self.buffer_mut().set_status_message(format!(
+                        "Match 1/{} at row {}, col {}",
+                        matches_count,
+                        row + 1,
+                        col + 1
+                    ));
+                }
             }
             SearchMode::Filter => {
                 debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}, thread={:?}", 
@@ -3128,6 +3100,12 @@ impl EnhancedTuiApp {
             return Ok(true); // Signal to quit
         }
 
+        // Use VimSearchManager for Search mode
+        if self.buffer().get_mode() == AppMode::Search {
+            self.handle_vim_search_typing(key);
+            return Ok(false);
+        }
+
         let action = self.search_modes_widget.handle_key(key);
 
         match action {
@@ -3169,9 +3147,10 @@ impl EnhancedTuiApp {
                 match mode {
                     SearchMode::Search => {
                         debug!(target: "search", "Search Apply: Applying search with pattern '{}'", pattern);
-                        self.buffer_mut().set_search_pattern(pattern);
-                        self.perform_search();
+                        // Use execute_search_action to get the navigation to first match
+                        self.execute_search_action(SearchMode::Search, pattern);
                         debug!(target: "search", "Search Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                        // For search, we always want to exit to Results mode after applying
                     }
                     SearchMode::Filter => {
                         debug!(target: "search", "Filter Apply: Applying filter with pattern '{}'", pattern);
@@ -3226,9 +3205,11 @@ impl EnhancedTuiApp {
                     }
                 }
 
-                // Exit search mode and return to Results (except for certain cases)
-                // For ColumnSearch, we DO want to exit on Apply (Enter key)
-                if let Some((sql, cursor)) = self.search_modes_widget.exit_mode() {
+                // Exit search mode and return to Results
+                // Try to get saved SQL from widget
+                let saved_state = self.search_modes_widget.exit_mode();
+
+                if let Some((sql, cursor)) = saved_state {
                     debug!(target: "search", "Exiting search mode. Original SQL was: '{}', cursor: {}", sql, cursor);
                     debug!(target: "buffer", "Returning to Results mode, preserving last_query: '{}'", 
                            self.buffer().get_last_query());
@@ -3242,33 +3223,39 @@ impl EnhancedTuiApp {
                     } else {
                         debug!(target: "search", "No saved SQL to restore, keeping input_text as is");
                     }
-
-                    // Switch back to Results mode
-                    self.buffer_mut().set_mode(AppMode::Results);
-
-                    // Show status message
-                    let filter_msg = match mode {
-                        SearchMode::FuzzyFilter => {
-                            let query = self.buffer().get_last_query();
-                            format!(
-                                "Fuzzy filter applied. Query: '{}'. Press 'f' again to modify.",
-                                if query.len() > 30 {
-                                    format!("{}...", &query[..30])
-                                } else {
-                                    query
-                                }
-                            )
-                        }
-                        SearchMode::Filter => {
-                            "Filter applied. Press 'F' again to modify.".to_string()
-                        }
-                        SearchMode::Search => "Search applied.".to_string(),
-                        SearchMode::ColumnSearch => "Column search complete.".to_string(),
-                    };
-                    self.buffer_mut().set_status_message(filter_msg);
                 } else {
-                    self.buffer_mut().set_mode(AppMode::Results);
+                    // Widget didn't have saved state, but we still need to preserve the SQL
+                    debug!(target: "search", "No saved state from widget, keeping current SQL");
                 }
+
+                // ALWAYS switch back to Results mode after Apply for all search modes
+                self.buffer_mut().set_mode(AppMode::Results);
+
+                // Show status message
+                let filter_msg = match mode {
+                    SearchMode::FuzzyFilter => {
+                        let query = self.buffer().get_last_query();
+                        format!(
+                            "Fuzzy filter applied. Query: '{}'. Press 'f' again to modify.",
+                            if query.len() > 30 {
+                                format!("{}...", &query[..30])
+                            } else {
+                                query
+                            }
+                        )
+                    }
+                    SearchMode::Filter => "Filter applied. Press 'F' again to modify.".to_string(),
+                    SearchMode::Search => {
+                        let matches = self.state_container.search().matches.len();
+                        if matches > 0 {
+                            format!("Found {} matches. Use n/N to navigate.", matches)
+                        } else {
+                            "No matches found.".to_string()
+                        }
+                    }
+                    SearchMode::ColumnSearch => "Column search complete.".to_string(),
+                };
+                self.buffer_mut().set_status_message(filter_msg);
             }
             SearchModesAction::Cancel => {
                 // Clear the filter and restore original SQL
@@ -5062,7 +5049,60 @@ impl EnhancedTuiApp {
             let search_match_index = self.state_container.search().current_match;
 
             // Now do mutable operations
+            // Set the row position
             self.state_container.set_table_selected_row(Some(row));
+            self.buffer_mut().set_selected_row(Some(row));
+
+            // Set the column position
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.selected_column = col;
+            }
+            self.buffer_mut().set_current_column(col);
+
+            // Ensure the row is visible in the viewport by scrolling if needed
+            let new_row_offset = {
+                let viewport_height = self.state_container.navigation().viewport_rows;
+                let current_scroll = self.state_container.navigation().scroll_offset.0; // row part of (row, col)
+
+                // Calculate new scroll offset if needed
+                if row < current_scroll {
+                    // Match is above viewport, scroll up
+                    row
+                } else if row >= current_scroll + viewport_height.saturating_sub(1) {
+                    // Match is below viewport, scroll down (center it)
+                    row.saturating_sub(viewport_height / 2)
+                } else {
+                    // Already visible, keep current scroll
+                    current_scroll
+                }
+            };
+
+            // Update navigation scroll offset
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.scroll_offset.0 = new_row_offset;
+            }
+
+            // Update ViewportManager crosshair and viewport
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                    // Update the actual viewport to show the new row
+                    let viewport_height = self.state_container.navigation().viewport_rows;
+                    let viewport_width = self.state_container.navigation().viewport_columns;
+                    viewport_manager.set_viewport(
+                        new_row_offset,
+                        0, // keep column scroll at 0 for now
+                        viewport_width as u16,
+                        viewport_height as u16,
+                    );
+
+                    // Now set the crosshair to the match position
+                    viewport_manager.set_crosshair(row, col);
+                }
+            }
+
             self.buffer_mut().set_current_match(Some((row, col)));
             self.buffer_mut()
                 .set_status_message(format!("Match {} of {}", current_idx, total));
@@ -5082,7 +5122,60 @@ impl EnhancedTuiApp {
             let search_match_index = self.state_container.search().current_match;
 
             // Now do mutable operations
+            // Set the row position
             self.state_container.set_table_selected_row(Some(row));
+            self.buffer_mut().set_selected_row(Some(row));
+
+            // Set the column position
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.selected_column = col;
+            }
+            self.buffer_mut().set_current_column(col);
+
+            // Ensure the row is visible in the viewport by scrolling if needed
+            let new_row_offset = {
+                let viewport_height = self.state_container.navigation().viewport_rows;
+                let current_scroll = self.state_container.navigation().scroll_offset.0; // row part of (row, col)
+
+                // Calculate new scroll offset if needed
+                if row < current_scroll {
+                    // Match is above viewport, scroll up
+                    row
+                } else if row >= current_scroll + viewport_height.saturating_sub(1) {
+                    // Match is below viewport, scroll down (center it)
+                    row.saturating_sub(viewport_height / 2)
+                } else {
+                    // Already visible, keep current scroll
+                    current_scroll
+                }
+            };
+
+            // Update navigation scroll offset
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.scroll_offset.0 = new_row_offset;
+            }
+
+            // Update ViewportManager crosshair and viewport
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                    // Update the actual viewport to show the new row
+                    let viewport_height = self.state_container.navigation().viewport_rows;
+                    let viewport_width = self.state_container.navigation().viewport_columns;
+                    viewport_manager.set_viewport(
+                        new_row_offset,
+                        0, // keep column scroll at 0 for now
+                        viewport_width as u16,
+                        viewport_height as u16,
+                    );
+
+                    // Now set the crosshair to the match position
+                    viewport_manager.set_crosshair(row, col);
+                }
+            }
+
             self.buffer_mut().set_current_match(Some((row, col)));
             self.buffer_mut()
                 .set_status_message(format!("Match {} of {}", current_idx, total));
@@ -5090,6 +5183,363 @@ impl EnhancedTuiApp {
         } else {
             self.buffer_mut()
                 .set_status_message("No search matches".to_string());
+        }
+    }
+
+    // --- Vim Search Methods ---
+
+    /// Start vim-like forward search (/ key)
+    fn start_vim_search(&mut self) {
+        info!(target: "vim_search", "Starting vim search mode");
+
+        // Start search mode in VimSearchManager
+        self.vim_search_manager.borrow_mut().start_search();
+
+        // Set the app mode to Search for UI rendering
+        self.buffer_mut().set_mode(AppMode::Search);
+
+        // Clear input for new search
+        self.set_input_text_with_cursor(String::new(), 0);
+
+        // Set status message
+        self.buffer_mut().set_status_message(
+            "Search: (type to search, Enter to confirm, Esc to cancel)".to_string(),
+        );
+    }
+
+    /// Handle vim search input while typing
+    fn handle_vim_search_typing(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                // Cancel search and restore the original query
+                self.vim_search_manager.borrow_mut().cancel_search();
+                self.buffer_mut().set_mode(AppMode::Results);
+
+                // Restore the last executed query to input
+                let last_query = self.buffer().get_last_query();
+                self.set_input_text_with_cursor(last_query.clone(), last_query.len());
+
+                self.buffer_mut()
+                    .set_status_message("Search cancelled".to_string());
+                true
+            }
+            KeyCode::Enter => {
+                // Confirm search and enter navigation mode
+                let (has_matches, crosshair_row) = {
+                    let mut viewport_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport) = *viewport_borrow {
+                        if let Some(dataview) = self.buffer().get_dataview() {
+                            let confirmed = self
+                                .vim_search_manager
+                                .borrow_mut()
+                                .confirm_search(dataview, viewport);
+
+                            // Get the crosshair row if confirmed
+                            let row = if confirmed {
+                                Some(viewport.get_crosshair_row())
+                            } else {
+                                None
+                            };
+
+                            (confirmed, row)
+                        } else {
+                            (false, None)
+                        }
+                    } else {
+                        (false, None)
+                    }
+                };
+
+                // Update selected row after dropping the viewport borrow
+                if let Some(row) = crosshair_row {
+                    self.state_container.set_table_selected_row(Some(row));
+                    self.buffer_mut().set_selected_row(Some(row));
+                }
+
+                if has_matches {
+                    // Stay in Results mode but with search active
+                    self.buffer_mut().set_mode(AppMode::Results);
+
+                    // Restore the last executed query to input
+                    let last_query = self.buffer().get_last_query();
+                    self.set_input_text_with_cursor(last_query.clone(), last_query.len());
+
+                    // Get match info for status
+                    let match_info = self.vim_search_manager.borrow().get_match_info();
+                    if let Some((current, total)) = match_info {
+                        self.buffer_mut().set_status_message(format!(
+                            "Found {} matches. Use n/N to navigate. Match {}/{}",
+                            total, current, total
+                        ));
+                    }
+                } else {
+                    self.buffer_mut().set_mode(AppMode::Results);
+
+                    // Restore the last executed query even if no matches
+                    let last_query = self.buffer().get_last_query();
+                    self.set_input_text_with_cursor(last_query.clone(), last_query.len());
+
+                    self.buffer_mut()
+                        .set_status_message("Pattern not found".to_string());
+                }
+                true
+            }
+            KeyCode::Backspace => {
+                // Remove last character from search pattern
+                let mut current = self.input.value().to_string();
+                current.pop();
+                self.set_input_text_with_cursor(current.clone(), current.len());
+
+                // Update search dynamically
+                if !current.is_empty() {
+                    self.update_vim_search_pattern(current);
+                }
+                true
+            }
+            KeyCode::Char(c) => {
+                // Add character to search pattern
+                let mut current = self.input.value().to_string();
+                current.push(c);
+                self.set_input_text_with_cursor(current.clone(), current.len());
+
+                // Update search dynamically
+                self.update_vim_search_pattern(current);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Update vim search pattern and navigate to first match
+    fn update_vim_search_pattern(&mut self, pattern: String) {
+        let result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport) = *viewport_borrow {
+                if let Some(dataview) = self.buffer().get_dataview() {
+                    self.vim_search_manager.borrow_mut().update_pattern(
+                        pattern.clone(),
+                        dataview,
+                        viewport,
+                    )
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }; // Drop viewport_borrow here
+
+        // Update the buffer's selected row AND column AFTER dropping the viewport borrow
+        if let Some(ref m) = result {
+            self.state_container.set_table_selected_row(Some(m.row));
+            self.buffer_mut().set_selected_row(Some(m.row));
+
+            // IMPORTANT: Also update the selected column to match the search match
+            self.buffer_mut().set_current_column(m.col);
+            self.state_container.navigation_mut().selected_column = m.col;
+
+            // CRITICAL: Also update navigation's selected_row to trigger proper rendering
+            self.state_container.navigation_mut().selected_row = m.row;
+
+            // Update scroll offset if row changed significantly
+            let viewport_height = 79; // Typical viewport height
+            let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
+
+            // If the match is outside current viewport, update scroll
+            if m.row < current_scroll_row || m.row >= current_scroll_row + viewport_height {
+                let new_scroll = m.row.saturating_sub(viewport_height / 2);
+                self.buffer_mut()
+                    .set_scroll_offset((new_scroll, current_scroll_col));
+                self.state_container.navigation_mut().scroll_offset =
+                    (new_scroll, current_scroll_col);
+            }
+        }
+
+        // Now we can update the status without borrow conflicts
+        if let Some(first_match) = result {
+            // Update status to show we found a match
+            self.buffer_mut().set_status_message(format!(
+                "/{} - found at ({}, {})",
+                pattern,
+                first_match.row + 1,
+                first_match.col + 1
+            ));
+        } else if !pattern.is_empty() {
+            self.buffer_mut()
+                .set_status_message(format!("/{} - no matches", pattern));
+        }
+    }
+
+    /// Navigate to next vim search match (n key)
+    fn vim_search_next(&mut self) {
+        if !self.vim_search_manager.borrow().is_navigating() {
+            // Try to resume last search if not currently navigating
+            let resumed = {
+                let mut viewport_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport) = *viewport_borrow {
+                    if let Some(dataview) = self.buffer().get_dataview() {
+                        self.vim_search_manager
+                            .borrow_mut()
+                            .resume_last_search(dataview, viewport)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+
+            if !resumed {
+                self.buffer_mut()
+                    .set_status_message("No previous search pattern".to_string());
+                return;
+            }
+        }
+
+        // Navigate to next match
+        let result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport) = *viewport_borrow {
+                let search_match = self.vim_search_manager.borrow_mut().next_match(viewport);
+                if search_match.is_some() {
+                    let match_info = self.vim_search_manager.borrow().get_match_info();
+                    search_match.map(|m| (m, match_info))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }; // Drop viewport_borrow here
+
+        // Update selected row AND column AFTER dropping the viewport borrow
+        if let Some((ref search_match, _)) = result {
+            self.state_container
+                .set_table_selected_row(Some(search_match.row));
+            self.buffer_mut().set_selected_row(Some(search_match.row));
+
+            // IMPORTANT: Also update the selected column to match the search match
+            self.buffer_mut().set_current_column(search_match.col);
+            self.state_container.navigation_mut().selected_column = search_match.col;
+
+            // CRITICAL: Also update navigation's selected_row to trigger proper rendering
+            self.state_container.navigation_mut().selected_row = search_match.row;
+
+            // Update scroll offset if row changed significantly
+            let viewport_height = 79; // Typical viewport height
+            let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
+
+            // If the match is outside current viewport, update scroll
+            if search_match.row < current_scroll_row
+                || search_match.row >= current_scroll_row + viewport_height
+            {
+                let new_scroll = search_match.row.saturating_sub(viewport_height / 2);
+                self.buffer_mut()
+                    .set_scroll_offset((new_scroll, current_scroll_col));
+                self.state_container.navigation_mut().scroll_offset =
+                    (new_scroll, current_scroll_col);
+            }
+        }
+
+        // Update status without borrow conflicts
+        if let Some((search_match, match_info)) = result {
+            if let Some((current, total)) = match_info {
+                self.buffer_mut().set_status_message(format!(
+                    "Match {}/{} at ({}, {})",
+                    current,
+                    total,
+                    search_match.row + 1,
+                    search_match.col + 1
+                ));
+            }
+        }
+    }
+
+    /// Navigate to previous vim search match (N key)
+    fn vim_search_previous(&mut self) {
+        if !self.vim_search_manager.borrow().is_navigating() {
+            // Try to resume last search if not currently navigating
+            let resumed = {
+                let mut viewport_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport) = *viewport_borrow {
+                    if let Some(dataview) = self.buffer().get_dataview() {
+                        self.vim_search_manager
+                            .borrow_mut()
+                            .resume_last_search(dataview, viewport)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+
+            if !resumed {
+                self.buffer_mut()
+                    .set_status_message("No previous search pattern".to_string());
+                return;
+            }
+        }
+
+        // Navigate to previous match
+        let result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport) = *viewport_borrow {
+                let search_match = self
+                    .vim_search_manager
+                    .borrow_mut()
+                    .previous_match(viewport);
+                if search_match.is_some() {
+                    let match_info = self.vim_search_manager.borrow().get_match_info();
+                    search_match.map(|m| (m, match_info))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }; // Drop viewport_borrow here
+
+        // Update selected row AND column AFTER dropping the viewport borrow
+        if let Some((ref search_match, _)) = result {
+            self.state_container
+                .set_table_selected_row(Some(search_match.row));
+            self.buffer_mut().set_selected_row(Some(search_match.row));
+
+            // IMPORTANT: Also update the selected column to match the search match
+            self.buffer_mut().set_current_column(search_match.col);
+            self.state_container.navigation_mut().selected_column = search_match.col;
+
+            // CRITICAL: Also update navigation's selected_row to trigger proper rendering
+            self.state_container.navigation_mut().selected_row = search_match.row;
+
+            // Update scroll offset if row changed significantly
+            let viewport_height = 79; // Typical viewport height
+            let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
+
+            // If the match is outside current viewport, update scroll
+            if search_match.row < current_scroll_row
+                || search_match.row >= current_scroll_row + viewport_height
+            {
+                let new_scroll = search_match.row.saturating_sub(viewport_height / 2);
+                self.buffer_mut()
+                    .set_scroll_offset((new_scroll, current_scroll_col));
+                self.state_container.navigation_mut().scroll_offset =
+                    (new_scroll, current_scroll_col);
+            }
+        }
+
+        // Update status without borrow conflicts
+        if let Some((search_match, match_info)) = result {
+            if let Some((current, total)) = match_info {
+                self.buffer_mut().set_status_message(format!(
+                    "Match {}/{} at ({}, {})",
+                    current,
+                    total,
+                    search_match.row + 1,
+                    search_match.col + 1
+                ));
+            }
         }
     }
 
@@ -8208,7 +8658,7 @@ impl EnhancedTuiApp {
             })
     }
 
-    fn toggle_debug_mode(&mut self) {
+    pub(crate) fn toggle_debug_mode(&mut self) {
         // First, collect all the data we need without any mutable borrows
         let (
             should_exit_debug,
@@ -8924,7 +9374,7 @@ impl EnhancedTuiApp {
     // These are kept in the TUI to avoid regressions from moving data access
 
     /// Generate the parser debug section
-    fn debug_generate_parser_info(&self, query: &str) -> String {
+    pub(crate) fn debug_generate_parser_info(&self, query: &str) -> String {
         self.hybrid_parser
             .get_detailed_debug_info(query, query.len())
     }
@@ -8982,7 +9432,7 @@ impl EnhancedTuiApp {
     }
 
     /// Generate the trace logs debug section
-    fn debug_generate_trace_logs(&self) -> String {
+    pub(crate) fn debug_generate_trace_logs(&self) -> String {
         let mut debug_info = String::from("\n========== TRACE LOGS ==========\n");
         debug_info.push_str("(Most recent at bottom, last 100 entries)\n");
 
@@ -9002,7 +9452,7 @@ impl EnhancedTuiApp {
     }
 
     /// Generate the state change logs debug section
-    fn debug_generate_state_logs(&self) -> String {
+    pub(crate) fn debug_generate_state_logs(&self) -> String {
         let mut debug_info = String::new();
 
         if let Some(ref services) = self.service_container {
@@ -9031,7 +9481,7 @@ impl EnhancedTuiApp {
     }
 
     /// Extract time in milliseconds from a timing string
-    fn debug_extract_timing(&self, s: &str) -> Option<f64> {
+    pub(crate) fn debug_extract_timing(&self, s: &str) -> Option<f64> {
         if let Some(total_pos) = s.find("total=") {
             let after_total = &s[total_pos + 6..];
             if let Some(end_pos) = after_total.find(',').or_else(|| after_total.find(')')) {

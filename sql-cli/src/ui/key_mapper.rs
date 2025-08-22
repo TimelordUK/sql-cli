@@ -131,9 +131,6 @@ impl KeyMapper {
         mappings.insert((Down, Mod::NONE), Action::Navigate(NavigateAction::Down(1)));
         mappings.insert((Up, Mod::NONE), Action::Navigate(NavigateAction::Up(1))); // Up navigates up, bounded at row 0
 
-        // Selection mode toggle
-        mappings.insert((Char('v'), Mod::NONE), Action::ToggleSelectionMode);
-
         // Mode switching
         mappings.insert((Esc, Mod::NONE), Action::ExitCurrentMode);
         mappings.insert((Char('q'), Mod::NONE), Action::Quit);
@@ -170,7 +167,11 @@ impl KeyMapper {
         // Also support < and > characters for column movement (more intuitive)
         mappings.insert((Char('<'), Mod::NONE), Action::MoveColumnLeft);
         mappings.insert((Char('>'), Mod::NONE), Action::MoveColumnRight);
-        mappings.insert((Char('/'), Mod::NONE), Action::StartColumnSearch);
+        // Search and filter operations
+        mappings.insert((Char('/'), Mod::NONE), Action::StartSearch);
+        mappings.insert((Char('\\'), Mod::NONE), Action::StartColumnSearch);
+        mappings.insert((Char('f'), Mod::NONE), Action::StartFilter);
+        mappings.insert((Char('F'), Mod::SHIFT), Action::StartFuzzyFilter);
 
         // Sorting
         mappings.insert((Char('s'), Mod::NONE), Action::Sort(None));
@@ -188,6 +189,25 @@ impl KeyMapper {
 
         // Jump to row
         mappings.insert((Char(':'), Mod::NONE), Action::StartJumpToRow);
+
+        // Search navigation
+        mappings.insert((Char('n'), Mod::NONE), Action::NextSearchMatch);
+        mappings.insert((Char('N'), Mod::SHIFT), Action::PreviousSearchMatch);
+
+        // Selection mode toggle (v key like vim visual mode)
+        mappings.insert((Char('v'), Mod::NONE), Action::ToggleSelectionMode);
+
+        // Column statistics
+        mappings.insert((Char('S'), Mod::SHIFT), Action::ShowColumnStatistics);
+
+        // Column packing mode
+        mappings.insert((Char('s'), Mod::ALT), Action::CycleColumnPacking);
+
+        // Viewport/cursor lock operations
+        mappings.insert((Char(' '), Mod::NONE), Action::ToggleViewportLock);
+        mappings.insert((Char('x'), Mod::NONE), Action::ToggleCursorLock);
+        mappings.insert((Char('X'), Mod::SHIFT), Action::ToggleCursorLock);
+        mappings.insert((Char(' '), Mod::CONTROL), Action::ToggleViewportLock);
 
         // F-key actions
         mappings.insert((F(8), Mod::NONE), Action::ToggleCaseInsensitive);

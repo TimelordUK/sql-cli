@@ -3,6 +3,7 @@ pub mod api;
 pub mod config;
 pub mod core;
 pub mod data;
+pub mod debug;
 pub mod handlers;
 pub mod sql;
 pub mod state;

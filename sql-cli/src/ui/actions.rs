@@ -93,6 +93,8 @@ pub enum Action {
     StartColumnSearch,
     NextMatch,
     PreviousMatch,
+    NextSearchMatch,     // For 'n' key
+    PreviousSearchMatch, // For 'N' key
 
     // Query operations
     ExecuteQuery,
@@ -110,6 +112,8 @@ pub enum Action {
     ToggleViewportLock,
     ToggleCaseInsensitive,
     ToggleKeyIndicator,
+    ShowColumnStatistics, // For 'S' key
+    CycleColumnPacking,   // For Alt-S
 
     // Application control
     Quit,
