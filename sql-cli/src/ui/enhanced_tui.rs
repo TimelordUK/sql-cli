@@ -4340,7 +4340,7 @@ impl EnhancedTuiApp {
 
     /// Helper to apply column navigation result to all state locations
     fn apply_column_navigation_result(&mut self, result: NavigationResult, direction: &str) {
-        // Update cursor_manager for table navigation
+        // Update cursor_manager for table navigation (only for left/right movement)
         match direction {
             "left" => {
                 self.cursor_manager.move_table_left();
@@ -4352,6 +4352,9 @@ impl EnhancedTuiApp {
                     0
                 };
                 self.cursor_manager.move_table_right(max_columns);
+            }
+            "first" | "last" => {
+                // goto_first_column and goto_last_column don't update cursor_manager
             }
             _ => {}
         }
@@ -4439,85 +4442,31 @@ impl EnhancedTuiApp {
     }
 
     fn goto_first_column(&mut self) {
-        // Get navigation result from ViewportManager, then drop the borrow
+        // Get navigation result from ViewportManager
         let nav_result = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            let viewport_manager = viewport_manager_borrow
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            viewport_borrow
                 .as_mut()
-                .expect("ViewportManager must exist for navigation");
-
-            // Navigate to visual column 0 - this will update crosshair and viewport
-            let result = viewport_manager.navigate_to_first_column();
-            debug!(target: "navigation", "goto_first_column: ViewportManager result: {:?}", result);
-            result
-        }; // viewport_manager borrow dropped here
-
-        // Get the visual position from ViewportManager after navigation
-        let visual_position = {
-            let viewport_manager_borrow = self.viewport_manager.borrow();
-            viewport_manager_borrow
-                .as_ref()
-                .map(|vm| vm.get_crosshair_col())
-                .unwrap_or(0)
+                .expect("ViewportManager must exist for navigation")
+                .navigate_to_first_column()
         };
 
-        // Update Buffer with the visual position
-        self.buffer_mut().set_current_column(visual_position);
-        self.state_container.navigation_mut().selected_column = visual_position;
-
-        // Update scroll offset if viewport changed
-        if nav_result.viewport_changed {
-            let mut offset = self.buffer().get_scroll_offset();
-            offset.1 = nav_result.scroll_offset;
-            self.buffer_mut().set_scroll_offset(offset);
-            self.state_container.navigation_mut().scroll_offset = offset;
-        }
-
-        // Use the description from ViewportManager
-        self.buffer_mut().set_status_message(nav_result.description);
-
-        debug!(target: "navigation", "goto_first_column: moved to visual column 0");
+        // Note: goto_first/last_column don't need cursor_manager updates
+        self.apply_column_navigation_result(nav_result, "first");
     }
 
     fn goto_last_column(&mut self) {
-        // Get navigation result from ViewportManager, then drop the borrow
+        // Get navigation result from ViewportManager
         let nav_result = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            let viewport_manager = viewport_manager_borrow
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            viewport_borrow
                 .as_mut()
-                .expect("ViewportManager must exist for navigation");
-
-            // Navigate to last visual column - this will update crosshair and viewport
-            let result = viewport_manager.navigate_to_last_column();
-            debug!(target: "navigation", "goto_last_column: ViewportManager result: {:?}", result);
-            result
-        }; // viewport_manager borrow dropped here
-
-        // Get the visual position from ViewportManager after navigation
-        let visual_position = {
-            let viewport_manager_borrow = self.viewport_manager.borrow();
-            viewport_manager_borrow
-                .as_ref()
-                .map(|vm| vm.get_crosshair_col())
-                .unwrap_or(0)
+                .expect("ViewportManager must exist for navigation")
+                .navigate_to_last_column()
         };
 
-        // Update Buffer with the visual position
-        self.buffer_mut().set_current_column(visual_position);
-        self.state_container.navigation_mut().selected_column = visual_position;
-
-        // Update scroll offset if viewport changed
-        if nav_result.viewport_changed {
-            let mut offset = self.buffer().get_scroll_offset();
-            offset.1 = nav_result.scroll_offset;
-            self.buffer_mut().set_scroll_offset(offset);
-            self.state_container.navigation_mut().scroll_offset = offset;
-        }
-
-        // Use the description from ViewportManager
-        self.buffer_mut().set_status_message(nav_result.description);
-
-        debug!(target: "navigation", "goto_last_column: moved to last visual column");
+        // Note: goto_first/last_column don't need cursor_manager updates
+        self.apply_column_navigation_result(nav_result, "last");
     }
 
     fn goto_first_row(&mut self) {
