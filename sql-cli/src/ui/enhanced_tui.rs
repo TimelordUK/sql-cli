@@ -2679,49 +2679,49 @@ impl EnhancedTuiApp {
 
         let normalized_key = normalized;
 
-        // CRITICAL: Check if chord mode is active FIRST
-        // If a chord is in progress, skip the action system and let the chord handler process it
-        if !self.key_chord_handler.is_chord_mode_active() {
-            // Try the new action system first (only if no chord is active)
-            let action_context = self.build_action_context();
-            if let Some(action) = self
-                .key_mapper
-                .map_key(normalized_key.clone(), &action_context)
-            {
-                info!(
-                    "✓ Action system: key {:?} -> action {:?}",
-                    normalized_key.code, action
-                );
-                if let Ok(result) = self.try_handle_action(action, &action_context) {
-                    match result {
-                        ActionResult::Handled => {
-                            debug!("Action handled by new system");
-                            return Ok(false);
-                        }
-                        ActionResult::Exit => {
-                            debug!("Action requested exit");
-                            return Ok(true);
-                        }
-                        ActionResult::SwitchMode(mode) => {
-                            debug!("Action requested mode switch to {:?}", mode);
-                            self.buffer_mut().set_mode(mode);
-                            return Ok(false);
-                        }
-                        ActionResult::Error(err) => {
-                            warn!("Action error: {}", err);
-                            self.buffer_mut()
-                                .set_status_message(format!("Error: {}", err));
-                            return Ok(false);
-                        }
-                        ActionResult::NotHandled => {
-                            // Fall through to existing handling
-                            debug!("Action not handled, falling back to legacy system");
-                        }
+        // Try the new action system first
+        // Note: Even if chord mode is active, single keys that aren't part of chords
+        // should still be processed by the action system
+        let action_context = self.build_action_context();
+        debug!(
+            "Action context for key {:?}: mode={:?}",
+            normalized_key.code, action_context.mode
+        );
+        if let Some(action) = self
+            .key_mapper
+            .map_key(normalized_key.clone(), &action_context)
+        {
+            info!(
+                "✓ Action system: key {:?} -> action {:?}",
+                normalized_key.code, action
+            );
+            if let Ok(result) = self.try_handle_action(action, &action_context) {
+                match result {
+                    ActionResult::Handled => {
+                        debug!("Action handled by new system");
+                        return Ok(false);
+                    }
+                    ActionResult::Exit => {
+                        debug!("Action requested exit");
+                        return Ok(true);
+                    }
+                    ActionResult::SwitchMode(mode) => {
+                        debug!("Action requested mode switch to {:?}", mode);
+                        self.buffer_mut().set_mode(mode);
+                        return Ok(false);
+                    }
+                    ActionResult::Error(err) => {
+                        warn!("Action error: {}", err);
+                        self.buffer_mut()
+                            .set_status_message(format!("Error: {}", err));
+                        return Ok(false);
+                    }
+                    ActionResult::NotHandled => {
+                        // Fall through to existing handling
+                        debug!("Action not handled, falling back to legacy system");
                     }
                 }
             }
-        } else {
-            debug!("Chord mode active - skipping action system to let chord handler process key");
         }
 
         // Debug uppercase G specifically
