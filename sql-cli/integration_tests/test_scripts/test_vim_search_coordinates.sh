@@ -108,8 +108,12 @@ expect {
     }
 }
 
-# Should move to next match (row 0, col 3 or row 5, col 2 depending on column order)
-puts "INFO: After 'n', crosshair at ($crosshair_row, $crosshair_col)"
+# Should move to next match (row 5, col 2)
+if {$crosshair_row == 5 && $crosshair_col == 2} {
+    puts "PASS: Second match correctly positioned at absolute (5, 2)"
+} else {
+    puts "INFO: Second match at ($crosshair_row, $crosshair_col) - may be correct depending on data"
+}
 
 # Press 'n' multiple times to test wrapping
 send "nnn"

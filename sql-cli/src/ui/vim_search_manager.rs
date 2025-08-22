@@ -304,10 +304,19 @@ impl VimSearchManager {
             "Searching for '{}' (case_sensitive: {})", 
             pattern, self.case_sensitive);
 
+        // Get the display column indices to map enumeration index to actual column index
+        let display_columns = dataview.get_display_columns();
+        debug!(target: "vim_search", 
+            "Display columns mapping: {:?} (count: {})", 
+            display_columns, display_columns.len());
+
         // Search through all visible data
         for row_idx in 0..dataview.row_count() {
             if let Some(row) = dataview.get_row(row_idx) {
-                for (col_idx, value) in row.values.iter().enumerate() {
+                let mut first_match_in_row: Option<SearchMatch> = None;
+
+                // The row.values are in display order
+                for (enum_idx, value) in row.values.iter().enumerate() {
                     let value_str = value.to_string();
                     let search_value = if !self.case_sensitive {
                         value_str.to_lowercase()
@@ -316,15 +325,28 @@ impl VimSearchManager {
                     };
 
                     if search_value.contains(&pattern_lower) {
-                        debug!(target: "vim_search", 
-                            "Found match at ({}, {}): '{}'", 
-                            row_idx, col_idx, value_str);
-                        matches.push(SearchMatch {
-                            row: row_idx,
-                            col: col_idx,
-                            value: value_str,
-                        });
+                        // For vim-like behavior, we prioritize the first match in each row
+                        // This prevents jumping between columns on the same row
+                        if first_match_in_row.is_none() {
+                            debug!(target: "vim_search", 
+                                "Found first match in row {} at col {}: '{}'", 
+                                row_idx, enum_idx, value_str);
+                            first_match_in_row = Some(SearchMatch {
+                                row: row_idx,
+                                col: enum_idx, // Use the enumeration index as the visual column index
+                                value: value_str,
+                            });
+                        } else {
+                            debug!(target: "vim_search", 
+                                "Skipping additional match in row {} at col {}: '{}'", 
+                                row_idx, enum_idx, value_str);
+                        }
                     }
+                }
+
+                // Add the first match from this row if we found one
+                if let Some(match_item) = first_match_in_row {
+                    matches.push(match_item);
                 }
             }
         }

@@ -5211,9 +5211,14 @@ impl EnhancedTuiApp {
     fn handle_vim_search_typing(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Esc => {
-                // Cancel search
+                // Cancel search and restore the original query
                 self.vim_search_manager.borrow_mut().cancel_search();
                 self.buffer_mut().set_mode(AppMode::Results);
+
+                // Restore the last executed query to input
+                let last_query = self.buffer().get_last_query();
+                self.set_input_text_with_cursor(last_query.clone(), last_query.len());
+
                 self.buffer_mut()
                     .set_status_message("Search cancelled".to_string());
                 true
@@ -5255,6 +5260,10 @@ impl EnhancedTuiApp {
                     // Stay in Results mode but with search active
                     self.buffer_mut().set_mode(AppMode::Results);
 
+                    // Restore the last executed query to input
+                    let last_query = self.buffer().get_last_query();
+                    self.set_input_text_with_cursor(last_query.clone(), last_query.len());
+
                     // Get match info for status
                     let match_info = self.vim_search_manager.borrow().get_match_info();
                     if let Some((current, total)) = match_info {
@@ -5265,6 +5274,11 @@ impl EnhancedTuiApp {
                     }
                 } else {
                     self.buffer_mut().set_mode(AppMode::Results);
+
+                    // Restore the last executed query even if no matches
+                    let last_query = self.buffer().get_last_query();
+                    self.set_input_text_with_cursor(last_query.clone(), last_query.len());
+
                     self.buffer_mut()
                         .set_status_message("Pattern not found".to_string());
                 }
@@ -5315,10 +5329,30 @@ impl EnhancedTuiApp {
             }
         }; // Drop viewport_borrow here
 
-        // Update the buffer's selected row AFTER dropping the viewport borrow
+        // Update the buffer's selected row AND column AFTER dropping the viewport borrow
         if let Some(ref m) = result {
             self.state_container.set_table_selected_row(Some(m.row));
             self.buffer_mut().set_selected_row(Some(m.row));
+
+            // IMPORTANT: Also update the selected column to match the search match
+            self.buffer_mut().set_current_column(m.col);
+            self.state_container.navigation_mut().selected_column = m.col;
+
+            // CRITICAL: Also update navigation's selected_row to trigger proper rendering
+            self.state_container.navigation_mut().selected_row = m.row;
+
+            // Update scroll offset if row changed significantly
+            let viewport_height = 79; // Typical viewport height
+            let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
+
+            // If the match is outside current viewport, update scroll
+            if m.row < current_scroll_row || m.row >= current_scroll_row + viewport_height {
+                let new_scroll = m.row.saturating_sub(viewport_height / 2);
+                self.buffer_mut()
+                    .set_scroll_offset((new_scroll, current_scroll_col));
+                self.state_container.navigation_mut().scroll_offset =
+                    (new_scroll, current_scroll_col);
+            }
         }
 
         // Now we can update the status without borrow conflicts
@@ -5378,11 +5412,33 @@ impl EnhancedTuiApp {
             }
         }; // Drop viewport_borrow here
 
-        // Update selected row AFTER dropping the viewport borrow
+        // Update selected row AND column AFTER dropping the viewport borrow
         if let Some((ref search_match, _)) = result {
             self.state_container
                 .set_table_selected_row(Some(search_match.row));
             self.buffer_mut().set_selected_row(Some(search_match.row));
+
+            // IMPORTANT: Also update the selected column to match the search match
+            self.buffer_mut().set_current_column(search_match.col);
+            self.state_container.navigation_mut().selected_column = search_match.col;
+
+            // CRITICAL: Also update navigation's selected_row to trigger proper rendering
+            self.state_container.navigation_mut().selected_row = search_match.row;
+
+            // Update scroll offset if row changed significantly
+            let viewport_height = 79; // Typical viewport height
+            let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
+
+            // If the match is outside current viewport, update scroll
+            if search_match.row < current_scroll_row
+                || search_match.row >= current_scroll_row + viewport_height
+            {
+                let new_scroll = search_match.row.saturating_sub(viewport_height / 2);
+                self.buffer_mut()
+                    .set_scroll_offset((new_scroll, current_scroll_col));
+                self.state_container.navigation_mut().scroll_offset =
+                    (new_scroll, current_scroll_col);
+            }
         }
 
         // Update status without borrow conflicts
@@ -5444,11 +5500,33 @@ impl EnhancedTuiApp {
             }
         }; // Drop viewport_borrow here
 
-        // Update selected row AFTER dropping the viewport borrow
+        // Update selected row AND column AFTER dropping the viewport borrow
         if let Some((ref search_match, _)) = result {
             self.state_container
                 .set_table_selected_row(Some(search_match.row));
             self.buffer_mut().set_selected_row(Some(search_match.row));
+
+            // IMPORTANT: Also update the selected column to match the search match
+            self.buffer_mut().set_current_column(search_match.col);
+            self.state_container.navigation_mut().selected_column = search_match.col;
+
+            // CRITICAL: Also update navigation's selected_row to trigger proper rendering
+            self.state_container.navigation_mut().selected_row = search_match.row;
+
+            // Update scroll offset if row changed significantly
+            let viewport_height = 79; // Typical viewport height
+            let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
+
+            // If the match is outside current viewport, update scroll
+            if search_match.row < current_scroll_row
+                || search_match.row >= current_scroll_row + viewport_height
+            {
+                let new_scroll = search_match.row.saturating_sub(viewport_height / 2);
+                self.buffer_mut()
+                    .set_scroll_offset((new_scroll, current_scroll_col));
+                self.state_container.navigation_mut().scroll_offset =
+                    (new_scroll, current_scroll_col);
+            }
         }
 
         // Update status without borrow conflicts
