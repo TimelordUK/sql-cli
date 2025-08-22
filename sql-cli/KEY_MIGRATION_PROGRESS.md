@@ -42,35 +42,33 @@
 - Removed old string-based handle_chord_action() method
 - Fixed compilation in debug binaries
 
-### Phase 4: Remove Dispatcher Layer
-**Status**: IN PROGRESS (2025-08-22)
-**Goal**: Remove intermediate `key_dispatcher` translation layer
-**Keys affected**: All keys currently going through dispatcher
+### ✅ Phase 4: Remove Dispatcher Layer from Results Mode
+**Status**: COMPLETE (2025-08-22)
+**Goal**: Remove intermediate `key_dispatcher` translation layer from Results mode
 
-**Dispatcher Analysis**:
-The dispatcher currently handles these actions in Results mode:
-- quit, exit_results_mode
-- next_row, previous_row
-- move_column_left, move_column_right  
-- goto_first_row, goto_last_row
-- goto_viewport_top/middle/bottom
-- goto_first_column, goto_last_column
-- page_up, page_down
-- start_search, start_column_search, start_filter, start_fuzzy_filter
-- sort_by_column, show_column_stats
-- next_search_match, previous_search_match
-- toggle_compact_mode, toggle_row_numbers
-- jump_to_row, pin_column, clear_pins
-- toggle_selection_mode
-- export_to_csv, export_to_json
-- toggle_help, toggle_debug
-- toggle_case_insensitive
-- start_history_search
+**Changes Made**:
+1. Added all missing key mappings to KeyMapper for Results mode:
+   - Page navigation (PageUp/PageDown)
+   - Vim navigation (g/G for top/bottom, H/M/L for viewport)
+   - Column navigation (0/^/$)
+   - Help/Debug toggles (F1/?/F5)
+   - Clear pins (Shift+P)
+   - History search (Ctrl+R)
+   - Quit (Ctrl+C)
 
-**Strategy**:
-1. Most of these can map directly to existing Actions
-2. Some need new Actions defined
-3. Remove dispatcher calls and use KeyMapper directly
+2. Added `StartHistorySearch` action to Action enum
+
+3. Enhanced `ExitCurrentMode` action to handle different modes properly:
+   - Results mode: restore query, save position
+   - Help/Debug modes: return to Results
+   - Vim search: exit search but stay in Results
+
+4. Removed dispatcher usage from `handle_results_input`:
+   - Now uses KeyMapper directly for all key mappings
+   - Commented out entire dispatcher match block
+   - Action system now handles all Results mode keys
+
+**Result**: All Results mode keys now go through the Action system!
 
 ### Phase 5: Remaining Results Mode Keys
 **Status**: Not started
