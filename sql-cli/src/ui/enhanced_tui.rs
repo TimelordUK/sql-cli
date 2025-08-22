@@ -161,6 +161,8 @@ pub struct EnhancedTuiApp {
 }
 
 impl EnhancedTuiApp {
+    // ========== COLUMN OPERATIONS ==========
+
     // --- Column Visibility Management ---
 
     /// Hide the currently selected column
@@ -376,6 +378,8 @@ impl EnhancedTuiApp {
         }
     }
 
+    // ========== JUMP TO ROW ==========
+
     /// Get jump-to-row input text
     fn get_jump_to_row_input(&self) -> String {
         self.state_container.jump_to_row().input.clone()
@@ -413,6 +417,8 @@ impl EnhancedTuiApp {
         log_state_clear!(self, "jump_to_row_input", "clear_jump_to_row_input");
     }
 
+    // ========== BUFFER MANAGEMENT ==========
+
     /// Get current buffer if available (for reading)
     fn current_buffer(&self) -> Option<&dyn buffer::BufferAPI> {
         self.buffer_manager
@@ -435,6 +441,8 @@ impl EnhancedTuiApp {
             .expect("No buffer available - this should not happen")
     }
 
+    // ========== ACTION CONTEXT ==========
+
     /// Build action context from current state
     fn build_action_context(&self) -> ActionContext {
         let buffer = self.buffer();
@@ -453,6 +461,8 @@ impl EnhancedTuiApp {
             current_column: nav.selected_column,
         }
     }
+
+    // ========== ACTION HANDLERS ==========
 
     /// Try to handle an action using the new action system
     fn try_handle_action(
@@ -1283,6 +1293,8 @@ impl EnhancedTuiApp {
         }
     }
 
+    // ========== DATA PROVIDER ACCESS ==========
+
     /// Get a DataProvider view of the current buffer
     /// This allows using the new trait-based data access pattern
     fn get_data_provider(&self) -> Option<Box<dyn DataProvider + '_>> {
@@ -1298,6 +1310,8 @@ impl EnhancedTuiApp {
     }
 
     // Note: edit_mode methods removed - use buffer directly
+
+    // ========== INPUT MANAGEMENT ==========
 
     // Helper to get input text from buffer or fallback to direct input
     fn get_input_text(&self) -> String {
@@ -1447,6 +1461,7 @@ impl EnhancedTuiApp {
             }
         }
     }
+    // ========== CURSOR AND SELECTION ==========
 
     // Helper to get visual cursor position (for rendering)
     fn get_visual_cursor(&self) -> (usize, usize) {
@@ -1476,6 +1491,7 @@ impl EnhancedTuiApp {
 
     fn get_selection_mode(&self) -> SelectionMode {
         self.state_container.get_selection_mode()
+        // ========== UTILITY FUNCTIONS ==========
     }
 
     fn sanitize_table_name(name: &str) -> String {
@@ -1595,6 +1611,7 @@ impl EnhancedTuiApp {
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             key_mapper: KeyMapper::new(),
+            // ========== INITIALIZATION ==========
             last_yanked: None,
             // CSV fields now in Buffer
             buffer_manager,
@@ -2430,6 +2447,7 @@ impl EnhancedTuiApp {
                         } else {
                             format!(
                                 "History: {}",
+                                // ========== MAIN RUN LOOP ==========
                                 if text.len() > 50 {
                                     format!("{}...", &text[..50])
                                 } else {
@@ -2765,192 +2783,194 @@ impl EnhancedTuiApp {
         // Remove the old dispatcher-based handling entirely
         // The action system above should handle everything
         /*
-        if let Some(action) = self.key_dispatcher.get_results_action(&normalized_key) {
-            debug!(
-                "Dispatcher returned action '{}' for key {:?}",
-                action, normalized_key
-            );
-            match action {
-                "quit" => return Ok(true),
-                "exit_results_mode" => {
-                    // If vim search is active, just exit search mode but stay in Results
-                    if self.vim_search_manager.borrow().is_active() {
-                        self.vim_search_manager.borrow_mut().exit_navigation();
-                        self.buffer_mut()
-                            .set_status_message("Search mode exited".to_string());
-                        return Ok(false);
-                    }
+               if let Some(action) = self.key_dispatcher.get_results_action(&normalized_key) {
+                   debug!(
+                       "Dispatcher returned action '{}' for key {:?}",
+                       action, normalized_key
+                   );
+                   match action {
+                       "quit" => return Ok(true),
+                       "exit_results_mode" => {
+                           // If vim search is active, just exit search mode but stay in Results
+                           if self.vim_search_manager.borrow().is_active() {
+                               self.vim_search_manager.borrow_mut().exit_navigation();
+                               self.buffer_mut()
+                                   .set_status_message("Search mode exited".to_string());
+                               return Ok(false);
+                           }
 
-                    // Otherwise, switch to Command mode as usual
-                    // Save current position before switching to Command mode
-                    if let Some(selected) = self.state_container.get_table_selected_row() {
-                        self.buffer_mut().set_last_results_row(Some(selected));
-                        let scroll_offset = self.buffer().get_scroll_offset();
-                        self.buffer_mut().set_last_scroll_offset(scroll_offset);
-                    }
+                           // Otherwise, switch to Command mode as usual
+                           // Save current position before switching to Command mode
+                           if let Some(selected) = self.state_container.get_table_selected_row() {
+                               self.buffer_mut().set_last_results_row(Some(selected));
+                               let scroll_offset = self.buffer().get_scroll_offset();
+                               self.buffer_mut().set_last_scroll_offset(scroll_offset);
+                           }
 
-                    // Restore the last executed query to input_text for editing
-                    let last_query = self.buffer().get_last_query();
-                    let current_input = self.buffer().get_input_text();
-                    debug!(target: "mode", "Exiting Results mode: current input_text='{}', last_query='{}'", current_input, last_query);
+                           // Restore the last executed query to input_text for editing
+                           let last_query = self.buffer().get_last_query();
+                           let current_input = self.buffer().get_input_text();
+                           debug!(target: "mode", "Exiting Results mode: current input_text='{}', last_query='{}'", current_input, last_query);
 
-                    if !last_query.is_empty() {
-                        debug!(target: "buffer", "Restoring last_query to input_text: '{}'", last_query);
-                        // Use the helper method to sync all three input states
-                        self.set_input_text(last_query.clone());
-                    } else if !current_input.is_empty() {
-                        debug!(target: "buffer", "No last_query but input_text has content, keeping: '{}'", current_input);
-                    } else {
-                        debug!(target: "buffer", "No last_query to restore when exiting Results mode");
-                    }
+                           if !last_query.is_empty() {
+                               debug!(target: "buffer", "Restoring last_query to input_text: '{}'", last_query);
+                               // Use the helper method to sync all three input states
+                               self.set_input_text(last_query.clone());
+                           } else if !current_input.is_empty() {
+                               debug!(target: "buffer", "No last_query but input_text has content, keeping: '{}'", current_input);
+                           } else {
+                               debug!(target: "buffer", "No last_query to restore when exiting Results mode");
+                           }
 
-                    debug!(target: "mode", "Switching from Results to Command mode");
-                    self.buffer_mut().set_mode(AppMode::Command);
-                    self.state_container.set_table_selected_row(None);
-                }
-                "next_row" => self.next_row(),
-                "previous_row" => self.previous_row(),
-                "move_column_left" => self.move_column_left(),
-                "move_column_right" => self.move_column_right(),
-                "goto_first_row" => self.goto_first_row(),
-                "goto_last_row" => {
-                    debug!("Executing goto_last_row action");
-                    self.goto_last_row();
-                }
-                "goto_viewport_top" => self.goto_viewport_top(),
-                "goto_viewport_middle" => self.goto_viewport_middle(),
-                "goto_viewport_bottom" => self.goto_viewport_bottom(),
-                "goto_first_column" => self.goto_first_column(),
-                "goto_last_column" => self.goto_last_column(),
-                "page_up" => self.page_up(),
-                "page_down" => self.page_down(),
-                "start_search" => {
-                    self.enter_search_mode(SearchMode::Search);
-                }
-                "start_column_search" => {
-                    self.enter_search_mode(SearchMode::ColumnSearch);
-                }
-                "start_filter" => {
-                    self.enter_search_mode(SearchMode::Filter);
-                }
-                "start_fuzzy_filter" => {
-                    self.enter_search_mode(SearchMode::FuzzyFilter);
-                }
-                "sort_by_column" => {
-                    // Use the DataView's toggle_sort for proper 3-state cycling
-                    self.toggle_sort_current_column();
-                    return Ok(false); // Event handled, continue running
-                }
-                "show_column_stats" => self.calculate_column_statistics(),
-                "next_search_match" => self.next_search_match(),
-                "previous_search_match" => self.previous_search_match(),
-                "toggle_compact_mode" => {
-                    let current_mode = self.buffer().is_compact_mode();
-                    self.buffer_mut().set_compact_mode(!current_mode);
-                    let message = if !current_mode {
-                        "Compact mode: ON (reduced padding, more columns visible)".to_string()
-                    } else {
-                        "Compact mode: OFF (normal padding)".to_string()
-                    };
-                    self.buffer_mut().set_status_message(message);
-                }
-                "toggle_row_numbers" => {
-                    let current_mode = self.buffer().is_show_row_numbers();
-                    self.buffer_mut().set_show_row_numbers(!current_mode);
-                    let message = if !current_mode {
-                        "Row numbers: ON".to_string()
-                    } else {
-                        "Row numbers: OFF".to_string()
-                    };
-                    self.buffer_mut().set_status_message(message);
-                }
-                "jump_to_row" => {
-                    self.buffer_mut().set_mode(AppMode::JumpToRow);
-                    self.clear_jump_to_row_input();
+                           debug!(target: "mode", "Switching from Results to Command mode");
+                           self.buffer_mut().set_mode(AppMode::Command);
+                           self.state_container.set_table_selected_row(None);
+                       }
+                       "next_row" => self.next_row(),
+                       "previous_row" => self.previous_row(),
+                       "move_column_left" => self.move_column_left(),
+                       "move_column_right" => self.move_column_right(),
+                       "goto_first_row" => self.goto_first_row(),
+                       "goto_last_row" => {
+                           debug!("Executing goto_last_row action");
+                           self.goto_last_row();
+                       }
+                       "goto_viewport_top" => self.goto_viewport_top(),
+                       "goto_viewport_middle" => self.goto_viewport_middle(),
+                       "goto_viewport_bottom" => self.goto_viewport_bottom(),
+                       "goto_first_column" => self.goto_first_column(),
+                       "goto_last_column" => self.goto_last_column(),
+                       "page_up" => self.page_up(),
+                       "page_down" => self.page_down(),
+                       "start_search" => {
+                           self.enter_search_mode(SearchMode::Search);
+                       }
+                       "start_column_search" => {
+                           self.enter_search_mode(SearchMode::ColumnSearch);
+                       }
+                       "start_filter" => {
+                           self.enter_search_mode(SearchMode::Filter);
+                       }
+                       "start_fuzzy_filter" => {
+                           self.enter_search_mode(SearchMode::FuzzyFilter);
+                       }
+                       "sort_by_column" => {
+                           // Use the DataView's toggle_sort for proper 3-state cycling
+                           self.toggle_sort_current_column();
+                           return Ok(false); // Event handled, continue running
+                       }
+                       "show_column_stats" => self.calculate_column_statistics(),
+                       "next_search_match" => self.next_search_match(),
+                       "previous_search_match" => self.previous_search_match(),
+                       "toggle_compact_mode" => {
+                           let current_mode = self.buffer().is_compact_mode();
+                           self.buffer_mut().set_compact_mode(!current_mode);
+                           let message = if !current_mode {
+                               "Compact mode: ON (reduced padding, more columns visible)".to_string()
+                           } else {
+                               "Compact mode: OFF (normal padding)".to_string()
+                           };
+                           self.buffer_mut().set_status_message(message);
+                       }
+                       "toggle_row_numbers" => {
+                           let current_mode = self.buffer().is_show_row_numbers();
+                           self.buffer_mut().set_show_row_numbers(!current_mode);
+                           let message = if !current_mode {
+                               "Row numbers: ON".to_string()
+                           } else {
+                               "Row numbers: OFF".to_string()
+                           };
+                           self.buffer_mut().set_status_message(message);
+                       }
+                       "jump_to_row" => {
+                           self.buffer_mut().set_mode(AppMode::JumpToRow);
+                           self.clear_jump_to_row_input();
 
-                    // Set jump-to-row state as active
-                    let container_ptr =
-                        Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
-                    unsafe {
-                        (*container_ptr).jump_to_row_mut().is_active = true;
-                    }
+                           // Set jump-to-row state as active
+                           let container_ptr =
+                               Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
+                           unsafe {
+                               (*container_ptr).jump_to_row_mut().is_active = true;
+                           }
 
-                    self.buffer_mut()
-                        .set_status_message("Enter row number:".to_string());
-                }
-                "pin_column" => self.toggle_column_pin(),
-                "clear_pins" => self.clear_all_pinned_columns(),
-                "toggle_selection_mode" => {
-                    self.state_container.toggle_selection_mode();
-                    let new_mode = self.state_container.get_selection_mode();
-                    let msg = match new_mode {
-                        SelectionMode::Cell => "Cell mode - Navigate to select individual cells",
-                        SelectionMode::Row => "Row mode - Navigate to select rows",
-                        SelectionMode::Column => "Column mode - Navigate to select columns",
-                    };
-                    self.buffer_mut().set_status_message(msg.to_string());
-                    return Ok(false); // Return to prevent duplicate handling
-                }
-                "export_to_csv" => self.export_to_csv(),
-                "export_to_json" => self.export_to_json(),
-                "toggle_help" => {
-                    if self.buffer().get_mode() == AppMode::Help {
-                        self.buffer_mut().set_mode(AppMode::Results);
-                        self.state_container.set_help_visible(false);
-                    } else {
-                        self.buffer_mut().set_mode(AppMode::Help);
-                        self.state_container.set_help_visible(true);
-                    }
-                }
-                "toggle_debug" => {
-                    // Use the unified debug handler
-                    self.toggle_debug_mode();
-                }
-                "toggle_case_insensitive" => {
-                    // Toggle case-insensitive string comparisons
-                    let current = self.buffer().is_case_insensitive();
-                    self.buffer_mut().set_case_insensitive(!current);
-                    self.buffer_mut().set_status_message(format!(
-                        "Case-insensitive string comparisons: {}",
-                        if !current { "ON" } else { "OFF" }
-                    ));
-                }
-                "start_history_search" => {
-                    // Switch to Command mode first
-                    let last_query = self.buffer().get_last_query();
+                           self.buffer_mut()
+                               .set_status_message("Enter row number:".to_string());
+                       }
+                       "pin_column" => self.toggle_column_pin(),
+                       "clear_pins" => self.clear_all_pinned_columns(),
+                       "toggle_selection_mode" => {
+                           self.state_container.toggle_selection_mode();
+                           let new_mode = self.state_container.get_selection_mode();
+                           let msg = match new_mode {
+                               SelectionMode::Cell => "Cell mode - Navigate to select individual cells",
+                               SelectionMode::Row => "Row mode - Navigate to select rows",
+                               SelectionMode::Column => "Column mode - Navigate to select columns",
+                           };
+                           self.buffer_mut().set_status_message(msg.to_string());
+                           return Ok(false); // Return to prevent duplicate handling
+                       }
+                       "export_to_csv" => self.export_to_csv(),
+                       "export_to_json" => self.export_to_json(),
+                       "toggle_help" => {
+                           if self.buffer().get_mode() == AppMode::Help {
+                               self.buffer_mut().set_mode(AppMode::Results);
+                               self.state_container.set_help_visible(false);
+                           } else {
+                               self.buffer_mut().set_mode(AppMode::Help);
+                               self.state_container.set_help_visible(true);
+                           }
+                       }
+                       "toggle_debug" => {
+                           // Use the unified debug handler
+                           self.toggle_debug_mode();
+                       }
+                       "toggle_case_insensitive" => {
+                           // Toggle case-insensitive string comparisons
+                           let current = self.buffer().is_case_insensitive();
+                           self.buffer_mut().set_case_insensitive(!current);
+                           self.buffer_mut().set_status_message(format!(
+                               "Case-insensitive string comparisons: {}",
+                               if !current { "ON" } else { "OFF" }
+                           ));
+                       }
+                       "start_history_search" => {
+                           // Switch to Command mode first
+                           let last_query = self.buffer().get_last_query();
 
-                    if !last_query.is_empty() {
-                        // Use helper to sync all states
-                        self.set_input_text(last_query.clone());
-                    }
+                           if !last_query.is_empty() {
+                               // Use helper to sync all states
+                               self.set_input_text(last_query.clone());
+                           }
+        // ========== MODE HANDLERS ==========
 
-                    self.buffer_mut().set_mode(AppMode::Command);
-                    self.state_container.set_table_selected_row(None);
 
-                    // Start history search
-                    let current_input = self.get_input_text();
+                           self.buffer_mut().set_mode(AppMode::Command);
+                           self.state_container.set_table_selected_row(None);
 
-                    // Start history search
-                    self.state_container.start_history_search(current_input);
+                           // Start history search
+                           let current_input = self.get_input_text();
 
-                    // Initialize with schema context
-                    self.update_history_matches_in_container();
+                           // Start history search
+                           self.state_container.start_history_search(current_input);
 
-                    // Get match count
-                    let match_count = self.state_container.history_search().matches.len();
+                           // Initialize with schema context
+                           self.update_history_matches_in_container();
 
-                    self.buffer_mut()
-                        .set_status_message(format!("History search: {} matches", match_count));
+                           // Get match count
+                           let match_count = self.state_container.history_search().matches.len();
 
-                    // Switch to History mode to show the search interface
-                    self.buffer_mut().set_mode(AppMode::History);
-                }
-                _ => {
-                    // Action not recognized, continue to handle key directly
-                }
-            }
-        }
-        */
+                           self.buffer_mut()
+                               .set_status_message(format!("History search: {} matches", match_count));
+
+                           // Switch to History mode to show the search interface
+                           self.buffer_mut().set_mode(AppMode::History);
+                       }
+                       _ => {
+                           // Action not recognized, continue to handle key directly
+                       }
+                   }
+               }
+               */
 
         // Fall back to direct key handling for special cases not in dispatcher
         match normalized_key.code {
@@ -3028,6 +3048,7 @@ impl EnhancedTuiApp {
         }
         Ok(false)
     }
+    // ========== SEARCH OPERATIONS ==========
 
     fn execute_search_action(&mut self, mode: SearchMode, pattern: String) {
         debug!(target: "search", "execute_search_action called: mode={:?}, pattern='{}', current_app_mode={:?}, thread={:?}", 
@@ -3478,6 +3499,8 @@ impl EnhancedTuiApp {
             SearchModesAction::PassThrough => {}
         }
 
+        // ========== FILTER OPERATIONS ==========
+
         Ok(false)
     }
 
@@ -3636,6 +3659,7 @@ impl EnhancedTuiApp {
             _ => {}
         }
         Ok(false)
+        // ========== COLUMN SEARCH ==========
     }
 
     fn handle_column_search_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -3785,6 +3809,7 @@ impl EnhancedTuiApp {
             AppMode::Command
         };
         self.buffer_mut().set_mode(mode);
+        // ========== HELP NAVIGATION ==========
     }
 
     fn scroll_help_down(&mut self) {
@@ -3858,6 +3883,7 @@ impl EnhancedTuiApp {
             _ => {}
         }
         Ok(false)
+        // ========== HISTORY MANAGEMENT ==========
     }
 
     /// Update history matches in the AppStateContainer with schema context
@@ -3909,6 +3935,7 @@ impl EnhancedTuiApp {
             self.buffer_mut().set_mode(AppMode::Command);
         }
         Ok(false)
+        // ========== QUERY OPERATIONS ==========
     }
 
     fn handle_pretty_query_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -4238,6 +4265,8 @@ impl EnhancedTuiApp {
         }
     }
 
+    // ========== COLUMN INFO ==========
+
     // Helper to get estimated visible rows based on terminal size
 
     fn get_column_count(&self) -> usize {
@@ -4317,6 +4346,7 @@ impl EnhancedTuiApp {
         // Extract the sorted indices
         Some(indexed_values.into_iter().map(|(_, idx)| idx).collect())
     }
+    // ========== NAVIGATION METHODS ==========
 
     // Navigation functions
     fn next_row(&mut self) {
@@ -4768,6 +4798,7 @@ impl EnhancedTuiApp {
             self.state_container.set_table_selected_row(Some(new_row));
             self.buffer_mut().set_status_message(status_msg);
         }
+        // ========== COLUMN PIN/HIDE ==========
     }
 
     fn toggle_column_pin(&mut self) {
@@ -4968,6 +4999,7 @@ impl EnhancedTuiApp {
         }
 
         None
+        // ========== VIEWPORT MANAGEMENT ==========
     }
 
     fn update_viewport_size(&mut self) {
@@ -5141,6 +5173,7 @@ impl EnhancedTuiApp {
         debug!(target: "navigation", "Page up via ViewportManager to row {}", 
                    result.row_position + 1);
     }
+    // ========== SEARCH EXECUTION ==========
 
     // Search and filter functions
     fn perform_search(&mut self) {
@@ -5679,6 +5712,7 @@ impl EnhancedTuiApp {
                 ));
             }
         }
+        // ========== FILTER EXECUTION ==========
     }
 
     fn apply_filter(&mut self, pattern: &str) {
@@ -6275,6 +6309,7 @@ impl EnhancedTuiApp {
             buffer.set_current_column(0);
             buffer.set_last_results_row(None); // Reset saved position for new results
             buffer.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
+                                                   // ========== SORT OPERATIONS ==========
         }
 
         // Reset ViewportManager if it exists
@@ -6516,6 +6551,7 @@ impl EnhancedTuiApp {
             Ok(message) => self.set_status_message(message),
             Err(e) => self.set_error_status("Export failed", e),
         }
+        // ========== YANK OPERATIONS ==========
     }
 
     fn yank_cell(&mut self) {
@@ -7129,6 +7165,7 @@ impl EnhancedTuiApp {
 
         // Render mode-specific status line
         self.render_status_line(f, chunks[2]);
+        // ========== RENDERING ==========
     }
 
     fn render_status_line(&self, f: &mut Frame, area: Rect) {
@@ -8647,6 +8684,8 @@ impl EnhancedTuiApp {
     }
 
     // === Editor Widget Helper Methods ===
+    // ========== QUERY EXECUTION ==========
+
     // These methods handle the actions returned by the editor widget
 
     fn handle_execute_query(&mut self) -> Result<bool> {
@@ -9606,6 +9645,7 @@ impl EnhancedTuiApp {
         } else {
             None
         }
+        // ========== DEBUG OPERATIONS ==========
     }
 
     fn show_pretty_query(&mut self) {
