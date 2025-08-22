@@ -141,11 +141,9 @@ impl KeyMapper {
             Action::Navigate(NavigateAction::PageDown),
         );
 
-        // Home/End navigation
-        mappings.insert(
-            (Char('g'), Mod::NONE),
-            Action::Navigate(NavigateAction::Home),
-        );
+        // Home/End navigation (using traditional vim gg/G pattern)
+        // Note: Single 'g' is reserved for vim command sequences like 'ga'
+        // Use 'gg' for go to top (handled in vim command sequences)
         mappings.insert(
             (Char('G'), Mod::SHIFT),
             Action::Navigate(NavigateAction::End),
@@ -361,6 +359,11 @@ impl KeyMapper {
                                     CursorPosition::AfterClause(SqlClause::GroupBy),
                                 ))
                             }
+                            "gg" => {
+                                // Go to top (vim-style)
+                                self.vim_command_buffer.clear();
+                                Some(Action::Navigate(NavigateAction::Home))
+                            }
                             _ => {
                                 // Invalid command, clear buffer
                                 self.vim_command_buffer.clear();
@@ -373,16 +376,25 @@ impl KeyMapper {
                         }
                     }
 
-                    // Check if this starts a vim command sequence
-                    if matches!(c, 'w' | 'o' | 's' | 'g') {
-                        self.vim_command_buffer.push(c);
-                        return None; // Collecting command, no action yet
-                    }
-
                     // Check for digits (vim counts)
                     if c.is_ascii_digit() {
                         self.count_buffer.push(c);
                         return None; // Collecting count, no action yet
+                    }
+
+                    // Check if this starts a vim command sequence, but only if no standalone mapping exists
+                    if matches!(c, 'w' | 'o' | 's' | 'g') {
+                        let key_combo = (key.code, key.modifiers);
+                        if let Some(mode_mappings) = self.mode_mappings.get(&context.mode) {
+                            if mode_mappings.contains_key(&key_combo) {
+                                // This key has a standalone mapping, let it fall through to normal mapping
+                                // Don't treat it as a vim command starter
+                            } else {
+                                // No standalone mapping, treat as vim command starter
+                                self.vim_command_buffer.push(c);
+                                return None; // Collecting command, no action yet
+                            }
+                        }
                     }
                 }
             }
@@ -702,6 +714,85 @@ mod tests {
                 AppMode::Command,
                 CursorPosition::AfterClause(SqlClause::OrderBy)
             ))
+        );
+    }
+
+    #[test]
+    fn test_sort_key_mapping() {
+        let mut mapper = KeyMapper::new();
+        let context = ActionContext {
+            mode: AppMode::Results,
+            selection_mode: SelectionMode::Row,
+            has_results: true,
+            has_filter: false,
+            has_search: false,
+            row_count: 100,
+            column_count: 10,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        // Test 's' for standalone sort action (this was the original issue)
+        let key = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
+        let action = mapper.map_key(key, &context);
+        assert_eq!(action, Some(Action::Sort(None)));
+    }
+
+    #[test]
+    fn test_vim_go_to_top() {
+        let mut mapper = KeyMapper::new();
+        let context = ActionContext {
+            mode: AppMode::Results,
+            selection_mode: SelectionMode::Row,
+            has_results: true,
+            has_filter: false,
+            has_search: false,
+            row_count: 100,
+            column_count: 10,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        // Test 'gg' for go to top (vim-style)
+        let key_g1 = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
+        let action_g1 = mapper.map_key(key_g1, &context);
+        assert_eq!(action_g1, None); // First 'g' starts collecting command
+
+        let key_g2 = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
+        let action_gg = mapper.map_key(key_g2, &context);
+        assert_eq!(action_gg, Some(Action::Navigate(NavigateAction::Home)));
+    }
+
+    #[test]
+    fn test_bug_reproduction_s_key_not_found() {
+        // This test reproduces the original bug where 's' key mapping wasn't found
+        let mut mapper = KeyMapper::new();
+        let context = ActionContext {
+            mode: AppMode::Results,
+            selection_mode: SelectionMode::Row,
+            has_results: true,
+            has_filter: false,
+            has_search: false,
+            row_count: 100,
+            column_count: 10,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        // Before the fix, this would return None because 's' was being intercepted
+        // by vim command logic. After the fix, it should return Sort action.
+        let key = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
+        let action = mapper.map_key(key, &context);
+
+        // This should NOT be None - the bug was that map_key returned None
+        assert!(
+            action.is_some(),
+            "Bug reproduction: 's' key should map to an action, not return None"
+        );
+        assert_eq!(
+            action,
+            Some(Action::Sort(None)),
+            "Bug reproduction: 's' key should map to Sort action"
         );
     }
 }

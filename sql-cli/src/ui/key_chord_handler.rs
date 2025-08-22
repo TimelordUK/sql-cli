@@ -437,7 +437,7 @@ mod tests {
         let key2 = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::empty());
         match handler.process_key(key2) {
             ChordResult::CompleteChord(action) => {
-                assert_eq!(action, "yank_row");
+                assert_eq!(action, Action::Yank(YankTarget::Row));
             }
             _ => panic!("Expected complete chord"),
         }
