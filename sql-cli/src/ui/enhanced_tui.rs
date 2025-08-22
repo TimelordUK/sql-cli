@@ -1254,12 +1254,11 @@ impl EnhancedTuiApp {
             CycleColumnPacking => {
                 let message = {
                     let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        let new_mode = viewport_manager.cycle_packing_mode();
-                        format!("Column packing: {}", new_mode.display_name())
-                    } else {
-                        "ViewportManager not available".to_string()
-                    }
+                    let viewport_manager = viewport_manager_borrow
+                        .as_mut()
+                        .expect("ViewportManager must exist");
+                    let new_mode = viewport_manager.cycle_packing_mode();
+                    format!("Column packing: {}", new_mode.display_name())
                 };
                 self.buffer_mut().set_status_message(message);
                 Ok(ActionResult::Handled)
@@ -4472,194 +4471,59 @@ impl EnhancedTuiApp {
     fn goto_first_row(&mut self) {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
-            // Use ViewportManager for navigation if available
-            let viewport_result = {
-                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                    Some(viewport_manager.navigate_to_first_row(total_rows))
-                } else {
-                    None
-                }
-            }; // viewport_manager borrow is dropped here
+            // Use ViewportManager for navigation
+            let nav_result = {
+                let mut viewport_borrow = self.viewport_manager.borrow_mut();
+                viewport_borrow
+                    .as_mut()
+                    .map(|vm| vm.navigate_to_first_row(total_rows))
+            };
 
-            if let Some(result) = viewport_result {
-                // Update NavigationState to match ViewportManager's result
-                {
-                    let mut nav = self.state_container.navigation_mut();
-                    // Don't call jump_to_first_row() - it might use different state
-                    // Instead, directly set to ViewportManager's calculated position
-                    nav.selected_row = result.row_position;
-                    nav.scroll_offset.0 = result.row_scroll_offset;
-                    debug!(target: "crosshair", 
-                           "goto_first_row: Synced NavigationState with ViewportManager - selected_row={}, scroll_offset={}", 
-                           nav.selected_row, nav.scroll_offset.0);
-                }
-
-                // Update selected row
-                self.state_container
-                    .set_table_selected_row(Some(result.row_position));
-                self.buffer_mut()
-                    .set_selected_row(Some(result.row_position));
-
-                // Update scroll offset from ViewportManager's calculation
-                let mut offset = self.buffer().get_scroll_offset();
-                offset.0 = result.row_scroll_offset;
-                self.buffer_mut().set_scroll_offset(offset);
-
-                // Use the description from ViewportManager
-                self.buffer_mut().set_status_message(result.description);
-            } else {
-                // Fallback if no ViewportManager
-                {
-                    let mut nav = self.state_container.navigation_mut();
-                    nav.jump_to_first_row();
-                }
-
-                self.state_container.set_table_selected_row(Some(0));
-                self.buffer_mut().set_selected_row(Some(0));
-
-                let mut offset = self.buffer().get_scroll_offset();
-                offset.0 = 0;
-                self.buffer_mut().set_scroll_offset(offset);
-
-                self.buffer_mut()
-                    .set_status_message(format!("Jumped to first row (1/{})", total_rows));
+            if let Some(nav_result) = nav_result {
+                self.apply_row_navigation_result(nav_result);
             }
         }
     }
 
     fn goto_viewport_top(&mut self) {
         // Use ViewportManager for navigation
-        let viewport_result = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                Some(viewport_manager.navigate_to_viewport_top())
-            } else {
-                None
-            }
-        }; // viewport_manager borrow is dropped here
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            viewport_borrow
+                .as_mut()
+                .map(|vm| vm.navigate_to_viewport_top())
+        };
 
-        if let Some(result) = viewport_result {
-            // Update NavigationState to match ViewportManager's result
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.selected_row = result.row_position;
-                // Scroll offset doesn't change for viewport navigation
-            }
-
-            // Update selected row
-            self.state_container
-                .set_table_selected_row(Some(result.row_position));
-            self.buffer_mut()
-                .set_selected_row(Some(result.row_position));
-
-            // Use the description from ViewportManager
-            self.buffer_mut().set_status_message(result.description);
-        } else {
-            // Fallback if no ViewportManager
-            let (new_row, status_msg) = {
-                let mut nav = self.state_container.navigation_mut();
-                nav.jump_to_viewport_top();
-                let row = nav.selected_row;
-                let total = nav.total_rows;
-                (
-                    row,
-                    format!("Jumped to viewport top (row {}/{})", row + 1, total),
-                )
-            };
-
-            self.state_container.set_table_selected_row(Some(new_row));
-            self.buffer_mut().set_status_message(status_msg);
+        if let Some(nav_result) = nav_result {
+            self.apply_row_navigation_result(nav_result);
         }
     }
 
     fn goto_viewport_middle(&mut self) {
         // Use ViewportManager for navigation
-        let viewport_result = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                Some(viewport_manager.navigate_to_viewport_middle())
-            } else {
-                None
-            }
-        }; // viewport_manager borrow is dropped here
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            viewport_borrow
+                .as_mut()
+                .map(|vm| vm.navigate_to_viewport_middle())
+        };
 
-        if let Some(result) = viewport_result {
-            // Update NavigationState to match ViewportManager's result
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.selected_row = result.row_position;
-                // Scroll offset doesn't change for viewport navigation
-            }
-
-            // Update selected row
-            self.state_container
-                .set_table_selected_row(Some(result.row_position));
-            self.buffer_mut()
-                .set_selected_row(Some(result.row_position));
-
-            // Use the description from ViewportManager
-            self.buffer_mut().set_status_message(result.description);
-        } else {
-            // Fallback if no ViewportManager
-            let (new_row, status_msg) = {
-                let mut nav = self.state_container.navigation_mut();
-                nav.jump_to_viewport_middle();
-                let row = nav.selected_row;
-                let total = nav.total_rows;
-                (
-                    row,
-                    format!("Jumped to viewport middle (row {}/{})", row + 1, total),
-                )
-            };
-
-            self.state_container.set_table_selected_row(Some(new_row));
-            self.buffer_mut().set_status_message(status_msg);
+        if let Some(nav_result) = nav_result {
+            self.apply_row_navigation_result(nav_result);
         }
     }
 
     fn goto_viewport_bottom(&mut self) {
         // Use ViewportManager for navigation
-        let viewport_result = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                Some(viewport_manager.navigate_to_viewport_bottom())
-            } else {
-                None
-            }
-        }; // viewport_manager borrow is dropped here
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            viewport_borrow
+                .as_mut()
+                .map(|vm| vm.navigate_to_viewport_bottom())
+        };
 
-        if let Some(result) = viewport_result {
-            // Update NavigationState to match ViewportManager's result
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.selected_row = result.row_position;
-                // Scroll offset doesn't change for viewport navigation
-            }
-
-            // Update selected row
-            self.state_container
-                .set_table_selected_row(Some(result.row_position));
-            self.buffer_mut()
-                .set_selected_row(Some(result.row_position));
-
-            // Use the description from ViewportManager
-            self.buffer_mut().set_status_message(result.description);
-        } else {
-            // Fallback if no ViewportManager
-            let (new_row, status_msg) = {
-                let mut nav = self.state_container.navigation_mut();
-                nav.jump_to_viewport_bottom();
-                let row = nav.selected_row;
-                let total = nav.total_rows;
-                (
-                    row,
-                    format!("Jumped to viewport bottom (row {}/{})", row + 1, total),
-                )
-            };
-
-            self.state_container.set_table_selected_row(Some(new_row));
-            self.buffer_mut().set_status_message(status_msg);
+        if let Some(nav_result) = nav_result {
+            self.apply_row_navigation_result(nav_result);
         }
         // ========== COLUMN PIN/HIDE ==========
     }
@@ -4892,149 +4756,42 @@ impl EnhancedTuiApp {
     fn goto_last_row(&mut self) {
         let total_rows = self.get_row_count();
         if total_rows > 0 {
-            // Use ViewportManager for navigation if available
-            let viewport_result = {
-                let mut viewport_manager_ref = self.viewport_manager.borrow_mut();
-                if let Some(ref mut viewport_manager) = *viewport_manager_ref {
-                    Some(viewport_manager.navigate_to_last_row(total_rows))
-                } else {
-                    None
-                }
-            }; // viewport_manager borrow is dropped here
+            // Use ViewportManager for navigation
+            let nav_result = {
+                let mut viewport_borrow = self.viewport_manager.borrow_mut();
+                viewport_borrow
+                    .as_mut()
+                    .map(|vm| vm.navigate_to_last_row(total_rows))
+            };
 
-            if let Some(result) = viewport_result {
-                // Update NavigationState to match ViewportManager's result
-                {
-                    let mut nav = self.state_container.navigation_mut();
-                    // Don't call jump_to_last_row() - it might use different total_rows
-                    // Instead, directly set to ViewportManager's calculated position
-                    nav.selected_row = result.row_position;
-                    nav.scroll_offset.0 = result.row_scroll_offset;
-                    debug!(target: "crosshair", 
-                           "goto_last_row: Synced NavigationState with ViewportManager - selected_row={}, scroll_offset={}", 
-                           nav.selected_row, nav.scroll_offset.0);
-                }
-
-                // Update selected row
-                self.state_container
-                    .set_table_selected_row(Some(result.row_position));
-                self.buffer_mut()
-                    .set_selected_row(Some(result.row_position));
-
-                // Update scroll offset from ViewportManager's calculation
-                let mut offset = self.buffer().get_scroll_offset();
-                offset.0 = result.row_scroll_offset;
-                self.buffer_mut().set_scroll_offset(offset);
-
-                // Set status message from ViewportManager's description
-                self.buffer_mut().set_status_message(result.description);
-
-                debug!(target: "navigation", "goto_last_row via ViewportManager: row={}, scroll={}, viewport_changed={}", 
-                       result.row_position, result.row_scroll_offset, result.viewport_changed);
-            } else {
-                // Fallback to old implementation if ViewportManager not available
-                let last_row = total_rows - 1;
-                // Update NavigationState
-                {
-                    let mut nav = self.state_container.navigation_mut();
-                    nav.jump_to_last_row();
-                }
-
-                self.state_container.set_table_selected_row(Some(last_row));
-
-                // Sync with buffer's table state so it shows in rendering
-                self.buffer_mut().set_selected_row(Some(last_row));
-
-                // Position viewport to show the last row at the bottom
-                let visible_rows = self.buffer().get_last_visible_rows();
-                let mut offset = self.buffer().get_scroll_offset();
-                offset.0 = last_row.saturating_sub(visible_rows - 1);
-                self.buffer_mut().set_scroll_offset(offset);
-
-                // Set status to confirm action
-                self.buffer_mut().set_status_message(format!(
-                    "Jumped to last row ({}/{})",
-                    last_row + 1,
-                    total_rows
-                ));
-
-                warn!(target: "navigation", "goto_last_row: ViewportManager not available, using fallback");
+            if let Some(nav_result) = nav_result {
+                self.apply_row_navigation_result(nav_result);
             }
         }
     }
 
     fn page_down(&mut self) {
-        // Use ViewportManager for page navigation - get result and drop borrow
-        let result = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            let viewport_manager = viewport_manager_borrow
-                .as_mut()
-                .expect("ViewportManager must exist for page navigation");
-            viewport_manager.page_down()
-        }; // Borrow of viewport_manager dropped here
+        // Use ViewportManager for page navigation
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            viewport_borrow.as_mut().map(|vm| vm.page_down())
+        };
 
-        // Update state with results
-        self.state_container
-            .set_table_selected_row(Some(result.row_position));
-
-        // Sync with buffer's table state
-        self.buffer_mut()
-            .set_selected_row(Some(result.row_position));
-
-        // Update scroll offset
-        let col_offset = self.buffer().get_scroll_offset().1;
-        self.buffer_mut()
-            .set_scroll_offset((result.row_scroll_offset, col_offset));
-
-        // Update navigation state
-        {
-            let mut nav = self.state_container.navigation_mut();
-            nav.selected_row = result.row_position;
-            nav.scroll_offset.0 = result.row_scroll_offset;
+        if let Some(nav_result) = nav_result {
+            self.apply_row_navigation_result(nav_result);
         }
-
-        // Set status message
-        self.buffer_mut().set_status_message(result.description);
-
-        debug!(target: "navigation", "Page down via ViewportManager to row {}", 
-                   result.row_position + 1);
     }
 
     fn page_up(&mut self) {
-        // Use ViewportManager for page navigation - get result and drop borrow
-        let result = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            let viewport_manager = viewport_manager_borrow
-                .as_mut()
-                .expect("ViewportManager must exist for page navigation");
-            viewport_manager.page_up()
-        }; // Borrow of viewport_manager dropped here
+        // Use ViewportManager for page navigation
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            viewport_borrow.as_mut().map(|vm| vm.page_up())
+        };
 
-        // Update state with results
-        self.state_container
-            .set_table_selected_row(Some(result.row_position));
-
-        // Sync with buffer's table state
-        self.buffer_mut()
-            .set_selected_row(Some(result.row_position));
-
-        // Update scroll offset
-        let col_offset = self.buffer().get_scroll_offset().1;
-        self.buffer_mut()
-            .set_scroll_offset((result.row_scroll_offset, col_offset));
-
-        // Update navigation state
-        {
-            let mut nav = self.state_container.navigation_mut();
-            nav.selected_row = result.row_position;
-            nav.scroll_offset.0 = result.row_scroll_offset;
+        if let Some(nav_result) = nav_result {
+            self.apply_row_navigation_result(nav_result);
         }
-
-        // Set status message
-        self.buffer_mut().set_status_message(result.description);
-
-        debug!(target: "navigation", "Page up via ViewportManager to row {}", 
-                   result.row_position + 1);
     }
     // ========== SEARCH EXECUTION ==========
 
@@ -7583,11 +7340,12 @@ impl EnhancedTuiApp {
         }
 
         // Get headers from ViewportManager (single source of truth)
-        let headers = if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+        let headers = {
+            let viewport_manager = self.viewport_manager.borrow();
+            let viewport_manager = viewport_manager
+                .as_ref()
+                .expect("ViewportManager must exist");
             viewport_manager.get_column_names_ordered()
-        } else {
-            // Fallback to provider if ViewportManager not available
-            provider.get_column_names()
         };
         debug!(
             "render_table_with_provider: Got {} column headers from ViewportManager",
