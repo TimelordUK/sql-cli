@@ -21,6 +21,7 @@ use crate::sql_highlighter::SqlHighlighter;
 use crate::text_navigation::TextNavigator;
 use crate::ui::actions::{Action, ActionContext, ActionResult};
 use crate::ui::cell_renderer::CellRenderer;
+use crate::ui::enhanced_tui_helpers;
 use crate::ui::key_chord_handler::{ChordResult, KeyChordHandler};
 use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
@@ -1494,40 +1495,6 @@ impl EnhancedTuiApp {
         // ========== UTILITY FUNCTIONS ==========
     }
 
-    fn sanitize_table_name(name: &str) -> String {
-        // Replace spaces and other problematic characters with underscores
-        // to create SQL-friendly table names
-        // Examples: "Business Crime Borough Level" -> "Business_Crime_Borough_Level"
-        let sanitized: String = name
-            .trim()
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-
-        // If the sanitized name is too complex (too long or has too many underscores),
-        // fall back to a simple default name
-        const MAX_LENGTH: usize = 30;
-        const MAX_UNDERSCORES: usize = 5;
-
-        let underscore_count = sanitized.chars().filter(|&c| c == '_').count();
-
-        if sanitized.len() > MAX_LENGTH || underscore_count > MAX_UNDERSCORES {
-            // Use a simple fallback name
-            "data".to_string()
-        } else if sanitized.is_empty() || sanitized.chars().all(|c| c == '_') {
-            // If the name is empty or all underscores after sanitization
-            "data".to_string()
-        } else {
-            sanitized
-        }
-    }
-
     pub fn new(api_url: &str) -> Self {
         // Load configuration
         let config = Config::load().unwrap_or_else(|_e| {
@@ -1666,7 +1633,7 @@ impl EnhancedTuiApp {
             .to_string();
 
         // Sanitize the table name to be SQL-friendly
-        let table_name = Self::sanitize_table_name(&raw_name);
+        let table_name = enhanced_tui_helpers::sanitize_table_name(&raw_name);
 
         // Direct DataTable loading
         let (file_type_str, memory_before, memory_after) = match file_type {
@@ -9717,7 +9684,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                                 .and_then(|s| s.to_str())
                                 .unwrap_or("data")
                                 .to_string();
-                            let table_name = EnhancedTuiApp::sanitize_table_name(&raw_name);
+                            let table_name = enhanced_tui_helpers::sanitize_table_name(&raw_name);
 
                             // Load the data
                             if extension.to_lowercase() == "csv" {
