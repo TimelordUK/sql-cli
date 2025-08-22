@@ -864,8 +864,58 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             ExitCurrentMode => {
-                // Handle escape from Results mode
-                self.buffer_mut().set_mode(AppMode::Command);
+                // Handle escape based on current mode
+                match _context.mode {
+                    AppMode::Results => {
+                        // If vim search is active, just exit search mode but stay in Results
+                        if self.vim_search_manager.borrow().is_active() {
+                            self.vim_search_manager.borrow_mut().exit_navigation();
+                            self.buffer_mut()
+                                .set_status_message("Search mode exited".to_string());
+                            return Ok(ActionResult::Handled);
+                        }
+
+                        // Otherwise, switch to Command mode as usual
+                        // Save current position before switching to Command mode
+                        if let Some(selected) = self.state_container.get_table_selected_row() {
+                            self.buffer_mut().set_last_results_row(Some(selected));
+                            let scroll_offset = self.buffer().get_scroll_offset();
+                            self.buffer_mut().set_last_scroll_offset(scroll_offset);
+                        }
+
+                        // Restore the last executed query to input_text for editing
+                        let last_query = self.buffer().get_last_query();
+                        let current_input = self.buffer().get_input_text();
+                        debug!(target: "mode", "Exiting Results mode: current input_text='{}', last_query='{}'", current_input, last_query);
+
+                        if !last_query.is_empty() {
+                            debug!(target: "buffer", "Restoring last_query to input_text: '{}'", last_query);
+                            // Use the helper method to sync all three input states
+                            self.set_input_text(last_query.clone());
+                        } else if !current_input.is_empty() {
+                            debug!(target: "buffer", "No last_query but input_text has content, keeping: '{}'", current_input);
+                        } else {
+                            debug!(target: "buffer", "No last_query to restore when exiting Results mode");
+                        }
+
+                        debug!(target: "mode", "Switching from Results to Command mode");
+                        self.buffer_mut().set_mode(AppMode::Command);
+                        self.state_container.set_table_selected_row(None);
+                    }
+                    AppMode::Help => {
+                        // Return to previous mode (usually Results)
+                        self.buffer_mut().set_mode(AppMode::Results);
+                        self.state_container.set_help_visible(false);
+                    }
+                    AppMode::Debug => {
+                        // Return to Results mode
+                        self.buffer_mut().set_mode(AppMode::Results);
+                    }
+                    _ => {
+                        // For other modes, generally go back to Command
+                        self.buffer_mut().set_mode(AppMode::Command);
+                    }
+                }
                 Ok(ActionResult::Handled)
             }
             SwitchMode(target_mode) => {
@@ -1158,6 +1208,34 @@ impl EnhancedTuiApp {
             }
             ShowColumnStatistics => {
                 self.calculate_column_statistics();
+                Ok(ActionResult::Handled)
+            }
+            StartHistorySearch => {
+                // Switch to Command mode first if needed
+                if self.buffer().get_mode() == AppMode::Results {
+                    let last_query = self.buffer().get_last_query();
+                    if !last_query.is_empty() {
+                        // Use helper to sync all states
+                        self.set_input_text(last_query.clone());
+                    }
+                    self.buffer_mut().set_mode(AppMode::Command);
+                    self.state_container.set_table_selected_row(None);
+                }
+
+                // Start history search with current input
+                let current_input = self.get_input_text();
+                self.state_container.start_history_search(current_input);
+
+                // Initialize with schema context
+                self.update_history_matches_in_container();
+
+                // Get match count and update status
+                let match_count = self.state_container.history_search().matches.len();
+                self.buffer_mut()
+                    .set_status_message(format!("History search: {} matches", match_count));
+
+                // Switch to History mode to show the search interface
+                self.buffer_mut().set_mode(AppMode::History);
                 Ok(ActionResult::Handled)
             }
             CycleColumnPacking => {
@@ -2599,11 +2677,10 @@ impl EnhancedTuiApp {
         // Normalize the key for platform differences
         let normalized = self.state_container.normalize_key(key);
 
-        // Get the action that will be performed (if any)
-        let action = self
-            .key_dispatcher
-            .get_results_action(&normalized)
-            .map(|s| s.to_string());
+        // Get the action that will be performed (if any) - for logging purposes
+        let action_context = self.build_action_context();
+        let mapped_action = self.key_mapper.map_key(normalized, &action_context);
+        let action = mapped_action.as_ref().map(|a| format!("{:?}", a));
 
         // Log the key press
         if normalized != key {
@@ -2672,7 +2749,22 @@ impl EnhancedTuiApp {
         // NOTE: Chord handling has been moved to handle_input level
         // This ensures chords work correctly before any other key processing
 
-        // Use dispatcher to get action first
+        // All keys should now be handled through the action system above
+        // Any keys that reach here are either:
+        // 1. Not mapped in the action system yet
+        // 2. Special cases that need direct handling
+
+        // For now, log unmapped keys for debugging
+        if mapped_action.is_none() {
+            debug!(
+                "No action mapping for key {:?} in Results mode",
+                normalized_key
+            );
+        }
+
+        // Remove the old dispatcher-based handling entirely
+        // The action system above should handle everything
+        /*
         if let Some(action) = self.key_dispatcher.get_results_action(&normalized_key) {
             debug!(
                 "Dispatcher returned action '{}' for key {:?}",
@@ -2858,6 +2950,7 @@ impl EnhancedTuiApp {
                 }
             }
         }
+        */
 
         // Fall back to direct key handling for special cases not in dispatcher
         match normalized_key.code {

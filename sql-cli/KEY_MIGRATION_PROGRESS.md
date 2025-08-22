@@ -40,11 +40,37 @@
 - ChordResult::CompleteChord now contains Action enum
 - Enhanced TUI routes chord Actions through try_handle_action()
 - Removed old string-based handle_chord_action() method
+- Fixed compilation in debug binaries
 
 ### Phase 4: Remove Dispatcher Layer
-**Status**: Not started
+**Status**: IN PROGRESS (2025-08-22)
 **Goal**: Remove intermediate `key_dispatcher` translation layer
 **Keys affected**: All keys currently going through dispatcher
+
+**Dispatcher Analysis**:
+The dispatcher currently handles these actions in Results mode:
+- quit, exit_results_mode
+- next_row, previous_row
+- move_column_left, move_column_right  
+- goto_first_row, goto_last_row
+- goto_viewport_top/middle/bottom
+- goto_first_column, goto_last_column
+- page_up, page_down
+- start_search, start_column_search, start_filter, start_fuzzy_filter
+- sort_by_column, show_column_stats
+- next_search_match, previous_search_match
+- toggle_compact_mode, toggle_row_numbers
+- jump_to_row, pin_column, clear_pins
+- toggle_selection_mode
+- export_to_csv, export_to_json
+- toggle_help, toggle_debug
+- toggle_case_insensitive
+- start_history_search
+
+**Strategy**:
+1. Most of these can map directly to existing Actions
+2. Some need new Actions defined
+3. Remove dispatcher calls and use KeyMapper directly
 
 ### Phase 5: Remaining Results Mode Keys
 **Status**: Not started

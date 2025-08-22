@@ -131,9 +131,49 @@ impl KeyMapper {
         mappings.insert((Down, Mod::NONE), Action::Navigate(NavigateAction::Down(1)));
         mappings.insert((Up, Mod::NONE), Action::Navigate(NavigateAction::Up(1))); // Up navigates up, bounded at row 0
 
+        // Page navigation
+        mappings.insert(
+            (PageUp, Mod::NONE),
+            Action::Navigate(NavigateAction::PageUp),
+        );
+        mappings.insert(
+            (PageDown, Mod::NONE),
+            Action::Navigate(NavigateAction::PageDown),
+        );
+
+        // Home/End navigation
+        mappings.insert(
+            (Char('g'), Mod::NONE),
+            Action::Navigate(NavigateAction::Home),
+        );
+        mappings.insert(
+            (Char('G'), Mod::SHIFT),
+            Action::Navigate(NavigateAction::End),
+        );
+
+        // First/Last column navigation
+        mappings.insert(
+            (Char('0'), Mod::NONE),
+            Action::Navigate(NavigateAction::FirstColumn),
+        );
+        mappings.insert(
+            (Char('^'), Mod::NONE),
+            Action::Navigate(NavigateAction::FirstColumn),
+        );
+        mappings.insert(
+            (Char('$'), Mod::NONE),
+            Action::Navigate(NavigateAction::LastColumn),
+        );
+
+        // Viewport navigation (H/M/L like vim)
+        mappings.insert((Char('H'), Mod::SHIFT), Action::NavigateToViewportTop);
+        mappings.insert((Char('M'), Mod::SHIFT), Action::NavigateToViewportMiddle);
+        mappings.insert((Char('L'), Mod::SHIFT), Action::NavigateToViewportBottom);
+
         // Mode switching
         mappings.insert((Esc, Mod::NONE), Action::ExitCurrentMode);
         mappings.insert((Char('q'), Mod::NONE), Action::Quit);
+        mappings.insert((Char('c'), Mod::CONTROL), Action::Quit); // Ctrl+C to quit
 
         // F2 to switch to Command mode
         mappings.insert((F(2), Mod::NONE), Action::SwitchMode(AppMode::Command));
@@ -210,8 +250,17 @@ impl KeyMapper {
         mappings.insert((Char(' '), Mod::CONTROL), Action::ToggleViewportLock);
 
         // F-key actions
+        mappings.insert((F(1), Mod::NONE), Action::ShowHelp);
+        mappings.insert((Char('?'), Mod::NONE), Action::ShowHelp); // ? also shows help
+        mappings.insert((F(5), Mod::NONE), Action::ShowDebugInfo);
         mappings.insert((F(8), Mod::NONE), Action::ToggleCaseInsensitive);
         mappings.insert((F(12), Mod::NONE), Action::ToggleKeyIndicator);
+
+        // Clear pins
+        mappings.insert((Char('P'), Mod::SHIFT), Action::ClearAllPins);
+
+        // History search
+        mappings.insert((Char('r'), Mod::CONTROL), Action::StartHistorySearch);
 
         self.mode_mappings.insert(AppMode::Results, mappings);
     }

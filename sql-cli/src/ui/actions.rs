@@ -99,6 +99,7 @@ pub enum Action {
     // Query operations
     ExecuteQuery,
     LoadFromHistory(usize),
+    StartHistorySearch,
 
     // View operations
     RefreshView,
