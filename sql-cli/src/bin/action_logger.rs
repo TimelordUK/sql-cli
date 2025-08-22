@@ -96,12 +96,12 @@ fn main() -> io::Result<()> {
                 let chord_result = chord_handler.process_key(key);
 
                 match chord_result {
-                    ChordResult::CompleteChord(action_name) => {
-                        println!("│ {:6} │ CHORD COMPLETE => {}", key_str, action_name);
+                    ChordResult::CompleteChord(action) => {
+                        println!("│ {:6} │ CHORD COMPLETE => {:?}", key_str, action);
                         io::stdout().flush().unwrap();
 
-                        // Reset for q to quit
-                        if action_name == "quit" {
+                        // Check for quit action
+                        if matches!(action, sql_cli::ui::actions::Action::Quit) {
                             break;
                         }
                         continue;

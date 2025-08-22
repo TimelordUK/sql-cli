@@ -75,15 +75,15 @@ impl ActionDebugger {
             let chord_result = self.chord_handler.process_key(key);
 
             match chord_result {
-                ChordResult::CompleteChord(action_name) => {
+                ChordResult::CompleteChord(action) => {
                     let msg = format!(
-                        "Chord completed: '{}' → {}",
+                        "Chord completed: '{}' → {:?}",
                         self.chord_handler
                             .format_debug_info()
                             .lines()
                             .find(|l| l.starts_with("Current chord:"))
                             .unwrap_or("??"),
-                        action_name
+                        action
                     );
                     self.action_history.push_front(msg);
                     if self.action_history.len() > MAX_HISTORY {
