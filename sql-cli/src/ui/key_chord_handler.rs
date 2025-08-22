@@ -1,3 +1,4 @@
+use crate::ui::actions::{Action, YankTarget};
 use chrono::Local;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
@@ -47,16 +48,16 @@ pub enum ChordResult {
     SingleKey(KeyEvent),
     /// Partial chord match, waiting for more keys
     PartialChord(String), // Description of what we're waiting for
-    /// Complete chord matched
-    CompleteChord(String), // Action name
+    /// Complete chord matched with corresponding Action
+    CompleteChord(Action),
     /// Chord cancelled (timeout or escape)
     Cancelled,
 }
 
 /// Manages key chord sequences and history
 pub struct KeyChordHandler {
-    /// Map of chord sequences to action names
-    chord_map: HashMap<ChordSequence, String>,
+    /// Map of chord sequences to Actions
+    chord_map: HashMap<ChordSequence, Action>,
     /// Current chord being built
     current_chord: Vec<KeyEvent>,
     /// Time when current chord started
@@ -92,12 +93,12 @@ impl KeyChordHandler {
     /// Set up default chord mappings
     fn setup_default_chords(&mut self) {
         // Yank chords - these are the only actual chords in use
-        self.register_chord("yy", "yank_row");
-        self.register_chord("yr", "yank_row"); // Alternative for yank row
-        self.register_chord("yc", "yank_column");
-        self.register_chord("ya", "yank_all");
-        self.register_chord("yv", "yank_cell"); // Yank cell value in row mode
-        self.register_chord("yq", "yank_query"); // Yank current query text
+        self.register_chord_action("yy", Action::Yank(YankTarget::Row));
+        self.register_chord_action("yr", Action::Yank(YankTarget::Row)); // Alternative for yank row
+        self.register_chord_action("yc", Action::Yank(YankTarget::Column));
+        self.register_chord_action("ya", Action::Yank(YankTarget::All));
+        self.register_chord_action("yv", Action::Yank(YankTarget::Cell)); // Yank cell value
+        self.register_chord_action("yq", Action::Yank(YankTarget::Query)); // Yank current query text
 
         // Future chord possibilities (not currently implemented):
         // self.register_chord("gg", "go_to_top");  // Currently single 'g'
@@ -105,10 +106,10 @@ impl KeyChordHandler {
         // self.register_chord("dw", "delete_word"); // Only in command mode with Alt+D
     }
 
-    /// Register a chord sequence
-    pub fn register_chord(&mut self, notation: &str, action: &str) {
+    /// Register a chord sequence with an Action
+    pub fn register_chord_action(&mut self, notation: &str, action: Action) {
         if let Some(chord) = ChordSequence::from_notation(notation) {
-            self.chord_map.insert(chord, action.to_string());
+            self.chord_map.insert(chord, action);
         }
     }
 
@@ -157,7 +158,7 @@ impl KeyChordHandler {
             self.chord_map.keys().collect::<Vec<_>>()
         );
         if let Some(action) = self.chord_map.get(&current) {
-            debug!("Found exact match! Action: {}", action);
+            debug!("Found exact match! Action: {:?}", action);
             let result = ChordResult::CompleteChord(action.clone());
             self.reset_chord();
             return result;
@@ -180,10 +181,18 @@ impl KeyChordHandler {
                     if chord.keys.len() > self.current_chord.len()
                         && chord.keys[..self.current_chord.len()] == self.current_chord[..]
                     {
+                        let action_name = match action {
+                            Action::Yank(YankTarget::Row) => "yank row",
+                            Action::Yank(YankTarget::Column) => "yank column",
+                            Action::Yank(YankTarget::All) => "yank all",
+                            Action::Yank(YankTarget::Cell) => "yank cell",
+                            Action::Yank(YankTarget::Query) => "yank query",
+                            _ => "unknown",
+                        };
                         Some(format!(
                             "{} → {}",
                             format_key(&chord.keys[self.current_chord.len()]),
-                            action
+                            action_name
                         ))
                     } else {
                         None
@@ -304,7 +313,15 @@ impl KeyChordHandler {
         let mut chords: Vec<_> = self.chord_map.iter().collect();
         chords.sort_by_key(|(chord, _)| chord.to_string());
         for (chord, action) in chords {
-            output.push_str(&format!("{} → {}\n", chord.to_string(), action));
+            let action_name = match action {
+                Action::Yank(YankTarget::Row) => "yank_row",
+                Action::Yank(YankTarget::Column) => "yank_column",
+                Action::Yank(YankTarget::All) => "yank_all",
+                Action::Yank(YankTarget::Cell) => "yank_cell",
+                Action::Yank(YankTarget::Query) => "yank_query",
+                _ => "unknown",
+            };
+            output.push_str(&format!("{} → {}\n", chord.to_string(), action_name));
         }
 
         // Key history
@@ -319,10 +336,14 @@ impl KeyChordHandler {
     }
 
     /// Load custom bindings from config (for future)
-    pub fn load_from_config(&mut self, config: &HashMap<String, String>) {
-        for (notation, action) in config {
-            self.register_chord(notation, action);
-        }
+    /// Note: This will need to be updated to work with Actions when config support is added
+    pub fn load_from_config(&mut self, _config: &HashMap<String, String>) {
+        // TODO: Convert string action names to Actions when loading from config
+        // for (notation, action_name) in config {
+        //     if let Some(action) = parse_action_from_string(action_name) {
+        //         self.register_chord_action(notation, action);
+        //     }
+        // }
     }
 }
 

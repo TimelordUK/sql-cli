@@ -1,0 +1,6 @@
+id,name,department,salary,status
+1,Alice,Engineering,120000,Active
+2,Bob,Marketing,95000,Active
+3,Charlie,Engineering,110000,Inactive
+4,David,Sales,85000,Active
+5,Eve,Engineering,125000,Active

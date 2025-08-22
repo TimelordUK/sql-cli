@@ -1,0 +1,11 @@
+id,product,category,price,status
+1,Laptop,Electronics,1200,Available
+2,Mouse,Electronics,25,Available
+3,Keyboard,Electronics,75,Out of Stock
+4,Monitor,Electronics,300,Available
+5,Desk,Furniture,450,Available
+6,Chair,Furniture,250,Available
+7,Lamp,Electronics,50,Out of Stock
+8,Notebook,Stationery,10,Available
+9,Pen,Stationery,5,Available
+10,Electronics Kit,Electronics,100,Available

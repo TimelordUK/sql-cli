@@ -1173,6 +1173,31 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_status_message(message);
                 Ok(ActionResult::Handled)
             }
+            Yank(target) => {
+                use crate::ui::actions::YankTarget;
+                match target {
+                    YankTarget::Cell => {
+                        self.yank_cell();
+                        Ok(ActionResult::Handled)
+                    }
+                    YankTarget::Row => {
+                        self.yank_row();
+                        Ok(ActionResult::Handled)
+                    }
+                    YankTarget::Column => {
+                        self.yank_column();
+                        Ok(ActionResult::Handled)
+                    }
+                    YankTarget::All => {
+                        self.yank_all();
+                        Ok(ActionResult::Handled)
+                    }
+                    YankTarget::Query => {
+                        self.yank_query();
+                        Ok(ActionResult::Handled)
+                    }
+                }
+            }
             _ => {
                 // Action not yet implemented in new system
                 Ok(ActionResult::NotHandled)
@@ -1810,11 +1835,31 @@ impl EnhancedTuiApp {
 
                             match chord_result {
                                 ChordResult::CompleteChord(action) => {
-                                    // Handle completed chord actions
-                                    debug!("Chord completed: {}", action);
+                                    // Handle completed chord actions through the action system
+                                    debug!("Chord completed: {:?}", action);
                                     // Clear chord mode in renderer
                                     self.key_sequence_renderer.clear_chord_mode();
-                                    self.handle_chord_action(&action)?
+                                    // Use the action system to handle the chord action
+                                    self.try_handle_action(
+                                        action,
+                                        &ActionContext {
+                                            mode: self.buffer().get_mode(),
+                                            selection_mode: self
+                                                .state_container
+                                                .get_selection_mode(),
+                                            has_results: self.buffer().get_dataview().is_some(),
+                                            has_filter: false,
+                                            has_search: false,
+                                            row_count: self.get_row_count(),
+                                            column_count: self.get_column_count(),
+                                            current_row: self
+                                                .state_container
+                                                .get_table_selected_row()
+                                                .unwrap_or(0),
+                                            current_column: self.buffer().get_current_column(),
+                                        },
+                                    )?;
+                                    false
                                 }
                                 ChordResult::PartialChord(description) => {
                                     // Update status to show chord mode
@@ -6452,39 +6497,6 @@ impl EnhancedTuiApp {
             Ok(None) => {}
             Err(e) => {
                 self.set_error_status("Failed to yank all", e);
-            }
-        }
-    }
-
-    fn handle_chord_action(&mut self, action: &str) -> Result<bool> {
-        debug!("Handling chord action: {}", action);
-        match action {
-            "yank_row" => {
-                self.yank_row();
-                Ok(false)
-            }
-            "yank_column" => {
-                self.yank_column();
-                Ok(false)
-            }
-            "yank_all" => {
-                self.yank_all();
-                Ok(false)
-            }
-            "yank_cell" => {
-                debug!("Executing yank_cell from chord action");
-                self.yank_cell();
-                Ok(false)
-            }
-            "yank_query" => {
-                self.yank_query();
-                Ok(false)
-            }
-            _ => {
-                debug!("Unknown chord action: {}", action);
-                self.buffer_mut()
-                    .set_status_message(format!("Unknown chord action: {}", action));
-                Ok(false)
             }
         }
     }
