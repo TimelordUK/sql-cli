@@ -24,7 +24,7 @@ impl MemoryTracker {
     }
 
     pub fn record_snapshot(&self) {
-        if let Some(memory_kb) = Self::get_process_memory_kb() {
+        if let Some(memory_kb) = crate::utils::memory_tracker::get_process_memory_kb() {
             let snapshot = MemorySnapshot {
                 timestamp: std::time::Instant::now(),
                 memory_kb,
@@ -41,50 +41,8 @@ impl MemoryTracker {
         }
     }
 
-    fn get_process_memory_kb() -> Option<usize> {
-        #[cfg(target_os = "linux")]
-        {
-            use std::fs;
-            if let Ok(status) = fs::read_to_string("/proc/self/status") {
-                for line in status.lines() {
-                    if line.starts_with("VmRSS:") {
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 2 {
-                            if let Ok(kb) = parts[1].parse::<usize>() {
-                                return Some(kb);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            use std::process::Command;
-            if let Ok(output) = Command::new("ps")
-                .args(&["-o", "rss=", "-p", &std::process::id().to_string()])
-                .output()
-            {
-                if let Ok(s) = String::from_utf8(output.stdout) {
-                    if let Ok(kb) = s.trim().parse::<usize>() {
-                        return Some(kb);
-                    }
-                }
-            }
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            // Windows implementation would go here
-            // For now, return None
-        }
-
-        None
-    }
-
     pub fn get_current_memory_mb(&self) -> Option<f64> {
-        Self::get_process_memory_kb().map(|kb| kb as f64 / 1024.0)
+        crate::utils::memory_tracker::get_process_memory_kb().map(|kb| kb as f64 / 1024.0)
     }
 
     pub fn get_history(&self) -> Vec<(usize, f64)> {

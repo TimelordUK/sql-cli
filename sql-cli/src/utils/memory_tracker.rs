@@ -20,6 +20,50 @@ pub fn get_memory_mb() -> usize {
     0
 }
 
+/// Get current process memory usage in KB (cross-platform)
+pub fn get_process_memory_kb() -> Option<usize> {
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_to_string("/proc/self/status")
+            .ok()?
+            .lines()
+            .find(|line| line.starts_with("VmRSS:"))
+            .and_then(|line| {
+                line.split_whitespace()
+                    .nth(1)
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        if let Ok(output) = Command::new("ps")
+            .args(&["-o", "rss=", "-p", &std::process::id().to_string()])
+            .output()
+        {
+            if let Ok(s) = String::from_utf8(output.stdout) {
+                if let Ok(kb) = s.trim().parse::<usize>() {
+                    return Some(kb);
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows implementation would go here
+        // For now, return None
+        None
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
 // Use thread-local storage instead of global static
 thread_local! {
     static MEMORY_LOG: std::cell::RefCell<Vec<(String, usize)>> = std::cell::RefCell::new(Vec::new());
