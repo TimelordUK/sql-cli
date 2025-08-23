@@ -456,8 +456,8 @@ impl ViewportManager {
         };
 
         // Initialize viewport rows to show first page of data
-        // Default terminal height is 24, reserve ~10 rows for UI chrome
-        let default_visible_rows = 14usize;
+        // Start with a reasonable default that will be updated when terminal size is known
+        let default_visible_rows = 50usize; // Start larger, will be adjusted by update_terminal_size
         let initial_viewport_rows = if total_rows > 0 {
             0..total_rows.min(default_visible_rows)
         } else {
@@ -551,13 +551,18 @@ impl ViewportManager {
     /// Update viewport size based on terminal dimensions
     /// Returns the calculated visible rows for the results area
     pub fn update_terminal_size(&mut self, terminal_width: u16, terminal_height: u16) -> usize {
-        // The terminal_height passed here is already the results area height
-        // (after input and status areas have been subtracted)
-        // So we only need to subtract the borders and header
-        // - 1 row for top border
-        // - 1 row for header
-        // - 1 row for bottom border
+        // The terminal_height passed here is the height of the table widget area
+        // The Table widget in ratatui handles borders and headers internally,
+        // so we need to account for:
+        // - 2 rows for top/bottom borders
+        // - 1 row for the header
+        // Total: 3 rows of chrome
         let visible_rows = (terminal_height as usize).saturating_sub(3).max(10);
+
+        debug!(target: "viewport_manager",
+            "update_terminal_size: terminal_height={}, calculated visible_rows={}",
+            terminal_height, visible_rows
+        );
 
         let old_viewport = self.viewport_rows.clone();
 
@@ -586,6 +591,34 @@ impl ViewportManager {
                 // Crosshair is in viewport - just resize the viewport
                 self.viewport_rows = self.viewport_rows.start
                     ..(self.viewport_rows.start + visible_rows).min(total_rows);
+            }
+        }
+
+        // Also update column viewport based on new terminal width
+        // This is crucial for showing all columns that fit when first loading
+        let visible_column_count = self.dataview.get_display_columns().len();
+        if visible_column_count > 0 {
+            // Calculate how many columns we can fit with the new terminal width
+            let columns_that_fit = self.calculate_columns_that_fit(
+                self.viewport_cols.start,
+                terminal_width.saturating_sub(2), // Account for borders
+            );
+
+            let new_col_viewport_end = self
+                .viewport_cols
+                .start
+                .saturating_add(columns_that_fit)
+                .min(visible_column_count);
+
+            let old_col_viewport = self.viewport_cols.clone();
+            self.viewport_cols = self.viewport_cols.start..new_col_viewport_end;
+
+            if old_col_viewport != self.viewport_cols {
+                debug!(target: "viewport_manager",
+                    "update_terminal_size - column viewport changed from {:?} to {:?}, terminal_width={}",
+                    old_col_viewport, self.viewport_cols, terminal_width
+                );
+                self.cache_dirty = true;
             }
         }
 
