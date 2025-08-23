@@ -543,3 +543,114 @@ mod tests {
         assert_eq!(result3.new_cursor_position, 6);
     }
 }
+
+// ========== SQL-Specific Text Functions ==========
+
+/// Extract partial word at cursor for SQL completion
+/// Handles quoted identifiers and SQL-specific parsing
+pub fn extract_partial_word_at_cursor(query: &str, cursor_pos: usize) -> Option<String> {
+    if cursor_pos == 0 || cursor_pos > query.len() {
+        return None;
+    }
+
+    let chars: Vec<char> = query.chars().collect();
+    let mut start = cursor_pos;
+    let end = cursor_pos;
+
+    // Check if we might be in a quoted identifier
+    let mut in_quote = false;
+
+    // Find start of word (go backward)
+    while start > 0 {
+        let prev_char = chars[start - 1];
+        if prev_char == '"' {
+            // Found a quote, include it and stop
+            start -= 1;
+            in_quote = true;
+            break;
+        } else if prev_char.is_alphanumeric() || prev_char == '_' || (prev_char == ' ' && in_quote)
+        {
+            start -= 1;
+        } else {
+            break;
+        }
+    }
+
+    // If we found a quote but are in a quoted identifier,
+    // we need to continue backwards to include the identifier content
+    if in_quote && start > 0 {
+        // We've already moved past the quote, now get the content before it
+        // Actually, we want to include everything from the quote forward
+        // The logic above is correct - we stop at the quote
+    }
+
+    // Convert back to byte positions
+    let start_byte = chars[..start].iter().map(|c| c.len_utf8()).sum();
+    let end_byte = chars[..end].iter().map(|c| c.len_utf8()).sum();
+
+    if start_byte < end_byte {
+        Some(query[start_byte..end_byte].to_string())
+    } else {
+        None
+    }
+}
+
+/// Result of applying a completion to text
+#[derive(Debug, Clone)]
+pub struct CompletionResult {
+    /// The new text with completion applied
+    pub new_text: String,
+    /// The new cursor position after completion
+    pub new_cursor_position: usize,
+    /// Description of what was completed
+    pub description: String,
+}
+
+/// Apply a completion suggestion to text at cursor position
+/// Handles quoted identifiers and smart cursor positioning
+pub fn apply_completion_to_text(
+    query: &str,
+    cursor_pos: usize,
+    partial_word: &str,
+    suggestion: &str,
+) -> CompletionResult {
+    let before_partial = &query[..cursor_pos - partial_word.len()];
+    let after_cursor = &query[cursor_pos..];
+
+    // Handle quoted identifiers - avoid double quotes
+    let suggestion_to_use = if partial_word.starts_with('"') && suggestion.starts_with('"') {
+        // The partial already includes the opening quote, so use suggestion without its quote
+        if suggestion.len() > 1 {
+            suggestion[1..].to_string()
+        } else {
+            suggestion.to_string()
+        }
+    } else {
+        suggestion.to_string()
+    };
+
+    let new_query = format!("{}{}{}", before_partial, suggestion_to_use, after_cursor);
+
+    // Smart cursor positioning for method calls like Contains('')
+    let new_cursor_pos = if suggestion_to_use.ends_with("('')") {
+        // Position cursor between the quotes for method calls
+        before_partial.len() + suggestion_to_use.len() - 2
+    } else {
+        before_partial.len() + suggestion_to_use.len()
+    };
+
+    let description = if suggestion_to_use.ends_with("('')") {
+        format!(
+            "Completed '{}' with cursor positioned for parameter input",
+            suggestion
+        )
+    } else {
+        format!("Completed '{}'", suggestion)
+    };
+
+    CompletionResult {
+        new_text: new_query,
+        new_cursor_position: new_cursor_pos,
+        description,
+    }
+}

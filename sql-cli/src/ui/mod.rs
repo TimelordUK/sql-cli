@@ -10,6 +10,7 @@ pub mod enhanced_tui;
 pub mod enhanced_tui_debug;
 pub mod enhanced_tui_debug_integration;
 pub mod enhanced_tui_helpers;
+pub mod input_handlers;
 pub mod key_chord_handler;
 pub mod key_dispatcher;
 pub mod key_indicator;

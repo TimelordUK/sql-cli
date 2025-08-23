@@ -3265,34 +3265,17 @@ impl EnhancedTuiApp {
     }
 
     fn handle_help_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // Use the new HelpWidget
-        match self.help_widget.handle_key(key) {
-            HelpAction::Exit => {
-                self.exit_help();
-            }
-            HelpAction::ShowDebug => {
-                // F5 was pressed in help - this is handled by the widget itself
-            }
-            _ => {
-                // Other actions are handled internally by the widget
-            }
-        }
-        Ok(false)
+        // Create context and delegate to extracted handler
+        let mut ctx = crate::ui::input_handlers::HelpInputContext {
+            buffer_manager: &mut self.buffer_manager,
+            help_widget: &mut self.help_widget,
+            state_container: &self.state_container,
+        };
+
+        crate::ui::input_handlers::handle_help_input(&mut ctx, key)
     }
 
-    // Helper methods for help mode actions
-    fn exit_help(&mut self) {
-        self.help_widget.on_exit();
-        self.state_container.set_help_visible(false);
-        // Scroll is automatically reset when help is hidden in state_container
-        let mode = if self.buffer().has_dataview() {
-            AppMode::Results
-        } else {
-            AppMode::Command
-        };
-        self.buffer_mut().set_mode(mode);
-        // ========== HELP NAVIGATION ==========
-    }
+    // ========== HELP NAVIGATION ==========
 
     fn scroll_help_down(&mut self) {
         let max_lines: usize = 58;
@@ -3392,45 +3375,42 @@ impl EnhancedTuiApp {
     }
 
     fn handle_debug_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // Handle special keys for test case generation
-        match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Ctrl+C to quit
-                return Ok(true);
+        // Create context and delegate to extracted handler
+        let mut ctx = crate::ui::input_handlers::DebugInputContext {
+            buffer_manager: &mut self.buffer_manager,
+            debug_widget: &mut self.debug_widget,
+        };
+
+        let should_quit = crate::ui::input_handlers::handle_debug_input(&mut ctx, key)?;
+
+        // If the extracted handler didn't handle these special keys, we still do them here
+        // (until we can extract yank operations too)
+        if !should_quit {
+            match key.code {
+                KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // Ctrl+T: "Yank as Test" - capture current session as test case
+                    self.yank_as_test_case();
+                }
+                KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    // Shift+Y: Yank debug dump with context
+                    self.yank_debug_with_context();
+                }
+                _ => {}
             }
-            KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Ctrl+T: "Yank as Test" - capture current session as test case
-                self.yank_as_test_case();
-                return Ok(false);
-            }
-            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                // Shift+Y: Yank debug dump with test context
-                self.yank_debug_with_context();
-                return Ok(false);
-            }
-            _ => {}
         }
 
-        // Let the widget handle navigation and exit
-        if self.debug_widget.handle_key(key) {
-            // Widget returned true - exit debug mode
-            self.buffer_mut().set_mode(AppMode::Command);
-        }
-        Ok(false)
+        Ok(should_quit)
         // ========== QUERY OPERATIONS ==========
     }
 
     fn handle_pretty_query_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            return Ok(true);
-        }
+        // Create context and delegate to extracted handler
+        let mut ctx = crate::ui::input_handlers::DebugInputContext {
+            buffer_manager: &mut self.buffer_manager,
+            debug_widget: &mut self.debug_widget,
+        };
 
-        // Let debug widget handle the key (includes scrolling and exit)
-        if self.debug_widget.handle_key(key) {
-            // Widget returned true - exit pretty query mode
-            self.buffer_mut().set_mode(AppMode::Command);
-        }
-        Ok(false)
+        crate::ui::input_handlers::handle_pretty_query_input(&mut ctx, key)
     }
 
     fn execute_query(&mut self, query: &str) -> Result<()> {
@@ -3607,50 +3587,35 @@ impl EnhancedTuiApp {
                 .set_status_message("No completion selected".to_string());
             return;
         };
-        let partial_word = self.extract_partial_word_at_cursor(&query, cursor_pos);
+        let partial_word =
+            crate::ui::text_operations::extract_partial_word_at_cursor(&query, cursor_pos);
 
         if let Some(partial) = partial_word {
-            // Replace the partial word with the suggestion
-            let before_partial = &query[..cursor_pos - partial.len()];
-            let after_cursor = &query[cursor_pos..];
+            // Use extracted completion logic
+            let result = crate::ui::text_operations::apply_completion_to_text(
+                &query,
+                cursor_pos,
+                &partial,
+                &suggestion,
+            );
 
-            // Handle quoted identifiers - if both partial and suggestion start with quotes,
-            // we need to avoid double quotes
-            let suggestion_to_use = if partial.starts_with('"') && suggestion.starts_with('"') {
-                // The partial already includes the opening quote, so use suggestion without its quote
-                if suggestion.len() > 1 {
-                    suggestion[1..].to_string()
-                } else {
-                    suggestion.clone()
-                }
-            } else {
-                suggestion.clone()
-            };
-
-            let new_query = format!("{}{}{}", before_partial, suggestion_to_use, after_cursor);
-
-            // Update input and cursor position
-            // Special case: if we completed a string method like Contains(''), position cursor inside quotes
-            let cursor_pos = if suggestion_to_use.ends_with("('')") {
-                // Position cursor between the quotes
-                before_partial.len() + suggestion_to_use.len() - 2
-            } else {
-                before_partial.len() + suggestion_to_use.len()
-            };
             // Use helper to set text through buffer
-            self.set_input_text(new_query.clone());
+            self.set_input_text(result.new_text.clone());
             // Set cursor to correct position
             if let Some(buffer) = self.buffer_manager.current_mut() {
-                buffer.set_input_cursor_position(cursor_pos);
+                buffer.set_input_cursor_position(result.new_cursor_position);
                 // Sync for rendering
                 if self.buffer().get_edit_mode() == EditMode::SingleLine {
-                    self.set_input_text_with_cursor(new_query.clone(), cursor_pos);
+                    self.set_input_text_with_cursor(
+                        result.new_text.clone(),
+                        result.new_cursor_position,
+                    );
                 }
             }
 
             // Update completion state for next tab press
             self.state_container
-                .update_completion_context(new_query.clone(), cursor_pos);
+                .update_completion_context(result.new_text.clone(), result.new_cursor_position);
 
             let completion = self.state_container.completion();
             let suggestion_info = if completion.suggestions.len() > 1 {
@@ -3697,55 +3662,6 @@ impl EnhancedTuiApp {
     }
 
     // Note: expand_asterisk and get_table_columns removed - moved to Buffer and use hybrid_parser directly
-
-    fn extract_partial_word_at_cursor(&self, query: &str, cursor_pos: usize) -> Option<String> {
-        if cursor_pos == 0 || cursor_pos > query.len() {
-            return None;
-        }
-
-        let chars: Vec<char> = query.chars().collect();
-        let mut start = cursor_pos;
-        let end = cursor_pos;
-
-        // Check if we might be in a quoted identifier
-        let mut in_quote = false;
-
-        // Find start of word (go backward)
-        while start > 0 {
-            let prev_char = chars[start - 1];
-            if prev_char == '"' {
-                // Found a quote, include it and stop
-                start -= 1;
-                in_quote = true;
-                break;
-            } else if prev_char.is_alphanumeric()
-                || prev_char == '_'
-                || (prev_char == ' ' && in_quote)
-            {
-                start -= 1;
-            } else {
-                break;
-            }
-        }
-
-        // If we found a quote but are in a quoted identifier,
-        // we need to continue backwards to include the identifier content
-        if in_quote && start > 0 {
-            // We've already moved past the quote, now get the content before it
-            // Actually, we want to include everything from the quote forward
-            // The logic above is correct - we stop at the quote
-        }
-
-        // Convert back to byte positions
-        let start_byte = chars[..start].iter().map(|c| c.len_utf8()).sum();
-        let end_byte = chars[..end].iter().map(|c| c.len_utf8()).sum();
-
-        if start_byte < end_byte {
-            Some(query[start_byte..end_byte].to_string())
-        } else {
-            None
-        }
-    }
 
     // ========== COLUMN INFO ==========
 
@@ -5376,29 +5292,6 @@ impl EnhancedTuiApp {
 
         if let Some(widths) = widths_from_viewport {
             self.buffer_mut().set_column_widths(widths);
-        } else {
-            // Fallback to DataProvider if no ViewportManager
-            // Get widths from provider first, then set them
-            let widths_to_set = if let Some(provider) = self.get_data_provider() {
-                let widths = provider.get_column_widths();
-                if !widths.is_empty() {
-                    Some(
-                        widths
-                            .iter()
-                            .map(|&w| w.min(u16::MAX as usize) as u16)
-                            .collect::<Vec<u16>>(),
-                    )
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            // Now set the widths after provider borrow is dropped
-            if let Some(widths) = widths_to_set {
-                self.buffer_mut().set_column_widths(widths);
-            }
         }
     }
 
@@ -7335,15 +7228,13 @@ impl EnhancedTuiApp {
     }
 
     fn handle_column_stats_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        match self.stats_widget.handle_key(key) {
-            StatsAction::Quit => return Ok(true),
-            StatsAction::Close => {
-                self.buffer_mut().set_column_stats(None);
-                self.buffer_mut().set_mode(AppMode::Results);
-            }
-            StatsAction::Continue | StatsAction::PassThrough => {}
-        }
-        Ok(false)
+        // Create context and delegate to extracted handler
+        let mut ctx = crate::ui::input_handlers::StatsInputContext {
+            buffer_manager: &mut self.buffer_manager,
+            stats_widget: &mut self.stats_widget,
+        };
+
+        crate::ui::input_handlers::handle_column_stats_input(&mut ctx, key)
     }
 
     fn handle_jump_to_row_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
