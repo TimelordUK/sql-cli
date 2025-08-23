@@ -5,9 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 
 use crate::buffer::AppMode;
-use crate::ui::actions::{
-    Action, ActionContext, CursorPosition, NavigateAction, SqlClause, YankTarget,
-};
+use crate::ui::actions::{Action, ActionContext, CursorPosition, NavigateAction};
 
 /// Maps keyboard input to actions based on context
 pub struct KeyMapper {
@@ -658,38 +656,9 @@ mod tests {
             ))
         );
 
-        // Test 'wa' for append after WHERE
-        let key_w = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE);
-        let action_w = mapper.map_key(key_w, &context);
-        assert_eq!(action_w, None); // 'w' starts collecting command
-
-        let key_a = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
-        let action_wa = mapper.map_key(key_a, &context);
-        assert_eq!(
-            action_wa,
-            Some(Action::SwitchModeWithCursor(
-                AppMode::Command,
-                CursorPosition::AfterClause(SqlClause::Where)
-            ))
-        );
-
-        // Reset mapper for next test
-        mapper.clear_pending();
-
-        // Test 'oa' for append after ORDER BY
-        let key_o = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE);
-        let action_o = mapper.map_key(key_o, &context);
-        assert_eq!(action_o, None); // 'o' starts collecting command
-
-        let key_a = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
-        let action_oa = mapper.map_key(key_a, &context);
-        assert_eq!(
-            action_oa,
-            Some(Action::SwitchModeWithCursor(
-                AppMode::Command,
-                CursorPosition::AfterClause(SqlClause::OrderBy)
-            ))
-        );
+        // Note: SQL clause navigation (wa, oa, etc.) has been moved to the KeyChordHandler
+        // and is now accessed via chord sequences like 'cw' for WHERE, 'co' for ORDER BY.
+        // These are tested separately in the chord handler tests.
     }
 
     #[test]
