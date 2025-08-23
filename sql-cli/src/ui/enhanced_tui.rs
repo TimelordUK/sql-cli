@@ -3923,48 +3923,9 @@ impl EnhancedTuiApp {
 
     // goto_first_column and goto_last_column now in ColumnBehavior trait
 
-    fn goto_viewport_top(&mut self) {
-        // Use ViewportManager for navigation
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            viewport_borrow
-                .as_mut()
-                .map(|vm| vm.navigate_to_viewport_top())
-        };
+    // goto_viewport_top, goto_viewport_middle, goto_viewport_bottom now in NavigationBehavior trait
 
-        if let Some(nav_result) = nav_result {
-            self.apply_row_navigation_result(nav_result);
-        }
-    }
-
-    fn goto_viewport_middle(&mut self) {
-        // Use ViewportManager for navigation
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            viewport_borrow
-                .as_mut()
-                .map(|vm| vm.navigate_to_viewport_middle())
-        };
-
-        if let Some(nav_result) = nav_result {
-            self.apply_row_navigation_result(nav_result);
-        }
-    }
-
-    fn goto_viewport_bottom(&mut self) {
-        // Use ViewportManager for navigation
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            viewport_borrow
-                .as_mut()
-                .map(|vm| vm.navigate_to_viewport_bottom())
-        };
-
-        if let Some(nav_result) = nav_result {
-            self.apply_row_navigation_result(nav_result);
-        }
-        // ========== COLUMN PIN/HIDE ==========
-    }
+    // ========== COLUMN PIN/HIDE ==========
 
     fn toggle_column_pin(&mut self) {
         // Get visual column index from ViewportManager's crosshair
@@ -8708,6 +8669,36 @@ impl BufferManagementBehavior for EnhancedTuiApp {
 
     fn set_input_text_with_cursor(&mut self, text: String, cursor: usize) {
         self.set_input_text_with_cursor(text, cursor)
+    }
+
+    fn next_buffer(&mut self) -> String {
+        self.buffer_handler.next_buffer(&mut self.buffer_manager)
+    }
+
+    fn previous_buffer(&mut self) -> String {
+        self.buffer_handler
+            .previous_buffer(&mut self.buffer_manager)
+    }
+
+    fn quick_switch_buffer(&mut self) -> String {
+        self.buffer_handler.quick_switch(&mut self.buffer_manager)
+    }
+
+    fn close_buffer(&mut self) -> (bool, String) {
+        self.buffer_handler.close_buffer(&mut self.buffer_manager)
+    }
+
+    fn switch_to_buffer(&mut self, index: usize) -> String {
+        self.buffer_handler
+            .switch_to_buffer(&mut self.buffer_manager, index)
+    }
+
+    fn buffer_count(&self) -> usize {
+        self.buffer_manager.all_buffers().len()
+    }
+
+    fn current_buffer_index(&self) -> usize {
+        self.buffer_manager.current_index()
     }
 }
 

@@ -41,30 +41,19 @@ pub trait BufferManagementBehavior {
     }
 
     /// Switch to the next buffer
-    fn next_buffer(&mut self) -> String {
-        self.buffer_handler().next_buffer(self.buffer_manager())
-    }
+    fn next_buffer(&mut self) -> String;
 
     /// Switch to the previous buffer
-    fn previous_buffer(&mut self) -> String {
-        self.buffer_handler().previous_buffer(self.buffer_manager())
-    }
+    fn previous_buffer(&mut self) -> String;
 
     /// Quick switch to the last used buffer
-    fn quick_switch_buffer(&mut self) -> String {
-        self.buffer_handler().quick_switch(self.buffer_manager())
-    }
+    fn quick_switch_buffer(&mut self) -> String;
 
     /// Close the current buffer
-    fn close_buffer(&mut self) -> (bool, String) {
-        self.buffer_handler().close_buffer(self.buffer_manager())
-    }
+    fn close_buffer(&mut self) -> (bool, String);
 
     /// Switch to a specific buffer by index
-    fn switch_to_buffer(&mut self, index: usize) -> String {
-        self.buffer_handler()
-            .switch_to_buffer(self.buffer_manager(), index)
-    }
+    fn switch_to_buffer(&mut self, index: usize) -> String;
 
     /// Yank (copy) from the current buffer
     fn yank(&mut self) {
@@ -82,12 +71,8 @@ pub trait BufferManagementBehavior {
     }
 
     /// Get the total number of buffers
-    fn buffer_count(&self) -> usize {
-        self.buffer_manager().all_buffers().len()
-    }
+    fn buffer_count(&self) -> usize;
 
     /// Get the current buffer index
-    fn current_buffer_index(&self) -> usize {
-        self.buffer_manager().current_index()
-    }
+    fn current_buffer_index(&self) -> usize;
 }

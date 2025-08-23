@@ -153,4 +153,46 @@ pub trait NavigationBehavior {
             );
         }
     }
+
+    /// Navigate to the top of the current viewport
+    fn goto_viewport_top(&mut self) {
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager().borrow_mut();
+            viewport_borrow
+                .as_mut()
+                .map(|vm| vm.navigate_to_viewport_top())
+        };
+
+        if let Some(nav_result) = nav_result {
+            self.apply_row_navigation_result(nav_result);
+        }
+    }
+
+    /// Navigate to the middle of the current viewport
+    fn goto_viewport_middle(&mut self) {
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager().borrow_mut();
+            viewport_borrow
+                .as_mut()
+                .map(|vm| vm.navigate_to_viewport_middle())
+        };
+
+        if let Some(nav_result) = nav_result {
+            self.apply_row_navigation_result(nav_result);
+        }
+    }
+
+    /// Navigate to the bottom of the current viewport
+    fn goto_viewport_bottom(&mut self) {
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager().borrow_mut();
+            viewport_borrow
+                .as_mut()
+                .map(|vm| vm.navigate_to_viewport_bottom())
+        };
+
+        if let Some(nav_result) = nav_result {
+            self.apply_row_navigation_result(nav_result);
+        }
+    }
 }
