@@ -3,6 +3,7 @@
 //! This module contains the main TUI application and related UI components.
 
 pub mod actions;
+pub mod behaviors;
 pub mod cell_renderer;
 pub mod column_utils;
 pub mod enhanced_tui;
