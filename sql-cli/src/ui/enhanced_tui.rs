@@ -27,7 +27,7 @@ use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
-use crate::ui::traits::NavigationBehavior;
+use crate::ui::traits::{ColumnBehavior, NavigationBehavior};
 use crate::ui::viewport_manager::{
     ColumnOperationResult, ColumnPackingMode, NavigationResult, RowNavigationResult,
     ViewportEfficiency, ViewportManager,
@@ -170,65 +170,7 @@ impl EnhancedTuiApp {
 
     // --- Column Visibility Management ---
 
-    /// Hide the currently selected column
-    pub fn hide_current_column(&mut self) {
-        if self.buffer().get_mode() != AppMode::Results {
-            return;
-        }
-
-        let result = self
-            .viewport_manager
-            .borrow_mut()
-            .as_mut()
-            .map(|vm| vm.hide_current_column_with_result())
-            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
-
-        self.apply_column_operation_result(result);
-    }
-
-    /// Unhide all columns
-    pub fn unhide_all_columns(&mut self) {
-        let result = self
-            .viewport_manager
-            .borrow_mut()
-            .as_mut()
-            .map(|vm| vm.unhide_all_columns_with_result())
-            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
-
-        self.apply_column_operation_result(result);
-    }
-
-    /// Move the current column left in the view
-    pub fn move_current_column_left(&mut self) {
-        if self.buffer().get_mode() != AppMode::Results {
-            return;
-        }
-
-        let result = self
-            .viewport_manager
-            .borrow_mut()
-            .as_mut()
-            .map(|vm| vm.reorder_column_left_with_result())
-            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
-
-        self.apply_column_operation_result(result);
-    }
-
-    /// Move the current column right in the view
-    pub fn move_current_column_right(&mut self) {
-        if self.buffer().get_mode() != AppMode::Results {
-            return;
-        }
-
-        let result = self
-            .viewport_manager
-            .borrow_mut()
-            .as_mut()
-            .map(|vm| vm.reorder_column_right_with_result())
-            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
-
-        self.apply_column_operation_result(result);
-    }
+    // Column operation methods moved to ColumnBehavior trait
 
     // ========== JUMP TO ROW ==========
 
@@ -4215,46 +4157,6 @@ impl EnhancedTuiApp {
         let column_num = visual_position + 1;
         self.buffer_mut()
             .set_status_message(format!("Column {} selected", column_num));
-    }
-
-    /// Helper to apply column operation result to all state locations
-    /// This consolidates state updates for hide/unhide/move column operations
-    fn apply_column_operation_result(&mut self, result: ColumnOperationResult) {
-        if !result.success {
-            if !result.description.is_empty() {
-                self.buffer_mut().set_status_message(result.description);
-            }
-            return;
-        }
-
-        // Sync DataView if updated
-        if let Some(dataview) = result.updated_dataview {
-            self.buffer_mut().set_dataview(Some(dataview));
-        }
-
-        // Update navigation state if column position changed
-        if let Some(new_col) = result.new_column_position {
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.selected_column = new_col;
-
-                // Update scroll offset if viewport changed
-                if let Some(viewport) = result.new_viewport {
-                    let pinned_count = self
-                        .buffer()
-                        .get_dataview()
-                        .as_ref()
-                        .map(|dv| dv.get_pinned_columns().len())
-                        .unwrap_or(0);
-                    nav.scroll_offset.1 = viewport.start.saturating_sub(pinned_count);
-                }
-            } // Drop nav borrow here
-
-            self.buffer_mut().set_current_column(new_col);
-        }
-
-        // Set status message
-        self.buffer_mut().set_status_message(result.description);
     }
 
     fn move_column_left(&mut self) {
@@ -9086,6 +8988,25 @@ impl NavigationBehavior for EnhancedTuiApp {
 
     fn get_row_count(&self) -> usize {
         self.get_row_count()
+    }
+}
+
+// Implement ColumnBehavior trait for EnhancedTuiApp
+impl ColumnBehavior for EnhancedTuiApp {
+    fn viewport_manager(&self) -> &RefCell<Option<ViewportManager>> {
+        &self.viewport_manager
+    }
+
+    fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
+        self.buffer_mut()
+    }
+
+    fn buffer(&self) -> &dyn BufferAPI {
+        self.buffer()
+    }
+
+    fn state_container(&self) -> &AppStateContainer {
+        &self.state_container
     }
 }
 
