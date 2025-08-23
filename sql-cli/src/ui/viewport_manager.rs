@@ -526,12 +526,16 @@ impl ViewportManager {
                 .saturating_add(height as usize)
                 .min(self.dataview.row_count());
 
-        // For columns, we need to work in visual space (visible columns only)
+        // For columns, we need to calculate how many columns actually fit in the width
+        // Don't use width directly as column count - it's terminal width in characters!
         let display_columns = self.dataview.get_display_columns();
         let visual_column_count = display_columns.len();
+
+        // Calculate how many columns we can actually fit in the available width
+        let columns_that_fit = self.calculate_columns_that_fit(col_offset, width);
         let new_cols = col_offset
             ..col_offset
-                .saturating_add(width as usize)
+                .saturating_add(columns_that_fit)
                 .min(visual_column_count);
 
         // Check if viewport actually changed
