@@ -5268,72 +5268,24 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
-        // Calculate column widths based on DataView
-        if let Some(dataview) = self.buffer().get_dataview() {
-            let headers = dataview.column_names();
-            let mut widths = Vec::with_capacity(headers.len());
+        // Get compact mode before borrowing viewport_manager
+        let compact_mode = self.buffer().is_compact_mode();
 
-            // Get terminal width to calculate better max_width
-            let terminal_width = crossterm::terminal::size()
-                .map(|(w, _)| w as usize)
-                .unwrap_or(80);
-
-            // Use compact mode settings
-            let compact = self.buffer().is_compact_mode();
-            let min_width = if compact { 4 } else { 6 };
-
-            // Calculate dynamic max_width based on terminal size and column count
-            // Reserve some space for borders, scrollbars, etc (about 10 chars)
-            let available_width = terminal_width.saturating_sub(10);
-            let visible_cols = headers.len().min(12); // Estimate visible columns
-
-            // Allow columns to use more space on wide terminals
-            // But still have a reasonable max to prevent single columns from dominating
-            let dynamic_max = if visible_cols > 0 {
-                (available_width / visible_cols).max(30).min(80)
+        // Delegate to ViewportManager for column width calculations
+        let widths = {
+            let mut viewport_opt = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_opt {
+                Some(viewport_manager.calculate_viewport_column_widths(
+                    viewport_start,
+                    viewport_end,
+                    compact_mode,
+                ))
             } else {
-                30
-            };
-
-            let max_width = if compact {
-                dynamic_max.min(40)
-            } else {
-                dynamic_max
-            };
-
-            let padding = if compact { 1 } else { 2 };
-
-            // PERF FIX: Only convert viewport rows to strings, not entire table!
-            // Get string representation of ONLY visible rows to avoid converting 100k rows
-            let mut rows_to_check = Vec::new();
-            let source_table = dataview.source();
-            for i in viewport_start..viewport_end.min(source_table.row_count()) {
-                if let Some(row_strings) = source_table.get_row_as_strings(i) {
-                    rows_to_check.push(row_strings);
-                }
+                None
             }
+        };
 
-            for (col_idx, header) in headers.iter().enumerate() {
-                // Start with header width
-                let mut max_col_width = header.len();
-
-                // Check only visible rows for this column
-                for row in &rows_to_check {
-                    if let Some(value) = row.get(col_idx) {
-                        let display_value = if value.is_empty() {
-                            "NULL"
-                        } else {
-                            value.as_str()
-                        };
-                        max_col_width = max_col_width.max(display_value.len());
-                    }
-                }
-
-                // Apply min/max constraints and padding
-                let width = (max_col_width + padding).clamp(min_width, max_width) as u16;
-                widths.push(width);
-            }
-
+        if let Some(widths) = widths {
             self.buffer_mut().set_column_widths(widths);
         }
     }
@@ -5395,28 +5347,11 @@ impl EnhancedTuiApp {
     }
 
     fn calculate_optimal_column_widths(&mut self) {
-        // Get the current scroll offset before borrowing viewport_manager
-        let (_, col_offset) = self.buffer().get_scroll_offset();
-
-        // If we have a ViewportManager, use it for smart column width calculation
+        // Delegate to ViewportManager for optimal column width calculations
         let widths_from_viewport = {
             let mut viewport_opt = self.viewport_manager.borrow_mut();
             if let Some(ref mut viewport_manager) = *viewport_opt {
-                // Get terminal dimensions (approximate - will be updated in render)
-                let terminal_width = 100u16; // Default, will be updated in render
-
-                // Update viewport with current column offset
-                // Note: col_offset from get_scroll_offset() is a scrollable offset, convert to absolute
-                let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
-                    dataview.get_pinned_columns().len()
-                } else {
-                    0
-                };
-                let absolute_offset = col_offset + pinned_count;
-                viewport_manager.update_column_viewport(absolute_offset, terminal_width);
-
-                // Get optimized column widths from ViewportManager
-                Some(viewport_manager.get_column_widths().to_vec())
+                Some(viewport_manager.calculate_optimal_column_widths())
             } else {
                 None
             }
@@ -5425,11 +5360,11 @@ impl EnhancedTuiApp {
         if let Some(widths) = widths_from_viewport {
             self.buffer_mut().set_column_widths(widths);
         } else {
-            // Fallback to old method using DataProvider
-            let widths_u16 = if let Some(provider) = self.get_data_provider() {
+            // Fallback to DataProvider if no ViewportManager
+            // Get widths from provider first, then set them
+            let widths_to_set = if let Some(provider) = self.get_data_provider() {
                 let widths = provider.get_column_widths();
                 if !widths.is_empty() {
-                    // Convert usize to u16 for buffer compatibility
                     Some(
                         widths
                             .iter()
@@ -5443,8 +5378,8 @@ impl EnhancedTuiApp {
                 None
             };
 
-            // Now the provider borrow is dropped, we can mutably borrow self
-            if let Some(widths) = widths_u16 {
+            // Now set the widths after provider borrow is dropped
+            if let Some(widths) = widths_to_set {
                 self.buffer_mut().set_column_widths(widths);
             }
         }

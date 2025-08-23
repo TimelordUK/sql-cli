@@ -3581,6 +3581,87 @@ impl ViewportManager {
             ColumnOperationResult::failure(reorder_result.description)
         }
     }
+
+    // ========== COLUMN WIDTH CALCULATIONS ==========
+
+    /// Calculate optimal column widths based on visible viewport rows
+    /// This is a performance-optimized version that only examines visible data
+    pub fn calculate_viewport_column_widths(
+        &mut self,
+        viewport_start: usize,
+        viewport_end: usize,
+        compact_mode: bool,
+    ) -> Vec<u16> {
+        let headers = self.dataview.column_names();
+        let mut widths = Vec::with_capacity(headers.len());
+
+        // Use compact mode settings
+        let min_width = if compact_mode { 4 } else { 6 };
+        let padding = if compact_mode { 1 } else { 2 };
+
+        // Calculate dynamic max_width based on terminal size and column count
+        let available_width = self.terminal_width.saturating_sub(10) as usize;
+        let visible_cols = headers.len().min(12); // Estimate visible columns
+
+        // Allow columns to use more space on wide terminals
+        let dynamic_max = if visible_cols > 0 {
+            (available_width / visible_cols).max(30).min(80)
+        } else {
+            30
+        };
+
+        let max_width = if compact_mode {
+            dynamic_max.min(40)
+        } else {
+            dynamic_max
+        };
+
+        // PERF: Only convert viewport rows to strings, not entire table!
+        let mut rows_to_check = Vec::new();
+        let source_table = self.dataview.source();
+        for i in viewport_start..viewport_end.min(source_table.row_count()) {
+            if let Some(row_strings) = source_table.get_row_as_strings(i) {
+                rows_to_check.push(row_strings);
+            }
+        }
+
+        // Calculate width for each column
+        for (col_idx, header) in headers.iter().enumerate() {
+            // Start with header width
+            let mut max_col_width = header.len();
+
+            // Check only visible rows for this column
+            for row in &rows_to_check {
+                if let Some(value) = row.get(col_idx) {
+                    let display_value = if value.is_empty() {
+                        "NULL"
+                    } else {
+                        value.as_str()
+                    };
+                    max_col_width = max_col_width.max(display_value.len());
+                }
+            }
+
+            // Apply min/max constraints and padding
+            let width = (max_col_width + padding).clamp(min_width, max_width) as u16;
+            widths.push(width);
+        }
+
+        widths
+    }
+
+    /// Calculate optimal column widths using smart viewport-based calculations
+    /// Returns the calculated widths without modifying any state
+    pub fn calculate_optimal_column_widths(&mut self) -> Vec<u16> {
+        // Use the viewport's visible rows for calculation
+        let viewport_start = self.viewport_rows.start;
+        let viewport_end = self.viewport_rows.end;
+
+        // For now, assume non-compact mode (this could be passed as a parameter)
+        let compact_mode = false;
+
+        self.calculate_viewport_column_widths(viewport_start, viewport_end, compact_mode)
+    }
 }
 
 /// Viewport efficiency metrics
