@@ -23,6 +23,7 @@ use crate::sql::cache::QueryCache;
 use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::text_navigation::TextNavigator;
+use crate::ui::action_handlers::ActionHandlerContext;
 use crate::ui::actions::{Action, ActionContext, ActionResult};
 use crate::ui::cell_renderer::CellRenderer;
 use crate::ui::enhanced_tui_helpers;
@@ -138,6 +139,7 @@ pub struct EnhancedTuiApp {
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
     key_mapper: KeyMapper,              // New action-based key mapping system
+    action_dispatcher: crate::ui::action_handlers::ActionDispatcher, // Visitor pattern for action handling
 
     // Selection and clipboard
     last_yanked: Option<(String, String)>, // (description, value) of last yanked item
@@ -194,6 +196,8 @@ impl EnhancedTuiApp {
     // ========== JUMP TO ROW ==========
     // Jump-to-row input methods moved to InputBehavior trait
 
+    // ========== ACTION HANDLER CONTEXT IMPLEMENTATION ==========
+
     // ========== BUFFER MANAGEMENT ==========
 
     /// Get current buffer if available (for reading)
@@ -245,62 +249,75 @@ impl EnhancedTuiApp {
     fn try_handle_action(
         &mut self,
         action: Action,
-        _context: &ActionContext,
+        context: &ActionContext,
     ) -> Result<ActionResult> {
+        // First, try the visitor pattern action handlers
+        // Create a temporary dispatcher to avoid borrowing conflicts
+        let temp_dispatcher = crate::ui::action_handlers::ActionDispatcher::new();
+        match temp_dispatcher.dispatch(&action, context, self) {
+            Ok(ActionResult::NotHandled) => {
+                // Action not handled by visitor pattern, fall back to existing switch
+                // This allows for gradual migration
+            }
+            result => {
+                // Action was handled (successfully or with error) by visitor pattern
+                return result;
+            }
+        }
+
         use Action::*;
 
-        // For now, we'll gradually move handlers here
-        // Starting with navigation actions that are simplest
+        // Fallback to existing switch statement for actions not yet in visitor pattern
         match action {
             Navigate(nav_action) => {
                 use crate::ui::actions::NavigateAction::*;
                 match nav_action {
                     Up(count) => {
                         for _ in 0..count {
-                            self.previous_row();
+                            NavigationBehavior::previous_row(self);
                         }
                         Ok(ActionResult::Handled)
                     }
                     Down(count) => {
                         for _ in 0..count {
-                            self.next_row();
+                            NavigationBehavior::next_row(self);
                         }
                         Ok(ActionResult::Handled)
                     }
                     Left(count) => {
                         for _ in 0..count {
-                            self.move_column_left();
+                            ColumnBehavior::move_column_left(self);
                         }
                         Ok(ActionResult::Handled)
                     }
                     Right(count) => {
                         for _ in 0..count {
-                            self.move_column_right();
+                            ColumnBehavior::move_column_right(self);
                         }
                         Ok(ActionResult::Handled)
                     }
                     PageUp => {
-                        self.page_up();
+                        NavigationBehavior::page_up(self);
                         Ok(ActionResult::Handled)
                     }
                     PageDown => {
-                        self.page_down();
+                        NavigationBehavior::page_down(self);
                         Ok(ActionResult::Handled)
                     }
                     Home => {
-                        self.goto_first_row();
+                        NavigationBehavior::goto_first_row(self);
                         Ok(ActionResult::Handled)
                     }
                     End => {
-                        self.goto_last_row();
+                        NavigationBehavior::goto_last_row(self);
                         Ok(ActionResult::Handled)
                     }
                     FirstColumn => {
-                        self.goto_first_column();
+                        ColumnBehavior::goto_first_column(self);
                         Ok(ActionResult::Handled)
                     }
                     LastColumn => {
-                        self.goto_last_column();
+                        ColumnBehavior::goto_last_column(self);
                         Ok(ActionResult::Handled)
                     }
                     _ => Ok(ActionResult::NotHandled),
@@ -331,7 +348,7 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             ToggleColumnPin => {
-                self.toggle_column_pin();
+                self.toggle_column_pin_impl();
                 Ok(ActionResult::Handled)
             }
             ToggleRowNumbers => {
@@ -564,11 +581,11 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             NextColumn => {
-                self.move_column_right();
+                ColumnBehavior::move_column_right(self);
                 Ok(ActionResult::Handled)
             }
             PreviousColumn => {
-                self.move_column_left();
+                ColumnBehavior::move_column_left(self);
                 Ok(ActionResult::Handled)
             }
             Sort(_column_idx) => {
@@ -577,11 +594,11 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             HideColumn => {
-                self.hide_current_column();
+                ColumnBehavior::hide_current_column(self);
                 Ok(ActionResult::Handled)
             }
             UnhideAllColumns => {
-                self.unhide_all_columns();
+                ColumnBehavior::unhide_all_columns(self);
                 Ok(ActionResult::Handled)
             }
             HideEmptyColumns => {
@@ -630,7 +647,7 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             ClearAllPins => {
-                self.clear_all_pinned_columns();
+                self.clear_all_pinned_columns_impl();
                 Ok(ActionResult::Handled)
             }
             StartSearch => {
@@ -652,7 +669,7 @@ impl EnhancedTuiApp {
             }
             ExitCurrentMode => {
                 // Handle escape based on current mode
-                match _context.mode {
+                match context.mode {
                     AppMode::Results => {
                         // If vim search is active, just exit search mode but stay in Results
                         if self.vim_search_manager.borrow().is_active() {
@@ -708,7 +725,7 @@ impl EnhancedTuiApp {
             SwitchMode(target_mode) => {
                 // Switch to the specified mode
                 // For Command->Results, only switch if we have results
-                if target_mode == AppMode::Results && !_context.has_results {
+                if target_mode == AppMode::Results && !context.has_results {
                     // Can't switch to Results mode without results
                     self.buffer_mut().set_status_message(
                         "No results to display. Run a query first.".to_string(),
@@ -837,7 +854,7 @@ impl EnhancedTuiApp {
 
             // Editing actions - only work in Command mode
             MoveCursorLeft => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     let buffer = self.buffer_mut();
                     let pos = buffer.get_input_cursor_position();
                     if pos > 0 {
@@ -849,7 +866,7 @@ impl EnhancedTuiApp {
                 }
             }
             MoveCursorRight => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     let buffer = self.buffer_mut();
                     let pos = buffer.get_input_cursor_position();
                     let text_len = buffer.get_input_text().chars().count();
@@ -862,7 +879,7 @@ impl EnhancedTuiApp {
                 }
             }
             MoveCursorHome => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     self.buffer_mut().set_input_cursor_position(0);
                     Ok(ActionResult::Handled)
                 } else {
@@ -870,7 +887,7 @@ impl EnhancedTuiApp {
                 }
             }
             MoveCursorEnd => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     let text_len = self.buffer().get_input_text().chars().count();
                     self.buffer_mut().set_input_cursor_position(text_len);
                     Ok(ActionResult::Handled)
@@ -879,7 +896,7 @@ impl EnhancedTuiApp {
                 }
             }
             Backspace => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     let buffer = self.buffer_mut();
                     let pos = buffer.get_input_cursor_position();
                     if pos > 0 {
@@ -899,7 +916,7 @@ impl EnhancedTuiApp {
                 }
             }
             Delete => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     let buffer = self.buffer_mut();
                     let pos = buffer.get_input_cursor_position();
                     let mut text = buffer.get_input_text();
@@ -917,7 +934,7 @@ impl EnhancedTuiApp {
                 }
             }
             ClearLine => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     let buffer = self.buffer_mut();
                     buffer.save_state_for_undo();
                     buffer.set_input_text(String::new());
@@ -928,7 +945,7 @@ impl EnhancedTuiApp {
                 }
             }
             Undo => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     self.buffer_mut().perform_undo();
                     Ok(ActionResult::Handled)
                 } else {
@@ -936,7 +953,7 @@ impl EnhancedTuiApp {
                 }
             }
             Redo => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     self.buffer_mut().perform_redo();
                     Ok(ActionResult::Handled)
                 } else {
@@ -944,7 +961,7 @@ impl EnhancedTuiApp {
                 }
             }
             ExecuteQuery => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     // Delegate to existing execute query logic
                     self.handle_execute_query()?;
                     Ok(ActionResult::Handled)
@@ -953,7 +970,7 @@ impl EnhancedTuiApp {
                 }
             }
             InsertChar(c) => {
-                if _context.mode == AppMode::Command {
+                if context.mode == AppMode::Command {
                     let buffer = self.buffer_mut();
                     buffer.save_state_for_undo();
                     let pos = buffer.get_input_cursor_position();
@@ -989,7 +1006,7 @@ impl EnhancedTuiApp {
                     self.vim_search_previous();
                 } else {
                     // Delegate to the ToggleRowNumbers action for consistency
-                    return self.try_handle_action(Action::ToggleRowNumbers, _context);
+                    return self.try_handle_action(Action::ToggleRowNumbers, context);
                 }
                 Ok(ActionResult::Handled)
             }
@@ -1041,23 +1058,23 @@ impl EnhancedTuiApp {
                 use crate::ui::actions::YankTarget;
                 match target {
                     YankTarget::Cell => {
-                        self.yank_cell();
+                        YankBehavior::yank_cell(self);
                         Ok(ActionResult::Handled)
                     }
                     YankTarget::Row => {
-                        self.yank_row();
+                        YankBehavior::yank_row(self);
                         Ok(ActionResult::Handled)
                     }
                     YankTarget::Column => {
-                        self.yank_column();
+                        YankBehavior::yank_column(self);
                         Ok(ActionResult::Handled)
                     }
                     YankTarget::All => {
-                        self.yank_all();
+                        YankBehavior::yank_all(self);
                         Ok(ActionResult::Handled)
                     }
                     YankTarget::Query => {
-                        self.yank_query();
+                        YankBehavior::yank_query(self);
                         Ok(ActionResult::Handled)
                     }
                 }
@@ -1353,6 +1370,7 @@ impl EnhancedTuiApp {
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             key_mapper: KeyMapper::new(),
+            action_dispatcher: crate::ui::action_handlers::ActionDispatcher::new(),
             // ========== INITIALIZATION ==========
             last_yanked: None,
             // CSV fields now in Buffer
@@ -2458,12 +2476,12 @@ impl EnhancedTuiApp {
             KeyCode::PageDown | KeyCode::Char('f')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                self.page_down();
+                NavigationBehavior::page_down(self);
             }
             KeyCode::PageUp | KeyCode::Char('b')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                self.page_up();
+                NavigationBehavior::page_up(self);
             }
             // 'n' and 'N' search navigation are now handled by the action system
             // Filter functionality is handled by dispatcher above
@@ -2482,7 +2500,7 @@ impl EnhancedTuiApp {
                         debug!("Yanking cell in cell selection mode");
                         self.buffer_mut()
                             .set_status_message("Yanking cell...".to_string());
-                        self.yank_cell();
+                        YankBehavior::yank_cell(self);
                         // Status message will be set by yank_cell
                     }
                     SelectionMode::Row => {
@@ -2499,7 +2517,7 @@ impl EnhancedTuiApp {
                         debug!("Yanking column in column selection mode");
                         self.buffer_mut()
                             .set_status_message("Yanking column...".to_string());
-                        self.yank_column();
+                        YankBehavior::yank_column(self);
                     }
                 }
             }
@@ -3781,7 +3799,7 @@ impl EnhancedTuiApp {
 
     // ========== COLUMN PIN/HIDE ==========
 
-    fn toggle_column_pin(&mut self) {
+    fn toggle_column_pin_impl(&mut self) {
         // Get visual column index from ViewportManager's crosshair
         let visual_col_idx = if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
             viewport_manager.get_crosshair_col()
@@ -3830,7 +3848,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn clear_all_pinned_columns(&mut self) {
+    fn clear_all_pinned_columns_impl(&mut self) {
         if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
             dataview.clear_pinned_columns();
         }
@@ -7683,6 +7701,135 @@ impl EnhancedTuiApp {
             let query = buffer.get_input_text();
             self.debug_widget.generate_pretty_sql(&query);
         }
+    }
+}
+
+// Implement ActionHandlerContext trait for EnhancedTuiApp
+impl ActionHandlerContext for EnhancedTuiApp {
+    // Navigation methods - delegate to trait implementations
+    fn previous_row(&mut self) {
+        <Self as NavigationBehavior>::previous_row(self);
+    }
+
+    fn next_row(&mut self) {
+        <Self as NavigationBehavior>::next_row(self);
+    }
+
+    fn move_column_left(&mut self) {
+        <Self as ColumnBehavior>::move_column_left(self);
+    }
+
+    fn move_column_right(&mut self) {
+        <Self as ColumnBehavior>::move_column_right(self);
+    }
+
+    fn page_up(&mut self) {
+        <Self as NavigationBehavior>::page_up(self);
+    }
+
+    fn page_down(&mut self) {
+        <Self as NavigationBehavior>::page_down(self);
+    }
+
+    fn goto_first_row(&mut self) {
+        <Self as NavigationBehavior>::goto_first_row(self);
+    }
+
+    fn goto_last_row(&mut self) {
+        <Self as NavigationBehavior>::goto_last_row(self);
+    }
+
+    fn goto_first_column(&mut self) {
+        <Self as ColumnBehavior>::goto_first_column(self);
+    }
+
+    fn goto_last_column(&mut self) {
+        <Self as ColumnBehavior>::goto_last_column(self);
+    }
+
+    fn goto_row(&mut self, row: usize) {
+        <Self as NavigationBehavior>::goto_line(self, row + 1); // Convert to 1-indexed
+    }
+
+    fn goto_column(&mut self, col: usize) {
+        // For now, implement basic column navigation
+        // TODO: Implement proper goto_column functionality
+        let current_col = self.buffer().get_current_column();
+        if col < current_col {
+            for _ in 0..(current_col - col) {
+                <Self as ColumnBehavior>::move_column_left(self);
+            }
+        } else if col > current_col {
+            for _ in 0..(col - current_col) {
+                <Self as ColumnBehavior>::move_column_right(self);
+            }
+        }
+    }
+
+    // Mode and UI state
+    fn set_mode(&mut self, mode: AppMode) {
+        self.buffer_mut().set_mode(mode);
+    }
+
+    fn get_mode(&self) -> AppMode {
+        self.buffer().get_mode()
+    }
+
+    fn set_status_message(&mut self, message: String) {
+        self.buffer_mut().set_status_message(message);
+    }
+
+    // Column operations - delegate to trait implementations
+    fn toggle_column_pin(&mut self) {
+        // Call the existing toggle_column_pin implementation directly
+        self.toggle_column_pin_impl();
+    }
+
+    fn hide_current_column(&mut self) {
+        <Self as ColumnBehavior>::hide_current_column(self);
+    }
+
+    fn unhide_all_columns(&mut self) {
+        <Self as ColumnBehavior>::unhide_all_columns(self);
+    }
+
+    fn clear_all_pinned_columns(&mut self) {
+        // Call the existing clear_all_pinned_columns implementation directly
+        self.clear_all_pinned_columns_impl();
+    }
+
+    // Export operations
+    fn export_to_csv(&mut self) {
+        // For now, just set a status message - actual implementation will be added later
+        self.buffer_mut()
+            .set_status_message("CSV export not yet implemented".to_string());
+    }
+
+    fn export_to_json(&mut self) {
+        // For now, just set a status message - actual implementation will be added later
+        self.buffer_mut()
+            .set_status_message("JSON export not yet implemented".to_string());
+    }
+
+    // Yank operations - delegate to trait implementations
+    fn yank_cell(&mut self) {
+        YankBehavior::yank_cell(self);
+    }
+
+    fn yank_row(&mut self) {
+        YankBehavior::yank_row(self);
+    }
+
+    fn yank_column(&mut self) {
+        YankBehavior::yank_column(self);
+    }
+
+    fn yank_all(&mut self) {
+        YankBehavior::yank_all(self);
+    }
+
+    fn yank_query(&mut self) {
+        YankBehavior::yank_query(self);
     }
 }
 
