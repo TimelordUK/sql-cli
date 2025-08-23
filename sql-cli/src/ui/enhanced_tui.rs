@@ -27,7 +27,9 @@ use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
-use crate::ui::traits::{ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior};
+use crate::ui::traits::{
+    BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
+};
 use crate::ui::viewport_manager::{
     ColumnOperationResult, ColumnPackingMode, NavigationResult, RowNavigationResult,
     ViewportEfficiency, ViewportManager,
@@ -5877,24 +5879,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    // Buffer management methods
-
-    fn new_buffer(&mut self) {
-        let mut new_buffer = buffer::Buffer::new(self.buffer_manager.all_buffers().len() + 1);
-        // Apply config settings to the new buffer
-        new_buffer.set_compact_mode(self.config.display.compact_mode);
-        new_buffer.set_case_insensitive(self.config.behavior.case_insensitive_default);
-        new_buffer.set_show_row_numbers(self.config.display.show_row_numbers);
-
-        info!(target: "buffer", "Creating new buffer with config: compact_mode={}, case_insensitive={}, show_row_numbers={}",
-              self.config.display.compact_mode,
-              self.config.behavior.case_insensitive_default,
-              self.config.display.show_row_numbers);
-
-        let index = self.buffer_manager.add_buffer(new_buffer);
-        self.buffer_mut()
-            .set_status_message(format!("Created new buffer #{}", index + 1));
-    }
+    // Buffer management methods now in BufferManagementBehavior trait
 
     /// Debug method to dump current buffer state (disabled to prevent TUI corruption)
     #[allow(dead_code)]
@@ -5903,19 +5888,7 @@ impl EnhancedTuiApp {
         // Use tracing/logging instead if debugging is needed
     }
 
-    fn yank(&mut self) {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.yank();
-
-            // Sync for rendering if single-line mode
-            if buffer.get_edit_mode() == EditMode::SingleLine {
-                let text = buffer.get_input_text();
-                let cursor = buffer.get_input_cursor_position();
-                self.set_input_text_with_cursor(text, cursor);
-                self.cursor_manager.set_position(cursor);
-            }
-        }
-    }
+    // yank() method now in BufferManagementBehavior trait
 
     fn ui(&mut self, f: &mut Frame) {
         // Always use single-line mode input height
@@ -8731,6 +8704,36 @@ impl YankBehavior for EnhancedTuiApp {
 
     fn set_error_status(&mut self, prefix: &str, error: anyhow::Error) {
         self.set_error_status(prefix, error)
+    }
+}
+
+impl BufferManagementBehavior for EnhancedTuiApp {
+    fn buffer_manager(&mut self) -> &mut BufferManager {
+        &mut self.buffer_manager
+    }
+
+    fn buffer_handler(&mut self) -> &mut BufferHandler {
+        &mut self.buffer_handler
+    }
+
+    fn buffer(&self) -> &dyn BufferAPI {
+        self.buffer()
+    }
+
+    fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
+        self.buffer_mut()
+    }
+
+    fn config(&self) -> &Config {
+        &self.config
+    }
+
+    fn cursor_manager(&mut self) -> &mut CursorManager {
+        &mut self.cursor_manager
+    }
+
+    fn set_input_text_with_cursor(&mut self, text: String, cursor: usize) {
+        self.set_input_text_with_cursor(text, cursor)
     }
 }
 
