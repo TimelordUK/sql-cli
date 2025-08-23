@@ -7,16 +7,13 @@ const STATUS_BAR_HEIGHT: u16 = 3; // Height of the status bar
 const TOTAL_UI_CHROME: u16 = INPUT_AREA_HEIGHT + STATUS_BAR_HEIGHT; // Total non-table UI height
 const TABLE_CHROME_ROWS: u16 = 3; // Table header (1) + top border (1) + bottom border (1)
 use crate::app_state_container::{AppStateContainer, SelectionMode};
-use crate::buffer::{
-    AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder,
-};
+use crate::buffer::{AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode};
 use crate::buffer_handler::BufferHandler;
 use crate::config::config::Config;
 use crate::cursor_manager::CursorManager;
 use crate::data::adapters::BufferAdapter;
 use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_analyzer::DataAnalyzer;
-use crate::data::data_exporter::DataExporter;
 use crate::data::data_provider::DataProvider;
 use crate::data::data_view::DataView;
 use crate::debug::{DebugRegistry, MemoryTracker};
@@ -38,16 +35,15 @@ use crate::ui::traits::{
     BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
 };
 use crate::ui::viewport_manager::{
-    ColumnOperationResult, ColumnPackingMode, NavigationResult, RowNavigationResult,
-    ViewportEfficiency, ViewportManager,
+    ColumnPackingMode, NavigationResult, ViewportEfficiency, ViewportManager,
 };
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
 use crate::widgets::editor_widget::{BufferAction, EditorAction, EditorWidget};
-use crate::widgets::help_widget::{HelpAction, HelpWidget};
+use crate::widgets::help_widget::HelpWidget;
 use crate::widgets::search_modes_widget::{SearchMode, SearchModesAction, SearchModesWidget};
-use crate::widgets::stats_widget::{StatsAction, StatsWidget};
+use crate::widgets::stats_widget::StatsWidget;
 use crate::{buffer, data_analyzer, dual_logging};
 use anyhow::Result;
 use crossterm::{
@@ -5311,19 +5307,24 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_csv(&mut self) {
-        // Use trait-based export with DataProvider
-        let result = if let Some(provider) = self.get_data_provider() {
-            DataExporter::export_provider_to_csv(provider.as_ref())
-        } else {
-            Err(anyhow::anyhow!("No data available to export"))
+        let result = {
+            let ctx = crate::ui::data_export_operations::DataExportContext {
+                data_provider: self.get_data_provider(),
+            };
+            crate::ui::data_export_operations::export_to_csv(&ctx)
         };
 
         match result {
-            Ok(message) => self.set_status_message(message),
-            Err(e) => self.set_error_status("Export failed", e),
+            crate::ui::data_export_operations::ExportResult::Success(message) => {
+                self.set_status_message(message);
+            }
+            crate::ui::data_export_operations::ExportResult::Error(error) => {
+                self.set_error_status("Export failed", error);
+            }
         }
-        // ========== YANK OPERATIONS ==========
     }
+
+    // ========== YANK OPERATIONS ==========
 
     // Yank operations are provided by the YankBehavior trait in traits/yank_ops.rs
     // The trait provides: yank_cell, yank_row, yank_column, yank_all, yank_query,
@@ -5405,17 +5406,21 @@ impl EnhancedTuiApp {
     }
 
     fn export_to_json(&mut self) {
-        // Use trait-based export with DataProvider
         // TODO: Handle filtered data in future DataView implementation
-        let result = if let Some(provider) = self.get_data_provider() {
-            DataExporter::export_provider_to_json(provider.as_ref())
-        } else {
-            Err(anyhow::anyhow!("No data available to export"))
+        let result = {
+            let ctx = crate::ui::data_export_operations::DataExportContext {
+                data_provider: self.get_data_provider(),
+            };
+            crate::ui::data_export_operations::export_to_json(&ctx)
         };
 
         match result {
-            Ok(message) => self.set_status_message(message),
-            Err(e) => self.set_error_status("Export failed", e),
+            crate::ui::data_export_operations::ExportResult::Success(message) => {
+                self.set_status_message(message);
+            }
+            crate::ui::data_export_operations::ExportResult::Error(error) => {
+                self.set_error_status("Export failed", error);
+            }
         }
     }
 
