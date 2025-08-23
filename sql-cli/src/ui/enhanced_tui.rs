@@ -27,7 +27,7 @@ use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
-use crate::ui::traits::{ColumnBehavior, NavigationBehavior};
+use crate::ui::traits::{ColumnBehavior, InputBehavior, NavigationBehavior};
 use crate::ui::viewport_manager::{
     ColumnOperationResult, ColumnPackingMode, NavigationResult, RowNavigationResult,
     ViewportEfficiency, ViewportManager,
@@ -2016,31 +2016,11 @@ impl EnhancedTuiApp {
                 }
                 // "move_to_line_start" and "move_to_line_end" now handled by editor_widget
                 "delete_word_backward" => {
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                        buffer.delete_word_backward();
-                        // Sync for rendering
-                        if buffer.get_edit_mode() == EditMode::SingleLine {
-                            let text = buffer.get_input_text();
-                            let cursor = buffer.get_input_cursor_position();
-                            self.set_input_text_with_cursor(text, cursor);
-                            self.cursor_manager.set_position(cursor);
-                        }
-                    }
+                    self.delete_word_backward();
                     return Ok(false);
                 }
                 "delete_word_forward" => {
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                        buffer.delete_word_forward();
-                        // Sync for rendering
-                        if buffer.get_edit_mode() == EditMode::SingleLine {
-                            let text = buffer.get_input_text();
-                            let cursor = buffer.get_input_cursor_position();
-                            self.set_input_text_with_cursor(text, cursor);
-                            self.cursor_manager.set_position(cursor);
-                        }
-                    }
+                    self.delete_word_forward();
                     return Ok(false);
                 }
                 "kill_line" => {
@@ -2080,29 +2060,11 @@ impl EnhancedTuiApp {
                     return Ok(false);
                 }
                 "jump_to_prev_token" => {
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.jump_to_prev_token();
-                        // Sync for rendering
-                        if buffer.get_edit_mode() == EditMode::SingleLine {
-                            let text = buffer.get_input_text();
-                            let cursor = buffer.get_input_cursor_position();
-                            self.set_input_text_with_cursor(text, cursor);
-                            self.cursor_manager.set_position(cursor);
-                        }
-                    }
+                    self.jump_to_prev_token();
                     return Ok(false);
                 }
                 "jump_to_next_token" => {
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.jump_to_next_token();
-                        // Sync for rendering
-                        if buffer.get_edit_mode() == EditMode::SingleLine {
-                            let text = buffer.get_input_text();
-                            let cursor = buffer.get_input_cursor_position();
-                            self.set_input_text_with_cursor(text, cursor);
-                            self.cursor_manager.set_position(cursor);
-                        }
-                    }
+                    self.jump_to_next_token();
                     return Ok(false);
                 }
                 "paste_from_clipboard" => {
@@ -2349,29 +2311,11 @@ impl EnhancedTuiApp {
             }
             KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Jump to previous SQL token
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    buffer.jump_to_prev_token();
-                    // Sync for rendering
-                    if buffer.get_edit_mode() == EditMode::SingleLine {
-                        let text = buffer.get_input_text();
-                        let cursor = buffer.get_input_cursor_position();
-                        self.set_input_text_with_cursor(text, cursor);
-                        self.cursor_manager.set_position(cursor);
-                    }
-                }
+                self.jump_to_prev_token();
             }
             KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Jump to next SQL token
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    buffer.jump_to_next_token();
-                    // Sync for rendering
-                    if buffer.get_edit_mode() == EditMode::SingleLine {
-                        let text = buffer.get_input_text();
-                        let cursor = buffer.get_input_cursor_position();
-                        self.set_input_text_with_cursor(text, cursor);
-                        self.cursor_manager.set_position(cursor);
-                    }
-                }
+                self.jump_to_next_token();
             }
             KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Move backward one word
@@ -6120,61 +6064,17 @@ impl EnhancedTuiApp {
         TextNavigator::get_token_at_cursor(&query, cursor_pos)
     }
 
-    fn move_cursor_word_backward(&mut self) {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.move_cursor_word_backward();
+    // Now using InputBehavior trait implementation
+    // fn move_cursor_word_backward(&mut self) { ... }
 
-            // Sync for rendering if single-line mode
-            if buffer.get_edit_mode() == EditMode::SingleLine {
-                let text = buffer.get_input_text();
-                let cursor = buffer.get_input_cursor_position();
-                self.set_input_text_with_cursor(text, cursor);
-                self.cursor_manager.set_position(cursor);
-            }
-        }
-    }
+    // Now using InputBehavior trait implementation
+    // fn move_cursor_word_forward(&mut self) { ... }
 
-    fn move_cursor_word_forward(&mut self) {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.move_cursor_word_forward();
+    // Now using InputBehavior trait implementation
+    // fn kill_line(&mut self) { ... }
 
-            // Sync for rendering if single-line mode
-            if buffer.get_edit_mode() == EditMode::SingleLine {
-                let text = buffer.get_input_text();
-                let cursor = buffer.get_input_cursor_position();
-                self.set_input_text_with_cursor(text, cursor);
-                self.cursor_manager.set_position(cursor);
-            }
-        }
-    }
-
-    fn kill_line(&mut self) {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.kill_line();
-
-            // Sync for rendering if single-line mode
-            if buffer.get_edit_mode() == EditMode::SingleLine {
-                let text = buffer.get_input_text();
-                let cursor = buffer.get_input_cursor_position();
-                self.set_input_text_with_cursor(text, cursor);
-                self.cursor_manager.set_position(cursor);
-            }
-        }
-    }
-
-    fn kill_line_backward(&mut self) {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.kill_line_backward();
-
-            // Sync for rendering if single-line mode
-            if buffer.get_edit_mode() == EditMode::SingleLine {
-                let text = buffer.get_input_text();
-                let cursor = buffer.get_input_cursor_position();
-                self.set_input_text_with_cursor(text, cursor);
-                self.cursor_manager.set_position(cursor);
-            }
-        }
-    }
+    // Now using InputBehavior trait implementation
+    // fn kill_line_backward(&mut self) { ... }
 
     fn undo(&mut self) {
         // Use buffer's high-level undo operation
@@ -9007,6 +8907,20 @@ impl ColumnBehavior for EnhancedTuiApp {
 
     fn state_container(&self) -> &AppStateContainer {
         &self.state_container
+    }
+}
+
+impl InputBehavior for EnhancedTuiApp {
+    fn buffer_manager(&mut self) -> &mut BufferManager {
+        &mut self.buffer_manager
+    }
+
+    fn cursor_manager(&mut self) -> &mut CursorManager {
+        &mut self.cursor_manager
+    }
+
+    fn set_input_text_with_cursor(&mut self, text: String, cursor: usize) {
+        self.set_input_text_with_cursor(text, cursor)
     }
 }
 
