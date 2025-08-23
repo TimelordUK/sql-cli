@@ -4,7 +4,7 @@
 //! extracted from the monolithic TUI to improve maintainability and testability.
 
 use crate::app_state_container::AppStateContainer;
-use crate::buffer::{AppMode, BufferAPI};
+use crate::buffer::{AppMode, BufferAPI, BufferManager};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ use std::sync::Arc;
 /// Provides the minimal interface needed for history search operations
 pub struct HistoryInputContext<'a> {
     pub state_container: &'a Arc<AppStateContainer>,
-    pub buffer: &'a mut dyn BufferAPI,
+    pub buffer_manager: &'a mut BufferManager,
 }
 
 /// Result of processing a history input key event
@@ -28,10 +28,7 @@ pub enum HistoryInputResult {
 
 /// Handle a key event in history search mode
 /// Returns the result of processing the key event
-pub fn handle_history_input(
-    ctx: &mut HistoryInputContext,
-    key: KeyEvent,
-) -> HistoryInputResult {
+pub fn handle_history_input(ctx: &mut HistoryInputContext, key: KeyEvent) -> HistoryInputResult {
     match key.code {
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             HistoryInputResult::Exit
@@ -39,17 +36,21 @@ pub fn handle_history_input(
         KeyCode::Esc => {
             // Cancel history search and restore original input
             let original_input = ctx.state_container.cancel_history_search();
-            ctx.buffer.set_mode(AppMode::Command);
-            ctx.buffer.set_status_message("History search cancelled".to_string());
+            if let Some(buffer) = ctx.buffer_manager.current_mut() {
+                buffer.set_mode(AppMode::Command);
+                buffer.set_status_message("History search cancelled".to_string());
+            }
             HistoryInputResult::SwitchToCommand(Some((original_input, 0)))
         }
         KeyCode::Enter => {
             // Accept the selected history command
             if let Some(command) = ctx.state_container.accept_history_search() {
-                ctx.buffer.set_mode(AppMode::Command);
-                ctx.buffer.set_status_message(
-                    "Command loaded from history (cursor at start)".to_string(),
-                );
+                if let Some(buffer) = ctx.buffer_manager.current_mut() {
+                    buffer.set_mode(AppMode::Command);
+                    buffer.set_status_message(
+                        "Command loaded from history (cursor at start)".to_string(),
+                    );
+                }
                 // Return command with cursor at the beginning for better visibility
                 HistoryInputResult::SwitchToCommand(Some((command, 0)))
             } else {
@@ -99,49 +100,59 @@ pub fn key_updates_search(key: KeyEvent) -> bool {
 mod tests {
     use super::*;
     use crate::app_state_container::AppStateContainer;
-    use crate::buffer::{AppMode, Buffer};
+    use crate::buffer::{AppMode, BufferManager};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    fn create_test_context() -> (AppStateContainer, Buffer) {
-        let state_container = AppStateContainer::new();
-        let buffer = Buffer::new();
-        (state_container, buffer)
+    fn create_test_context() -> (AppStateContainer, BufferManager) {
+        let mut state_buffer_manager = crate::buffer::BufferManager::new();
+        let state_buffer = crate::buffer::Buffer::new(1);
+        state_buffer_manager.add_buffer(state_buffer);
+
+        let state_container =
+            AppStateContainer::new(state_buffer_manager).expect("Failed to create state container");
+
+        let mut buffer_manager = crate::buffer::BufferManager::new();
+        let buffer = crate::buffer::Buffer::new(1);
+        buffer_manager.add_buffer(buffer);
+        (state_container, buffer_manager)
     }
 
     #[test]
     fn test_ctrl_c_exits() {
-        let (state_container, mut buffer) = create_test_context();
+        let (state_container, mut buffer_manager) = create_test_context();
         let state_arc = Arc::new(state_container);
-        
+
         let mut ctx = HistoryInputContext {
             state_container: &state_arc,
-            buffer: &mut buffer,
+            buffer_manager: &mut buffer_manager,
         };
 
         let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         let result = handle_history_input(&mut ctx, key);
-        
+
         assert_eq!(result, HistoryInputResult::Exit);
     }
 
     #[test]
     fn test_esc_cancels_search() {
-        let (state_container, mut buffer) = create_test_context();
+        let (state_container, mut buffer_manager) = create_test_context();
         let state_arc = Arc::new(state_container);
-        
+
         let mut ctx = HistoryInputContext {
             state_container: &state_arc,
-            buffer: &mut buffer,
+            buffer_manager: &mut buffer_manager,
         };
 
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         let result = handle_history_input(&mut ctx, key);
-        
+
         // Should switch to command mode with original input
         match result {
             HistoryInputResult::SwitchToCommand(input) => {
                 assert!(input.is_some());
-                assert_eq!(ctx.buffer.get_mode(), AppMode::Command);
+                if let Some(buffer) = ctx.buffer_manager.current() {
+                    assert_eq!(buffer.get_mode(), AppMode::Command);
+                }
             }
             _ => panic!("Expected SwitchToCommand result"),
         }
@@ -149,12 +160,12 @@ mod tests {
 
     #[test]
     fn test_up_down_navigation() {
-        let (state_container, mut buffer) = create_test_context();
+        let (state_container, mut buffer_manager) = create_test_context();
         let state_arc = Arc::new(state_container);
-        
+
         let mut ctx = HistoryInputContext {
             state_container: &state_arc,
-            buffer: &mut buffer,
+            buffer_manager: &mut buffer_manager,
         };
 
         let up_key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
@@ -168,12 +179,12 @@ mod tests {
 
     #[test]
     fn test_ctrl_r_navigation() {
-        let (state_container, mut buffer) = create_test_context();
+        let (state_container, mut buffer_manager) = create_test_context();
         let state_arc = Arc::new(state_container);
-        
+
         let mut ctx = HistoryInputContext {
             state_container: &state_arc,
-            buffer: &mut buffer,
+            buffer_manager: &mut buffer_manager,
         };
 
         let key = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL);
@@ -183,12 +194,12 @@ mod tests {
 
     #[test]
     fn test_character_input() {
-        let (state_container, mut buffer) = create_test_context();
+        let (state_container, mut buffer_manager) = create_test_context();
         let state_arc = Arc::new(state_container);
-        
+
         let mut ctx = HistoryInputContext {
             state_container: &state_arc,
-            buffer: &mut buffer,
+            buffer_manager: &mut buffer_manager,
         };
 
         let key = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
@@ -200,10 +211,10 @@ mod tests {
     fn test_key_updates_search() {
         let backspace_key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
         assert!(key_updates_search(backspace_key));
-        
+
         let char_key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
         assert!(key_updates_search(char_key));
-        
+
         let up_key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
         assert!(!key_updates_search(up_key));
     }
@@ -212,6 +223,8 @@ mod tests {
     fn test_should_update_history_matches() {
         assert!(should_update_history_matches(&HistoryInputResult::Continue));
         assert!(!should_update_history_matches(&HistoryInputResult::Exit));
-        assert!(!should_update_history_matches(&HistoryInputResult::SwitchToCommand(None)));
+        assert!(!should_update_history_matches(
+            &HistoryInputResult::SwitchToCommand(None)
+        ));
     }
 }

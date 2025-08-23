@@ -3298,51 +3298,34 @@ impl EnhancedTuiApp {
     }
 
     fn handle_history_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::Esc => {
-                // Cancel history search and restore original input
-                let original_input = self.state_container.cancel_history_search();
-                self.set_input_text(original_input);
-                self.buffer_mut().set_mode(AppMode::Command);
-                self.buffer_mut()
-                    .set_status_message("History search cancelled".to_string());
-            }
-            KeyCode::Enter => {
-                // Accept the selected history command
-                if let Some(command) = self.state_container.accept_history_search() {
-                    // Set text with cursor at the beginning for better visibility
-                    self.set_input_text_with_cursor(command, 0);
-                    self.buffer_mut().set_mode(AppMode::Command);
-                    self.buffer_mut().set_status_message(
-                        "Command loaded from history (cursor at start)".to_string(),
-                    );
+        // Split borrows to avoid borrow checker conflicts
+        let result = {
+            let mut ctx = crate::ui::history_input_handler::HistoryInputContext {
+                state_container: &self.state_container,
+                buffer_manager: &mut self.buffer_manager,
+            };
+            crate::ui::history_input_handler::handle_history_input(&mut ctx, key)
+        };
+
+        // Handle the result
+        match result {
+            crate::ui::history_input_handler::HistoryInputResult::Exit => return Ok(true),
+            crate::ui::history_input_handler::HistoryInputResult::SwitchToCommand(input_data) => {
+                if let Some((text, cursor_pos)) = input_data {
+                    self.set_input_text_with_cursor(text, cursor_pos);
                     // Sync to ensure scroll is reset properly
-                    self.sync_all_input_states()
+                    self.sync_all_input_states();
                 }
             }
-            KeyCode::Up => {
-                self.state_container.history_search_previous();
+            crate::ui::history_input_handler::HistoryInputResult::Continue => {
+                // Update history matches if needed
+                if crate::ui::history_input_handler::key_updates_search(key) {
+                    self.update_history_matches_in_container();
+                }
             }
-            KeyCode::Down => {
-                self.state_container.history_search_next();
-            }
-            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Ctrl+R cycles through matches
-                self.state_container.history_search_next();
-            }
-            KeyCode::Backspace => {
-                self.state_container.history_search_backspace();
-                self.update_history_matches_in_container();
-            }
-            KeyCode::Char(c) => {
-                self.state_container.history_search_add_char(c);
-                self.update_history_matches_in_container();
-            }
-            _ => {}
         }
+
         Ok(false)
-        // ========== HISTORY MANAGEMENT ==========
     }
 
     /// Update history matches in the AppStateContainer with schema context
@@ -3961,42 +3944,7 @@ impl EnhancedTuiApp {
     }
 
     fn check_parser_error(&self, query: &str) -> Option<String> {
-        // Quick check for common parser errors
-        let mut paren_depth = 0;
-        let mut in_string = false;
-        let mut escape_next = false;
-
-        for ch in query.chars() {
-            if escape_next {
-                escape_next = false;
-                continue;
-            }
-
-            match ch {
-                '\\' if in_string => escape_next = true,
-                '\'' => in_string = !in_string,
-                '(' if !in_string => paren_depth += 1,
-                ')' if !in_string => {
-                    paren_depth -= 1;
-                    if paren_depth < 0 {
-                        return Some("Extra )".to_string());
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        if paren_depth > 0 {
-            return Some(format!("Missing {} )", paren_depth));
-        }
-
-        // Could add more checks here (unclosed strings, etc.)
-        if in_string {
-            return Some("Unclosed string".to_string());
-        }
-
-        None
-        // ========== VIEWPORT MANAGEMENT ==========
+        crate::ui::simple_operations::check_parser_error(query)
     }
 
     fn update_viewport_size(&mut self) {
@@ -5450,15 +5398,19 @@ impl EnhancedTuiApp {
     }
 
     fn get_cursor_token_position(&self) -> (usize, usize) {
-        let query = self.get_input_text();
-        let cursor_pos = self.get_input_cursor();
-        TextNavigator::get_cursor_token_position(&query, cursor_pos)
+        let ctx = crate::ui::simple_operations::TextNavigationContext {
+            query: &self.get_input_text(),
+            cursor_pos: self.get_input_cursor(),
+        };
+        crate::ui::simple_operations::get_cursor_token_position(&ctx)
     }
 
     fn get_token_at_cursor(&self) -> Option<String> {
-        let query = self.get_input_text();
-        let cursor_pos = self.get_input_cursor();
-        TextNavigator::get_token_at_cursor(&query, cursor_pos)
+        let ctx = crate::ui::simple_operations::TextNavigationContext {
+            query: &self.get_input_text(),
+            cursor_pos: self.get_input_cursor(),
+        };
+        crate::ui::simple_operations::get_token_at_cursor(&ctx)
     }
 
     // Now using InputBehavior trait implementation
@@ -5474,16 +5426,12 @@ impl EnhancedTuiApp {
     // fn kill_line_backward(&mut self) { ... }
 
     fn undo(&mut self) {
-        // Use buffer's high-level undo operation
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            if buffer.perform_undo() {
-                self.buffer_mut()
-                    .set_status_message("Undo performed".to_string());
-            } else {
-                self.buffer_mut()
-                    .set_status_message("Nothing to undo".to_string());
-            }
-        }
+        let mut ctx = crate::ui::simple_operations::UndoContext {
+            buffer_manager: &mut self.buffer_manager,
+        };
+
+        let result = crate::ui::simple_operations::perform_undo(&mut ctx);
+        self.set_status_message(result.status_message());
     }
 
     // Buffer management methods now in BufferManagementBehavior trait
