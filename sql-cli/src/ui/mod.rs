@@ -17,6 +17,7 @@ pub mod key_sequence_renderer;
 pub mod query_engine_integration;
 pub mod scroll_utils;
 pub mod text_utils;
+pub mod traits;
 pub mod tui_app;
 pub mod tui_renderer;
 pub mod tui_state;

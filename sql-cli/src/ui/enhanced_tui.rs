@@ -27,6 +27,7 @@ use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
+use crate::ui::traits::NavigationBehavior;
 use crate::ui::viewport_manager::{
     ColumnOperationResult, ColumnPackingMode, NavigationResult, RowNavigationResult,
     ViewportEfficiency, ViewportManager,
@@ -4164,26 +4165,7 @@ impl EnhancedTuiApp {
     }
     // ========== NAVIGATION METHODS ==========
 
-    /// Helper to apply row navigation result to all state locations
-    /// This consolidates the duplicated state updates that were in every navigation method
-    fn apply_row_navigation_result(&mut self, result: RowNavigationResult) {
-        // Update Buffer's selected row
-        self.buffer_mut()
-            .set_selected_row(Some(result.row_position));
-
-        // Update scroll offset if viewport changed
-        if result.viewport_changed {
-            let mut offset = self.buffer().get_scroll_offset();
-            offset.0 = result.row_scroll_offset;
-            self.buffer_mut().set_scroll_offset(offset);
-        }
-
-        // Update AppStateContainer for consistency
-        self.state_container.navigation_mut().selected_row = result.row_position;
-        if result.viewport_changed {
-            self.state_container.navigation_mut().scroll_offset.0 = result.row_scroll_offset;
-        }
-    }
+    // Navigation methods moved to NavigationBehavior trait
 
     /// Helper to apply column navigation result to all state locations
     fn apply_column_navigation_result(&mut self, result: NavigationResult, direction: &str) {
@@ -4275,31 +4257,6 @@ impl EnhancedTuiApp {
         self.buffer_mut().set_status_message(result.description);
     }
 
-    // Navigation functions
-    fn next_row(&mut self) {
-        // Use ViewportManager to navigate (it manages the crosshair)
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            viewport_borrow.as_mut().map(|vm| vm.navigate_row_down())
-        };
-
-        if let Some(nav_result) = nav_result {
-            self.apply_row_navigation_result(nav_result);
-        }
-    }
-
-    fn previous_row(&mut self) {
-        // Use ViewportManager to navigate (it manages the crosshair)
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            viewport_borrow.as_mut().map(|vm| vm.navigate_row_up())
-        };
-
-        if let Some(nav_result) = nav_result {
-            self.apply_row_navigation_result(nav_result);
-        }
-    }
-
     fn move_column_left(&mut self) {
         // Get navigation result from ViewportManager
         let nav_result = {
@@ -4354,23 +4311,6 @@ impl EnhancedTuiApp {
 
         // Note: goto_first/last_column don't need cursor_manager updates
         self.apply_column_navigation_result(nav_result, "last");
-    }
-
-    fn goto_first_row(&mut self) {
-        let total_rows = self.get_row_count();
-        if total_rows > 0 {
-            // Use ViewportManager for navigation
-            let nav_result = {
-                let mut viewport_borrow = self.viewport_manager.borrow_mut();
-                viewport_borrow
-                    .as_mut()
-                    .map(|vm| vm.navigate_to_first_row(total_rows))
-            };
-
-            if let Some(nav_result) = nav_result {
-                self.apply_row_navigation_result(nav_result);
-            }
-        }
     }
 
     fn goto_viewport_top(&mut self) {
@@ -4641,46 +4581,6 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn goto_last_row(&mut self) {
-        let total_rows = self.get_row_count();
-        if total_rows > 0 {
-            // Use ViewportManager for navigation
-            let nav_result = {
-                let mut viewport_borrow = self.viewport_manager.borrow_mut();
-                viewport_borrow
-                    .as_mut()
-                    .map(|vm| vm.navigate_to_last_row(total_rows))
-            };
-
-            if let Some(nav_result) = nav_result {
-                self.apply_row_navigation_result(nav_result);
-            }
-        }
-    }
-
-    fn page_down(&mut self) {
-        // Use ViewportManager for page navigation
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            viewport_borrow.as_mut().map(|vm| vm.page_down())
-        };
-
-        if let Some(nav_result) = nav_result {
-            self.apply_row_navigation_result(nav_result);
-        }
-    }
-
-    fn page_up(&mut self) {
-        // Use ViewportManager for page navigation
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            viewport_borrow.as_mut().map(|vm| vm.page_up())
-        };
-
-        if let Some(nav_result) = nav_result {
-            self.apply_row_navigation_result(nav_result);
-        }
-    }
     // ========== SEARCH EXECUTION ==========
 
     // Search and filter functions
@@ -9163,6 +9063,29 @@ impl EnhancedTuiApp {
             let query = buffer.get_input_text();
             self.debug_widget.generate_pretty_sql(&query);
         }
+    }
+}
+
+// Implement NavigationBehavior trait for EnhancedTuiApp
+impl NavigationBehavior for EnhancedTuiApp {
+    fn viewport_manager(&self) -> &RefCell<Option<ViewportManager>> {
+        &self.viewport_manager
+    }
+
+    fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
+        self.buffer_mut()
+    }
+
+    fn buffer(&self) -> &dyn BufferAPI {
+        self.buffer()
+    }
+
+    fn state_container(&self) -> &AppStateContainer {
+        &self.state_container
+    }
+
+    fn get_row_count(&self) -> usize {
+        self.get_row_count()
     }
 }
 

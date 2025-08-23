@@ -2406,6 +2406,227 @@ impl ViewportManager {
         }
     }
 
+    /// Navigate half page down in the data
+    pub fn half_page_down(&mut self) -> RowNavigationResult {
+        let total_rows = self.dataview.row_count();
+        // Calculate visible rows (viewport height)
+        let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
+        let half_page = visible_rows / 2;
+
+        debug!(target: "viewport_manager", 
+               "half_page_down: crosshair_row={}, total_rows={}, half_page={}, current_viewport_rows={:?}", 
+               self.crosshair_row, total_rows, half_page, self.viewport_rows);
+
+        // Check viewport lock first - prevent scrolling entirely
+        if self.viewport_lock {
+            debug!(target: "viewport_manager", 
+                   "half_page_down: Viewport locked, moving within current viewport");
+            // In viewport lock mode, move to bottom of current viewport
+            let new_row = self
+                .viewport_rows
+                .end
+                .saturating_sub(1)
+                .min(total_rows.saturating_sub(1));
+            self.crosshair_row = new_row;
+            return RowNavigationResult {
+                row_position: new_row,
+                row_scroll_offset: self.viewport_rows.start,
+                description: format!(
+                    "Half page down within locked viewport: row {} → {}",
+                    self.crosshair_row + 1,
+                    new_row + 1
+                ),
+                viewport_changed: false,
+            };
+        }
+
+        // Check cursor lock - scroll viewport but keep cursor at same relative position
+        if self.cursor_lock {
+            if let Some(lock_position) = self.cursor_lock_position {
+                debug!(target: "viewport_manager", 
+                       "half_page_down: Cursor locked at position {}", lock_position);
+
+                // Calculate new viewport position
+                let old_scroll_offset = self.viewport_rows.start;
+                let max_scroll = total_rows.saturating_sub(visible_rows);
+                let new_scroll_offset = (old_scroll_offset + half_page).min(max_scroll);
+
+                if new_scroll_offset == old_scroll_offset {
+                    // Can't scroll further
+                    return RowNavigationResult {
+                        row_position: self.crosshair_row,
+                        row_scroll_offset: old_scroll_offset,
+                        description: "Already at bottom".to_string(),
+                        viewport_changed: false,
+                    };
+                }
+
+                // Update viewport
+                self.viewport_rows =
+                    new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
+
+                // Keep crosshair at same relative position
+                self.crosshair_row =
+                    (new_scroll_offset + lock_position).min(total_rows.saturating_sub(1));
+
+                return RowNavigationResult {
+                    row_position: self.crosshair_row,
+                    row_scroll_offset: new_scroll_offset,
+                    description: format!(
+                        "Half page down with cursor lock (viewport {} → {})",
+                        old_scroll_offset + 1,
+                        new_scroll_offset + 1
+                    ),
+                    viewport_changed: true,
+                };
+            }
+        }
+
+        // Normal half page down behavior
+        // Calculate new row position (move down by half page) using ViewportManager's crosshair
+        let new_row = (self.crosshair_row + half_page).min(total_rows.saturating_sub(1));
+        self.crosshair_row = new_row;
+
+        // Calculate new scroll offset to keep new position visible
+        let old_scroll_offset = self.viewport_rows.start;
+        let new_scroll_offset = if new_row >= self.viewport_rows.start + visible_rows {
+            // Need to scroll down
+            (new_row + 1).saturating_sub(visible_rows)
+        } else {
+            // Keep current scroll
+            old_scroll_offset
+        };
+
+        // Update viewport
+        self.viewport_rows = new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
+        let viewport_changed = new_scroll_offset != old_scroll_offset;
+
+        let description = format!(
+            "Half page down: row {} → {} (of {})",
+            self.crosshair_row + 1 - half_page.min(self.crosshair_row),
+            new_row + 1,
+            total_rows
+        );
+
+        debug!(target: "viewport_manager", 
+               "half_page_down result: new_row={}, scroll_offset={}→{}, viewport_changed={}", 
+               new_row, old_scroll_offset, new_scroll_offset, viewport_changed);
+
+        RowNavigationResult {
+            row_position: new_row,
+            row_scroll_offset: new_scroll_offset,
+            description,
+            viewport_changed,
+        }
+    }
+
+    /// Navigate half page up in the data
+    pub fn half_page_up(&mut self) -> RowNavigationResult {
+        let total_rows = self.dataview.row_count();
+        // Calculate visible rows (viewport height)
+        let visible_rows = self.terminal_height.saturating_sub(6) as usize; // Account for headers, borders, status
+        let half_page = visible_rows / 2;
+
+        debug!(target: "viewport_manager", 
+               "half_page_up: crosshair_row={}, half_page={}, current_viewport_rows={:?}", 
+               self.crosshair_row, half_page, self.viewport_rows);
+
+        // Check viewport lock first - prevent scrolling entirely
+        if self.viewport_lock {
+            debug!(target: "viewport_manager", 
+                   "half_page_up: Viewport locked, moving within current viewport");
+            // In viewport lock mode, move to top of current viewport
+            let new_row = self.viewport_rows.start;
+            self.crosshair_row = new_row;
+            return RowNavigationResult {
+                row_position: new_row,
+                row_scroll_offset: self.viewport_rows.start,
+                description: format!(
+                    "Half page up within locked viewport: row {} → {}",
+                    self.crosshair_row + 1,
+                    new_row + 1
+                ),
+                viewport_changed: false,
+            };
+        }
+
+        // Check cursor lock - scroll viewport but keep cursor at same relative position
+        if self.cursor_lock {
+            if let Some(lock_position) = self.cursor_lock_position {
+                debug!(target: "viewport_manager", 
+                       "half_page_up: Cursor locked at position {}", lock_position);
+
+                // Calculate new viewport position
+                let old_scroll_offset = self.viewport_rows.start;
+                let new_scroll_offset = old_scroll_offset.saturating_sub(half_page);
+
+                if new_scroll_offset == old_scroll_offset {
+                    // Can't scroll further
+                    return RowNavigationResult {
+                        row_position: self.crosshair_row,
+                        row_scroll_offset: old_scroll_offset,
+                        description: "Already at top".to_string(),
+                        viewport_changed: false,
+                    };
+                }
+
+                // Update viewport
+                self.viewport_rows =
+                    new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
+
+                // Keep crosshair at same relative position
+                self.crosshair_row = new_scroll_offset + lock_position;
+
+                return RowNavigationResult {
+                    row_position: self.crosshair_row,
+                    row_scroll_offset: new_scroll_offset,
+                    description: format!(
+                        "Half page up with cursor lock (viewport {} → {})",
+                        old_scroll_offset + 1,
+                        new_scroll_offset + 1
+                    ),
+                    viewport_changed: true,
+                };
+            }
+        }
+
+        // Normal half page up behavior
+        // Calculate new row position (move up by half page) using ViewportManager's crosshair
+        let new_row = self.crosshair_row.saturating_sub(half_page);
+        self.crosshair_row = new_row;
+
+        // Calculate new scroll offset to keep new position visible
+        let old_scroll_offset = self.viewport_rows.start;
+        let new_scroll_offset = if new_row < self.viewport_rows.start {
+            // Need to scroll up
+            new_row
+        } else {
+            // Keep current scroll
+            old_scroll_offset
+        };
+
+        // Update viewport
+        self.viewport_rows = new_scroll_offset..(new_scroll_offset + visible_rows).min(total_rows);
+        let viewport_changed = new_scroll_offset != old_scroll_offset;
+
+        let description = format!(
+            "Half page up: row {} → {}",
+            self.crosshair_row + half_page + 1,
+            new_row + 1
+        );
+
+        debug!(target: "viewport_manager", 
+               "half_page_up result: new_row={}, scroll_offset={}→{}, viewport_changed={}", 
+               new_row, old_scroll_offset, new_scroll_offset, viewport_changed);
+
+        RowNavigationResult {
+            row_position: new_row,
+            row_scroll_offset: new_scroll_offset,
+            description,
+            viewport_changed,
+        }
+    }
+
     /// Navigate to the last row in the data (like vim 'G' command)
     pub fn navigate_to_last_row(&mut self, total_rows: usize) -> RowNavigationResult {
         // Check viewport lock - prevent scrolling
