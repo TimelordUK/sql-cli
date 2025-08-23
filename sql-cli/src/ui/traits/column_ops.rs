@@ -29,6 +29,16 @@ pub trait ColumnBehavior {
         // Update navigation state
         self.state_container().navigation_mut().selected_column = visual_position;
 
+        // Update scroll offset if viewport changed
+        if result.viewport_changed {
+            let mut offset = self.buffer().get_scroll_offset();
+            offset.1 = result.scroll_offset;
+            self.buffer_mut().set_scroll_offset(offset);
+
+            // Also update the navigation state scroll offset
+            self.state_container().navigation_mut().scroll_offset.1 = result.scroll_offset;
+        }
+
         // Set status message based on direction
         let message = match direction {
             "first" => "Moved to first column".to_string(),
