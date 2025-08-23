@@ -257,11 +257,8 @@ impl ActionHandler for UIActionHandler {
                 tui.set_status_message("Help mode - Press 'q' or Escape to return".to_string());
                 Some(Ok(ActionResult::Handled))
             }
-            Action::ShowDebugInfo => {
-                tui.set_mode(AppMode::Debug);
-                tui.set_status_message("Debug mode - Press 'q' or Escape to return".to_string());
-                Some(Ok(ActionResult::Handled))
-            }
+            // ShowDebugInfo needs to stay in the legacy switch for now
+            // because it calls toggle_debug_mode() which generates debug data
             _ => None,
         }
     }

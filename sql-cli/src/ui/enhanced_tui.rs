@@ -269,60 +269,7 @@ impl EnhancedTuiApp {
 
         // Fallback to existing switch statement for actions not yet in visitor pattern
         match action {
-            Navigate(nav_action) => {
-                use crate::ui::actions::NavigateAction::*;
-                match nav_action {
-                    Up(count) => {
-                        for _ in 0..count {
-                            NavigationBehavior::previous_row(self);
-                        }
-                        Ok(ActionResult::Handled)
-                    }
-                    Down(count) => {
-                        for _ in 0..count {
-                            NavigationBehavior::next_row(self);
-                        }
-                        Ok(ActionResult::Handled)
-                    }
-                    Left(count) => {
-                        for _ in 0..count {
-                            ColumnBehavior::move_column_left(self);
-                        }
-                        Ok(ActionResult::Handled)
-                    }
-                    Right(count) => {
-                        for _ in 0..count {
-                            ColumnBehavior::move_column_right(self);
-                        }
-                        Ok(ActionResult::Handled)
-                    }
-                    PageUp => {
-                        NavigationBehavior::page_up(self);
-                        Ok(ActionResult::Handled)
-                    }
-                    PageDown => {
-                        NavigationBehavior::page_down(self);
-                        Ok(ActionResult::Handled)
-                    }
-                    Home => {
-                        NavigationBehavior::goto_first_row(self);
-                        Ok(ActionResult::Handled)
-                    }
-                    End => {
-                        NavigationBehavior::goto_last_row(self);
-                        Ok(ActionResult::Handled)
-                    }
-                    FirstColumn => {
-                        ColumnBehavior::goto_first_column(self);
-                        Ok(ActionResult::Handled)
-                    }
-                    LastColumn => {
-                        ColumnBehavior::goto_last_column(self);
-                        Ok(ActionResult::Handled)
-                    }
-                    _ => Ok(ActionResult::NotHandled),
-                }
-            }
+            // Navigate actions are now handled by NavigationActionHandler in visitor pattern
             ToggleSelectionMode => {
                 self.state_container.toggle_selection_mode();
                 let new_mode = self.state_container.get_selection_mode();
@@ -336,21 +283,13 @@ impl EnhancedTuiApp {
             }
             Quit => Ok(ActionResult::Exit),
             ForceQuit => Ok(ActionResult::Exit),
-            ShowHelp => {
-                self.state_container.set_help_visible(true);
-                self.buffer_mut().set_mode(AppMode::Help);
-                self.help_widget.on_enter();
-                Ok(ActionResult::Handled)
-            }
+            // ShowHelp is now handled by UIActionHandler in visitor pattern
             ShowDebugInfo => {
                 // Use the existing toggle_debug_mode which generates all debug info
                 self.toggle_debug_mode();
                 Ok(ActionResult::Handled)
             }
-            ToggleColumnPin => {
-                self.toggle_column_pin_impl();
-                Ok(ActionResult::Handled)
-            }
+            // ToggleColumnPin is now handled by ColumnActionHandler in visitor pattern
             ToggleRowNumbers => {
                 // Toggle row numbers using the buffer's display option
                 let current = self.buffer().is_show_row_numbers();
@@ -390,14 +329,7 @@ impl EnhancedTuiApp {
                     .set_status_message("Enter row number (1-based):".to_string());
                 Ok(ActionResult::Handled)
             }
-            ExportToCsv => {
-                self.export_to_csv();
-                Ok(ActionResult::Handled)
-            }
-            ExportToJson => {
-                self.export_to_json();
-                Ok(ActionResult::Handled)
-            }
+            // ExportToCsv and ExportToJson are now handled by ExportActionHandler in visitor pattern
             ClearFilter => {
                 // Check if we have an active filter to clear
                 if let Some(dataview) = self.buffer().get_dataview() {
@@ -580,27 +512,13 @@ impl EnhancedTuiApp {
                 }
                 Ok(ActionResult::Handled)
             }
-            NextColumn => {
-                ColumnBehavior::move_column_right(self);
-                Ok(ActionResult::Handled)
-            }
-            PreviousColumn => {
-                ColumnBehavior::move_column_left(self);
-                Ok(ActionResult::Handled)
-            }
+            // NextColumn and PreviousColumn are now handled by NavigationActionHandler in visitor pattern
             Sort(_column_idx) => {
                 // For now, always sort by current column (like 's' key does)
                 self.toggle_sort_current_column();
                 Ok(ActionResult::Handled)
             }
-            HideColumn => {
-                ColumnBehavior::hide_current_column(self);
-                Ok(ActionResult::Handled)
-            }
-            UnhideAllColumns => {
-                ColumnBehavior::unhide_all_columns(self);
-                Ok(ActionResult::Handled)
-            }
+            // HideColumn and UnhideAllColumns are now handled by ColumnActionHandler in visitor pattern
             HideEmptyColumns => {
                 tracing::info!("HideEmptyColumns action triggered");
 
@@ -646,10 +564,7 @@ impl EnhancedTuiApp {
                 self.move_current_column_right();
                 Ok(ActionResult::Handled)
             }
-            ClearAllPins => {
-                self.clear_all_pinned_columns_impl();
-                Ok(ActionResult::Handled)
-            }
+            // ClearAllPins is now handled by ColumnActionHandler in visitor pattern
             StartSearch => {
                 // Use the new VimSearchManager for forward search
                 self.start_vim_search();
