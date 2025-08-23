@@ -358,9 +358,7 @@ impl ViewportManager {
                    "navigate_row_down: Viewport locked, crosshair={}, viewport={:?}",
                    self.crosshair_row, self.viewport_rows);
             // In viewport lock mode, just move cursor down within current viewport
-            // Account for table chrome when checking viewport boundary
-            let visible_data_end = self.viewport_rows.end.saturating_sub(TABLE_CHROME_ROWS);
-            if self.crosshair_row < visible_data_end.saturating_sub(1)
+            if self.crosshair_row < self.viewport_rows.end - 1
                 && self.crosshair_row < total_rows - 1
             {
                 self.crosshair_row += 1;
@@ -436,9 +434,9 @@ impl ViewportManager {
         self.crosshair_row = new_row;
 
         // Adjust viewport if needed
-        // The viewport includes table chrome, so actual visible data area ends earlier
-        let visible_data_end = self.viewport_rows.end.saturating_sub(TABLE_CHROME_ROWS);
-        let viewport_changed = if new_row >= visible_data_end {
+        // viewport_rows now correctly represents only data rows (no table chrome)
+        let viewport_changed = if new_row >= self.viewport_rows.end {
+            // Need to scroll - cursor is at or past the end of viewport
             let viewport_height = self.viewport_rows.end - self.viewport_rows.start;
             self.viewport_rows = (new_row + 1).saturating_sub(viewport_height)..(new_row + 1);
             true
@@ -2832,11 +2830,9 @@ impl ViewportManager {
 
     /// Navigate to the middle of the current viewport (M in vim)
     pub fn navigate_to_viewport_middle(&mut self) -> RowNavigationResult {
-        // The viewport includes table chrome (header + borders = 3 rows)
-        // Calculate the middle of the actual visible data area
+        // Calculate the middle of the viewport (viewport now only contains data rows)
         let viewport_height = self.viewport_rows.end - self.viewport_rows.start;
-        let data_rows_visible = viewport_height.saturating_sub(TABLE_CHROME_ROWS); // Remove table chrome
-        let middle_offset = data_rows_visible / 2;
+        let middle_offset = viewport_height / 2;
         let middle_row = self.viewport_rows.start + middle_offset;
         let old_row = self.crosshair_row;
 
@@ -2859,16 +2855,9 @@ impl ViewportManager {
 
     /// Navigate to the bottom of the current viewport (L in vim)
     pub fn navigate_to_viewport_bottom(&mut self) -> RowNavigationResult {
-        // The viewport_rows represents the table area which includes borders and header
-        // Actual visible data rows = viewport height - 3 (1 header + 2 borders)
-        // So the last visible data row is at viewport.end - 4 (3 for chrome + 1 for 0-based index)
-        let total_rows = self.dataview.row_count();
-        let viewport_data_end = self
-            .viewport_rows
-            .end
-            .saturating_sub(TABLE_CHROME_ROWS)
-            .min(total_rows);
-        let bottom_row = viewport_data_end.saturating_sub(1);
+        // Bottom row is the last visible row in the viewport
+        // viewport_rows now represents only data rows (no table chrome)
+        let bottom_row = self.viewport_rows.end.saturating_sub(1);
         let old_row = self.crosshair_row;
 
         // Move crosshair to bottom of viewport

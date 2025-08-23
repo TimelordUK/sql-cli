@@ -1492,12 +1492,12 @@ impl EnhancedTuiApp {
 
                 // Update terminal size from current terminal
                 if let Ok((width, height)) = crossterm::terminal::size() {
-                    // Calculate the actual table area height
-                    let table_height = height.saturating_sub(TOTAL_UI_CHROME);
-                    new_viewport_manager.update_terminal_size(width, table_height);
+                    // Calculate the actual data area height (remove UI chrome AND table chrome)
+                    let data_rows_available = height.saturating_sub(TOTAL_UI_CHROME + 3); // 3 for table header and borders
+                    new_viewport_manager.update_terminal_size(width, data_rows_available);
                     debug!(
-                        "Updated new ViewportManager terminal size: {}x{} (table area)",
-                        width, table_height
+                        "Updated new ViewportManager terminal size: {}x{} (data rows)",
+                        width, data_rows_available
                     );
                 }
 
@@ -4075,8 +4075,8 @@ impl EnhancedTuiApp {
     fn update_viewport_size(&mut self) {
         // Update the stored viewport size based on current terminal size
         if let Ok((width, height)) = crossterm::terminal::size() {
-            // Calculate the actual table area height
-            let table_height = height.saturating_sub(TOTAL_UI_CHROME);
+            // Calculate the actual data area height (remove UI chrome AND table chrome)
+            let data_rows_available = height.saturating_sub(TOTAL_UI_CHROME + 3); // 3 for table header and borders
 
             // Let ViewportManager handle the calculations
             let visible_rows = {
@@ -4084,7 +4084,7 @@ impl EnhancedTuiApp {
                 let viewport_manager = viewport_manager_borrow
                     .as_mut()
                     .expect("ViewportManager must exist for viewport size update");
-                viewport_manager.update_terminal_size(width, table_height)
+                viewport_manager.update_terminal_size(width, data_rows_available)
             };
 
             // Update buffer's last_visible_rows
@@ -5315,12 +5315,12 @@ impl EnhancedTuiApp {
 
             // Update terminal size from current terminal
             if let Ok((width, height)) = crossterm::terminal::size() {
-                // Calculate the actual table area height
-                let table_height = height.saturating_sub(TOTAL_UI_CHROME);
-                new_viewport_manager.update_terminal_size(width, table_height);
+                // Calculate the actual data area height (remove UI chrome AND table chrome)
+                let data_rows_available = height.saturating_sub(TOTAL_UI_CHROME + 3); // 3 for table header and borders
+                new_viewport_manager.update_terminal_size(width, data_rows_available);
                 debug!(
-                    "Updated new ViewportManager terminal size: {}x{} (table area)",
-                    width, table_height
+                    "Updated new ViewportManager terminal size: {}x{} (data rows)",
+                    width, data_rows_available
                 );
             }
 
