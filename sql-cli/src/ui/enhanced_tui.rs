@@ -7419,49 +7419,11 @@ impl EnhancedTuiApp {
             }
             KeyCode::Enter => {
                 if let Ok(row_num) = self.get_jump_to_row_input().parse::<usize>() {
-                    if row_num > 0 {
-                        let target_row = row_num - 1; // Convert to 0-based index
-                        let max_row = self.get_current_data().map(|d| d.row_count()).unwrap_or(0);
-
-                        if target_row < max_row {
-                            // Use ViewportManager's goto_line to handle all navigation
-                            let result = {
-                                let mut viewport_manager_borrow =
-                                    self.viewport_manager.borrow_mut();
-                                let viewport_manager = viewport_manager_borrow
-                                    .as_mut()
-                                    .expect("ViewportManager must exist for goto line");
-                                viewport_manager.goto_line(target_row)
-                            }; // Borrow of viewport_manager dropped here
-
-                            // Sync NavigationState with ViewportManager
-                            {
-                                let mut nav = self.state_container.navigation_mut();
-                                nav.jump_to_row(result.row_position);
-                                nav.scroll_offset.0 = result.row_scroll_offset;
-                                info!(target: "navigation", "Jump-to-row: synced to ViewportManager position {} with scroll_offset {}", 
-                                    result.row_position, result.row_scroll_offset);
-                            }
-
-                            self.state_container
-                                .set_table_selected_row(Some(result.row_position));
-
-                            // Update buffer's scroll offset to match
-                            let mut offset = self.buffer().get_scroll_offset();
-                            offset.0 = result.row_scroll_offset;
-                            self.buffer_mut().set_scroll_offset(offset);
-
-                            self.buffer_mut().set_status_message(format!(
-                                "Jumped to row {} (centered)",
-                                row_num
-                            ));
-                        } else {
-                            self.buffer_mut().set_status_message(format!(
-                                "Row {} out of range (max: {})",
-                                row_num, max_row
-                            ));
-                        }
-                    }
+                    // Use the NavigationBehavior trait's goto_line method
+                    self.goto_line(row_num);
+                } else {
+                    self.buffer_mut()
+                        .set_status_message("Invalid row number".to_string());
                 }
                 self.buffer_mut().set_mode(AppMode::Results);
                 self.clear_jump_to_row_input();
