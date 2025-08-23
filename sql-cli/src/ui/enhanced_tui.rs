@@ -1,4 +1,10 @@
 use crate::api_client::{ApiClient, QueryResponse};
+
+// UI Layout Constants
+const TABLE_BORDER_WIDTH: u16 = 4; // Left border (1) + right border (1) + padding (2)
+const INPUT_AREA_HEIGHT: u16 = 3; // Height of the command input area
+const STATUS_BAR_HEIGHT: u16 = 3; // Height of the status bar
+const TOTAL_UI_CHROME: u16 = INPUT_AREA_HEIGHT + STATUS_BAR_HEIGHT; // Total non-table UI height
 use crate::app_state_container::{AppStateContainer, SelectionMode};
 use crate::buffer::{
     AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode, SortOrder,
@@ -1486,10 +1492,12 @@ impl EnhancedTuiApp {
 
                 // Update terminal size from current terminal
                 if let Ok((width, height)) = crossterm::terminal::size() {
-                    new_viewport_manager.update_terminal_size(width, height);
+                    // Calculate the actual table area height
+                    let table_height = height.saturating_sub(TOTAL_UI_CHROME);
+                    new_viewport_manager.update_terminal_size(width, table_height);
                     debug!(
-                        "Updated new ViewportManager terminal size: {}x{}",
-                        width, height
+                        "Updated new ViewportManager terminal size: {}x{} (table area)",
+                        width, table_height
                     );
                 }
 
@@ -4067,13 +4075,16 @@ impl EnhancedTuiApp {
     fn update_viewport_size(&mut self) {
         // Update the stored viewport size based on current terminal size
         if let Ok((width, height)) = crossterm::terminal::size() {
+            // Calculate the actual table area height
+            let table_height = height.saturating_sub(TOTAL_UI_CHROME);
+
             // Let ViewportManager handle the calculations
             let visible_rows = {
                 let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
                 let viewport_manager = viewport_manager_borrow
                     .as_mut()
                     .expect("ViewportManager must exist for viewport size update");
-                viewport_manager.update_terminal_size(width, height)
+                viewport_manager.update_terminal_size(width, table_height)
             };
 
             // Update buffer's last_visible_rows
@@ -5352,10 +5363,12 @@ impl EnhancedTuiApp {
 
             // Update terminal size from current terminal
             if let Ok((width, height)) = crossterm::terminal::size() {
-                new_viewport_manager.update_terminal_size(width, height);
+                // Calculate the actual table area height
+                let table_height = height.saturating_sub(TOTAL_UI_CHROME);
+                new_viewport_manager.update_terminal_size(width, table_height);
                 debug!(
-                    "Updated new ViewportManager terminal size: {}x{}",
-                    width, height
+                    "Updated new ViewportManager terminal size: {}x{} (table area)",
+                    width, table_height
                 );
             }
 
@@ -5763,15 +5776,15 @@ impl EnhancedTuiApp {
 
     fn ui(&mut self, f: &mut Frame) {
         // Always use single-line mode input height
-        let input_height = 3;
+        let input_height = INPUT_AREA_HEIGHT;
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
                 [
-                    Constraint::Length(input_height), // Command input area
-                    Constraint::Min(0),               // Results
-                    Constraint::Length(3),            // Status bar
+                    Constraint::Length(input_height),      // Command input area
+                    Constraint::Min(0),                    // Results
+                    Constraint::Length(STATUS_BAR_HEIGHT), // Status bar
                 ]
                 .as_ref(),
             )
@@ -5976,8 +5989,9 @@ impl EnhancedTuiApp {
                 // Calculate viewport using DataView
                 if let Some(dataview) = self.buffer().get_dataview() {
                     // Extract viewport info first
+                    // results_area is already the table area with proper height
                     let terminal_height = results_area.height as usize;
-                    let max_visible_rows = terminal_height.saturating_sub(3).max(10);
+                    let max_visible_rows = terminal_height.max(10);
                     let total_rows = dataview.row_count();
                     let row_viewport_start = self
                         .buffer()
@@ -6185,7 +6199,7 @@ impl EnhancedTuiApp {
 
                     // Add actual terminal cursor position if we can calculate it
                     if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
-                        let available_width = area.width.saturating_sub(4) as u16;
+                        let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH) as u16;
                         // Use ViewportManager's crosshair column position
                         let visual_col = viewport_manager.get_crosshair_col();
                         if let Some(x_pos) =
@@ -6523,7 +6537,7 @@ impl EnhancedTuiApp {
 
         // Calculate available space for help text
         let current_length: usize = spans.iter().map(|s| s.content.len()).sum();
-        let available_width = area.width.saturating_sub(4) as usize; // Account for borders
+        let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH) as usize; // Account for borders
         let help_length = help_text.len();
 
         if current_length + help_length + 3 < available_width {
@@ -6554,8 +6568,10 @@ impl EnhancedTuiApp {
         use crate::ui::table_render_context::TableRenderContextBuilder;
 
         let row_count = provider.get_row_count();
-        let available_width = area.width.saturating_sub(4) as u16;
-        let available_height = area.height.saturating_sub(3) as u16;
+        let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH) as u16;
+        // The area passed here is already the table area
+        // The Table widget itself handles borders and header
+        let available_height = area.height as u16;
 
         // Get headers from ViewportManager (single source of truth)
         let headers = {
@@ -6720,7 +6736,7 @@ impl EnhancedTuiApp {
 
         // Calculate visible columns for virtual scrolling based on actual widths
         let terminal_width = area.width as usize;
-        let available_width = terminal_width.saturating_sub(4); // Account for borders and padding
+        let available_width = terminal_width.saturating_sub(TABLE_BORDER_WIDTH as usize); // Account for borders and padding
 
         // Update ViewportManager with current terminal dimensions
         // Don't use buffer's scroll offset - let ViewportManager manage its own viewport based on current_column
@@ -6729,8 +6745,10 @@ impl EnhancedTuiApp {
             if let Some(ref mut viewport_manager) = *viewport_opt {
                 // Only update terminal size, not viewport position
                 // The viewport position should be managed by set_current_column calls
-                viewport_manager
-                    .update_terminal_size(area.width.saturating_sub(4) as u16, area.height as u16);
+                viewport_manager.update_terminal_size(
+                    area.width.saturating_sub(TABLE_BORDER_WIDTH),
+                    area.height as u16,
+                );
 
                 // Recalculate column widths based on current viewport
                 let _ = viewport_manager.get_column_widths(); // This triggers recalculation if needed
@@ -6821,7 +6839,7 @@ impl EnhancedTuiApp {
             } else if self.buffer().get_column_widths().is_empty() {
                 // If no calculated widths, estimate based on terminal width
                 let terminal_width = area.width as usize;
-                let available = terminal_width.saturating_sub(4);
+                let available = terminal_width.saturating_sub(TABLE_BORDER_WIDTH as usize);
                 let visible_cols = headers.len().min(12);
                 let estimated_width = if visible_cols > 0 {
                     (available / visible_cols).clamp(10, 50)
@@ -6868,8 +6886,9 @@ impl EnhancedTuiApp {
         }
 
         // Calculate viewport dimensions
+        // area is already the table area with proper height
         let terminal_height = area.height as usize;
-        let max_visible_rows = terminal_height.saturating_sub(3).max(10);
+        let max_visible_rows = terminal_height.max(10);
 
         // Calculate row viewport using navigation state as source of truth
         let row_viewport_start = self
@@ -8196,7 +8215,7 @@ impl EnhancedTuiApp {
                         let terminal_width =
                             crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80);
                         // Use the same width calculation as actual rendering (subtract 4 for borders)
-                        let available_width = terminal_width.saturating_sub(4);
+                        let available_width = terminal_width.saturating_sub(TABLE_BORDER_WIDTH);
                         debug_info.push_str(&viewport_manager.debug_dump(available_width));
                     } else {
                         debug_info.push_str("\n========== VIEWPORT MANAGER ==========\n");

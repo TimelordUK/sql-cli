@@ -551,13 +551,9 @@ impl ViewportManager {
     /// Update viewport size based on terminal dimensions
     /// Returns the calculated visible rows for the results area
     pub fn update_terminal_size(&mut self, terminal_width: u16, terminal_height: u16) -> usize {
-        // The terminal_height passed here is the height of the table widget area
-        // The Table widget in ratatui handles borders and headers internally,
-        // so we need to account for:
-        // - 2 rows for top/bottom borders
-        // - 1 row for the header
-        // Total: 3 rows of chrome
-        let visible_rows = (terminal_height as usize).saturating_sub(3).max(10);
+        // The terminal_height passed here should already be the number of data rows available
+        // The caller should have already accounted for any UI chrome
+        let visible_rows = (terminal_height as usize).max(10);
 
         debug!(target: "viewport_manager",
             "update_terminal_size: terminal_height={}, calculated visible_rows={}",
@@ -599,9 +595,11 @@ impl ViewportManager {
         let visible_column_count = self.dataview.get_display_columns().len();
         if visible_column_count > 0 {
             // Calculate how many columns we can fit with the new terminal width
+            // Calculate how many columns we can fit with the new terminal width
+            // Subtract 2 for left and right table borders
             let columns_that_fit = self.calculate_columns_that_fit(
                 self.viewport_cols.start,
-                terminal_width.saturating_sub(2), // Account for borders
+                terminal_width.saturating_sub(2), // Left + right table borders
             );
 
             let new_col_viewport_end = self
@@ -2692,7 +2690,8 @@ impl ViewportManager {
         }
 
         // Get the actual visible rows from our current viewport
-        let visible_rows = (self.terminal_height as usize).saturating_sub(3).max(10);
+        // terminal_height should already account for UI chrome
+        let visible_rows = (self.terminal_height as usize).max(10);
 
         // The last row index
         let last_row = total_rows - 1;
@@ -2758,7 +2757,8 @@ impl ViewportManager {
         }
 
         // Get the actual visible rows from our current viewport
-        let visible_rows = (self.terminal_height as usize).saturating_sub(3).max(10);
+        // terminal_height should already account for UI chrome
+        let visible_rows = (self.terminal_height as usize).max(10);
 
         // First row is always 0
         let first_row = 0;
