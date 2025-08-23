@@ -6544,9 +6544,145 @@ impl EnhancedTuiApp {
         f.render_widget(status, area);
     }
 
+    /// Build a TableRenderContext with all data needed for rendering
+    /// This collects all the scattered data into a single struct
+    fn build_table_context(
+        &self,
+        area: Rect,
+        provider: &dyn DataProvider,
+    ) -> crate::ui::table_render_context::TableRenderContext {
+        use crate::ui::table_render_context::TableRenderContextBuilder;
+
+        let row_count = provider.get_row_count();
+        let available_width = area.width.saturating_sub(4) as u16;
+        let available_height = area.height.saturating_sub(3) as u16;
+
+        // Get headers from ViewportManager (single source of truth)
+        let headers = {
+            let viewport_manager = self.viewport_manager.borrow();
+            let viewport_manager = viewport_manager
+                .as_ref()
+                .expect("ViewportManager must exist");
+            viewport_manager.get_column_names_ordered()
+        };
+
+        // Update ViewportManager with current terminal dimensions
+        {
+            let mut viewport_opt = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_opt {
+                viewport_manager.update_terminal_size(available_width, available_height);
+                let _ = viewport_manager.get_column_widths(); // Trigger recalculation
+            }
+        }
+
+        // Get structured column information from ViewportManager
+        let (visible_indices, pinned_indices, scrollable_indices, crosshair_column_position, _) = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            let viewport_manager = viewport_manager_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for rendering");
+            let info = viewport_manager.get_visible_columns_info(available_width);
+
+            let crosshair_visual = viewport_manager.get_crosshair_col();
+            let viewport_start = viewport_manager.get_viewport_range().start;
+            let crosshair_column_position = if crosshair_visual >= viewport_start
+                && crosshair_visual < viewport_manager.get_viewport_range().end
+            {
+                crosshair_visual - viewport_start
+            } else {
+                0
+            };
+
+            (
+                info.0,
+                info.1,
+                info.2,
+                crosshair_column_position,
+                crosshair_visual,
+            )
+        };
+
+        // Calculate row viewport
+        let row_viewport_start = self
+            .state_container
+            .navigation()
+            .scroll_offset
+            .0
+            .min(row_count.saturating_sub(1));
+        let row_viewport_end = (row_viewport_start + available_height as usize).min(row_count);
+        let visible_row_indices: Vec<usize> = (row_viewport_start..row_viewport_end).collect();
+
+        // Get the visual display data from ViewportManager
+        let (column_headers, data_to_display, column_widths_visual) = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                viewport_manager.get_visual_display(available_width, &visible_row_indices)
+            } else {
+                // Fallback
+                let visible_rows = provider
+                    .get_visible_rows(row_viewport_start, row_viewport_end - row_viewport_start);
+                let widths = vec![15u16; headers.len()];
+                (headers.clone(), visible_rows, widths)
+            }
+        };
+
+        // Get sort state
+        let sort_state = self
+            .buffer()
+            .get_dataview()
+            .map(|dv| dv.get_sort_state().clone());
+
+        // Get filter info
+        let fuzzy_filter_pattern = if self.buffer().is_fuzzy_filter_active() {
+            let pattern = self.buffer().get_fuzzy_filter_pattern();
+            if !pattern.is_empty() {
+                Some(pattern)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Build the context
+        TableRenderContextBuilder::new()
+            .row_count(row_count)
+            .visible_rows(visible_row_indices.clone(), data_to_display)
+            .columns(column_headers, column_widths_visual)
+            .pinned_columns(pinned_indices)
+            .selection(
+                self.state_container.navigation().selected_row,
+                crosshair_column_position,
+                self.state_container.get_selection_mode(),
+            )
+            .row_viewport(row_viewport_start..row_viewport_end)
+            .sort_state(sort_state)
+            .display_options(
+                self.buffer().is_show_row_numbers(),
+                self.buffer().get_mode(),
+            )
+            .filter(fuzzy_filter_pattern, self.buffer().is_case_insensitive())
+            .dimensions(available_width, available_height)
+            .build()
+    }
+
     /// New trait-based table rendering method
     /// This uses DataProvider trait instead of directly accessing QueryResponse
     fn render_table_with_provider(&self, f: &mut Frame, area: Rect, provider: &dyn DataProvider) {
+        // Build the context with all data needed for rendering
+        let context = self.build_table_context(area, provider);
+
+        // Use the pure table renderer
+        crate::ui::table_renderer::render_table(f, area, &context);
+    }
+
+    /// Legacy render method - keeping for now but can be removed later
+    fn render_table_with_provider_old(
+        &self,
+        f: &mut Frame,
+        area: Rect,
+        provider: &dyn DataProvider,
+    ) {
         use std::time::Instant;
         let render_start = Instant::now();
 

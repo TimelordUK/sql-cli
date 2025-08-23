@@ -16,6 +16,8 @@ pub mod key_mapper;
 pub mod key_sequence_renderer;
 pub mod query_engine_integration;
 pub mod scroll_utils;
+pub mod table_render_context;
+pub mod table_renderer;
 pub mod text_operations;
 pub mod text_utils;
 pub mod traits;
