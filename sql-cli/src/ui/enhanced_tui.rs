@@ -3893,35 +3893,7 @@ impl EnhancedTuiApp {
             .set_status_message(format!("Column {} selected", column_num));
     }
 
-    fn move_column_left(&mut self) {
-        // Get navigation result from ViewportManager
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            let vm = viewport_borrow
-                .as_mut()
-                .expect("ViewportManager must exist for navigation");
-            let current_visual = vm.get_crosshair_col();
-            vm.navigate_column_left(current_visual)
-        };
-
-        self.apply_column_navigation_result(nav_result, "left");
-    }
-
-    fn move_column_right(&mut self) {
-        // Get navigation result from ViewportManager
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            let vm = viewport_borrow
-                .as_mut()
-                .expect("ViewportManager must exist for navigation");
-            let current_visual = vm.get_crosshair_col();
-            vm.navigate_column_right(current_visual)
-        };
-
-        self.apply_column_navigation_result(nav_result, "right");
-    }
-
-    // goto_first_column and goto_last_column now in ColumnBehavior trait
+    // move_column_left, move_column_right, goto_first_column and goto_last_column now in ColumnBehavior trait
 
     // goto_viewport_top, goto_viewport_middle, goto_viewport_bottom now in NavigationBehavior trait
 

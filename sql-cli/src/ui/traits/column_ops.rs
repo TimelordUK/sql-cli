@@ -138,6 +138,36 @@ pub trait ColumnBehavior {
         self.apply_column_operation_result(result);
     }
 
+    /// Navigate to the column on the left
+    fn move_column_left(&mut self) {
+        // Get navigation result from ViewportManager
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager().borrow_mut();
+            let vm = viewport_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for navigation");
+            let current_visual = vm.get_crosshair_col();
+            vm.navigate_column_left(current_visual)
+        };
+
+        self.apply_column_navigation_result(nav_result, "left");
+    }
+
+    /// Navigate to the column on the right
+    fn move_column_right(&mut self) {
+        // Get navigation result from ViewportManager
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager().borrow_mut();
+            let vm = viewport_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for navigation");
+            let current_visual = vm.get_crosshair_col();
+            vm.navigate_column_right(current_visual)
+        };
+
+        self.apply_column_navigation_result(nav_result, "right");
+    }
+
     /// Navigate to the first column
     fn goto_first_column(&mut self) {
         // Get navigation result from ViewportManager
