@@ -55,6 +55,49 @@ pub struct ColumnReorderResult {
     pub success: bool,
 }
 
+/// Unified result for all column operations
+#[derive(Debug, Clone)]
+pub struct ColumnOperationResult {
+    /// Whether the operation was successful
+    pub success: bool,
+    /// Human-readable description for status message
+    pub description: String,
+    /// Updated DataView after the operation (if changed)
+    pub updated_dataview: Option<DataView>,
+    /// New column position (for move/navigation operations)
+    pub new_column_position: Option<usize>,
+    /// New viewport range (if changed)
+    pub new_viewport: Option<std::ops::Range<usize>>,
+    /// Number of columns affected (for hide/unhide operations)
+    pub affected_count: Option<usize>,
+}
+
+impl ColumnOperationResult {
+    /// Create a failure result with a description
+    pub fn failure(description: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            description: description.into(),
+            updated_dataview: None,
+            new_column_position: None,
+            new_viewport: None,
+            affected_count: None,
+        }
+    }
+
+    /// Create a success result with a description
+    pub fn success(description: impl Into<String>) -> Self {
+        Self {
+            success: true,
+            description: description.into(),
+            updated_dataview: None,
+            new_column_position: None,
+            new_viewport: None,
+            affected_count: None,
+        }
+    }
+}
+
 /// Column packing mode for optimizing data display
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnPackingMode {
@@ -3191,6 +3234,93 @@ impl ViewportManager {
             row_scroll_offset: centered_scroll_offset,
             description,
             viewport_changed,
+        }
+    }
+
+    // ========== Column Operation Methods with Unified Results ==========
+
+    /// Hide the current column (using crosshair position) and return unified result
+    pub fn hide_current_column_with_result(&mut self) -> ColumnOperationResult {
+        let visual_col_idx = self.get_crosshair_col();
+        let columns = self.dataview.column_names();
+
+        if visual_col_idx >= columns.len() {
+            return ColumnOperationResult::failure("Invalid column position");
+        }
+
+        let col_name = columns[visual_col_idx].clone();
+        let visible_count = columns.len();
+
+        // Don't hide if it's the last visible column
+        if visible_count <= 1 {
+            return ColumnOperationResult::failure("Cannot hide the last visible column");
+        }
+
+        // Hide the column
+        let success = self.hide_column(visual_col_idx);
+
+        if success {
+            let mut result =
+                ColumnOperationResult::success(format!("Column '{}' hidden", col_name));
+            result.updated_dataview = Some(self.clone_dataview());
+            result.new_column_position = Some(self.get_crosshair_col());
+            result.new_viewport = Some(self.viewport_cols.clone());
+            result
+        } else {
+            ColumnOperationResult::failure(format!(
+                "Cannot hide column '{}' (may be pinned)",
+                col_name
+            ))
+        }
+    }
+
+    /// Unhide all columns and return unified result
+    pub fn unhide_all_columns_with_result(&mut self) -> ColumnOperationResult {
+        let hidden_columns = self.dataview.get_hidden_column_names();
+        let count = hidden_columns.len();
+
+        if count == 0 {
+            return ColumnOperationResult::success("No hidden columns");
+        }
+
+        self.unhide_all_columns();
+
+        let mut result = ColumnOperationResult::success(format!("Unhidden {} column(s)", count));
+        result.updated_dataview = Some(self.clone_dataview());
+        result.affected_count = Some(count);
+        result.new_viewport = Some(self.viewport_cols.clone());
+        result
+    }
+
+    /// Reorder column left and return unified result
+    pub fn reorder_column_left_with_result(&mut self) -> ColumnOperationResult {
+        let current_col = self.get_crosshair_col();
+        let reorder_result = self.reorder_column_left(current_col);
+
+        if reorder_result.success {
+            let mut result = ColumnOperationResult::success(reorder_result.description);
+            result.updated_dataview = Some(self.clone_dataview());
+            result.new_column_position = Some(reorder_result.new_column_position);
+            result.new_viewport = Some(self.viewport_cols.clone());
+            result
+        } else {
+            ColumnOperationResult::failure(reorder_result.description)
+        }
+    }
+
+    /// Reorder column right and return unified result
+    pub fn reorder_column_right_with_result(&mut self) -> ColumnOperationResult {
+        let current_col = self.get_crosshair_col();
+        let reorder_result = self.reorder_column_right(current_col);
+
+        if reorder_result.success {
+            let mut result = ColumnOperationResult::success(reorder_result.description);
+            result.updated_dataview = Some(self.clone_dataview());
+            result.new_column_position = Some(reorder_result.new_column_position);
+            result.new_viewport = Some(self.viewport_cols.clone());
+            result
+        } else {
+            ColumnOperationResult::failure(reorder_result.description)
         }
     }
 }

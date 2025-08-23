@@ -28,7 +28,8 @@ use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
 use crate::ui::viewport_manager::{
-    ColumnPackingMode, NavigationResult, RowNavigationResult, ViewportEfficiency, ViewportManager,
+    ColumnOperationResult, ColumnPackingMode, NavigationResult, RowNavigationResult,
+    ViewportEfficiency, ViewportManager,
 };
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
@@ -170,115 +171,30 @@ impl EnhancedTuiApp {
 
     /// Hide the currently selected column
     pub fn hide_current_column(&mut self) {
-        debug!(
-            "hide_current_column called, mode={:?}",
-            self.buffer().get_mode()
-        );
         if self.buffer().get_mode() != AppMode::Results {
-            debug!("Not in Results mode, returning");
             return;
         }
 
-        // Use ViewportManager's crosshair position (visual coordinates) to hide the correct column
-        let (success, col_name, visible_count, updated_dataview) = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                // Get the visual column index from ViewportManager's crosshair
-                let visual_col_idx = viewport_manager.get_crosshair_col();
-                debug!("Hiding column at visual index: {}", visual_col_idx);
+        let result = self
+            .viewport_manager
+            .borrow_mut()
+            .as_mut()
+            .map(|vm| vm.hide_current_column_with_result())
+            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
 
-                // Get column name before hiding
-                let columns = viewport_manager.dataview().column_names();
-                let visible_count = columns.len();
-
-                if visual_col_idx < columns.len() {
-                    let col_name = columns[visual_col_idx].clone();
-                    // Don't hide if it's the last visible column
-                    if visible_count > 1 {
-                        let success = viewport_manager.hide_column(visual_col_idx);
-                        let updated_dataview = if success {
-                            Some(viewport_manager.clone_dataview())
-                        } else {
-                            None
-                        };
-                        (success, Some(col_name), visible_count, updated_dataview)
-                    } else {
-                        (false, Some(col_name), visible_count, None)
-                    }
-                } else {
-                    (false, None, visible_count, None)
-                }
-            } else {
-                (false, None, 0, None)
-            }
-        };
-
-        if success {
-            // Sync the updated DataView back to the Buffer
-            if let Some(updated_dataview) = updated_dataview {
-                self.buffer_mut().set_dataview(Some(updated_dataview));
-            }
-
-            if let Some(col_name) = col_name {
-                debug!(
-                    "Hiding column '{}', remaining visible: {}",
-                    col_name,
-                    visible_count - 1
-                );
-
-                // Force immediate re-render to reflect the change
-                debug!("Triggering immediate re-render after hiding column");
-
-                self.buffer_mut().set_status_message(format!(
-                    "Hidden column: '{}' (Press + or = to unhide all)",
-                    col_name
-                ));
-            }
-        } else if let Some(col_name) = col_name {
-            if visible_count <= 1 {
-                debug!("Cannot hide last visible column");
-                self.buffer_mut()
-                    .set_status_message("Cannot hide last visible column".to_string());
-            } else {
-                debug!("Failed to hide column '{}' (might be pinned)", col_name);
-                self.buffer_mut()
-                    .set_status_message(format!("Cannot hide column '{}' (pinned)", col_name));
-            }
-        }
+        self.apply_column_operation_result(result);
     }
 
     /// Unhide all columns
     pub fn unhide_all_columns(&mut self) {
-        // Use ViewportManager to unhide all columns
-        let (hidden_count, updated_dataview) = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                // Get hidden column count before unhiding
-                let hidden_columns = viewport_manager.dataview().get_hidden_column_names();
-                let count = hidden_columns.len();
+        let result = self
+            .viewport_manager
+            .borrow_mut()
+            .as_mut()
+            .map(|vm| vm.unhide_all_columns_with_result())
+            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
 
-                if count > 0 {
-                    viewport_manager.unhide_all_columns();
-                    (count, Some(viewport_manager.clone_dataview()))
-                } else {
-                    (count, None)
-                }
-            } else {
-                (0, None)
-            }
-        };
-
-        if hidden_count > 0 {
-            // Sync the updated DataView back to the Buffer
-            if let Some(updated_dataview) = updated_dataview {
-                self.buffer_mut().set_dataview(Some(updated_dataview));
-            }
-            // Force immediate re-render to reflect the change
-            debug!("Triggering immediate re-render after unhiding all columns");
-
-            self.buffer_mut()
-                .set_status_message(format!("Unhidden {} column(s)", hidden_count));
-        }
+        self.apply_column_operation_result(result);
     }
 
     /// Move the current column left in the view
@@ -287,48 +203,14 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Use ViewportManager for column reordering - use its own crosshair position
-        let (result, new_viewport_cols, updated_dataview) = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            let viewport_manager = viewport_manager_borrow
-                .as_mut()
-                .expect("ViewportManager must exist for column reordering");
-            // Use ViewportManager's crosshair position, not NavigationState's
-            let current_col = viewport_manager.get_crosshair_col();
-            let result = viewport_manager.reorder_column_left(current_col);
-            let new_viewport = viewport_manager.viewport_cols().clone();
-            // Get the updated DataView to sync back to Buffer
-            let updated_dataview = viewport_manager.clone_dataview();
-            (result, new_viewport, updated_dataview)
-        };
+        let result = self
+            .viewport_manager
+            .borrow_mut()
+            .as_mut()
+            .map(|vm| vm.reorder_column_left_with_result())
+            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
 
-        if result.success {
-            // Sync the updated DataView back to the Buffer
-            self.buffer_mut().set_dataview(Some(updated_dataview));
-            // Update navigation state with new position and viewport
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.selected_column = result.new_column_position;
-                // Convert absolute viewport start to scrollable offset
-                let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
-                    dataview.get_pinned_columns().len()
-                } else {
-                    0
-                };
-                let scrollable_offset = new_viewport_cols.start.saturating_sub(pinned_count);
-                nav.scroll_offset.1 = scrollable_offset;
-            }
-
-            self.buffer_mut()
-                .set_current_column(result.new_column_position);
-
-            // Set status message
-            self.buffer_mut()
-                .set_status_message(result.description.clone());
-
-            debug!(target: "navigation", "Column reordered left: {}, viewport updated to {:?}", 
-                result.description, new_viewport_cols);
-        }
+        self.apply_column_operation_result(result);
     }
 
     /// Move the current column right in the view
@@ -337,48 +219,14 @@ impl EnhancedTuiApp {
             return;
         }
 
-        // Use ViewportManager for column reordering - use its own crosshair position
-        let (result, new_viewport_cols, updated_dataview) = {
-            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            let viewport_manager = viewport_manager_borrow
-                .as_mut()
-                .expect("ViewportManager must exist for column reordering");
-            // Use ViewportManager's crosshair position, not NavigationState's
-            let current_col = viewport_manager.get_crosshair_col();
-            let result = viewport_manager.reorder_column_right(current_col);
-            let new_viewport = viewport_manager.viewport_cols().clone();
-            // Get the updated DataView to sync back to Buffer
-            let updated_dataview = viewport_manager.clone_dataview();
-            (result, new_viewport, updated_dataview)
-        };
+        let result = self
+            .viewport_manager
+            .borrow_mut()
+            .as_mut()
+            .map(|vm| vm.reorder_column_right_with_result())
+            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
 
-        if result.success {
-            // Sync the updated DataView back to the Buffer
-            self.buffer_mut().set_dataview(Some(updated_dataview));
-            // Update navigation state with new position and viewport
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.selected_column = result.new_column_position;
-                // Convert absolute viewport start to scrollable offset
-                let pinned_count = if let Some(dataview) = self.buffer().get_dataview() {
-                    dataview.get_pinned_columns().len()
-                } else {
-                    0
-                };
-                let scrollable_offset = new_viewport_cols.start.saturating_sub(pinned_count);
-                nav.scroll_offset.1 = scrollable_offset;
-            }
-
-            self.buffer_mut()
-                .set_current_column(result.new_column_position);
-
-            // Set status message
-            self.buffer_mut()
-                .set_status_message(result.description.clone());
-
-            debug!(target: "navigation", "Column reordered right: {}, viewport updated to {:?}", 
-                result.description, new_viewport_cols);
-        }
+        self.apply_column_operation_result(result);
     }
 
     // ========== JUMP TO ROW ==========
@@ -4385,6 +4233,46 @@ impl EnhancedTuiApp {
         let column_num = visual_position + 1;
         self.buffer_mut()
             .set_status_message(format!("Column {} selected", column_num));
+    }
+
+    /// Helper to apply column operation result to all state locations
+    /// This consolidates state updates for hide/unhide/move column operations
+    fn apply_column_operation_result(&mut self, result: ColumnOperationResult) {
+        if !result.success {
+            if !result.description.is_empty() {
+                self.buffer_mut().set_status_message(result.description);
+            }
+            return;
+        }
+
+        // Sync DataView if updated
+        if let Some(dataview) = result.updated_dataview {
+            self.buffer_mut().set_dataview(Some(dataview));
+        }
+
+        // Update navigation state if column position changed
+        if let Some(new_col) = result.new_column_position {
+            {
+                let mut nav = self.state_container.navigation_mut();
+                nav.selected_column = new_col;
+
+                // Update scroll offset if viewport changed
+                if let Some(viewport) = result.new_viewport {
+                    let pinned_count = self
+                        .buffer()
+                        .get_dataview()
+                        .as_ref()
+                        .map(|dv| dv.get_pinned_columns().len())
+                        .unwrap_or(0);
+                    nav.scroll_offset.1 = viewport.start.saturating_sub(pinned_count);
+                }
+            } // Drop nav borrow here
+
+            self.buffer_mut().set_current_column(new_col);
+        }
+
+        // Set status message
+        self.buffer_mut().set_status_message(result.description);
     }
 
     // Navigation functions
