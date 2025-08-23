@@ -146,6 +146,16 @@ const COLUMN_PADDING: u16 = 2;
 /// Max ratio of header width to data width (to prevent huge columns for long headers with short data)
 const MAX_HEADER_TO_DATA_RATIO: f32 = 1.5;
 
+/// Number of rows used by the table widget chrome (header + borders)
+/// This includes:
+/// - 1 row for the header
+/// - 1 row for the top border  
+/// - 1 row for the bottom border
+const TABLE_CHROME_ROWS: usize = 3;
+
+/// Number of columns used by table borders (left + right + padding)
+const TABLE_BORDER_WIDTH: u16 = 4;
+
 /// Manages the visible viewport into a DataView
 pub struct ViewportManager {
     /// The underlying data view
@@ -348,7 +358,9 @@ impl ViewportManager {
                    "navigate_row_down: Viewport locked, crosshair={}, viewport={:?}",
                    self.crosshair_row, self.viewport_rows);
             // In viewport lock mode, just move cursor down within current viewport
-            if self.crosshair_row < self.viewport_rows.end - 1
+            // Account for table chrome when checking viewport boundary
+            let visible_data_end = self.viewport_rows.end.saturating_sub(TABLE_CHROME_ROWS);
+            if self.crosshair_row < visible_data_end.saturating_sub(1)
                 && self.crosshair_row < total_rows - 1
             {
                 self.crosshair_row += 1;
@@ -424,7 +436,9 @@ impl ViewportManager {
         self.crosshair_row = new_row;
 
         // Adjust viewport if needed
-        let viewport_changed = if new_row >= self.viewport_rows.end {
+        // The viewport includes table chrome, so actual visible data area ends earlier
+        let visible_data_end = self.viewport_rows.end.saturating_sub(TABLE_CHROME_ROWS);
+        let viewport_changed = if new_row >= visible_data_end {
             let viewport_height = self.viewport_rows.end - self.viewport_rows.start;
             self.viewport_rows = (new_row + 1).saturating_sub(viewport_height)..(new_row + 1);
             true
@@ -2818,8 +2832,11 @@ impl ViewportManager {
 
     /// Navigate to the middle of the current viewport (M in vim)
     pub fn navigate_to_viewport_middle(&mut self) -> RowNavigationResult {
+        // The viewport includes table chrome (header + borders = 3 rows)
+        // Calculate the middle of the actual visible data area
         let viewport_height = self.viewport_rows.end - self.viewport_rows.start;
-        let middle_offset = viewport_height / 2;
+        let data_rows_visible = viewport_height.saturating_sub(TABLE_CHROME_ROWS); // Remove table chrome
+        let middle_offset = data_rows_visible / 2;
         let middle_row = self.viewport_rows.start + middle_offset;
         let old_row = self.crosshair_row;
 
@@ -2842,8 +2859,16 @@ impl ViewportManager {
 
     /// Navigate to the bottom of the current viewport (L in vim)
     pub fn navigate_to_viewport_bottom(&mut self) -> RowNavigationResult {
-        // Bottom row is the last visible row in the viewport
-        let bottom_row = self.viewport_rows.end.saturating_sub(1);
+        // The viewport_rows represents the table area which includes borders and header
+        // Actual visible data rows = viewport height - 3 (1 header + 2 borders)
+        // So the last visible data row is at viewport.end - 4 (3 for chrome + 1 for 0-based index)
+        let total_rows = self.dataview.row_count();
+        let viewport_data_end = self
+            .viewport_rows
+            .end
+            .saturating_sub(TABLE_CHROME_ROWS)
+            .min(total_rows);
+        let bottom_row = viewport_data_end.saturating_sub(1);
         let old_row = self.crosshair_row;
 
         // Move crosshair to bottom of viewport
@@ -2985,7 +3010,7 @@ impl ViewportManager {
             if wrapped_to_end {
                 // Calculate optimal offset to show the last column
                 let optimal_offset = self.calculate_optimal_offset_for_last_column(
-                    self.terminal_width.saturating_sub(4),
+                    self.terminal_width.saturating_sub(TABLE_BORDER_WIDTH),
                 );
                 debug!(target: "viewport_manager",
                     "Column wrapped to end! Adjusting viewport from {:?} to {}..{}",
@@ -2996,7 +3021,7 @@ impl ViewportManager {
                 // Check if the new position is outside the current viewport
                 if !self.viewport_cols.contains(&new_position) {
                     // Column moved outside viewport, adjust to show it
-                    let terminal_width = self.terminal_width.saturating_sub(4);
+                    let terminal_width = self.terminal_width.saturating_sub(TABLE_BORDER_WIDTH);
 
                     // Calculate how many columns we can fit starting from the new position
                     let columns_that_fit =
@@ -3100,7 +3125,7 @@ impl ViewportManager {
                 // Check if the new position is outside the current viewport
                 if !self.viewport_cols.contains(&new_position) {
                     // Column moved outside viewport, adjust to show it
-                    let terminal_width = self.terminal_width.saturating_sub(4);
+                    let terminal_width = self.terminal_width.saturating_sub(TABLE_BORDER_WIDTH);
 
                     // Calculate how many columns we can fit
                     let columns_that_fit =
@@ -3291,7 +3316,7 @@ impl ViewportManager {
     /// Update the current column position and automatically adjust viewport if needed
     /// This takes a VISUAL column index (0, 1, 2... in display order)
     pub fn set_current_column(&mut self, visual_column: usize) -> bool {
-        let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
+        let terminal_width = self.terminal_width.saturating_sub(TABLE_BORDER_WIDTH); // Account for borders
         let total_visual_columns = self.dataview.get_display_columns().len();
 
         debug!(target: "viewport_manager", 
@@ -3407,7 +3432,7 @@ impl ViewportManager {
     /// Calculate the optimal scroll offset to keep a visual column visible
     fn calculate_scroll_offset_for_visual_column(&mut self, visual_column: usize) -> usize {
         let current_offset = self.viewport_cols.start;
-        let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
+        let terminal_width = self.terminal_width.saturating_sub(TABLE_BORDER_WIDTH); // Account for borders
 
         // Calculate how many columns fit from current offset
         let display_columns = self.dataview.get_display_columns();
