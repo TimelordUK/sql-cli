@@ -27,7 +27,7 @@ use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
-use crate::ui::traits::{ColumnBehavior, InputBehavior, NavigationBehavior};
+use crate::ui::traits::{ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior};
 use crate::ui::viewport_manager::{
     ColumnOperationResult, ColumnPackingMode, NavigationResult, RowNavigationResult,
     ViewportEfficiency, ViewportManager,
@@ -2024,31 +2024,11 @@ impl EnhancedTuiApp {
                     return Ok(false);
                 }
                 "kill_line" => {
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                        buffer.kill_line();
-                        // Sync for rendering
-                        if buffer.get_edit_mode() == EditMode::SingleLine {
-                            let text = buffer.get_input_text();
-                            let cursor = buffer.get_input_cursor_position();
-                            self.set_input_text_with_cursor(text, cursor);
-                            self.cursor_manager.set_position(cursor);
-                        }
-                    }
+                    self.kill_line();
                     return Ok(false);
                 }
                 "kill_line_backward" => {
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        buffer.save_state_for_undo();
-                        buffer.kill_line_backward();
-                        // Sync for rendering
-                        if buffer.get_edit_mode() == EditMode::SingleLine {
-                            let text = buffer.get_input_text();
-                            let cursor = buffer.get_input_cursor_position();
-                            self.set_input_text_with_cursor(text, cursor);
-                            self.cursor_manager.set_position(cursor);
-                        }
-                    }
+                    self.kill_line_backward();
                     return Ok(false);
                 }
                 "move_word_backward" => {
@@ -8921,6 +8901,28 @@ impl InputBehavior for EnhancedTuiApp {
 
     fn set_input_text_with_cursor(&mut self, text: String, cursor: usize) {
         self.set_input_text_with_cursor(text, cursor)
+    }
+}
+
+impl YankBehavior for EnhancedTuiApp {
+    fn buffer(&self) -> &dyn BufferAPI {
+        self.buffer()
+    }
+
+    fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
+        self.buffer_mut()
+    }
+
+    fn state_container(&self) -> &AppStateContainer {
+        &self.state_container
+    }
+
+    fn set_status_message(&mut self, message: String) {
+        self.set_status_message(message)
+    }
+
+    fn set_error_status(&mut self, prefix: &str, error: anyhow::Error) {
+        self.set_error_status(prefix, error)
     }
 }
 

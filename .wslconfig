@@ -1,0 +1,36 @@
+# WSL2 Configuration File
+# Place this file in your Windows user directory: C:\Users\[YourUsername]\.wslconfig
+# Then restart WSL with: wsl --shutdown
+
+[wsl2]
+# Memory limit - Set to 80GB (leaving ~110GB for Windows)
+# Adjust based on your needs
+memory=80GB
+
+# CPU cores - Use 75% of available cores
+processors=12
+
+# Swap file configuration
+swap=40GB
+swapFile=D:\\WSL\\swap.vhdx
+
+# Disk cache - Helps with performance
+pageReporting=true
+guiApplications=false
+
+# Network settings
+localhostForwarding=true
+
+# Kernel settings for better performance
+kernelCommandLine = cgroup_enable=memory swapaccount=1
+
+[experimental]
+# Sparse VHD - Automatically shrinks disk size
+sparseVhd=true
+
+# Auto memory reclaim - Helps reduce memory usage
+autoMemoryReclaim=gradual
+
+# Memory reclaim settings
+memoryReclaimGradualTime=5
+memoryReclaimDropTime=10
