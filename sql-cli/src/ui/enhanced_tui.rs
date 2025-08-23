@@ -1,5 +1,3 @@
-use crate::api_client::{ApiClient, QueryResponse};
-
 // UI Layout Constants
 const TABLE_BORDER_WIDTH: u16 = 4; // Left border (1) + right border (1) + padding (2)
 const INPUT_AREA_HEIGHT: u16 = 3; // Height of the command input area
@@ -19,12 +17,10 @@ use crate::data::data_view::DataView;
 use crate::debug::{DebugRegistry, MemoryTracker};
 use crate::help_text::HelpText;
 use crate::service_container::ServiceContainer;
-use crate::sql::cache::QueryCache;
 use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::ui::action_handlers::ActionHandlerContext;
 use crate::ui::actions::{Action, ActionContext, ActionResult};
-use crate::ui::cell_renderer::CellRenderer;
 use crate::ui::enhanced_tui_helpers;
 use crate::ui::key_chord_handler::{ChordResult, KeyChordHandler};
 use crate::ui::key_dispatcher::KeyDispatcher;
@@ -34,9 +30,7 @@ use crate::ui::key_sequence_renderer::KeySequenceRenderer;
 use crate::ui::traits::{
     BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
 };
-use crate::ui::viewport_manager::{
-    ColumnPackingMode, NavigationResult, ViewportEfficiency, ViewportManager,
-};
+use crate::ui::viewport_manager::{ColumnPackingMode, ViewportEfficiency, ViewportManager};
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -80,7 +74,6 @@ pub struct EnhancedTuiApp {
     // Service container for dependency injection
     service_container: Option<ServiceContainer>,
 
-    api_client: ApiClient,
     input: Input,
     cursor_manager: CursorManager, // New: manages cursor/navigation logic
     data_analyzer: DataAnalyzer,   // New: manages data analysis/statistics
@@ -100,10 +93,6 @@ pub struct EnhancedTuiApp {
     key_chord_handler: KeyChordHandler, // Manages key sequences and history
     key_dispatcher: KeyDispatcher,      // Maps keys to actions
     key_mapper: KeyMapper,              // New action-based key mapping system
-    action_dispatcher: crate::ui::action_handlers::ActionDispatcher, // Visitor pattern for action handling
-
-    // Selection and clipboard
-    last_yanked: Option<(String, String)>, // (description, value) of last yanked item
 
     // Buffer management (new - for supporting multiple files)
     pub(crate) buffer_manager: BufferManager,
@@ -113,14 +102,12 @@ pub struct EnhancedTuiApp {
     pub(crate) navigation_timings: Vec<String>, // Track last N navigation timings for debugging
     pub(crate) render_timings: Vec<String>,     // Track last N render timings for debugging
     // Cache
-    query_cache: Option<QueryCache>,
     log_buffer: Option<LogRingBuffer>, // Ring buffer for debug logs
 
     // Data source tracking
     data_source: Option<String>, // e.g., "trades.csv", "data.json", "https://api.example.com"
 
     // Visual enhancements
-    cell_renderer: CellRenderer,
     key_indicator: KeyPressIndicator,
     key_sequence_renderer: KeySequenceRenderer,
 
@@ -147,17 +134,6 @@ impl EnhancedTuiApp {
     fn calculate_table_data_rows(table_area_height: u16) -> u16 {
         crate::ui::ui_layout_utils::calculate_table_data_rows(table_area_height)
     }
-
-    // ========== COLUMN OPERATIONS ==========
-
-    // --- Column Visibility Management ---
-
-    // Column operation methods moved to ColumnBehavior trait
-
-    // ========== JUMP TO ROW ==========
-    // Jump-to-row input methods moved to InputBehavior trait
-
-    // ========== ACTION HANDLER CONTEXT IMPLEMENTATION ==========
 
     // ========== BUFFER MANAGEMENT ==========
 
@@ -615,7 +591,6 @@ impl EnhancedTuiApp {
                             self.buffer_mut().set_input_cursor_position(pos);
                         } else {
                             // Clause not found, append it at the end
-                            let text_len = self.buffer().get_input_text().len();
                             let clause_text = match clause {
                                 SqlClause::Where => " WHERE ",
                                 SqlClause::OrderBy => " ORDER BY ",
@@ -1138,7 +1113,6 @@ impl EnhancedTuiApp {
         Self {
             state_container,
             service_container,
-            api_client: ApiClient::new(api_url),
             input: Input::default(),
             cursor_manager: CursorManager::new(),
             data_analyzer: DataAnalyzer::new(),
@@ -1154,18 +1128,14 @@ impl EnhancedTuiApp {
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             key_mapper: KeyMapper::new(),
-            action_dispatcher: crate::ui::action_handlers::ActionDispatcher::new(),
             // ========== INITIALIZATION ==========
-            last_yanked: None,
             // CSV fields now in Buffer
             buffer_manager,
             buffer_handler: BufferHandler::new(),
             navigation_timings: Vec::new(),
             render_timings: Vec::new(),
-            query_cache: QueryCache::new().ok(),
             log_buffer: dual_logging::get_dual_logger().map(|logger| logger.ring_buffer().clone()),
             data_source,
-            cell_renderer: CellRenderer::new(config.theme.cell_selection_style.clone()),
             key_indicator: {
                 let mut indicator = KeyPressIndicator::new();
                 if config.display.show_key_indicator {
@@ -2795,32 +2765,6 @@ impl EnhancedTuiApp {
 
     // ========== HELP NAVIGATION ==========
 
-    fn scroll_help_down(&mut self) {
-        let max_lines: usize = 58;
-        let visible_height: usize = 30;
-
-        self.state_container
-            .set_help_max_scroll(max_lines, visible_height);
-        self.state_container.help_scroll_down();
-    }
-
-    fn scroll_help_up(&mut self) {
-        self.state_container.help_scroll_up();
-    }
-
-    fn help_page_down(&mut self) {
-        let max_lines: usize = 58;
-        let visible_height: usize = 30;
-
-        self.state_container
-            .set_help_max_scroll(max_lines, visible_height);
-        self.state_container.help_page_down();
-    }
-
-    fn help_page_up(&mut self) {
-        self.state_container.help_page_up();
-    }
-
     fn handle_history_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Split borrows to avoid borrow checker conflicts
         let result = {
@@ -3179,14 +3123,6 @@ impl EnhancedTuiApp {
 
     /// Get column count using DataProvider trait (new pattern)
     /// This demonstrates using the trait-based approach for column information
-    fn get_column_count_via_provider(&self) -> usize {
-        if let Some(provider) = self.get_data_provider() {
-            provider.get_column_count()
-        } else {
-            0
-        }
-    }
-
     /// Get column names using DataProvider trait
     /// Part of the migration to trait-based data access
     fn get_column_names_via_provider(&self) -> Vec<String> {
@@ -3197,111 +3133,9 @@ impl EnhancedTuiApp {
         }
     }
 
-    /// Sort data using DataProvider (V44 migration helper)
-    /// Returns sorted indices without modifying underlying data
-    fn sort_via_provider(&self, column_index: usize, ascending: bool) -> Option<Vec<usize>> {
-        let provider = self.get_data_provider()?;
-        let row_count = provider.get_row_count();
-
-        // Collect column values with their original indices
-        let mut indexed_values: Vec<(String, usize)> = Vec::with_capacity(row_count);
-
-        for row_idx in 0..row_count {
-            if let Some(row) = provider.get_row(row_idx) {
-                if column_index < row.len() {
-                    indexed_values.push((row[column_index].clone(), row_idx));
-                } else {
-                    indexed_values.push((String::new(), row_idx));
-                }
-            }
-        }
-
-        // Sort by value, maintaining stable sort for equal values
-        indexed_values.sort_by(|(a, _), (b, _)| {
-            // Try numeric comparison first
-            match (a.parse::<f64>(), b.parse::<f64>()) {
-                (Ok(num_a), Ok(num_b)) => {
-                    let cmp = num_a
-                        .partial_cmp(&num_b)
-                        .unwrap_or(std::cmp::Ordering::Equal);
-                    if ascending {
-                        cmp
-                    } else {
-                        cmp.reverse()
-                    }
-                }
-                _ => {
-                    // Fall back to string comparison
-                    let cmp = a.cmp(b);
-                    if ascending {
-                        cmp
-                    } else {
-                        cmp.reverse()
-                    }
-                }
-            }
-        });
-
-        // Extract the sorted indices
-        Some(indexed_values.into_iter().map(|(_, idx)| idx).collect())
-    }
     // ========== NAVIGATION METHODS ==========
 
-    // Navigation methods moved to NavigationBehavior trait
-
     /// Helper to apply column navigation result to all state locations
-    fn apply_column_navigation_result(&mut self, result: NavigationResult, direction: &str) {
-        // Update cursor_manager for table navigation (only for left/right movement)
-        match direction {
-            "left" => {
-                self.cursor_manager.move_table_left();
-            }
-            "right" => {
-                let max_columns = if let Some(provider) = self.get_data_provider() {
-                    provider.get_column_count()
-                } else {
-                    0
-                };
-                self.cursor_manager.move_table_right(max_columns);
-            }
-            "first" | "last" => {
-                // goto_first_column and goto_last_column don't update cursor_manager
-            }
-            _ => {}
-        }
-
-        // Get the visual position from ViewportManager after navigation
-        let visual_position = {
-            let viewport_borrow = self.viewport_manager.borrow();
-            viewport_borrow
-                .as_ref()
-                .map(|vm| vm.get_crosshair_col())
-                .unwrap_or(0)
-        };
-
-        // Update Buffer's current column
-        self.buffer_mut().set_current_column(visual_position);
-
-        // Update AppStateContainer's navigation state
-        self.state_container.navigation_mut().selected_column = visual_position;
-
-        // Update scroll offset if viewport changed
-        if result.viewport_changed {
-            let mut offset = self.buffer().get_scroll_offset();
-            offset.1 = result.scroll_offset;
-            self.buffer_mut().set_scroll_offset(offset);
-            self.state_container.navigation_mut().scroll_offset = offset;
-        }
-
-        // Set status message
-        let column_num = visual_position + 1;
-        self.buffer_mut()
-            .set_status_message(format!("Column {} selected", column_num));
-    }
-
-    // move_column_left, move_column_right, goto_first_column and goto_last_column now in ColumnBehavior trait
-
-    // goto_viewport_top, goto_viewport_middle, goto_viewport_bottom now in NavigationBehavior trait
 
     // ========== COLUMN PIN/HIDE ==========
 
@@ -3532,153 +3366,6 @@ impl EnhancedTuiApp {
                 buffer.set_status_message("No matches found".to_string());
                 buffer.set_search_matches(buffer_matches.clone());
             }
-        }
-    }
-
-    fn next_search_match(&mut self) {
-        // Use AppStateContainer for search navigation if available
-
-        if let Some((row, col)) = self.state_container.next_search_match() {
-            // Extract values before mutable borrows
-            let current_idx = self.state_container.search().current_match + 1;
-            let total = self.state_container.search().matches.len();
-            let search_match_index = self.state_container.search().current_match;
-
-            // Now do mutable operations
-            // Set the row position
-            self.state_container.set_table_selected_row(Some(row));
-            self.buffer_mut().set_selected_row(Some(row));
-
-            // Set the column position
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.selected_column = col;
-            }
-            self.buffer_mut().set_current_column(col);
-
-            // Ensure the row is visible in the viewport by scrolling if needed
-            let new_row_offset = {
-                let viewport_height = self.state_container.navigation().viewport_rows;
-                let current_scroll = self.state_container.navigation().scroll_offset.0; // row part of (row, col)
-
-                // Calculate new scroll offset if needed
-                if row < current_scroll {
-                    // Match is above viewport, scroll up
-                    row
-                } else if row >= current_scroll + viewport_height.saturating_sub(1) {
-                    // Match is below viewport, scroll down (center it)
-                    row.saturating_sub(viewport_height / 2)
-                } else {
-                    // Already visible, keep current scroll
-                    current_scroll
-                }
-            };
-
-            // Update navigation scroll offset
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.scroll_offset.0 = new_row_offset;
-            }
-
-            // Update ViewportManager crosshair and viewport
-            {
-                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                    // Update the actual viewport to show the new row
-                    let viewport_height = self.state_container.navigation().viewport_rows;
-                    let viewport_width = self.state_container.navigation().viewport_columns;
-                    viewport_manager.set_viewport(
-                        new_row_offset,
-                        0, // keep column scroll at 0 for now
-                        viewport_width as u16,
-                        viewport_height as u16,
-                    );
-
-                    // Now set the crosshair to the match position
-                    viewport_manager.set_crosshair(row, col);
-                }
-            }
-
-            self.buffer_mut().set_current_match(Some((row, col)));
-            self.buffer_mut()
-                .set_status_message(format!("Match {} of {}", current_idx, total));
-            self.buffer_mut().set_search_match_index(search_match_index);
-        } else {
-            self.buffer_mut()
-                .set_status_message("No search matches".to_string());
-        }
-    }
-
-    fn previous_search_match(&mut self) {
-        // Use AppStateContainer for search navigation if available
-        if let Some((row, col)) = self.state_container.previous_search_match() {
-            // Extract values before mutable borrows
-            let current_idx = self.state_container.search().current_match + 1;
-            let total = self.state_container.search().matches.len();
-            let search_match_index = self.state_container.search().current_match;
-
-            // Now do mutable operations
-            // Set the row position
-            self.state_container.set_table_selected_row(Some(row));
-            self.buffer_mut().set_selected_row(Some(row));
-
-            // Set the column position
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.selected_column = col;
-            }
-            self.buffer_mut().set_current_column(col);
-
-            // Ensure the row is visible in the viewport by scrolling if needed
-            let new_row_offset = {
-                let viewport_height = self.state_container.navigation().viewport_rows;
-                let current_scroll = self.state_container.navigation().scroll_offset.0; // row part of (row, col)
-
-                // Calculate new scroll offset if needed
-                if row < current_scroll {
-                    // Match is above viewport, scroll up
-                    row
-                } else if row >= current_scroll + viewport_height.saturating_sub(1) {
-                    // Match is below viewport, scroll down (center it)
-                    row.saturating_sub(viewport_height / 2)
-                } else {
-                    // Already visible, keep current scroll
-                    current_scroll
-                }
-            };
-
-            // Update navigation scroll offset
-            {
-                let mut nav = self.state_container.navigation_mut();
-                nav.scroll_offset.0 = new_row_offset;
-            }
-
-            // Update ViewportManager crosshair and viewport
-            {
-                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                    // Update the actual viewport to show the new row
-                    let viewport_height = self.state_container.navigation().viewport_rows;
-                    let viewport_width = self.state_container.navigation().viewport_columns;
-                    viewport_manager.set_viewport(
-                        new_row_offset,
-                        0, // keep column scroll at 0 for now
-                        viewport_width as u16,
-                        viewport_height as u16,
-                    );
-
-                    // Now set the crosshair to the match position
-                    viewport_manager.set_crosshair(row, col);
-                }
-            }
-
-            self.buffer_mut().set_current_match(Some((row, col)));
-            self.buffer_mut()
-                .set_status_message(format!("Match {} of {}", current_idx, total));
-            self.buffer_mut().set_search_match_index(search_match_index);
-        } else {
-            self.buffer_mut()
-                .set_status_message("No search matches".to_string());
         }
     }
 
@@ -4399,133 +4086,6 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn update_column_search(&mut self) {
-        // Use DataView's column search if available
-        let pattern = self.state_container.column_search().pattern.clone();
-
-        // Collect all the data we need from DataView first
-        let (matching_columns, display_columns) =
-            if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-                dataview.search_columns(&pattern);
-
-                // Get matching columns from DataView - clone them to avoid borrow issues
-                let matching_columns = dataview.get_matching_columns().to_vec();
-                let display_columns = dataview.get_display_columns();
-
-                debug!(target: "column_search",
-                    "Search found {} matches, display_columns has {} entries, first 25: {:?}",
-                    matching_columns.len(), display_columns.len(),
-                    &display_columns[..display_columns.len().min(25)]
-                );
-
-                // Log the matches found
-                for (idx, (vis_idx, name)) in matching_columns.iter().enumerate() {
-                    debug!(target: "column_search",
-                    "Match {}: '{}' at visual_index={}", idx, name, vis_idx);
-                }
-
-                // Return the data we need
-                (matching_columns, display_columns)
-            } else {
-                (vec![], vec![])
-            };
-
-        // Now update AppStateContainer with the matches
-        // AppStateContainer expects DataTable indices, not visual indices
-        if !matching_columns.is_empty() {
-            let columns: Vec<(String, usize)> = matching_columns
-                .iter()
-                .map(|(visual_idx, name)| {
-                    // Convert visual index to DataTable index for AppStateContainer
-                    let datatable_idx = if *visual_idx < display_columns.len() {
-                        display_columns[*visual_idx]
-                    } else {
-                        *visual_idx // Fallback
-                    };
-                    (name.clone(), datatable_idx)
-                })
-                .collect();
-            self.state_container
-                .update_column_search_matches(&columns, &pattern);
-        }
-
-        // Update status message and current column
-        if pattern.is_empty() {
-            self.buffer_mut()
-                .set_status_message("Enter column name to search".to_string());
-        } else {
-            if matching_columns.is_empty() {
-                self.buffer_mut()
-                    .set_status_message(format!("No columns match '{}'", pattern));
-            } else {
-                let (visual_index, column_name) = matching_columns[0].clone();
-
-                // Convert visual index to DataTable index for Buffer/AppStateContainer
-                let datatable_index = if visual_index < display_columns.len() {
-                    let dt_idx = display_columns[visual_index];
-                    // Sanity check: for externalOrderId, visual_index should be 19 and dt_idx should be 20
-                    if column_name.to_lowercase().contains("order") {
-                        debug!(target: "column_search",
-                            "ORDER COLUMN DEBUG: '{}' visual_index={}, display_columns[{}]={}, expected for externalOrderId: 20",
-                            column_name, visual_index, visual_index, dt_idx
-                        );
-                    }
-                    dt_idx
-                } else {
-                    visual_index // Fallback
-                };
-
-                debug!(target: "column_search",
-                    "Column search match: '{}' at visual_index={}, display_columns.len()={}, converting to datatable_index={} (display_columns[{}]={})",
-                    column_name, visual_index, display_columns.len(), datatable_index, visual_index,
-                    if visual_index < display_columns.len() { display_columns[visual_index].to_string() } else { "OUT_OF_BOUNDS".to_string() }
-                );
-
-                // Double-check: print first few display_columns values around this index
-                if visual_index > 0 && visual_index < display_columns.len() {
-                    let start = visual_index.saturating_sub(2);
-                    let end = (visual_index + 3).min(display_columns.len());
-                    debug!(target: "column_search",
-                        "Display columns around index {}: {:?}",
-                        visual_index, &display_columns[start..end]
-                    );
-                }
-
-                self.buffer_mut().set_current_column(datatable_index);
-                self.state_container.set_current_column(datatable_index);
-
-                // Update ViewportManager to ensure the column is visible
-                // ViewportManager expects visual index
-                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
-                    viewport_manager.set_current_column(visual_index);
-                }
-                drop(viewport_manager_borrow);
-
-                self.buffer_mut().set_status_message(format!(
-                    "Column 1 of {}: {} (Tab=next, Enter=select)",
-                    matching_columns.len(),
-                    column_name
-                ));
-            }
-        }
-    }
-
-    fn sort_by_column(&mut self, column_index: usize, ascending: bool) {
-        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            if let Err(e) = dataview.apply_sort(column_index, ascending) {
-                self.buffer_mut()
-                    .set_status_message(format!("Sort error: {}", e));
-            } else {
-                self.buffer_mut().set_status_message(format!(
-                    "Sorted by column {} ({})",
-                    column_index,
-                    if ascending { "ascending" } else { "descending" }
-                ));
-            }
-        }
-    }
-
     fn toggle_sort_current_column(&mut self) {
         // Get visual column index from ViewportManager's crosshair
         let visual_col_idx = if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
@@ -4603,24 +4163,6 @@ impl EnhancedTuiApp {
         }
     }
 
-    /// Get row count using DataProvider trait (new pattern)
-    /// This is a parallel implementation that uses the trait-based approach
-    fn get_row_count_via_provider(&self) -> usize {
-        // First check for filters - these still need buffer access for now
-        if self.buffer().is_fuzzy_filter_active() {
-            return self.buffer().get_fuzzy_filter_indices().len();
-        } else if let Some(filtered) = self.buffer().get_dataview() {
-            return filtered.row_count();
-        }
-
-        // Use DataProvider for unfiltered data
-        if let Some(provider) = self.get_data_provider() {
-            provider.get_row_count()
-        } else {
-            0
-        }
-    }
-
     fn reset_table_state(&mut self) {
         // Reset state container navigation state using the new reset method
         self.state_container.navigation_mut().reset();
@@ -4664,29 +4206,6 @@ impl EnhancedTuiApp {
             buffer.set_fuzzy_filter_active(false);
             buffer.set_fuzzy_filter_indices(Vec::new());
         };
-    }
-
-    fn calculate_viewport_column_widths(&mut self, viewport_start: usize, viewport_end: usize) {
-        // Get compact mode before borrowing viewport_manager
-        let compact_mode = self.buffer().is_compact_mode();
-
-        // Delegate to ViewportManager for column width calculations
-        let widths = {
-            let mut viewport_opt = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport_manager) = *viewport_opt {
-                Some(viewport_manager.calculate_viewport_column_widths(
-                    viewport_start,
-                    viewport_end,
-                    compact_mode,
-                ))
-            } else {
-                None
-            }
-        };
-
-        if let Some(widths) = widths {
-            self.buffer_mut().set_column_widths(widths);
-        }
     }
 
     fn update_parser_for_current_buffer(&mut self) {
@@ -4937,37 +4456,12 @@ impl EnhancedTuiApp {
         crate::ui::simple_operations::get_token_at_cursor(&ctx)
     }
 
-    // Now using InputBehavior trait implementation
-    // fn move_cursor_word_backward(&mut self) { ... }
-
-    // Now using InputBehavior trait implementation
-    // fn move_cursor_word_forward(&mut self) { ... }
-
-    // Now using InputBehavior trait implementation
-    // fn kill_line(&mut self) { ... }
-
-    // Now using InputBehavior trait implementation
-    // fn kill_line_backward(&mut self) { ... }
-
-    fn undo(&mut self) {
-        let mut ctx = crate::ui::simple_operations::UndoContext {
-            buffer_manager: &mut self.buffer_manager,
-        };
-
-        let result = crate::ui::simple_operations::perform_undo(&mut ctx);
-        self.set_status_message(result.status_message());
-    }
-
-    // Buffer management methods now in BufferManagementBehavior trait
-
     /// Debug method to dump current buffer state (disabled to prevent TUI corruption)
     #[allow(dead_code)]
     fn debug_current_buffer(&self) {
         // Debug output disabled - was corrupting TUI display
         // Use tracing/logging instead if debugging is needed
     }
-
-    // yank() method now in BufferManagementBehavior trait
 
     fn ui(&mut self, f: &mut Frame) {
         // Always use single-line mode input height
@@ -5182,24 +4676,6 @@ impl EnhancedTuiApp {
             AppMode::ColumnStats => self.render_column_stats(f, results_area),
             _ if self.buffer().has_dataview() => {
                 // Calculate viewport using DataView
-                if let Some(dataview) = self.buffer().get_dataview() {
-                    // Extract viewport info first
-                    // results_area is already the table area with proper height
-                    let terminal_height = results_area.height as usize;
-                    let max_visible_rows = terminal_height.max(10);
-                    let total_rows = dataview.row_count();
-                    let row_viewport_start = self
-                        .buffer()
-                        .get_scroll_offset()
-                        .0
-                        .min(total_rows.saturating_sub(1));
-                    let row_viewport_end = (row_viewport_start + max_visible_rows).min(total_rows);
-
-                    // PERF: Skip column width calculation for now - it's expensive even with viewport
-                    // TODO: Re-enable when we have lazy column width calculation
-                    // self.calculate_viewport_column_widths(row_viewport_start, row_viewport_end);
-                }
-
                 // V50: Render using DataProvider which works with DataTable
                 if let Some(provider) = self.get_data_provider() {
                     self.render_table_with_provider(f, results_area, provider.as_ref());
@@ -5790,7 +5266,7 @@ impl EnhancedTuiApp {
         }
 
         // Get structured column information from ViewportManager
-        let (visible_indices, pinned_indices, scrollable_indices, crosshair_column_position, _) = {
+        let (pinned_indices, crosshair_column_position, _) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
@@ -5807,13 +5283,7 @@ impl EnhancedTuiApp {
                 0
             };
 
-            (
-                info.0,
-                info.1,
-                info.2,
-                crosshair_column_position,
-                crosshair_visual,
-            )
+            (info.1, crosshair_column_position, crosshair_visual)
         };
 
         // Calculate row viewport
@@ -5888,20 +5358,6 @@ impl EnhancedTuiApp {
 
         // Use the pure table renderer
         crate::ui::table_renderer::render_table(f, area, &context);
-    }
-
-    fn render_table_immutable(&self, f: &mut Frame, area: Rect, _results: &QueryResponse) {
-        // V40: Now using trait-based rendering via DataProvider
-        // The BufferAdapter makes this seamless - the Buffer implements DataProvider
-        if let Some(provider) = self.get_data_provider() {
-            self.render_table_with_provider(f, area, provider.as_ref());
-        } else {
-            // Minimal fallback - should rarely if ever be hit
-            let msg = Paragraph::new("No data provider available")
-                .block(Block::default().borders(Borders::ALL).title("Error"))
-                .style(Style::default().fg(Color::Red));
-            f.render_widget(msg, area);
-        }
     }
 
     fn render_help(&mut self, f: &mut Frame, area: Rect) {
@@ -6185,73 +5641,6 @@ impl EnhancedTuiApp {
             }
         }
         Ok(false)
-    }
-
-    fn render_cache_list(&self, f: &mut Frame, area: Rect) {
-        if let Some(ref cache) = self.query_cache {
-            let cached_queries = cache.list_cached_queries();
-
-            if cached_queries.is_empty() {
-                let empty = Paragraph::new("No cached queries found.\n\nUse :cache save after running a query to cache results.")
-                    .block(Block::default().borders(Borders::ALL).title("Cached Queries (F7)"))
-                    .style(Style::default().fg(Color::DarkGray));
-                f.render_widget(empty, area);
-                return;
-            }
-
-            // Create table of cached queries
-            let header_cells = vec!["ID", "Query", "Rows", "Cached At"]
-                .into_iter()
-                .map(|h| {
-                    Cell::from(h).style(
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                })
-                .collect::<Vec<Cell>>();
-
-            let rows: Vec<Row> = cached_queries
-                .iter()
-                .map(|query| {
-                    let cells = vec![
-                        Cell::from(query.id.to_string()),
-                        Cell::from(if query.query_text.len() > 50 {
-                            format!("{}...", &query.query_text[..47])
-                        } else {
-                            query.query_text.clone()
-                        }),
-                        Cell::from(query.row_count.to_string()),
-                        Cell::from(query.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()),
-                    ];
-                    Row::new(cells)
-                })
-                .collect();
-
-            let table = Table::new(
-                rows,
-                vec![
-                    Constraint::Length(6),
-                    Constraint::Percentage(50),
-                    Constraint::Length(8),
-                    Constraint::Length(20),
-                ],
-            )
-            .header(Row::new(header_cells))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Cached Queries (F7) - Use :cache load <id> to load"),
-            )
-            .row_highlight_style(Style::default().bg(Color::DarkGray));
-
-            f.render_widget(table, area);
-        } else {
-            let error = Paragraph::new("Cache not available")
-                .block(Block::default().borders(Borders::ALL).title("Cache Error"))
-                .style(Style::default().fg(Color::Red));
-            f.render_widget(error, area);
-        }
     }
 
     fn render_column_stats(&self, f: &mut Frame, area: Rect) {
