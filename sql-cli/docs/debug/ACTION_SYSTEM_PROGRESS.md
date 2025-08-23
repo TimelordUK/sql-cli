@@ -56,14 +56,40 @@
 4. **Customizable** - Key mappings can be easily changed in one place
 5. **Non-breaking** - All existing functionality preserved through fallback
 
+### Phase 3 Completed: Visitor Pattern Migration ✓
+
+We've successfully migrated several groups of actions to the visitor pattern:
+
+1. **Toggle Actions** (`ToggleActionHandler`)
+   - ToggleSelectionMode - Switch between cell/row/column selection
+   - ToggleRowNumbers - Show/hide row numbers
+   - ToggleCompactMode - Enable/disable compact display
+   - ToggleCaseInsensitive - Toggle case-insensitive comparisons
+   - ToggleKeyIndicator - Show/hide key press indicator
+
+2. **Clear Actions** (`ClearActionHandler`)
+   - ClearFilter - Remove active filter
+   - ClearLine - Clear command line (context-aware for Command mode)
+
+3. **Exit Actions** (`ExitActionHandler`)
+   - Quit - Normal application exit
+   - ForceQuit - Force quit (Ctrl+C)
+
+These join the existing handlers:
+- NavigationActionHandler (arrow keys, vim navigation, page navigation)
+- ColumnActionHandler (pin, hide, unhide columns)
+- ExportActionHandler (CSV, JSON export)
+- YankActionHandler (yank cell, row, column, all, query)
+- UIActionHandler (show help, debug info)
+
 ### Next Steps
 
 1. **Remove duplicate handling** - Navigation keys are now handled twice (action system + legacy)
-2. **Extract more actions**:
+2. **Extract more complex actions**:
+   - Search operations (StartSearch, StartColumnSearch, StartFilter)
+   - Viewport navigation (NavigateToViewportTop/Middle/Bottom)
+   - Mode transitions (StartJumpToRow, etc.)
    - Editing keys (text input, backspace, etc.)
-   - Clipboard operations (yank, paste)
-   - Search/filter operations
-   - Command mode keys
 3. **Move to reducer pattern** - Convert action handlers to pure functions
 4. **Add key customization** - Load custom key mappings from config
 

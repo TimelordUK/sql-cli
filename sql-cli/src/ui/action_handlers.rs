@@ -59,6 +59,17 @@ pub trait ActionHandlerContext {
     fn yank_column(&mut self);
     fn yank_all(&mut self);
     fn yank_query(&mut self);
+
+    // Toggle operations
+    fn toggle_selection_mode(&mut self);
+    fn toggle_row_numbers(&mut self);
+    fn toggle_compact_mode(&mut self);
+    fn toggle_case_insensitive(&mut self);
+    fn toggle_key_indicator(&mut self);
+
+    // Clear operations
+    fn clear_filter(&mut self);
+    fn clear_line(&mut self);
 }
 
 /// Handler for navigation actions (Up, Down, Left, Right, PageUp, etc.)
@@ -268,6 +279,100 @@ impl ActionHandler for UIActionHandler {
     }
 }
 
+/// Handler for toggle operations (selection mode, row numbers, etc.)
+pub struct ToggleActionHandler;
+
+impl ActionHandler for ToggleActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        _context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        match action {
+            Action::ToggleSelectionMode => {
+                tui.toggle_selection_mode();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ToggleRowNumbers => {
+                tui.toggle_row_numbers();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ToggleCompactMode => {
+                tui.toggle_compact_mode();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ToggleCaseInsensitive => {
+                tui.toggle_case_insensitive();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ToggleKeyIndicator => {
+                tui.toggle_key_indicator();
+                Some(Ok(ActionResult::Handled))
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "Toggle"
+    }
+}
+
+/// Handler for clear/reset operations
+pub struct ClearActionHandler;
+
+impl ActionHandler for ClearActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        match action {
+            Action::ClearFilter => {
+                tui.clear_filter();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ClearLine => {
+                // Only handle in Command mode
+                if context.mode == AppMode::Command {
+                    tui.clear_line();
+                    Some(Ok(ActionResult::Handled))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "Clear"
+    }
+}
+
+/// Handler for exit/quit actions
+pub struct ExitActionHandler;
+
+impl ActionHandler for ExitActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        _context: &ActionContext,
+        _tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        match action {
+            Action::Quit | Action::ForceQuit => Some(Ok(ActionResult::Exit)),
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "Exit"
+    }
+}
+
 /// Main action dispatcher using visitor pattern
 pub struct ActionDispatcher {
     handlers: Vec<Box<dyn ActionHandler>>,
@@ -281,6 +386,9 @@ impl ActionDispatcher {
             Box::new(ExportActionHandler),
             Box::new(YankActionHandler),
             Box::new(UIActionHandler),
+            Box::new(ToggleActionHandler),
+            Box::new(ClearActionHandler),
+            Box::new(ExitActionHandler),
         ];
 
         Self { handlers }
@@ -415,6 +523,31 @@ mod tests {
         fn yank_query(&mut self) {
             self.last_action = "yank_query".to_string();
         }
+
+        // Toggle operations
+        fn toggle_selection_mode(&mut self) {
+            self.last_action = "toggle_selection_mode".to_string();
+        }
+        fn toggle_row_numbers(&mut self) {
+            self.last_action = "toggle_row_numbers".to_string();
+        }
+        fn toggle_compact_mode(&mut self) {
+            self.last_action = "toggle_compact_mode".to_string();
+        }
+        fn toggle_case_insensitive(&mut self) {
+            self.last_action = "toggle_case_insensitive".to_string();
+        }
+        fn toggle_key_indicator(&mut self) {
+            self.last_action = "toggle_key_indicator".to_string();
+        }
+
+        // Clear operations
+        fn clear_filter(&mut self) {
+            self.last_action = "clear_filter".to_string();
+        }
+        fn clear_line(&mut self) {
+            self.last_action = "clear_line".to_string();
+        }
     }
 
     #[test]
@@ -478,5 +611,138 @@ mod tests {
 
         assert_eq!(result, ActionResult::Handled);
         assert_eq!(mock_tui.last_action, "export_to_csv");
+    }
+
+    #[test]
+    fn test_toggle_handler() {
+        let handler = ToggleActionHandler;
+        let mut mock_tui = MockTui::new();
+        let context = ActionContext {
+            mode: AppMode::Results,
+            selection_mode: crate::app_state_container::SelectionMode::Row,
+            has_results: true,
+            has_filter: false,
+            has_search: false,
+            row_count: 10,
+            column_count: 5,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        // Test toggle selection mode
+        let action = Action::ToggleSelectionMode;
+        let result = handler
+            .handle_action(&action, &context, &mut mock_tui)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, ActionResult::Handled);
+        assert_eq!(mock_tui.last_action, "toggle_selection_mode");
+
+        // Test toggle row numbers
+        let action = Action::ToggleRowNumbers;
+        let result = handler
+            .handle_action(&action, &context, &mut mock_tui)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, ActionResult::Handled);
+        assert_eq!(mock_tui.last_action, "toggle_row_numbers");
+    }
+
+    #[test]
+    fn test_clear_handler() {
+        let handler = ClearActionHandler;
+        let mut mock_tui = MockTui::new();
+
+        // Test clear filter
+        let context = ActionContext {
+            mode: AppMode::Results,
+            selection_mode: crate::app_state_container::SelectionMode::Row,
+            has_results: true,
+            has_filter: true,
+            has_search: false,
+            row_count: 10,
+            column_count: 5,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        let action = Action::ClearFilter;
+        let result = handler
+            .handle_action(&action, &context, &mut mock_tui)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, ActionResult::Handled);
+        assert_eq!(mock_tui.last_action, "clear_filter");
+
+        // Test clear line in Command mode
+        let context = ActionContext {
+            mode: AppMode::Command,
+            selection_mode: crate::app_state_container::SelectionMode::Row,
+            has_results: true,
+            has_filter: false,
+            has_search: false,
+            row_count: 10,
+            column_count: 5,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        let action = Action::ClearLine;
+        let result = handler
+            .handle_action(&action, &context, &mut mock_tui)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, ActionResult::Handled);
+        assert_eq!(mock_tui.last_action, "clear_line");
+
+        // Test clear line not handled in Results mode
+        let context = ActionContext {
+            mode: AppMode::Results,
+            selection_mode: crate::app_state_container::SelectionMode::Row,
+            has_results: true,
+            has_filter: false,
+            has_search: false,
+            row_count: 10,
+            column_count: 5,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        let action = Action::ClearLine;
+        let result = handler.handle_action(&action, &context, &mut mock_tui);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_exit_handler() {
+        let handler = ExitActionHandler;
+        let mut mock_tui = MockTui::new();
+        let context = ActionContext {
+            mode: AppMode::Results,
+            selection_mode: crate::app_state_container::SelectionMode::Row,
+            has_results: true,
+            has_filter: false,
+            has_search: false,
+            row_count: 10,
+            column_count: 5,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        // Test quit
+        let action = Action::Quit;
+        let result = handler
+            .handle_action(&action, &context, &mut mock_tui)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, ActionResult::Exit);
+
+        // Test force quit
+        let action = Action::ForceQuit;
+        let result = handler
+            .handle_action(&action, &context, &mut mock_tui)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, ActionResult::Exit);
     }
 }

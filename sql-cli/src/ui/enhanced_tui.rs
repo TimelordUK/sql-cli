@@ -230,50 +230,18 @@ impl EnhancedTuiApp {
 
         // Fallback to existing switch statement for actions not yet in visitor pattern
         match action {
-            // Navigate actions are now handled by NavigationActionHandler in visitor pattern
-            ToggleSelectionMode => {
-                self.state_container.toggle_selection_mode();
-                let new_mode = self.state_container.get_selection_mode();
-                let msg = match new_mode {
-                    SelectionMode::Cell => "Cell mode - Navigate to select individual cells",
-                    SelectionMode::Row => "Row mode - Navigate to select rows",
-                    SelectionMode::Column => "Column mode - Navigate to select columns",
-                };
-                self.buffer_mut().set_status_message(msg.to_string());
-                Ok(ActionResult::Handled)
-            }
-            Quit => Ok(ActionResult::Exit),
-            ForceQuit => Ok(ActionResult::Exit),
-            // ShowHelp is now handled by UIActionHandler in visitor pattern
+            // The following actions are now handled by visitor pattern handlers:
+            // - Navigation: NavigationActionHandler
+            // - Toggle operations: ToggleActionHandler (ToggleSelectionMode, ToggleRowNumbers, etc.)
+            // - Clear operations: ClearActionHandler (ClearFilter, ClearLine)
+            // - Exit operations: ExitActionHandler (Quit, ForceQuit)
+            // - Column operations: ColumnActionHandler
+            // - Export operations: ExportActionHandler
+            // - Yank operations: YankActionHandler
+            // - UI operations: UIActionHandler (ShowHelp)
             ShowDebugInfo => {
                 // Use the existing toggle_debug_mode which generates all debug info
                 self.toggle_debug_mode();
-                Ok(ActionResult::Handled)
-            }
-            // ToggleColumnPin is now handled by ColumnActionHandler in visitor pattern
-            ToggleRowNumbers => {
-                // Toggle row numbers using the buffer's display option
-                let current = self.buffer().is_show_row_numbers();
-                self.buffer_mut().set_show_row_numbers(!current);
-                let message = if !current {
-                    "Row numbers: ON (showing line numbers)".to_string()
-                } else {
-                    "Row numbers: OFF".to_string()
-                };
-                self.buffer_mut().set_status_message(message);
-                // Recalculate column widths with new mode
-                self.calculate_optimal_column_widths();
-                Ok(ActionResult::Handled)
-            }
-            ToggleCompactMode => {
-                let current_mode = self.buffer().is_compact_mode();
-                self.buffer_mut().set_compact_mode(!current_mode);
-                let message = if !current_mode {
-                    "Compact mode enabled"
-                } else {
-                    "Compact mode disabled"
-                };
-                self.buffer_mut().set_status_message(message.to_string());
                 Ok(ActionResult::Handled)
             }
             StartJumpToRow => {
@@ -288,55 +256,6 @@ impl EnhancedTuiApp {
 
                 self.buffer_mut()
                     .set_status_message("Enter row number (1-based):".to_string());
-                Ok(ActionResult::Handled)
-            }
-            // ExportToCsv and ExportToJson are now handled by ExportActionHandler in visitor pattern
-            ClearFilter => {
-                // Check if we have an active filter to clear
-                if let Some(dataview) = self.buffer().get_dataview() {
-                    if dataview.has_filter() {
-                        // Clear the filter
-                        if let Some(dataview_mut) = self.buffer_mut().get_dataview_mut() {
-                            dataview_mut.clear_filter();
-                            self.buffer_mut()
-                                .set_status_message("Filter cleared".to_string());
-                        }
-
-                        // Update ViewportManager after clearing filter
-                        if let Some(dataview) = self.buffer().get_dataview() {
-                            if let Some(ref mut viewport_manager) =
-                                *self.viewport_manager.borrow_mut()
-                            {
-                                viewport_manager.set_dataview(Arc::new(dataview.clone()));
-                            }
-                        }
-                    } else {
-                        self.buffer_mut()
-                            .set_status_message("No active filter to clear".to_string());
-                    }
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("No data loaded".to_string());
-                }
-                Ok(ActionResult::Handled)
-            }
-            ToggleCaseInsensitive => {
-                let current = self.buffer().is_case_insensitive();
-                self.buffer_mut().set_case_insensitive(!current);
-                self.buffer_mut().set_status_message(format!(
-                    "Case-insensitive string comparisons: {}",
-                    if !current { "ON" } else { "OFF" }
-                ));
-                Ok(ActionResult::Handled)
-            }
-            ToggleKeyIndicator => {
-                let enabled = !self.key_indicator.enabled;
-                self.key_indicator.set_enabled(enabled);
-                self.key_sequence_renderer.set_enabled(enabled);
-                self.buffer_mut().set_status_message(format!(
-                    "Key press indicator {}",
-                    if enabled { "enabled" } else { "disabled" }
-                ));
                 Ok(ActionResult::Handled)
             }
             NavigateToViewportTop => {
@@ -525,7 +444,6 @@ impl EnhancedTuiApp {
                 self.move_current_column_right();
                 Ok(ActionResult::Handled)
             }
-            // ClearAllPins is now handled by ColumnActionHandler in visitor pattern
             StartSearch => {
                 // Use the new VimSearchManager for forward search
                 self.start_vim_search();
@@ -809,17 +727,7 @@ impl EnhancedTuiApp {
                     Ok(ActionResult::NotHandled)
                 }
             }
-            ClearLine => {
-                if context.mode == AppMode::Command {
-                    let buffer = self.buffer_mut();
-                    buffer.save_state_for_undo();
-                    buffer.set_input_text(String::new());
-                    buffer.set_input_cursor_position(0);
-                    Ok(ActionResult::Handled)
-                } else {
-                    Ok(ActionResult::NotHandled)
-                }
-            }
+            // ClearLine is now handled by ClearActionHandler in visitor pattern
             Undo => {
                 if context.mode == AppMode::Command {
                     self.buffer_mut().perform_undo();
@@ -7418,6 +7326,96 @@ impl ActionHandlerContext for EnhancedTuiApp {
 
     fn yank_query(&mut self) {
         YankBehavior::yank_query(self);
+    }
+
+    // Toggle operations
+    fn toggle_selection_mode(&mut self) {
+        self.state_container.toggle_selection_mode();
+        let new_mode = self.state_container.get_selection_mode();
+        let msg = match new_mode {
+            SelectionMode::Cell => "Cell mode - Navigate to select individual cells",
+            SelectionMode::Row => "Row mode - Navigate to select rows",
+            SelectionMode::Column => "Column mode - Navigate to select columns",
+        };
+        self.buffer_mut().set_status_message(msg.to_string());
+    }
+
+    fn toggle_row_numbers(&mut self) {
+        let current = self.buffer().is_show_row_numbers();
+        self.buffer_mut().set_show_row_numbers(!current);
+        let message = if !current {
+            "Row numbers: ON (showing line numbers)".to_string()
+        } else {
+            "Row numbers: OFF".to_string()
+        };
+        self.buffer_mut().set_status_message(message);
+        // Recalculate column widths with new mode
+        self.calculate_optimal_column_widths();
+    }
+
+    fn toggle_compact_mode(&mut self) {
+        let current_mode = self.buffer().is_compact_mode();
+        self.buffer_mut().set_compact_mode(!current_mode);
+        let message = if !current_mode {
+            "Compact mode enabled"
+        } else {
+            "Compact mode disabled"
+        };
+        self.buffer_mut().set_status_message(message.to_string());
+    }
+
+    fn toggle_case_insensitive(&mut self) {
+        let current = self.buffer().is_case_insensitive();
+        self.buffer_mut().set_case_insensitive(!current);
+        self.buffer_mut().set_status_message(format!(
+            "Case-insensitive string comparisons: {}",
+            if !current { "ON" } else { "OFF" }
+        ));
+    }
+
+    fn toggle_key_indicator(&mut self) {
+        let enabled = !self.key_indicator.enabled;
+        self.key_indicator.set_enabled(enabled);
+        self.key_sequence_renderer.set_enabled(enabled);
+        self.buffer_mut().set_status_message(format!(
+            "Key press indicator {}",
+            if enabled { "enabled" } else { "disabled" }
+        ));
+    }
+
+    // Clear operations
+    fn clear_filter(&mut self) {
+        // Check if we have an active filter to clear
+        if let Some(dataview) = self.buffer().get_dataview() {
+            if dataview.has_filter() {
+                // Clear the filter
+                if let Some(dataview_mut) = self.buffer_mut().get_dataview_mut() {
+                    dataview_mut.clear_filter();
+                    self.buffer_mut()
+                        .set_status_message("Filter cleared".to_string());
+                }
+
+                // Update ViewportManager after clearing filter
+                if let Some(dataview) = self.buffer().get_dataview() {
+                    if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                        viewport_manager.set_dataview(Arc::new(dataview.clone()));
+                    }
+                }
+            } else {
+                self.buffer_mut()
+                    .set_status_message("No active filter to clear".to_string());
+            }
+        } else {
+            self.buffer_mut()
+                .set_status_message("No data loaded".to_string());
+        }
+    }
+
+    fn clear_line(&mut self) {
+        let buffer = self.buffer_mut();
+        buffer.save_state_for_undo();
+        buffer.set_input_text(String::new());
+        buffer.set_input_cursor_position(0);
     }
 }
 
