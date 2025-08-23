@@ -16,22 +16,30 @@ pub trait NavigationBehavior {
 
     // Helper method that stays in the trait
     fn apply_row_navigation_result(&mut self, result: RowNavigationResult) {
-        // Update Buffer's selected row
-        self.buffer_mut()
-            .set_selected_row(Some(result.row_position));
+        // Use centralized sync method
+        self.sync_row_state(result.row_position);
 
         // Update scroll offset if viewport changed
         if result.viewport_changed {
             let mut offset = self.buffer().get_scroll_offset();
             offset.0 = result.row_scroll_offset;
             self.buffer_mut().set_scroll_offset(offset);
-        }
-
-        // Update AppStateContainer for consistency
-        self.state_container().navigation_mut().selected_row = result.row_position;
-        if result.viewport_changed {
             self.state_container().navigation_mut().scroll_offset.0 = result.row_scroll_offset;
         }
+    }
+
+    /// Centralized method to sync row state across all components
+    /// This ensures Buffer, AppStateContainer, and any other row tracking stays in sync
+    fn sync_row_state(&mut self, row: usize) {
+        // 1. Update Buffer's selected row
+        self.buffer_mut().set_selected_row(Some(row));
+
+        // 2. Update AppStateContainer navigation state
+        self.state_container().navigation_mut().selected_row = row;
+
+        // 3. Also update via set_table_selected_row for consistency
+        // This ensures any internal bookkeeping in AppStateContainer is maintained
+        self.state_container().set_table_selected_row(Some(row));
     }
 
     // ========== Row Navigation Methods ==========

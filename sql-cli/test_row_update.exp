@@ -1,0 +1,31 @@
+#!/usr/bin/expect -f
+
+set timeout 2
+spawn ./target/release/sql-cli test_nav.csv -e "select * from data"
+
+# Wait for initial display
+expect "1/10"
+
+# Test j (down arrow)
+send "j"
+expect "2/10"
+
+# Test k (up arrow)  
+send "k"
+expect "1/10"
+
+# Test G (go to last)
+send "G"
+expect "10/10"
+
+# Test gg (go to first)
+send "gg"
+expect "1/10"
+
+# Test 5G (go to line 5)
+send "5G"
+expect "5/10"
+
+# Clean exit
+send "q"
+expect eof

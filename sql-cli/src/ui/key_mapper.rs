@@ -322,43 +322,11 @@ impl KeyMapper {
         if context.mode == AppMode::Results {
             if let KeyCode::Char(c) = key.code {
                 if key.modifiers.is_empty() {
-                    // Check if we're building a vim command
+                    // Check if we're building a vim command (only for 'gg' now, others moved to chords)
                     if !self.vim_command_buffer.is_empty() {
                         // We have a pending command, check for valid combinations
                         let command = format!("{}{}", self.vim_command_buffer, c);
                         let action = match command.as_str() {
-                            "wa" => {
-                                // Append after WHERE clause
-                                self.vim_command_buffer.clear();
-                                Some(Action::SwitchModeWithCursor(
-                                    AppMode::Command,
-                                    CursorPosition::AfterClause(SqlClause::Where),
-                                ))
-                            }
-                            "oa" => {
-                                // Append after ORDER BY clause
-                                self.vim_command_buffer.clear();
-                                Some(Action::SwitchModeWithCursor(
-                                    AppMode::Command,
-                                    CursorPosition::AfterClause(SqlClause::OrderBy),
-                                ))
-                            }
-                            "sa" => {
-                                // Append after SELECT clause
-                                self.vim_command_buffer.clear();
-                                Some(Action::SwitchModeWithCursor(
-                                    AppMode::Command,
-                                    CursorPosition::AfterClause(SqlClause::Select),
-                                ))
-                            }
-                            "ga" => {
-                                // Append after GROUP BY clause
-                                self.vim_command_buffer.clear();
-                                Some(Action::SwitchModeWithCursor(
-                                    AppMode::Command,
-                                    CursorPosition::AfterClause(SqlClause::GroupBy),
-                                ))
-                            }
                             "gg" => {
                                 // Go to top (vim-style)
                                 self.vim_command_buffer.clear();
@@ -383,15 +351,22 @@ impl KeyMapper {
                     }
 
                     // Check if this starts a vim command sequence, but only if no standalone mapping exists
-                    if matches!(c, 'w' | 'o' | 's' | 'g') {
+                    // Only 'g' is used for vim commands now (gg = go to top)
+                    // SQL clause navigation moved to chord handler (cw, cs, etc.)
+                    if c == 'g' {
                         let key_combo = (key.code, key.modifiers);
                         if let Some(mode_mappings) = self.mode_mappings.get(&context.mode) {
                             if mode_mappings.contains_key(&key_combo) {
                                 // This key has a standalone mapping, let it fall through to normal mapping
                                 // Don't treat it as a vim command starter
+                                tracing::debug!(
+                                    "Key '{}' has standalone mapping, not treating as vim command",
+                                    c
+                                );
                             } else {
                                 // No standalone mapping, treat as vim command starter
                                 self.vim_command_buffer.push(c);
+                                tracing::debug!("Starting vim command buffer with '{}'", c);
                                 return None; // Collecting command, no action yet
                             }
                         }

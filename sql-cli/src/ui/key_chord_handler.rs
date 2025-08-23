@@ -92,6 +92,9 @@ impl KeyChordHandler {
 
     /// Set up default chord mappings
     fn setup_default_chords(&mut self) {
+        use crate::buffer::AppMode;
+        use crate::ui::actions::{CursorPosition, SqlClause};
+
         // Yank chords - these are the only actual chords in use
         self.register_chord_action("yy", Action::Yank(YankTarget::Row));
         self.register_chord_action("yr", Action::Yank(YankTarget::Row)); // Alternative for yank row
@@ -99,6 +102,58 @@ impl KeyChordHandler {
         self.register_chord_action("ya", Action::Yank(YankTarget::All));
         self.register_chord_action("yv", Action::Yank(YankTarget::Cell)); // Yank cell value
         self.register_chord_action("yq", Action::Yank(YankTarget::Query)); // Yank current query text
+
+        // SQL clause navigation chords - jump to end of SQL clauses in command mode
+        // cw = cursor to WHERE, cs = cursor to SELECT, co = cursor to ORDER BY, etc.
+        self.register_chord_action(
+            "cw",
+            Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::AfterClause(SqlClause::Where),
+            ),
+        );
+        self.register_chord_action(
+            "cs",
+            Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::AfterClause(SqlClause::Select),
+            ),
+        );
+        self.register_chord_action(
+            "cf",
+            Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::AfterClause(SqlClause::From),
+            ),
+        );
+        self.register_chord_action(
+            "co",
+            Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::AfterClause(SqlClause::OrderBy),
+            ),
+        );
+        self.register_chord_action(
+            "cg",
+            Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::AfterClause(SqlClause::GroupBy),
+            ),
+        );
+        self.register_chord_action(
+            "ch",
+            Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::AfterClause(SqlClause::Having),
+            ),
+        );
+        self.register_chord_action(
+            "cl",
+            Action::SwitchModeWithCursor(
+                AppMode::Command,
+                CursorPosition::AfterClause(SqlClause::Limit),
+            ),
+        );
 
         // Future chord possibilities (not currently implemented):
         // self.register_chord("gg", "go_to_top");  // Currently single 'g'

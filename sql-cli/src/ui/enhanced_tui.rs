@@ -5447,7 +5447,8 @@ impl EnhancedTuiApp {
                 // In results mode, show navigation and data info
                 let total_rows = self.get_row_count();
                 if total_rows > 0 {
-                    let selected = self.state_container.get_table_selected_row().unwrap_or(0) + 1;
+                    // Get selected row directly from navigation state (0-indexed) and add 1 for display
+                    let selected = self.state_container.navigation().selected_row + 1;
                     spans.push(Span::raw(" | "));
 
                     // Show selection mode

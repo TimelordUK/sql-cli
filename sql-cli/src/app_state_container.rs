@@ -3174,6 +3174,12 @@ impl AppStateContainer {
         if nav.total_rows > 0 {
             Some(nav.selected_row)
         } else {
+            // Debug logging to understand why this returns None
+            tracing::debug!(
+                "get_table_selected_row returning None: total_rows={}, selected_row={}",
+                nav.total_rows,
+                nav.selected_row
+            );
             None
         }
     }
