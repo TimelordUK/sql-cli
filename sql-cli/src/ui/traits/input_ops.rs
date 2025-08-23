@@ -1,6 +1,8 @@
-use crate::buffer::{BufferAPI, BufferManager, EditMode};
+use crate::app_state_container::AppStateContainer;
+use crate::buffer::{AppMode, BufferAPI, BufferManager, EditMode};
 use crate::cursor_manager::CursorManager;
 use crate::ui::text_operations::{self, CursorMovementResult, TextOperationResult};
+use std::sync::Arc;
 
 /// Trait that provides input operation behavior for TUI components
 /// This uses pure text manipulation functions and applies results to TUI state
@@ -9,6 +11,8 @@ pub trait InputBehavior {
     fn buffer_manager(&mut self) -> &mut BufferManager;
     fn cursor_manager(&mut self) -> &mut CursorManager;
     fn set_input_text_with_cursor(&mut self, text: String, cursor: usize);
+    fn state_container(&self) -> &Arc<AppStateContainer>;
+    fn buffer_mut(&mut self) -> &mut dyn BufferAPI;
 
     // Helper method to get current input state
     fn get_current_input(&mut self) -> (String, usize) {
@@ -173,5 +177,62 @@ pub trait InputBehavior {
 
         let result = text_operations::clear_text();
         self.apply_text_result(result);
+    }
+
+    // ========== Jump-to-Row Input Management ==========
+
+    /// Get jump-to-row input text
+    fn get_jump_to_row_input(&self) -> String {
+        self.state_container().jump_to_row().input.clone()
+    }
+
+    /// Set jump-to-row input text
+    fn set_jump_to_row_input(&mut self, input: String) {
+        // Use unsafe to get mutable access through Arc
+        let container_ptr = Arc::as_ptr(self.state_container()) as *mut AppStateContainer;
+        unsafe {
+            (*container_ptr).jump_to_row_mut().input = input;
+        }
+    }
+
+    /// Clear jump-to-row input
+    fn clear_jump_to_row_input(&mut self) {
+        // Use unsafe to get mutable access through Arc
+        let container_ptr = Arc::as_ptr(self.state_container()) as *mut AppStateContainer;
+        unsafe {
+            (*container_ptr).jump_to_row_mut().input.clear();
+        }
+    }
+
+    /// Process jump-to-row input key event (handles all keys except Enter)
+    fn process_jump_to_row_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Esc => {
+                self.buffer_mut().set_mode(AppMode::Results);
+                self.clear_jump_to_row_input();
+
+                // Clear is_active flag
+                let container_ptr = Arc::as_ptr(self.state_container()) as *mut AppStateContainer;
+                unsafe {
+                    (*container_ptr).jump_to_row_mut().is_active = false;
+                }
+                true
+            }
+            KeyCode::Backspace => {
+                let mut input = self.get_jump_to_row_input();
+                input.pop();
+                self.set_jump_to_row_input(input);
+                true
+            }
+            KeyCode::Char(c) if c.is_ascii_digit() => {
+                let mut input = self.get_jump_to_row_input();
+                input.push(c);
+                self.set_jump_to_row_input(input);
+                true
+            }
+            _ => false,
+        }
     }
 }

@@ -2,6 +2,7 @@ use crate::app_state_container::AppStateContainer;
 use crate::buffer::BufferAPI;
 use crate::handlers::YankHandler;
 use crate::ui::actions::{Action, YankTarget};
+use std::sync::Arc;
 
 /// Trait that provides yank operation behavior for TUI components
 /// This extracts yank operations from EnhancedTui to reduce coupling
@@ -9,7 +10,7 @@ pub trait YankBehavior {
     // Required methods - these provide access to TUI internals
     fn buffer(&self) -> &dyn BufferAPI;
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI;
-    fn state_container(&self) -> &AppStateContainer;
+    fn state_container(&self) -> &Arc<AppStateContainer>;
     fn set_status_message(&mut self, message: String);
     fn set_error_status(&mut self, prefix: &str, error: anyhow::Error);
 

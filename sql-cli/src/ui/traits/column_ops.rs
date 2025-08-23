@@ -2,6 +2,7 @@ use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, BufferAPI};
 use crate::ui::viewport_manager::{ColumnOperationResult, NavigationResult, ViewportManager};
 use std::cell::RefCell;
+use std::sync::Arc;
 
 /// Trait that provides column operation behavior for TUI components
 /// This extracts column operation methods from EnhancedTui to reduce coupling
@@ -10,7 +11,7 @@ pub trait ColumnBehavior {
     fn viewport_manager(&self) -> &RefCell<Option<ViewportManager>>;
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI;
     fn buffer(&self) -> &dyn BufferAPI;
-    fn state_container(&self) -> &AppStateContainer;
+    fn state_container(&self) -> &Arc<AppStateContainer>;
 
     // Helper method to apply column navigation results
     fn apply_column_navigation_result(&mut self, result: NavigationResult, direction: &str) {

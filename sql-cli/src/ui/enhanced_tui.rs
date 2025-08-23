@@ -175,43 +175,7 @@ impl EnhancedTuiApp {
     // Column operation methods moved to ColumnBehavior trait
 
     // ========== JUMP TO ROW ==========
-
-    /// Get jump-to-row input text
-    fn get_jump_to_row_input(&self) -> String {
-        self.state_container.jump_to_row().input.clone()
-    }
-
-    /// Set jump-to-row input text
-    fn set_jump_to_row_input(&mut self, input: String) {
-        let old_value = self.get_jump_to_row_input();
-
-        // Use unsafe to get mutable access through Arc
-        let container_ptr = Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
-        unsafe {
-            (*container_ptr).jump_to_row_mut().input = input.clone();
-        }
-
-        // Log the state change
-        log_state_change!(
-            self,
-            "jump_to_row_input",
-            old_value,
-            input,
-            "set_jump_to_row_input"
-        );
-    }
-
-    /// Clear jump-to-row input
-    fn clear_jump_to_row_input(&mut self) {
-        // Use unsafe to get mutable access through Arc
-        let container_ptr = Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
-        unsafe {
-            (*container_ptr).jump_to_row_mut().input.clear();
-        }
-
-        // Log the state clear
-        log_state_clear!(self, "jump_to_row_input", "clear_jump_to_row_input");
-    }
+    // Jump-to-row input methods moved to InputBehavior trait
 
     // ========== BUFFER MANAGEMENT ==========
 
@@ -7401,53 +7365,15 @@ impl EnhancedTuiApp {
 
     fn handle_jump_to_row_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         match key.code {
-            KeyCode::Esc => {
-                self.buffer_mut().set_mode(AppMode::Results);
-                self.clear_jump_to_row_input();
-
-                // Clear is_active flag
-                {
-                    let container_ptr =
-                        Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
-                    unsafe {
-                        (*container_ptr).jump_to_row_mut().is_active = false;
-                    }
-                }
-
-                self.buffer_mut()
-                    .set_status_message("Jump cancelled".to_string());
-            }
             KeyCode::Enter => {
-                if let Ok(row_num) = self.get_jump_to_row_input().parse::<usize>() {
-                    // Use the NavigationBehavior trait's goto_line method
-                    self.goto_line(row_num);
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("Invalid row number".to_string());
-                }
-                self.buffer_mut().set_mode(AppMode::Results);
-                self.clear_jump_to_row_input();
-
-                // Clear is_active flag
-                {
-                    let container_ptr =
-                        Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
-                    unsafe {
-                        (*container_ptr).jump_to_row_mut().is_active = false;
-                    }
-                }
+                // Use NavigationBehavior trait's complete_jump_to_row method
+                let input = self.get_jump_to_row_input();
+                self.complete_jump_to_row(&input);
             }
-            KeyCode::Backspace => {
-                let mut input = self.get_jump_to_row_input();
-                input.pop();
-                self.set_jump_to_row_input(input);
+            _ => {
+                // Use InputBehavior trait's process_jump_to_row_key for other keys
+                self.process_jump_to_row_key(key);
             }
-            KeyCode::Char(c) if c.is_ascii_digit() => {
-                let mut input = self.get_jump_to_row_input();
-                input.push(c);
-                self.set_jump_to_row_input(input);
-            }
-            _ => {}
         }
         Ok(false)
     }
@@ -8512,7 +8438,7 @@ impl NavigationBehavior for EnhancedTuiApp {
         self.buffer()
     }
 
-    fn state_container(&self) -> &AppStateContainer {
+    fn state_container(&self) -> &Arc<AppStateContainer> {
         &self.state_container
     }
 
@@ -8535,7 +8461,7 @@ impl ColumnBehavior for EnhancedTuiApp {
         self.buffer()
     }
 
-    fn state_container(&self) -> &AppStateContainer {
+    fn state_container(&self) -> &Arc<AppStateContainer> {
         &self.state_container
     }
 }
@@ -8552,6 +8478,14 @@ impl InputBehavior for EnhancedTuiApp {
     fn set_input_text_with_cursor(&mut self, text: String, cursor: usize) {
         self.set_input_text_with_cursor(text, cursor)
     }
+
+    fn state_container(&self) -> &Arc<AppStateContainer> {
+        &self.state_container
+    }
+
+    fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
+        self.buffer_mut()
+    }
 }
 
 impl YankBehavior for EnhancedTuiApp {
@@ -8563,7 +8497,7 @@ impl YankBehavior for EnhancedTuiApp {
         self.buffer_mut()
     }
 
-    fn state_container(&self) -> &AppStateContainer {
+    fn state_container(&self) -> &Arc<AppStateContainer> {
         &self.state_container
     }
 

@@ -1,8 +1,8 @@
 use crate::app_state_container::AppStateContainer;
-use crate::buffer::BufferAPI;
+use crate::buffer::{AppMode, BufferAPI};
 use crate::ui::viewport_manager::{RowNavigationResult, ViewportManager};
 use std::cell::RefCell;
-use tracing::debug;
+use std::sync::Arc;
 
 /// Trait that provides navigation behavior for TUI components
 /// This extracts navigation methods from EnhancedTui to reduce coupling
@@ -11,7 +11,7 @@ pub trait NavigationBehavior {
     fn viewport_manager(&self) -> &RefCell<Option<ViewportManager>>;
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI;
     fn buffer(&self) -> &dyn BufferAPI;
-    fn state_container(&self) -> &AppStateContainer;
+    fn state_container(&self) -> &Arc<AppStateContainer>;
     fn get_row_count(&self) -> usize;
 
     // Helper method that stays in the trait
@@ -195,6 +195,25 @@ pub trait NavigationBehavior {
 
         if let Some(nav_result) = nav_result {
             self.apply_row_navigation_result(nav_result);
+        }
+    }
+
+    /// Complete jump-to-row operation (called on Enter key)
+    fn complete_jump_to_row(&mut self, input: &str) {
+        if let Ok(row_num) = input.parse::<usize>() {
+            self.goto_line(row_num);
+        } else {
+            self.buffer_mut()
+                .set_status_message("Invalid row number".to_string());
+        }
+
+        self.buffer_mut().set_mode(AppMode::Results);
+
+        // Clear jump-to-row state
+        let container_ptr = Arc::as_ptr(self.state_container()) as *mut AppStateContainer;
+        unsafe {
+            (*container_ptr).jump_to_row_mut().input.clear();
+            (*container_ptr).jump_to_row_mut().is_active = false;
         }
     }
 }
