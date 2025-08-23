@@ -3921,33 +3921,7 @@ impl EnhancedTuiApp {
         self.apply_column_navigation_result(nav_result, "right");
     }
 
-    fn goto_first_column(&mut self) {
-        // Get navigation result from ViewportManager
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            viewport_borrow
-                .as_mut()
-                .expect("ViewportManager must exist for navigation")
-                .navigate_to_first_column()
-        };
-
-        // Note: goto_first/last_column don't need cursor_manager updates
-        self.apply_column_navigation_result(nav_result, "first");
-    }
-
-    fn goto_last_column(&mut self) {
-        // Get navigation result from ViewportManager
-        let nav_result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            viewport_borrow
-                .as_mut()
-                .expect("ViewportManager must exist for navigation")
-                .navigate_to_last_column()
-        };
-
-        // Note: goto_first/last_column don't need cursor_manager updates
-        self.apply_column_navigation_result(nav_result, "last");
-    }
+    // goto_first_column and goto_last_column now in ColumnBehavior trait
 
     fn goto_viewport_top(&mut self) {
         // Use ViewportManager for navigation

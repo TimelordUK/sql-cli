@@ -1,6 +1,6 @@
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, BufferAPI};
-use crate::ui::viewport_manager::{ColumnOperationResult, ViewportManager};
+use crate::ui::viewport_manager::{ColumnOperationResult, NavigationResult, ViewportManager};
 use std::cell::RefCell;
 
 /// Trait that provides column operation behavior for TUI components
@@ -11,6 +11,32 @@ pub trait ColumnBehavior {
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI;
     fn buffer(&self) -> &dyn BufferAPI;
     fn state_container(&self) -> &AppStateContainer;
+
+    // Helper method to apply column navigation results
+    fn apply_column_navigation_result(&mut self, result: NavigationResult, direction: &str) {
+        // Get the visual position from ViewportManager after navigation
+        let visual_position = {
+            let viewport_borrow = self.viewport_manager().borrow();
+            viewport_borrow
+                .as_ref()
+                .map(|vm| vm.get_crosshair_col())
+                .unwrap_or(0)
+        };
+
+        // Update Buffer's current column
+        self.buffer_mut().set_current_column(visual_position);
+
+        // Update navigation state
+        self.state_container().navigation_mut().selected_column = visual_position;
+
+        // Set status message based on direction
+        let message = match direction {
+            "first" => "Moved to first column".to_string(),
+            "last" => "Moved to last column".to_string(),
+            _ => format!("Moved to column {}", visual_position),
+        };
+        self.buffer_mut().set_status_message(message);
+    }
 
     // Helper method that stays in the trait
     fn apply_column_operation_result(&mut self, result: ColumnOperationResult) {
@@ -110,5 +136,35 @@ pub trait ColumnBehavior {
             .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
 
         self.apply_column_operation_result(result);
+    }
+
+    /// Navigate to the first column
+    fn goto_first_column(&mut self) {
+        // Get navigation result from ViewportManager
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager().borrow_mut();
+            viewport_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for navigation")
+                .navigate_to_first_column()
+        };
+
+        // Note: goto_first/last_column don't need cursor_manager updates
+        self.apply_column_navigation_result(nav_result, "first");
+    }
+
+    /// Navigate to the last column
+    fn goto_last_column(&mut self) {
+        // Get navigation result from ViewportManager
+        let nav_result = {
+            let mut viewport_borrow = self.viewport_manager().borrow_mut();
+            viewport_borrow
+                .as_mut()
+                .expect("ViewportManager must exist for navigation")
+                .navigate_to_last_column()
+        };
+
+        // Note: goto_first/last_column don't need cursor_manager updates
+        self.apply_column_navigation_result(nav_result, "last");
     }
 }
