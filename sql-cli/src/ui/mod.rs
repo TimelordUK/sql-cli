@@ -2,6 +2,7 @@
 //!
 //! This module contains the main TUI application and related UI components.
 
+pub mod action_handlers;
 pub mod actions;
 pub mod behaviors;
 pub mod cell_renderer;
@@ -20,6 +21,7 @@ pub mod key_mapper;
 pub mod key_sequence_renderer;
 pub mod query_engine_integration;
 pub mod scroll_utils;
+pub mod search_operations;
 pub mod simple_operations;
 pub mod table_render_context;
 pub mod table_renderer;
