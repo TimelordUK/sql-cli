@@ -32,9 +32,7 @@ use crate::ui::table_widget_manager::TableWidgetManager;
 use crate::ui::traits::{
     BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
 };
-use crate::ui::viewport_manager::{
-    ColumnPackingMode, ViewportEfficiency, ViewportManager,
-};
+use crate::ui::viewport_manager::{ColumnPackingMode, ViewportEfficiency, ViewportManager};
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
