@@ -362,7 +362,7 @@ impl EnhancedTuiApp {
                     info!(target: "shadow_state",
                         "Cursor lock toggled: {} (in {:?} mode)",
                         if is_locked { "ON" } else { "OFF" },
-                        self.buffer().get_mode()
+                        self.shadow_state.borrow().get_mode()
                     );
                 }
                 Ok(ActionResult::Handled)
@@ -391,7 +391,7 @@ impl EnhancedTuiApp {
                     info!(target: "shadow_state",
                         "Viewport lock toggled: {} (in {:?} mode)",
                         if is_locked { "ON" } else { "OFF" },
-                        self.buffer().get_mode()
+                        self.shadow_state.borrow().get_mode()
                     );
                 }
                 Ok(ActionResult::Handled)
@@ -938,7 +938,7 @@ impl EnhancedTuiApp {
     // Helper to set input text through buffer and sync input field
     fn set_input_text(&mut self, text: String) {
         let old_text = self.buffer().get_input_text();
-        let mode = self.buffer().get_mode();
+        let mode = self.shadow_state.borrow().get_mode();
 
         // Log every input text change with context
         info!(target: "input", "SET_INPUT_TEXT: '{}' -> '{}' (mode: {:?})", 
@@ -1042,7 +1042,8 @@ impl EnhancedTuiApp {
     // Helper to handle key events in the input
     fn handle_input_key(&mut self, key: KeyEvent) -> bool {
         // For special modes that handle input directly
-        match self.buffer().get_mode() {
+        let mode = self.shadow_state.borrow().get_mode();
+        match mode {
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 self.input.handle_event(&Event::Key(key));
                 false
@@ -1460,7 +1461,7 @@ impl EnhancedTuiApp {
                 SearchModesAction::ExecuteDebounced(mode, pattern) => {
                     info!(target: "search", "=== DEBOUNCED SEARCH EXECUTING ===");
                     info!(target: "search", "Mode: {:?}, Pattern: '{}', AppMode: {:?}", 
-                          mode, pattern, self.buffer().get_mode());
+                          mode, pattern, self.shadow_state.borrow().get_mode());
 
                     // Log current position before search
                     {
@@ -1522,7 +1523,7 @@ impl EnhancedTuiApp {
                 self.try_handle_action(
                     action,
                     &ActionContext {
-                        mode: self.buffer().get_mode(),
+                        mode: self.shadow_state.borrow().get_mode(),
                         selection_mode: self.state_container.get_selection_mode(),
                         has_results: self.buffer().get_dataview().is_some(),
                         has_filter: false,
@@ -1565,7 +1566,8 @@ impl EnhancedTuiApp {
 
     /// Dispatch key to appropriate mode handler, returns true if exit is requested
     fn try_handle_mode_dispatch(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        match self.buffer().get_mode() {
+        let mode = self.shadow_state.borrow().get_mode();
+        match mode {
             AppMode::Command => self.handle_command_input(key),
             AppMode::Results => {
                 // Results mode uses chord processing
@@ -2597,10 +2599,10 @@ impl EnhancedTuiApp {
 
     fn execute_search_action(&mut self, mode: SearchMode, pattern: String) {
         debug!(target: "search", "execute_search_action called: mode={:?}, pattern='{}', current_app_mode={:?}, thread={:?}", 
-               mode, pattern, self.buffer().get_mode(), std::thread::current().id());
+               mode, pattern, self.shadow_state.borrow().get_mode(), std::thread::current().id());
         match mode {
             SearchMode::Search => {
-                debug!(target: "search", "Executing search with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
+                debug!(target: "search", "Executing search with pattern: '{}', app_mode={:?}", pattern, self.shadow_state.borrow().get_mode());
                 debug!(target: "search", "Search: current results count={}", 
                        self.buffer().get_dataview().map(|v| v.source().row_count()).unwrap_or(0));
 
@@ -2611,7 +2613,7 @@ impl EnhancedTuiApp {
                 self.perform_search();
                 let matches_count = self.state_container.search().matches.len();
                 debug!(target: "search", "After perform_search, app_mode={:?}, matches_found={}", 
-                       self.buffer().get_mode(),
+                       self.shadow_state.borrow().get_mode(),
                        matches_count);
 
                 // CRITICAL: Sync search results to VimSearchManager so 'n' and 'N' work
@@ -2764,7 +2766,7 @@ impl EnhancedTuiApp {
             }
             SearchMode::Filter => {
                 debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}, thread={:?}", 
-                       pattern, self.buffer().get_mode(), std::thread::current().id());
+                       pattern, self.shadow_state.borrow().get_mode(), std::thread::current().id());
                 debug!(target: "search", "Filter: case_insensitive={}, current results count={}", 
                        self.buffer().is_case_insensitive(),
                        self.buffer().get_dataview().map(|v| v.source().row_count()).unwrap_or(0));
@@ -2774,21 +2776,21 @@ impl EnhancedTuiApp {
                     .set_pattern(pattern.clone());
                 self.apply_filter(&pattern); // <-- Actually apply the filter!
                 debug!(target: "search", "After apply_filter, app_mode={:?}, filtered_count={}", 
-                       self.buffer().get_mode(),
+                       self.shadow_state.borrow().get_mode(),
                 self.buffer().get_dataview().map(|v| v.row_count()).unwrap_or(0));
             }
             SearchMode::FuzzyFilter => {
-                debug!(target: "search", "Executing fuzzy filter with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
+                debug!(target: "search", "Executing fuzzy filter with pattern: '{}', app_mode={:?}", pattern, self.shadow_state.borrow().get_mode());
                 debug!(target: "search", "FuzzyFilter: current results count={}", 
                        self.buffer().get_dataview().map(|v| v.source().row_count()).unwrap_or(0));
                 self.buffer_mut().set_fuzzy_filter_pattern(pattern);
                 self.apply_fuzzy_filter();
                 let indices_count = self.buffer().get_fuzzy_filter_indices().len();
                 debug!(target: "search", "After apply_fuzzy_filter, app_mode={:?}, matched_indices={}", 
-                       self.buffer().get_mode(), indices_count);
+                       self.shadow_state.borrow().get_mode(), indices_count);
             }
             SearchMode::ColumnSearch => {
-                debug!(target: "search", "Executing column search with pattern: '{}', app_mode={:?}", pattern, self.buffer().get_mode());
+                debug!(target: "search", "Executing column search with pattern: '{}', app_mode={:?}", pattern, self.shadow_state.borrow().get_mode());
 
                 // Use AppStateContainer for column search
                 self.state_container.start_column_search(pattern.clone());
@@ -2797,7 +2799,7 @@ impl EnhancedTuiApp {
                 self.search_columns();
 
                 // IMPORTANT: Ensure we stay in ColumnSearch mode after search
-                if self.buffer().get_mode() != AppMode::ColumnSearch {
+                if self.shadow_state.borrow().get_mode() != AppMode::ColumnSearch {
                     debug!(target: "search", "WARNING: Mode changed after search_columns, restoring to ColumnSearch");
                     self.buffer_mut().set_mode(AppMode::ColumnSearch);
                     self.shadow_state.borrow_mut().observe_search_start(
@@ -2805,14 +2807,14 @@ impl EnhancedTuiApp {
                         "column_search_restored",
                     );
                 }
-                debug!(target: "search", "After search_columns, app_mode={:?}", self.buffer().get_mode());
+                debug!(target: "search", "After search_columns, app_mode={:?}", self.shadow_state.borrow().get_mode());
             }
         }
     }
 
     fn enter_search_mode(&mut self, mode: SearchMode) {
         debug!(target: "search", "enter_search_mode called for {:?}, current_mode={:?}, input_text='{}'", 
-               mode, self.buffer().get_mode(), self.buffer().get_input_text());
+               mode, self.shadow_state.borrow().get_mode(), self.buffer().get_input_text());
 
         // Get the SQL text based on the current mode
         let current_sql = if self.shadow_state.borrow().is_in_results_mode() {
@@ -2845,7 +2847,7 @@ impl EnhancedTuiApp {
             .enter_mode(mode.clone(), current_sql, cursor_pos);
 
         // Set the app mode
-        debug!(target: "mode", "Setting app mode from {:?} to {:?}", self.buffer().get_mode(), mode.to_app_mode());
+        debug!(target: "mode", "Setting app mode from {:?} to {:?}", self.shadow_state.borrow().get_mode(), mode.to_app_mode());
         self.buffer_mut().set_mode(mode.to_app_mode());
 
         // Observe the search mode start in shadow state
@@ -3062,7 +3064,7 @@ impl EnhancedTuiApp {
             }
             SearchModesAction::Cancel => {
                 // Clear the filter and restore original SQL
-                match self.buffer().get_mode() {
+                match self.shadow_state.borrow().get_mode() {
                     AppMode::FuzzyFilter => {
                         // Clear fuzzy filter - must apply empty filter to DataView
                         debug!(target: "search", "FuzzyFilter Cancel: Clearing fuzzy filter");
@@ -3120,7 +3122,7 @@ impl EnhancedTuiApp {
             }
             SearchModesAction::NextMatch => {
                 debug!(target: "search", "NextMatch action, current_mode={:?}, widget_mode={:?}", 
-                       self.buffer().get_mode(), self.search_modes_widget.current_mode());
+                       self.shadow_state.borrow().get_mode(), self.search_modes_widget.current_mode());
 
                 // Check both shadow state and widget mode for consistency
                 if self.shadow_state.borrow().is_in_column_search()
@@ -3143,15 +3145,15 @@ impl EnhancedTuiApp {
             }
             SearchModesAction::PreviousMatch => {
                 debug!(target: "search", "PreviousMatch action, current_mode={:?}, widget_mode={:?}", 
-                       self.buffer().get_mode(), self.search_modes_widget.current_mode());
+                       self.shadow_state.borrow().get_mode(), self.search_modes_widget.current_mode());
 
                 // Check both buffer mode and widget mode for consistency
-                if self.buffer().get_mode() == AppMode::ColumnSearch
+                if self.shadow_state.borrow().get_mode() == AppMode::ColumnSearch
                     || self.search_modes_widget.current_mode() == Some(SearchMode::ColumnSearch)
                 {
                     debug!(target: "search", "Calling previous_column_match");
                     // Ensure mode is correctly set
-                    if self.buffer().get_mode() != AppMode::ColumnSearch {
+                    if self.shadow_state.borrow().get_mode() != AppMode::ColumnSearch {
                         debug!(target: "search", "WARNING: Mode mismatch - fixing");
                         self.buffer_mut().set_mode(AppMode::ColumnSearch);
                         self.shadow_state.borrow_mut().observe_search_start(
@@ -4732,7 +4734,7 @@ impl EnhancedTuiApp {
         // Paste from system clipboard into the current input field
         match self.state_container.read_from_clipboard() {
             Ok(text) => {
-                match self.buffer().get_mode() {
+                match self.shadow_state.borrow().get_mode() {
                     AppMode::Command => {
                         // Always use single-line mode paste
                         // Get current cursor position
@@ -4766,7 +4768,7 @@ impl EnhancedTuiApp {
                         self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
 
                         // Update the appropriate filter/search state
-                        match self.buffer().get_mode() {
+                        match self.shadow_state.borrow().get_mode() {
                             AppMode::Filter => {
                                 let pattern = self.get_input_text();
                                 self.state_container.filter_mut().pattern = pattern.clone();
@@ -4907,7 +4909,7 @@ impl EnhancedTuiApp {
             ""
         };
 
-        let input_title = match self.buffer().get_mode() {
+        let input_title = match self.shadow_state.borrow().get_mode() {
             AppMode::Command => format!("SQL Query{}{}", char_count_display, scroll_indicator),
             AppMode::Results => format!(
                 "SQL Query (Results Mode - Press ↑ to edit){}{}",
@@ -4936,7 +4938,7 @@ impl EnhancedTuiApp {
 
         // Check if we should use the search modes widget for rendering
         let use_search_widget = matches!(
-            self.buffer().get_mode(),
+            self.shadow_state.borrow().get_mode(),
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch
         ) && self.search_modes_widget.is_active();
 
@@ -4954,7 +4956,7 @@ impl EnhancedTuiApp {
                    } else {
                        input_text_string.clone()
                    },
-                   self.buffer().get_mode(),
+                   self.shadow_state.borrow().get_mode(),
                    self.get_input_cursor());
 
             // Get history search query if in history mode
@@ -4964,12 +4966,12 @@ impl EnhancedTuiApp {
                 String::new()
             };
 
-            let input_text = match self.buffer().get_mode() {
+            let input_text = match self.shadow_state.borrow().get_mode() {
                 AppMode::History => &history_query_string,
                 _ => &input_text_string,
             };
 
-            let input_paragraph = match self.buffer().get_mode() {
+            let input_paragraph = match self.shadow_state.borrow().get_mode() {
                 AppMode::Command => {
                     match self.buffer().get_edit_mode() {
                         EditMode::SingleLine => {
@@ -4994,7 +4996,7 @@ impl EnhancedTuiApp {
                     // Plain text for other modes
                     Paragraph::new(input_text.as_str())
                         .block(input_block)
-                        .style(match self.buffer().get_mode() {
+                        .style(match self.shadow_state.borrow().get_mode() {
                             AppMode::Results => Style::default().fg(Color::DarkGray),
                             AppMode::Search => Style::default().fg(Color::Yellow),
                             AppMode::Filter => Style::default().fg(Color::Cyan),
@@ -5019,7 +5021,7 @@ impl EnhancedTuiApp {
 
         // Set cursor position for input modes (skip if search widget is handling it)
         if !use_search_widget {
-            match self.buffer().get_mode() {
+            match self.shadow_state.borrow().get_mode() {
                 AppMode::Command => {
                     // Always use single-line cursor handling
                     // Calculate cursor position with horizontal scrolling
@@ -5075,7 +5077,7 @@ impl EnhancedTuiApp {
         }
 
         // Results area - render based on mode to reduce complexity
-        match self.buffer().get_mode() {
+        match self.shadow_state.borrow().get_mode() {
             AppMode::Help => self.render_help(f, results_area),
             AppMode::History => self.render_history(f, results_area),
             AppMode::Debug => self.render_debug(f, results_area),
@@ -5105,7 +5107,7 @@ impl EnhancedTuiApp {
     /// Add mode styling and indicator to status spans
     fn add_mode_styling(&self, spans: &mut Vec<Span>) -> (Style, Color) {
         // Determine the mode color
-        let (status_style, mode_color) = match self.buffer().get_mode() {
+        let (status_style, mode_color) = match self.shadow_state.borrow().get_mode() {
             AppMode::Command => (Style::default().fg(Color::Green), Color::Green),
             AppMode::Results => (Style::default().fg(Color::Blue), Color::Blue),
             AppMode::Search => (Style::default().fg(Color::Yellow), Color::Yellow),
@@ -5120,7 +5122,7 @@ impl EnhancedTuiApp {
             AppMode::ColumnStats => (Style::default().fg(Color::Cyan), Color::Cyan),
         };
 
-        let mode_indicator = match self.buffer().get_mode() {
+        let mode_indicator = match self.shadow_state.borrow().get_mode() {
             AppMode::Command => "CMD",
             AppMode::Results => "NAV",
             AppMode::Search => "SEARCH",
@@ -5209,7 +5211,7 @@ impl EnhancedTuiApp {
 
     /// Add mode-specific information to status spans
     fn add_mode_specific_info(&self, spans: &mut Vec<Span>, mode_color: Color, area: Rect) {
-        match self.buffer().get_mode() {
+        match self.shadow_state.borrow().get_mode() {
             AppMode::Command => {
                 // In command mode, show editing-related info
                 if !self.get_input_text().trim().is_empty() {
@@ -5446,7 +5448,7 @@ impl EnhancedTuiApp {
         }
 
         // Help shortcuts (right side) - TO BE EXTRACTED
-        let help_text = match self.buffer().get_mode() {
+        let help_text = match self.shadow_state.borrow().get_mode() {
             AppMode::Command => "Enter:Run | Tab:Complete | ↓:Results | F1:Help",
             AppMode::Results => match self.get_selection_mode() {
                 SelectionMode::Cell => "v:Row mode | y:Yank cell | ↑:Edit | F1:Help",
@@ -5604,7 +5606,7 @@ impl EnhancedTuiApp {
             .sort_state(sort_state)
             .display_options(
                 self.buffer().is_show_row_numbers(),
-                self.buffer().get_mode(),
+                self.shadow_state.borrow().get_mode(),
             )
             .filter(fuzzy_filter_pattern, self.buffer().is_case_insensitive())
             .dimensions(available_width, available_height)
@@ -5889,7 +5891,7 @@ impl EnhancedTuiApp {
         let result = crate::ui::input_handlers::handle_column_stats_input(&mut ctx, key)?;
 
         // Check if mode changed to Results (happens when stats view is closed)
-        if self.buffer().get_mode() == AppMode::Results {
+        if self.shadow_state.borrow().get_mode() == AppMode::Results {
             self.shadow_state
                 .borrow_mut()
                 .observe_mode_change(AppMode::Results, "column_stats_closed");
@@ -6563,7 +6565,8 @@ impl EnhancedTuiApp {
                 debug_info.push_str(&self.search_modes_widget.debug_info());
 
                 // Add column search state if active
-                let show_column_search = self.buffer().get_mode() == AppMode::ColumnSearch
+                let show_column_search = self.shadow_state.borrow().get_mode()
+                    == AppMode::ColumnSearch
                     || !self.state_container.column_search().pattern.is_empty();
                 if show_column_search {
                     {
@@ -7019,7 +7022,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn get_mode(&self) -> AppMode {
-        self.buffer().get_mode()
+        self.shadow_state.borrow().get_mode()
     }
 
     fn set_status_message(&mut self, message: String) {
@@ -7185,7 +7188,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
 
     fn exit_current_mode(&mut self) {
         // Handle escape based on current mode
-        let mode = self.buffer().get_mode();
+        let mode = self.shadow_state.borrow().get_mode();
         match mode {
             AppMode::Results => {
                 // If vim search is active, just exit search mode but stay in Results
@@ -7305,6 +7308,10 @@ impl ColumnBehavior for EnhancedTuiApp {
 
     fn state_container(&self) -> &Arc<AppStateContainer> {
         &self.state_container
+    }
+
+    fn is_in_results_mode(&self) -> bool {
+        self.shadow_state.borrow().is_in_results_mode()
     }
 }
 

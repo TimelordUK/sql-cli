@@ -13,6 +13,12 @@ pub trait ColumnBehavior {
     fn buffer(&self) -> &dyn BufferAPI;
     fn state_container(&self) -> &Arc<AppStateContainer>;
 
+    // Mode checking - will be implemented by TUI to use shadow state
+    fn is_in_results_mode(&self) -> bool {
+        // Default implementation for compatibility
+        self.buffer().get_mode() == AppMode::Results
+    }
+
     // Helper method to apply column navigation results
     fn apply_column_navigation_result(&mut self, result: NavigationResult, direction: &str) {
         // Get the visual position from ViewportManager after navigation
@@ -91,7 +97,7 @@ pub trait ColumnBehavior {
 
     /// Hide the currently selected column
     fn hide_current_column(&mut self) {
-        if self.buffer().get_mode() != AppMode::Results {
+        if !self.is_in_results_mode() {
             return;
         }
 
@@ -119,7 +125,7 @@ pub trait ColumnBehavior {
 
     /// Move the current column left in the view
     fn move_current_column_left(&mut self) {
-        if self.buffer().get_mode() != AppMode::Results {
+        if !self.is_in_results_mode() {
             return;
         }
 
@@ -135,7 +141,7 @@ pub trait ColumnBehavior {
 
     /// Move the current column right in the view
     fn move_current_column_right(&mut self) {
-        if self.buffer().get_mode() != AppMode::Results {
+        if !self.is_in_results_mode() {
             return;
         }
 
