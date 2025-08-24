@@ -1,0 +1,53 @@
+#!/usr/bin/expect -f
+
+# Test search navigation with interactive search
+
+set timeout 5
+set csv_file "test_search_nav.csv"
+
+# Create test data
+exec cat > $csv_file << CSV
+id,book,product
+1,Fixed Income,Corporate
+2,Commodities,Energy
+3,Equities,Tech
+4,Forex,EUR/USD
+5,Derivatives,Options
+6,Fixed Income,emerging
+7,Commodities,Gold
+8,Fixed Income,emerging
+9,Equities,emerging
+CSV
+
+# Run the TUI with logging
+spawn env RUST_LOG=sql_cli::ui::table_widget_manager=info,search=info ./sql-cli/target/release/sql-cli test_search_nav.csv -e "select * from data"
+
+# Wait for initial load
+expect {
+    "INFO" { }
+    timeout { puts "Timeout waiting for initial load"; exit 1 }
+}
+
+# Give it time to render
+sleep 0.5
+
+# Enter search mode
+send "/"
+sleep 0.2
+
+# Type search pattern
+send "emerging"
+sleep 0.5
+
+# Submit search (Enter)
+send "\r"
+sleep 0.5
+
+# Take a screenshot equivalent - send q to quit
+send "q"
+sleep 0.2
+
+expect eof
+
+# Clean up
+exec rm -f $csv_file

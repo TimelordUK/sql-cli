@@ -8,6 +8,7 @@ use crate::app_state_container::{AppStateContainer, SelectionMode};
 use crate::buffer::{AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode};
 use crate::buffer_handler::BufferHandler;
 use crate::config::config::Config;
+use crate::core::search_manager::{SearchConfig, SearchManager};
 use crate::cursor_manager::CursorManager;
 use crate::data::adapters::BufferAdapter;
 use crate::data::csv_datasource::CsvApiClient;
@@ -27,10 +28,13 @@ use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
+use crate::ui::table_widget_manager::TableWidgetManager;
 use crate::ui::traits::{
     BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
 };
-use crate::ui::viewport_manager::{ColumnPackingMode, ViewportEfficiency, ViewportManager};
+use crate::ui::viewport_manager::{
+    ColumnPackingMode, NavigationResult, ViewportEfficiency, ViewportManager,
+};
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -54,7 +58,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 use std::io;
@@ -90,9 +94,10 @@ pub struct EnhancedTuiApp {
     help_widget: HelpWidget,
     search_modes_widget: SearchModesWidget,
     vim_search_manager: RefCell<crate::ui::vim_search_manager::VimSearchManager>, // Manages vim-like forward search
-    key_chord_handler: KeyChordHandler, // Manages key sequences and history
-    key_dispatcher: KeyDispatcher,      // Maps keys to actions
-    key_mapper: KeyMapper,              // New action-based key mapping system
+    search_manager: RefCell<SearchManager>, // New: Centralized search logic
+    key_chord_handler: KeyChordHandler,     // Manages key sequences and history
+    key_dispatcher: KeyDispatcher,          // Maps keys to actions
+    key_mapper: KeyMapper,                  // New action-based key mapping system
 
     // Buffer management (new - for supporting multiple files)
     pub(crate) buffer_manager: BufferManager,
@@ -114,6 +119,9 @@ pub struct EnhancedTuiApp {
     // Viewport management (RefCell for interior mutability during render)
     pub(crate) viewport_manager: RefCell<Option<ViewportManager>>,
     viewport_efficiency: RefCell<Option<ViewportEfficiency>>,
+
+    // Table widget manager for centralized table state/rendering
+    table_widget_manager: RefCell<TableWidgetManager>,
 
     // Debug system
     pub(crate) debug_registry: DebugRegistry,
@@ -412,31 +420,8 @@ impl EnhancedTuiApp {
                 self.buffer_mut().set_status_message(message);
                 Ok(ActionResult::Handled)
             }
-            MoveColumnLeft => {
-                self.move_current_column_left();
-                Ok(ActionResult::Handled)
-            }
-            MoveColumnRight => {
-                self.move_current_column_right();
-                Ok(ActionResult::Handled)
-            }
-            StartSearch => {
-                // Use the new VimSearchManager for forward search
-                self.start_vim_search();
-                Ok(ActionResult::Handled)
-            }
-            StartColumnSearch => {
-                self.enter_search_mode(SearchMode::ColumnSearch);
-                Ok(ActionResult::Handled)
-            }
-            StartFilter => {
-                self.enter_search_mode(SearchMode::Filter);
-                Ok(ActionResult::Handled)
-            }
-            StartFuzzyFilter => {
-                self.enter_search_mode(SearchMode::FuzzyFilter);
-                Ok(ActionResult::Handled)
-            }
+            // MoveColumnLeft, MoveColumnRight - handled by ColumnArrangementActionHandler
+            // StartSearch, StartColumnSearch, StartFilter, StartFuzzyFilter - handled by ModeActionHandler
             ExitCurrentMode => {
                 // Handle escape based on current mode
                 match context.mode {
@@ -1125,6 +1110,11 @@ impl EnhancedTuiApp {
             help_widget,
             search_modes_widget: SearchModesWidget::new(),
             vim_search_manager: RefCell::new(crate::ui::vim_search_manager::VimSearchManager::new()),
+            search_manager: RefCell::new({
+                let mut search_config = SearchConfig::default();
+                search_config.case_sensitive = !config.behavior.case_insensitive_default;
+                SearchManager::with_config(search_config)
+            }),
             key_chord_handler: KeyChordHandler::new(),
             key_dispatcher: KeyDispatcher::new(),
             key_mapper: KeyMapper::new(),
@@ -1152,6 +1142,7 @@ impl EnhancedTuiApp {
             },
             viewport_manager: RefCell::new(None), // Will be initialized when DataView is set
             viewport_efficiency: RefCell::new(None),
+            table_widget_manager: RefCell::new(TableWidgetManager::new()),
             debug_registry: DebugRegistry::new(),
             memory_tracker: MemoryTracker::new(100),
         }
@@ -1399,16 +1390,56 @@ impl EnhancedTuiApp {
         terminal.draw(|f| self.ui(f))?;
 
         loop {
-            // Check for debounced actions from search modes widget
+            // Check for debounced actions from search modes widget (handles all search modes including vim search)
             if self.search_modes_widget.is_active() {
                 if let Some(action) = self.search_modes_widget.check_debounce() {
+                    let mut needs_redraw = false;
                     match action {
                         SearchModesAction::ExecuteDebounced(mode, pattern) => {
-                            debug!(target: "search", "Processing ExecuteDebounced action, current_mode={:?}", self.buffer().get_mode());
+                            info!(target: "search", "=== DEBOUNCED SEARCH EXECUTING ===");
+                            info!(target: "search", "Mode: {:?}, Pattern: '{}', AppMode: {:?}", 
+                                  mode, pattern, self.buffer().get_mode());
+
+                            // Log current position before search
+                            {
+                                let nav = self.state_container.navigation();
+                                info!(target: "search", "BEFORE: nav.selected_row={}, nav.selected_column={}", 
+                                      nav.selected_row, nav.selected_column);
+                                info!(target: "search", "BEFORE: buffer.selected_row={:?}, buffer.current_column={}", 
+                                      self.buffer().get_selected_row(), self.buffer().get_current_column());
+                            }
+
                             self.execute_search_action(mode, pattern);
-                            debug!(target: "search", "After execute_search_action, current_mode={:?}", self.buffer().get_mode());
+
+                            // Log position after search
+                            {
+                                let nav = self.state_container.navigation();
+                                info!(target: "search", "AFTER: nav.selected_row={}, nav.selected_column={}", 
+                                      nav.selected_row, nav.selected_column);
+                                info!(target: "search", "AFTER: buffer.selected_row={:?}, buffer.current_column={}", 
+                                      self.buffer().get_selected_row(), self.buffer().get_current_column());
+
+                                // Check ViewportManager state
+                                let viewport_manager = self.viewport_manager.borrow();
+                                if let Some(ref vm) = *viewport_manager {
+                                    info!(target: "search", "AFTER: ViewportManager crosshair=({}, {})",
+                                          vm.get_crosshair_row(), vm.get_crosshair_col());
+                                }
+                            }
+
+                            info!(target: "search", "=== FORCING REDRAW ===");
+                            // CRITICAL: Force immediate redraw after search navigation
+                            needs_redraw = true;
                         }
                         _ => {}
+                    }
+
+                    // Redraw immediately if search moved the cursor OR if TableWidgetManager needs render
+                    if needs_redraw || self.table_widget_manager.borrow().needs_render() {
+                        info!(target: "search", "Triggering redraw: needs_redraw={}, table_needs_render={}", 
+                              needs_redraw, self.table_widget_manager.borrow().needs_render());
+                        terminal.draw(|f| self.ui(f))?;
+                        self.table_widget_manager.borrow_mut().rendered();
                     }
                 }
             }
@@ -1520,17 +1551,27 @@ impl EnhancedTuiApp {
                             break;
                         }
 
-                        // Only redraw after handling a key event
+                        // Only redraw after handling a key event OR if TableWidgetManager needs render
+                        if self.table_widget_manager.borrow().needs_render() {
+                            info!("TableWidgetManager needs render after key event");
+                        }
                         terminal.draw(|f| self.ui(f))?;
+                        self.table_widget_manager.borrow_mut().rendered();
                     }
                     _ => {
                         // Ignore other events (mouse, resize, etc.) to reduce CPU
                     }
                 }
             } else {
-                // No event available, but still redraw if we have pending debounced actions
-                if self.search_modes_widget.is_active() {
+                // No event available, but still redraw if we have pending debounced actions or table needs render
+                if self.search_modes_widget.is_active()
+                    || self.table_widget_manager.borrow().needs_render()
+                {
+                    if self.table_widget_manager.borrow().needs_render() {
+                        info!("TableWidgetManager needs periodic render");
+                    }
                     terminal.draw(|f| self.ui(f))?;
+                    self.table_widget_manager.borrow_mut().rendered();
                 }
             }
         }
@@ -1649,38 +1690,9 @@ impl EnhancedTuiApp {
 
         // ORIGINAL LOGIC: Keep all existing logic as fallback
 
-        // Handle Ctrl+R for history search
-        if let KeyCode::Char('r') = normalized_key.code {
-            if normalized_key.modifiers.contains(KeyModifiers::CONTROL) {
-                // Start history search mode
-                let current_input = self.get_input_text();
-                eprintln!(
-                    "[DEBUG] Starting history search with input: '{}'",
-                    current_input
-                );
-
-                // Start history search
-                self.state_container.start_history_search(current_input);
-
-                // Initialize with schema context
-                self.update_history_matches_in_container();
-
-                // Get status
-                let is_active = self.state_container.is_history_search_active();
-                let match_count = self.state_container.history_search().matches.len();
-
-                eprintln!(
-                    "[DEBUG] History search active: {}, matches: {}",
-                    is_active, match_count
-                );
-
-                self.buffer_mut().set_mode(AppMode::History);
-                self.buffer_mut().set_status_message(format!(
-                    "History search started (Ctrl+R) - {} matches",
-                    match_count
-                ));
-                return Ok(false);
-            }
+        // Try history navigation first
+        if let Some(result) = self.try_handle_history_navigation(&normalized_key)? {
+            return Ok(result);
         }
 
         // Store old cursor position
@@ -1692,59 +1704,19 @@ impl EnhancedTuiApp {
         // DON'T process chord handler in Command mode - yanking makes no sense when editing queries!
         // The 'y' key should just type 'y' in the query editor.
 
-        // Try dispatcher first for buffer operations and other actions
+        // Try buffer operations
+        if let Some(result) = self.try_handle_buffer_operations(&key)? {
+            return Ok(result);
+        }
+
+        // Try function keys
+        if let Some(result) = self.try_handle_function_keys(&key)? {
+            return Ok(result);
+        }
+
+        // Try dispatcher for other text editing operations
         if let Some(action) = self.key_dispatcher.get_command_action(&key) {
             match action {
-                "quit" => return Ok(true),
-                "next_buffer" => {
-                    let message = self.buffer_handler.next_buffer(&mut self.buffer_manager);
-                    debug!("{}", message);
-                    return Ok(false);
-                }
-                "previous_buffer" => {
-                    let message = self
-                        .buffer_handler
-                        .previous_buffer(&mut self.buffer_manager);
-                    debug!("{}", message);
-                    return Ok(false);
-                }
-                "quick_switch_buffer" => {
-                    let message = self.buffer_handler.quick_switch(&mut self.buffer_manager);
-                    debug!("{}", message);
-                    return Ok(false);
-                }
-                "new_buffer" => {
-                    let message = self
-                        .buffer_handler
-                        .new_buffer(&mut self.buffer_manager, &self.config);
-                    debug!("{}", message);
-                    return Ok(false);
-                }
-                "close_buffer" => {
-                    let (success, message) =
-                        self.buffer_handler.close_buffer(&mut self.buffer_manager);
-                    debug!("{}", message);
-                    return Ok(!success); // Exit if we couldn't close (only one left)
-                }
-                "list_buffers" => {
-                    let buffer_list = self.buffer_handler.list_buffers(&self.buffer_manager);
-                    // For now, just log the list - later we can show a popup
-                    for line in &buffer_list {
-                        debug!("{}", line);
-                    }
-                    return Ok(false);
-                }
-                action if action.starts_with("switch_to_buffer_") => {
-                    if let Some(buffer_num_str) = action.strip_prefix("switch_to_buffer_") {
-                        if let Ok(buffer_num) = buffer_num_str.parse::<usize>() {
-                            let message = self
-                                .buffer_handler
-                                .switch_to_buffer(&mut self.buffer_manager, buffer_num - 1); // Convert to 0-based
-                            debug!("{}", message);
-                        }
-                    }
-                    return Ok(false);
-                }
                 "expand_asterisk" => {
                     if let Some(buffer) = self.buffer_manager.current_mut() {
                         if buffer.expand_asterisk(&self.hybrid_parser) {
@@ -1815,40 +1787,6 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::F(1) | KeyCode::Char('?') => {
-                // Toggle between Help mode and previous mode
-                if self.buffer().get_mode() == AppMode::Help {
-                    // Exit help mode
-                    let mode = if self.buffer().has_dataview() {
-                        AppMode::Results
-                    } else {
-                        AppMode::Command
-                    };
-                    self.buffer_mut().set_mode(mode);
-                    self.state_container.set_help_visible(false);
-                    self.help_widget.on_exit();
-                } else {
-                    // Enter help mode
-                    eprintln!("DEBUG: F1 pressed - entering help mode");
-                    eprintln!(
-                        "DEBUG: service_container is: {}",
-                        if self.service_container.is_some() {
-                            "Some"
-                        } else {
-                            "None"
-                        }
-                    );
-                    self.buffer_mut().set_mode(AppMode::Help);
-                    self.state_container.set_help_visible(true);
-                    self.help_widget.on_enter();
-                }
-            }
-            KeyCode::F(3) => {
-                // F3 no longer toggles modes - always stay in single-line mode
-                self.buffer_mut().set_status_message(
-                    "Multi-line mode has been removed. Use F6 for pretty print.".to_string(),
-                );
-            }
             KeyCode::Enter => {
                 // Always use single-line mode handling
                 let query = self.get_input_text().trim().to_string();
@@ -1976,51 +1914,6 @@ impl EnhancedTuiApp {
                     }
                 }
             }
-            KeyCode::F(8) => {
-                // Toggle case-insensitive string comparisons
-                let current = self.buffer().is_case_insensitive();
-                self.buffer_mut().set_case_insensitive(!current);
-                self.buffer_mut().set_status_message(format!(
-                    "Case-insensitive string comparisons: {}",
-                    if !current { "ON" } else { "OFF" }
-                ));
-            }
-            KeyCode::F(9) => {
-                // F9 as alternative for kill line (for terminals that intercept Ctrl+K)
-                self.kill_line();
-                let message = if !self.buffer().is_kill_ring_empty() {
-                    format!(
-                        "Killed to end of line ('{}' saved to kill ring)",
-                        self.buffer().get_kill_ring()
-                    )
-                } else {
-                    "Killed to end of line".to_string()
-                };
-                self.buffer_mut().set_status_message(message);
-            }
-            KeyCode::F(10) => {
-                // F10 as alternative for kill line backward (for consistency with F9)
-                self.kill_line_backward();
-                let message = if !self.buffer().is_kill_ring_empty() {
-                    format!(
-                        "Killed to beginning of line ('{}' saved to kill ring)",
-                        self.buffer().get_kill_ring()
-                    )
-                } else {
-                    "Killed to beginning of line".to_string()
-                };
-                self.buffer_mut().set_status_message(message);
-            }
-            KeyCode::F(12) => {
-                // Toggle key press indicator
-                let enabled = !self.key_indicator.enabled;
-                self.key_indicator.set_enabled(enabled);
-                self.key_sequence_renderer.set_enabled(enabled);
-                self.buffer_mut().set_status_message(format!(
-                    "Key press indicator {}",
-                    if enabled { "enabled" } else { "disabled" }
-                ));
-            }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Kill line - delete from cursor to end of line
                 self.buffer_mut()
@@ -2083,27 +1976,6 @@ impl EnhancedTuiApp {
                 let last_offset = self.buffer().get_last_scroll_offset();
                 self.buffer_mut().set_scroll_offset(last_offset);
             }
-            KeyCode::F(5) => {
-                // Use the unified debug handler
-                self.toggle_debug_mode();
-            }
-            KeyCode::F(6) => {
-                // F6 is now available for future use
-            }
-            KeyCode::F(7) => {
-                // Pretty query view (moved from F6)
-                let query = self.get_input_text();
-                if !query.trim().is_empty() {
-                    self.debug_widget.generate_pretty_sql(&query);
-                    self.buffer_mut().set_mode(AppMode::PrettyQuery);
-                    self.buffer_mut().set_status_message(
-                        "Pretty query view (press Esc or q to return)".to_string(),
-                    );
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("No query to format".to_string());
-                }
-            }
             _ => {
                 // Use the new helper to handle input keys through buffer
                 self.handle_input_key(key);
@@ -2122,6 +1994,293 @@ impl EnhancedTuiApp {
         }
 
         Ok(false)
+    }
+
+    // ========== COMMAND INPUT HELPER METHODS ==========
+    // These helpers break down the massive handle_command_input method into logical groups
+
+    /// Handle function key inputs (F1-F12)
+    fn try_handle_function_keys(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+    ) -> Result<Option<bool>> {
+        match key.code {
+            KeyCode::F(1) | KeyCode::Char('?') => {
+                // Toggle between Help mode and previous mode
+                if self.buffer().get_mode() == AppMode::Help {
+                    // Exit help mode
+                    let mode = if self.buffer().has_dataview() {
+                        AppMode::Results
+                    } else {
+                        AppMode::Command
+                    };
+                    self.buffer_mut().set_mode(mode);
+                    self.state_container.set_help_visible(false);
+                    self.help_widget.on_exit();
+                } else {
+                    // Enter help mode
+                    self.state_container.set_help_visible(true);
+                    self.buffer_mut().set_mode(AppMode::Help);
+                    self.help_widget.on_enter();
+                }
+                Ok(Some(false))
+            }
+            KeyCode::F(3) => {
+                // Show pretty printed query
+                self.show_pretty_query();
+                Ok(Some(false))
+            }
+            KeyCode::F(5) => {
+                // Toggle debug mode
+                self.toggle_debug_mode();
+                Ok(Some(false))
+            }
+            KeyCode::F(6) => {
+                // Toggle row numbers
+                let current = self.buffer().is_show_row_numbers();
+                self.buffer_mut().set_show_row_numbers(!current);
+                self.buffer_mut().set_status_message(format!(
+                    "Row numbers: {}",
+                    if !current { "ON" } else { "OFF" }
+                ));
+                Ok(Some(false))
+            }
+            KeyCode::F(7) => {
+                // Toggle compact mode
+                let current_mode = self.buffer().is_compact_mode();
+                self.buffer_mut().set_compact_mode(!current_mode);
+                let message = if !current_mode {
+                    "Compact mode enabled"
+                } else {
+                    "Compact mode disabled"
+                };
+                self.buffer_mut().set_status_message(message.to_string());
+                Ok(Some(false))
+            }
+            KeyCode::F(8) => {
+                // Toggle case-insensitive string comparisons
+                let current = self.buffer().is_case_insensitive();
+                self.buffer_mut().set_case_insensitive(!current);
+                self.buffer_mut().set_status_message(format!(
+                    "Case-insensitive string comparisons: {}",
+                    if !current { "ON" } else { "OFF" }
+                ));
+                Ok(Some(false))
+            }
+            KeyCode::F(9) => {
+                // F9 as alternative for kill line (for terminals that intercept Ctrl+K)
+                self.kill_line();
+                let message = if !self.buffer().is_kill_ring_empty() {
+                    format!(
+                        "Killed to end of line ('{}' saved to kill ring)",
+                        self.buffer().get_kill_ring()
+                    )
+                } else {
+                    "Killed to end of line".to_string()
+                };
+                self.buffer_mut().set_status_message(message);
+                Ok(Some(false))
+            }
+            KeyCode::F(10) => {
+                // F10 as alternative for kill line backward
+                self.kill_line_backward();
+                let message = if !self.buffer().is_kill_ring_empty() {
+                    format!(
+                        "Killed to beginning of line ('{}' saved to kill ring)",
+                        self.buffer().get_kill_ring()
+                    )
+                } else {
+                    "Killed to beginning of line".to_string()
+                };
+                self.buffer_mut().set_status_message(message);
+                Ok(Some(false))
+            }
+            KeyCode::F(12) => {
+                // Toggle key press indicator
+                let enabled = !self.key_indicator.enabled;
+                self.key_indicator.set_enabled(enabled);
+                self.key_sequence_renderer.set_enabled(enabled);
+                self.buffer_mut().set_status_message(format!(
+                    "Key press indicator {}",
+                    if enabled { "enabled" } else { "disabled" }
+                ));
+                Ok(Some(false))
+            }
+            _ => Ok(None), // Not a function key we handle
+        }
+    }
+
+    /// Handle buffer management operations
+    fn try_handle_buffer_operations(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+    ) -> Result<Option<bool>> {
+        if let Some(action) = self.key_dispatcher.get_command_action(key) {
+            match action {
+                "quit" => return Ok(Some(true)),
+                "next_buffer" => {
+                    let message = self.buffer_handler.next_buffer(&mut self.buffer_manager);
+                    debug!("{}", message);
+                    return Ok(Some(false));
+                }
+                "previous_buffer" => {
+                    let message = self
+                        .buffer_handler
+                        .previous_buffer(&mut self.buffer_manager);
+                    debug!("{}", message);
+                    return Ok(Some(false));
+                }
+                "quick_switch_buffer" => {
+                    let message = self.buffer_handler.quick_switch(&mut self.buffer_manager);
+                    debug!("{}", message);
+                    return Ok(Some(false));
+                }
+                "new_buffer" => {
+                    let message = self
+                        .buffer_handler
+                        .new_buffer(&mut self.buffer_manager, &self.config);
+                    debug!("{}", message);
+                    return Ok(Some(false));
+                }
+                "close_buffer" => {
+                    let (success, message) =
+                        self.buffer_handler.close_buffer(&mut self.buffer_manager);
+                    debug!("{}", message);
+                    return Ok(Some(!success)); // Exit if we couldn't close (only one left)
+                }
+                "list_buffers" => {
+                    let buffer_list = self.buffer_handler.list_buffers(&self.buffer_manager);
+                    for line in &buffer_list {
+                        debug!("{}", line);
+                    }
+                    return Ok(Some(false));
+                }
+                action if action.starts_with("switch_to_buffer_") => {
+                    if let Some(buffer_num_str) = action.strip_prefix("switch_to_buffer_") {
+                        if let Ok(buffer_num) = buffer_num_str.parse::<usize>() {
+                            let message = self
+                                .buffer_handler
+                                .switch_to_buffer(&mut self.buffer_manager, buffer_num - 1);
+                            debug!("{}", message);
+                        }
+                    }
+                    return Ok(Some(false));
+                }
+                _ => {} // Not a buffer operation
+            }
+        }
+        Ok(None)
+    }
+
+    /// Handle history navigation operations
+    fn try_handle_history_navigation(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+    ) -> Result<Option<bool>> {
+        // Handle Ctrl+R for history search
+        if let KeyCode::Char('r') = key.code {
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                // Start history search mode
+                let current_input = self.get_input_text();
+
+                // Start history search
+                self.state_container.start_history_search(current_input);
+
+                // Initialize with schema context
+                self.update_history_matches_in_container();
+
+                // Get status
+                let match_count = self.state_container.history_search().matches.len();
+
+                self.buffer_mut().set_mode(AppMode::History);
+                self.buffer_mut().set_status_message(format!(
+                    "History search started (Ctrl+R) - {} matches",
+                    match_count
+                ));
+                return Ok(Some(false));
+            }
+        }
+
+        // Handle Ctrl+P for previous history
+        if let KeyCode::Char('p') = key.code {
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                let history_entries = self
+                    .state_container
+                    .command_history()
+                    .get_navigation_entries();
+                let history_commands: Vec<String> =
+                    history_entries.iter().map(|e| e.command.clone()).collect();
+
+                if let Some(buffer) = self.buffer_manager.current_mut() {
+                    if buffer.navigate_history_up(&history_commands) {
+                        self.sync_all_input_states();
+                        self.buffer_mut()
+                            .set_status_message("Previous command from history".to_string());
+                    }
+                }
+                return Ok(Some(false));
+            }
+        }
+
+        // Handle Ctrl+N for next history
+        if let KeyCode::Char('n') = key.code {
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                let history_entries = self
+                    .state_container
+                    .command_history()
+                    .get_navigation_entries();
+                let history_commands: Vec<String> =
+                    history_entries.iter().map(|e| e.command.clone()).collect();
+
+                if let Some(buffer) = self.buffer_manager.current_mut() {
+                    if buffer.navigate_history_down(&history_commands) {
+                        self.sync_all_input_states();
+                        self.buffer_mut()
+                            .set_status_message("Next command from history".to_string());
+                    }
+                }
+                return Ok(Some(false));
+            }
+        }
+
+        // Handle Alt+Up/Down as alternatives
+        match key.code {
+            KeyCode::Up if key.modifiers.contains(KeyModifiers::ALT) => {
+                let history_entries = self
+                    .state_container
+                    .command_history()
+                    .get_navigation_entries();
+                let history_commands: Vec<String> =
+                    history_entries.iter().map(|e| e.command.clone()).collect();
+
+                if let Some(buffer) = self.buffer_manager.current_mut() {
+                    if buffer.navigate_history_up(&history_commands) {
+                        self.sync_all_input_states();
+                        self.buffer_mut()
+                            .set_status_message("Previous command (Alt+Up)".to_string());
+                    }
+                }
+                Ok(Some(false))
+            }
+            KeyCode::Down if key.modifiers.contains(KeyModifiers::ALT) => {
+                let history_entries = self
+                    .state_container
+                    .command_history()
+                    .get_navigation_entries();
+                let history_commands: Vec<String> =
+                    history_entries.iter().map(|e| e.command.clone()).collect();
+
+                if let Some(buffer) = self.buffer_manager.current_mut() {
+                    if buffer.navigate_history_down(&history_commands) {
+                        self.sync_all_input_states();
+                        self.buffer_mut()
+                            .set_status_message("Next command (Alt+Down)".to_string());
+                    }
+                }
+                Ok(Some(false))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn handle_results_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -2310,31 +2469,64 @@ impl EnhancedTuiApp {
                 // Set search pattern in AppStateContainer
                 self.state_container.start_search(pattern.clone());
 
-                self.buffer_mut().set_search_pattern(pattern);
+                self.buffer_mut().set_search_pattern(pattern.clone());
                 self.perform_search();
                 let matches_count = self.state_container.search().matches.len();
                 debug!(target: "search", "After perform_search, app_mode={:?}, matches_found={}", 
                        self.buffer().get_mode(),
                        matches_count);
 
+                // CRITICAL: Sync search results to VimSearchManager so 'n' and 'N' work
+                if matches_count > 0 {
+                    // Get matches from SearchManager to sync to VimSearchManager
+                    let matches_for_vim: Vec<(usize, usize)> = {
+                        let search_manager = self.search_manager.borrow();
+                        search_manager
+                            .all_matches()
+                            .iter()
+                            .map(|m| (m.row, m.column))
+                            .collect()
+                    };
+
+                    // Sync to VimSearchManager
+                    if let Some(dataview) = self.buffer().get_dataview() {
+                        info!(target: "search", "Syncing {} matches to VimSearchManager for pattern '{}'", 
+                              matches_for_vim.len(), pattern);
+                        self.vim_search_manager
+                            .borrow_mut()
+                            .set_search_state_from_external(
+                                pattern.clone(),
+                                matches_for_vim,
+                                dataview,
+                            );
+                    }
+                }
+
                 // Navigate to the first match if found (like vim)
                 if matches_count > 0 {
-                    // Get the first match position (extract values to avoid borrow issues)
+                    // Get the first match position from SearchManager
                     let (row, col) = {
-                        let search_state = self.state_container.search();
-                        if let Some((row, col, _, _)) = search_state.matches.first() {
-                            (*row, *col)
+                        let search_manager = self.search_manager.borrow();
+                        if let Some(first_match) = search_manager.first_match() {
+                            (first_match.row, first_match.column)
                         } else {
-                            (0, 0) // Default if no match (shouldn't happen)
+                            // Fallback to state_container if SearchManager is empty (shouldn't happen)
+                            let search_state = self.state_container.search();
+                            if let Some((row, col, _, _)) = search_state.matches.first() {
+                                (*row, *col)
+                            } else {
+                                (0, 0)
+                            }
                         }
-                    }; // search_state borrow is dropped here
+                    };
 
-                    debug!(target: "search", "Navigating to first match at row={}, col={}", row, col);
+                    info!(target: "search", "NAVIGATION START: Moving to first match at data row={}, col={}", row, col);
 
                     // Navigate to the match position
                     // Set the row position
                     self.state_container.set_table_selected_row(Some(row));
                     self.buffer_mut().set_selected_row(Some(row));
+                    info!(target: "search", "  Set row position to {}", row);
 
                     // Set the column position
                     {
@@ -2342,6 +2534,13 @@ impl EnhancedTuiApp {
                         nav.selected_column = col;
                     }
                     self.buffer_mut().set_current_column(col);
+                    info!(target: "search", "  Set column position to {}", col);
+
+                    // CRITICAL: Update TableWidgetManager for debounced search navigation
+                    info!(target: "search", "Updating TableWidgetManager for debounced search to ({}, {})", row, col);
+                    self.table_widget_manager
+                        .borrow_mut()
+                        .on_debounced_search(row, col);
 
                     // Update ViewportManager and ensure match is visible
                     {
@@ -2352,31 +2551,69 @@ impl EnhancedTuiApp {
                             let viewport_width = self.state_container.navigation().viewport_columns;
                             let current_scroll = self.state_container.navigation().scroll_offset.0;
 
+                            info!(target: "search", "  Viewport dimensions: {}x{}, current_scroll: {}", 
+                                  viewport_height, viewport_width, current_scroll);
+
                             // Calculate new scroll offset if needed to show the match
                             let new_row_offset = if row < current_scroll {
+                                info!(target: "search", "  Match is above viewport, scrolling up to row {}", row);
                                 row // Match is above, scroll up
                             } else if row >= current_scroll + viewport_height.saturating_sub(1) {
-                                row.saturating_sub(viewport_height / 2) // Match is below, center it
+                                let centered = row.saturating_sub(viewport_height / 2);
+                                info!(target: "search", "  Match is below viewport, centering at row {}", centered);
+                                centered // Match is below, center it
                             } else {
+                                info!(target: "search", "  Match is already visible, keeping scroll at {}", current_scroll);
                                 current_scroll // Already visible
                             };
 
-                            // Update viewport to show the match
+                            // Calculate column scroll if needed
+                            let current_col_scroll =
+                                self.state_container.navigation().scroll_offset.1;
+                            let new_col_offset = if col < current_col_scroll {
+                                info!(target: "search", "  Match column {} is left of viewport (scroll={}), scrolling left", col, current_col_scroll);
+                                col // Match is to the left, scroll left
+                            } else if col >= current_col_scroll + viewport_width.saturating_sub(1) {
+                                let centered = col.saturating_sub(viewport_width / 4);
+                                info!(target: "search", "  Match column {} is right of viewport (scroll={}, width={}), scrolling to {}", 
+                                      col, current_col_scroll, viewport_width, centered);
+                                centered // Match is to the right, scroll right but keep some context
+                            } else {
+                                info!(target: "search", "  Match column {} is visible, keeping scroll at {}", col, current_col_scroll);
+                                current_col_scroll // Already visible
+                            };
+
+                            // Update viewport to show the match (both row and column)
                             viewport_manager.set_viewport(
                                 new_row_offset,
-                                0, // keep column scroll at 0 for now
+                                new_col_offset,
                                 viewport_width as u16,
                                 viewport_height as u16,
                             );
+                            info!(target: "search", "  Set viewport to row_offset={}, col_offset={}", new_row_offset, new_col_offset);
 
                             // Set crosshair to match position
                             viewport_manager.set_crosshair(row, col);
+                            info!(target: "search", "  Set crosshair to ({}, {})", row, col);
 
-                            // Update navigation scroll offset
+                            // Update navigation scroll offset (both row and column)
                             let mut nav = self.state_container.navigation_mut();
                             nav.scroll_offset.0 = new_row_offset;
+                            nav.scroll_offset.1 = new_col_offset;
                         }
                     }
+
+                    // Also update the buffer's current match to trigger UI updates
+                    self.buffer_mut().set_current_match(Some((row, col)));
+
+                    // CRITICAL: Force the visual cursor position to update
+                    // The crosshair is set but we need to ensure the visual cursor moves
+                    {
+                        let mut nav = self.state_container.navigation_mut();
+                        nav.selected_row = row;
+                        nav.selected_column = col;
+                    }
+                    info!(target: "search", "  Forced navigation state to row={}, col={}", row, col);
 
                     // Update status to show we're at match 1 of N
                     self.buffer_mut().set_status_message(format!(
@@ -2507,11 +2744,7 @@ impl EnhancedTuiApp {
             return Ok(true); // Signal to quit
         }
 
-        // Use VimSearchManager for Search mode
-        if self.buffer().get_mode() == AppMode::Search {
-            self.handle_vim_search_typing(key);
-            return Ok(false);
-        }
+        // All search modes now use the same SearchModesWidget for consistent debouncing
 
         let action = self.search_modes_widget.handle_key(key);
 
@@ -3337,34 +3570,141 @@ impl EnhancedTuiApp {
     // Search and filter functions
     fn perform_search(&mut self) {
         if let Some(dataview) = self.get_current_data() {
-            // Convert DataView rows to Vec<Vec<String>> for AppStateContainer
+            // Convert DataView rows to Vec<Vec<String>> for SearchManager
             let data: Vec<Vec<String>> = (0..dataview.row_count())
                 .filter_map(|i| dataview.get_row(i))
                 .map(|row| row.values.iter().map(|v| v.to_string()).collect())
                 .collect();
 
-            // Perform search using AppStateContainer
-            let matches = self.state_container.perform_search(&data);
+            // Get search pattern from buffer
+            let pattern = self.buffer().get_search_pattern().to_string();
 
-            // Update buffer with matches for now (until we fully migrate)
-            let buffer_matches: Vec<(usize, usize)> = matches
-                .iter()
-                .map(|(row, col, _, _)| (*row, *col))
-                .collect();
+            info!(target: "search", "=== SEARCH START ===");
+            info!(target: "search", "Pattern: '{}', case_insensitive: {}", 
+                  pattern, self.buffer().is_case_insensitive());
+            info!(target: "search", "Data dimensions: {} rows x {} columns", 
+                  data.len(), data.first().map(|r| r.len()).unwrap_or(0));
 
-            if !buffer_matches.is_empty() {
-                let (row, _) = buffer_matches[0];
-                self.state_container.set_table_selected_row(Some(row));
+            // Log column names to understand ordering
+            let column_names = dataview.column_names();
+            info!(target: "search", "Column names (first 5): {:?}", 
+                  column_names.iter().take(5).collect::<Vec<_>>());
+
+            // Log the first few rows of data we're searching
+            for (i, row) in data.iter().take(10).enumerate() {
+                info!(target: "search", "  Data row {}: [{}]", i, 
+                      row.iter().take(5).map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(", "));
+            }
+
+            // Get visible columns if needed (for now search all columns)
+            let visible_columns = None;
+
+            // Perform search using SearchManager
+            let match_count = {
+                let mut search_manager = self.search_manager.borrow_mut();
+
+                // IMPORTANT: Clear any previous search results first
+                search_manager.clear();
+                info!(target: "search", "Cleared previous search results");
+
+                // Update case sensitivity based on current setting
+                search_manager.set_case_sensitive(!self.buffer().is_case_insensitive());
+                info!(target: "search", "Set case_sensitive to {}", !self.buffer().is_case_insensitive());
+
+                // Perform the search
+                let count = search_manager.search(&pattern, &data, visible_columns);
+                info!(target: "search", "SearchManager.search() returned {} matches", count);
+                count
+            };
+
+            info!(target: "search", "SearchManager found {} matches", match_count);
+
+            // Process the matches
+            if match_count > 0 {
+                // Get first match for navigation and log details
+                let (first_row, first_col) = {
+                    let search_manager = self.search_manager.borrow();
+                    if let Some(first_match) = search_manager.first_match() {
+                        info!(target: "search", "FIRST MATCH DETAILS:");
+                        info!(target: "search", "  Data coordinates: row={}, col={}", 
+                              first_match.row, first_match.column);
+                        info!(target: "search", "  Matched value: '{}'", first_match.value);
+                        info!(target: "search", "  Highlight range: {:?}", first_match.highlight_range);
+
+                        // Log first 5 matches for debugging
+                        for (i, m) in search_manager.all_matches().iter().take(5).enumerate() {
+                            info!(target: "search", "  Match #{}: row={}, col={}, value='{}'",
+                                  i + 1, m.row, m.column, m.value);
+                        }
+
+                        (first_match.row, first_match.column)
+                    } else {
+                        warn!(target: "search", "SearchManager reported matches but first_match() is None!");
+                        (0, 0)
+                    }
+                };
+
+                // Update state container and buffer with matches
+                self.state_container.set_table_selected_row(Some(first_row));
+
+                // CRITICAL: Update TableWidgetManager to trigger re-render
+                info!(target: "search", "Updating TableWidgetManager to navigate to ({}, {})", first_row, first_col);
+                self.table_widget_manager
+                    .borrow_mut()
+                    .navigate_to_search_match(first_row, first_col);
+
+                // Log what's actually at the position we're navigating to
+                if let Some(dataview) = self.get_current_data() {
+                    if let Some(row_data) = dataview.get_row(first_row) {
+                        if first_col < row_data.values.len() {
+                            info!(target: "search", "VALUE AT NAVIGATION TARGET ({}, {}): '{}'",
+                                  first_row, first_col, row_data.values[first_col]);
+                        }
+                    }
+                }
+
+                // Convert matches to buffer format
+                let buffer_matches: Vec<(usize, usize)> = {
+                    let search_manager = self.search_manager.borrow();
+                    search_manager
+                        .all_matches()
+                        .iter()
+                        .map(|m| (m.row, m.column))
+                        .collect()
+                };
+
+                // Also update AppStateContainer with matches (for compatibility)
+                // Convert SearchManager matches to state_container format (row_start, col_start, row_end, col_end)
+                let state_matches: Vec<(usize, usize, usize, usize)> = {
+                    let search_manager = self.search_manager.borrow();
+                    search_manager
+                        .all_matches()
+                        .iter()
+                        .map(|m| {
+                            // For now, treat each match as a single cell
+                            (m.row, m.column, m.row, m.column)
+                        })
+                        .collect()
+                };
+                self.state_container.search_mut().matches = state_matches;
 
                 let buffer = self.buffer_mut();
                 buffer.set_search_matches(buffer_matches.clone());
                 buffer.set_search_match_index(0);
-                buffer.set_current_match(Some(buffer_matches[0]));
-                buffer.set_status_message(format!("Found {} matches", buffer_matches.len()));
+                buffer.set_current_match(Some((first_row, first_col)));
+                buffer.set_status_message(format!("Found {} matches", match_count));
+
+                info!(target: "search", "Search found {} matches for pattern '{}'", match_count, pattern);
             } else {
+                // Clear search state
+                self.state_container.search_mut().matches.clear();
+
                 let buffer = self.buffer_mut();
                 buffer.set_status_message("No matches found".to_string());
-                buffer.set_search_matches(buffer_matches.clone());
+                buffer.set_search_matches(Vec::new());
+                buffer.set_current_match(None);
+
+                info!(target: "search", "No matches found for pattern '{}'", pattern);
             }
         }
     }
@@ -3378,119 +3718,8 @@ impl EnhancedTuiApp {
         // Start search mode in VimSearchManager
         self.vim_search_manager.borrow_mut().start_search();
 
-        // Set the app mode to Search for UI rendering
-        self.buffer_mut().set_mode(AppMode::Search);
-
-        // Clear input for new search
-        self.set_input_text_with_cursor(String::new(), 0);
-
-        // Set status message
-        self.buffer_mut().set_status_message(
-            "Search: (type to search, Enter to confirm, Esc to cancel)".to_string(),
-        );
-    }
-
-    /// Handle vim search input while typing
-    fn handle_vim_search_typing(&mut self, key: KeyEvent) -> bool {
-        match key.code {
-            KeyCode::Esc => {
-                // Cancel search and restore the original query
-                self.vim_search_manager.borrow_mut().cancel_search();
-                self.buffer_mut().set_mode(AppMode::Results);
-
-                // Restore the last executed query to input
-                let last_query = self.buffer().get_last_query();
-                self.set_input_text_with_cursor(last_query.clone(), last_query.len());
-
-                self.buffer_mut()
-                    .set_status_message("Search cancelled".to_string());
-                true
-            }
-            KeyCode::Enter => {
-                // Confirm search and enter navigation mode
-                let (has_matches, crosshair_row) = {
-                    let mut viewport_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport) = *viewport_borrow {
-                        if let Some(dataview) = self.buffer().get_dataview() {
-                            let confirmed = self
-                                .vim_search_manager
-                                .borrow_mut()
-                                .confirm_search(dataview, viewport);
-
-                            // Get the crosshair row if confirmed
-                            let row = if confirmed {
-                                Some(viewport.get_crosshair_row())
-                            } else {
-                                None
-                            };
-
-                            (confirmed, row)
-                        } else {
-                            (false, None)
-                        }
-                    } else {
-                        (false, None)
-                    }
-                };
-
-                // Update selected row after dropping the viewport borrow
-                if let Some(row) = crosshair_row {
-                    self.state_container.set_table_selected_row(Some(row));
-                    self.buffer_mut().set_selected_row(Some(row));
-                }
-
-                if has_matches {
-                    // Stay in Results mode but with search active
-                    self.buffer_mut().set_mode(AppMode::Results);
-
-                    // Restore the last executed query to input
-                    let last_query = self.buffer().get_last_query();
-                    self.set_input_text_with_cursor(last_query.clone(), last_query.len());
-
-                    // Get match info for status
-                    let match_info = self.vim_search_manager.borrow().get_match_info();
-                    if let Some((current, total)) = match_info {
-                        self.buffer_mut().set_status_message(format!(
-                            "Found {} matches. Use n/N to navigate. Match {}/{}",
-                            total, current, total
-                        ));
-                    }
-                } else {
-                    self.buffer_mut().set_mode(AppMode::Results);
-
-                    // Restore the last executed query even if no matches
-                    let last_query = self.buffer().get_last_query();
-                    self.set_input_text_with_cursor(last_query.clone(), last_query.len());
-
-                    self.buffer_mut()
-                        .set_status_message("Pattern not found".to_string());
-                }
-                true
-            }
-            KeyCode::Backspace => {
-                // Remove last character from search pattern
-                let mut current = self.input.value().to_string();
-                current.pop();
-                self.set_input_text_with_cursor(current.clone(), current.len());
-
-                // Update search dynamically
-                if !current.is_empty() {
-                    self.update_vim_search_pattern(current);
-                }
-                true
-            }
-            KeyCode::Char(c) => {
-                // Add character to search pattern
-                let mut current = self.input.value().to_string();
-                current.push(c);
-                self.set_input_text_with_cursor(current.clone(), current.len());
-
-                // Update search dynamically
-                self.update_vim_search_pattern(current);
-                true
-            }
-            _ => false,
-        }
+        // Use the existing SearchModesWidget which already has perfect debouncing
+        self.enter_search_mode(SearchMode::Search);
     }
 
     /// Update vim search pattern and navigate to first match
@@ -3608,6 +3837,13 @@ impl EnhancedTuiApp {
             // CRITICAL: Also update navigation's selected_row to trigger proper rendering
             self.state_container.navigation_mut().selected_row = search_match.row;
 
+            // CRITICAL: Update TableWidgetManager to trigger re-render
+            info!(target: "search", "Updating TableWidgetManager for vim search navigation to ({}, {})", 
+                  search_match.row, search_match.col);
+            self.table_widget_manager
+                .borrow_mut()
+                .navigate_to(search_match.row, search_match.col);
+
             // Update scroll offset if row changed significantly
             let viewport_height = 79; // Typical viewport height
             let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
@@ -3696,6 +3932,13 @@ impl EnhancedTuiApp {
             // CRITICAL: Also update navigation's selected_row to trigger proper rendering
             self.state_container.navigation_mut().selected_row = search_match.row;
 
+            // CRITICAL: Update TableWidgetManager to trigger re-render
+            info!(target: "search", "Updating TableWidgetManager for vim search navigation to ({}, {})", 
+                  search_match.row, search_match.col);
+            self.table_widget_manager
+                .borrow_mut()
+                .navigate_to(search_match.row, search_match.col);
+
             // Update scroll offset if row changed significantly
             let viewport_height = 79; // Typical viewport height
             let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
@@ -3770,14 +4013,8 @@ impl EnhancedTuiApp {
         }
 
         // Update ViewportManager with the filtered DataView
-        if let Some(dataview) = self.buffer().get_dataview() {
-            if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
-                viewport_manager.set_dataview(Arc::new(dataview.clone()));
-                debug!(target: "filter", 
-                       "Updated ViewportManager with filtered DataView (row_count={})", 
-                       dataview.row_count());
-            }
-        }
+        // Sync the dataview to both managers
+        self.sync_dataview_to_managers();
 
         // Decrement re-entrancy counter
         FILTER_DEPTH.fetch_sub(1, Ordering::SeqCst);
@@ -4076,14 +4313,8 @@ impl EnhancedTuiApp {
         self.buffer_mut().set_fuzzy_filter_indices(indices);
 
         // Update ViewportManager with the filtered DataView
-        if let Some(dataview) = self.buffer().get_dataview() {
-            if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
-                viewport_manager.set_dataview(Arc::new(dataview.clone()));
-                debug!(target: "fuzzy_filter", 
-                       "Updated ViewportManager with filtered DataView (row_count={})", 
-                       dataview.row_count());
-            }
-        }
+        // Sync the dataview to both managers
+        self.sync_dataview_to_managers();
     }
 
     fn toggle_sort_current_column(&mut self) {
@@ -4129,6 +4360,11 @@ impl EnhancedTuiApp {
 
                 // Update ViewportManager with the sorted DataView to keep them in sync
                 if let Some(updated_dataview) = self.buffer().get_dataview() {
+                    // Update TableWidgetManager with the sorted dataview as well
+                    self.table_widget_manager
+                        .borrow_mut()
+                        .set_dataview(Arc::new(updated_dataview.clone()));
+
                     let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
                     if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
                         viewport_manager.set_dataview(Arc::new(updated_dataview.clone()));
@@ -4160,6 +4396,28 @@ impl EnhancedTuiApp {
             provider.get_row_count()
         } else {
             0
+        }
+    }
+
+    /// Helper to sync dataview to both ViewportManager and TableWidgetManager
+    fn sync_dataview_to_managers(&self) {
+        if let Some(dataview) = self.buffer().get_dataview() {
+            let arc_dataview = Arc::new(dataview.clone());
+
+            // Update ViewportManager
+            if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                viewport_manager.set_dataview(arc_dataview.clone());
+                debug!(
+                    "Updated ViewportManager with DataView (row_count={})",
+                    arc_dataview.row_count()
+                );
+            }
+
+            // Update TableWidgetManager
+            self.table_widget_manager
+                .borrow_mut()
+                .set_dataview(arc_dataview);
+            debug!("Updated TableWidgetManager with DataView");
         }
     }
 
@@ -5329,14 +5587,21 @@ impl EnhancedTuiApp {
         };
 
         // Build the context
+        let selected_row = self.state_container.navigation().selected_row;
+        let selected_col = crosshair_column_position;
+
+        // Log what we're passing to the renderer
+        trace!(target: "search", "Building TableRenderContext: selected_row={}, selected_col={}, mode={:?}",
+               selected_row, selected_col, self.state_container.get_selection_mode());
+
         TableRenderContextBuilder::new()
             .row_count(row_count)
             .visible_rows(visible_row_indices.clone(), data_to_display)
             .columns(column_headers, column_widths_visual)
             .pinned_columns(pinned_indices)
             .selection(
-                self.state_container.navigation().selected_row,
-                crosshair_column_position,
+                selected_row,
+                selected_col,
                 self.state_container.get_selection_mode(),
             )
             .row_viewport(row_viewport_start..row_viewport_end)
@@ -6594,18 +6859,51 @@ impl ActionHandlerContext for EnhancedTuiApp {
     // Navigation methods - delegate to trait implementations
     fn previous_row(&mut self) {
         <Self as NavigationBehavior>::previous_row(self);
+
+        // Update TableWidgetManager for rendering
+        let current_row = self.state_container.navigation().selected_row;
+        let current_col = self.state_container.navigation().selected_column;
+        self.table_widget_manager
+            .borrow_mut()
+            .navigate_to(current_row, current_col);
+        info!(target: "navigation", "previous_row: Updated TableWidgetManager to ({}, {})", current_row, current_col);
     }
 
     fn next_row(&mut self) {
+        info!(target: "navigation", "next_row called - calling NavigationBehavior::next_row");
         <Self as NavigationBehavior>::next_row(self);
+
+        // Update TableWidgetManager for rendering
+        let current_row = self.state_container.navigation().selected_row;
+        let current_col = self.state_container.navigation().selected_column;
+        self.table_widget_manager
+            .borrow_mut()
+            .navigate_to(current_row, current_col);
+        info!(target: "navigation", "next_row: Updated TableWidgetManager to ({}, {})", current_row, current_col);
     }
 
     fn move_column_left(&mut self) {
         <Self as ColumnBehavior>::move_column_left(self);
+
+        // Update TableWidgetManager for rendering
+        let current_row = self.state_container.navigation().selected_row;
+        let current_col = self.state_container.navigation().selected_column;
+        self.table_widget_manager
+            .borrow_mut()
+            .navigate_to(current_row, current_col);
+        info!(target: "navigation", "move_column_left: Updated TableWidgetManager to ({}, {})", current_row, current_col);
     }
 
     fn move_column_right(&mut self) {
         <Self as ColumnBehavior>::move_column_right(self);
+
+        // Update TableWidgetManager for rendering
+        let current_row = self.state_container.navigation().selected_row;
+        let current_col = self.state_container.navigation().selected_column;
+        self.table_widget_manager
+            .borrow_mut()
+            .navigate_to(current_row, current_col);
+        info!(target: "navigation", "move_column_right: Updated TableWidgetManager to ({}, {})", current_row, current_col);
     }
 
     fn page_up(&mut self) {
@@ -6617,7 +6915,23 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn goto_first_row(&mut self) {
+        // Always perform the normal goto first row behavior
         <Self as NavigationBehavior>::goto_first_row(self);
+
+        // Additionally, if we're in vim search navigation mode, reset search to first match
+        let is_navigating = self.vim_search_manager.borrow().is_navigating();
+
+        if is_navigating {
+            // Reset search index to first match
+            let mut vim_search_mut = self.vim_search_manager.borrow_mut();
+            let mut viewport_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport) = *viewport_borrow {
+                if let Some(first_match) = vim_search_mut.reset_to_first_match(viewport) {
+                    info!(target: "vim_search", "'g' key: reset search to first match at ({}, {}) while also going to origin", 
+                          first_match.row, first_match.col);
+                }
+            }
+        }
     }
 
     fn goto_last_row(&mut self) {
@@ -6785,11 +7099,8 @@ impl ActionHandlerContext for EnhancedTuiApp {
                 }
 
                 // Update ViewportManager after clearing filter
-                if let Some(dataview) = self.buffer().get_dataview() {
-                    if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
-                        viewport_manager.set_dataview(Arc::new(dataview.clone()));
-                    }
-                }
+                // Sync the dataview to both managers
+                self.sync_dataview_to_managers();
             } else {
                 self.buffer_mut()
                     .set_status_message("No active filter to clear".to_string());
@@ -6805,6 +7116,105 @@ impl ActionHandlerContext for EnhancedTuiApp {
         buffer.save_state_for_undo();
         buffer.set_input_text(String::new());
         buffer.set_input_cursor_position(0);
+    }
+
+    // Mode operations
+    fn start_search(&mut self) {
+        self.start_vim_search();
+    }
+
+    fn start_column_search(&mut self) {
+        self.enter_search_mode(SearchMode::ColumnSearch);
+    }
+
+    fn start_filter(&mut self) {
+        self.enter_search_mode(SearchMode::Filter);
+    }
+
+    fn start_fuzzy_filter(&mut self) {
+        self.enter_search_mode(SearchMode::FuzzyFilter);
+    }
+
+    fn exit_current_mode(&mut self) {
+        // Handle escape based on current mode
+        let mode = self.buffer().get_mode();
+        match mode {
+            AppMode::Results => {
+                // If vim search is active, just exit search mode but stay in Results
+                if self.vim_search_manager.borrow().is_active() {
+                    self.vim_search_manager.borrow_mut().exit_navigation();
+                    self.buffer_mut()
+                        .set_status_message("Search mode exited".to_string());
+                    return;
+                }
+                // Otherwise, switch to Command mode as usual
+                self.buffer_mut().set_mode(AppMode::Command);
+            }
+            AppMode::Command => {
+                self.buffer_mut().set_mode(AppMode::Results);
+            }
+            AppMode::Help => {
+                self.buffer_mut().set_mode(AppMode::Results);
+            }
+            AppMode::JumpToRow => {
+                self.buffer_mut().set_mode(AppMode::Results);
+                self.clear_jump_to_row_input();
+                let container_ptr = Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
+                unsafe {
+                    (*container_ptr).jump_to_row_mut().is_active = false;
+                }
+                self.buffer_mut()
+                    .set_status_message("Jump to row cancelled".to_string());
+            }
+            _ => {
+                // For any other mode, return to Results
+                self.buffer_mut().set_mode(AppMode::Results);
+            }
+        }
+    }
+
+    fn toggle_debug_mode(&mut self) {
+        // Call the existing public method
+        EnhancedTuiApp::toggle_debug_mode(self);
+    }
+
+    // Column arrangement operations
+    fn move_current_column_left(&mut self) {
+        <Self as ColumnBehavior>::move_current_column_left(self);
+    }
+
+    fn move_current_column_right(&mut self) {
+        <Self as ColumnBehavior>::move_current_column_right(self);
+    }
+
+    // Search navigation
+    fn next_search_match(&mut self) {
+        self.vim_search_next();
+    }
+
+    fn previous_search_match(&mut self) {
+        if self.vim_search_manager.borrow().is_active()
+            || self.vim_search_manager.borrow().get_pattern().is_some()
+        {
+            self.vim_search_previous();
+        }
+    }
+
+    // Statistics and display
+    fn show_column_statistics(&mut self) {
+        self.calculate_column_statistics();
+    }
+
+    fn cycle_column_packing(&mut self) {
+        let message = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            let viewport_manager = viewport_manager_borrow
+                .as_mut()
+                .expect("ViewportManager must exist");
+            let new_mode = viewport_manager.cycle_packing_mode();
+            format!("Column packing: {}", new_mode.display_name())
+        };
+        self.buffer_mut().set_status_message(message);
     }
 }
 

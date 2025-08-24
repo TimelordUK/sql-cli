@@ -1,6 +1,6 @@
-id,name,orderid,description,amount,status
-1,Widget A,ORD001,First widget,100.50,active
-2,Widget B,ORD002,Second widget,200.75,active
-3,Gadget X,ORD003,Cool gadget,300.25,pending
-4,Tool Y,ORD004,Useful tool,400.00,complete
-5,Device Z,ORD005,Smart device,500.99,active
+id,name,age,score
+1,Alice,25,85.5
+2,Bob,30,92.0
+3,Charlie,35,78.5
+4,David,28,88.0
+5,Eve,32,95.5

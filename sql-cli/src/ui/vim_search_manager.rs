@@ -291,6 +291,37 @@ impl VimSearchManager {
         }
     }
 
+    /// Reset to first match (for 'g' key)
+    pub fn reset_to_first_match(&mut self, viewport: &mut ViewportManager) -> Option<SearchMatch> {
+        match &mut self.state {
+            VimSearchState::Navigating {
+                matches,
+                current_index,
+                ..
+            } => {
+                if matches.is_empty() {
+                    return None;
+                }
+
+                // Reset to first match
+                *current_index = 0;
+                let first_match = matches[0].clone();
+
+                info!(target: "vim_search", 
+                    "Resetting to first match at ({}, {})", 
+                    first_match.row, first_match.col);
+
+                // Navigate to the first match
+                self.navigate_to_match(&first_match, viewport);
+                Some(first_match)
+            }
+            _ => {
+                debug!(target: "vim_search", "reset_to_first_match called but not in navigation mode");
+                None
+            }
+        }
+    }
+
     /// Find all matches in the dataview
     fn find_matches(&self, pattern: &str, dataview: &DataView) -> Vec<SearchMatch> {
         let mut matches = Vec::new();
@@ -422,5 +453,56 @@ impl VimSearchManager {
     pub fn set_case_sensitive(&mut self, case_sensitive: bool) {
         self.case_sensitive = case_sensitive;
         debug!(target: "vim_search", "Case sensitivity set to: {}", case_sensitive);
+    }
+
+    /// Set search state from external search (e.g., SearchModesWidget)
+    /// This allows 'n' and 'N' to work after a regular search
+    pub fn set_search_state_from_external(
+        &mut self,
+        pattern: String,
+        matches: Vec<(usize, usize)>,
+        dataview: &DataView,
+    ) {
+        info!(target: "vim_search", 
+            "Setting search state from external search: pattern='{}', {} matches", 
+            pattern, matches.len());
+
+        // Convert matches to SearchMatch format
+        let search_matches: Vec<SearchMatch> = matches
+            .into_iter()
+            .filter_map(|(row, col)| {
+                if let Some(row_data) = dataview.get_row(row) {
+                    if col < row_data.values.len() {
+                        Some(SearchMatch {
+                            row,
+                            col,
+                            value: row_data.values[col].to_string(),
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if !search_matches.is_empty() {
+            let match_count = search_matches.len();
+
+            // Set the state to navigating
+            self.state = VimSearchState::Navigating {
+                pattern: pattern.clone(),
+                matches: search_matches,
+                current_index: 0,
+            };
+            self.last_search_pattern = Some(pattern);
+
+            info!(target: "vim_search", 
+                "Vim search state updated: {} matches ready for navigation", 
+                match_count);
+        } else {
+            warn!(target: "vim_search", "No valid matches to set in vim search state");
+        }
     }
 }

@@ -70,6 +70,26 @@ pub trait ActionHandlerContext {
     // Clear operations
     fn clear_filter(&mut self);
     fn clear_line(&mut self);
+
+    // Mode operations
+    fn start_search(&mut self);
+    fn start_column_search(&mut self);
+    fn start_filter(&mut self);
+    fn start_fuzzy_filter(&mut self);
+    fn exit_current_mode(&mut self);
+    fn toggle_debug_mode(&mut self);
+
+    // Column arrangement operations
+    fn move_current_column_left(&mut self);
+    fn move_current_column_right(&mut self);
+
+    // Search navigation
+    fn next_search_match(&mut self);
+    fn previous_search_match(&mut self);
+
+    // Statistics and display
+    fn show_column_statistics(&mut self);
+    fn cycle_column_packing(&mut self);
 }
 
 /// Handler for navigation actions (Up, Down, Left, Right, PageUp, etc.)
@@ -373,6 +393,140 @@ impl ActionHandler for ExitActionHandler {
     }
 }
 
+/// Handler for mode transition actions (search modes, debug, etc.)
+pub struct ModeActionHandler;
+
+impl ActionHandler for ModeActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        _context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        match action {
+            Action::StartSearch => {
+                tui.start_search();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::StartColumnSearch => {
+                tui.start_column_search();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::StartFilter => {
+                tui.start_filter();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::StartFuzzyFilter => {
+                tui.start_fuzzy_filter();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ExitCurrentMode => {
+                tui.exit_current_mode();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ShowDebugInfo => {
+                tui.toggle_debug_mode();
+                Some(Ok(ActionResult::Handled))
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "Mode"
+    }
+}
+
+/// Handler for column arrangement actions (move left/right)
+pub struct ColumnArrangementActionHandler;
+
+impl ActionHandler for ColumnArrangementActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        _context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        match action {
+            Action::MoveColumnLeft => {
+                tui.move_current_column_left();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::MoveColumnRight => {
+                tui.move_current_column_right();
+                Some(Ok(ActionResult::Handled))
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "ColumnArrangement"
+    }
+}
+
+/// Handler for search navigation actions
+pub struct SearchNavigationActionHandler;
+
+impl ActionHandler for SearchNavigationActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        match action {
+            Action::NextSearchMatch => {
+                tui.next_search_match();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::PreviousSearchMatch => {
+                // When Shift+N is pressed and there's no active search,
+                // toggle row numbers instead of navigating search
+                if !context.has_search {
+                    tui.toggle_row_numbers();
+                } else {
+                    tui.previous_search_match();
+                }
+                Some(Ok(ActionResult::Handled))
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "SearchNavigation"
+    }
+}
+
+/// Handler for statistics and display actions
+pub struct StatisticsActionHandler;
+
+impl ActionHandler for StatisticsActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        _context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        match action {
+            Action::ShowColumnStatistics => {
+                tui.show_column_statistics();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::CycleColumnPacking => {
+                tui.cycle_column_packing();
+                Some(Ok(ActionResult::Handled))
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "Statistics"
+    }
+}
+
 /// Main action dispatcher using visitor pattern
 pub struct ActionDispatcher {
     handlers: Vec<Box<dyn ActionHandler>>,
@@ -389,6 +543,10 @@ impl ActionDispatcher {
             Box::new(ToggleActionHandler),
             Box::new(ClearActionHandler),
             Box::new(ExitActionHandler),
+            Box::new(ModeActionHandler),
+            Box::new(ColumnArrangementActionHandler),
+            Box::new(SearchNavigationActionHandler),
+            Box::new(StatisticsActionHandler),
         ];
 
         Self { handlers }
@@ -547,6 +705,50 @@ mod tests {
         }
         fn clear_line(&mut self) {
             self.last_action = "clear_line".to_string();
+        }
+
+        // Mode operations
+        fn start_search(&mut self) {
+            self.last_action = "start_search".to_string();
+        }
+        fn start_column_search(&mut self) {
+            self.last_action = "start_column_search".to_string();
+        }
+        fn start_filter(&mut self) {
+            self.last_action = "start_filter".to_string();
+        }
+        fn start_fuzzy_filter(&mut self) {
+            self.last_action = "start_fuzzy_filter".to_string();
+        }
+        fn exit_current_mode(&mut self) {
+            self.last_action = "exit_current_mode".to_string();
+        }
+        fn toggle_debug_mode(&mut self) {
+            self.last_action = "toggle_debug_mode".to_string();
+        }
+
+        // Column arrangement operations
+        fn move_current_column_left(&mut self) {
+            self.last_action = "move_current_column_left".to_string();
+        }
+        fn move_current_column_right(&mut self) {
+            self.last_action = "move_current_column_right".to_string();
+        }
+
+        // Search navigation
+        fn next_search_match(&mut self) {
+            self.last_action = "next_search_match".to_string();
+        }
+        fn previous_search_match(&mut self) {
+            self.last_action = "previous_search_match".to_string();
+        }
+
+        // Statistics and display
+        fn show_column_statistics(&mut self) {
+            self.last_action = "show_column_statistics".to_string();
+        }
+        fn cycle_column_packing(&mut self) {
+            self.last_action = "cycle_column_packing".to_string();
         }
     }
 

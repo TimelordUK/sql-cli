@@ -17,7 +17,7 @@ Vim-like terminal SQL editor with in-memory query engine for ultra-fast navigati
 ## Build & Test Commands
 ```bash
 # Build
-cargo build --release
+cargo build --releaseds
 
 # Run tests
 cargo test

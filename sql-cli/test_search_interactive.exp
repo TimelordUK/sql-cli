@@ -1,0 +1,31 @@
+#!/usr/bin/expect -f
+
+set timeout 5
+set log_file "search_debug.log"
+
+# Start the application with logging
+spawn env RUST_LOG=search=info ./target/release/sql-cli test_emerging.csv -e "select * from data"
+
+# Wait for the app to load
+sleep 1
+
+# Press / to start search
+send "/"
+sleep 0.5
+
+# Type "emerging"
+send "emerging"
+sleep 1
+
+# Press Enter to confirm search
+send "\r"
+sleep 1
+
+# Press F5 to show debug
+send "\033\[15~"
+sleep 1
+
+# Exit
+send "\003"
+
+expect eof
