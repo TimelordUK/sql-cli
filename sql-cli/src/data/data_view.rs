@@ -7,7 +7,7 @@ use tracing::{debug, info};
 
 use crate::data::data_provider::DataProvider;
 use crate::data::datatable::{DataRow, DataTable, DataValue};
-use crate::data::datavalue_compare::{compare_datavalues, compare_optional_datavalues};
+use crate::data::datavalue_compare::compare_optional_datavalues;
 
 /// Sort order for columns
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

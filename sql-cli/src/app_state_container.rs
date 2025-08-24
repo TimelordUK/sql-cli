@@ -14,11 +14,10 @@ use arboard::Clipboard;
 use chrono::{DateTime, Local};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::cell::RefCell;
-use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::time::{Duration, Instant};
-use tracing::{debug, error, info, trace};
+use tracing::{info, trace};
 
 /// Platform type for key handling
 #[derive(Debug, Clone, PartialEq)]

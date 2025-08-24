@@ -908,7 +908,7 @@ impl ViewportManager {
 
         // Work in visual coordinate space!
         // Visual indices are 0, 1, 2, 3... (contiguous, no gaps)
-        let mut visual_start = self.viewport_cols.start.min(total_visual_columns);
+        let visual_start = self.viewport_cols.start.min(total_visual_columns);
         let mut visual_end = visual_start;
 
         debug!(target: "viewport_manager",
