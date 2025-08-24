@@ -1,9 +1,12 @@
 //! Adapter to make VimSearchManager work with StateDispatcher
 
 use crate::buffer::{AppMode, Buffer};
+use crate::data::data_view::DataView;
 use crate::state::{StateEvent, StateSubscriber};
 use crate::ui::shadow_state::SearchType;
+use crate::ui::viewport_manager::ViewportManager;
 use crate::ui::vim_search_manager::VimSearchManager;
+use crossterm::event::KeyCode;
 use tracing::{debug, info};
 
 /// Adapter that connects VimSearchManager to the state dispatcher
@@ -50,6 +53,84 @@ impl VimSearchAdapter {
     /// Get mutable reference to inner manager
     pub fn manager_mut(&mut self) -> &mut VimSearchManager {
         &mut self.manager
+    }
+
+    /// Handle a key press - delegates to VimSearchManager if appropriate
+    pub fn handle_key(
+        &mut self,
+        key: KeyCode,
+        dataview: &DataView,
+        viewport: &mut ViewportManager,
+        buffer: &Buffer,
+    ) -> bool {
+        // First check if we should handle keys at all
+        if !self.should_handle_key(buffer) {
+            debug!("VimSearchAdapter: Not handling key - search not active");
+            return false;
+        }
+
+        // Delegate to VimSearchManager for actual search operations
+        match key {
+            KeyCode::Char('n') => {
+                info!("VimSearchAdapter: Delegating 'n' (next match) to VimSearchManager");
+                self.manager.next_match(viewport);
+                true
+            }
+            KeyCode::Char('N') => {
+                info!("VimSearchAdapter: Delegating 'N' (previous match) to VimSearchManager");
+                self.manager.previous_match(viewport);
+                true
+            }
+            KeyCode::Enter => {
+                info!("VimSearchAdapter: Delegating Enter (confirm search) to VimSearchManager");
+                self.manager.confirm_search(dataview, viewport);
+                true
+            }
+            KeyCode::Esc => {
+                info!("VimSearchAdapter: Search cancelled");
+                self.clear();
+                false // Let TUI handle mode change
+            }
+            _ => {
+                // For typing characters in search mode
+                if self.manager.is_typing() {
+                    if let KeyCode::Char(c) = key {
+                        // Update pattern - this would need to be connected to Buffer's search_state
+                        debug!("VimSearchAdapter: Character '{}' typed in search", c);
+                        // Note: Pattern updates should go through Buffer
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Start a new search
+    pub fn start_search(&mut self) {
+        info!("VimSearchAdapter: Starting new search");
+        self.is_active = true;
+        self.manager.start_search();
+    }
+
+    /// Update search pattern and find matches
+    pub fn update_pattern(
+        &mut self,
+        pattern: String,
+        dataview: &DataView,
+        viewport: &mut ViewportManager,
+    ) {
+        debug!("VimSearchAdapter: Updating pattern to '{}'", pattern);
+        self.manager.update_pattern(pattern, dataview, viewport);
+    }
+
+    /// Confirm the current search
+    pub fn confirm_search(&mut self, dataview: &DataView, viewport: &mut ViewportManager) -> bool {
+        info!("VimSearchAdapter: Confirming search");
+        self.manager.confirm_search(dataview, viewport)
     }
 }
 
