@@ -1,6 +1,6 @@
 //! Adapter to make VimSearchManager work with StateDispatcher
 
-use crate::buffer::{AppMode, Buffer};
+use crate::buffer::{AppMode, Buffer, BufferAPI};
 use crate::data::data_view::DataView;
 use crate::state::{StateEvent, StateSubscriber};
 use crate::ui::shadow_state::SearchType;
@@ -24,14 +24,16 @@ impl VimSearchAdapter {
     }
 
     /// Check if vim search should handle a key based on Buffer state
-    pub fn should_handle_key(&self, buffer: &Buffer) -> bool {
+    pub fn should_handle_key(&self, buffer: &dyn BufferAPI) -> bool {
         // Check Buffer's state, not internal state
-        let in_search_mode = buffer.mode == AppMode::Search;
-        let has_pattern = !buffer.search_state.pattern.is_empty();
+        let in_search_mode = buffer.get_mode() == AppMode::Search;
+        let has_pattern = !buffer.get_search_pattern().is_empty();
 
         debug!(
             "VimSearchAdapter: should_handle_key? mode={:?}, pattern='{}', active={}",
-            buffer.mode, buffer.search_state.pattern, self.is_active
+            buffer.get_mode(),
+            buffer.get_search_pattern(),
+            self.is_active
         );
 
         // Only handle keys if we're in search mode OR have an active pattern
@@ -61,7 +63,7 @@ impl VimSearchAdapter {
         key: KeyCode,
         dataview: &DataView,
         viewport: &mut ViewportManager,
-        buffer: &Buffer,
+        buffer: &dyn BufferAPI,
     ) -> bool {
         // First check if we should handle keys at all
         if !self.should_handle_key(buffer) {
@@ -131,6 +133,88 @@ impl VimSearchAdapter {
     pub fn confirm_search(&mut self, dataview: &DataView, viewport: &mut ViewportManager) -> bool {
         info!("VimSearchAdapter: Confirming search");
         self.manager.confirm_search(dataview, viewport)
+    }
+
+    /// Check if the adapter is active (has vim search running)
+    pub fn is_active(&self) -> bool {
+        self.is_active || self.manager.is_active()
+    }
+
+    /// Check if we're currently navigating through search results
+    pub fn is_navigating(&self) -> bool {
+        self.manager.is_navigating()
+    }
+
+    /// Get the current search pattern
+    pub fn get_pattern(&self) -> Option<String> {
+        self.manager.get_pattern()
+    }
+
+    /// Get match information (current, total)
+    pub fn get_match_info(&self) -> Option<(usize, usize)> {
+        self.manager.get_match_info()
+    }
+
+    /// Cancel the current search
+    pub fn cancel_search(&mut self) {
+        info!("VimSearchAdapter: Cancelling search");
+        self.manager.cancel_search();
+        self.is_active = false;
+    }
+
+    /// Exit navigation mode
+    pub fn exit_navigation(&mut self) {
+        info!("VimSearchAdapter: Exiting navigation");
+        self.manager.exit_navigation();
+    }
+
+    /// Navigate to next match
+    pub fn next_match(
+        &mut self,
+        viewport: &mut ViewportManager,
+    ) -> Option<crate::ui::vim_search_manager::SearchMatch> {
+        self.manager.next_match(viewport)
+    }
+
+    /// Navigate to previous match  
+    pub fn previous_match(
+        &mut self,
+        viewport: &mut ViewportManager,
+    ) -> Option<crate::ui::vim_search_manager::SearchMatch> {
+        self.manager.previous_match(viewport)
+    }
+
+    /// Set search state from external source (for compatibility)
+    pub fn set_search_state_from_external(
+        &mut self,
+        pattern: String,
+        matches: Vec<(usize, usize)>,
+        dataview: &DataView,
+    ) {
+        self.manager
+            .set_search_state_from_external(pattern, matches, dataview);
+        self.is_active = true; // Activate when search state is set externally
+    }
+
+    /// Resume the last search
+    pub fn resume_last_search(
+        &mut self,
+        dataview: &DataView,
+        viewport: &mut ViewportManager,
+    ) -> bool {
+        let result = self.manager.resume_last_search(dataview, viewport);
+        if result {
+            self.is_active = true;
+        }
+        result
+    }
+
+    /// Reset to the first match
+    pub fn reset_to_first_match(
+        &mut self,
+        viewport: &mut ViewportManager,
+    ) -> Option<crate::ui::vim_search_manager::SearchMatch> {
+        self.manager.reset_to_first_match(viewport)
     }
 }
 

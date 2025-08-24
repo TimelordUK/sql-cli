@@ -20,6 +20,7 @@ use crate::help_text::HelpText;
 use crate::service_container::ServiceContainer;
 use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
+use crate::state::StateDispatcher;
 use crate::ui::action_handlers::ActionHandlerContext;
 use crate::ui::actions::{Action, ActionContext, ActionResult};
 use crate::ui::enhanced_tui_helpers;
@@ -33,6 +34,8 @@ use crate::ui::traits::{
     BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
 };
 use crate::ui::viewport_manager::{ColumnPackingMode, ViewportEfficiency, ViewportManager};
+use crate::ui::vim_search_adapter::VimSearchAdapter;
+use crate::ui::vim_search_manager::VimSearchManager;
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -91,11 +94,12 @@ pub struct EnhancedTuiApp {
     stats_widget: StatsWidget,
     help_widget: HelpWidget,
     search_modes_widget: SearchModesWidget,
-    vim_search_manager: RefCell<crate::ui::vim_search_manager::VimSearchManager>, // Manages vim-like forward search
-    search_manager: RefCell<SearchManager>, // New: Centralized search logic
-    key_chord_handler: KeyChordHandler,     // Manages key sequences and history
-    key_dispatcher: KeyDispatcher,          // Maps keys to actions
-    key_mapper: KeyMapper,                  // New action-based key mapping system
+    vim_search_adapter: RefCell<VimSearchAdapter>, // State-aware vim search adapter
+    search_manager: RefCell<SearchManager>,        // New: Centralized search logic
+    state_dispatcher: RefCell<StateDispatcher>,    // Coordinates state changes
+    key_chord_handler: KeyChordHandler,            // Manages key sequences and history
+    key_dispatcher: KeyDispatcher,                 // Maps keys to actions
+    key_mapper: KeyMapper,                         // New action-based key mapping system
 
     // Buffer management (new - for supporting multiple files)
     pub(crate) buffer_manager: BufferManager,
@@ -182,7 +186,7 @@ impl EnhancedTuiApp {
             has_filter: !buffer.get_filter_pattern().is_empty()
                 || !buffer.get_fuzzy_filter_pattern().is_empty(),
             has_search: !buffer.get_search_pattern().is_empty()
-                || self.vim_search_manager.borrow().is_active()
+                || self.vim_search_adapter.borrow().should_handle_key(buffer)
                 || self.state_container.column_search().is_active,
             row_count: buffer.get_dataview().map_or(0, |v| v.row_count()),
             column_count: buffer.get_dataview().map_or(0, |v| v.column_count()),
@@ -447,8 +451,8 @@ impl EnhancedTuiApp {
                 match context.mode {
                     AppMode::Results => {
                         // If vim search is active, just exit search mode but stay in Results
-                        if self.vim_search_manager.borrow().is_active() {
-                            self.vim_search_manager.borrow_mut().exit_navigation();
+                        if self.vim_search_adapter.borrow().is_active() {
+                            self.vim_search_adapter.borrow_mut().exit_navigation();
                             self.buffer_mut()
                                 .set_status_message("Search mode exited".to_string());
                             return Ok(ActionResult::Handled);
@@ -799,8 +803,8 @@ impl EnhancedTuiApp {
             }
             PreviousSearchMatch => {
                 // Shift+N behavior: search navigation if search is active, otherwise toggle row numbers
-                if self.vim_search_manager.borrow().is_active()
-                    || self.vim_search_manager.borrow().get_pattern().is_some()
+                if self.vim_search_adapter.borrow().is_active()
+                    || self.vim_search_adapter.borrow().get_pattern().is_some()
                 {
                     self.vim_search_previous();
                 } else {
@@ -1151,7 +1155,7 @@ impl EnhancedTuiApp {
 
         let service_container = Some(services);
 
-        Self {
+        let mut app = Self {
             state_container,
             service_container,
             input: Input::default(),
@@ -1165,7 +1169,8 @@ impl EnhancedTuiApp {
             stats_widget: StatsWidget::new(),
             help_widget,
             search_modes_widget: SearchModesWidget::new(),
-            vim_search_manager: RefCell::new(crate::ui::vim_search_manager::VimSearchManager::new()),
+            vim_search_adapter: RefCell::new(VimSearchAdapter::new(VimSearchManager::new())),
+            state_dispatcher: RefCell::new(StateDispatcher::new()),
             search_manager: RefCell::new({
                 let mut search_config = SearchConfig::default();
                 search_config.case_sensitive = !config.behavior.case_insensitive_default;
@@ -1202,7 +1207,27 @@ impl EnhancedTuiApp {
             table_widget_manager: RefCell::new(TableWidgetManager::new()),
             debug_registry: DebugRegistry::new(),
             memory_tracker: MemoryTracker::new(100),
+        };
+
+        // Set up state dispatcher
+        app.setup_state_coordination();
+
+        app
+    }
+
+    /// Set up state coordination between dispatcher and components
+    fn setup_state_coordination(&mut self) {
+        // Connect state dispatcher to current buffer
+        if let Some(current_buffer) = self.buffer_manager.current() {
+            let buffer_rc = std::rc::Rc::new(std::cell::RefCell::new(current_buffer.clone()));
+            self.state_dispatcher.borrow_mut().set_buffer(buffer_rc);
         }
+
+        // NOTE: We would add VimSearchAdapter as subscriber here, but it requires
+        // moving the adapter out of RefCell temporarily. For now, we'll handle
+        // this connection when events are dispatched.
+
+        info!("State coordination setup complete");
     }
 
     pub fn new_with_csv(csv_path: &str) -> Result<Self> {
@@ -2635,7 +2660,7 @@ impl EnhancedTuiApp {
                     if let Some(dataview) = self.buffer().get_dataview() {
                         info!(target: "search", "Syncing {} matches to VimSearchManager for pattern '{}'", 
                               matches_for_vim.len(), pattern);
-                        self.vim_search_manager
+                        self.vim_search_adapter
                             .borrow_mut()
                             .set_search_state_from_external(
                                 pattern.clone(),
@@ -3109,7 +3134,7 @@ impl EnhancedTuiApp {
 
                 // Clear all search navigation state (so n/N keys work properly after escape)
                 self.state_container.clear_search();
-                self.vim_search_manager.borrow_mut().cancel_search();
+                self.vim_search_adapter.borrow_mut().cancel_search();
 
                 // Observe search end
                 self.shadow_state
@@ -3296,7 +3321,7 @@ impl EnhancedTuiApp {
         self.state_container.clear_search();
         self.state_container.clear_column_search();
         // Also clear vim search state
-        self.vim_search_manager.borrow_mut().cancel_search();
+        self.vim_search_adapter.borrow_mut().cancel_search();
 
         // 2. Save query to buffer and state container
         self.buffer_mut().set_last_query(query.to_string());
@@ -3929,7 +3954,7 @@ impl EnhancedTuiApp {
         info!(target: "vim_search", "Starting vim search mode");
 
         // Start search mode in VimSearchManager
-        self.vim_search_manager.borrow_mut().start_search();
+        self.vim_search_adapter.borrow_mut().start_search();
 
         // Observe search start
         self.shadow_state.borrow_mut().observe_search_start(
@@ -3943,13 +3968,13 @@ impl EnhancedTuiApp {
 
     /// Navigate to next vim search match (n key)
     fn vim_search_next(&mut self) {
-        if !self.vim_search_manager.borrow().is_navigating() {
+        if !self.vim_search_adapter.borrow().is_navigating() {
             // Try to resume last search if not currently navigating
             let resumed = {
                 let mut viewport_borrow = self.viewport_manager.borrow_mut();
                 if let Some(ref mut viewport) = *viewport_borrow {
                     if let Some(dataview) = self.buffer().get_dataview() {
-                        self.vim_search_manager
+                        self.vim_search_adapter
                             .borrow_mut()
                             .resume_last_search(dataview, viewport)
                     } else {
@@ -3971,9 +3996,9 @@ impl EnhancedTuiApp {
         let result = {
             let mut viewport_borrow = self.viewport_manager.borrow_mut();
             if let Some(ref mut viewport) = *viewport_borrow {
-                let search_match = self.vim_search_manager.borrow_mut().next_match(viewport);
+                let search_match = self.vim_search_adapter.borrow_mut().next_match(viewport);
                 if search_match.is_some() {
-                    let match_info = self.vim_search_manager.borrow().get_match_info();
+                    let match_info = self.vim_search_adapter.borrow().get_match_info();
                     search_match.map(|m| (m, match_info))
                 } else {
                     None
@@ -4035,13 +4060,13 @@ impl EnhancedTuiApp {
 
     /// Navigate to previous vim search match (N key)
     fn vim_search_previous(&mut self) {
-        if !self.vim_search_manager.borrow().is_navigating() {
+        if !self.vim_search_adapter.borrow().is_navigating() {
             // Try to resume last search if not currently navigating
             let resumed = {
                 let mut viewport_borrow = self.viewport_manager.borrow_mut();
                 if let Some(ref mut viewport) = *viewport_borrow {
                     if let Some(dataview) = self.buffer().get_dataview() {
-                        self.vim_search_manager
+                        self.vim_search_adapter
                             .borrow_mut()
                             .resume_last_search(dataview, viewport)
                     } else {
@@ -4064,11 +4089,11 @@ impl EnhancedTuiApp {
             let mut viewport_borrow = self.viewport_manager.borrow_mut();
             if let Some(ref mut viewport) = *viewport_borrow {
                 let search_match = self
-                    .vim_search_manager
+                    .vim_search_adapter
                     .borrow_mut()
                     .previous_match(viewport);
                 if search_match.is_some() {
-                    let match_info = self.vim_search_manager.borrow().get_match_info();
+                    let match_info = self.vim_search_adapter.borrow().get_match_info();
                     search_match.map(|m| (m, match_info))
                 } else {
                     None
@@ -6993,11 +7018,11 @@ impl ActionHandlerContext for EnhancedTuiApp {
         <Self as NavigationBehavior>::goto_first_row(self);
 
         // Additionally, if we're in vim search navigation mode, reset search to first match
-        let is_navigating = self.vim_search_manager.borrow().is_navigating();
+        let is_navigating = self.vim_search_adapter.borrow().is_navigating();
 
         if is_navigating {
             // Reset search index to first match
-            let mut vim_search_mut = self.vim_search_manager.borrow_mut();
+            let mut vim_search_mut = self.vim_search_adapter.borrow_mut();
             let mut viewport_borrow = self.viewport_manager.borrow_mut();
             if let Some(ref mut viewport) = *viewport_borrow {
                 if let Some(first_match) = vim_search_mut.reset_to_first_match(viewport) {
@@ -7215,8 +7240,8 @@ impl ActionHandlerContext for EnhancedTuiApp {
         match mode {
             AppMode::Results => {
                 // If vim search is active, just exit search mode but stay in Results
-                if self.vim_search_manager.borrow().is_active() {
-                    self.vim_search_manager.borrow_mut().exit_navigation();
+                if self.vim_search_adapter.borrow().is_active() {
+                    self.vim_search_adapter.borrow_mut().exit_navigation();
                     self.buffer_mut()
                         .set_status_message("Search mode exited".to_string());
                     return;
@@ -7267,8 +7292,8 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn previous_search_match(&mut self) {
-        if self.vim_search_manager.borrow().is_active()
-            || self.vim_search_manager.borrow().get_pattern().is_some()
+        if self.vim_search_adapter.borrow().is_active()
+            || self.vim_search_adapter.borrow().get_pattern().is_some()
         {
             self.vim_search_previous();
         }
