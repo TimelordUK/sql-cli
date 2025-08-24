@@ -3070,8 +3070,10 @@ impl EnhancedTuiApp {
                 // Clear the filter and restore original SQL
                 match self.buffer().get_mode() {
                     AppMode::FuzzyFilter => {
-                        // Clear fuzzy filter
+                        // Clear fuzzy filter - must apply empty filter to DataView
+                        debug!(target: "search", "FuzzyFilter Cancel: Clearing fuzzy filter");
                         self.buffer_mut().set_fuzzy_filter_pattern(String::new());
+                        self.apply_fuzzy_filter(); // This will clear the filter in DataView
                         self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
                         self.buffer_mut().set_fuzzy_filter_active(false);
                     }

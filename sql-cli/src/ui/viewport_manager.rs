@@ -2964,11 +2964,16 @@ impl ViewportManager {
             column_count, pinned_count, current_column
         );
 
-        // Delegate to DataView's move_column_left - it handles pinned column logic
-        let dataview_mut = Arc::get_mut(&mut self.dataview)
-            .expect("ViewportManager should have exclusive access to DataView during reordering");
+        // Clone the DataView, modify it, and replace the Arc
+        let mut new_dataview = (*self.dataview).clone();
 
-        let success = dataview_mut.move_column_left(current_column);
+        // Delegate to DataView's move_column_left - it handles pinned column logic
+        let success = new_dataview.move_column_left(current_column);
+
+        if success {
+            // Replace the Arc with the modified DataView
+            self.dataview = Arc::new(new_dataview);
+        }
 
         if success {
             self.invalidate_cache(); // Column order changed, need to recalculate widths
@@ -3068,11 +3073,16 @@ impl ViewportManager {
         // Get pinned columns count to respect boundaries
         let pinned_count = self.dataview.get_pinned_columns().len();
 
-        // Delegate to DataView's move_column_right - it handles pinned column logic
-        let dataview_mut = Arc::get_mut(&mut self.dataview)
-            .expect("ViewportManager should have exclusive access to DataView during reordering");
+        // Clone the DataView, modify it, and replace the Arc
+        let mut new_dataview = (*self.dataview).clone();
 
-        let success = dataview_mut.move_column_right(current_column);
+        // Delegate to DataView's move_column_right - it handles pinned column logic
+        let success = new_dataview.move_column_right(current_column);
+
+        if success {
+            // Replace the Arc with the modified DataView
+            self.dataview = Arc::new(new_dataview);
+        }
 
         if success {
             self.invalidate_cache(); // Column order changed, need to recalculate widths
@@ -3161,15 +3171,15 @@ impl ViewportManager {
     pub fn hide_column(&mut self, column_index: usize) -> bool {
         debug!(target: "viewport_manager", "hide_column: column_index={}", column_index);
 
-        // Get mutable access to DataView
-        let dataview_mut = Arc::get_mut(&mut self.dataview).expect(
-            "ViewportManager should have exclusive access to DataView during column operations",
-        );
+        // Clone the DataView, modify it, and replace the Arc
+        let mut new_dataview = (*self.dataview).clone();
 
-        // Hide the column in DataView
-        let success = dataview_mut.hide_column(column_index);
+        // Hide the column in the cloned DataView
+        let success = new_dataview.hide_column(column_index);
 
         if success {
+            // Replace the Arc with the modified DataView
+            self.dataview = Arc::new(new_dataview);
             self.invalidate_cache(); // Column visibility changed, need to recalculate widths
 
             // Adjust viewport if necessary
@@ -3216,13 +3226,16 @@ impl ViewportManager {
     pub fn hide_column_by_name(&mut self, column_name: &str) -> bool {
         debug!(target: "viewport_manager", "hide_column_by_name: column_name={}", column_name);
 
-        // Get mutable access to DataView
-        let dataview_mut = Arc::get_mut(&mut self.dataview).expect(
-            "ViewportManager should have exclusive access to DataView during column operations",
-        );
+        // Clone the DataView, modify it, and replace the Arc
+        let mut new_dataview = (*self.dataview).clone();
 
         // Hide the column in DataView
-        let success = dataview_mut.hide_column_by_name(column_name);
+        let success = new_dataview.hide_column_by_name(column_name);
+
+        if success {
+            // Replace the Arc with the modified DataView
+            self.dataview = Arc::new(new_dataview);
+        }
 
         if success {
             self.invalidate_cache(); // Column visibility changed, need to recalculate widths
@@ -3255,13 +3268,16 @@ impl ViewportManager {
     pub fn hide_empty_columns(&mut self) -> usize {
         debug!(target: "viewport_manager", "hide_empty_columns called");
 
-        // Get mutable access to DataView
-        let dataview_mut = Arc::get_mut(&mut self.dataview).expect(
-            "ViewportManager should have exclusive access to DataView during column operations",
-        );
+        // Clone the DataView, modify it, and replace the Arc
+        let mut new_dataview = (*self.dataview).clone();
 
         // Hide empty columns in DataView
-        let count = dataview_mut.hide_empty_columns();
+        let count = new_dataview.hide_empty_columns();
+
+        if count > 0 {
+            // Replace the Arc with the modified DataView
+            self.dataview = Arc::new(new_dataview);
+        }
 
         if count > 0 {
             self.invalidate_cache(); // Column visibility changed, need to recalculate widths
@@ -3285,13 +3301,14 @@ impl ViewportManager {
     pub fn unhide_all_columns(&mut self) {
         debug!(target: "viewport_manager", "unhide_all_columns called");
 
-        // Get mutable access to DataView
-        let dataview_mut = Arc::get_mut(&mut self.dataview).expect(
-            "ViewportManager should have exclusive access to DataView during column operations",
-        );
+        // Clone the DataView, modify it, and replace the Arc
+        let mut new_dataview = (*self.dataview).clone();
 
-        // Unhide all columns in DataView
-        dataview_mut.unhide_all_columns();
+        // Unhide all columns in the cloned DataView
+        new_dataview.unhide_all_columns();
+
+        // Replace the Arc with the modified DataView
+        self.dataview = Arc::new(new_dataview);
 
         self.invalidate_cache(); // Column visibility changed, need to recalculate widths
 

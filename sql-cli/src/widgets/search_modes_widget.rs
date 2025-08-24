@@ -194,7 +194,9 @@ impl SearchModesWidget {
             KeyCode::Esc => SearchModesAction::Cancel,
             KeyCode::Enter => {
                 let pattern = state.get_pattern();
-                if !pattern.is_empty() {
+                // For FuzzyFilter, allow empty pattern to clear the filter
+                // For other modes, treat empty as Cancel
+                if !pattern.is_empty() || state.mode == SearchMode::FuzzyFilter {
                     SearchModesAction::Apply(state.mode.clone(), pattern)
                 } else {
                     SearchModesAction::Cancel
