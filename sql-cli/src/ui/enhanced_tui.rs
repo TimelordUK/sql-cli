@@ -33,7 +33,7 @@ use crate::ui::traits::{
     BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
 };
 use crate::ui::viewport_manager::{
-    ColumnPackingMode, NavigationResult, ViewportEfficiency, ViewportManager,
+    ColumnPackingMode, ViewportEfficiency, ViewportManager,
 };
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;

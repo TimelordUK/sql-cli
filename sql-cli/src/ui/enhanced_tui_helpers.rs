@@ -1,7 +1,6 @@
 // Helper functions extracted from enhanced_tui.rs
 // These are pure functions with no dependencies on self
 
-use anyhow::Result;
 
 /// Sanitize table name by removing special characters and limiting length
 pub fn sanitize_table_name(name: &str) -> String {

@@ -1,7 +1,7 @@
 use crate::buffer::{AppMode, BufferAPI};
 use crate::key_dispatcher::KeyDispatcher;
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::KeyEvent;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},

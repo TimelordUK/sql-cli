@@ -1,6 +1,5 @@
 use crate::debug::{
     BufferDebugProvider, BufferManagerDebugProvider, DataViewDebugProvider, MemoryDebugProvider,
-    ViewportDebugProvider,
 };
 use crate::ui::enhanced_tui::EnhancedTuiApp;
 use std::sync::Arc;
