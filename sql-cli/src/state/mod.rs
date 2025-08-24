@@ -1,7 +1,15 @@
 //! State management components
 //!
-//! This module contains individual state components that are
-//! orchestrated by the AppStateContainer.
+//! This module contains the state coordination system that manages
+//! Buffer state changes and notifies interested components.
+
+pub mod coordinator;
+pub mod dispatcher;
+pub mod events;
+
+pub use coordinator::StateCoordinator;
+pub use dispatcher::{StateDispatcher, StateSubscriber};
+pub use events::{StateChange, StateEvent};
 
 // State components to be extracted from app_state_container.rs:
 // - selection_state.rs

@@ -52,7 +52,7 @@ pub struct SortState {
     pub order: SortOrder,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FilterState {
     pub pattern: String,
     pub regex: Option<Regex>,
@@ -74,6 +74,17 @@ pub struct FuzzyFilterState {
     pub active: bool,
     pub matcher: SkimMatcherV2,
     pub filtered_indices: Vec<usize>,
+}
+
+impl std::fmt::Debug for FuzzyFilterState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FuzzyFilterState")
+            .field("pattern", &self.pattern)
+            .field("active", &self.active)
+            .field("matcher", &"SkimMatcherV2")
+            .field("filtered_indices", &self.filtered_indices)
+            .finish()
+    }
 }
 
 impl Clone for FuzzyFilterState {
@@ -98,7 +109,7 @@ impl Default for FuzzyFilterState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SearchState {
     pub pattern: String,
     pub current_match: Option<(usize, usize)>,

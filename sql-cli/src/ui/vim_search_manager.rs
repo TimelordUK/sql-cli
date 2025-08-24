@@ -213,6 +213,13 @@ impl VimSearchManager {
         self.state = VimSearchState::Inactive;
     }
 
+    /// Clear all search state and return to inactive mode
+    pub fn clear(&mut self) {
+        info!(target: "vim_search", "Clearing all search state");
+        self.state = VimSearchState::Inactive;
+        self.last_search_pattern = None;
+    }
+
     /// Exit navigation mode but keep search pattern for later
     pub fn exit_navigation(&mut self) {
         if let VimSearchState::Navigating { pattern, .. } = &self.state {
