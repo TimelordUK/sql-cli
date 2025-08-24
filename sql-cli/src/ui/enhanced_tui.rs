@@ -2502,6 +2502,16 @@ impl EnhancedTuiApp {
     }
 
     fn handle_results_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // Simple fix: If Escape is pressed and there's an active search, clear it
+        if key.code == KeyCode::Esc && !self.buffer().get_search_pattern().is_empty() {
+            info!("Escape pressed in Results mode with active search - clearing search");
+            self.buffer_mut().set_search_pattern(String::new());
+            self.state_container.clear_search();
+            self.buffer_mut()
+                .set_status_message("Search cleared".to_string());
+            return Ok(false);
+        }
+
         let selection_mode = self.state_container.get_selection_mode();
 
         debug!(
