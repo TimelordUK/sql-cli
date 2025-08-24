@@ -118,6 +118,10 @@ pub struct EnhancedTuiApp {
     pub(crate) viewport_manager: RefCell<Option<ViewportManager>>,
     viewport_efficiency: RefCell<Option<ViewportEfficiency>>,
 
+    // Shadow state manager for observing state transitions
+    #[cfg(feature = "shadow-state")]
+    shadow_state: RefCell<crate::ui::shadow_state::ShadowStateManager>,
+
     // Table widget manager for centralized table state/rendering
     table_widget_manager: RefCell<TableWidgetManager>,
 
@@ -1142,6 +1146,8 @@ impl EnhancedTuiApp {
             },
             viewport_manager: RefCell::new(None), // Will be initialized when DataView is set
             viewport_efficiency: RefCell::new(None),
+            #[cfg(feature = "shadow-state")]
+            shadow_state: RefCell::new(crate::ui::shadow_state::ShadowStateManager::new()),
             table_widget_manager: RefCell::new(TableWidgetManager::new()),
             debug_registry: DebugRegistry::new(),
             memory_tracker: MemoryTracker::new(100),
@@ -2979,9 +2985,21 @@ impl EnhancedTuiApp {
                 // Clear all search navigation state (so n/N keys work properly after escape)
                 self.state_container.clear_search();
                 self.vim_search_manager.borrow_mut().cancel_search();
+                
+                // Observe search end
+                #[cfg(feature = "shadow-state")]
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_search_end("search_cancelled");
 
                 // Switch back to Results mode
                 self.buffer_mut().set_mode(AppMode::Results);
+                
+                // Observe mode change
+                #[cfg(feature = "shadow-state")]
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Results, "return_from_search");
             }
             SearchModesAction::NextMatch => {
                 debug!(target: "search", "NextMatch action, current_mode={:?}, widget_mode={:?}", 
@@ -3245,6 +3263,13 @@ impl EnhancedTuiApp {
 
                 // 7. Switch to results mode and reset navigation using centralized reset
                 self.buffer_mut().set_mode(AppMode::Results);
+                
+                // Observe state transition
+                #[cfg(feature = "shadow-state")]
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Results, "execute_query_success");
+                
                 self.reset_table_state();
 
                 Ok(())
@@ -3768,6 +3793,12 @@ impl EnhancedTuiApp {
 
         // Start search mode in VimSearchManager
         self.vim_search_manager.borrow_mut().start_search();
+        
+        // Observe search start
+        #[cfg(feature = "shadow-state")]
+        self.shadow_state
+            .borrow_mut()
+            .observe_search_start(crate::ui::shadow_state::SearchType::Vim, "slash_key_pressed");
 
         // Use the existing SearchModesWidget which already has perfect debouncing
         self.enter_search_mode(SearchMode::Search);
@@ -5306,6 +5337,19 @@ impl EnhancedTuiApp {
         };
 
         self.add_global_indicators(&mut spans);
+        
+        // Add shadow state display for debugging
+        #[cfg(feature = "shadow-state")]
+        {
+            let shadow_display = self.shadow_state.borrow().status_display();
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                shadow_display,
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::DIM),
+            ));
+        }
 
         self.add_help_text_display(&mut spans, help_text, area);
 

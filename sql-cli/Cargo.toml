@@ -3,6 +3,10 @@ name = "sql-cli"
 version = "1.28.6"
 edition = "2021"
 
+[features]
+default = []
+shadow-state = []  # Enable shadow state manager for observing state transitions
+
 [lib]
 name = "sql_cli"
 path = "src/lib.rs"

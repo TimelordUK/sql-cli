@@ -36,3 +36,6 @@ pub mod tui_state;
 pub mod ui_layout_utils;
 pub mod viewport_manager;
 pub mod vim_search_manager;
+
+#[cfg(feature = "shadow-state")]
+pub mod shadow_state;
