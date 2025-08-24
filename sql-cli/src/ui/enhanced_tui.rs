@@ -666,103 +666,23 @@ impl EnhancedTuiApp {
             }
 
             // Editing actions - only work in Command mode
-            MoveCursorLeft => {
-                if context.mode == AppMode::Command {
-                    let buffer = self.buffer_mut();
-                    let pos = buffer.get_input_cursor_position();
-                    if pos > 0 {
-                        buffer.set_input_cursor_position(pos - 1);
-                    }
-                    Ok(ActionResult::Handled)
-                } else {
-                    Ok(ActionResult::NotHandled)
-                }
-            }
-            MoveCursorRight => {
-                if context.mode == AppMode::Command {
-                    let buffer = self.buffer_mut();
-                    let pos = buffer.get_input_cursor_position();
-                    let text_len = buffer.get_input_text().chars().count();
-                    if pos < text_len {
-                        buffer.set_input_cursor_position(pos + 1);
-                    }
-                    Ok(ActionResult::Handled)
-                } else {
-                    Ok(ActionResult::NotHandled)
-                }
-            }
-            MoveCursorHome => {
-                if context.mode == AppMode::Command {
-                    self.buffer_mut().set_input_cursor_position(0);
-                    Ok(ActionResult::Handled)
-                } else {
-                    Ok(ActionResult::NotHandled)
-                }
-            }
-            MoveCursorEnd => {
-                if context.mode == AppMode::Command {
-                    let text_len = self.buffer().get_input_text().chars().count();
-                    self.buffer_mut().set_input_cursor_position(text_len);
-                    Ok(ActionResult::Handled)
-                } else {
-                    Ok(ActionResult::NotHandled)
-                }
-            }
-            Backspace => {
-                if context.mode == AppMode::Command {
-                    let buffer = self.buffer_mut();
-                    let pos = buffer.get_input_cursor_position();
-                    if pos > 0 {
-                        buffer.save_state_for_undo();
-                        let mut text = buffer.get_input_text();
-                        let mut chars: Vec<char> = text.chars().collect();
-                        if pos <= chars.len() {
-                            chars.remove(pos - 1);
-                            text = chars.iter().collect();
-                            buffer.set_input_text(text);
-                            buffer.set_input_cursor_position(pos - 1);
-                        }
-                    }
-                    Ok(ActionResult::Handled)
-                } else {
-                    Ok(ActionResult::NotHandled)
-                }
-            }
-            Delete => {
-                if context.mode == AppMode::Command {
-                    let buffer = self.buffer_mut();
-                    let pos = buffer.get_input_cursor_position();
-                    let mut text = buffer.get_input_text();
-                    let chars_len = text.chars().count();
-                    if pos < chars_len {
-                        buffer.save_state_for_undo();
-                        let mut chars: Vec<char> = text.chars().collect();
-                        chars.remove(pos);
-                        text = chars.iter().collect();
-                        buffer.set_input_text(text);
-                    }
-                    Ok(ActionResult::Handled)
-                } else {
-                    Ok(ActionResult::NotHandled)
-                }
-            }
+            // MoveCursorLeft is now handled by InputCursorActionHandler in visitor pattern
+            MoveCursorLeft => Ok(ActionResult::NotHandled),
+            // MoveCursorRight is now handled by InputCursorActionHandler in visitor pattern
+            MoveCursorRight => Ok(ActionResult::NotHandled),
+            // MoveCursorHome is now handled by InputCursorActionHandler in visitor pattern
+            MoveCursorHome => Ok(ActionResult::NotHandled),
+            // MoveCursorEnd is now handled by InputCursorActionHandler in visitor pattern
+            MoveCursorEnd => Ok(ActionResult::NotHandled),
+            // Backspace is now handled by TextEditActionHandler in visitor pattern
+            Backspace => Ok(ActionResult::NotHandled),
+            // Delete is now handled by TextEditActionHandler in visitor pattern
+            Delete => Ok(ActionResult::NotHandled),
             // ClearLine is now handled by ClearActionHandler in visitor pattern
-            Undo => {
-                if context.mode == AppMode::Command {
-                    self.buffer_mut().perform_undo();
-                    Ok(ActionResult::Handled)
-                } else {
-                    Ok(ActionResult::NotHandled)
-                }
-            }
-            Redo => {
-                if context.mode == AppMode::Command {
-                    self.buffer_mut().perform_redo();
-                    Ok(ActionResult::Handled)
-                } else {
-                    Ok(ActionResult::NotHandled)
-                }
-            }
+            // Undo is now handled by TextEditActionHandler in visitor pattern
+            Undo => Ok(ActionResult::NotHandled),
+            // Redo is now handled by TextEditActionHandler in visitor pattern
+            Redo => Ok(ActionResult::NotHandled),
             ExecuteQuery => {
                 if context.mode == AppMode::Command {
                     // Delegate to existing execute query logic
@@ -7262,6 +7182,71 @@ impl ActionHandlerContext for EnhancedTuiApp {
             format!("Column packing: {}", new_mode.display_name())
         };
         self.buffer_mut().set_status_message(message);
+    }
+
+    // Input and text editing methods
+    fn move_input_cursor_left(&mut self) {
+        let buffer = self.buffer_mut();
+        let pos = buffer.get_input_cursor_position();
+        if pos > 0 {
+            buffer.set_input_cursor_position(pos - 1);
+        }
+    }
+
+    fn move_input_cursor_right(&mut self) {
+        let buffer = self.buffer_mut();
+        let pos = buffer.get_input_cursor_position();
+        let text_len = buffer.get_input_text().chars().count();
+        if pos < text_len {
+            buffer.set_input_cursor_position(pos + 1);
+        }
+    }
+
+    fn move_input_cursor_home(&mut self) {
+        self.buffer_mut().set_input_cursor_position(0);
+    }
+
+    fn move_input_cursor_end(&mut self) {
+        let text_len = self.buffer().get_input_text().chars().count();
+        self.buffer_mut().set_input_cursor_position(text_len);
+    }
+
+    fn backspace(&mut self) {
+        let buffer = self.buffer_mut();
+        let pos = buffer.get_input_cursor_position();
+        if pos > 0 {
+            buffer.save_state_for_undo();
+            let mut text = buffer.get_input_text();
+            let mut chars: Vec<char> = text.chars().collect();
+            if pos <= chars.len() {
+                chars.remove(pos - 1);
+                text = chars.iter().collect();
+                buffer.set_input_text(text);
+                buffer.set_input_cursor_position(pos - 1);
+            }
+        }
+    }
+
+    fn delete(&mut self) {
+        let buffer = self.buffer_mut();
+        let pos = buffer.get_input_cursor_position();
+        let mut text = buffer.get_input_text();
+        let chars_len = text.chars().count();
+        if pos < chars_len {
+            buffer.save_state_for_undo();
+            let mut chars: Vec<char> = text.chars().collect();
+            chars.remove(pos);
+            text = chars.iter().collect();
+            buffer.set_input_text(text);
+        }
+    }
+
+    fn undo(&mut self) {
+        self.buffer_mut().perform_undo();
+    }
+
+    fn redo(&mut self) {
+        self.buffer_mut().perform_redo();
     }
 }
 

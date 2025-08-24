@@ -90,6 +90,16 @@ pub trait ActionHandlerContext {
     // Statistics and display
     fn show_column_statistics(&mut self);
     fn cycle_column_packing(&mut self);
+
+    // Input and text editing
+    fn move_input_cursor_left(&mut self);
+    fn move_input_cursor_right(&mut self);
+    fn move_input_cursor_home(&mut self);
+    fn move_input_cursor_end(&mut self);
+    fn backspace(&mut self);
+    fn delete(&mut self);
+    fn undo(&mut self);
+    fn redo(&mut self);
 }
 
 /// Handler for navigation actions (Up, Down, Left, Right, PageUp, etc.)
@@ -527,6 +537,88 @@ impl ActionHandler for StatisticsActionHandler {
     }
 }
 
+/// Handler for cursor movement actions in Command mode
+pub struct InputCursorActionHandler;
+
+impl ActionHandler for InputCursorActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        // Only handle in Command mode
+        if context.mode != AppMode::Command {
+            return None;
+        }
+
+        match action {
+            Action::MoveCursorLeft => {
+                tui.move_input_cursor_left();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::MoveCursorRight => {
+                tui.move_input_cursor_right();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::MoveCursorHome => {
+                tui.move_input_cursor_home();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::MoveCursorEnd => {
+                tui.move_input_cursor_end();
+                Some(Ok(ActionResult::Handled))
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "InputCursor"
+    }
+}
+
+/// Handler for text editing actions in Command mode
+pub struct TextEditActionHandler;
+
+impl ActionHandler for TextEditActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        // Only handle in Command mode
+        if context.mode != AppMode::Command {
+            return None;
+        }
+
+        match action {
+            Action::Backspace => {
+                tui.backspace();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::Delete => {
+                tui.delete();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::Undo => {
+                tui.undo();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::Redo => {
+                tui.redo();
+                Some(Ok(ActionResult::Handled))
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "TextEdit"
+    }
+}
+
 /// Main action dispatcher using visitor pattern
 pub struct ActionDispatcher {
     handlers: Vec<Box<dyn ActionHandler>>,
@@ -547,6 +639,8 @@ impl ActionDispatcher {
             Box::new(ColumnArrangementActionHandler),
             Box::new(SearchNavigationActionHandler),
             Box::new(StatisticsActionHandler),
+            Box::new(InputCursorActionHandler),
+            Box::new(TextEditActionHandler),
         ];
 
         Self { handlers }
@@ -749,6 +843,32 @@ mod tests {
         }
         fn cycle_column_packing(&mut self) {
             self.last_action = "cycle_column_packing".to_string();
+        }
+
+        // Input and text editing
+        fn move_input_cursor_left(&mut self) {
+            self.last_action = "move_input_cursor_left".to_string();
+        }
+        fn move_input_cursor_right(&mut self) {
+            self.last_action = "move_input_cursor_right".to_string();
+        }
+        fn move_input_cursor_home(&mut self) {
+            self.last_action = "move_input_cursor_home".to_string();
+        }
+        fn move_input_cursor_end(&mut self) {
+            self.last_action = "move_input_cursor_end".to_string();
+        }
+        fn backspace(&mut self) {
+            self.last_action = "backspace".to_string();
+        }
+        fn delete(&mut self) {
+            self.last_action = "delete".to_string();
+        }
+        fn undo(&mut self) {
+            self.last_action = "undo".to_string();
+        }
+        fn redo(&mut self) {
+            self.last_action = "redo".to_string();
         }
     }
 
