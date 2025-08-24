@@ -1,4 +1,4 @@
-use crate::buffer::{AppMode, BufferAPI};
+use crate::buffer::BufferAPI;
 use crate::debug::debug_trace::{DebugSection, DebugSectionBuilder, DebugTrace, Priority};
 use std::sync::Arc;
 

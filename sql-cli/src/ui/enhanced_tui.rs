@@ -32,9 +32,7 @@ use crate::ui::table_widget_manager::TableWidgetManager;
 use crate::ui::traits::{
     BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
 };
-use crate::ui::viewport_manager::{
-    ColumnPackingMode, NavigationResult, ViewportEfficiency, ViewportManager,
-};
+use crate::ui::viewport_manager::{ColumnPackingMode, ViewportEfficiency, ViewportManager};
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -120,6 +118,9 @@ pub struct EnhancedTuiApp {
     pub(crate) viewport_manager: RefCell<Option<ViewportManager>>,
     viewport_efficiency: RefCell<Option<ViewportEfficiency>>,
 
+    // Shadow state manager for observing state transitions
+    shadow_state: RefCell<crate::ui::shadow_state::ShadowStateManager>,
+
     // Table widget manager for centralized table state/rendering
     table_widget_manager: RefCell<TableWidgetManager>,
 
@@ -180,7 +181,9 @@ impl EnhancedTuiApp {
             has_results: buffer.get_dataview().is_some(),
             has_filter: !buffer.get_filter_pattern().is_empty()
                 || !buffer.get_fuzzy_filter_pattern().is_empty(),
-            has_search: !buffer.get_search_pattern().is_empty(),
+            has_search: !buffer.get_search_pattern().is_empty()
+                || self.vim_search_manager.borrow().is_active()
+                || self.state_container.column_search().is_active,
             row_count: buffer.get_dataview().map_or(0, |v| v.row_count()),
             column_count: buffer.get_dataview().map_or(0, |v| v.column_count()),
             current_row: nav.selected_row,
@@ -230,6 +233,9 @@ impl EnhancedTuiApp {
             }
             StartJumpToRow => {
                 self.buffer_mut().set_mode(AppMode::JumpToRow);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::JumpToRow, "jump_to_row_requested");
                 self.clear_jump_to_row_input();
 
                 // Set jump-to-row state as active
@@ -351,6 +357,13 @@ impl EnhancedTuiApp {
                         "Cursor lock OFF"
                     };
                     self.buffer_mut().set_status_message(msg.to_string());
+
+                    // Log for shadow state learning (not tracking as state change yet)
+                    info!(target: "shadow_state",
+                        "Cursor lock toggled: {} (in {:?} mode)",
+                        if is_locked { "ON" } else { "OFF" },
+                        self.buffer().get_mode()
+                    );
                 }
                 Ok(ActionResult::Handled)
             }
@@ -373,6 +386,13 @@ impl EnhancedTuiApp {
                         "Viewport lock OFF"
                     };
                     self.buffer_mut().set_status_message(msg.to_string());
+
+                    // Log for shadow state learning (not tracking as state change yet)
+                    info!(target: "shadow_state",
+                        "Viewport lock toggled: {} (in {:?} mode)",
+                        if is_locked { "ON" } else { "OFF" },
+                        self.buffer().get_mode()
+                    );
                 }
                 Ok(ActionResult::Handled)
             }
@@ -459,20 +479,32 @@ impl EnhancedTuiApp {
 
                         debug!(target: "mode", "Switching from Results to Command mode");
                         self.buffer_mut().set_mode(AppMode::Command);
+                        self.shadow_state
+                            .borrow_mut()
+                            .observe_mode_change(AppMode::Command, "escape_from_results");
                         self.state_container.set_table_selected_row(None);
                     }
                     AppMode::Help => {
                         // Return to previous mode (usually Results)
                         self.buffer_mut().set_mode(AppMode::Results);
+                        self.shadow_state
+                            .borrow_mut()
+                            .observe_mode_change(AppMode::Results, "escape_from_help");
                         self.state_container.set_help_visible(false);
                     }
                     AppMode::Debug => {
                         // Return to Results mode
                         self.buffer_mut().set_mode(AppMode::Results);
+                        self.shadow_state
+                            .borrow_mut()
+                            .observe_mode_change(AppMode::Results, "escape_from_debug");
                     }
                     _ => {
                         // For other modes, generally go back to Command
                         self.buffer_mut().set_mode(AppMode::Command);
+                        self.shadow_state
+                            .borrow_mut()
+                            .observe_mode_change(AppMode::Command, "escape_to_command");
                     }
                 }
                 Ok(ActionResult::Handled)
@@ -488,6 +520,19 @@ impl EnhancedTuiApp {
                     Ok(ActionResult::Handled)
                 } else {
                     self.buffer_mut().set_mode(target_mode.clone());
+
+                    // Observe the mode change in shadow state
+                    let trigger = match target_mode {
+                        AppMode::Command => "switch_to_command",
+                        AppMode::Results => "switch_to_results",
+                        AppMode::Help => "switch_to_help",
+                        AppMode::History => "switch_to_history",
+                        _ => "switch_mode",
+                    };
+                    self.shadow_state
+                        .borrow_mut()
+                        .observe_mode_change(target_mode.clone(), trigger);
+
                     let msg = match target_mode {
                         AppMode::Command => "Command mode - Enter SQL queries",
                         AppMode::Results => {
@@ -506,6 +551,16 @@ impl EnhancedTuiApp {
 
                 // Switch to the target mode
                 self.buffer_mut().set_mode(target_mode.clone());
+
+                // Observe the mode change in shadow state
+                let trigger = match cursor_position {
+                    CursorPosition::End => "a_key_pressed",
+                    CursorPosition::Current => "i_key_pressed",
+                    CursorPosition::AfterClause(_) => "clause_navigation",
+                };
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(target_mode.clone(), trigger);
 
                 // Position the cursor based on the requested position
                 match cursor_position {
@@ -767,6 +822,9 @@ impl EnhancedTuiApp {
                         self.set_input_text(last_query.clone());
                     }
                     self.buffer_mut().set_mode(AppMode::Command);
+                    self.shadow_state
+                        .borrow_mut()
+                        .observe_mode_change(AppMode::Command, "history_search_from_results");
                     self.state_container.set_table_selected_row(None);
                 }
 
@@ -784,6 +842,9 @@ impl EnhancedTuiApp {
 
                 // Switch to History mode to show the search interface
                 self.buffer_mut().set_mode(AppMode::History);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::History, "history_search_started");
                 Ok(ActionResult::Handled)
             }
             CycleColumnPacking => {
@@ -1142,6 +1203,7 @@ impl EnhancedTuiApp {
             },
             viewport_manager: RefCell::new(None), // Will be initialized when DataView is set
             viewport_efficiency: RefCell::new(None),
+            shadow_state: RefCell::new(crate::ui::shadow_state::ShadowStateManager::new()),
             table_widget_manager: RefCell::new(TableWidgetManager::new()),
             debug_registry: DebugRegistry::new(),
             memory_tracker: MemoryTracker::new(100),
@@ -1381,198 +1443,234 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
-        // Initialize viewport size before first draw
+    /// Initialize viewport and perform initial draw
+    fn initialize_viewport<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         self.update_viewport_size();
         info!(target: "navigation", "Initial viewport size update completed");
-
-        // Initial draw
         terminal.draw(|f| self.ui(f))?;
+        Ok(())
+    }
 
-        loop {
-            // Check for debounced actions from search modes widget (handles all search modes including vim search)
-            if self.search_modes_widget.is_active() {
-                if let Some(action) = self.search_modes_widget.check_debounce() {
-                    let mut needs_redraw = false;
-                    match action {
-                        SearchModesAction::ExecuteDebounced(mode, pattern) => {
-                            info!(target: "search", "=== DEBOUNCED SEARCH EXECUTING ===");
-                            info!(target: "search", "Mode: {:?}, Pattern: '{}', AppMode: {:?}", 
-                                  mode, pattern, self.buffer().get_mode());
+    /// Handle debounced search actions, returns true if exit is requested
+    fn try_handle_debounced_actions<B: Backend>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+    ) -> Result<bool> {
+        if !self.search_modes_widget.is_active() {
+            return Ok(false);
+        }
 
-                            // Log current position before search
-                            {
-                                let nav = self.state_container.navigation();
-                                info!(target: "search", "BEFORE: nav.selected_row={}, nav.selected_column={}", 
-                                      nav.selected_row, nav.selected_column);
-                                info!(target: "search", "BEFORE: buffer.selected_row={:?}, buffer.current_column={}", 
-                                      self.buffer().get_selected_row(), self.buffer().get_current_column());
-                            }
+        if let Some(action) = self.search_modes_widget.check_debounce() {
+            let mut needs_redraw = false;
+            match action {
+                SearchModesAction::ExecuteDebounced(mode, pattern) => {
+                    info!(target: "search", "=== DEBOUNCED SEARCH EXECUTING ===");
+                    info!(target: "search", "Mode: {:?}, Pattern: '{}', AppMode: {:?}", 
+                          mode, pattern, self.buffer().get_mode());
 
-                            self.execute_search_action(mode, pattern);
+                    // Log current position before search
+                    {
+                        let nav = self.state_container.navigation();
+                        info!(target: "search", "BEFORE: nav.selected_row={}, nav.selected_column={}", 
+                              nav.selected_row, nav.selected_column);
+                        info!(target: "search", "BEFORE: buffer.selected_row={:?}, buffer.current_column={}", 
+                              self.buffer().get_selected_row(), self.buffer().get_current_column());
+                    }
 
-                            // Log position after search
-                            {
-                                let nav = self.state_container.navigation();
-                                info!(target: "search", "AFTER: nav.selected_row={}, nav.selected_column={}", 
-                                      nav.selected_row, nav.selected_column);
-                                info!(target: "search", "AFTER: buffer.selected_row={:?}, buffer.current_column={}", 
-                                      self.buffer().get_selected_row(), self.buffer().get_current_column());
+                    self.execute_search_action(mode, pattern);
 
-                                // Check ViewportManager state
-                                let viewport_manager = self.viewport_manager.borrow();
-                                if let Some(ref vm) = *viewport_manager {
-                                    info!(target: "search", "AFTER: ViewportManager crosshair=({}, {})",
-                                          vm.get_crosshair_row(), vm.get_crosshair_col());
-                                }
-                            }
+                    // Log position after search
+                    {
+                        let nav = self.state_container.navigation();
+                        info!(target: "search", "AFTER: nav.selected_row={}, nav.selected_column={}", 
+                              nav.selected_row, nav.selected_column);
+                        info!(target: "search", "AFTER: buffer.selected_row={:?}, buffer.current_column={}", 
+                              self.buffer().get_selected_row(), self.buffer().get_current_column());
 
-                            info!(target: "search", "=== FORCING REDRAW ===");
-                            // CRITICAL: Force immediate redraw after search navigation
-                            needs_redraw = true;
+                        // Check ViewportManager state
+                        let viewport_manager = self.viewport_manager.borrow();
+                        if let Some(ref vm) = *viewport_manager {
+                            info!(target: "search", "AFTER: ViewportManager crosshair=({}, {})",
+                                  vm.get_crosshair_row(), vm.get_crosshair_col());
                         }
-                        _ => {}
                     }
 
-                    // Redraw immediately if search moved the cursor OR if TableWidgetManager needs render
-                    if needs_redraw || self.table_widget_manager.borrow().needs_render() {
-                        info!(target: "search", "Triggering redraw: needs_redraw={}, table_needs_render={}", 
-                              needs_redraw, self.table_widget_manager.borrow().needs_render());
-                        terminal.draw(|f| self.ui(f))?;
-                        self.table_widget_manager.borrow_mut().rendered();
-                    }
+                    info!(target: "search", "=== FORCING REDRAW ===");
+                    // CRITICAL: Force immediate redraw after search navigation
+                    needs_redraw = true;
                 }
+                _ => {}
             }
 
-            // Use poll with timeout to allow checking for debounced actions
-            if event::poll(std::time::Duration::from_millis(50))? {
-                match event::read()? {
-                    Event::Key(key) => {
-                        // On Windows, filter out key release events - only handle key press
-                        // This prevents double-triggering of toggles
-                        if key.kind != crossterm::event::KeyEventKind::Press {
-                            continue;
-                        }
+            // Redraw immediately if search moved the cursor OR if TableWidgetManager needs render
+            if needs_redraw || self.table_widget_manager.borrow().needs_render() {
+                info!(target: "search", "Triggering redraw: needs_redraw={}, table_needs_render={}", 
+                      needs_redraw, self.table_widget_manager.borrow().needs_render());
+                terminal.draw(|f| self.ui(f))?;
+                self.table_widget_manager.borrow_mut().rendered();
+            }
+        }
+        Ok(false)
+    }
 
-                        // SAFETY: Always allow Ctrl-C to exit, regardless of app state
-                        // This prevents getting stuck in unresponsive states
-                        if key.code == KeyCode::Char('c')
-                            && key.modifiers.contains(KeyModifiers::CONTROL)
-                        {
-                            info!(target: "app", "Ctrl-C detected, forcing exit");
-                            break;
-                        }
+    /// Handle chord processing for Results mode, returns true if exit is requested
+    fn try_handle_chord_processing(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        let chord_result = self.key_chord_handler.process_key(key);
+        debug!("Chord handler returned: {:?}", chord_result);
 
-                        // Record key press for visual indicator
-                        let key_display = format_key_for_display(&key);
-                        self.key_indicator.record_key(key_display.clone());
-                        self.key_sequence_renderer.record_key(key_display);
+        match chord_result {
+            ChordResult::CompleteChord(action) => {
+                // Handle completed chord actions through the action system
+                debug!("Chord completed: {:?}", action);
+                // Clear chord mode in renderer
+                self.key_sequence_renderer.clear_chord_mode();
+                // Use the action system to handle the chord action
+                self.try_handle_action(
+                    action,
+                    &ActionContext {
+                        mode: self.buffer().get_mode(),
+                        selection_mode: self.state_container.get_selection_mode(),
+                        has_results: self.buffer().get_dataview().is_some(),
+                        has_filter: false,
+                        has_search: false,
+                        row_count: self.get_row_count(),
+                        column_count: self.get_column_count(),
+                        current_row: self.state_container.get_table_selected_row().unwrap_or(0),
+                        current_column: self.buffer().get_current_column(),
+                    },
+                )?;
+                Ok(false)
+            }
+            ChordResult::PartialChord(description) => {
+                // Update status to show chord mode
+                self.buffer_mut().set_status_message(description.clone());
+                // Update chord mode in renderer with available completions
+                // Extract the completions from the description
+                if description.contains("y=row") {
+                    self.key_sequence_renderer
+                        .set_chord_mode(Some("y(a,c,q,r,v)".to_string()));
+                } else {
+                    self.key_sequence_renderer
+                        .set_chord_mode(Some(description.clone()));
+                }
+                Ok(false) // Don't exit, waiting for more keys
+            }
+            ChordResult::Cancelled => {
+                self.buffer_mut()
+                    .set_status_message("Chord cancelled".to_string());
+                // Clear chord mode in renderer
+                self.key_sequence_renderer.clear_chord_mode();
+                Ok(false)
+            }
+            ChordResult::SingleKey(single_key) => {
+                // Not a chord, process normally
+                self.handle_results_input(single_key)
+            }
+        }
+    }
 
-                        // CRITICAL: Process through chord handler FIRST for Results mode
-                        // This allows chord sequences like 'yv' to work correctly
-                        let should_exit = if self.buffer().get_mode() == AppMode::Results {
-                            // In Results mode, check chord handler first
-                            let chord_result = self.key_chord_handler.process_key(key);
-                            debug!("Chord handler returned: {:?}", chord_result);
+    /// Dispatch key to appropriate mode handler, returns true if exit is requested
+    fn try_handle_mode_dispatch(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        match self.buffer().get_mode() {
+            AppMode::Command => self.handle_command_input(key),
+            AppMode::Results => {
+                // Results mode uses chord processing
+                self.try_handle_chord_processing(key)
+            }
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
+                self.handle_search_modes_input(key)
+            }
+            AppMode::Help => self.handle_help_input(key),
+            AppMode::History => self.handle_history_input(key),
+            AppMode::Debug => self.handle_debug_input(key),
+            AppMode::PrettyQuery => self.handle_pretty_query_input(key),
+            AppMode::JumpToRow => self.handle_jump_to_row_input(key),
+            AppMode::ColumnStats => self.handle_column_stats_input(key),
+        }
+    }
 
-                            match chord_result {
-                                ChordResult::CompleteChord(action) => {
-                                    // Handle completed chord actions through the action system
-                                    debug!("Chord completed: {:?}", action);
-                                    // Clear chord mode in renderer
-                                    self.key_sequence_renderer.clear_chord_mode();
-                                    // Use the action system to handle the chord action
-                                    self.try_handle_action(
-                                        action,
-                                        &ActionContext {
-                                            mode: self.buffer().get_mode(),
-                                            selection_mode: self
-                                                .state_container
-                                                .get_selection_mode(),
-                                            has_results: self.buffer().get_dataview().is_some(),
-                                            has_filter: false,
-                                            has_search: false,
-                                            row_count: self.get_row_count(),
-                                            column_count: self.get_column_count(),
-                                            current_row: self
-                                                .state_container
-                                                .get_table_selected_row()
-                                                .unwrap_or(0),
-                                            current_column: self.buffer().get_current_column(),
-                                        },
-                                    )?;
-                                    false
-                                }
-                                ChordResult::PartialChord(description) => {
-                                    // Update status to show chord mode
-                                    self.buffer_mut().set_status_message(description.clone());
-                                    // Update chord mode in renderer with available completions
-                                    // Extract the completions from the description
-                                    if description.contains("y=row") {
-                                        self.key_sequence_renderer
-                                            .set_chord_mode(Some("y(a,c,q,r,v)".to_string()));
-                                    } else {
-                                        self.key_sequence_renderer
-                                            .set_chord_mode(Some(description.clone()));
-                                    }
-                                    false // Don't exit, waiting for more keys
-                                }
-                                ChordResult::Cancelled => {
-                                    self.buffer_mut()
-                                        .set_status_message("Chord cancelled".to_string());
-                                    // Clear chord mode in renderer
-                                    self.key_sequence_renderer.clear_chord_mode();
-                                    false
-                                }
-                                ChordResult::SingleKey(single_key) => {
-                                    // Not a chord, process normally
-                                    self.handle_results_input(single_key)?
-                                }
-                            }
-                        } else {
-                            // For other modes, process keys normally
-                            match self.buffer().get_mode() {
-                                AppMode::Command => self.handle_command_input(key)?,
-                                AppMode::Results => unreachable!(), // Handled above
-                                AppMode::Search
-                                | AppMode::Filter
-                                | AppMode::FuzzyFilter
-                                | AppMode::ColumnSearch => self.handle_search_modes_input(key)?,
-                                AppMode::Help => self.handle_help_input(key)?,
-                                AppMode::History => self.handle_history_input(key)?,
-                                AppMode::Debug => self.handle_debug_input(key)?,
-                                AppMode::PrettyQuery => self.handle_pretty_query_input(key)?,
-                                AppMode::JumpToRow => self.handle_jump_to_row_input(key)?,
-                                AppMode::ColumnStats => self.handle_column_stats_input(key)?,
-                            }
-                        };
+    /// Handle key event processing, returns true if exit is requested
+    fn try_handle_key_event<B: Backend>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+        key: crossterm::event::KeyEvent,
+    ) -> Result<bool> {
+        // On Windows, filter out key release events - only handle key press
+        // This prevents double-triggering of toggles
+        if key.kind != crossterm::event::KeyEventKind::Press {
+            return Ok(false);
+        }
 
-                        if should_exit {
-                            break;
-                        }
+        // SAFETY: Always allow Ctrl-C to exit, regardless of app state
+        // This prevents getting stuck in unresponsive states
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            info!(target: "app", "Ctrl-C detected, forcing exit");
+            return Ok(true);
+        }
 
-                        // Only redraw after handling a key event OR if TableWidgetManager needs render
-                        if self.table_widget_manager.borrow().needs_render() {
-                            info!("TableWidgetManager needs render after key event");
-                        }
-                        terminal.draw(|f| self.ui(f))?;
-                        self.table_widget_manager.borrow_mut().rendered();
-                    }
-                    _ => {
-                        // Ignore other events (mouse, resize, etc.) to reduce CPU
+        // Record key press for visual indicator
+        let key_display = format_key_for_display(&key);
+        self.key_indicator.record_key(key_display.clone());
+        self.key_sequence_renderer.record_key(key_display);
+
+        // Dispatch to appropriate mode handler
+        let should_exit = self.try_handle_mode_dispatch(key)?;
+
+        if should_exit {
+            return Ok(true);
+        }
+
+        // Only redraw after handling a key event OR if TableWidgetManager needs render
+        if self.table_widget_manager.borrow().needs_render() {
+            info!("TableWidgetManager needs render after key event");
+        }
+        terminal.draw(|f| self.ui(f))?;
+        self.table_widget_manager.borrow_mut().rendered();
+
+        Ok(false)
+    }
+
+    /// Handle all events, returns true if exit is requested  
+    fn try_handle_events<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<bool> {
+        // Use poll with timeout to allow checking for debounced actions
+        if event::poll(std::time::Duration::from_millis(50))? {
+            match event::read()? {
+                Event::Key(key) => {
+                    if self.try_handle_key_event(terminal, key)? {
+                        return Ok(true);
                     }
                 }
-            } else {
-                // No event available, but still redraw if we have pending debounced actions or table needs render
-                if self.search_modes_widget.is_active()
-                    || self.table_widget_manager.borrow().needs_render()
-                {
-                    if self.table_widget_manager.borrow().needs_render() {
-                        info!("TableWidgetManager needs periodic render");
-                    }
-                    terminal.draw(|f| self.ui(f))?;
-                    self.table_widget_manager.borrow_mut().rendered();
+                _ => {
+                    // Ignore other events (mouse, resize, etc.) to reduce CPU
                 }
+            }
+        } else {
+            // No event available, but still redraw if we have pending debounced actions or table needs render
+            if self.search_modes_widget.is_active()
+                || self.table_widget_manager.borrow().needs_render()
+            {
+                if self.table_widget_manager.borrow().needs_render() {
+                    info!("TableWidgetManager needs periodic render");
+                }
+                terminal.draw(|f| self.ui(f))?;
+                self.table_widget_manager.borrow_mut().rendered();
+            }
+        }
+        Ok(false)
+    }
+
+    fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
+        self.initialize_viewport(terminal)?;
+
+        loop {
+            // Handle debounced search actions
+            if self.try_handle_debounced_actions(terminal)? {
+                break;
+            }
+
+            // Handle all events (key presses, etc.)
+            if self.try_handle_events(terminal)? {
+                break;
             }
         }
         Ok(())
@@ -1649,6 +1747,9 @@ impl EnhancedTuiApp {
             EditorAction::ShowHelp => {
                 self.state_container.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Help, "help_requested");
                 return Ok(false);
             }
             EditorAction::ShowDebug => {
@@ -1660,8 +1761,22 @@ impl EnhancedTuiApp {
                 return Ok(false);
             }
             EditorAction::SwitchMode(mode) => {
+                debug!(target: "shadow_state", "EditorAction::SwitchMode to {:?}", mode);
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     buffer.set_mode(mode.clone());
+                    // Observe the mode change in shadow state
+                    let trigger = match mode {
+                        AppMode::Results => "enter_results_mode",
+                        AppMode::Command => "enter_command_mode",
+                        AppMode::History => "enter_history_mode",
+                        _ => "switch_mode",
+                    };
+                    debug!(target: "shadow_state", "Observing mode change to {:?} with trigger {}", mode, trigger);
+                    self.shadow_state
+                        .borrow_mut()
+                        .observe_mode_change(mode.clone(), trigger);
+                } else {
+                    debug!(target: "shadow_state", "No buffer available for mode switch!");
                 }
                 // Special handling for History mode - initialize history search
                 if mode == AppMode::History {
@@ -1714,284 +1829,18 @@ impl EnhancedTuiApp {
             return Ok(result);
         }
 
-        // Try dispatcher for other text editing operations
-        if let Some(action) = self.key_dispatcher.get_command_action(&key) {
-            match action {
-                "expand_asterisk" => {
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        if buffer.expand_asterisk(&self.hybrid_parser) {
-                            // Sync for rendering if needed
-                            if buffer.get_edit_mode() == EditMode::SingleLine {
-                                let text = buffer.get_input_text();
-                                let cursor = buffer.get_input_cursor_position();
-                                self.set_input_text_with_cursor(text, cursor);
-                            }
-                        }
-                    }
-                    return Ok(false);
-                }
-                "expand_asterisk_visible" => {
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
-                        if buffer.expand_asterisk_visible() {
-                            // Sync for rendering if needed
-                            if buffer.get_edit_mode() == EditMode::SingleLine {
-                                let text = buffer.get_input_text();
-                                let cursor = buffer.get_input_cursor_position();
-                                self.set_input_text_with_cursor(text, cursor);
-                            }
-                        }
-                    }
-                    return Ok(false);
-                }
-                // "move_to_line_start" and "move_to_line_end" now handled by editor_widget
-                "delete_word_backward" => {
-                    self.delete_word_backward();
-                    return Ok(false);
-                }
-                "delete_word_forward" => {
-                    self.delete_word_forward();
-                    return Ok(false);
-                }
-                "kill_line" => {
-                    self.kill_line();
-                    return Ok(false);
-                }
-                "kill_line_backward" => {
-                    self.kill_line_backward();
-                    return Ok(false);
-                }
-                "move_word_backward" => {
-                    self.move_cursor_word_backward();
-                    return Ok(false);
-                }
-                "move_word_forward" => {
-                    self.move_cursor_word_forward();
-                    return Ok(false);
-                }
-                "jump_to_prev_token" => {
-                    self.jump_to_prev_token();
-                    return Ok(false);
-                }
-                "jump_to_next_token" => {
-                    self.jump_to_next_token();
-                    return Ok(false);
-                }
-                "paste_from_clipboard" => {
-                    self.paste_from_clipboard();
-                    return Ok(false);
-                }
-                _ => {} // Fall through to hardcoded handling
-            }
+        // Try text editing operations
+        if let Some(result) = self.try_handle_text_editing(&key)? {
+            return Ok(result);
         }
 
-        match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
-            KeyCode::Enter => {
-                // Always use single-line mode handling
-                let query = self.get_input_text().trim().to_string();
-                debug!(target: "action", "Executing query: {}", query);
-
-                if !query.is_empty() {
-                    // Check for special commands
-                    if query == ":help" {
-                        self.state_container.set_help_visible(true);
-                        self.buffer_mut().set_mode(AppMode::Help);
-                        self.buffer_mut()
-                            .set_status_message("Help Mode - Press ESC to return".to_string());
-                    } else if query == ":exit" || query == ":quit" || query == ":q" {
-                        return Ok(true);
-                    } else if query == ":tui" {
-                        // Already in TUI mode
-                        self.buffer_mut()
-                            .set_status_message("Already in TUI mode".to_string());
-                    } else {
-                        self.buffer_mut()
-                            .set_status_message(format!("Processing query: '{}'", query));
-                        self.execute_query(&query)?;
-                    }
-                } else {
-                    self.buffer_mut()
-                        .set_status_message("Empty query - please enter a SQL command".to_string());
-                }
-            }
-            KeyCode::Tab => {
-                // Tab completion works in both modes
-                // Always use single-line completion
-                self.apply_completion()
-            }
-            // Ctrl+R is now handled by the editor widget above
-            // History navigation - Ctrl+P or Alt+Up
-            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Navigate to previous command in history
-                // Get history entries first, before mutable borrow
-                let history_entries = self
-                    .state_container
-                    .command_history()
-                    .get_navigation_entries();
-                let history_commands: Vec<String> =
-                    history_entries.iter().map(|e| e.command.clone()).collect();
-
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    if buffer.navigate_history_up(&history_commands) {
-                        // Sync the input field with buffer (for now, until we complete migration)
-                        let text = buffer.get_input_text();
-
-                        // Debug: show what we got from history
-                        let debug_msg = if text.is_empty() {
-                            "History navigation returned empty text!".to_string()
-                        } else {
-                            format!(
-                                "History: {}",
-                                // ========== MAIN RUN LOOP ==========
-                                if text.len() > 50 {
-                                    format!("{}...", &text[..50])
-                                } else {
-                                    text.clone()
-                                }
-                            )
-                        };
-
-                        // Sync all input states
-                        self.sync_all_input_states();
-                        self.buffer_mut().set_status_message(debug_msg);
-                    }
-                }
-            }
-            // History navigation - Ctrl+N or Alt+Down
-            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Navigate to next command in history
-                // Get history entries first, before mutable borrow
-                let history_entries = self
-                    .state_container
-                    .command_history()
-                    .get_navigation_entries();
-                let history_commands: Vec<String> =
-                    history_entries.iter().map(|e| e.command.clone()).collect();
-
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    if buffer.navigate_history_down(&history_commands) {
-                        // Sync all input states
-                        self.sync_all_input_states();
-                        self.buffer_mut()
-                            .set_status_message("Next command from history".to_string());
-                    }
-                }
-            }
-            // Alternative: Alt+Up for history previous (in case Ctrl+P is intercepted)
-            KeyCode::Up if key.modifiers.contains(KeyModifiers::ALT) => {
-                let history_entries = self
-                    .state_container
-                    .command_history()
-                    .get_navigation_entries();
-                let history_commands: Vec<String> =
-                    history_entries.iter().map(|e| e.command.clone()).collect();
-
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    if buffer.navigate_history_up(&history_commands) {
-                        // Sync all input states
-                        self.sync_all_input_states();
-                        self.buffer_mut()
-                            .set_status_message("Previous command (Alt+Up)".to_string());
-                    }
-                }
-            }
-            // Alternative: Alt+Down for history next
-            KeyCode::Down if key.modifiers.contains(KeyModifiers::ALT) => {
-                let history_entries = self
-                    .state_container
-                    .command_history()
-                    .get_navigation_entries();
-                let history_commands: Vec<String> =
-                    history_entries.iter().map(|e| e.command.clone()).collect();
-
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    if buffer.navigate_history_down(&history_commands) {
-                        // Sync all input states
-                        self.sync_all_input_states();
-                        self.buffer_mut()
-                            .set_status_message("Next command (Alt+Down)".to_string());
-                    }
-                }
-            }
-            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Kill line - delete from cursor to end of line
-                self.buffer_mut()
-                    .set_status_message("Ctrl+K pressed - killing to end of line".to_string());
-                self.kill_line();
-            }
-            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Alternative: Alt+K for kill line (for terminals that intercept Ctrl+K)
-                self.buffer_mut()
-                    .set_status_message("Alt+K - killing to end of line".to_string());
-                self.kill_line();
-            }
-            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Kill line backward - delete from cursor to beginning of line
-                self.kill_line_backward();
-            }
-            // Ctrl+Z (undo) now handled by editor_widget
-            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Yank - paste from kill ring
-                self.yank();
-            }
-            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Paste from system clipboard
-                self.paste_from_clipboard();
-            }
-            KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Jump to previous SQL token
-                self.jump_to_prev_token();
-            }
-            KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Jump to next SQL token
-                self.jump_to_next_token();
-            }
-            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Move backward one word
-                self.move_cursor_word_backward();
-            }
-            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Move forward one word
-                self.move_cursor_word_forward();
-            }
-            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Move backward one word (alt+b like in bash)
-                self.move_cursor_word_backward();
-            }
-            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Move forward one word (alt+f like in bash)
-                self.move_cursor_word_forward();
-            }
-            KeyCode::Down
-                if self.buffer().has_dataview()
-                    && self.buffer().get_edit_mode() == EditMode::SingleLine =>
-            {
-                self.buffer_mut().set_mode(AppMode::Results);
-                // Restore previous position or default to 0
-                let row = self.buffer().get_last_results_row().unwrap_or(0);
-                self.state_container.set_table_selected_row(Some(row));
-
-                // Restore the exact scroll offset from when we left
-                let last_offset = self.buffer().get_last_scroll_offset();
-                self.buffer_mut().set_scroll_offset(last_offset);
-            }
-            _ => {
-                // Use the new helper to handle input keys through buffer
-                self.handle_input_key(key);
-
-                // Clear completion state when typing other characters
-                self.state_container.clear_completion();
-
-                // Always use single-line completion
-                self.handle_completion()
-            }
+        // Try mode transitions and core input handling
+        if let Some(result) = self.try_handle_mode_transitions(&key, old_cursor)? {
+            return Ok(result);
         }
 
-        // Update horizontal scroll if cursor moved
-        if self.get_input_cursor() != old_cursor {
-            self.update_horizontal_scroll(120); // Assume reasonable terminal width, will be adjusted in render
-        }
+        // All input should be handled by the try_handle_* methods above
+        // If we reach here, it means we missed handling a key combination
 
         Ok(false)
     }
@@ -2021,6 +1870,9 @@ impl EnhancedTuiApp {
                     // Enter help mode
                     self.state_container.set_help_visible(true);
                     self.buffer_mut().set_mode(AppMode::Help);
+                    self.shadow_state
+                        .borrow_mut()
+                        .observe_mode_change(AppMode::Help, "help_requested");
                     self.help_widget.on_enter();
                 }
                 Ok(Some(false))
@@ -2193,6 +2045,9 @@ impl EnhancedTuiApp {
                 let match_count = self.state_container.history_search().matches.len();
 
                 self.buffer_mut().set_mode(AppMode::History);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::History, "history_search_started");
                 self.buffer_mut().set_status_message(format!(
                     "History search started (Ctrl+R) - {} matches",
                     match_count
@@ -2277,6 +2132,345 @@ impl EnhancedTuiApp {
                             .set_status_message("Next command (Alt+Down)".to_string());
                     }
                 }
+                Ok(Some(false))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Handle text editing operations (word movement, kill line, clipboard, etc.)
+    fn try_handle_text_editing(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+    ) -> Result<Option<bool>> {
+        // Try dispatcher actions first
+        if let Some(action) = self.key_dispatcher.get_command_action(key) {
+            match action {
+                "expand_asterisk" => {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        if buffer.expand_asterisk(&self.hybrid_parser) {
+                            // Sync for rendering if needed
+                            if buffer.get_edit_mode() == EditMode::SingleLine {
+                                let text = buffer.get_input_text();
+                                let cursor = buffer.get_input_cursor_position();
+                                self.set_input_text_with_cursor(text, cursor);
+                            }
+                        }
+                    }
+                    return Ok(Some(false));
+                }
+                "expand_asterisk_visible" => {
+                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                        if buffer.expand_asterisk_visible() {
+                            // Sync for rendering if needed
+                            if buffer.get_edit_mode() == EditMode::SingleLine {
+                                let text = buffer.get_input_text();
+                                let cursor = buffer.get_input_cursor_position();
+                                self.set_input_text_with_cursor(text, cursor);
+                            }
+                        }
+                    }
+                    return Ok(Some(false));
+                }
+                "delete_word_backward" => {
+                    self.delete_word_backward();
+                    return Ok(Some(false));
+                }
+                "delete_word_forward" => {
+                    self.delete_word_forward();
+                    return Ok(Some(false));
+                }
+                "kill_line" => {
+                    self.kill_line();
+                    return Ok(Some(false));
+                }
+                "kill_line_backward" => {
+                    self.kill_line_backward();
+                    return Ok(Some(false));
+                }
+                "move_word_backward" => {
+                    self.move_cursor_word_backward();
+                    return Ok(Some(false));
+                }
+                "move_word_forward" => {
+                    self.move_cursor_word_forward();
+                    return Ok(Some(false));
+                }
+                "jump_to_prev_token" => {
+                    self.jump_to_prev_token();
+                    return Ok(Some(false));
+                }
+                "jump_to_next_token" => {
+                    self.jump_to_next_token();
+                    return Ok(Some(false));
+                }
+                "paste_from_clipboard" => {
+                    self.paste_from_clipboard();
+                    return Ok(Some(false));
+                }
+                _ => {} // Not a text editing action, fall through
+            }
+        }
+
+        // Handle hardcoded text editing keys
+        match key.code {
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Kill line - delete from cursor to end of line
+                self.buffer_mut()
+                    .set_status_message("Ctrl+K pressed - killing to end of line".to_string());
+                self.kill_line();
+                Ok(Some(false))
+            }
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Alternative: Alt+K for kill line (for terminals that intercept Ctrl+K)
+                self.buffer_mut()
+                    .set_status_message("Alt+K - killing to end of line".to_string());
+                self.kill_line();
+                Ok(Some(false))
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Kill line backward - delete from cursor to beginning of line
+                self.kill_line_backward();
+                Ok(Some(false))
+            }
+            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Yank - paste from kill ring
+                self.yank();
+                Ok(Some(false))
+            }
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Paste from system clipboard
+                self.paste_from_clipboard();
+                Ok(Some(false))
+            }
+            KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Jump to previous SQL token
+                self.jump_to_prev_token();
+                Ok(Some(false))
+            }
+            KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Jump to next SQL token
+                self.jump_to_next_token();
+                Ok(Some(false))
+            }
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Move backward one word
+                self.move_cursor_word_backward();
+                Ok(Some(false))
+            }
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Move forward one word
+                self.move_cursor_word_forward();
+                Ok(Some(false))
+            }
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Move backward one word (alt+b like in bash)
+                self.move_cursor_word_backward();
+                Ok(Some(false))
+            }
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => {
+                // Move forward one word (alt+f like in bash)
+                self.move_cursor_word_forward();
+                Ok(Some(false))
+            }
+            _ => Ok(None), // Not a text editing key we handle
+        }
+    }
+
+    /// Handle mode transitions and core input processing (Enter, Tab, Down arrow, input)
+    fn try_handle_mode_transitions(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+        old_cursor: usize,
+    ) -> Result<Option<bool>> {
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+C - exit application
+                Ok(Some(true))
+            }
+            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+D - exit application
+                Ok(Some(true))
+            }
+            KeyCode::Enter => {
+                // Query execution and special command handling
+                let query = self.get_input_text().trim().to_string();
+                debug!(target: "action", "Executing query: {}", query);
+
+                if !query.is_empty() {
+                    // Check for special commands
+                    if query == ":help" {
+                        self.state_container.set_help_visible(true);
+                        self.buffer_mut().set_mode(AppMode::Help);
+                        self.shadow_state
+                            .borrow_mut()
+                            .observe_mode_change(AppMode::Help, "help_requested");
+                        self.buffer_mut()
+                            .set_status_message("Help Mode - Press ESC to return".to_string());
+                    } else if query == ":exit" || query == ":quit" || query == ":q" {
+                        return Ok(Some(true));
+                    } else if query == ":tui" {
+                        // Already in TUI mode
+                        self.buffer_mut()
+                            .set_status_message("Already in TUI mode".to_string());
+                    } else {
+                        self.buffer_mut()
+                            .set_status_message(format!("Processing query: '{}'", query));
+                        self.execute_query(&query)?;
+                    }
+                } else {
+                    self.buffer_mut()
+                        .set_status_message("Empty query - please enter a SQL command".to_string());
+                }
+                Ok(Some(false))
+            }
+            KeyCode::Tab => {
+                // Tab completion works in both modes
+                self.apply_completion();
+                Ok(Some(false))
+            }
+            KeyCode::Down => {
+                debug!(target: "shadow_state", "Down arrow pressed in Command mode. has_dataview={}, edit_mode={:?}",
+                    self.buffer().has_dataview(),
+                    self.buffer().get_edit_mode());
+
+                if self.buffer().has_dataview()
+                    && self.buffer().get_edit_mode() == EditMode::SingleLine
+                {
+                    debug!(target: "shadow_state", "Down arrow conditions met, switching to Results via set_mode");
+                    // Switch to Results mode and restore state
+                    self.buffer_mut().set_mode(AppMode::Results);
+                    self.shadow_state
+                        .borrow_mut()
+                        .observe_mode_change(AppMode::Results, "down_arrow_to_results");
+                    // Restore previous position or default to 0
+                    let row = self.buffer().get_last_results_row().unwrap_or(0);
+                    self.state_container.set_table_selected_row(Some(row));
+
+                    // Restore the exact scroll offset from when we left
+                    let last_offset = self.buffer().get_last_scroll_offset();
+                    self.buffer_mut().set_scroll_offset(last_offset);
+                    Ok(Some(false))
+                } else {
+                    debug!(target: "shadow_state", "Down arrow conditions not met, falling through");
+                    // Fall through to default handling
+                    Ok(None)
+                }
+            }
+            _ => {
+                // Fallback input handling and completion
+                self.handle_input_key(*key);
+
+                // Clear completion state when typing other characters
+                self.state_container.clear_completion();
+
+                // Always use single-line completion
+                self.handle_completion();
+
+                // Update horizontal scroll if cursor moved
+                if self.get_input_cursor() != old_cursor {
+                    self.update_horizontal_scroll(120); // Assume reasonable terminal width, will be adjusted in render
+                }
+
+                Ok(Some(false))
+            }
+        }
+    }
+
+    /// Handle navigation keys specific to Results mode
+    fn try_handle_results_navigation(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+    ) -> Result<Option<bool>> {
+        match key.code {
+            KeyCode::PageDown | KeyCode::Char('f')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                NavigationBehavior::page_down(self);
+                Ok(Some(false))
+            }
+            KeyCode::PageUp | KeyCode::Char('b')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                NavigationBehavior::page_up(self);
+                Ok(Some(false))
+            }
+            _ => Ok(None), // Not a navigation key we handle
+        }
+    }
+
+    /// Handle clipboard/yank operations in Results mode
+    fn try_handle_results_clipboard(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+    ) -> Result<Option<bool>> {
+        match key.code {
+            KeyCode::Char('y') => {
+                let selection_mode = self.get_selection_mode();
+                debug!("'y' key pressed - selection_mode={:?}", selection_mode);
+                match selection_mode {
+                    SelectionMode::Cell => {
+                        // In cell mode, single 'y' yanks the cell directly
+                        debug!("Yanking cell in cell selection mode");
+                        self.buffer_mut()
+                            .set_status_message("Yanking cell...".to_string());
+                        YankBehavior::yank_cell(self);
+                        // Status message will be set by yank_cell
+                    }
+                    SelectionMode::Row => {
+                        // In row mode, 'y' is handled by chord handler (yy, yc, ya)
+                        // The chord handler will process the key sequence
+                        debug!("'y' pressed in row mode - waiting for chord completion");
+                        self.buffer_mut().set_status_message(
+                            "Press second key for chord: yy=row, yc=column, ya=all, yv=cell"
+                                .to_string(),
+                        );
+                    }
+                    SelectionMode::Column => {
+                        // In column mode, 'y' yanks the current column
+                        debug!("Yanking column in column selection mode");
+                        self.buffer_mut()
+                            .set_status_message("Yanking column...".to_string());
+                        YankBehavior::yank_column(self);
+                    }
+                }
+                Ok(Some(false))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Handle export operations in Results mode
+    fn try_handle_results_export(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+    ) -> Result<Option<bool>> {
+        match key.code {
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.export_to_csv();
+                Ok(Some(false))
+            }
+            KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.export_to_json();
+                Ok(Some(false))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Handle help and mode transitions in Results mode
+    fn try_handle_results_help(
+        &mut self,
+        key: &crossterm::event::KeyEvent,
+    ) -> Result<Option<bool>> {
+        match key.code {
+            KeyCode::F(1) | KeyCode::Char('?') => {
+                self.state_container.set_help_visible(true);
+                self.buffer_mut().set_mode(AppMode::Help);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Help, "help_requested");
+                self.help_widget.on_enter();
                 Ok(Some(false))
             }
             _ => Ok(None),
@@ -2379,80 +2573,30 @@ impl EnhancedTuiApp {
             );
         }
 
-        // Fall back to direct key handling for special cases not in dispatcher
-        match normalized_key.code {
-            // Space, 'x', and Ctrl+Space are now handled by the action system
-            // Column operations are now handled by the action system
-            // - 'H' to hide column
-            // - Ctrl+Shift+H to unhide all columns
-            // - Shift+Left/Right to move columns
-            KeyCode::PageDown | KeyCode::Char('f')
-                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                NavigationBehavior::page_down(self);
-            }
-            KeyCode::PageUp | KeyCode::Char('b')
-                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                NavigationBehavior::page_up(self);
-            }
-            // 'n' and 'N' search navigation are now handled by the action system
-            // Filter functionality is handled by dispatcher above
-            // Removed duplicate handlers for filter keys (F, f)
-            // Sort functionality (lowercase s) - handled by dispatcher above
-            // Removed to prevent double handling
-            // 'S' and Alt-S are now handled by the action system
-            // 'v' key is now handled by the action system
-            // Clipboard operations (vim-like yank)
-            KeyCode::Char('y') => {
-                let selection_mode = self.get_selection_mode();
-                debug!("'y' key pressed - selection_mode={:?}", selection_mode);
-                match selection_mode {
-                    SelectionMode::Cell => {
-                        // In cell mode, single 'y' yanks the cell directly
-                        debug!("Yanking cell in cell selection mode");
-                        self.buffer_mut()
-                            .set_status_message("Yanking cell...".to_string());
-                        YankBehavior::yank_cell(self);
-                        // Status message will be set by yank_cell
-                    }
-                    SelectionMode::Row => {
-                        // In row mode, 'y' is handled by chord handler (yy, yc, ya)
-                        // The chord handler will process the key sequence
-                        debug!("'y' pressed in row mode - waiting for chord completion");
-                        self.buffer_mut().set_status_message(
-                            "Press second key for chord: yy=row, yc=column, ya=all, yv=cell"
-                                .to_string(),
-                        );
-                    }
-                    SelectionMode::Column => {
-                        // In column mode, 'y' yanks the current column
-                        debug!("Yanking column in column selection mode");
-                        self.buffer_mut()
-                            .set_status_message("Yanking column...".to_string());
-                        YankBehavior::yank_column(self);
-                    }
-                }
-            }
-            // Export to CSV
-            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.export_to_csv();
-            }
-            // Export to JSON
-            KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.export_to_json();
-            }
-            // Number keys now handled by action system for vim counts (5j, 3k, etc.)
-            // Direct column sorting moved to 's' key + column navigation
-            KeyCode::F(1) | KeyCode::Char('?') => {
-                self.state_container.set_help_visible(true);
-                self.buffer_mut().set_mode(AppMode::Help);
-                self.help_widget.on_enter();
-            }
-            _ => {
-                // Other keys handled normally
-            }
+        // Try Results-specific navigation keys
+        if let Some(result) = self.try_handle_results_navigation(&normalized_key)? {
+            return Ok(result);
         }
+
+        // Try clipboard/yank operations
+        if let Some(result) = self.try_handle_results_clipboard(&normalized_key)? {
+            return Ok(result);
+        }
+
+        // Try export operations
+        if let Some(result) = self.try_handle_results_export(&normalized_key)? {
+            return Ok(result);
+        }
+
+        // Try help and mode transitions
+        if let Some(result) = self.try_handle_results_help(&normalized_key)? {
+            return Ok(result);
+        }
+
+        // All key handling has been migrated to:
+        // - Action system (handles most keys)
+        // - try_handle_results_* methods (handles specific Results mode keys)
+        // This completes the orchestration pattern for Results mode input
         Ok(false)
     }
     // ========== SEARCH OPERATIONS ==========
@@ -2662,6 +2806,10 @@ impl EnhancedTuiApp {
                 if self.buffer().get_mode() != AppMode::ColumnSearch {
                     debug!(target: "search", "WARNING: Mode changed after search_columns, restoring to ColumnSearch");
                     self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                    self.shadow_state.borrow_mut().observe_search_start(
+                        crate::ui::shadow_state::SearchType::Column,
+                        "column_search_restored",
+                    );
                 }
                 debug!(target: "search", "After search_columns, app_mode={:?}", self.buffer().get_mode());
             }
@@ -2705,6 +2853,24 @@ impl EnhancedTuiApp {
         // Set the app mode
         debug!(target: "mode", "Setting app mode from {:?} to {:?}", self.buffer().get_mode(), mode.to_app_mode());
         self.buffer_mut().set_mode(mode.to_app_mode());
+
+        // Observe the search mode start in shadow state
+        let search_type = match mode {
+            SearchMode::ColumnSearch => crate::ui::shadow_state::SearchType::Column,
+            SearchMode::Search => crate::ui::shadow_state::SearchType::Data,
+            SearchMode::FuzzyFilter | SearchMode::Filter => {
+                crate::ui::shadow_state::SearchType::Fuzzy
+            }
+        };
+        let trigger = match mode {
+            SearchMode::ColumnSearch => "backslash_column_search",
+            SearchMode::Search => "data_search_started",
+            SearchMode::FuzzyFilter => "fuzzy_filter_started",
+            SearchMode::Filter => "filter_started",
+        };
+        self.shadow_state
+            .borrow_mut()
+            .observe_search_start(search_type, trigger);
 
         // Clear patterns
         match mode {
@@ -2870,6 +3036,9 @@ impl EnhancedTuiApp {
 
                 // ALWAYS switch back to Results mode after Apply for all search modes
                 self.buffer_mut().set_mode(AppMode::Results);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Results, "filter_applied");
 
                 // Show status message
                 let filter_msg = match mode {
@@ -2901,8 +3070,10 @@ impl EnhancedTuiApp {
                 // Clear the filter and restore original SQL
                 match self.buffer().get_mode() {
                     AppMode::FuzzyFilter => {
-                        // Clear fuzzy filter
+                        // Clear fuzzy filter - must apply empty filter to DataView
+                        debug!(target: "search", "FuzzyFilter Cancel: Clearing fuzzy filter");
                         self.buffer_mut().set_fuzzy_filter_pattern(String::new());
+                        self.apply_fuzzy_filter(); // This will clear the filter in DataView
                         self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
                         self.buffer_mut().set_fuzzy_filter_active(false);
                     }
@@ -2936,8 +3107,22 @@ impl EnhancedTuiApp {
                     debug!(target: "search", "Cancel: No saved SQL from widget");
                 }
 
+                // Clear all search navigation state (so n/N keys work properly after escape)
+                self.state_container.clear_search();
+                self.vim_search_manager.borrow_mut().cancel_search();
+
+                // Observe search end
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_search_end("search_cancelled");
+
                 // Switch back to Results mode
                 self.buffer_mut().set_mode(AppMode::Results);
+
+                // Observe mode change
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Results, "return_from_search");
             }
             SearchModesAction::NextMatch => {
                 debug!(target: "search", "NextMatch action, current_mode={:?}, widget_mode={:?}", 
@@ -2952,6 +3137,10 @@ impl EnhancedTuiApp {
                     if self.buffer().get_mode() != AppMode::ColumnSearch {
                         debug!(target: "search", "WARNING: Mode mismatch - fixing");
                         self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                        self.shadow_state.borrow_mut().observe_search_start(
+                            crate::ui::shadow_state::SearchType::Column,
+                            "column_search_mode_fix_next",
+                        );
                     }
                     self.next_column_match();
                 } else {
@@ -2971,6 +3160,10 @@ impl EnhancedTuiApp {
                     if self.buffer().get_mode() != AppMode::ColumnSearch {
                         debug!(target: "search", "WARNING: Mode mismatch - fixing");
                         self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                        self.shadow_state.borrow_mut().observe_search_start(
+                            crate::ui::shadow_state::SearchType::Column,
+                            "column_search_mode_fix_prev",
+                        );
                     }
                     self.previous_column_match();
                 } else {
@@ -3094,12 +3287,19 @@ impl EnhancedTuiApp {
     fn execute_query(&mut self, query: &str) -> Result<()> {
         info!(target: "query", "Executing query: {}", query);
 
-        // 1. Save query to buffer and state container
+        // 1. Clear previous search state so n/N keys work properly
+        // This fixes the bug where N key was stuck in search mode after query execution
+        self.state_container.clear_search();
+        self.state_container.clear_column_search();
+        // Also clear vim search state
+        self.vim_search_manager.borrow_mut().cancel_search();
+
+        // 2. Save query to buffer and state container
         self.buffer_mut().set_last_query(query.to_string());
         self.state_container
             .set_last_executed_query(query.to_string());
 
-        // 2. Update status
+        // 3. Update status
         self.buffer_mut()
             .set_status_message(format!("Executing query: '{}'...", query));
         let start_time = std::time::Instant::now();
@@ -3194,6 +3394,12 @@ impl EnhancedTuiApp {
 
                 // 7. Switch to results mode and reset navigation using centralized reset
                 self.buffer_mut().set_mode(AppMode::Results);
+
+                // Observe state transition
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Results, "execute_query_success");
+
                 self.reset_table_state();
 
                 Ok(())
@@ -3532,6 +3738,9 @@ impl EnhancedTuiApp {
         ));
 
         self.buffer_mut().set_mode(AppMode::ColumnStats);
+        self.shadow_state
+            .borrow_mut()
+            .observe_mode_change(AppMode::ColumnStats, "column_stats_requested");
     }
 
     fn check_parser_error(&self, query: &str) -> Option<String> {
@@ -3718,68 +3927,14 @@ impl EnhancedTuiApp {
         // Start search mode in VimSearchManager
         self.vim_search_manager.borrow_mut().start_search();
 
+        // Observe search start
+        self.shadow_state.borrow_mut().observe_search_start(
+            crate::ui::shadow_state::SearchType::Vim,
+            "slash_key_pressed",
+        );
+
         // Use the existing SearchModesWidget which already has perfect debouncing
         self.enter_search_mode(SearchMode::Search);
-    }
-
-    /// Update vim search pattern and navigate to first match
-    fn update_vim_search_pattern(&mut self, pattern: String) {
-        let result = {
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport) = *viewport_borrow {
-                if let Some(dataview) = self.buffer().get_dataview() {
-                    self.vim_search_manager.borrow_mut().update_pattern(
-                        pattern.clone(),
-                        dataview,
-                        viewport,
-                    )
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        }; // Drop viewport_borrow here
-
-        // Update the buffer's selected row AND column AFTER dropping the viewport borrow
-        if let Some(ref m) = result {
-            self.state_container.set_table_selected_row(Some(m.row));
-            self.buffer_mut().set_selected_row(Some(m.row));
-
-            // IMPORTANT: Also update the selected column to match the search match
-            self.buffer_mut().set_current_column(m.col);
-            self.state_container.navigation_mut().selected_column = m.col;
-
-            // CRITICAL: Also update navigation's selected_row to trigger proper rendering
-            self.state_container.navigation_mut().selected_row = m.row;
-
-            // Update scroll offset if row changed significantly
-            let viewport_height = 79; // Typical viewport height
-            let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
-
-            // If the match is outside current viewport, update scroll
-            if m.row < current_scroll_row || m.row >= current_scroll_row + viewport_height {
-                let new_scroll = m.row.saturating_sub(viewport_height / 2);
-                self.buffer_mut()
-                    .set_scroll_offset((new_scroll, current_scroll_col));
-                self.state_container.navigation_mut().scroll_offset =
-                    (new_scroll, current_scroll_col);
-            }
-        }
-
-        // Now we can update the status without borrow conflicts
-        if let Some(first_match) = result {
-            // Update status to show we found a match
-            self.buffer_mut().set_status_message(format!(
-                "/{} - found at ({}, {})",
-                pattern,
-                first_match.row + 1,
-                first_match.col + 1
-            ));
-        } else if !pattern.is_empty() {
-            self.buffer_mut()
-                .set_status_message(format!("/{} - no matches", pattern));
-        }
     }
 
     /// Navigate to next vim search match (n key)
@@ -4953,7 +5108,8 @@ impl EnhancedTuiApp {
         // ========== RENDERING ==========
     }
 
-    fn render_status_line(&self, f: &mut Frame, area: Rect) {
+    /// Add mode styling and indicator to status spans
+    fn add_mode_styling(&self, spans: &mut Vec<Span>) -> (Style, Color) {
         // Determine the mode color
         let (status_style, mode_color) = match self.buffer().get_mode() {
             AppMode::Command => (Style::default().fg(Color::Green), Color::Green),
@@ -4985,15 +5141,17 @@ impl EnhancedTuiApp {
             AppMode::ColumnStats => "STATS",
         };
 
-        let mut spans = Vec::new();
-
         // Mode indicator with color
         spans.push(Span::styled(
             format!("[{}]", mode_indicator),
             Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
         ));
 
-        // Show data source
+        (status_style, mode_color)
+    }
+
+    /// Add data source display to status spans
+    fn add_data_source_display(&self, spans: &mut Vec<Span>) {
         if let Some(ref source) = self.data_source {
             spans.push(Span::raw(" "));
             let source_display = if source.starts_with("http://") || source.starts_with("https://")
@@ -5013,33 +5171,33 @@ impl EnhancedTuiApp {
                 Style::default().fg(Color::Cyan),
             ));
         }
+    }
 
-        // Show buffer information
-        {
-            let index = self.buffer_manager.current_index();
-            let total = self.buffer_manager.all_buffers().len();
+    /// Add buffer information to status spans
+    fn add_buffer_information(&self, spans: &mut Vec<Span>) {
+        let index = self.buffer_manager.current_index();
+        let total = self.buffer_manager.all_buffers().len();
 
-            // Show buffer indicator if multiple buffers
-            if total > 1 {
-                spans.push(Span::raw(" "));
-                spans.push(Span::styled(
-                    format!("[{}/{}]", index + 1, total),
-                    Style::default().fg(Color::Yellow),
-                ));
-            }
+        // Show buffer indicator if multiple buffers
+        if total > 1 {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                format!("[{}/{}]", index + 1, total),
+                Style::default().fg(Color::Yellow),
+            ));
+        }
 
-            // Show current buffer name
-            if let Some(buffer) = self.buffer_manager.current() {
-                spans.push(Span::raw(" "));
-                let name = buffer.get_name();
-                let modified = if buffer.is_modified() { "*" } else { "" };
-                spans.push(Span::styled(
-                    format!("{}{}", name, modified),
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
+        // Show current buffer name
+        if let Some(buffer) = self.buffer_manager.current() {
+            spans.push(Span::raw(" "));
+            let name = buffer.get_name();
+            let modified = if buffer.is_modified() { "*" } else { "" };
+            spans.push(Span::styled(
+                format!("{}{}", name, modified),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
         }
 
         // Get buffer name from the current buffer
@@ -5053,8 +5211,10 @@ impl EnhancedTuiApp {
                     .add_modifier(Modifier::BOLD),
             ));
         }
+    }
 
-        // Mode-specific information
+    /// Add mode-specific information to status spans
+    fn add_mode_specific_info(&self, spans: &mut Vec<Span>, mode_color: Color, area: Rect) {
         match self.buffer().get_mode() {
             AppMode::Command => {
                 // In command mode, show editing-related info
@@ -5086,244 +5246,8 @@ impl EnhancedTuiApp {
                 }
             }
             AppMode::Results => {
-                // In results mode, show navigation and data info
-                let total_rows = self.get_row_count();
-                if total_rows > 0 {
-                    // Get selected row directly from navigation state (0-indexed) and add 1 for display
-                    let selected = self.state_container.navigation().selected_row + 1;
-                    spans.push(Span::raw(" | "));
-
-                    // Show selection mode
-                    let selection_mode = self.get_selection_mode();
-                    let mode_text = match selection_mode {
-                        SelectionMode::Cell => "CELL",
-                        SelectionMode::Row => "ROW",
-                        SelectionMode::Column => "COL",
-                    };
-                    spans.push(Span::styled(
-                        format!("[{}]", mode_text),
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-
-                    spans.push(Span::raw(" "));
-                    spans.push(Span::styled(
-                        format!("Row {}/{}", selected, total_rows),
-                        Style::default().fg(Color::White),
-                    ));
-
-                    // Add cursor coordinates (x,y) - column and row position
-                    // Use ViewportManager's visual column position (1-based for display)
-                    let visual_col_display =
-                        if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
-                            viewport_manager.get_crosshair_col() + 1
-                        } else {
-                            1
-                        };
-                    spans.push(Span::raw(" "));
-                    spans.push(Span::styled(
-                        format!("({},{})", visual_col_display, selected),
-                        Style::default().fg(Color::DarkGray),
-                    ));
-
-                    // Add actual terminal cursor position if we can calculate it
-                    if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
-                        let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH) as u16;
-                        // Use ViewportManager's crosshair column position
-                        let visual_col = viewport_manager.get_crosshair_col();
-                        if let Some(x_pos) =
-                            viewport_manager.get_column_x_position(visual_col, available_width)
-                        {
-                            // Add 2 for left border and padding, add 3 for header rows
-                            let terminal_x = x_pos + 2;
-                            let terminal_y = (selected as u16)
-                                .saturating_sub(self.buffer().get_scroll_offset().0 as u16)
-                                + 3;
-                            spans.push(Span::raw(" "));
-                            spans.push(Span::styled(
-                                format!("[{}x{}]", terminal_x, terminal_y),
-                                Style::default().fg(Color::DarkGray),
-                            ));
-                        }
-                    }
-
-                    // Column information
-                    if let Some(dataview) = self.buffer().get_dataview() {
-                        let headers = dataview.column_names();
-
-                        // Get ViewportManager's crosshair position (visual coordinates)
-                        // and use it to get the correct column name
-                        let (visual_row, visual_col) =
-                            if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
-                                (
-                                    viewport_manager.get_crosshair_row(),
-                                    viewport_manager.get_crosshair_col(),
-                                )
-                            } else {
-                                (0, 0)
-                            };
-
-                        debug!(target: "render", 
-                               "Status line: headers.len()={}, headers={:?}, viewport_crosshair=(row:{}, col:{})", 
-                               headers.len(), headers, visual_row, visual_col);
-
-                        // Use ViewportManager's visual column index to get the correct column name
-                        if visual_col < headers.len() {
-                            spans.push(Span::raw(" | Col: "));
-                            spans.push(Span::styled(
-                                headers[visual_col].clone(),
-                                Style::default().fg(Color::Cyan),
-                            ));
-
-                            // Show ViewportManager's crosshair position and viewport size
-                            let viewport_info = if let Some(ref viewport_manager) =
-                                *self.viewport_manager.borrow()
-                            {
-                                let viewport_rows = viewport_manager.get_viewport_rows();
-                                let viewport_height = viewport_rows.end - viewport_rows.start;
-                                format!("[V:{},{} @ {}r]", visual_row, visual_col, viewport_height)
-                            } else {
-                                format!("[V:{},{}]", visual_row, visual_col)
-                            };
-                            spans.push(Span::raw(" "));
-                            spans.push(Span::styled(
-                                viewport_info,
-                                Style::default().fg(Color::Magenta),
-                            ));
-
-                            // Show pinned columns count if any
-                            if let Some(dataview) = self.buffer().get_dataview() {
-                                let pinned_count = dataview.get_pinned_columns().len();
-                                if pinned_count > 0 {
-                                    spans.push(Span::raw(" | "));
-                                    spans.push(Span::styled(
-                                        format!("📌{}", pinned_count),
-                                        Style::default().fg(Color::Magenta),
-                                    ));
-                                }
-
-                                // Show hidden columns count if any
-                                let hidden_count = dataview.get_hidden_column_names().len();
-                                if hidden_count > 0 {
-                                    spans.push(Span::raw(" | "));
-                                    spans.push(Span::styled(
-                                        format!("👁️‍🗨️{} hidden", hidden_count),
-                                        Style::default().fg(Color::DarkGray),
-                                    ));
-                                    spans.push(Span::raw(" "));
-                                    spans.push(Span::styled(
-                                        "[- hide/+ unhide]",
-                                        Style::default()
-                                            .fg(Color::DarkGray)
-                                            .add_modifier(Modifier::DIM),
-                                    ));
-                                } else {
-                                    // Show hint about column hiding when no columns are hidden
-                                    spans.push(Span::raw(" "));
-                                    spans.push(Span::styled(
-                                        "[- to hide col]",
-                                        Style::default()
-                                            .fg(Color::DarkGray)
-                                            .add_modifier(Modifier::DIM),
-                                    ));
-                                }
-                            } // Close the dataview if let
-
-                            // In cell mode, show the current cell value
-                            if self.get_selection_mode() == SelectionMode::Cell {
-                                if let Some(selected_row) =
-                                    self.state_container.get_table_selected_row()
-                                {
-                                    if let Some(row_data) =
-                                        dataview.source().get_row_as_strings(selected_row)
-                                    {
-                                        // Get visual column from ViewportManager and convert to DataTable index
-                                        let datatable_idx = if let Some(ref viewport_manager) =
-                                            *self.viewport_manager.borrow()
-                                        {
-                                            let visual_col = viewport_manager.get_crosshair_col();
-                                            let display_columns = dataview.get_display_columns();
-                                            if visual_col < display_columns.len() {
-                                                display_columns[visual_col]
-                                            } else {
-                                                0
-                                            }
-                                        } else {
-                                            self.buffer().get_current_column()
-                                        };
-                                        if let Some(cell_value) = row_data.get(datatable_idx) {
-                                            // Truncate if too long
-                                            let display_value = if cell_value.len() > 30 {
-                                                format!("{}...", &cell_value[..27])
-                                            } else {
-                                                cell_value.clone()
-                                            };
-
-                                            spans.push(Span::raw(" = "));
-                                            spans.push(Span::styled(
-                                                display_value,
-                                                Style::default().fg(Color::Yellow),
-                                            ));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Viewport efficiency indicator (only show if viewport manager is active)
-                    if let Some(ref efficiency) = *self.viewport_efficiency.borrow() {
-                        spans.push(Span::raw(" | "));
-                        let efficiency_color = if efficiency.efficiency_percent >= 90 {
-                            Color::Green
-                        } else if efficiency.efficiency_percent >= 75 {
-                            Color::Yellow
-                        } else {
-                            Color::Red
-                        };
-                        spans.push(Span::styled(
-                            format!("{}% eff", efficiency.efficiency_percent),
-                            Style::default().fg(efficiency_color),
-                        ));
-                        if efficiency.wasted_space > 10 {
-                            spans.push(Span::styled(
-                                format!(" ({}w lost)", efficiency.wasted_space),
-                                Style::default().fg(Color::DarkGray),
-                            ));
-                        }
-                    }
-
-                    // Filter indicators
-                    if self.buffer().is_fuzzy_filter_active() {
-                        spans.push(Span::raw(" | "));
-                        spans.push(Span::styled(
-                            format!("Fuzzy: {}", self.buffer().get_fuzzy_filter_pattern()),
-                            Style::default().fg(Color::Magenta),
-                        ));
-                    } else if self.state_container.filter().is_active {
-                        spans.push(Span::raw(" | "));
-                        spans.push(Span::styled(
-                            format!("Filter: {}", self.state_container.filter().pattern),
-                            Style::default().fg(Color::Cyan),
-                        ));
-                    }
-
-                    // Show last yanked value from AppStateContainer
-                    {
-                        if let Some(ref yanked) = self.state_container.clipboard().last_yanked {
-                            spans.push(Span::raw(" | "));
-                            spans.push(Span::styled(
-                                "Yanked: ",
-                                Style::default().fg(Color::DarkGray),
-                            ));
-                            spans.push(Span::styled(
-                                format!("{}={}", yanked.description, yanked.preview),
-                                Style::default().fg(Color::Green),
-                            ));
-                        }
-                    }
-                }
+                // Extract this separately due to its size
+                self.add_results_mode_info(spans, area);
             }
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 // Show the pattern being typed - always use input for consistency
@@ -5335,8 +5259,130 @@ impl EnhancedTuiApp {
             }
             _ => {}
         }
+    }
 
-        // Data source indicator (shown in all modes)
+    /// Add Results mode specific information (restored critical navigation info)
+    fn add_results_mode_info(&self, spans: &mut Vec<Span>, area: Rect) {
+        let total_rows = self.get_row_count();
+        if total_rows > 0 {
+            // Get selected row directly from navigation state (0-indexed) and add 1 for display
+            let selected = self.state_container.navigation().selected_row + 1;
+            spans.push(Span::raw(" | "));
+
+            // Show selection mode
+            let selection_mode = self.get_selection_mode();
+            let mode_text = match selection_mode {
+                SelectionMode::Cell => "CELL",
+                SelectionMode::Row => "ROW",
+                SelectionMode::Column => "COL",
+            };
+            spans.push(Span::styled(
+                format!("[{}]", mode_text),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                format!("Row {}/{}", selected, total_rows),
+                Style::default().fg(Color::White),
+            ));
+
+            // Add cursor coordinates (x,y) - column and row position
+            // Use ViewportManager's visual column position (1-based for display)
+            let visual_col_display =
+                if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+                    viewport_manager.get_crosshair_col() + 1
+                } else {
+                    1
+                };
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                format!("({},{})", visual_col_display, selected),
+                Style::default().fg(Color::DarkGray),
+            ));
+
+            // Add actual terminal cursor position if we can calculate it
+            if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
+                let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH) as u16;
+                // Use ViewportManager's crosshair column position
+                let visual_col = viewport_manager.get_crosshair_col();
+                if let Some(x_pos) =
+                    viewport_manager.get_column_x_position(visual_col, available_width)
+                {
+                    // Add 2 for left border and padding, add 3 for header rows
+                    let terminal_x = x_pos + 2;
+                    let terminal_y = (selected as u16)
+                        .saturating_sub(self.buffer().get_scroll_offset().0 as u16)
+                        + 3;
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(
+                        format!("[{}x{}]", terminal_x, terminal_y),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                }
+            }
+
+            // Column information
+            if let Some(dataview) = self.buffer().get_dataview() {
+                let headers = dataview.column_names();
+
+                // Get ViewportManager's crosshair position (visual coordinates)
+                // and use it to get the correct column name
+                let (visual_row, visual_col) =
+                    if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+                        (
+                            viewport_manager.get_crosshair_row(),
+                            viewport_manager.get_crosshair_col(),
+                        )
+                    } else {
+                        (0, 0)
+                    };
+
+                // Use ViewportManager's visual column index to get the correct column name
+                if visual_col < headers.len() {
+                    spans.push(Span::raw(" | Col: "));
+                    spans.push(Span::styled(
+                        headers[visual_col].clone(),
+                        Style::default().fg(Color::Cyan),
+                    ));
+
+                    // Show ViewportManager's crosshair position and viewport size
+                    let viewport_info =
+                        if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+                            let viewport_rows = viewport_manager.get_viewport_rows();
+                            let viewport_height = viewport_rows.end - viewport_rows.start;
+                            format!("[V:{},{} @ {}r]", visual_row, visual_col, viewport_height)
+                        } else {
+                            format!("[V:{},{}]", visual_row, visual_col)
+                        };
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(
+                        viewport_info,
+                        Style::default().fg(Color::Magenta),
+                    ));
+                }
+            }
+        }
+    }
+
+    fn render_status_line(&self, f: &mut Frame, area: Rect) {
+        let mut spans = Vec::new();
+
+        // Add mode styling and indicator
+        let (status_style, mode_color) = self.add_mode_styling(&mut spans);
+
+        // Add data source display
+        self.add_data_source_display(&mut spans);
+
+        // Add buffer information
+        self.add_buffer_information(&mut spans);
+
+        // Add mode-specific information
+        self.add_mode_specific_info(&mut spans, mode_color, area);
+
+        // Data source indicator (shown in all modes) - TO BE EXTRACTED
         if let Some(source) = self.buffer().get_last_query_source() {
             spans.push(Span::raw(" | "));
             let (icon, label, color) = match source.as_str() {
@@ -5370,11 +5416,10 @@ impl EnhancedTuiApp {
             spans.push(Span::styled(label, Style::default().fg(color)));
         }
 
-        // Global indicators (shown when active)
+        // Global indicators (shown when active) - TO BE EXTRACTED
         let case_insensitive = self.buffer().is_case_insensitive();
         if case_insensitive {
             spans.push(Span::raw(" | "));
-            // Use to_string() to ensure we get the actual string value
             let icon = self.config.display.icons.case_insensitive.clone();
             spans.push(Span::styled(
                 format!("{} CASE", icon),
@@ -5382,7 +5427,7 @@ impl EnhancedTuiApp {
             ));
         }
 
-        // Show column packing mode instead of compact mode
+        // Show column packing mode - TO BE EXTRACTED
         if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
             let packing_mode = viewport_manager.get_packing_mode();
             spans.push(Span::raw(" | "));
@@ -5394,34 +5439,7 @@ impl EnhancedTuiApp {
             spans.push(Span::styled(text, Style::default().fg(color)));
         }
 
-        // Show lock status indicators
-        {
-            let navigation = self.state_container.navigation();
-
-            // Viewport lock indicator with boundary status
-            if navigation.viewport_lock {
-                spans.push(Span::raw(" | "));
-                let lock_text = if navigation.is_at_viewport_top() {
-                    format!("{}V↑", &self.config.display.icons.lock)
-                } else if navigation.is_at_viewport_bottom() {
-                    format!("{}V↓", &self.config.display.icons.lock)
-                } else {
-                    format!("{}V", &self.config.display.icons.lock)
-                };
-                spans.push(Span::styled(lock_text, Style::default().fg(Color::Magenta)));
-            }
-
-            // Cursor lock indicator
-            if navigation.cursor_lock {
-                spans.push(Span::raw(" | "));
-                spans.push(Span::styled(
-                    format!("{}C", &self.config.display.icons.lock),
-                    Style::default().fg(Color::Yellow),
-                ));
-            }
-        }
-
-        // Show status message if present
+        // Show status message if present - TO BE EXTRACTED
         let status_msg = self.buffer().get_status_message();
         if !status_msg.is_empty() {
             spans.push(Span::raw(" | "));
@@ -5433,7 +5451,7 @@ impl EnhancedTuiApp {
             ));
         }
 
-        // Help shortcuts (right side)
+        // Help shortcuts (right side) - TO BE EXTRACTED
         let help_text = match self.buffer().get_mode() {
             AppMode::Command => "Enter:Run | Tab:Complete | ↓:Results | F1:Help",
             AppMode::Results => match self.get_selection_mode() {
@@ -5451,35 +5469,19 @@ impl EnhancedTuiApp {
             AppMode::JumpToRow => "Enter:Jump | Esc:Cancel",
         };
 
-        // Add key press indicator using smart sequence renderer
-        if self.key_sequence_renderer.has_content() {
-            let key_display = self.key_sequence_renderer.get_display();
-            if !key_display.is_empty() {
-                spans.push(Span::raw(" | Keys: "));
-                spans.push(Span::styled(
-                    key_display,
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::ITALIC),
-                ));
-            }
-        }
+        self.add_global_indicators(&mut spans);
 
-        // Calculate available space for help text
-        let current_length: usize = spans.iter().map(|s| s.content.len()).sum();
-        let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH) as usize; // Account for borders
-        let help_length = help_text.len();
-
-        if current_length + help_length + 3 < available_width {
-            // Add spacing to right-align help text
-            let padding = available_width - current_length - help_length - 3;
-            spans.push(Span::raw(" ".repeat(padding)));
-            spans.push(Span::raw(" | "));
+        // Add shadow state display for debugging
+        {
+            let shadow_display = self.shadow_state.borrow().status_display();
+            spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                help_text,
-                Style::default().fg(Color::DarkGray),
+                shadow_display,
+                Style::default().fg(Color::Cyan),
             ));
         }
+
+        self.add_help_text_display(&mut spans, help_text, area);
 
         let status_line = Line::from(spans);
         let status = Paragraph::new(status_line)
@@ -5890,7 +5892,16 @@ impl EnhancedTuiApp {
             stats_widget: &mut self.stats_widget,
         };
 
-        crate::ui::input_handlers::handle_column_stats_input(&mut ctx, key)
+        let result = crate::ui::input_handlers::handle_column_stats_input(&mut ctx, key)?;
+
+        // Check if mode changed to Results (happens when stats view is closed)
+        if self.buffer().get_mode() == AppMode::Results {
+            self.shadow_state
+                .borrow_mut()
+                .observe_mode_change(AppMode::Results, "column_stats_closed");
+        }
+
+        Ok(result)
     }
 
     fn handle_jump_to_row_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -5927,6 +5938,9 @@ impl EnhancedTuiApp {
             if query == ":help" {
                 self.state_container.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Help, "help_requested");
                 self.buffer_mut()
                     .set_status_message("Help Mode - Press ESC to return".to_string());
             } else if query == ":exit" || query == ":quit" || query == ":q" {
@@ -6608,6 +6622,13 @@ impl EnhancedTuiApp {
                     debug_info.push_str("\n");
                 }
 
+                // Add Shadow State debug info
+                {
+                    debug_info.push_str("\n========== SHADOW STATE MANAGER ==========\n");
+                    debug_info.push_str(&self.shadow_state.borrow().debug_info());
+                    debug_info.push_str("\n==========================================\n");
+                }
+
                 // Add KeySequenceRenderer debug info
                 debug_info.push_str("\n========== KEY SEQUENCE RENDERER ==========\n");
                 debug_info.push_str(&format!(
@@ -6850,6 +6871,39 @@ impl EnhancedTuiApp {
             buffer.set_mode(AppMode::PrettyQuery);
             let query = buffer.get_input_text();
             self.debug_widget.generate_pretty_sql(&query);
+        }
+    }
+
+    /// Add global indicators like key sequence display
+    fn add_global_indicators(&self, spans: &mut Vec<Span>) {
+        if self.key_sequence_renderer.has_content() {
+            let key_display = self.key_sequence_renderer.get_display();
+            if !key_display.is_empty() {
+                spans.push(Span::raw(" | Keys: "));
+                spans.push(Span::styled(
+                    key_display,
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::ITALIC),
+                ));
+            }
+        }
+    }
+
+    /// Add right-aligned help text if space allows
+    fn add_help_text_display<'a>(&self, spans: &mut Vec<Span<'a>>, help_text: &'a str, area: Rect) {
+        let current_length: usize = spans.iter().map(|s| s.content.len()).sum();
+        let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH) as usize;
+        let help_length = help_text.len();
+
+        if current_length + help_length + 3 < available_width {
+            let padding = available_width - current_length - help_length - 3;
+            spans.push(Span::raw(" ".repeat(padding)));
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(
+                help_text,
+                Style::default().fg(Color::DarkGray),
+            ));
         }
     }
 }

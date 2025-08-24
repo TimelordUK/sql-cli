@@ -23,6 +23,7 @@ pub mod query_engine_integration;
 pub mod render_state;
 pub mod scroll_utils;
 pub mod search_operations;
+pub mod shadow_state;
 pub mod simple_operations;
 pub mod table_render_context;
 pub mod table_renderer;

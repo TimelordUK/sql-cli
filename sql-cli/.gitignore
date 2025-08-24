@@ -5,3 +5,4 @@
 *vmoptions*.txt
 trades_*.json
 test_shift_g.rs
+test_*.csv

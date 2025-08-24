@@ -1,4 +1,3 @@
-use crate::debug::Priority;
 /// Integration of new debug registry system with existing toggle_debug_mode
 /// This file provides a gradual migration path from the old debug system to the new trait-based system
 use crate::ui::enhanced_tui::EnhancedTuiApp;
