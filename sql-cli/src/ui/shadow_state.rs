@@ -4,7 +4,7 @@
 //! logging state changes to help us understand patterns before migrating to
 //! centralized state management.
 
-use crate::buffer::AppMode;
+use crate::buffer::{AppMode, Buffer, BufferAPI};
 use std::collections::VecDeque;
 use std::time::Instant;
 use tracing::{debug, info, warn};
@@ -118,6 +118,94 @@ impl ShadowStateManager {
                 "Redundant mode change to {:?} ignored", mode);
         }
     }
+
+    // ============= Write-Through Methods (Temporary) =============
+    // These methods update both shadow state and buffer during migration
+    // Eventually the buffer parameter will be removed
+
+    /// Set mode - authoritative method that updates both shadow state and buffer
+    pub fn set_mode(&mut self, mode: AppMode, buffer: &mut Buffer, trigger: &str) {
+        let new_state = self.mode_to_state(mode.clone());
+
+        // Only proceed if state actually changed
+        if new_state != self.state {
+            self.transition_count += 1;
+
+            info!(target: "shadow_state",
+                "[#{}] {} -> {} (trigger: {})",
+                self.transition_count,
+                self.state_display(&self.state),
+                self.state_display(&new_state),
+                trigger
+            );
+
+            // Record transition
+            let transition = StateTransition {
+                timestamp: Instant::now(),
+                from: self.state.clone(),
+                to: new_state.clone(),
+                trigger: trigger.to_string(),
+            };
+
+            self.history.push_back(transition);
+            if self.history.len() > 100 {
+                self.history.pop_front();
+            }
+
+            // Update shadow state
+            self.previous_state = Some(self.state.clone());
+            self.state = new_state;
+
+            // Update buffer (temporary - will be removed)
+            buffer.set_mode(mode);
+
+            // Log what side effects should happen
+            self.log_expected_side_effects();
+        } else {
+            debug!(target: "shadow_state", 
+                "Redundant mode change to {:?} ignored", mode);
+        }
+    }
+
+    /// Switch to Results mode
+    pub fn switch_to_results(&mut self, buffer: &mut Buffer) {
+        self.set_mode(AppMode::Results, buffer, "switch_to_results");
+    }
+
+    /// Switch to Command mode
+    pub fn switch_to_command(&mut self, buffer: &mut Buffer) {
+        self.set_mode(AppMode::Command, buffer, "switch_to_command");
+    }
+
+    /// Start search with specific type
+    pub fn start_search(&mut self, search_type: SearchType, buffer: &mut Buffer, trigger: &str) {
+        let mode = match search_type {
+            SearchType::Column => AppMode::ColumnSearch,
+            SearchType::Data | SearchType::Vim => AppMode::Search,
+            SearchType::Fuzzy => AppMode::FuzzyFilter,
+        };
+
+        // Update state
+        self.state = AppState::Search {
+            search_type: search_type.clone(),
+        };
+        self.transition_count += 1;
+
+        info!(target: "shadow_state",
+            "[#{}] Starting {:?} search (trigger: {})",
+            self.transition_count, search_type, trigger
+        );
+
+        // Update buffer
+        buffer.set_mode(mode);
+    }
+
+    /// Exit current mode to Results
+    pub fn exit_to_results(&mut self, buffer: &mut Buffer) {
+        self.set_mode(AppMode::Results, buffer, "exit_to_results");
+    }
+
+    // ============= Original Observer Methods =============
 
     /// Observe search starting
     pub fn observe_search_start(&mut self, search_type: SearchType, trigger: &str) {
