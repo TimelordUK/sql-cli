@@ -242,6 +242,7 @@ impl ShadowStateManager {
                 SearchType::Column => AppMode::ColumnSearch,
                 SearchType::Data => AppMode::Search,
                 SearchType::Fuzzy => AppMode::FuzzyFilter,
+                SearchType::Vim => AppMode::Search, // Vim search uses Search mode
             },
             AppState::Help => AppMode::Help,
             AppState::Debug => AppMode::Debug,
@@ -317,6 +318,16 @@ impl ShadowStateManager {
             self.state,
             AppState::Search {
                 search_type: SearchType::Fuzzy
+            }
+        )
+    }
+
+    /// Check if in vim search mode specifically
+    pub fn is_in_vim_search(&self) -> bool {
+        matches!(
+            self.state,
+            AppState::Search {
+                search_type: SearchType::Vim
             }
         )
     }
