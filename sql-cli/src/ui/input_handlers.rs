@@ -3,16 +3,19 @@
 
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, BufferAPI, BufferManager};
+use crate::ui::shadow_state::ShadowStateManager;
 use crate::widgets::help_widget::HelpAction;
 use crate::widgets::stats_widget::StatsAction;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::cell::RefCell;
 
 /// Minimal context for debug/pretty query input handlers
 /// We'll add more fields as we extract more handlers
 pub struct DebugInputContext<'a> {
     pub buffer_manager: &'a mut BufferManager,
     pub debug_widget: &'a mut crate::widgets::debug_widget::DebugWidget,
+    pub shadow_state: &'a RefCell<ShadowStateManager>,
 }
 
 /// Context for help input handler
@@ -20,12 +23,14 @@ pub struct HelpInputContext<'a> {
     pub buffer_manager: &'a mut BufferManager,
     pub help_widget: &'a mut crate::widgets::help_widget::HelpWidget,
     pub state_container: &'a AppStateContainer,
+    pub shadow_state: &'a RefCell<ShadowStateManager>,
 }
 
 /// Context for column stats input handler
 pub struct StatsInputContext<'a> {
     pub buffer_manager: &'a mut BufferManager,
     pub stats_widget: &'a mut crate::widgets::stats_widget::StatsWidget,
+    pub shadow_state: &'a RefCell<ShadowStateManager>,
 }
 
 /// Handle debug mode input
@@ -65,7 +70,9 @@ pub fn handle_debug_input(ctx: &mut DebugInputContext, key: KeyEvent) -> Result<
     if ctx.debug_widget.handle_key(key) {
         // Widget returned true - exit debug mode
         if let Some(buffer) = ctx.buffer_manager.current_mut() {
-            buffer.set_mode(AppMode::Command);
+            ctx.shadow_state
+                .borrow_mut()
+                .set_mode(AppMode::Command, buffer, "debug_exit");
         }
     }
 
@@ -82,7 +89,9 @@ pub fn handle_pretty_query_input(ctx: &mut DebugInputContext, key: KeyEvent) -> 
     if ctx.debug_widget.handle_key(key) {
         // Widget returned true - exit pretty query mode
         if let Some(buffer) = ctx.buffer_manager.current_mut() {
-            buffer.set_mode(AppMode::Command);
+            ctx.shadow_state
+                .borrow_mut()
+                .set_mode(AppMode::Command, buffer, "pretty_query_exit");
         }
     }
 
@@ -95,7 +104,9 @@ pub fn handle_cache_list_input(ctx: &mut DebugInputContext, key: KeyEvent) -> Re
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(true),
         KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
             if let Some(buffer) = ctx.buffer_manager.current_mut() {
-                buffer.set_mode(AppMode::Command);
+                ctx.shadow_state
+                    .borrow_mut()
+                    .set_mode(AppMode::Command, buffer, "cache_list_exit");
             }
         }
         _ => {}
@@ -135,7 +146,9 @@ fn exit_help(ctx: &mut HelpInputContext) {
         AppMode::Command
     };
     if let Some(buffer) = ctx.buffer_manager.current_mut() {
-        buffer.set_mode(mode);
+        ctx.shadow_state
+            .borrow_mut()
+            .set_mode(mode, buffer, "help_exit");
     }
 }
 
@@ -146,7 +159,9 @@ pub fn handle_column_stats_input(ctx: &mut StatsInputContext, key: KeyEvent) -> 
         StatsAction::Close => {
             if let Some(buffer) = ctx.buffer_manager.current_mut() {
                 buffer.set_column_stats(None);
-                buffer.set_mode(AppMode::Results);
+                ctx.shadow_state
+                    .borrow_mut()
+                    .set_mode(AppMode::Results, buffer, "stats_close");
             }
         }
         StatsAction::Continue | StatsAction::PassThrough => {}

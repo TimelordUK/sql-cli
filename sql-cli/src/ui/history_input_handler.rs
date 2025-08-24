@@ -5,7 +5,9 @@
 
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, BufferAPI, BufferManager};
+use crate::ui::shadow_state::ShadowStateManager;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::cell::RefCell;
 use std::sync::Arc;
 
 /// Context for history input operations
@@ -13,6 +15,7 @@ use std::sync::Arc;
 pub struct HistoryInputContext<'a> {
     pub state_container: &'a Arc<AppStateContainer>,
     pub buffer_manager: &'a mut BufferManager,
+    pub shadow_state: &'a RefCell<ShadowStateManager>,
 }
 
 /// Result of processing a history input key event
@@ -37,7 +40,11 @@ pub fn handle_history_input(ctx: &mut HistoryInputContext, key: KeyEvent) -> His
             // Cancel history search and restore original input
             let original_input = ctx.state_container.cancel_history_search();
             if let Some(buffer) = ctx.buffer_manager.current_mut() {
-                buffer.set_mode(AppMode::Command);
+                ctx.shadow_state.borrow_mut().set_mode(
+                    AppMode::Command,
+                    buffer,
+                    "history_cancelled",
+                );
                 buffer.set_status_message("History search cancelled".to_string());
             }
             HistoryInputResult::SwitchToCommand(Some((original_input, 0)))
@@ -46,7 +53,11 @@ pub fn handle_history_input(ctx: &mut HistoryInputContext, key: KeyEvent) -> His
             // Accept the selected history command
             if let Some(command) = ctx.state_container.accept_history_search() {
                 if let Some(buffer) = ctx.buffer_manager.current_mut() {
-                    buffer.set_mode(AppMode::Command);
+                    ctx.shadow_state.borrow_mut().set_mode(
+                        AppMode::Command,
+                        buffer,
+                        "history_accepted",
+                    );
                     buffer.set_status_message(
                         "Command loaded from history (cursor at start)".to_string(),
                     );
@@ -101,7 +112,9 @@ mod tests {
     use super::*;
     use crate::app_state_container::AppStateContainer;
     use crate::buffer::{AppMode, BufferManager};
+    use crate::ui::shadow_state::ShadowStateManager;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::cell::RefCell;
 
     fn create_test_context() -> (AppStateContainer, BufferManager) {
         // Create the expected data directory and history file for testing
@@ -150,10 +163,12 @@ mod tests {
     fn test_esc_cancels_search() {
         let (state_container, mut buffer_manager) = create_test_context();
         let state_arc = Arc::new(state_container);
+        let shadow_state = RefCell::new(ShadowStateManager::new());
 
         let mut ctx = HistoryInputContext {
             state_container: &state_arc,
             buffer_manager: &mut buffer_manager,
+            shadow_state: &shadow_state,
         };
 
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
@@ -175,10 +190,12 @@ mod tests {
     fn test_up_down_navigation() {
         let (state_container, mut buffer_manager) = create_test_context();
         let state_arc = Arc::new(state_container);
+        let shadow_state = RefCell::new(ShadowStateManager::new());
 
         let mut ctx = HistoryInputContext {
             state_container: &state_arc,
             buffer_manager: &mut buffer_manager,
+            shadow_state: &shadow_state,
         };
 
         let up_key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);

@@ -1519,11 +1519,15 @@ impl EnhancedTuiApp {
                 debug!("Chord completed: {:?}", action);
                 // Clear chord mode in renderer
                 self.key_sequence_renderer.clear_chord_mode();
+
+                // Get mode before the borrow
+                let current_mode = self.shadow_state.borrow().get_mode();
+
                 // Use the action system to handle the chord action
                 self.try_handle_action(
                     action,
                     &ActionContext {
-                        mode: self.shadow_state.borrow().get_mode(),
+                        mode: current_mode,
                         selection_mode: self.state_container.get_selection_mode(),
                         has_results: self.buffer().get_dataview().is_some(),
                         has_filter: false,
@@ -1759,18 +1763,17 @@ impl EnhancedTuiApp {
             EditorAction::SwitchMode(mode) => {
                 debug!(target: "shadow_state", "EditorAction::SwitchMode to {:?}", mode);
                 if let Some(buffer) = self.buffer_manager.current_mut() {
-                    buffer.set_mode(mode.clone());
-                    // Observe the mode change in shadow state
+                    // Use shadow state to set mode (with write-through to buffer)
                     let trigger = match mode {
                         AppMode::Results => "enter_results_mode",
                         AppMode::Command => "enter_command_mode",
                         AppMode::History => "enter_history_mode",
                         _ => "switch_mode",
                     };
-                    debug!(target: "shadow_state", "Observing mode change to {:?} with trigger {}", mode, trigger);
+                    debug!(target: "shadow_state", "Setting mode via shadow state to {:?} with trigger {}", mode, trigger);
                     self.shadow_state
                         .borrow_mut()
-                        .observe_mode_change(mode.clone(), trigger);
+                        .set_mode(mode.clone(), buffer, trigger);
                 } else {
                     debug!(target: "shadow_state", "No buffer available for mode switch!");
                 }
@@ -3064,7 +3067,8 @@ impl EnhancedTuiApp {
             }
             SearchModesAction::Cancel => {
                 // Clear the filter and restore original SQL
-                match self.shadow_state.borrow().get_mode() {
+                let mode = self.shadow_state.borrow().get_mode();
+                match mode {
                     AppMode::FuzzyFilter => {
                         // Clear fuzzy filter - must apply empty filter to DataView
                         debug!(target: "search", "FuzzyFilter Cancel: Clearing fuzzy filter");
@@ -3180,6 +3184,7 @@ impl EnhancedTuiApp {
             buffer_manager: &mut self.buffer_manager,
             help_widget: &mut self.help_widget,
             state_container: &self.state_container,
+            shadow_state: &self.shadow_state,
         };
 
         crate::ui::input_handlers::handle_help_input(&mut ctx, key)
@@ -3193,6 +3198,7 @@ impl EnhancedTuiApp {
             let mut ctx = crate::ui::history_input_handler::HistoryInputContext {
                 state_container: &self.state_container,
                 buffer_manager: &mut self.buffer_manager,
+                shadow_state: &self.shadow_state,
             };
             crate::ui::history_input_handler::handle_history_input(&mut ctx, key)
         };
@@ -3246,6 +3252,7 @@ impl EnhancedTuiApp {
         let mut ctx = crate::ui::input_handlers::DebugInputContext {
             buffer_manager: &mut self.buffer_manager,
             debug_widget: &mut self.debug_widget,
+            shadow_state: &self.shadow_state,
         };
 
         let should_quit = crate::ui::input_handlers::handle_debug_input(&mut ctx, key)?;
@@ -3275,6 +3282,7 @@ impl EnhancedTuiApp {
         let mut ctx = crate::ui::input_handlers::DebugInputContext {
             buffer_manager: &mut self.buffer_manager,
             debug_widget: &mut self.debug_widget,
+            shadow_state: &self.shadow_state,
         };
 
         crate::ui::input_handlers::handle_pretty_query_input(&mut ctx, key)
@@ -4734,7 +4742,8 @@ impl EnhancedTuiApp {
         // Paste from system clipboard into the current input field
         match self.state_container.read_from_clipboard() {
             Ok(text) => {
-                match self.shadow_state.borrow().get_mode() {
+                let mode = self.shadow_state.borrow().get_mode();
+                match mode {
                     AppMode::Command => {
                         // Always use single-line mode paste
                         // Get current cursor position
@@ -4767,8 +4776,8 @@ impl EnhancedTuiApp {
 
                         self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
 
-                        // Update the appropriate filter/search state
-                        match self.shadow_state.borrow().get_mode() {
+                        // Update the appropriate filter/search state (reuse the mode we already have)
+                        match mode {
                             AppMode::Filter => {
                                 let pattern = self.get_input_text();
                                 self.state_container.filter_mut().pattern = pattern.clone();
@@ -5077,7 +5086,8 @@ impl EnhancedTuiApp {
         }
 
         // Results area - render based on mode to reduce complexity
-        match self.shadow_state.borrow().get_mode() {
+        let mode = self.shadow_state.borrow().get_mode();
+        match mode {
             AppMode::Help => self.render_help(f, results_area),
             AppMode::History => self.render_history(f, results_area),
             AppMode::Debug => self.render_debug(f, results_area),
@@ -5886,6 +5896,7 @@ impl EnhancedTuiApp {
         let mut ctx = crate::ui::input_handlers::StatsInputContext {
             buffer_manager: &mut self.buffer_manager,
             stats_widget: &mut self.stats_widget,
+            shadow_state: &self.shadow_state,
         };
 
         let result = crate::ui::input_handlers::handle_column_stats_input(&mut ctx, key)?;
@@ -6077,9 +6088,17 @@ impl EnhancedTuiApp {
         // Now handle the mode transition with mutable borrow
         if let Some(buffer) = self.buffer_manager.current_mut() {
             if should_exit_debug {
-                buffer.set_mode(AppMode::Command);
+                self.shadow_state.borrow_mut().set_mode(
+                    AppMode::Command,
+                    buffer,
+                    "debug_toggle_exit",
+                );
             } else {
-                buffer.set_mode(AppMode::Debug);
+                self.shadow_state.borrow_mut().set_mode(
+                    AppMode::Debug,
+                    buffer,
+                    "debug_toggle_enter",
+                );
                 // Generate full debug information like the original F5 handler
                 self.debug_current_buffer();
                 let cursor_pos = self.get_input_cursor();
@@ -6865,7 +6884,11 @@ impl EnhancedTuiApp {
 
     fn show_pretty_query(&mut self) {
         if let Some(buffer) = self.buffer_manager.current_mut() {
-            buffer.set_mode(AppMode::PrettyQuery);
+            self.shadow_state.borrow_mut().set_mode(
+                AppMode::PrettyQuery,
+                buffer,
+                "pretty_query_show",
+            );
             let query = buffer.get_input_text();
             self.debug_widget.generate_pretty_sql(&query);
         }
