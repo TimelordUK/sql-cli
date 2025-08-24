@@ -1,5 +1,5 @@
 //! Shadow State Manager - Observes state transitions without controlling them
-//! 
+//!
 //! This module runs in parallel to the existing state system, observing and
 //! logging state changes to help us understand patterns before migrating to
 //! centralized state management.
@@ -15,38 +15,44 @@ pub enum AppState {
     /// Command/query input mode
     Command,
     /// Results navigation mode
-    Results, 
+    Results,
     /// Any search mode active
     Search { search_type: SearchType },
     /// Help mode
     Help,
     /// Debug view
     Debug,
+    /// History search mode
+    History,
+    /// Jump to row mode
+    JumpToRow,
+    /// Column statistics view
+    ColumnStats,
 }
 
 /// Types of search that can be active
 #[derive(Debug, Clone, PartialEq)]
 pub enum SearchType {
-    Vim,        // / search
-    Column,     // Column name search
-    Data,       // Data content search
-    Fuzzy,      // Fuzzy filter
+    Vim,    // / search
+    Column, // Column name search
+    Data,   // Data content search
+    Fuzzy,  // Fuzzy filter
 }
 
 /// Shadow state manager that observes but doesn't control
 pub struct ShadowStateManager {
     /// Current observed state
     state: AppState,
-    
+
     /// Previous state for transition tracking
     previous_state: Option<AppState>,
-    
+
     /// History of state transitions
     history: VecDeque<StateTransition>,
-    
+
     /// Count of transitions observed
     transition_count: usize,
-    
+
     /// Track if we're in sync with actual state
     discrepancies: Vec<String>,
 }
@@ -62,7 +68,7 @@ struct StateTransition {
 impl ShadowStateManager {
     pub fn new() -> Self {
         info!(target: "shadow_state", "Shadow state manager initialized");
-        
+
         Self {
             state: AppState::Command,
             previous_state: None,
@@ -71,23 +77,23 @@ impl ShadowStateManager {
             discrepancies: Vec::new(),
         }
     }
-    
+
     /// Observe a mode change from the existing system
     pub fn observe_mode_change(&mut self, mode: AppMode, trigger: &str) {
         let new_state = self.mode_to_state(mode.clone());
-        
+
         // Only log if state actually changed
         if new_state != self.state {
             self.transition_count += 1;
-            
-            info!(target: "shadow_state", 
+
+            info!(target: "shadow_state",
                 "[#{}] {} -> {} (trigger: {})",
                 self.transition_count,
                 self.state_display(&self.state),
                 self.state_display(&new_state),
                 trigger
             );
-            
+
             // Record transition
             let transition = StateTransition {
                 timestamp: Instant::now(),
@@ -95,16 +101,16 @@ impl ShadowStateManager {
                 to: new_state.clone(),
                 trigger: trigger.to_string(),
             };
-            
+
             self.history.push_back(transition);
             if self.history.len() > 100 {
                 self.history.pop_front();
             }
-            
+
             // Update state
             self.previous_state = Some(self.state.clone());
             self.state = new_state;
-            
+
             // Log what side effects should happen
             self.log_expected_side_effects();
         } else {
@@ -112,14 +118,16 @@ impl ShadowStateManager {
                 "Redundant mode change to {:?} ignored", mode);
         }
     }
-    
+
     /// Observe search starting
     pub fn observe_search_start(&mut self, search_type: SearchType, trigger: &str) {
-        let new_state = AppState::Search { search_type: search_type.clone() };
-        
+        let new_state = AppState::Search {
+            search_type: search_type.clone(),
+        };
+
         if !matches!(self.state, AppState::Search { .. }) {
             self.transition_count += 1;
-            
+
             info!(target: "shadow_state",
                 "[#{}] {} -> {:?} search (trigger: {})",
                 self.transition_count,
@@ -127,43 +135,43 @@ impl ShadowStateManager {
                 search_type,
                 trigger
             );
-            
+
             self.previous_state = Some(self.state.clone());
             self.state = new_state;
-            
+
             // Note: When we see search start, other searches should be cleared
             warn!(target: "shadow_state",
                 "⚠️  Search started - verify other search states were cleared!");
         }
     }
-    
+
     /// Observe search ending
     pub fn observe_search_end(&mut self, trigger: &str) {
         if matches!(self.state, AppState::Search { .. }) {
             // Return to Results mode (assuming we were in results before search)
             let new_state = AppState::Results;
-            
+
             info!(target: "shadow_state",
                 "[#{}] Exiting search -> {} (trigger: {})",
                 self.transition_count,
                 self.state_display(&new_state),
                 trigger
             );
-            
+
             self.previous_state = Some(self.state.clone());
             self.state = new_state;
-            
+
             // Log expected cleanup
             info!(target: "shadow_state", 
                 "✓ Expected side effects: Clear search UI, restore navigation keys");
         }
     }
-    
+
     /// Check if we're in search mode
     pub fn is_search_active(&self) -> bool {
         matches!(self.state, AppState::Search { .. })
     }
-    
+
     /// Get current search type if active
     pub fn get_search_type(&self) -> Option<SearchType> {
         if let AppState::Search { ref search_type } = self.state {
@@ -172,17 +180,20 @@ impl ShadowStateManager {
             None
         }
     }
-    
+
     /// Get display string for status line
     pub fn status_display(&self) -> String {
         format!("[Shadow: {}]", self.state_display(&self.state))
     }
-    
+
     /// Get debug info about recent transitions
     pub fn debug_info(&self) -> String {
-        let mut info = format!("Shadow State Debug (transitions: {})\n", self.transition_count);
+        let mut info = format!(
+            "Shadow State Debug (transitions: {})\n",
+            self.transition_count
+        );
         info.push_str(&format!("Current: {:?}\n", self.state));
-        
+
         if !self.history.is_empty() {
             info.push_str("\nRecent transitions:\n");
             for transition in self.history.iter().rev().take(5) {
@@ -195,26 +206,26 @@ impl ShadowStateManager {
                 ));
             }
         }
-        
+
         if !self.discrepancies.is_empty() {
             info.push_str("\n⚠️  Discrepancies detected:\n");
             for disc in self.discrepancies.iter().rev().take(3) {
                 info.push_str(&format!("  - {}\n", disc));
             }
         }
-        
+
         info
     }
-    
+
     /// Report a discrepancy between shadow and actual state
     pub fn report_discrepancy(&mut self, expected: &str, actual: &str) {
         let msg = format!("Expected: {}, Actual: {}", expected, actual);
         warn!(target: "shadow_state", "Discrepancy: {}", msg);
         self.discrepancies.push(msg);
     }
-    
+
     // Helper methods
-    
+
     fn mode_to_state(&self, mode: AppMode) -> AppState {
         match mode {
             AppMode::Command => AppState::Command,
@@ -222,7 +233,9 @@ impl ShadowStateManager {
             AppMode::Search | AppMode::ColumnSearch => {
                 // Try to preserve search type if we're already in search
                 if let AppState::Search { ref search_type } = self.state {
-                    AppState::Search { search_type: search_type.clone() }
+                    AppState::Search {
+                        search_type: search_type.clone(),
+                    }
                 } else {
                     // Guess based on mode
                     let search_type = match mode {
@@ -231,13 +244,16 @@ impl ShadowStateManager {
                     };
                     AppState::Search { search_type }
                 }
-            },
+            }
             AppMode::Help => AppState::Help,
             AppMode::Debug | AppMode::PrettyQuery => AppState::Debug,
+            AppMode::History => AppState::History,
+            AppMode::JumpToRow => AppState::JumpToRow,
+            AppMode::ColumnStats => AppState::ColumnStats,
             _ => self.state.clone(), // Preserve current for unknown modes
         }
     }
-    
+
     fn state_display(&self, state: &AppState) -> String {
         match state {
             AppState::Command => "COMMAND".to_string(),
@@ -245,23 +261,26 @@ impl ShadowStateManager {
             AppState::Search { search_type } => format!("SEARCH({:?})", search_type),
             AppState::Help => "HELP".to_string(),
             AppState::Debug => "DEBUG".to_string(),
+            AppState::History => "HISTORY".to_string(),
+            AppState::JumpToRow => "JUMP_TO_ROW".to_string(),
+            AppState::ColumnStats => "COLUMN_STATS".to_string(),
         }
     }
-    
+
     fn log_expected_side_effects(&self) {
         match (&self.previous_state, &self.state) {
             (Some(AppState::Command), AppState::Results) => {
                 debug!(target: "shadow_state", 
                     "Expected side effects: Clear searches, reset viewport, enable nav keys");
-            },
+            }
             (Some(AppState::Results), AppState::Search { .. }) => {
                 debug!(target: "shadow_state",
                     "Expected side effects: Clear other searches, setup search UI");
-            },
+            }
             (Some(AppState::Search { .. }), AppState::Results) => {
                 debug!(target: "shadow_state",
                     "Expected side effects: Clear search UI, restore nav keys");
-            },
+            }
             _ => {}
         }
     }

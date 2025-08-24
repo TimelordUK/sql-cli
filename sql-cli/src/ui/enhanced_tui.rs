@@ -119,7 +119,6 @@ pub struct EnhancedTuiApp {
     viewport_efficiency: RefCell<Option<ViewportEfficiency>>,
 
     // Shadow state manager for observing state transitions
-    #[cfg(feature = "shadow-state")]
     shadow_state: RefCell<crate::ui::shadow_state::ShadowStateManager>,
 
     // Table widget manager for centralized table state/rendering
@@ -234,6 +233,9 @@ impl EnhancedTuiApp {
             }
             StartJumpToRow => {
                 self.buffer_mut().set_mode(AppMode::JumpToRow);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::JumpToRow, "jump_to_row_requested");
                 self.clear_jump_to_row_input();
 
                 // Set jump-to-row state as active
@@ -463,20 +465,32 @@ impl EnhancedTuiApp {
 
                         debug!(target: "mode", "Switching from Results to Command mode");
                         self.buffer_mut().set_mode(AppMode::Command);
+                        self.shadow_state
+                            .borrow_mut()
+                            .observe_mode_change(AppMode::Command, "escape_from_results");
                         self.state_container.set_table_selected_row(None);
                     }
                     AppMode::Help => {
                         // Return to previous mode (usually Results)
                         self.buffer_mut().set_mode(AppMode::Results);
+                        self.shadow_state
+                            .borrow_mut()
+                            .observe_mode_change(AppMode::Results, "escape_from_help");
                         self.state_container.set_help_visible(false);
                     }
                     AppMode::Debug => {
                         // Return to Results mode
                         self.buffer_mut().set_mode(AppMode::Results);
+                        self.shadow_state
+                            .borrow_mut()
+                            .observe_mode_change(AppMode::Results, "escape_from_debug");
                     }
                     _ => {
                         // For other modes, generally go back to Command
                         self.buffer_mut().set_mode(AppMode::Command);
+                        self.shadow_state
+                            .borrow_mut()
+                            .observe_mode_change(AppMode::Command, "escape_to_command");
                     }
                 }
                 Ok(ActionResult::Handled)
@@ -492,6 +506,19 @@ impl EnhancedTuiApp {
                     Ok(ActionResult::Handled)
                 } else {
                     self.buffer_mut().set_mode(target_mode.clone());
+
+                    // Observe the mode change in shadow state
+                    let trigger = match target_mode {
+                        AppMode::Command => "switch_to_command",
+                        AppMode::Results => "switch_to_results",
+                        AppMode::Help => "switch_to_help",
+                        AppMode::History => "switch_to_history",
+                        _ => "switch_mode",
+                    };
+                    self.shadow_state
+                        .borrow_mut()
+                        .observe_mode_change(target_mode.clone(), trigger);
+
                     let msg = match target_mode {
                         AppMode::Command => "Command mode - Enter SQL queries",
                         AppMode::Results => {
@@ -510,6 +537,16 @@ impl EnhancedTuiApp {
 
                 // Switch to the target mode
                 self.buffer_mut().set_mode(target_mode.clone());
+
+                // Observe the mode change in shadow state
+                let trigger = match cursor_position {
+                    CursorPosition::End => "a_key_pressed",
+                    CursorPosition::Current => "i_key_pressed",
+                    CursorPosition::AfterClause(_) => "clause_navigation",
+                };
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(target_mode.clone(), trigger);
 
                 // Position the cursor based on the requested position
                 match cursor_position {
@@ -771,6 +808,9 @@ impl EnhancedTuiApp {
                         self.set_input_text(last_query.clone());
                     }
                     self.buffer_mut().set_mode(AppMode::Command);
+                    self.shadow_state
+                        .borrow_mut()
+                        .observe_mode_change(AppMode::Command, "history_search_from_results");
                     self.state_container.set_table_selected_row(None);
                 }
 
@@ -788,6 +828,9 @@ impl EnhancedTuiApp {
 
                 // Switch to History mode to show the search interface
                 self.buffer_mut().set_mode(AppMode::History);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::History, "history_search_started");
                 Ok(ActionResult::Handled)
             }
             CycleColumnPacking => {
@@ -1146,7 +1189,6 @@ impl EnhancedTuiApp {
             },
             viewport_manager: RefCell::new(None), // Will be initialized when DataView is set
             viewport_efficiency: RefCell::new(None),
-            #[cfg(feature = "shadow-state")]
             shadow_state: RefCell::new(crate::ui::shadow_state::ShadowStateManager::new()),
             table_widget_manager: RefCell::new(TableWidgetManager::new()),
             debug_registry: DebugRegistry::new(),
@@ -1691,6 +1733,9 @@ impl EnhancedTuiApp {
             EditorAction::ShowHelp => {
                 self.state_container.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Help, "help_requested");
                 return Ok(false);
             }
             EditorAction::ShowDebug => {
@@ -1702,8 +1747,22 @@ impl EnhancedTuiApp {
                 return Ok(false);
             }
             EditorAction::SwitchMode(mode) => {
+                debug!(target: "shadow_state", "EditorAction::SwitchMode to {:?}", mode);
                 if let Some(buffer) = self.buffer_manager.current_mut() {
                     buffer.set_mode(mode.clone());
+                    // Observe the mode change in shadow state
+                    let trigger = match mode {
+                        AppMode::Results => "enter_results_mode",
+                        AppMode::Command => "enter_command_mode",
+                        AppMode::History => "enter_history_mode",
+                        _ => "switch_mode",
+                    };
+                    debug!(target: "shadow_state", "Observing mode change to {:?} with trigger {}", mode, trigger);
+                    self.shadow_state
+                        .borrow_mut()
+                        .observe_mode_change(mode.clone(), trigger);
+                } else {
+                    debug!(target: "shadow_state", "No buffer available for mode switch!");
                 }
                 // Special handling for History mode - initialize history search
                 if mode == AppMode::History {
@@ -1797,6 +1856,9 @@ impl EnhancedTuiApp {
                     // Enter help mode
                     self.state_container.set_help_visible(true);
                     self.buffer_mut().set_mode(AppMode::Help);
+                    self.shadow_state
+                        .borrow_mut()
+                        .observe_mode_change(AppMode::Help, "help_requested");
                     self.help_widget.on_enter();
                 }
                 Ok(Some(false))
@@ -1969,6 +2031,9 @@ impl EnhancedTuiApp {
                 let match_count = self.state_container.history_search().matches.len();
 
                 self.buffer_mut().set_mode(AppMode::History);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::History, "history_search_started");
                 self.buffer_mut().set_status_message(format!(
                     "History search started (Ctrl+R) - {} matches",
                     match_count
@@ -2223,6 +2288,9 @@ impl EnhancedTuiApp {
                     if query == ":help" {
                         self.state_container.set_help_visible(true);
                         self.buffer_mut().set_mode(AppMode::Help);
+                        self.shadow_state
+                            .borrow_mut()
+                            .observe_mode_change(AppMode::Help, "help_requested");
                         self.buffer_mut()
                             .set_status_message("Help Mode - Press ESC to return".to_string());
                     } else if query == ":exit" || query == ":quit" || query == ":q" {
@@ -2247,20 +2315,33 @@ impl EnhancedTuiApp {
                 self.apply_completion();
                 Ok(Some(false))
             }
-            KeyCode::Down
-                if self.buffer().has_dataview()
-                    && self.buffer().get_edit_mode() == EditMode::SingleLine =>
-            {
-                // Switch to Results mode and restore state
-                self.buffer_mut().set_mode(AppMode::Results);
-                // Restore previous position or default to 0
-                let row = self.buffer().get_last_results_row().unwrap_or(0);
-                self.state_container.set_table_selected_row(Some(row));
+            KeyCode::Down => {
+                debug!(target: "shadow_state", "Down arrow pressed in Command mode. has_dataview={}, edit_mode={:?}",
+                    self.buffer().has_dataview(),
+                    self.buffer().get_edit_mode());
 
-                // Restore the exact scroll offset from when we left
-                let last_offset = self.buffer().get_last_scroll_offset();
-                self.buffer_mut().set_scroll_offset(last_offset);
-                Ok(Some(false))
+                if self.buffer().has_dataview()
+                    && self.buffer().get_edit_mode() == EditMode::SingleLine
+                {
+                    debug!(target: "shadow_state", "Down arrow conditions met, switching to Results via set_mode");
+                    // Switch to Results mode and restore state
+                    self.buffer_mut().set_mode(AppMode::Results);
+                    self.shadow_state
+                        .borrow_mut()
+                        .observe_mode_change(AppMode::Results, "down_arrow_to_results");
+                    // Restore previous position or default to 0
+                    let row = self.buffer().get_last_results_row().unwrap_or(0);
+                    self.state_container.set_table_selected_row(Some(row));
+
+                    // Restore the exact scroll offset from when we left
+                    let last_offset = self.buffer().get_last_scroll_offset();
+                    self.buffer_mut().set_scroll_offset(last_offset);
+                    Ok(Some(false))
+                } else {
+                    debug!(target: "shadow_state", "Down arrow conditions not met, falling through");
+                    // Fall through to default handling
+                    Ok(None)
+                }
             }
             _ => {
                 // Fallback input handling and completion
@@ -2372,6 +2453,9 @@ impl EnhancedTuiApp {
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.state_container.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Help, "help_requested");
                 self.help_widget.on_enter();
                 Ok(Some(false))
             }
@@ -2708,6 +2792,10 @@ impl EnhancedTuiApp {
                 if self.buffer().get_mode() != AppMode::ColumnSearch {
                     debug!(target: "search", "WARNING: Mode changed after search_columns, restoring to ColumnSearch");
                     self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                    self.shadow_state.borrow_mut().observe_search_start(
+                        crate::ui::shadow_state::SearchType::Column,
+                        "column_search_restored",
+                    );
                 }
                 debug!(target: "search", "After search_columns, app_mode={:?}", self.buffer().get_mode());
             }
@@ -2751,6 +2839,24 @@ impl EnhancedTuiApp {
         // Set the app mode
         debug!(target: "mode", "Setting app mode from {:?} to {:?}", self.buffer().get_mode(), mode.to_app_mode());
         self.buffer_mut().set_mode(mode.to_app_mode());
+
+        // Observe the search mode start in shadow state
+        let search_type = match mode {
+            SearchMode::ColumnSearch => crate::ui::shadow_state::SearchType::Column,
+            SearchMode::Search => crate::ui::shadow_state::SearchType::Data,
+            SearchMode::FuzzyFilter | SearchMode::Filter => {
+                crate::ui::shadow_state::SearchType::Fuzzy
+            }
+        };
+        let trigger = match mode {
+            SearchMode::ColumnSearch => "backslash_column_search",
+            SearchMode::Search => "data_search_started",
+            SearchMode::FuzzyFilter => "fuzzy_filter_started",
+            SearchMode::Filter => "filter_started",
+        };
+        self.shadow_state
+            .borrow_mut()
+            .observe_search_start(search_type, trigger);
 
         // Clear patterns
         match mode {
@@ -2916,6 +3022,9 @@ impl EnhancedTuiApp {
 
                 // ALWAYS switch back to Results mode after Apply for all search modes
                 self.buffer_mut().set_mode(AppMode::Results);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Results, "filter_applied");
 
                 // Show status message
                 let filter_msg = match mode {
@@ -2985,18 +3094,16 @@ impl EnhancedTuiApp {
                 // Clear all search navigation state (so n/N keys work properly after escape)
                 self.state_container.clear_search();
                 self.vim_search_manager.borrow_mut().cancel_search();
-                
+
                 // Observe search end
-                #[cfg(feature = "shadow-state")]
                 self.shadow_state
                     .borrow_mut()
                     .observe_search_end("search_cancelled");
 
                 // Switch back to Results mode
                 self.buffer_mut().set_mode(AppMode::Results);
-                
+
                 // Observe mode change
-                #[cfg(feature = "shadow-state")]
                 self.shadow_state
                     .borrow_mut()
                     .observe_mode_change(AppMode::Results, "return_from_search");
@@ -3014,6 +3121,10 @@ impl EnhancedTuiApp {
                     if self.buffer().get_mode() != AppMode::ColumnSearch {
                         debug!(target: "search", "WARNING: Mode mismatch - fixing");
                         self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                        self.shadow_state.borrow_mut().observe_search_start(
+                            crate::ui::shadow_state::SearchType::Column,
+                            "column_search_mode_fix_next",
+                        );
                     }
                     self.next_column_match();
                 } else {
@@ -3033,6 +3144,10 @@ impl EnhancedTuiApp {
                     if self.buffer().get_mode() != AppMode::ColumnSearch {
                         debug!(target: "search", "WARNING: Mode mismatch - fixing");
                         self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                        self.shadow_state.borrow_mut().observe_search_start(
+                            crate::ui::shadow_state::SearchType::Column,
+                            "column_search_mode_fix_prev",
+                        );
                     }
                     self.previous_column_match();
                 } else {
@@ -3263,13 +3378,12 @@ impl EnhancedTuiApp {
 
                 // 7. Switch to results mode and reset navigation using centralized reset
                 self.buffer_mut().set_mode(AppMode::Results);
-                
+
                 // Observe state transition
-                #[cfg(feature = "shadow-state")]
                 self.shadow_state
                     .borrow_mut()
                     .observe_mode_change(AppMode::Results, "execute_query_success");
-                
+
                 self.reset_table_state();
 
                 Ok(())
@@ -3608,6 +3722,9 @@ impl EnhancedTuiApp {
         ));
 
         self.buffer_mut().set_mode(AppMode::ColumnStats);
+        self.shadow_state
+            .borrow_mut()
+            .observe_mode_change(AppMode::ColumnStats, "column_stats_requested");
     }
 
     fn check_parser_error(&self, query: &str) -> Option<String> {
@@ -3793,12 +3910,12 @@ impl EnhancedTuiApp {
 
         // Start search mode in VimSearchManager
         self.vim_search_manager.borrow_mut().start_search();
-        
+
         // Observe search start
-        #[cfg(feature = "shadow-state")]
-        self.shadow_state
-            .borrow_mut()
-            .observe_search_start(crate::ui::shadow_state::SearchType::Vim, "slash_key_pressed");
+        self.shadow_state.borrow_mut().observe_search_start(
+            crate::ui::shadow_state::SearchType::Vim,
+            "slash_key_pressed",
+        );
 
         // Use the existing SearchModesWidget which already has perfect debouncing
         self.enter_search_mode(SearchMode::Search);
@@ -5337,17 +5454,14 @@ impl EnhancedTuiApp {
         };
 
         self.add_global_indicators(&mut spans);
-        
+
         // Add shadow state display for debugging
-        #[cfg(feature = "shadow-state")]
         {
             let shadow_display = self.shadow_state.borrow().status_display();
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 shadow_display,
-                Style::default()
-                    .fg(Color::Magenta)
-                    .add_modifier(Modifier::DIM),
+                Style::default().fg(Color::Cyan),
             ));
         }
 
@@ -5762,7 +5876,16 @@ impl EnhancedTuiApp {
             stats_widget: &mut self.stats_widget,
         };
 
-        crate::ui::input_handlers::handle_column_stats_input(&mut ctx, key)
+        let result = crate::ui::input_handlers::handle_column_stats_input(&mut ctx, key)?;
+
+        // Check if mode changed to Results (happens when stats view is closed)
+        if self.buffer().get_mode() == AppMode::Results {
+            self.shadow_state
+                .borrow_mut()
+                .observe_mode_change(AppMode::Results, "column_stats_closed");
+        }
+
+        Ok(result)
     }
 
     fn handle_jump_to_row_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
@@ -5799,6 +5922,9 @@ impl EnhancedTuiApp {
             if query == ":help" {
                 self.state_container.set_help_visible(true);
                 self.buffer_mut().set_mode(AppMode::Help);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Help, "help_requested");
                 self.buffer_mut()
                     .set_status_message("Help Mode - Press ESC to return".to_string());
             } else if query == ":exit" || query == ":quit" || query == ":q" {
@@ -6478,6 +6604,13 @@ impl EnhancedTuiApp {
                     debug_info.push_str("\n");
                     debug_info.push_str(&self.state_container.debug_dump());
                     debug_info.push_str("\n");
+                }
+
+                // Add Shadow State debug info
+                {
+                    debug_info.push_str("\n========== SHADOW STATE MANAGER ==========\n");
+                    debug_info.push_str(&self.shadow_state.borrow().debug_info());
+                    debug_info.push_str("\n==========================================\n");
                 }
 
                 // Add KeySequenceRenderer debug info
