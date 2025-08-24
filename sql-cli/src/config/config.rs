@@ -239,6 +239,75 @@ impl Default for CellSelectionStyle {
 }
 
 impl Config {
+    /// Generate debug info string for display
+    pub fn debug_info(&self) -> String {
+        let mut info = String::new();
+        info.push_str("\n========== CONFIGURATION ==========\n");
+
+        // Display configuration
+        info.push_str("[display]\n");
+        info.push_str(&format!("  use_glyphs = {}\n", self.display.use_glyphs));
+        info.push_str(&format!(
+            "  show_row_numbers = {}\n",
+            self.display.show_row_numbers
+        ));
+        info.push_str(&format!("  compact_mode = {}\n", self.display.compact_mode));
+        info.push_str(&format!(
+            "  show_key_indicator = {}\n",
+            self.display.show_key_indicator
+        ));
+
+        // Behavior configuration
+        info.push_str("\n[behavior]\n");
+        info.push_str(&format!(
+            "  auto_execute_on_load = {}\n",
+            self.behavior.auto_execute_on_load
+        ));
+        info.push_str(&format!(
+            "  case_insensitive_default = {}\n",
+            self.behavior.case_insensitive_default
+        ));
+        info.push_str(&format!(
+            "  max_display_rows = {}\n",
+            self.behavior.max_display_rows
+        ));
+        info.push_str(&format!(
+            "  enable_history = {}\n",
+            self.behavior.enable_history
+        ));
+        info.push_str(&format!(
+            "  max_history_entries = {}\n",
+            self.behavior.max_history_entries
+        ));
+        info.push_str(&format!(
+            "  hide_empty_columns = {}\n",
+            self.behavior.hide_empty_columns
+        ));
+
+        // Keybindings configuration
+        info.push_str("\n[keybindings]\n");
+        info.push_str(&format!("  vim_mode = {}\n", self.keybindings.vim_mode));
+
+        // Theme configuration
+        info.push_str("\n[theme]\n");
+        info.push_str(&format!("  color_scheme = {}\n", self.theme.color_scheme));
+        info.push_str(&format!(
+            "  rainbow_parentheses = {}\n",
+            self.theme.rainbow_parentheses
+        ));
+        info.push_str(&format!(
+            "  syntax_highlighting = {}\n",
+            self.theme.syntax_highlighting
+        ));
+        info.push_str(&format!(
+            "  cell_selection_style = {}\n",
+            self.theme.cell_selection_style.mode
+        ));
+
+        info.push_str("==========================================\n");
+        info
+    }
+
     /// Load config from the default location
     pub fn load() -> Result<Self> {
         let config_path = Self::get_config_path()?;
