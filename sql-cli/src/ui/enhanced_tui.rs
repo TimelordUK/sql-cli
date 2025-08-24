@@ -815,7 +815,7 @@ impl EnhancedTuiApp {
             }
             StartHistorySearch => {
                 // Switch to Command mode first if needed
-                if self.buffer().get_mode() == AppMode::Results {
+                if self.shadow_state.borrow().is_in_results_mode() {
                     let last_query = self.buffer().get_last_query();
                     if !last_query.is_empty() {
                         // Use helper to sync all states
@@ -914,30 +914,24 @@ impl EnhancedTuiApp {
     // Helper to get input text from buffer or fallback to direct input
     fn get_input_text(&self) -> String {
         // For special modes that use the input field for their own purposes
-        match self.buffer().get_mode() {
-            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
-                // These modes temporarily use the input field for their patterns
-                self.input.value().to_string() // TODO: Migrate to buffer-based input
-            }
-            _ => {
-                // All other modes use the buffer
-                self.buffer().get_input_text()
-            }
+        if self.shadow_state.borrow().is_in_search_mode() {
+            // These modes temporarily use the input field for their patterns
+            self.input.value().to_string() // TODO: Migrate to buffer-based input
+        } else {
+            // All other modes use the buffer
+            self.buffer().get_input_text()
         }
     }
 
     // Helper to get cursor position from buffer or fallback to direct input
     fn get_input_cursor(&self) -> usize {
         // For special modes that use the input field directly
-        match self.buffer().get_mode() {
-            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
-                // These modes use the input field for their patterns
-                self.input.cursor()
-            }
-            _ => {
-                // All other modes use the buffer
-                self.buffer().get_input_cursor_position()
-            }
+        if self.shadow_state.borrow().is_in_search_mode() {
+            // These modes use the input field for their patterns
+            self.input.cursor()
+        } else {
+            // All other modes use the buffer
+            self.buffer().get_input_cursor_position()
         }
     }
 
@@ -1856,7 +1850,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::F(1) | KeyCode::Char('?') => {
                 // Toggle between Help mode and previous mode
-                if self.buffer().get_mode() == AppMode::Help {
+                if self.shadow_state.borrow().is_in_help_mode() {
                     // Exit help mode
                     let mode = if self.buffer().has_dataview() {
                         AppMode::Results
@@ -2821,7 +2815,7 @@ impl EnhancedTuiApp {
                mode, self.buffer().get_mode(), self.buffer().get_input_text());
 
         // Get the SQL text based on the current mode
-        let current_sql = if self.buffer().get_mode() == AppMode::Results {
+        let current_sql = if self.shadow_state.borrow().is_in_results_mode() {
             // In Results mode, use the last executed query
             let last_query = self.buffer().get_last_query();
             if !last_query.is_empty() {
@@ -3128,13 +3122,13 @@ impl EnhancedTuiApp {
                 debug!(target: "search", "NextMatch action, current_mode={:?}, widget_mode={:?}", 
                        self.buffer().get_mode(), self.search_modes_widget.current_mode());
 
-                // Check both buffer mode and widget mode for consistency
-                if self.buffer().get_mode() == AppMode::ColumnSearch
+                // Check both shadow state and widget mode for consistency
+                if self.shadow_state.borrow().is_in_column_search()
                     || self.search_modes_widget.current_mode() == Some(SearchMode::ColumnSearch)
                 {
                     debug!(target: "search", "Calling next_column_match");
                     // Ensure mode is correctly set
-                    if self.buffer().get_mode() != AppMode::ColumnSearch {
+                    if !self.shadow_state.borrow().is_in_column_search() {
                         debug!(target: "search", "WARNING: Mode mismatch - fixing");
                         self.buffer_mut().set_mode(AppMode::ColumnSearch);
                         self.shadow_state.borrow_mut().observe_search_start(
@@ -4964,7 +4958,7 @@ impl EnhancedTuiApp {
                    self.get_input_cursor());
 
             // Get history search query if in history mode
-            let history_query_string = if self.buffer().get_mode() == AppMode::History {
+            let history_query_string = if self.shadow_state.borrow().is_in_history_mode() {
                 self.state_container.history_search().query.clone()
             } else {
                 String::new()

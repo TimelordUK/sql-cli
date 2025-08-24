@@ -224,6 +224,128 @@ impl ShadowStateManager {
         self.discrepancies.push(msg);
     }
 
+    // ============= Comprehensive Read Methods =============
+    // These methods make shadow state easy to query and will eventually
+    // replace all buffer().get_mode() calls
+
+    /// Get the current state
+    pub fn get_state(&self) -> &AppState {
+        &self.state
+    }
+
+    /// Get the current mode (converts state to AppMode for compatibility)
+    pub fn get_mode(&self) -> AppMode {
+        match &self.state {
+            AppState::Command => AppMode::Command,
+            AppState::Results => AppMode::Results,
+            AppState::Search { search_type } => match search_type {
+                SearchType::Column => AppMode::ColumnSearch,
+                SearchType::Data => AppMode::Search,
+                SearchType::Fuzzy => AppMode::FuzzyFilter,
+            },
+            AppState::Help => AppMode::Help,
+            AppState::Debug => AppMode::Debug,
+            AppState::History => AppMode::History,
+            AppState::JumpToRow => AppMode::JumpToRow,
+            AppState::ColumnStats => AppMode::ColumnStats,
+        }
+    }
+
+    /// Check if currently in Results mode
+    pub fn is_in_results_mode(&self) -> bool {
+        matches!(self.state, AppState::Results)
+    }
+
+    /// Check if currently in Command mode
+    pub fn is_in_command_mode(&self) -> bool {
+        matches!(self.state, AppState::Command)
+    }
+
+    /// Check if currently in any Search mode
+    pub fn is_in_search_mode(&self) -> bool {
+        matches!(self.state, AppState::Search { .. })
+    }
+
+    /// Check if currently in Help mode
+    pub fn is_in_help_mode(&self) -> bool {
+        matches!(self.state, AppState::Help)
+    }
+
+    /// Check if currently in Debug mode
+    pub fn is_in_debug_mode(&self) -> bool {
+        matches!(self.state, AppState::Debug)
+    }
+
+    /// Check if currently in History mode
+    pub fn is_in_history_mode(&self) -> bool {
+        matches!(self.state, AppState::History)
+    }
+
+    /// Check if currently in JumpToRow mode
+    pub fn is_in_jump_mode(&self) -> bool {
+        matches!(self.state, AppState::JumpToRow)
+    }
+
+    /// Check if currently in ColumnStats mode
+    pub fn is_in_column_stats_mode(&self) -> bool {
+        matches!(self.state, AppState::ColumnStats)
+    }
+
+    /// Check if in column search specifically
+    pub fn is_in_column_search(&self) -> bool {
+        matches!(
+            self.state,
+            AppState::Search {
+                search_type: SearchType::Column
+            }
+        )
+    }
+
+    /// Check if in data search specifically
+    pub fn is_in_data_search(&self) -> bool {
+        matches!(
+            self.state,
+            AppState::Search {
+                search_type: SearchType::Data
+            }
+        )
+    }
+
+    /// Check if in fuzzy filter mode specifically
+    pub fn is_in_fuzzy_filter(&self) -> bool {
+        matches!(
+            self.state,
+            AppState::Search {
+                search_type: SearchType::Fuzzy
+            }
+        )
+    }
+
+    /// Get the previous state if any
+    pub fn get_previous_state(&self) -> Option<&AppState> {
+        self.previous_state.as_ref()
+    }
+
+    /// Check if we can navigate (in Results mode)
+    pub fn can_navigate(&self) -> bool {
+        self.is_in_results_mode()
+    }
+
+    /// Check if we can edit (in Command mode or search modes)
+    pub fn can_edit(&self) -> bool {
+        self.is_in_command_mode() || self.is_in_search_mode()
+    }
+
+    /// Get transition count (useful for debugging)
+    pub fn get_transition_count(&self) -> usize {
+        self.transition_count
+    }
+
+    /// Get the last transition if any
+    pub fn get_last_transition(&self) -> Option<&StateTransition> {
+        self.history.back()
+    }
+
     // Helper methods
 
     fn mode_to_state(&self, mode: AppMode) -> AppState {

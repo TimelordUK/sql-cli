@@ -1,0 +1,56 @@
+#!/usr/bin/expect -f
+
+set timeout 5
+spawn ./target/release/sql-cli test_fuzzy_clear.csv -e "select * from data"
+
+# Wait for initial load - should show 10 rows
+expect {
+    "Rows: 10" { puts "✓ Initial load shows 10 rows" }
+    timeout { puts "✗ Failed to see initial 10 rows"; exit 1 }
+}
+
+# Enter fuzzy filter mode
+send "F"
+expect {
+    "Fuzzy Filter:" { puts "✓ Entered fuzzy filter mode" }
+    timeout { puts "✗ Failed to enter fuzzy filter mode"; exit 1 }
+}
+
+# Type "rejected" to filter
+send "rejected"
+sleep 0.5
+
+# Apply the filter
+send "\r"
+expect {
+    "Rows: 3" { puts "✓ Filter applied, showing 3 rows" }
+    timeout { puts "✗ Failed to filter to 3 rows"; exit 1 }
+}
+
+# Re-enter fuzzy filter mode
+send "F"
+expect {
+    "Fuzzy Filter:" { puts "✓ Re-entered fuzzy filter mode" }
+    timeout { puts "✗ Failed to re-enter fuzzy filter mode"; exit 1 }
+}
+
+# Press Enter with empty input to clear filter
+send "\r"
+expect {
+    "Rows: 10" { 
+        puts "✓ Empty filter cleared - showing all 10 rows again"
+        puts "\n✅ TEST PASSED: Empty fuzzy filter correctly clears and shows all rows"
+    }
+    "Rows: 3" { 
+        puts "✗ BUG STILL EXISTS: Still showing 3 filtered rows"
+        exit 1
+    }
+    timeout { 
+        puts "✗ Failed to verify row count after clearing filter"
+        exit 1
+    }
+}
+
+# Exit cleanly
+send "q"
+expect eof
