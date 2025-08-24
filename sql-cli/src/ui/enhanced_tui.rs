@@ -357,6 +357,13 @@ impl EnhancedTuiApp {
                         "Cursor lock OFF"
                     };
                     self.buffer_mut().set_status_message(msg.to_string());
+
+                    // Log for shadow state learning (not tracking as state change yet)
+                    info!(target: "shadow_state",
+                        "Cursor lock toggled: {} (in {:?} mode)",
+                        if is_locked { "ON" } else { "OFF" },
+                        self.buffer().get_mode()
+                    );
                 }
                 Ok(ActionResult::Handled)
             }
@@ -379,6 +386,13 @@ impl EnhancedTuiApp {
                         "Viewport lock OFF"
                     };
                     self.buffer_mut().set_status_message(msg.to_string());
+
+                    // Log for shadow state learning (not tracking as state change yet)
+                    info!(target: "shadow_state",
+                        "Viewport lock toggled: {} (in {:?} mode)",
+                        if is_locked { "ON" } else { "OFF" },
+                        self.buffer().get_mode()
+                    );
                 }
                 Ok(ActionResult::Handled)
             }
