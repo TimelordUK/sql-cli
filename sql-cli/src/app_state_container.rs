@@ -5664,8 +5664,12 @@ impl AppStateContainer {
     /// Set input cursor position (proxy to Buffer)
     pub fn set_input_cursor_position(&mut self, pos: usize) {
         if let Some(buffer) = self.current_buffer_mut() {
-            buffer.set_input_cursor(pos);
+            // Use the correct method that updates input_manager
+            buffer.set_input_cursor_position(pos);
         }
+
+        // Also update command_input for compatibility
+        self.command_input.borrow_mut().cursor_position = pos;
     }
 
     /// Set search pattern (proxy to Buffer)

@@ -691,8 +691,11 @@ impl EnhancedTuiApp {
                     }
                     CursorPosition::End => {
                         // Move cursor to end of input
-                        let text_len = self.state_container.get_input_text().len();
+                        let text = self.state_container.get_buffer_input_text();
+                        let text_len = text.len();
                         self.state_container.set_input_cursor_position(text_len);
+                        // Also sync the TUI's input field
+                        self.input = tui_input::Input::new(text).with_cursor(text_len);
                     }
                     CursorPosition::AfterClause(clause) => {
                         // Use the SQL parser to find the clause position
@@ -751,6 +754,9 @@ impl EnhancedTuiApp {
                         // If not found, append at the end with the clause
                         if let Some(pos) = cursor_pos {
                             self.state_container.set_input_cursor_position(pos);
+                            // Also sync the TUI's input field
+                            let text = self.state_container.get_buffer_input_text();
+                            self.input = tui_input::Input::new(text).with_cursor(pos);
                         } else {
                             // Clause not found, append it at the end
                             let clause_text = match clause {
@@ -765,9 +771,9 @@ impl EnhancedTuiApp {
 
                             let mut new_text = self.state_container.get_input_text();
                             new_text.push_str(clause_text);
-                            self.state_container.set_input_text(new_text.clone());
-                            self.state_container
-                                .set_input_cursor_position(new_text.len());
+                            let cursor_pos = new_text.len();
+                            // Use the helper method that syncs everything
+                            self.set_input_text_with_cursor(new_text, cursor_pos);
                         }
                     }
                 }
