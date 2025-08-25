@@ -4109,6 +4109,11 @@ impl EnhancedTuiApp {
                 .set_current_column_buffer(search_match.col);
             self.state_container.navigation_mut().selected_column = search_match.col;
 
+            // CRITICAL: Update SelectionState's selected_column too!
+            self.state_container.select_column(search_match.col);
+            info!(target: "search", 
+                "Updated SelectionState column to: {}", search_match.col);
+
             // CRITICAL: Also update navigation's selected_row to trigger proper rendering
             self.state_container.navigation_mut().selected_row = search_match.row;
 
@@ -4205,6 +4210,11 @@ impl EnhancedTuiApp {
             self.state_container
                 .set_current_column_buffer(search_match.col);
             self.state_container.navigation_mut().selected_column = search_match.col;
+
+            // CRITICAL: Update SelectionState's selected_column too!
+            self.state_container.select_column(search_match.col);
+            info!(target: "search", 
+                "Updated SelectionState column to: {}", search_match.col);
 
             // CRITICAL: Also update navigation's selected_row to trigger proper rendering
             self.state_container.navigation_mut().selected_row = search_match.row;
