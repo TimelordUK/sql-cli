@@ -154,11 +154,11 @@ pub trait NavigationBehavior {
 
             if let Some(nav_result) = nav_result {
                 self.apply_row_navigation_result(nav_result);
-                self.buffer_mut()
+                self.state_container_mut()
                     .set_status_message(format!("Jumped to row {} (centered)", line_number));
             }
         } else {
-            self.buffer_mut().set_status_message(format!(
+            self.state_container_mut().set_status_message(format!(
                 "Row {} out of range (max: {})",
                 line_number, total_rows
             ));
