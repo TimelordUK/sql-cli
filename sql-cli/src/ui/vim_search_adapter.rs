@@ -76,13 +76,39 @@ impl VimSearchAdapter {
 
     /// Handle a key press through AppStateContainer (simplified interface)
     pub fn handle_key(&mut self, key: KeyCode, state: &mut AppStateContainer) -> bool {
-        // First check if we should handle keys at all
+        let mode = state.get_mode();
+
+        // Handle Escape key based on current mode
+        if key == KeyCode::Esc {
+            match mode {
+                AppMode::Results if self.is_active => {
+                    // In Results mode with active search: just exit search, stay in Results
+                    info!("VimSearchAdapter: Exiting search navigation in Results mode");
+                    state.set_status_message("Search mode exited".to_string());
+                    self.clear();
+                    return true; // We handled it
+                }
+                AppMode::Search => {
+                    // In Search mode: exit to Results
+                    info!("VimSearchAdapter: Exiting search mode to Results");
+                    state.exit_vim_search();
+                    self.clear();
+                    return true;
+                }
+                _ => {
+                    // Not our concern
+                    return false;
+                }
+            }
+        }
+
+        // For other keys, only handle if we should
         if !self.should_handle_key(state) {
             debug!("VimSearchAdapter: Not handling key - search not active");
             return false;
         }
 
-        // Handle search navigation keys through state container
+        // Handle search navigation keys
         match key {
             KeyCode::Char('n') => {
                 info!("VimSearchAdapter: Next match requested");
@@ -97,12 +123,6 @@ impl VimSearchAdapter {
             KeyCode::Enter => {
                 info!("VimSearchAdapter: Confirming search");
                 // TODO: state.confirm_vim_search();
-                true
-            }
-            KeyCode::Esc => {
-                info!("VimSearchAdapter: Exiting search");
-                state.exit_vim_search();
-                self.clear();
                 true
             }
             _ => false,

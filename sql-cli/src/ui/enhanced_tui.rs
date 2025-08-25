@@ -569,15 +569,8 @@ impl EnhancedTuiApp {
                 // Handle escape based on current mode
                 match context.mode {
                     AppMode::Results => {
-                        // If vim search is active, just exit search mode but stay in Results
-                        if self.vim_search_adapter.borrow().is_active() {
-                            self.vim_search_adapter.borrow_mut().exit_navigation();
-                            self.buffer_mut()
-                                .set_status_message("Search mode exited".to_string());
-                            return Ok(ActionResult::Handled);
-                        }
-
-                        // Otherwise, switch to Command mode as usual
+                        // VimSearchAdapter now handles Escape in Results mode
+                        // If we get here, search wasn't active, so switch to Command mode
                         // Save current position before switching to Command mode
                         if let Some(selected) = self.state_container.get_table_selected_row() {
                             self.state_container.set_last_results_row(Some(selected));
@@ -1524,6 +1517,23 @@ impl EnhancedTuiApp {
 
     /// Handle chord processing for Results mode, returns true if exit is requested
     fn try_handle_chord_processing(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // FIRST: Give VimSearchAdapter a chance to handle the key
+        // This allows it to handle search navigation (n/N) and Escape in Results mode
+        if self
+            .vim_search_adapter
+            .borrow()
+            .should_handle_key(&self.state_container)
+        {
+            let handled = self
+                .vim_search_adapter
+                .borrow_mut()
+                .handle_key(key.code, &mut self.state_container);
+            if handled {
+                debug!("VimSearchAdapter handled key: {:?}", key.code);
+                return Ok(false); // Key was handled, don't exit
+            }
+        }
+
         let chord_result = self.key_chord_handler.process_key(key);
         debug!("Chord handler returned: {:?}", chord_result);
 
@@ -6831,14 +6841,8 @@ impl ActionHandlerContext for EnhancedTuiApp {
         let mode = self.shadow_state.borrow().get_mode();
         match mode {
             AppMode::Results => {
-                // If vim search is active, just exit search mode but stay in Results
-                if self.vim_search_adapter.borrow().is_active() {
-                    self.vim_search_adapter.borrow_mut().exit_navigation();
-                    self.state_container
-                        .set_status_message("Search mode exited".to_string());
-                    return;
-                }
-                // Otherwise, switch to Command mode as usual
+                // VimSearchAdapter now handles Escape in Results mode when search is active
+                // If we get here, it means search wasn't active, so switch to Command mode
                 self.state_container.set_mode(AppMode::Command);
             }
             AppMode::Command => {
