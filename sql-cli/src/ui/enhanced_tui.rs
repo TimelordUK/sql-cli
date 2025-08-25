@@ -5,7 +5,9 @@ const STATUS_BAR_HEIGHT: u16 = 3; // Height of the status bar
 const TOTAL_UI_CHROME: u16 = INPUT_AREA_HEIGHT + STATUS_BAR_HEIGHT; // Total non-table UI height
 const TABLE_CHROME_ROWS: u16 = 3; // Table header (1) + top border (1) + bottom border (1)
 use crate::app_state_container::{AppStateContainer, SelectionMode};
-use crate::buffer::{AppMode, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode};
+use crate::buffer::{
+    AppMode, Buffer, BufferAPI, BufferManager, ColumnStatistics, ColumnType, EditMode,
+};
 use crate::buffer_handler::BufferHandler;
 use crate::config::config::Config;
 use crate::core::search_manager::{SearchConfig, SearchManager};
@@ -23,12 +25,14 @@ use crate::sql_highlighter::SqlHighlighter;
 use crate::state::StateDispatcher;
 use crate::ui::action_handlers::ActionHandlerContext;
 use crate::ui::actions::{Action, ActionContext, ActionResult};
+use crate::ui::debug_context::DebugContext;
 use crate::ui::enhanced_tui_helpers;
 use crate::ui::key_chord_handler::{ChordResult, KeyChordHandler};
 use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
 use crate::ui::key_mapper::KeyMapper;
 use crate::ui::key_sequence_renderer::KeySequenceRenderer;
+use crate::ui::shadow_state::ShadowStateManager;
 use crate::ui::table_widget_manager::TableWidgetManager;
 use crate::ui::traits::{
     BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
@@ -131,6 +135,202 @@ pub struct EnhancedTuiApp {
     // Debug system
     pub(crate) debug_registry: DebugRegistry,
     pub(crate) memory_tracker: MemoryTracker,
+}
+
+impl DebugContext for EnhancedTuiApp {
+    fn buffer(&self) -> &dyn BufferAPI {
+        self.buffer()
+    }
+
+    fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
+        self.buffer_mut()
+    }
+
+    fn get_debug_widget(&self) -> &DebugWidget {
+        &self.debug_widget
+    }
+
+    fn get_debug_widget_mut(&mut self) -> &mut DebugWidget {
+        &mut self.debug_widget
+    }
+
+    fn get_shadow_state(&self) -> &RefCell<ShadowStateManager> {
+        &self.shadow_state
+    }
+
+    fn get_buffer_manager(&self) -> &BufferManager {
+        &self.buffer_manager
+    }
+
+    fn get_viewport_manager(&self) -> &RefCell<Option<ViewportManager>> {
+        &self.viewport_manager
+    }
+
+    fn get_navigation_timings(&self) -> &Vec<String> {
+        &self.navigation_timings
+    }
+
+    fn get_render_timings(&self) -> &Vec<String> {
+        &self.render_timings
+    }
+
+    fn debug_current_buffer(&mut self) {
+        // Call the existing method - will need to be defined below
+        EnhancedTuiApp::debug_current_buffer(self)
+    }
+
+    fn get_input_cursor(&self) -> usize {
+        EnhancedTuiApp::get_input_cursor(self)
+    }
+
+    fn get_visual_cursor(&self) -> (usize, usize) {
+        EnhancedTuiApp::get_visual_cursor(self)
+    }
+
+    fn get_input_text(&self) -> String {
+        EnhancedTuiApp::get_input_text(self)
+    }
+
+    fn get_buffer_mut_if_available(&mut self) -> Option<&mut Buffer> {
+        self.buffer_manager.current_mut()
+    }
+
+    fn set_mode_via_shadow_state(&mut self, mode: AppMode, trigger: &str) {
+        if let Some(buffer) = self.buffer_manager.current_mut() {
+            self.shadow_state
+                .borrow_mut()
+                .set_mode(mode, buffer, trigger);
+        }
+    }
+
+    fn collect_current_state(
+        &self,
+    ) -> (AppMode, String, String, Option<usize>, usize, usize, usize) {
+        if let Some(buffer) = self.buffer_manager.current() {
+            let mode = buffer.get_mode();
+            if mode == AppMode::Debug {
+                (mode, String::new(), String::new(), None, 0, 0, 0)
+            } else {
+                (
+                    mode,
+                    buffer.get_last_query(),
+                    buffer.get_input_text(),
+                    buffer.get_selected_row(),
+                    self.state_container.get_current_column(),
+                    buffer
+                        .get_dataview()
+                        .map(|v| v.source().row_count())
+                        .unwrap_or(0),
+                    buffer.get_dataview().map(|v| v.row_count()).unwrap_or(0),
+                )
+            }
+        } else {
+            (
+                AppMode::Command,
+                String::new(),
+                String::new(),
+                None,
+                0,
+                0,
+                0,
+            )
+        }
+    }
+
+    fn format_buffer_manager_state(&self) -> String {
+        let buffer_names: Vec<String> = self
+            .buffer_manager
+            .all_buffers()
+            .iter()
+            .map(|b| b.get_name())
+            .collect();
+        let buffer_count = self.buffer_manager.all_buffers().len();
+        let buffer_index = self.buffer_manager.current_index();
+
+        format!(
+            "\n========== BUFFER MANAGER STATE ==========\n\
+            Number of Buffers: {}\n\
+            Current Buffer Index: {}\n\
+            Buffer Names: {}\n",
+            buffer_count,
+            buffer_index,
+            buffer_names.join(", ")
+        )
+    }
+
+    fn debug_generate_viewport_efficiency(&self) -> String {
+        if let Some(ref efficiency) = *self.viewport_efficiency.borrow() {
+            let mut result = String::from("\n========== VIEWPORT EFFICIENCY ==========\n");
+            result.push_str(&efficiency.to_debug_string());
+            result.push_str("\n==========================================\n");
+            result
+        } else {
+            String::new()
+        }
+    }
+
+    fn debug_generate_key_chord_info(&self) -> String {
+        let mut result = String::from("\n");
+        result.push_str(&self.key_chord_handler.format_debug_info());
+        result.push_str("========================================\n");
+        result
+    }
+
+    fn debug_generate_search_modes_info(&self) -> String {
+        let mut result = String::from("\n");
+        result.push_str(&self.search_modes_widget.debug_info());
+        result
+    }
+
+    fn debug_generate_state_container_info(&self) -> String {
+        let mut result = String::from("\n");
+        result.push_str(&self.state_container.debug_dump());
+        result.push_str("\n");
+        result
+    }
+
+    fn collect_debug_info(&self) -> String {
+        // Simplified version - the full version is in toggle_debug_mode
+        let mut debug_info = String::new();
+        debug_info.push_str(&self.debug_generate_parser_info(&self.buffer().get_input_text()));
+        debug_info.push_str(&self.debug_generate_memory_info());
+        debug_info
+    }
+
+    // Forward all the debug generation methods to the existing implementations
+    fn debug_generate_parser_info(&self, query: &str) -> String {
+        EnhancedTuiApp::debug_generate_parser_info(self, query)
+    }
+
+    // debug_generate_buffer_state now uses default implementation from trait
+    // debug_generate_results_state now uses default implementation from trait
+    // debug_generate_memory_info now uses default implementation from trait
+
+    fn debug_generate_datatable_schema(&self) -> String {
+        EnhancedTuiApp::debug_generate_datatable_schema(self)
+    }
+
+    fn debug_generate_dataview_state(&self) -> String {
+        EnhancedTuiApp::debug_generate_dataview_state(self)
+    }
+
+    // debug_generate_viewport_state now uses default implementation from trait
+
+    fn debug_generate_navigation_state(&self) -> String {
+        EnhancedTuiApp::debug_generate_navigation_state(self)
+    }
+
+    fn debug_generate_column_search_state(&self) -> String {
+        EnhancedTuiApp::debug_generate_column_search_state(self)
+    }
+
+    fn debug_generate_trace_logs(&self) -> String {
+        EnhancedTuiApp::debug_generate_trace_logs(self)
+    }
+
+    fn debug_generate_state_logs(&self) -> String {
+        EnhancedTuiApp::debug_generate_state_logs(self)
+    }
 }
 
 impl EnhancedTuiApp {
@@ -250,96 +450,6 @@ impl EnhancedTuiApp {
 
                 self.buffer_mut()
                     .set_status_message("Enter row number (1-based):".to_string());
-                Ok(ActionResult::Handled)
-            }
-            NavigateToViewportTop => {
-                // Use ViewportManager's H command
-                let result = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        Some(viewport_manager.navigate_to_viewport_top())
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(result) = result {
-                    // Update Buffer with the new row position
-                    self.buffer_mut()
-                        .set_selected_row(Some(result.row_position));
-                    // Update viewport if changed
-                    if result.viewport_changed {
-                        let mut offset = self.buffer().get_scroll_offset();
-                        offset.0 = result.row_scroll_offset;
-                        self.buffer_mut().set_scroll_offset(offset);
-                    }
-                    // Also update AppStateContainer for consistency
-                    self.state_container.navigation_mut().selected_row = result.row_position;
-                    if result.viewport_changed {
-                        self.state_container.navigation_mut().scroll_offset.0 =
-                            result.row_scroll_offset;
-                    }
-                }
-                Ok(ActionResult::Handled)
-            }
-            NavigateToViewportMiddle => {
-                // Use ViewportManager's M command
-                let result = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        Some(viewport_manager.navigate_to_viewport_middle())
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(result) = result {
-                    // Update Buffer with the new row position
-                    self.buffer_mut()
-                        .set_selected_row(Some(result.row_position));
-                    // Update viewport if changed
-                    if result.viewport_changed {
-                        let mut offset = self.buffer().get_scroll_offset();
-                        offset.0 = result.row_scroll_offset;
-                        self.buffer_mut().set_scroll_offset(offset);
-                    }
-                    // Also update AppStateContainer for consistency
-                    self.state_container.navigation_mut().selected_row = result.row_position;
-                    if result.viewport_changed {
-                        self.state_container.navigation_mut().scroll_offset.0 =
-                            result.row_scroll_offset;
-                    }
-                }
-                Ok(ActionResult::Handled)
-            }
-            NavigateToViewportBottom => {
-                // Use ViewportManager's L command
-                let result = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        Some(viewport_manager.navigate_to_viewport_bottom())
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(result) = result {
-                    // Update Buffer with the new row position
-                    self.buffer_mut()
-                        .set_selected_row(Some(result.row_position));
-                    // Update viewport if changed
-                    if result.viewport_changed {
-                        let mut offset = self.buffer().get_scroll_offset();
-                        offset.0 = result.row_scroll_offset;
-                        self.buffer_mut().set_scroll_offset(offset);
-                    }
-                    // Also update AppStateContainer for consistency
-                    self.state_container.navigation_mut().selected_row = result.row_position;
-                    if result.viewport_changed {
-                        self.state_container.navigation_mut().scroll_offset.0 =
-                            result.row_scroll_offset;
-                    }
-                }
                 Ok(ActionResult::Handled)
             }
             ToggleCursorLock => {
@@ -782,31 +892,6 @@ impl EnhancedTuiApp {
                 };
                 self.buffer_mut().set_status_message(message);
                 Ok(ActionResult::Handled)
-            }
-            Yank(target) => {
-                use crate::ui::actions::YankTarget;
-                match target {
-                    YankTarget::Cell => {
-                        YankBehavior::yank_cell(self);
-                        Ok(ActionResult::Handled)
-                    }
-                    YankTarget::Row => {
-                        YankBehavior::yank_row(self);
-                        Ok(ActionResult::Handled)
-                    }
-                    YankTarget::Column => {
-                        YankBehavior::yank_column(self);
-                        Ok(ActionResult::Handled)
-                    }
-                    YankTarget::All => {
-                        YankBehavior::yank_all(self);
-                        Ok(ActionResult::Handled)
-                    }
-                    YankTarget::Query => {
-                        YankBehavior::yank_query(self);
-                        Ok(ActionResult::Handled)
-                    }
-                }
             }
             _ => {
                 // Action not yet implemented in new system
@@ -1622,129 +1707,17 @@ impl EnhancedTuiApp {
     }
 
     fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // Normalize the key for platform differences
-        let normalized = self.state_container.normalize_key(key);
+        // Normalize and log the key
+        let normalized_key = self.normalize_and_log_key(key);
 
-        // Get the action that will be performed (if any)
-        let action = self
-            .key_dispatcher
-            .get_command_action(&normalized)
-            .map(|s| s.to_string());
-
-        // Log the key press
-        if normalized != key {
-            self.state_container
-                .log_key_press(key, Some(format!("normalized to {:?}", normalized)));
-        }
-        self.state_container.log_key_press(normalized, action);
-
-        let normalized_key = normalized;
-
-        // Try the new action system first (for Tab to switch modes)
-        let action_context = self.build_action_context();
-        if let Some(action) = self
-            .key_mapper
-            .map_key(normalized_key.clone(), &action_context)
-        {
-            info!(
-                "✓ Action system (Command): key {:?} -> action {:?}",
-                normalized_key.code, action
-            );
-            if let Ok(result) = self.try_handle_action(action, &action_context) {
-                match result {
-                    ActionResult::Handled => {
-                        debug!("Action handled by new system in Command mode");
-                        return Ok(false);
-                    }
-                    ActionResult::Exit => {
-                        return Ok(true);
-                    }
-                    ActionResult::NotHandled => {
-                        // Fall through to existing handling
-                    }
-                    _ => {}
-                }
-            }
+        // Try the new action system first
+        if let Some(result) = self.try_action_system(normalized_key.clone())? {
+            return Ok(result);
         }
 
-        // NEW: Try editor widget first for high-level actions
-        let key_dispatcher = self.key_dispatcher.clone();
-        // Handle editor widget actions by splitting the borrow
-        let editor_result = if let Some(buffer) = self.buffer_manager.current_mut() {
-            self.editor_widget
-                .handle_key(normalized_key.clone(), &key_dispatcher, buffer)?
-        } else {
-            EditorAction::PassToMainApp(normalized_key.clone())
-        };
-
-        match editor_result {
-            EditorAction::Quit => return Ok(true),
-            EditorAction::ExecuteQuery => {
-                // Execute the current query - delegate to existing logic for now
-                return self.handle_execute_query();
-            }
-            EditorAction::BufferAction(buffer_action) => {
-                return self.handle_buffer_action(buffer_action);
-            }
-            EditorAction::ExpandAsterisk => {
-                return self.handle_expand_asterisk();
-            }
-            EditorAction::ShowHelp => {
-                self.state_container.set_help_visible(true);
-                self.buffer_mut().set_mode(AppMode::Help);
-                self.shadow_state
-                    .borrow_mut()
-                    .observe_mode_change(AppMode::Help, "help_requested");
-                return Ok(false);
-            }
-            EditorAction::ShowDebug => {
-                // This is now handled by passing through to original F5 handler
-                return Ok(false);
-            }
-            EditorAction::ShowPrettyQuery => {
-                self.show_pretty_query();
-                return Ok(false);
-            }
-            EditorAction::SwitchMode(mode) => {
-                debug!(target: "shadow_state", "EditorAction::SwitchMode to {:?}", mode);
-                if let Some(buffer) = self.buffer_manager.current_mut() {
-                    // Use shadow state to set mode (with write-through to buffer)
-                    let trigger = match mode {
-                        AppMode::Results => "enter_results_mode",
-                        AppMode::Command => "enter_command_mode",
-                        AppMode::History => "enter_history_mode",
-                        _ => "switch_mode",
-                    };
-                    debug!(target: "shadow_state", "Setting mode via shadow state to {:?} with trigger {}", mode, trigger);
-                    self.shadow_state
-                        .borrow_mut()
-                        .set_mode(mode.clone(), buffer, trigger);
-                } else {
-                    debug!(target: "shadow_state", "No buffer available for mode switch!");
-                }
-                // Special handling for History mode - initialize history search
-                if mode == AppMode::History {
-                    eprintln!("[DEBUG] Using AppStateContainer for history search");
-                    let current_input = self.get_input_text();
-
-                    // Start history search
-                    self.state_container.start_history_search(current_input);
-
-                    // Initialize with schema context
-                    self.update_history_matches_in_container();
-
-                    // Get match count
-                    let match_count = self.state_container.history_search().matches.len();
-
-                    self.buffer_mut()
-                        .set_status_message(format!("History search: {} matches", match_count));
-                }
-                return Ok(false);
-            }
-            EditorAction::PassToMainApp(_) => {
-                // Fall through to original logic below
-            }
-            EditorAction::Continue => return Ok(false),
+        // Try editor widget for high-level actions
+        if let Some(result) = self.try_editor_widget(normalized_key.clone())? {
+            return Ok(result);
         }
 
         // ORIGINAL LOGIC: Keep all existing logic as fallback
@@ -1791,6 +1764,153 @@ impl EnhancedTuiApp {
 
     // ========== COMMAND INPUT HELPER METHODS ==========
     // These helpers break down the massive handle_command_input method into logical groups
+
+    /// Normalize key for platform differences and log it
+    fn normalize_and_log_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+    ) -> crossterm::event::KeyEvent {
+        let normalized = self.state_container.normalize_key(key);
+
+        // Get the action that will be performed (if any)
+        let action = self
+            .key_dispatcher
+            .get_command_action(&normalized)
+            .map(|s| s.to_string());
+
+        // Log the key press
+        if normalized != key {
+            self.state_container
+                .log_key_press(key, Some(format!("normalized to {:?}", normalized)));
+        }
+        self.state_container.log_key_press(normalized, action);
+
+        normalized
+    }
+
+    /// Try handling with the new action system
+    fn try_action_system(
+        &mut self,
+        normalized_key: crossterm::event::KeyEvent,
+    ) -> Result<Option<bool>> {
+        let action_context = self.build_action_context();
+        if let Some(action) = self
+            .key_mapper
+            .map_key(normalized_key.clone(), &action_context)
+        {
+            info!(
+                "✓ Action system (Command): key {:?} -> action {:?}",
+                normalized_key.code, action
+            );
+            if let Ok(result) = self.try_handle_action(action, &action_context) {
+                match result {
+                    ActionResult::Handled => {
+                        debug!("Action handled by new system in Command mode");
+                        return Ok(Some(false));
+                    }
+                    ActionResult::Exit => {
+                        return Ok(Some(true));
+                    }
+                    ActionResult::NotHandled => {
+                        // Fall through to existing handling
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Try handling with editor widget
+    fn try_editor_widget(
+        &mut self,
+        normalized_key: crossterm::event::KeyEvent,
+    ) -> Result<Option<bool>> {
+        let key_dispatcher = self.key_dispatcher.clone();
+        let editor_result = if let Some(buffer) = self.buffer_manager.current_mut() {
+            self.editor_widget
+                .handle_key(normalized_key.clone(), &key_dispatcher, buffer)?
+        } else {
+            EditorAction::PassToMainApp(normalized_key.clone())
+        };
+
+        match editor_result {
+            EditorAction::Quit => return Ok(Some(true)),
+            EditorAction::ExecuteQuery => {
+                return self.handle_execute_query().map(Some);
+            }
+            EditorAction::BufferAction(buffer_action) => {
+                return self.handle_buffer_action(buffer_action).map(Some);
+            }
+            EditorAction::ExpandAsterisk => {
+                return self.handle_expand_asterisk().map(Some);
+            }
+            EditorAction::ShowHelp => {
+                self.state_container.set_help_visible(true);
+                self.buffer_mut().set_mode(AppMode::Help);
+                self.shadow_state
+                    .borrow_mut()
+                    .observe_mode_change(AppMode::Help, "help_requested");
+                return Ok(Some(false));
+            }
+            EditorAction::ShowDebug => {
+                // This is now handled by passing through to original F5 handler
+                return Ok(Some(false));
+            }
+            EditorAction::ShowPrettyQuery => {
+                self.show_pretty_query();
+                return Ok(Some(false));
+            }
+            EditorAction::SwitchMode(mode) => {
+                self.handle_editor_mode_switch(mode);
+                return Ok(Some(false));
+            }
+            EditorAction::PassToMainApp(_) => {
+                // Fall through to original logic
+            }
+            EditorAction::Continue => return Ok(Some(false)),
+        }
+
+        Ok(None)
+    }
+
+    /// Handle mode switch from editor widget
+    fn handle_editor_mode_switch(&mut self, mode: AppMode) {
+        debug!(target: "shadow_state", "EditorAction::SwitchMode to {:?}", mode);
+        if let Some(buffer) = self.buffer_manager.current_mut() {
+            // Use shadow state to set mode (with write-through to buffer)
+            let trigger = match mode {
+                AppMode::Results => "enter_results_mode",
+                AppMode::Command => "enter_command_mode",
+                AppMode::History => "enter_history_mode",
+                _ => "switch_mode",
+            };
+            debug!(target: "shadow_state", "Setting mode via shadow state to {:?} with trigger {}", mode, trigger);
+            self.shadow_state
+                .borrow_mut()
+                .set_mode(mode.clone(), buffer, trigger);
+        } else {
+            debug!(target: "shadow_state", "No buffer available for mode switch!");
+        }
+
+        // Special handling for History mode - initialize history search
+        if mode == AppMode::History {
+            eprintln!("[DEBUG] Using AppStateContainer for history search");
+            let current_input = self.get_input_text();
+
+            // Start history search
+            self.state_container.start_history_search(current_input);
+
+            // Initialize with schema context
+            self.update_history_matches_in_container();
+
+            // Get match count
+            let match_count = self.state_container.history_search().matches.len();
+
+            self.buffer_mut()
+                .set_status_message(format!("History search: {} matches", match_count));
+        }
+    }
 
     /// Handle function key inputs (F1-F12)
     fn try_handle_function_keys(
@@ -5343,104 +5463,25 @@ impl EnhancedTuiApp {
         // Add mode-specific information
         self.add_mode_specific_info(&mut spans, mode_color, area);
 
-        // Data source indicator (shown in all modes) - TO BE EXTRACTED
-        if let Some(source) = self.buffer().get_last_query_source() {
-            spans.push(Span::raw(" | "));
-            let (icon, label, color) = match source.as_str() {
-                "cache" => (
-                    &self.config.display.icons.cache,
-                    "CACHE".to_string(),
-                    Color::Cyan,
-                ),
-                "file" | "FileDataSource" => (
-                    &self.config.display.icons.file,
-                    "FILE".to_string(),
-                    Color::Green,
-                ),
-                "SqlServerDataSource" => (
-                    &self.config.display.icons.database,
-                    "SQL".to_string(),
-                    Color::Blue,
-                ),
-                "PublicApiDataSource" => (
-                    &self.config.display.icons.api,
-                    "API".to_string(),
-                    Color::Yellow,
-                ),
-                _ => (
-                    &self.config.display.icons.api,
-                    source.clone(),
-                    Color::Magenta,
-                ),
-            };
-            spans.push(Span::raw(format!("{} ", icon)));
-            spans.push(Span::styled(label, Style::default().fg(color)));
-        }
+        // Add query source indicator
+        self.add_query_source_indicator(&mut spans);
 
-        // Global indicators (shown when active) - TO BE EXTRACTED
-        let case_insensitive = self.buffer().is_case_insensitive();
-        if case_insensitive {
-            spans.push(Span::raw(" | "));
-            let icon = self.config.display.icons.case_insensitive.clone();
-            spans.push(Span::styled(
-                format!("{} CASE", icon),
-                Style::default().fg(Color::Cyan),
-            ));
-        }
+        // Add case sensitivity indicator
+        self.add_case_sensitivity_indicator(&mut spans);
 
-        // Show column packing mode - TO BE EXTRACTED
-        if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
-            let packing_mode = viewport_manager.get_packing_mode();
-            spans.push(Span::raw(" | "));
-            let (text, color) = match packing_mode {
-                ColumnPackingMode::DataFocus => ("DATA", Color::Cyan),
-                ColumnPackingMode::HeaderFocus => ("HEADER", Color::Yellow),
-                ColumnPackingMode::Balanced => ("BALANCED", Color::Green),
-            };
-            spans.push(Span::styled(text, Style::default().fg(color)));
-        }
+        // Add column packing mode indicator
+        self.add_column_packing_indicator(&mut spans);
 
-        // Show status message if present - TO BE EXTRACTED
-        let status_msg = self.buffer().get_status_message();
-        if !status_msg.is_empty() {
-            spans.push(Span::raw(" | "));
-            spans.push(Span::styled(
-                status_msg,
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ));
-        }
+        // Add status message
+        self.add_status_message(&mut spans);
 
-        // Help shortcuts (right side) - TO BE EXTRACTED
-        let help_text = match self.shadow_state.borrow().get_mode() {
-            AppMode::Command => "Enter:Run | Tab:Complete | ↓:Results | F1:Help",
-            AppMode::Results => match self.get_selection_mode() {
-                SelectionMode::Cell => "v:Row mode | y:Yank cell | ↑:Edit | F1:Help",
-                SelectionMode::Row => "v:Cell mode | y:Yank | f:Filter | ↑:Edit | F1:Help",
-                SelectionMode::Column => "v:Cell mode | y:Yank col | ↑:Edit | F1:Help",
-            },
-            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
-                "Enter:Apply | Esc:Cancel"
-            }
-            AppMode::Help | AppMode::Debug | AppMode::PrettyQuery | AppMode::ColumnStats => {
-                "Esc:Close"
-            }
-            AppMode::History => "Enter:Select | Esc:Cancel",
-            AppMode::JumpToRow => "Enter:Jump | Esc:Cancel",
-        };
+        // Determine help text based on current mode
+        let help_text = self.get_help_text_for_mode();
 
         self.add_global_indicators(&mut spans);
 
-        // Add shadow state display for debugging
-        {
-            let shadow_display = self.shadow_state.borrow().status_display();
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                shadow_display,
-                Style::default().fg(Color::Cyan),
-            ));
-        }
+        // Add shadow state display
+        self.add_shadow_state_display(&mut spans);
 
         self.add_help_text_display(&mut spans, help_text, area);
 
@@ -5995,281 +6036,8 @@ impl EnhancedTuiApp {
     }
 
     pub(crate) fn toggle_debug_mode(&mut self) {
-        // First, collect all the data we need without any mutable borrows
-        let (
-            should_exit_debug,
-            previous_mode,
-            last_query,
-            input_text,
-            selected_row,
-            current_column,
-            results_count,
-            filtered_count,
-        ) = {
-            if let Some(buffer) = self.buffer_manager.current() {
-                let mode = buffer.get_mode();
-                if mode == AppMode::Debug {
-                    (true, mode, String::new(), String::new(), None, 0, 0, 0)
-                } else {
-                    (
-                        false,
-                        mode,
-                        buffer.get_last_query(),
-                        buffer.get_input_text(),
-                        buffer.get_selected_row(),
-                        self.state_container.get_current_column(),
-                        buffer
-                            .get_dataview()
-                            .map(|v| v.source().row_count())
-                            .unwrap_or(0),
-                        buffer.get_dataview().map(|v| v.row_count()).unwrap_or(0),
-                    )
-                }
-            } else {
-                return;
-            }
-        };
-
-        // Collect buffer manager info without mutable borrow
-        let buffer_names: Vec<String> = self
-            .buffer_manager
-            .all_buffers()
-            .iter()
-            .map(|b| b.get_name())
-            .collect();
-        let buffer_count = self.buffer_manager.all_buffers().len();
-        let buffer_index = self.buffer_manager.current_index();
-
-        // Now handle the mode transition with mutable borrow
-        if let Some(buffer) = self.buffer_manager.current_mut() {
-            if should_exit_debug {
-                self.shadow_state.borrow_mut().set_mode(
-                    AppMode::Command,
-                    buffer,
-                    "debug_toggle_exit",
-                );
-            } else {
-                self.shadow_state.borrow_mut().set_mode(
-                    AppMode::Debug,
-                    buffer,
-                    "debug_toggle_enter",
-                );
-                // Generate full debug information like the original F5 handler
-                self.debug_current_buffer();
-                let cursor_pos = self.get_input_cursor();
-                let visual_cursor = self.get_visual_cursor().1;
-                let query = self.get_input_text();
-
-                // Use the appropriate query for parser debug based on mode
-                let query_for_parser =
-                    if previous_mode == AppMode::Results && !last_query.is_empty() {
-                        // In Results mode, show parser info for the executed query
-                        last_query.clone()
-                    } else if !query.is_empty() {
-                        // In Command mode, show parser info for current input
-                        query.clone()
-                    } else if !last_query.is_empty() {
-                        // Fallback to last query if input is empty
-                        last_query.clone()
-                    } else {
-                        query.clone()
-                    };
-
-                // Generate debug info using helper methods
-                let mut debug_info = self.debug_generate_parser_info(&query_for_parser);
-
-                // Add comprehensive buffer state
-                debug_info.push_str(&self.debug_generate_buffer_state(
-                    previous_mode,
-                    &last_query,
-                    &input_text,
-                    cursor_pos,
-                    visual_cursor,
-                ));
-
-                // Add results state if in Results mode
-                debug_info.push_str(&self.debug_generate_results_state(
-                    results_count,
-                    filtered_count,
-                    selected_row,
-                    current_column,
-                ));
-
-                // Add DataTable schema and DataView state
-                debug_info.push_str(&self.debug_generate_datatable_schema());
-                debug_info.push_str(&self.debug_generate_dataview_state());
-
-                // Add memory tracking history
-                debug_info.push_str(&self.debug_generate_memory_info());
-
-                // Add navigation timing statistics
-                debug_info.push_str("\n========== NAVIGATION TIMING ==========\n");
-                if !self.navigation_timings.is_empty() {
-                    debug_info.push_str(&format!(
-                        "Last {} navigation timings:\n",
-                        self.navigation_timings.len()
-                    ));
-                    for timing in &self.navigation_timings {
-                        debug_info.push_str(&format!("  {}\n", timing));
-                    }
-                    // Calculate average
-                    if self.navigation_timings.len() > 0 {
-                        let total_ms: f64 = self
-                            .navigation_timings
-                            .iter()
-                            .filter_map(|s| self.debug_extract_timing(s))
-                            .sum();
-                        let avg_ms = total_ms / self.navigation_timings.len() as f64;
-                        debug_info.push_str(&format!("Average navigation time: {:.3}ms\n", avg_ms));
-                    }
-                } else {
-                    debug_info.push_str("No navigation timing data yet (press j/k to navigate)\n");
-                }
-
-                // Add render timing statistics
-                debug_info.push_str("\n========== RENDER TIMING ==========\n");
-                if !self.render_timings.is_empty() {
-                    debug_info.push_str(&format!(
-                        "Last {} render timings:\n",
-                        self.render_timings.len()
-                    ));
-                    for timing in &self.render_timings {
-                        debug_info.push_str(&format!("  {}\n", timing));
-                    }
-                    // Calculate average render time
-                    if self.render_timings.len() > 0 {
-                        let total_ms: f64 = self
-                            .render_timings
-                            .iter()
-                            .filter_map(|s| self.debug_extract_timing(s))
-                            .sum();
-                        let avg_ms = total_ms / self.render_timings.len() as f64;
-                        debug_info.push_str(&format!("Average render time: {:.3}ms\n", avg_ms));
-                    }
-                } else {
-                    debug_info.push_str("No render timing data yet\n");
-                }
-
-                // Add viewport and navigation information
-                debug_info.push_str(&self.debug_generate_viewport_state());
-                debug_info.push_str(&self.debug_generate_navigation_state());
-
-                // Add buffer state info
-                debug_info.push_str(&format!(
-                    "\n========== BUFFER MANAGER STATE ==========\n\
-                        Number of Buffers: {}\n\
-                        Current Buffer Index: {}\n\
-                        Buffer Names: {}\n",
-                    buffer_count,
-                    buffer_index,
-                    buffer_names.join(", ")
-                ));
-
-                // Add WHERE clause AST if needed
-                /*
-                if query.to_lowercase().contains(" where ") {
-                    let where_ast_info = match self.parse_where_clause_ast(&query) {
-                            Ok(ast_str) => ast_str,
-                            Err(e) => format!("\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {}\n", e)
-                        };
-                    debug_info.push_str(&where_ast_info);
-                }*/
-
-                // Add viewport efficiency metrics
-                if let Some(ref efficiency) = *self.viewport_efficiency.borrow() {
-                    debug_info.push_str("\n========== VIEWPORT EFFICIENCY ==========\n");
-                    debug_info.push_str(&efficiency.to_debug_string());
-                    debug_info.push_str("\n==========================================\n");
-                }
-
-                // Add key chord handler debug info
-                debug_info.push_str("\n");
-                debug_info.push_str(&self.key_chord_handler.format_debug_info());
-                debug_info.push_str("========================================\n");
-
-                // Add search modes widget debug info
-                debug_info.push_str("\n");
-                debug_info.push_str(&self.search_modes_widget.debug_info());
-
-                // Add column search state if active
-                debug_info.push_str(&self.debug_generate_column_search_state());
-
-                // Add trace logs from ring buffer
-                debug_info.push_str(&self.debug_generate_trace_logs());
-
-                // Add DebugService logs (our StateManager logs!)
-                debug_info.push_str(&self.debug_generate_state_logs());
-
-                // Add AppStateContainer debug dump if available
-                {
-                    debug_info.push_str("\n");
-                    debug_info.push_str(&self.state_container.debug_dump());
-                    debug_info.push_str("\n");
-                }
-
-                // Add Shadow State debug info
-                {
-                    debug_info.push_str("\n========== SHADOW STATE MANAGER ==========\n");
-                    debug_info.push_str(&self.shadow_state.borrow().debug_info());
-                    debug_info.push_str("\n==========================================\n");
-                }
-
-                // Add KeySequenceRenderer debug info
-                debug_info.push_str("\n========== KEY SEQUENCE RENDERER ==========\n");
-                debug_info.push_str(&format!(
-                    "Enabled: {}\n",
-                    self.key_sequence_renderer.is_enabled()
-                ));
-                debug_info.push_str(&format!(
-                    "Has Content: {}\n",
-                    self.key_sequence_renderer.has_content()
-                ));
-                debug_info.push_str(&format!(
-                    "Display String: '{}'\n",
-                    self.key_sequence_renderer.get_display()
-                ));
-
-                // Show detailed state if enabled
-                if self.key_sequence_renderer.is_enabled() {
-                    debug_info.push_str(&format!(
-                        "Chord Mode: {:?}\n",
-                        self.key_sequence_renderer.get_chord_mode()
-                    ));
-                    debug_info.push_str(&format!(
-                        "Key History Size: {}\n",
-                        self.key_sequence_renderer.sequence_count()
-                    ));
-                    let sequences = self.key_sequence_renderer.get_sequences();
-                    if !sequences.is_empty() {
-                        debug_info.push_str("Recent Keys:\n");
-                        for (key, count) in sequences {
-                            debug_info.push_str(&format!("  - '{}' ({} times)\n", key, count));
-                        }
-                    }
-                }
-                debug_info.push_str("==========================================\n");
-
-                // Add configuration display
-                debug_info.push_str(&self.config.debug_info());
-
-                // Set the final content in debug widget
-                self.debug_widget.set_content(debug_info.clone());
-
-                // Try to copy to clipboard
-                match self.state_container.write_to_clipboard(&debug_info) {
-                    Ok(_) => {
-                        self.buffer_mut().set_status_message(format!(
-                            "DEBUG INFO copied to clipboard ({} chars)!",
-                            debug_info.len()
-                        ));
-                    }
-                    Err(e) => {
-                        self.buffer_mut()
-                            .set_status_message(format!("Clipboard error: {}", e));
-                    }
-                }
-            }
-        }
+        // Use the DebugContext trait which has all the logic
+        DebugContext::toggle_debug_mode(self);
     }
 
     // ==================== Debug Helper Methods ====================
@@ -6282,46 +6050,7 @@ impl EnhancedTuiApp {
     }
 
     /// Generate the buffer state debug section
-    fn debug_generate_buffer_state(
-        &self,
-        previous_mode: AppMode,
-        last_query: &str,
-        input_text: &str,
-        cursor_pos: usize,
-        visual_cursor: usize,
-    ) -> String {
-        format!(
-            "\n========== BUFFER STATE ==========\n\
-            Current Mode: {:?}\n\
-            Last Executed Query: '{}'\n\
-            Input Text: '{}'\n\
-            Input Cursor: {}\n\
-            Visual Cursor: {}\n",
-            previous_mode, last_query, input_text, cursor_pos, visual_cursor
-        )
-    }
-
-    /// Generate the results state debug section
-    fn debug_generate_results_state(
-        &self,
-        results_count: usize,
-        filtered_count: usize,
-        selected_row: Option<usize>,
-        current_column: usize,
-    ) -> String {
-        if results_count == 0 {
-            return String::new();
-        }
-
-        format!(
-            "\n========== RESULTS STATE ==========\n\
-            Total Rows: {}\n\
-            Filtered Rows: {}\n\
-            Selected Row: {:?}\n\
-            Current Column: {}\n",
-            results_count, filtered_count, selected_row, current_column
-        )
-    }
+    // debug_generate_buffer_state and debug_generate_results_state moved to DebugContext trait defaults
 
     /// Generate memory usage debug section
     fn debug_generate_memory_info(&self) -> String {
@@ -6432,87 +6161,7 @@ impl EnhancedTuiApp {
         debug_info
     }
 
-    fn debug_generate_viewport_state(&self) -> String {
-        let mut debug_info = String::new();
-        if let Some(buffer) = self.buffer_manager.current() {
-            debug_info.push_str("\n========== VIEWPORT STATE ==========\n");
-            let (scroll_row, scroll_col) = buffer.get_scroll_offset();
-            debug_info.push_str(&format!(
-                "Scroll Offset: row={}, col={}\n",
-                scroll_row, scroll_col
-            ));
-            debug_info.push_str(&format!(
-                "Current Column: {}\n",
-                buffer.get_current_column()
-            ));
-            debug_info.push_str(&format!("Selected Row: {:?}\n", buffer.get_selected_row()));
-            debug_info.push_str(&format!("Viewport Lock: {}\n", buffer.is_viewport_lock()));
-            if let Some(lock_row) = buffer.get_viewport_lock_row() {
-                debug_info.push_str(&format!("Viewport Lock Row: {}\n", lock_row));
-            }
-
-            // Add ViewportManager crosshair position
-            if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
-                let visual_row = viewport_manager.get_crosshair_row();
-                let visual_col = viewport_manager.get_crosshair_col();
-                debug_info.push_str(&format!(
-                    "ViewportManager Crosshair (visual): row={}, col={}\n",
-                    visual_row, visual_col
-                ));
-
-                // Also show viewport-relative position
-                if let Some((viewport_row, viewport_col)) =
-                    viewport_manager.get_crosshair_viewport_position()
-                {
-                    debug_info.push_str(&format!(
-                        "Crosshair in viewport (relative): row={}, col={}\n",
-                        viewport_row, viewport_col
-                    ));
-                }
-            }
-
-            // Show visible area calculation
-            if let Some(dataview) = buffer.get_dataview() {
-                let total_rows = dataview.row_count();
-                let total_cols = dataview.column_count();
-                let visible_rows = buffer.get_last_visible_rows();
-                debug_info.push_str(&format!("\nVisible Area:\n"));
-                debug_info.push_str(&format!(
-                    "  Total Data: {} rows × {} columns\n",
-                    total_rows, total_cols
-                ));
-                debug_info.push_str(&format!("  Visible Rows in Terminal: {}\n", visible_rows));
-
-                // Calculate what section is being viewed
-                if total_rows > 0 && visible_rows > 0 {
-                    let start_row = scroll_row.min(total_rows.saturating_sub(1));
-                    let end_row = (scroll_row + visible_rows).min(total_rows);
-                    let percent_start = (start_row as f64 / total_rows as f64 * 100.0) as u32;
-                    let percent_end = (end_row as f64 / total_rows as f64 * 100.0) as u32;
-                    debug_info.push_str(&format!(
-                        "  Viewing rows {}-{} ({}%-{}% of data)\n",
-                        start_row + 1,
-                        end_row,
-                        percent_start,
-                        percent_end
-                    ));
-                }
-
-                if total_cols > 0 {
-                    let visible_cols_estimate = 10; // Estimate based on typical column widths
-                    let start_col = scroll_col.min(total_cols.saturating_sub(1));
-                    let end_col = (scroll_col + visible_cols_estimate).min(total_cols);
-                    debug_info.push_str(&format!(
-                        "  Viewing columns {}-{} of {}\n",
-                        start_col + 1,
-                        end_col,
-                        total_cols
-                    ));
-                }
-            }
-        }
-        debug_info
-    }
+    // debug_generate_viewport_state moved to DebugContext trait default implementation
 
     fn debug_generate_navigation_state(&self) -> String {
         let mut debug_info = String::new();
@@ -6801,6 +6450,107 @@ impl EnhancedTuiApp {
                 ));
             }
         }
+    }
+
+    fn add_query_source_indicator(&self, spans: &mut Vec<Span>) {
+        if let Some(source) = self.buffer().get_last_query_source() {
+            spans.push(Span::raw(" | "));
+            let (icon, label, color) = match source.as_str() {
+                "cache" => (
+                    &self.config.display.icons.cache,
+                    "CACHE".to_string(),
+                    Color::Cyan,
+                ),
+                "file" | "FileDataSource" => (
+                    &self.config.display.icons.file,
+                    "FILE".to_string(),
+                    Color::Green,
+                ),
+                "SqlServerDataSource" => (
+                    &self.config.display.icons.database,
+                    "SQL".to_string(),
+                    Color::Blue,
+                ),
+                "PublicApiDataSource" => (
+                    &self.config.display.icons.api,
+                    "API".to_string(),
+                    Color::Yellow,
+                ),
+                _ => (
+                    &self.config.display.icons.api,
+                    source.clone(),
+                    Color::Magenta,
+                ),
+            };
+            spans.push(Span::raw(format!("{} ", icon)));
+            spans.push(Span::styled(label, Style::default().fg(color)));
+        }
+    }
+
+    fn add_case_sensitivity_indicator(&self, spans: &mut Vec<Span>) {
+        let case_insensitive = self.buffer().is_case_insensitive();
+        if case_insensitive {
+            spans.push(Span::raw(" | "));
+            let icon = self.config.display.icons.case_insensitive.clone();
+            spans.push(Span::styled(
+                format!("{} CASE", icon),
+                Style::default().fg(Color::Cyan),
+            ));
+        }
+    }
+
+    fn add_column_packing_indicator(&self, spans: &mut Vec<Span>) {
+        if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
+            let packing_mode = viewport_manager.get_packing_mode();
+            spans.push(Span::raw(" | "));
+            let (text, color) = match packing_mode {
+                ColumnPackingMode::DataFocus => ("DATA", Color::Cyan),
+                ColumnPackingMode::HeaderFocus => ("HEADER", Color::Yellow),
+                ColumnPackingMode::Balanced => ("BALANCED", Color::Green),
+            };
+            spans.push(Span::styled(text, Style::default().fg(color)));
+        }
+    }
+
+    fn add_status_message(&self, spans: &mut Vec<Span>) {
+        let status_msg = self.buffer().get_status_message();
+        if !status_msg.is_empty() {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(
+                status_msg,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+    }
+
+    fn get_help_text_for_mode(&self) -> &str {
+        match self.shadow_state.borrow().get_mode() {
+            AppMode::Command => "Enter:Run | Tab:Complete | ↓:Results | F1:Help",
+            AppMode::Results => match self.get_selection_mode() {
+                SelectionMode::Cell => "v:Row mode | y:Yank cell | ↑:Edit | F1:Help",
+                SelectionMode::Row => "v:Cell mode | y:Yank | f:Filter | ↑:Edit | F1:Help",
+                SelectionMode::Column => "v:Cell mode | y:Yank col | ↑:Edit | F1:Help",
+            },
+            AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
+                "Enter:Apply | Esc:Cancel"
+            }
+            AppMode::Help | AppMode::Debug | AppMode::PrettyQuery | AppMode::ColumnStats => {
+                "Esc:Close"
+            }
+            AppMode::History => "Enter:Select | Esc:Cancel",
+            AppMode::JumpToRow => "Enter:Jump | Esc:Cancel",
+        }
+    }
+
+    fn add_shadow_state_display(&self, spans: &mut Vec<Span>) {
+        let shadow_display = self.shadow_state.borrow().status_display();
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            shadow_display,
+            Style::default().fg(Color::Cyan),
+        ));
     }
 
     /// Add right-aligned help text if space allows
@@ -7141,8 +6891,8 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn toggle_debug_mode(&mut self) {
-        // Call the existing public method
-        EnhancedTuiApp::toggle_debug_mode(self);
+        // Use the DebugContext trait
+        <Self as DebugContext>::toggle_debug_mode(self);
     }
 
     // Column arrangement operations
@@ -7182,6 +6932,82 @@ impl ActionHandlerContext for EnhancedTuiApp {
             format!("Column packing: {}", new_mode.display_name())
         };
         self.buffer_mut().set_status_message(message);
+    }
+
+    // Viewport navigation
+    fn navigate_to_viewport_top(&mut self) {
+        let result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                Some(viewport_manager.navigate_to_viewport_top())
+            } else {
+                None
+            }
+        };
+
+        if let Some(result) = result {
+            self.buffer_mut()
+                .set_selected_row(Some(result.row_position));
+            if result.viewport_changed {
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.0 = result.row_scroll_offset;
+                self.buffer_mut().set_scroll_offset(offset);
+            }
+            self.state_container.navigation_mut().selected_row = result.row_position;
+            if result.viewport_changed {
+                self.state_container.navigation_mut().scroll_offset.0 = result.row_scroll_offset;
+            }
+        }
+    }
+
+    fn navigate_to_viewport_middle(&mut self) {
+        let result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                Some(viewport_manager.navigate_to_viewport_middle())
+            } else {
+                None
+            }
+        };
+
+        if let Some(result) = result {
+            self.buffer_mut()
+                .set_selected_row(Some(result.row_position));
+            if result.viewport_changed {
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.0 = result.row_scroll_offset;
+                self.buffer_mut().set_scroll_offset(offset);
+            }
+            self.state_container.navigation_mut().selected_row = result.row_position;
+            if result.viewport_changed {
+                self.state_container.navigation_mut().scroll_offset.0 = result.row_scroll_offset;
+            }
+        }
+    }
+
+    fn navigate_to_viewport_bottom(&mut self) {
+        let result = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                Some(viewport_manager.navigate_to_viewport_bottom())
+            } else {
+                None
+            }
+        };
+
+        if let Some(result) = result {
+            self.buffer_mut()
+                .set_selected_row(Some(result.row_position));
+            if result.viewport_changed {
+                let mut offset = self.buffer().get_scroll_offset();
+                offset.0 = result.row_scroll_offset;
+                self.buffer_mut().set_scroll_offset(offset);
+            }
+            self.state_container.navigation_mut().selected_row = result.row_position;
+            if result.viewport_changed {
+                self.state_container.navigation_mut().scroll_offset.0 = result.row_scroll_offset;
+            }
+        }
     }
 
     // Input and text editing methods

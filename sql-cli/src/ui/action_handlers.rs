@@ -91,6 +91,11 @@ pub trait ActionHandlerContext {
     fn show_column_statistics(&mut self);
     fn cycle_column_packing(&mut self);
 
+    // Viewport navigation
+    fn navigate_to_viewport_top(&mut self);
+    fn navigate_to_viewport_middle(&mut self);
+    fn navigate_to_viewport_bottom(&mut self);
+
     // Input and text editing
     fn move_input_cursor_left(&mut self);
     fn move_input_cursor_right(&mut self);
@@ -447,6 +452,38 @@ impl ActionHandler for ModeActionHandler {
     }
 }
 
+/// Handler for viewport navigation actions (H, M, L vim commands)
+pub struct ViewportNavigationHandler;
+
+impl ActionHandler for ViewportNavigationHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        _context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        match action {
+            Action::NavigateToViewportTop => {
+                tui.navigate_to_viewport_top();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::NavigateToViewportMiddle => {
+                tui.navigate_to_viewport_middle();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::NavigateToViewportBottom => {
+                tui.navigate_to_viewport_bottom();
+                Some(Ok(ActionResult::Handled))
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "ViewportNavigation"
+    }
+}
+
 /// Handler for column arrangement actions (move left/right)
 pub struct ColumnArrangementActionHandler;
 
@@ -641,6 +678,7 @@ impl ActionDispatcher {
             Box::new(StatisticsActionHandler),
             Box::new(InputCursorActionHandler),
             Box::new(TextEditActionHandler),
+            Box::new(ViewportNavigationHandler),
         ];
 
         Self { handlers }
@@ -843,6 +881,18 @@ mod tests {
         }
         fn cycle_column_packing(&mut self) {
             self.last_action = "cycle_column_packing".to_string();
+        }
+
+        fn navigate_to_viewport_top(&mut self) {
+            self.last_action = "navigate_to_viewport_top".to_string();
+        }
+
+        fn navigate_to_viewport_middle(&mut self) {
+            self.last_action = "navigate_to_viewport_middle".to_string();
+        }
+
+        fn navigate_to_viewport_bottom(&mut self) {
+            self.last_action = "navigate_to_viewport_bottom".to_string();
         }
 
         // Input and text editing

@@ -8,6 +8,7 @@ pub mod behaviors;
 pub mod cell_renderer;
 pub mod column_utils;
 pub mod data_export_operations;
+pub mod debug_context;
 pub mod enhanced_tui;
 pub mod enhanced_tui_debug;
 pub mod enhanced_tui_debug_integration;
