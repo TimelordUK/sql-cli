@@ -1,6 +1,6 @@
 use crate::data::data_view::DataView;
 use crate::ui::viewport_manager::ViewportManager;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Represents a search match in the data
 #[derive(Debug, Clone)]
@@ -161,14 +161,38 @@ impl VimSearchManager {
                 info!(target: "vim_search", 
                     "=== NEXT MATCH DETAILS ===");
                 info!(target: "vim_search", 
-                    "Match {}/{}: row={}, visual_col={}, value='{}'", 
+                    "Match {}/{}: row={}, visual_col={}, stored_value='{}'", 
                     *current_index + 1, matches.len(),
                     match_item.row, match_item.col, match_item.value);
+                    
+                // Double-check: Does this value actually contain our pattern?
+                if !match_item.value.to_lowercase().contains(&pattern.to_lowercase()) {
+                    error!(target: "vim_search",
+                        "CRITICAL ERROR: Match value '{}' does NOT contain search pattern '{}'!",
+                        match_item.value, pattern);
+                    error!(target: "vim_search",
+                        "This indicates the search index is corrupted or stale!");
+                }
 
                 // Log what we expect to find at this position
                 info!(target: "vim_search", 
                     "Expected: Cell at row {} col {} should contain substring '{}'", 
                     match_item.row, match_item.col, pattern);
+
+                // Verify the stored match actually contains the pattern
+                let stored_contains = match_item
+                    .value
+                    .to_lowercase()
+                    .contains(&pattern.to_lowercase());
+                if !stored_contains {
+                    warn!(target: "vim_search",
+                        "CRITICAL: Stored match '{}' does NOT contain pattern '{}'!",
+                        match_item.value, pattern);
+                } else {
+                    info!(target: "vim_search",
+                        "✓ Stored match '{}' contains pattern '{}'",
+                        match_item.value, pattern);
+                }
 
                 Some(match_item)
             }
@@ -374,9 +398,11 @@ impl VimSearchManager {
             pattern.to_string()
         };
 
-        debug!(target: "vim_search", 
-            "Searching for '{}' (case_sensitive: {})", 
-            pattern, self.case_sensitive);
+        info!(target: "vim_search", 
+            "=== FIND_MATCHES CALLED ===");
+        info!(target: "vim_search", 
+            "Pattern passed in: '{}', pattern_lower: '{}', case_sensitive: {}", 
+            pattern, pattern_lower, self.case_sensitive);
 
         // Get the display column indices to map enumeration index to actual column index
         let display_columns = dataview.get_display_columns();
@@ -414,9 +440,17 @@ impl VimSearchManager {
                                 enum_idx // Fallback, shouldn't happen
                             };
 
-                            debug!(target: "vim_search", 
+                            info!(target: "vim_search", 
                                 "Found first match in row {} at visual col {} (DataTable col {}, value '{}')", 
                                 row_idx, enum_idx, actual_col, value_str);
+
+                            // Extra validation - log if we find "Futures Trading"
+                            if value_str.contains("Futures Trading") {
+                                warn!(target: "vim_search",
+                                    "SUSPICIOUS: Found 'Futures Trading' as a match for pattern '{}' (search_value='{}', pattern_lower='{}')",
+                                    pattern, search_value, pattern_lower);
+                            }
+
                             first_match_in_row = Some(SearchMatch {
                                 row: row_idx,
                                 col: enum_idx, // This is the visual column index in display order
@@ -443,47 +477,57 @@ impl VimSearchManager {
 
     /// Navigate viewport to ensure match is visible and set crosshair
     fn navigate_to_match(&self, match_item: &SearchMatch, viewport: &mut ViewportManager) {
-        debug!(target: "vim_search", 
-            "Navigating to match at row={}, col={}", 
-            match_item.row, match_item.col);
+        info!(target: "vim_search", 
+            "=== NAVIGATE_TO_MATCH START ===");
+        info!(target: "vim_search", 
+            "Target match: row={} (absolute), col={} (visual), value='{}'", 
+            match_item.row, match_item.col, match_item.value);
 
         // Get terminal dimensions to preserve width
         let terminal_width = viewport.get_terminal_width();
         let terminal_height = viewport.get_terminal_height();
+        info!(target: "vim_search",
+            "Terminal dimensions: width={}, height={}",
+            terminal_width, terminal_height);
 
-        // Ensure row is visible
+        // Get current viewport state BEFORE any changes
         let viewport_rows = viewport.get_viewport_rows();
-        let viewport_height = viewport_rows.end - viewport_rows.start;
-
-        // Calculate new row start if needed
-        let new_row_start =
-            if match_item.row < viewport_rows.start || match_item.row >= viewport_rows.end {
-                // Calculate new viewport start to center the match
-                let centered_start = match_item.row.saturating_sub(viewport_height / 2);
-                debug!(target: "vim_search", 
-                "Row {} not visible in viewport {:?}, centering to row {}", 
-                match_item.row, viewport_rows, centered_start);
-                centered_start
-            } else {
-                viewport_rows.start
-            };
-
-        // Ensure column is visible
         let viewport_cols = viewport.viewport_cols();
-        let new_col_start =
-            if match_item.col < viewport_cols.start || match_item.col >= viewport_cols.end {
-                // Scroll horizontally to show the column
-                // Try to center the column in view if possible
-                let col_width = viewport_cols.end - viewport_cols.start;
-                let centered_start = match_item.col.saturating_sub(col_width / 2);
-                debug!(target: "vim_search", 
-                "Column {} not visible in viewport {:?}, centering to column {}", 
-                match_item.col, viewport_cols, centered_start);
-                centered_start
-            } else {
-                viewport_cols.start
-            };
+        let viewport_height = viewport_rows.end - viewport_rows.start;
+        let viewport_width = viewport_cols.end - viewport_cols.start;
+        
+        info!(target: "vim_search",
+            "Current viewport BEFORE changes:");
+        info!(target: "vim_search",
+            "  Rows: {:?} (height={})", viewport_rows, viewport_height);
+        info!(target: "vim_search",
+            "  Cols: {:?} (width={})", viewport_cols, viewport_width);
+        info!(target: "vim_search",
+            "  Current crosshair: row={}, col={}",
+            viewport.get_crosshair_row(), viewport.get_crosshair_col());
 
+        // ALWAYS center the match in the viewport for predictable behavior
+        // The match should appear at viewport position (height/2, width/2)
+        let new_row_start = match_item.row.saturating_sub(viewport_height / 2);
+        info!(target: "vim_search", 
+            "Centering row {} in viewport (height={}), new viewport start row={}", 
+            match_item.row, viewport_height, new_row_start);
+
+        // For columns, we can't just divide by 2 because columns have variable widths
+        // Instead, try to position the match column reasonably in view
+        // Start by trying to show a few columns before the match if possible
+        let new_col_start = match_item.col.saturating_sub(3); // Show 3 columns before if possible
+        info!(target: "vim_search", 
+            "Positioning column {} in viewport, new viewport start col={}", 
+            match_item.col, new_col_start);
+
+        // Log what we're about to do
+        info!(target: "vim_search",
+            "=== VIEWPORT UPDATE ===");
+        info!(target: "vim_search",
+            "Will call set_viewport with: row_start={}, col_start={}, width={}, height={}",
+            new_row_start, new_col_start, terminal_width, terminal_height);
+            
         // Update viewport with preserved terminal dimensions
         viewport.set_viewport(
             new_row_start,
@@ -492,34 +536,99 @@ impl VimSearchManager {
             terminal_height as u16,
         );
 
-        debug!(target: "vim_search", 
-            "Updated viewport: rows {:?}, cols {:?}", 
-            viewport.get_viewport_rows(), viewport.viewport_cols());
-
-        // Set crosshair position to the match
-        // IMPORTANT: The crosshair uses ABSOLUTE coordinates, not viewport-relative
-        // The ViewportManager internally handles the conversion when needed
-        viewport.set_crosshair(match_item.row, match_item.col);
-
-        // Verify the match is actually visible in the viewport after scrolling
+        // Get the updated viewport state
         let final_viewport_rows = viewport.get_viewport_rows();
         let final_viewport_cols = viewport.viewport_cols();
+        
+        info!(target: "vim_search", 
+            "Viewport AFTER set_viewport: rows {:?}, cols {:?}", 
+            final_viewport_rows, final_viewport_cols);
+            
+        // CRITICAL: Check if our target column is actually in the viewport!
+        if match_item.col < final_viewport_cols.start || match_item.col >= final_viewport_cols.end {
+            error!(target: "vim_search",
+                "CRITICAL ERROR: Target column {} is NOT in viewport {:?} after set_viewport!",
+                match_item.col, final_viewport_cols);
+            error!(target: "vim_search",
+                "We asked for col_start={}, but viewport gave us {:?}",
+                new_col_start, final_viewport_cols);
+        }
 
+        // Set the crosshair to the ABSOLUTE position of the match
+        // The viewport manager uses absolute coordinates internally
+        info!(target: "vim_search",
+            "=== CROSSHAIR POSITIONING ===");
+        info!(target: "vim_search",
+            "Setting crosshair to ABSOLUTE position: row={}, col={}",
+            match_item.row, match_item.col);
+            
+        viewport.set_crosshair(match_item.row, match_item.col);
+        
+        // Verify the match is centered in the viewport
+        let center_row = final_viewport_rows.start + (final_viewport_rows.end - final_viewport_rows.start) / 2;
+        let center_col = final_viewport_cols.start + (final_viewport_cols.end - final_viewport_cols.start) / 2;
+        
+        info!(target: "vim_search",
+            "Viewport center is at: row={}, col={}",
+            center_row, center_col);
+        info!(target: "vim_search",
+            "Match is at: row={}, col={}",
+            match_item.row, match_item.col);
+        info!(target: "vim_search",
+            "Distance from center: row_diff={}, col_diff={}",
+            (match_item.row as i32 - center_row as i32).abs(),
+            (match_item.col as i32 - center_col as i32).abs());
+            
+        // Get the viewport-relative position for verification
+        if let Some((vp_row, vp_col)) = viewport.get_crosshair_viewport_position() {
+            info!(target: "vim_search",
+                "Crosshair appears at viewport position: ({}, {})",
+                vp_row, vp_col);
+            info!(target: "vim_search",
+                "Viewport dimensions: {} rows x {} cols",
+                final_viewport_rows.end - final_viewport_rows.start,
+                final_viewport_cols.end - final_viewport_cols.start);
+            info!(target: "vim_search",
+                "Expected center position: ({}, {})",
+                (final_viewport_rows.end - final_viewport_rows.start) / 2,
+                (final_viewport_cols.end - final_viewport_cols.start) / 2);
+        } else {
+            error!(target: "vim_search",
+                "CRITICAL: Crosshair is NOT visible in viewport after centering!");
+        }
+
+        // Verify the match is actually visible in the viewport after scrolling
+        info!(target: "vim_search",
+            "=== VERIFICATION ===");
+            
         if match_item.row < final_viewport_rows.start || match_item.row >= final_viewport_rows.end {
-            warn!(target: "vim_search", 
-                "Match row {} is outside viewport {:?} after scrolling", 
+            error!(target: "vim_search", 
+                "ERROR: Match row {} is OUTSIDE viewport {:?} after scrolling!", 
+                match_item.row, final_viewport_rows);
+        } else {
+            info!(target: "vim_search",
+                "✓ Match row {} is within viewport {:?}",
                 match_item.row, final_viewport_rows);
         }
 
         if match_item.col < final_viewport_cols.start || match_item.col >= final_viewport_cols.end {
-            warn!(target: "vim_search", 
-                "Match column {} is outside viewport {:?} after scrolling", 
+            error!(target: "vim_search", 
+                "ERROR: Match column {} is OUTSIDE viewport {:?} after scrolling!", 
+                match_item.col, final_viewport_cols);
+        } else {
+            info!(target: "vim_search",
+                "✓ Match column {} is within viewport {:?}",
                 match_item.col, final_viewport_cols);
         }
 
+        // Final summary
         info!(target: "vim_search", 
-            "Positioned crosshair at absolute ({}, {}) for match", 
-            match_item.row, match_item.col);
+            "=== NAVIGATE_TO_MATCH COMPLETE ===");
+        info!(target: "vim_search",
+            "Match at absolute ({}, {}), crosshair at ({}, {}), viewport rows {:?} cols {:?}", 
+            match_item.row, match_item.col,
+            viewport.get_crosshair_row(), viewport.get_crosshair_col(),
+            final_viewport_rows, final_viewport_cols);
     }
 
     /// Set case sensitivity for search

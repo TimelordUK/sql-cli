@@ -2773,9 +2773,12 @@ impl EnhancedTuiApp {
                             );
                             info!(target: "search", "  Set viewport to row_offset={}, col_offset={}", new_row_offset, new_col_offset);
 
-                            // Set crosshair to match position
-                            viewport_manager.set_crosshair(row, col);
-                            info!(target: "search", "  Set crosshair to ({}, {})", row, col);
+                            // Set crosshair to match position (needs viewport-relative coordinates)
+                            let crosshair_row = row - new_row_offset;
+                            let crosshair_col = col - new_col_offset;
+                            viewport_manager.set_crosshair(crosshair_row, crosshair_col);
+                            info!(target: "search", "  Set crosshair to viewport-relative ({}, {}), absolute was ({}, {})", 
+                                  crosshair_row, crosshair_col, row, col);
 
                             // Update navigation scroll offset (both row and column)
                             let mut nav = self.state_container.navigation_mut();
@@ -4057,7 +4060,18 @@ impl EnhancedTuiApp {
 
             // Verify what's actually at this position
             if let Some(dataview) = self.state_container.get_buffer_dataview() {
+                // First, let's verify what row we're actually getting
+                info!(target: "search",
+                    "DEBUG: Fetching row {} from dataview with {} total rows",
+                    search_match.row, dataview.row_count());
+
                 if let Some(row_data) = dataview.get_row(search_match.row) {
+                    // Log ALL values in this row to debug the mismatch
+                    info!(target: "search",
+                        "Row {} has {} values, first 5: {:?}",
+                        search_match.row, row_data.values.len(),
+                        row_data.values.iter().take(5).map(|v| v.to_string()).collect::<Vec<_>>());
+
                     if search_match.col < row_data.values.len() {
                         let actual_value = &row_data.values[search_match.col];
                         info!(target: "search", 
@@ -4104,7 +4118,13 @@ impl EnhancedTuiApp {
             self.state_container
                 .set_selected_row(Some(search_match.row));
 
-            // IMPORTANT: Also update the selected column to match the search match
+            // Update the selected column - search_match.col is already in visual coordinates
+            // Keep everything in visual column indices for consistency
+            info!(target: "search",
+                "Setting column to visual index {}",
+                search_match.col);
+            
+            // Update all column-related state to the visual column index
             self.state_container
                 .set_current_column_buffer(search_match.col);
             self.state_container.navigation_mut().selected_column = search_match.col;
@@ -4113,9 +4133,33 @@ impl EnhancedTuiApp {
             self.state_container.select_column(search_match.col);
             info!(target: "search", 
                 "Updated SelectionState column to: {}", search_match.col);
+            
+            // Log the current state of all column-related fields
+            info!(target: "search", 
+                "Column state after update: nav.selected_column={}, buffer.current_column={}, selection.selected_column={}", 
+                self.state_container.navigation().selected_column,
+                self.state_container.get_current_column(),
+                self.state_container.selection().selected_column);
 
             // CRITICAL: Also update navigation's selected_row to trigger proper rendering
             self.state_container.navigation_mut().selected_row = search_match.row;
+            
+            // CRITICAL: Update navigation scroll offset to match the viewport!
+            // The viewport manager has scrolled, but we need to sync that back to navigation state
+            if let Some(ref viewport) = *self.viewport_manager.borrow() {
+                let viewport_rows = viewport.get_viewport_rows();
+                let viewport_cols = viewport.viewport_cols();
+                
+                info!(target: "search",
+                    "Syncing navigation scroll to viewport: row_offset={}, col_offset={}",
+                    viewport_rows.start, viewport_cols.start);
+                    
+                // Update the navigation scroll offset to match viewport
+                self.state_container.navigation_mut().scroll_offset = (viewport_rows.start, viewport_cols.start);
+                
+                // Also update the buffer scroll offset
+                self.state_container.set_scroll_offset((viewport_rows.start, viewport_cols.start));
+            }
 
             // CRITICAL: Update TableWidgetManager to trigger re-render
             info!(target: "search", "Updating TableWidgetManager for vim search navigation to ({}, {})",
@@ -4123,10 +4167,25 @@ impl EnhancedTuiApp {
             self.table_widget_manager
                 .borrow_mut()
                 .navigate_to(search_match.row, search_match.col);
+                
+            // Log column state after TableWidgetManager update
+            info!(target: "search", 
+                "After TableWidgetManager update: nav.selected_column={}, buffer.current_column={}, selection.selected_column={}", 
+                self.state_container.navigation().selected_column,
+                self.state_container.get_current_column(),
+                self.state_container.selection().selected_column);
 
             // Update scroll offset if row changed significantly
             let viewport_height = 79; // Typical viewport height
-            let (current_scroll_row, current_scroll_col) = self.state_container.get_scroll_offset();
+            let (current_scroll_row, _) = self.state_container.get_scroll_offset();
+
+            // Get the column scroll offset from the viewport manager
+            // The viewport manager has already updated the column viewport
+            let new_col_scroll = if let Some(ref viewport) = *self.viewport_manager.borrow() {
+                viewport.viewport_cols().start
+            } else {
+                0
+            };
 
             // If the match is outside current viewport, update scroll
             if search_match.row < current_scroll_row
@@ -4134,9 +4193,14 @@ impl EnhancedTuiApp {
             {
                 let new_scroll = search_match.row.saturating_sub(viewport_height / 2);
                 self.state_container
-                    .set_scroll_offset((new_scroll, current_scroll_col));
+                    .set_scroll_offset((new_scroll, new_col_scroll));
+                self.state_container.navigation_mut().scroll_offset = (new_scroll, new_col_scroll);
+            } else {
+                // Even if row didn't change, we need to update column scroll
+                self.state_container
+                    .set_scroll_offset((current_scroll_row, new_col_scroll));
                 self.state_container.navigation_mut().scroll_offset =
-                    (new_scroll, current_scroll_col);
+                    (current_scroll_row, new_col_scroll);
             }
         }
 
@@ -4150,6 +4214,35 @@ impl EnhancedTuiApp {
                     search_match.row + 1,
                     search_match.col + 1
                 ));
+            }
+            
+            // Final column state logging
+            info!(target: "search", 
+                "FINAL vim_search_next state: nav.selected_column={}, buffer.current_column={}, selection.selected_column={}", 
+                self.state_container.navigation().selected_column,
+                self.state_container.get_current_column(),
+                self.state_container.selection().selected_column);
+                
+            // CRITICAL: Verify what's actually at the final position
+            if let Some(dataview) = self.state_container.get_buffer_dataview() {
+                let final_row = self.state_container.navigation().selected_row;
+                let final_col = self.state_container.navigation().selected_column;
+                
+                if let Some(row_data) = dataview.get_row(final_row) {
+                    if final_col < row_data.values.len() {
+                        let actual_value = &row_data.values[final_col];
+                        info!(target: "search", 
+                            "VERIFICATION: Cell at final position ({}, {}) contains: '{}'",
+                            final_row, final_col, actual_value);
+                            
+                        let pattern = self.vim_search_adapter.borrow().get_pattern().unwrap_or_default();
+                        if !actual_value.to_string().to_lowercase().contains(&pattern.to_lowercase()) {
+                            error!(target: "search",
+                                "ERROR: Final cell '{}' does NOT contain search pattern '{}'!",
+                                actual_value, pattern);
+                        }
+                    }
+                }
             }
         }
     }
@@ -4206,7 +4299,13 @@ impl EnhancedTuiApp {
             self.state_container
                 .set_selected_row(Some(search_match.row));
 
-            // IMPORTANT: Also update the selected column to match the search match
+            // Update the selected column - search_match.col is already in visual coordinates
+            // Keep everything in visual column indices for consistency
+            info!(target: "search",
+                "Setting column to visual index {}",
+                search_match.col);
+            
+            // Update all column-related state to the visual column index
             self.state_container
                 .set_current_column_buffer(search_match.col);
             self.state_container.navigation_mut().selected_column = search_match.col;
@@ -4215,9 +4314,33 @@ impl EnhancedTuiApp {
             self.state_container.select_column(search_match.col);
             info!(target: "search", 
                 "Updated SelectionState column to: {}", search_match.col);
+            
+            // Log the current state of all column-related fields
+            info!(target: "search", 
+                "Column state after update: nav.selected_column={}, buffer.current_column={}, selection.selected_column={}", 
+                self.state_container.navigation().selected_column,
+                self.state_container.get_current_column(),
+                self.state_container.selection().selected_column);
 
             // CRITICAL: Also update navigation's selected_row to trigger proper rendering
             self.state_container.navigation_mut().selected_row = search_match.row;
+            
+            // CRITICAL: Update navigation scroll offset to match the viewport!
+            // The viewport manager has scrolled, but we need to sync that back to navigation state
+            if let Some(ref viewport) = *self.viewport_manager.borrow() {
+                let viewport_rows = viewport.get_viewport_rows();
+                let viewport_cols = viewport.viewport_cols();
+                
+                info!(target: "search",
+                    "Syncing navigation scroll to viewport: row_offset={}, col_offset={}",
+                    viewport_rows.start, viewport_cols.start);
+                    
+                // Update the navigation scroll offset to match viewport
+                self.state_container.navigation_mut().scroll_offset = (viewport_rows.start, viewport_cols.start);
+                
+                // Also update the buffer scroll offset
+                self.state_container.set_scroll_offset((viewport_rows.start, viewport_cols.start));
+            }
 
             // CRITICAL: Update TableWidgetManager to trigger re-render
             info!(target: "search", "Updating TableWidgetManager for vim search navigation to ({}, {})",
@@ -4225,10 +4348,25 @@ impl EnhancedTuiApp {
             self.table_widget_manager
                 .borrow_mut()
                 .navigate_to(search_match.row, search_match.col);
+                
+            // Log column state after TableWidgetManager update
+            info!(target: "search", 
+                "After TableWidgetManager update: nav.selected_column={}, buffer.current_column={}, selection.selected_column={}", 
+                self.state_container.navigation().selected_column,
+                self.state_container.get_current_column(),
+                self.state_container.selection().selected_column);
 
             // Update scroll offset if row changed significantly
             let viewport_height = 79; // Typical viewport height
-            let (current_scroll_row, current_scroll_col) = self.state_container.get_scroll_offset();
+            let (current_scroll_row, _) = self.state_container.get_scroll_offset();
+
+            // Get the column scroll offset from the viewport manager
+            // The viewport manager has already updated the column viewport
+            let new_col_scroll = if let Some(ref viewport) = *self.viewport_manager.borrow() {
+                viewport.viewport_cols().start
+            } else {
+                0
+            };
 
             // If the match is outside current viewport, update scroll
             if search_match.row < current_scroll_row
@@ -4236,9 +4374,14 @@ impl EnhancedTuiApp {
             {
                 let new_scroll = search_match.row.saturating_sub(viewport_height / 2);
                 self.state_container
-                    .set_scroll_offset((new_scroll, current_scroll_col));
+                    .set_scroll_offset((new_scroll, new_col_scroll));
+                self.state_container.navigation_mut().scroll_offset = (new_scroll, new_col_scroll);
+            } else {
+                // Even if row didn't change, we need to update column scroll
+                self.state_container
+                    .set_scroll_offset((current_scroll_row, new_col_scroll));
                 self.state_container.navigation_mut().scroll_offset =
-                    (new_scroll, current_scroll_col);
+                    (current_scroll_row, new_col_scroll);
             }
         }
 
@@ -5577,15 +5720,17 @@ impl EnhancedTuiApp {
                 .expect("ViewportManager must exist for rendering");
             let info = viewport_manager.get_visible_columns_info(available_width);
 
-            let crosshair_visual = viewport_manager.get_crosshair_col();
-            let viewport_start = viewport_manager.get_viewport_range().start;
-            let crosshair_column_position = if crosshair_visual >= viewport_start
-                && crosshair_visual < viewport_manager.get_viewport_range().end
-            {
-                crosshair_visual - viewport_start
+            // Get the crosshair's viewport-relative position for rendering
+            // The viewport manager stores crosshair in absolute coordinates
+            // but we need viewport-relative for rendering
+            let crosshair_column_position = if let Some((_, col_pos)) = viewport_manager.get_crosshair_viewport_position() {
+                col_pos
             } else {
+                // Crosshair is outside viewport, default to 0
                 0
             };
+            
+            let crosshair_visual = viewport_manager.get_crosshair_col();
 
             (info.1, crosshair_column_position, crosshair_visual)
         };
