@@ -5724,6 +5724,26 @@ impl AppStateContainer {
         }
     }
 
+    /// Set input text (proxy to Buffer) - properly syncs both buffer and command_input
+    pub fn set_buffer_input_text(&mut self, text: String) {
+        // Update the actual buffer
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_text(text.clone());
+        }
+
+        // Also update command_input for compatibility
+        let mut input = self.command_input.borrow_mut();
+        input.text = text.clone();
+        input.cursor_position = text.len();
+    }
+
+    /// Get input text (proxy to Buffer)
+    pub fn get_buffer_input_text(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_input_text())
+            .unwrap_or_default()
+    }
+
     /// Set current column (proxy to Buffer)
     pub fn set_current_column_buffer(&mut self, col: usize) {
         if let Some(buffer) = self.current_buffer_mut() {

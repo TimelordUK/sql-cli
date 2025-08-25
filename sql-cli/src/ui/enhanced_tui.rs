@@ -920,8 +920,8 @@ impl EnhancedTuiApp {
             // These modes temporarily use the input field for their patterns
             self.input.value().to_string() // TODO: Migrate to buffer-based input
         } else {
-            // All other modes use the buffer
-            self.state_container.get_input_text()
+            // Get from the actual buffer to ensure consistency
+            self.state_container.get_buffer_input_text()
         }
     }
 
@@ -948,19 +948,12 @@ impl EnhancedTuiApp {
               if text.len() > 50 { format!("{}...", &text[..50]) } else { text.clone() },
               mode);
 
-        // Transaction-like block for input updates
-        {
-            // Set input text with cursor at end
-            self.state_container
-                .set_input_text_with_cursor(text.clone(), text.len());
-        }
+        // Use the proper proxy method that syncs both buffer and command_input
+        self.state_container.set_buffer_input_text(text.clone());
 
         // Always update the input field for all modes
         // TODO: Eventually migrate special modes to use buffer input
         self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
-
-        // IMPORTANT: Also sync with AppStateContainer's command_input to prevent desync
-        self.state_container.set_input_text(text);
     }
 
     // Helper to set input text with specific cursor position
