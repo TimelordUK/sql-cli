@@ -17,7 +17,15 @@ pub struct VimSearchAdapter {
 }
 
 impl VimSearchAdapter {
-    pub fn new(manager: VimSearchManager) -> Self {
+    pub fn new() -> Self {
+        Self {
+            manager: VimSearchManager::new(),
+            is_active: false,
+        }
+    }
+
+    /// Create with a specific manager (for testing or advanced use)
+    pub fn with_manager(manager: VimSearchManager) -> Self {
         Self {
             manager,
             is_active: false,

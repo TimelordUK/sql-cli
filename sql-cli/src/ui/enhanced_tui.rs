@@ -40,7 +40,6 @@ use crate::ui::traits::{
 };
 use crate::ui::viewport_manager::{ColumnPackingMode, ViewportEfficiency, ViewportManager};
 use crate::ui::vim_search_adapter::VimSearchAdapter;
-use crate::ui::vim_search_manager::VimSearchManager;
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -1152,7 +1151,7 @@ impl EnhancedTuiApp {
             stats_widget: StatsWidget::new(),
             help_widget,
             search_modes_widget: SearchModesWidget::new(),
-            vim_search_adapter: RefCell::new(VimSearchAdapter::new(VimSearchManager::new())),
+            vim_search_adapter: RefCell::new(VimSearchAdapter::new()),
             state_dispatcher: RefCell::new(StateDispatcher::new()),
             search_manager: RefCell::new({
                 let mut search_config = SearchConfig::default();
