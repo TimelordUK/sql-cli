@@ -960,7 +960,10 @@ impl EnhancedTuiApp {
         self.input = tui_input::Input::new(text.clone()).with_cursor(text.len());
 
         // IMPORTANT: Also sync with AppStateContainer's command_input to prevent desync
-        self.state_container.set_input_text(text);
+        self.state_container.set_input_text(text.clone());
+
+        // Also ensure it's set in the buffer for Command mode
+        self.buffer_mut().set_input_text(text);
     }
 
     // Helper to set input text with specific cursor position
