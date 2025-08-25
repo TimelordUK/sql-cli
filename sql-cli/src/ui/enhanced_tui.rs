@@ -137,11 +137,15 @@ pub struct EnhancedTuiApp {
 
 impl DebugContext for EnhancedTuiApp {
     fn buffer(&self) -> &dyn BufferAPI {
-        self.buffer()
+        self.state_container
+            .current_buffer()
+            .expect("Buffer should exist")
     }
 
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
-        self.buffer_mut()
+        self.state_container
+            .current_buffer_mut()
+            .expect("Buffer should exist")
     }
 
     fn get_debug_widget(&self) -> &DebugWidget {
@@ -463,7 +467,7 @@ impl EnhancedTuiApp {
                 // Set jump-to-row state as active (can mutate directly now)
                 self.state_container.jump_to_row_mut().is_active = true;
 
-                self.buffer_mut()
+                self.state_container
                     .set_status_message("Enter row number (1-based):".to_string());
                 Ok(ActionResult::Handled)
             }
@@ -878,7 +882,7 @@ impl EnhancedTuiApp {
 
                 // Get match count and update status
                 let match_count = self.state_container.history_search().matches.len();
-                self.buffer_mut()
+                self.state_container
                     .set_status_message(format!("History search: {} matches", match_count));
 
                 // Switch to History mode to show the search interface
@@ -999,10 +1003,9 @@ impl EnhancedTuiApp {
     // 2. self.input (tui_input widget)
     // 3. AppStateContainer's command_input
     fn sync_all_input_states(&mut self) {
-        let buffer = self.buffer();
-        let text = buffer.get_input_text();
-        let cursor = buffer.get_input_cursor_position();
-        let mode = buffer.get_mode();
+        let text = self.state_container.get_input_text();
+        let cursor = self.state_container.get_input_cursor_position();
+        let mode = self.state_container.get_mode();
 
         // Get caller for debugging
         let backtrace_str = std::backtrace::Backtrace::capture().to_string();
@@ -1056,15 +1059,18 @@ impl EnhancedTuiApp {
     // Helper to get visual cursor position (for rendering)
     fn get_visual_cursor(&self) -> (usize, usize) {
         // Get text and cursor from appropriate source based on mode
-        let buffer = self.buffer();
-        let (text, cursor) = match buffer.get_mode() {
+        let mode = self.state_container.get_mode();
+        let (text, cursor) = match mode {
             AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch => {
                 // Special modes use self.input directly
                 (self.input.value().to_string(), self.input.cursor())
             }
             _ => {
-                // Other modes use buffer
-                (buffer.get_input_text(), buffer.get_input_cursor_position())
+                // Other modes use state_container
+                (
+                    self.state_container.get_input_text(),
+                    self.state_container.get_input_cursor_position(),
+                )
             }
         };
 
@@ -1117,7 +1123,7 @@ impl EnhancedTuiApp {
         buffer_manager.add_buffer(buffer);
 
         // Initialize state container (owns the only buffer_manager)
-        let mut state_container = match AppStateContainer::new(buffer_manager) {
+        let state_container = match AppStateContainer::new(buffer_manager) {
             Ok(container) => container,
             Err(e) => {
                 panic!("Failed to initialize AppStateContainer: {}", e);
@@ -1574,7 +1580,7 @@ impl EnhancedTuiApp {
                 Ok(false) // Don't exit, waiting for more keys
             }
             ChordResult::Cancelled => {
-                self.buffer_mut()
+                self.state_container
                     .set_status_message("Chord cancelled".to_string());
                 // Clear chord mode in renderer
                 self.key_sequence_renderer.clear_chord_mode();
@@ -1896,7 +1902,7 @@ impl EnhancedTuiApp {
             // Get match count
             let match_count = self.state_container.history_search().matches.len();
 
-            self.buffer_mut()
+            self.state_container
                 .set_status_message(format!("History search: {} matches", match_count));
         }
     }
@@ -2130,7 +2136,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                     if buffer.navigate_history_up(&history_commands) {
                         self.sync_all_input_states();
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message("Previous command from history".to_string());
                     }
                 }
@@ -2151,7 +2157,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                     if buffer.navigate_history_down(&history_commands) {
                         self.sync_all_input_states();
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message("Next command from history".to_string());
                     }
                 }
@@ -2172,7 +2178,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                     if buffer.navigate_history_up(&history_commands) {
                         self.sync_all_input_states();
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message("Previous command (Alt+Up)".to_string());
                     }
                 }
@@ -2189,7 +2195,7 @@ impl EnhancedTuiApp {
                 if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                     if buffer.navigate_history_down(&history_commands) {
                         self.sync_all_input_states();
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message("Next command (Alt+Down)".to_string());
                     }
                 }
@@ -2277,14 +2283,14 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Kill line - delete from cursor to end of line
-                self.buffer_mut()
+                self.state_container
                     .set_status_message("Ctrl+K pressed - killing to end of line".to_string());
                 self.kill_line();
                 Ok(Some(false))
             }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Alternative: Alt+K for kill line (for terminals that intercept Ctrl+K)
-                self.buffer_mut()
+                self.state_container
                     .set_status_message("Alt+K - killing to end of line".to_string());
                 self.kill_line();
                 Ok(Some(false))
@@ -2366,21 +2372,21 @@ impl EnhancedTuiApp {
                         self.shadow_state
                             .borrow_mut()
                             .observe_mode_change(AppMode::Help, "help_requested");
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message("Help Mode - Press ESC to return".to_string());
                     } else if query == ":exit" || query == ":quit" || query == ":q" {
                         return Ok(Some(true));
                     } else if query == ":tui" {
                         // Already in TUI mode
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message("Already in TUI mode".to_string());
                     } else {
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message(format!("Processing query: '{}'", query));
                         self.execute_query(&query)?;
                     }
                 } else {
-                    self.buffer_mut()
+                    self.state_container
                         .set_status_message("Empty query - please enter a SQL command".to_string());
                 }
                 Ok(Some(false))
@@ -2473,7 +2479,7 @@ impl EnhancedTuiApp {
                     SelectionMode::Cell => {
                         // In cell mode, single 'y' yanks the cell directly
                         debug!("Yanking cell in cell selection mode");
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message("Yanking cell...".to_string());
                         YankBehavior::yank_cell(self);
                         // Status message will be set by yank_cell
@@ -2490,7 +2496,7 @@ impl EnhancedTuiApp {
                     SelectionMode::Column => {
                         // In column mode, 'y' yanks the current column
                         debug!("Yanking column in column selection mode");
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message("Yanking column...".to_string());
                         YankBehavior::yank_column(self);
                     }
@@ -2544,7 +2550,7 @@ impl EnhancedTuiApp {
             info!("Escape pressed in Results mode with active search - clearing search");
             self.state_container.set_search_pattern(String::new());
             self.state_container.clear_search();
-            self.buffer_mut()
+            self.state_container
                 .set_status_message("Search cleared".to_string());
             return Ok(false);
         }
@@ -5993,7 +5999,13 @@ impl EnhancedTuiApp {
 
     fn render_column_stats(&self, f: &mut Frame, area: Rect) {
         // Delegate to the stats widget
-        self.stats_widget.render(f, area, self.buffer());
+        self.stats_widget.render(
+            f,
+            area,
+            self.state_container
+                .current_buffer()
+                .expect("Buffer should exist"),
+        );
     }
 
     // === Editor Widget Helper Methods ===
@@ -7009,11 +7021,15 @@ impl NavigationBehavior for EnhancedTuiApp {
     }
 
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
-        self.buffer_mut()
+        self.state_container
+            .current_buffer_mut()
+            .expect("Buffer should exist")
     }
 
     fn buffer(&self) -> &dyn BufferAPI {
-        self.buffer()
+        self.state_container
+            .current_buffer()
+            .expect("Buffer should exist")
     }
 
     fn state_container(&self) -> &AppStateContainer {
@@ -7080,11 +7096,15 @@ impl InputBehavior for EnhancedTuiApp {
 
 impl YankBehavior for EnhancedTuiApp {
     fn buffer(&self) -> &dyn BufferAPI {
-        self.buffer()
+        self.state_container
+            .current_buffer()
+            .expect("Buffer should exist")
     }
 
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
-        self.buffer_mut()
+        self.state_container
+            .current_buffer_mut()
+            .expect("Buffer should exist")
     }
 
     fn state_container(&self) -> &AppStateContainer {
@@ -7092,7 +7112,7 @@ impl YankBehavior for EnhancedTuiApp {
     }
 
     fn set_status_message(&mut self, message: String) {
-        self.set_status_message(message)
+        self.state_container.set_status_message(message)
     }
 
     fn set_error_status(&mut self, prefix: &str, error: anyhow::Error) {
@@ -7110,11 +7130,15 @@ impl BufferManagementBehavior for EnhancedTuiApp {
     }
 
     fn buffer(&self) -> &dyn BufferAPI {
-        self.buffer()
+        self.state_container
+            .current_buffer()
+            .expect("Buffer should exist")
     }
 
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
-        self.buffer_mut()
+        self.state_container
+            .current_buffer_mut()
+            .expect("Buffer should exist")
     }
 
     fn config(&self) -> &Config {

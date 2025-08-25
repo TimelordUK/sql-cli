@@ -3736,7 +3736,7 @@ impl ViewportEfficiency {
                 "\n\n  Next column needs: {}w (+1 separator)",
                 next_width
             ));
-            if next_width + 1 <= self.wasted_space {
+            if next_width < self.wasted_space {
                 efficiency_analysis.push_str(" ✓ FITS!");
             } else {
                 efficiency_analysis.push_str(&format!(" ✗ Too wide (have {}w)", self.wasted_space));

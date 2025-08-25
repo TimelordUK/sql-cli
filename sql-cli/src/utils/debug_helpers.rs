@@ -1,4 +1,5 @@
 use std::fs::OpenOptions;
+#[allow(unused_imports)]
 use std::io::Write;
 use std::sync::Mutex;
 use std::sync::OnceLock;

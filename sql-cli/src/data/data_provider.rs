@@ -124,7 +124,7 @@ pub trait DataProvider: Send + Sync + Debug {
 
     /// Get the data type of a specific column
     /// This should be cached/determined at load time, not computed on each call
-    fn get_column_type(&self, column_index: usize) -> DataType {
+    fn get_column_type(&self, _column_index: usize) -> DataType {
         // Default implementation: Unknown
         // Implementations should override with actual type detection
         DataType::Unknown
@@ -169,7 +169,7 @@ pub trait DataViewProvider: DataProvider {
 
     /// Get sorted indices for a column (for read-only sorting)
     /// Returns a vector of indices in sorted order
-    fn get_sorted_indices(&self, column_index: usize, ascending: bool) -> Vec<usize> {
+    fn get_sorted_indices(&self, _column_index: usize, _ascending: bool) -> Vec<usize> {
         // Default implementation: return unsorted indices
         (0..self.get_row_count()).collect()
     }
