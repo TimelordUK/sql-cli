@@ -164,6 +164,14 @@ impl DebugContext for EnhancedTuiApp {
         &self.viewport_manager
     }
 
+    fn get_state_container(&self) -> &AppStateContainer {
+        &self.state_container
+    }
+
+    fn get_state_container_mut(&mut self) -> &mut AppStateContainer {
+        &mut self.state_container
+    }
+
     fn get_navigation_timings(&self) -> &Vec<String> {
         &self.navigation_timings
     }

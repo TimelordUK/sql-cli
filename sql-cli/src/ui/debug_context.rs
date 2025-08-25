@@ -3,6 +3,7 @@
 //! This module provides a trait that encapsulates all debug-related operations,
 //! allowing them to be organized separately from the main TUI logic.
 
+use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, Buffer, BufferAPI, BufferManager};
 use crate::ui::shadow_state::ShadowStateManager;
 use crate::ui::viewport_manager::ViewportManager;
@@ -22,6 +23,8 @@ pub trait DebugContext {
     // Additional accessors for viewport and buffer management
     fn get_buffer_manager(&self) -> &BufferManager;
     fn get_viewport_manager(&self) -> &RefCell<Option<ViewportManager>>;
+    fn get_state_container(&self) -> &AppStateContainer;
+    fn get_state_container_mut(&mut self) -> &mut AppStateContainer;
 
     // Additional accessors for the full debug implementation
     fn get_navigation_timings(&self) -> &Vec<String>;
@@ -138,7 +141,25 @@ pub trait DebugContext {
         debug_info.push_str("\n==========================================\n");
 
         // Store the debug info in the widget
-        self.get_debug_widget_mut().set_content(debug_info);
+        self.get_debug_widget_mut().set_content(debug_info.clone());
+
+        // Copy to clipboard
+        match self
+            .get_state_container_mut()
+            .write_to_clipboard(&debug_info)
+        {
+            Ok(_) => {
+                let status_msg = format!(
+                    "DEBUG INFO copied to clipboard ({} chars)!",
+                    debug_info.len()
+                );
+                self.buffer_mut().set_status_message(status_msg);
+            }
+            Err(e) => {
+                let status_msg = format!("Clipboard error: {}", e);
+                self.buffer_mut().set_status_message(status_msg);
+            }
+        }
     }
 
     // Required helper methods that implementations must provide
