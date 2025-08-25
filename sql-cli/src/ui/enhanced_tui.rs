@@ -20,6 +20,7 @@ use crate::data::data_view::DataView;
 use crate::debug::{DebugRegistry, MemoryTracker};
 use crate::debug_service::DebugService;
 use crate::help_text::HelpText;
+use crate::services::{QueryExecutionService, QueryOrchestrator};
 use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::state::StateDispatcher;
@@ -129,6 +130,9 @@ pub struct EnhancedTuiApp {
 
     // Table widget manager for centralized table state/rendering
     table_widget_manager: RefCell<TableWidgetManager>,
+
+    // Services
+    query_orchestrator: QueryOrchestrator,
 
     // Debug system
     pub(crate) debug_registry: DebugRegistry,
@@ -1191,6 +1195,10 @@ impl EnhancedTuiApp {
             viewport_efficiency: RefCell::new(None),
             shadow_state: RefCell::new(crate::ui::shadow_state::ShadowStateManager::new()),
             table_widget_manager: RefCell::new(TableWidgetManager::new()),
+            query_orchestrator: QueryOrchestrator::new(
+                config.behavior.case_insensitive_default,
+                config.behavior.hide_empty_columns,
+            ),
             debug_registry: DebugRegistry::new(),
             memory_tracker: MemoryTracker::new(100),
         };
@@ -1387,7 +1395,7 @@ impl EnhancedTuiApp {
         app.set_input_text(auto_query.clone());
 
         if app.config.behavior.auto_execute_on_load {
-            if let Err(e) = app.execute_query(&auto_query) {
+            if let Err(e) = app.execute_query_v2(&auto_query) {
                 // If auto-query fails, just log it in status but don't fail the load
                 app.state_container.set_status_message(format!(
                     "{} loaded: table '{}' ({} columns) - Note: {}",
@@ -2385,7 +2393,7 @@ impl EnhancedTuiApp {
                     } else {
                         self.state_container
                             .set_status_message(format!("Processing query: '{}'", query));
-                        self.execute_query(&query)?;
+                        self.execute_query_v2(&query)?;
                     }
                 } else {
                     self.state_container
@@ -3442,124 +3450,55 @@ impl EnhancedTuiApp {
         crate::ui::input_handlers::handle_pretty_query_input(&mut ctx, key)
     }
 
-    fn execute_query(&mut self, query: &str) -> Result<()> {
-        info!(target: "query", "Executing query: {}", query);
+    fn execute_query_v2(&mut self, query: &str) -> Result<()> {
+        // Use orchestrator to handle all the query execution logic
+        let context = self.query_orchestrator.execute_query(
+            query,
+            &mut self.state_container,
+            &self.vim_search_adapter,
+        );
 
-        // 1. Clear previous search state so n/N keys work properly
-        // This fixes the bug where N key was stuck in search mode after query execution
-        self.state_container.clear_search();
-        self.state_container.clear_column_search();
-        // Also clear vim search state
-        self.vim_search_adapter.borrow_mut().cancel_search();
-
-        // 2. Save query to buffer and state container
-        self.state_container.set_last_query(query.to_string());
-        self.state_container
-            .set_last_executed_query(query.to_string());
-
-        // 3. Update status
-        self.state_container
-            .set_status_message(format!("Executing query: '{}'...", query));
-        let start_time = std::time::Instant::now();
-
-        // 3. Execute query on DataView
-        let query_start = std::time::Instant::now();
-        let result = if let Some(dataview) = self.state_container.get_buffer_dataview() {
-            // Get the DataTable Arc (should add source_arc() method to DataView to avoid cloning)
-            let table_arc = Arc::new(dataview.source().clone());
-            let case_insensitive = self.state_container.is_case_insensitive();
-
-            // Execute using QueryEngine
-            let engine =
-                crate::data::query_engine::QueryEngine::with_case_insensitive(case_insensitive);
-            engine.execute(table_arc, query)
-        } else {
-            return Err(anyhow::anyhow!("No data loaded"));
-        };
-        let query_duration = query_start.elapsed();
-        info!("Query execution took {:?}", query_duration);
-
-        // 4. Handle result
-        match result {
-            Ok(new_dataview) => {
-                let duration = start_time.elapsed();
-                let row_count = new_dataview.row_count();
-                let col_count = new_dataview.column_count();
-
-                // Store the new DataView in buffer
+        match context {
+            Ok(ctx) => {
+                // Apply the new DataView
                 self.state_container
-                    .set_dataview(Some(new_dataview.clone()));
+                    .set_dataview(Some(ctx.result.dataview.clone()));
 
-                // Apply auto-hide empty columns if configured
-                if self.config.behavior.hide_empty_columns {
-                    if let Some(dataview_mut) = self.state_container.get_buffer_dataview_mut() {
-                        let count = dataview_mut.hide_empty_columns();
-                        if count > 0 {
-                            info!("Auto-hidden {} empty columns after query execution", count);
-                        }
-                    }
-                }
+                // Update viewport
+                self.update_viewport_manager(Some(ctx.result.dataview.clone()));
 
-                // Update ViewportManager with the new DataView (after potential column hiding)
-                let final_dataview = self
-                    .buffer()
-                    .get_dataview()
-                    .cloned()
-                    .unwrap_or(new_dataview);
-                self.update_viewport_manager(Some(final_dataview));
+                // Update navigation state
+                self.state_container
+                    .update_data_size(ctx.result.stats.row_count, ctx.result.stats.column_count);
 
-                // Update NavigationState with data dimensions
-                self.state_container.update_data_size(row_count, col_count);
-
-                // Calculate optimal column widths for the new data
+                // Calculate column widths
                 self.calculate_optimal_column_widths();
 
-                // Update status
-                self.state_container.set_status_message(format!(
-                    "Query executed: {} rows, {} columns ({} ms)",
-                    row_count,
-                    col_count,
-                    duration.as_millis()
-                ));
+                // Update status message
+                self.state_container
+                    .set_status_message(ctx.result.status_message());
 
-                // 5. Add to history
-                let columns = self
-                    .buffer()
-                    .get_dataview()
-                    .map(|v| v.column_names())
-                    .unwrap_or_default();
-
-                let table_name = self
-                    .buffer()
-                    .get_dataview()
-                    .map(|v| v.source().name.clone())
-                    .unwrap_or_else(|| "data".to_string());
-
+                // Add to history
                 self.state_container
                     .command_history_mut()
                     .add_entry_with_schema(
-                        query.to_string(),
-                        true, // success
-                        Some(duration.as_millis() as u64),
-                        columns,
-                        Some(table_name),
+                        ctx.query.clone(),
+                        true,
+                        Some(ctx.result.stats.execution_time.as_millis() as u64),
+                        ctx.result.column_names(),
+                        Some(ctx.result.table_name()),
                     )?;
 
-                // 6. Clear any active filters (new query should start with clean state)
-                self.state_container.set_filter_pattern(String::new());
-                self.state_container.set_fuzzy_filter_pattern(String::new());
-                self.state_container.set_filter_active(false);
-                self.state_container.set_fuzzy_filter_active(false);
-
-                // 7. Switch to results mode and reset navigation using centralized reset
+                // Switch to results mode
                 self.state_container.set_mode(AppMode::Results);
 
-                // Observe state transition
+                // Reset table
+                self.reset_table_state();
+
+                // Handle shadow state (TUI-specific)
                 self.shadow_state
                     .borrow_mut()
                     .observe_mode_change(AppMode::Results, "execute_query_success");
-
-                self.reset_table_state();
 
                 Ok(())
             }
@@ -3567,14 +3506,12 @@ impl EnhancedTuiApp {
                 let error_msg = format!("Query error: {}", e);
                 self.state_container.set_status_message(error_msg.clone());
 
-                // Add failed query to history
-                self.state_container.command_history_mut().add_entry(
-                    query.to_string(),
-                    false,
-                    None,
-                )?;
+                // Add to history as failed
+                self.state_container
+                    .command_history_mut()
+                    .add_entry_with_schema(query.to_string(), false, None, vec![], None)?;
 
-                Err(anyhow::anyhow!(error_msg))
+                Err(e)
             }
         }
     }
@@ -6031,7 +5968,7 @@ impl EnhancedTuiApp {
                 // Execute the SQL query
                 self.state_container
                     .set_status_message(format!("Processing query: '{}'", query));
-                if let Err(e) = self.execute_query(&query) {
+                if let Err(e) = self.execute_query_v2(&query) {
                     self.state_container
                         .set_status_message(format!("Error executing query: {}", e));
                 }
