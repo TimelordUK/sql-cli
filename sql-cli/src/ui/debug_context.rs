@@ -434,9 +434,21 @@ pub trait DebugContext {
         debug_info
     }
 
+    // DataTable schema can be a default implementation now that we have buffer_manager
+    fn debug_generate_datatable_schema(&self) -> String {
+        let mut debug_info = String::new();
+        if let Some(buffer) = self.get_buffer_manager().current() {
+            if let Some(dataview) = buffer.get_dataview() {
+                let datatable = dataview.source();
+                debug_info.push_str("\n========== DATATABLE SCHEMA ==========\n");
+                debug_info.push_str(&datatable.get_schema_summary());
+            }
+        }
+        debug_info
+    }
+
     // Methods that need to be implemented by the TUI (need access to TUI fields)
     fn debug_generate_parser_info(&self, query: &str) -> String;
-    fn debug_generate_datatable_schema(&self) -> String;
     fn debug_generate_navigation_state(&self) -> String;
     fn debug_generate_column_search_state(&self) -> String;
     fn debug_generate_trace_logs(&self) -> String;

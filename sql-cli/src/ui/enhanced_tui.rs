@@ -91,7 +91,6 @@ pub struct EnhancedTuiApp {
     // Configuration
     config: Config,
 
-    // command_history: CommandHistory, // MIGRATED to AppStateContainer
     sql_highlighter: SqlHighlighter,
     pub(crate) debug_widget: DebugWidget,
     editor_widget: EditorWidget,
@@ -305,11 +304,7 @@ impl DebugContext for EnhancedTuiApp {
     // debug_generate_buffer_state now uses default implementation from trait
     // debug_generate_results_state now uses default implementation from trait
     // debug_generate_memory_info now uses default implementation from trait
-
-    fn debug_generate_datatable_schema(&self) -> String {
-        EnhancedTuiApp::debug_generate_datatable_schema(self)
-    }
-
+    // debug_generate_datatable_schema now uses default implementation from trait
     // debug_generate_dataview_state now uses default implementation from trait
 
     // debug_generate_viewport_state now uses default implementation from trait
@@ -6050,32 +6045,8 @@ impl EnhancedTuiApp {
     /// Generate the buffer state debug section
     // debug_generate_buffer_state and debug_generate_results_state moved to DebugContext trait defaults
 
-    /// Generate memory usage debug section
-    fn debug_generate_memory_info(&self) -> String {
-        format!(
-            "\n========== MEMORY USAGE ==========\n\
-            Current Memory: {} MB\n{}",
-            crate::utils::memory_tracker::get_memory_mb(),
-            crate::utils::memory_tracker::format_memory_history()
-        )
-    }
-
-    /// Generate the trace logs debug section
-    fn debug_generate_datatable_schema(&self) -> String {
-        let mut debug_info = String::new();
-        if let Some(buffer) = self.buffer_manager.current() {
-            if let Some(dataview) = buffer.get_dataview() {
-                let datatable = dataview.source();
-                debug_info.push_str("\n========== DATATABLE SCHEMA ==========\n");
-                debug_info.push_str(&datatable.get_schema_summary());
-            }
-        }
-        debug_info
-    }
-
-    // debug_generate_dataview_state moved to DebugContext trait default implementation
-
-    // debug_generate_viewport_state moved to DebugContext trait default implementation
+    // debug_generate_memory_info moved to DebugContext trait default implementation
+    // debug_generate_datatable_schema moved to DebugContext trait default implementation
 
     fn debug_generate_navigation_state(&self) -> String {
         let mut debug_info = String::new();
