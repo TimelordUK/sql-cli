@@ -16,7 +16,8 @@ impl EnhancedTuiApp {
 
         // Register BufferManager provider
         let buffers: Vec<Arc<dyn crate::buffer::BufferAPI>> = self
-            .buffer_manager
+            .state_container()
+            .buffers()
             .all_buffers()
             .iter()
             .map(|b| Arc::new(b.clone()) as Arc<dyn crate::buffer::BufferAPI>)
@@ -24,12 +25,12 @@ impl EnhancedTuiApp {
 
         let buffer_manager_provider = Arc::new(BufferManagerDebugProvider::new(
             buffers,
-            self.buffer_manager.current_index(),
+            self.state_container().buffers().current_index(),
         ));
         self.debug_registry.register(buffer_manager_provider);
 
         // Register current buffer provider
-        if let Some(buffer) = self.buffer_manager.current() {
+        if let Some(buffer) = self.state_container().buffers().current() {
             let buffer_provider = Arc::new(BufferDebugProvider::new(
                 Arc::new(buffer.clone()) as Arc<dyn crate::buffer::BufferAPI>
             ));

@@ -105,8 +105,8 @@ pub struct EnhancedTuiApp {
     key_dispatcher: KeyDispatcher,                 // Maps keys to actions
     key_mapper: KeyMapper,                         // New action-based key mapping system
 
-    // Buffer management (new - for supporting multiple files)
-    pub(crate) buffer_manager: BufferManager,
+    // Buffer management now in AppStateContainer
+    // buffer_manager field removed - using state_container.buffers() instead
     buffer_handler: BufferHandler, // Handles buffer operations like switching
 
     // Performance tracking
@@ -159,7 +159,7 @@ impl DebugContext for EnhancedTuiApp {
     }
 
     fn get_buffer_manager(&self) -> &BufferManager {
-        &self.buffer_manager
+        self.state_container.buffers()
     }
 
     fn get_viewport_manager(&self) -> &RefCell<Option<ViewportManager>> {
@@ -192,11 +192,11 @@ impl DebugContext for EnhancedTuiApp {
     }
 
     fn get_buffer_mut_if_available(&mut self) -> Option<&mut Buffer> {
-        self.buffer_manager.current_mut()
+        self.state_container.buffers_mut().current_mut()
     }
 
     fn set_mode_via_shadow_state(&mut self, mode: AppMode, trigger: &str) {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
+        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
             self.shadow_state
                 .borrow_mut()
                 .set_mode(mode, buffer, trigger);
@@ -206,7 +206,7 @@ impl DebugContext for EnhancedTuiApp {
     fn collect_current_state(
         &self,
     ) -> (AppMode, String, String, Option<usize>, usize, usize, usize) {
-        if let Some(buffer) = self.buffer_manager.current() {
+        if let Some(buffer) = self.state_container.buffers().current() {
             let mode = buffer.get_mode();
             if mode == AppMode::Debug {
                 (mode, String::new(), String::new(), None, 0, 0, 0)
@@ -239,13 +239,14 @@ impl DebugContext for EnhancedTuiApp {
 
     fn format_buffer_manager_state(&self) -> String {
         let buffer_names: Vec<String> = self
-            .buffer_manager
+            .state_container
+            .buffers()
             .all_buffers()
             .iter()
             .map(|b| b.get_name())
             .collect();
-        let buffer_count = self.buffer_manager.all_buffers().len();
-        let buffer_index = self.buffer_manager.current_index();
+        let buffer_count = self.state_container.buffers().all_buffers().len();
+        let buffer_index = self.state_container.buffers().current_index();
 
         format!(
             "\n========== BUFFER MANAGER STATE ==========\n\
@@ -328,6 +329,17 @@ impl DebugContext for EnhancedTuiApp {
 }
 
 impl EnhancedTuiApp {
+    // ========== STATE ACCESS ==========
+    /// Get immutable reference to state container for debug purposes
+    pub(crate) fn state_container(&self) -> &AppStateContainer {
+        &self.state_container
+    }
+
+    /// Get mutable reference to state container for debug purposes  
+    pub(crate) fn state_container_mut(&mut self) -> &mut AppStateContainer {
+        &mut self.state_container
+    }
+
     // ========== VIEWPORT CALCULATIONS ==========
 
     /// Calculate the number of data rows available for the table
@@ -346,7 +358,8 @@ impl EnhancedTuiApp {
 
     /// Get current buffer if available (for reading)
     fn current_buffer(&self) -> Option<&dyn buffer::BufferAPI> {
-        self.buffer_manager
+        self.state_container
+            .buffers()
             .current()
             .map(|b| b as &dyn buffer::BufferAPI)
     }
@@ -361,7 +374,8 @@ impl EnhancedTuiApp {
     /// Get current mutable buffer (panics if none exists)
     /// Use this when we know a buffer should always exist
     fn buffer_mut(&mut self) -> &mut buffer::Buffer {
-        self.buffer_manager
+        self.state_container
+            .buffers_mut()
             .current_mut()
             .expect("No buffer available - this should not happen")
     }
@@ -898,7 +912,7 @@ impl EnhancedTuiApp {
     fn get_data_provider(&self) -> Option<Box<dyn DataProvider + '_>> {
         // For now, we'll use BufferAdapter for Buffer data
         // In the future, we can check data source type and return appropriate adapter
-        if let Some(buffer) = self.buffer_manager.current() {
+        if let Some(buffer) = self.state_container.buffers().current() {
             // V51: Check for DataView first, then DataTable
             if buffer.has_dataview() {
                 return Some(Box::new(BufferAdapter::new(buffer)));
@@ -1110,8 +1124,7 @@ impl EnhancedTuiApp {
             );
         }
 
-        // Create buffer manager first
-
+        // Create buffer manager for the state container (no longer duplicated)
         let mut buffer_manager = BufferManager::new();
         let mut buffer = buffer::Buffer::new(1);
         // Sync initial settings from config
@@ -1120,16 +1133,8 @@ impl EnhancedTuiApp {
         buffer.set_show_row_numbers(config.display.show_row_numbers);
         buffer_manager.add_buffer(buffer);
 
-        // Create a second buffer manager for the state container (temporary during migration)
-        let mut container_buffer_manager = BufferManager::new();
-        let mut container_buffer = buffer::Buffer::new(1);
-        container_buffer.set_case_insensitive(config.behavior.case_insensitive_default);
-        container_buffer.set_compact_mode(config.display.compact_mode);
-        container_buffer.set_show_row_numbers(config.display.show_row_numbers);
-        container_buffer_manager.add_buffer(container_buffer);
-
-        // Initialize state container (no Arc needed)
-        let mut state_container = match AppStateContainer::new(container_buffer_manager) {
+        // Initialize state container (owns the only buffer_manager)
+        let mut state_container = match AppStateContainer::new(buffer_manager) {
             Ok(container) => container,
             Err(e) => {
                 panic!("Failed to initialize AppStateContainer: {}", e);
@@ -1170,8 +1175,7 @@ impl EnhancedTuiApp {
             key_dispatcher: KeyDispatcher::new(),
             key_mapper: KeyMapper::new(),
             // ========== INITIALIZATION ==========
-            // CSV fields now in Buffer
-            buffer_manager,
+            // CSV fields now in Buffer (buffer_manager in AppStateContainer)
             buffer_handler: BufferHandler::new(),
             navigation_timings: Vec::new(),
             render_timings: Vec::new(),
@@ -1208,7 +1212,7 @@ impl EnhancedTuiApp {
     /// Set up state coordination between dispatcher and components
     fn setup_state_coordination(&mut self) {
         // Connect state dispatcher to current buffer
-        if let Some(current_buffer) = self.buffer_manager.current() {
+        if let Some(current_buffer) = self.state_container.buffers().current() {
             let buffer_rc = std::rc::Rc::new(std::cell::RefCell::new(current_buffer.clone()));
             self.state_dispatcher.borrow_mut().set_buffer(buffer_rc);
         }
@@ -1305,7 +1309,7 @@ impl EnhancedTuiApp {
         // Replace the default buffer with a file buffer using direct DataTable
         {
             // Clear all buffers and add a buffer with DataTable
-            app.buffer_manager.clear_all();
+            app.state_container.buffers_mut().clear_all();
             let mut buffer = buffer::Buffer::new(1);
             buffer.set_datatable(datatable_opt);
             info!("Created buffer with direct DataTable");
@@ -1358,7 +1362,7 @@ impl EnhancedTuiApp {
                     .update_data_size(dataview.row_count(), dataview.column_count());
             }
 
-            app.buffer_manager.add_buffer(buffer);
+            app.state_container.buffers_mut().add_buffer(buffer);
         }
 
         // Update parser with file columns
@@ -1812,7 +1816,7 @@ impl EnhancedTuiApp {
         normalized_key: crossterm::event::KeyEvent,
     ) -> Result<Option<bool>> {
         let key_dispatcher = self.key_dispatcher.clone();
-        let editor_result = if let Some(buffer) = self.buffer_manager.current_mut() {
+        let editor_result = if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
             self.editor_widget
                 .handle_key(normalized_key.clone(), &key_dispatcher, buffer)?
         } else {
@@ -1862,7 +1866,7 @@ impl EnhancedTuiApp {
     /// Handle mode switch from editor widget
     fn handle_editor_mode_switch(&mut self, mode: AppMode) {
         debug!(target: "shadow_state", "EditorAction::SwitchMode to {:?}", mode);
-        if let Some(buffer) = self.buffer_manager.current_mut() {
+        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
             // Use shadow state to set mode (with write-through to buffer)
             let trigger = match mode {
                 AppMode::Results => "enter_results_mode",
@@ -2020,37 +2024,44 @@ impl EnhancedTuiApp {
             match action {
                 "quit" => return Ok(Some(true)),
                 "next_buffer" => {
-                    let message = self.buffer_handler.next_buffer(&mut self.buffer_manager);
+                    let message = self
+                        .buffer_handler
+                        .next_buffer(self.state_container.buffers_mut());
                     debug!("{}", message);
                     return Ok(Some(false));
                 }
                 "previous_buffer" => {
                     let message = self
                         .buffer_handler
-                        .previous_buffer(&mut self.buffer_manager);
+                        .previous_buffer(self.state_container.buffers_mut());
                     debug!("{}", message);
                     return Ok(Some(false));
                 }
                 "quick_switch_buffer" => {
-                    let message = self.buffer_handler.quick_switch(&mut self.buffer_manager);
+                    let message = self
+                        .buffer_handler
+                        .quick_switch(self.state_container.buffers_mut());
                     debug!("{}", message);
                     return Ok(Some(false));
                 }
                 "new_buffer" => {
                     let message = self
                         .buffer_handler
-                        .new_buffer(&mut self.buffer_manager, &self.config);
+                        .new_buffer(self.state_container.buffers_mut(), &self.config);
                     debug!("{}", message);
                     return Ok(Some(false));
                 }
                 "close_buffer" => {
-                    let (success, message) =
-                        self.buffer_handler.close_buffer(&mut self.buffer_manager);
+                    let (success, message) = self
+                        .buffer_handler
+                        .close_buffer(self.state_container.buffers_mut());
                     debug!("{}", message);
                     return Ok(Some(!success)); // Exit if we couldn't close (only one left)
                 }
                 "list_buffers" => {
-                    let buffer_list = self.buffer_handler.list_buffers(&self.buffer_manager);
+                    let buffer_list = self
+                        .buffer_handler
+                        .list_buffers(self.state_container.buffers());
                     for line in &buffer_list {
                         debug!("{}", line);
                     }
@@ -2059,9 +2070,10 @@ impl EnhancedTuiApp {
                 action if action.starts_with("switch_to_buffer_") => {
                     if let Some(buffer_num_str) = action.strip_prefix("switch_to_buffer_") {
                         if let Ok(buffer_num) = buffer_num_str.parse::<usize>() {
-                            let message = self
-                                .buffer_handler
-                                .switch_to_buffer(&mut self.buffer_manager, buffer_num - 1);
+                            let message = self.buffer_handler.switch_to_buffer(
+                                self.state_container.buffers_mut(),
+                                buffer_num - 1,
+                            );
                             debug!("{}", message);
                         }
                     }
@@ -2115,7 +2127,7 @@ impl EnhancedTuiApp {
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
-                if let Some(buffer) = self.buffer_manager.current_mut() {
+                if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                     if buffer.navigate_history_up(&history_commands) {
                         self.sync_all_input_states();
                         self.buffer_mut()
@@ -2136,7 +2148,7 @@ impl EnhancedTuiApp {
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
-                if let Some(buffer) = self.buffer_manager.current_mut() {
+                if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                     if buffer.navigate_history_down(&history_commands) {
                         self.sync_all_input_states();
                         self.buffer_mut()
@@ -2157,7 +2169,7 @@ impl EnhancedTuiApp {
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
-                if let Some(buffer) = self.buffer_manager.current_mut() {
+                if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                     if buffer.navigate_history_up(&history_commands) {
                         self.sync_all_input_states();
                         self.buffer_mut()
@@ -2174,7 +2186,7 @@ impl EnhancedTuiApp {
                 let history_commands: Vec<String> =
                     history_entries.iter().map(|e| e.command.clone()).collect();
 
-                if let Some(buffer) = self.buffer_manager.current_mut() {
+                if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                     if buffer.navigate_history_down(&history_commands) {
                         self.sync_all_input_states();
                         self.buffer_mut()
@@ -2196,7 +2208,7 @@ impl EnhancedTuiApp {
         if let Some(action) = self.key_dispatcher.get_command_action(key) {
             match action {
                 "expand_asterisk" => {
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                    if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                         if buffer.expand_asterisk(&self.hybrid_parser) {
                             // Sync for rendering if needed
                             if buffer.get_edit_mode() == EditMode::SingleLine {
@@ -2209,7 +2221,7 @@ impl EnhancedTuiApp {
                     return Ok(Some(false));
                 }
                 "expand_asterisk_visible" => {
-                    if let Some(buffer) = self.buffer_manager.current_mut() {
+                    if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                         if buffer.expand_asterisk_visible() {
                             // Sync for rendering if needed
                             if buffer.get_edit_mode() == EditMode::SingleLine {
@@ -3239,28 +3251,104 @@ impl EnhancedTuiApp {
     }
 
     fn handle_help_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // Create context and delegate to extracted handler
-        let mut ctx = crate::ui::input_handlers::HelpInputContext {
-            buffer_manager: &mut self.buffer_manager,
-            help_widget: &mut self.help_widget,
-            state_container: &self.state_container,
-            shadow_state: &self.shadow_state,
+        // Handle help input directly to avoid borrow conflicts
+        let result = match key.code {
+            crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => {
+                self.help_widget.on_exit();
+                self.state_container.set_help_visible(false);
+                let _mode = if let Some(buffer) = self.state_container.current_buffer() {
+                    buffer.mode.clone()
+                } else {
+                    crate::buffer::AppMode::Command
+                };
+                if let Some(buffer) = self.state_container.current_buffer_mut() {
+                    self.shadow_state.borrow_mut().set_mode(
+                        crate::buffer::AppMode::Command,
+                        buffer,
+                        "help_exit",
+                    );
+                }
+                Ok(true)
+            }
+            _ => {
+                // Delegate other keys to help widget
+                self.help_widget.handle_key(key);
+                Ok(false)
+            }
         };
 
-        crate::ui::input_handlers::handle_help_input(&mut ctx, key)
+        result
     }
 
     // ========== HELP NAVIGATION ==========
 
     fn handle_history_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // Split borrows to avoid borrow checker conflicts
-        let result = {
-            let mut ctx = crate::ui::history_input_handler::HistoryInputContext {
-                state_container: &self.state_container,
-                buffer_manager: &mut self.buffer_manager,
-                shadow_state: &self.shadow_state,
-            };
-            crate::ui::history_input_handler::handle_history_input(&mut ctx, key)
+        // Handle history input directly to avoid borrow conflicts
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        let result = match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                crate::ui::history_input_handler::HistoryInputResult::Exit
+            }
+            KeyCode::Esc => {
+                // Cancel history search and restore original input
+                let original_input = self.state_container.cancel_history_search();
+                if let Some(buffer) = self.state_container.current_buffer_mut() {
+                    self.shadow_state.borrow_mut().set_mode(
+                        crate::buffer::AppMode::Command,
+                        buffer,
+                        "history_cancelled",
+                    );
+                    buffer.set_status_message("History search cancelled".to_string());
+                }
+                crate::ui::history_input_handler::HistoryInputResult::SwitchToCommand(Some((
+                    original_input,
+                    0,
+                )))
+            }
+            KeyCode::Enter => {
+                // Accept the selected history command
+                if let Some(command) = self.state_container.accept_history_search() {
+                    if let Some(buffer) = self.state_container.current_buffer_mut() {
+                        self.shadow_state.borrow_mut().set_mode(
+                            crate::buffer::AppMode::Command,
+                            buffer,
+                            "history_accepted",
+                        );
+                        buffer.set_status_message(
+                            "Command loaded from history (cursor at start)".to_string(),
+                        );
+                    }
+                    // Return command with cursor at the beginning for better visibility
+                    crate::ui::history_input_handler::HistoryInputResult::SwitchToCommand(Some((
+                        command, 0,
+                    )))
+                } else {
+                    crate::ui::history_input_handler::HistoryInputResult::Continue
+                }
+            }
+            KeyCode::Up => {
+                self.state_container.history_search_previous();
+                crate::ui::history_input_handler::HistoryInputResult::Continue
+            }
+            KeyCode::Down => {
+                self.state_container.history_search_next();
+                crate::ui::history_input_handler::HistoryInputResult::Continue
+            }
+            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+R cycles through matches
+                self.state_container.history_search_next();
+                crate::ui::history_input_handler::HistoryInputResult::Continue
+            }
+            KeyCode::Backspace => {
+                self.state_container.history_search_backspace();
+                crate::ui::history_input_handler::HistoryInputResult::Continue
+            }
+            KeyCode::Char(c) => {
+                self.state_container.history_search_add_char(c);
+                crate::ui::history_input_handler::HistoryInputResult::Continue
+            }
+            _ => crate::ui::history_input_handler::HistoryInputResult::Continue,
         };
 
         // Handle the result
@@ -3310,7 +3398,7 @@ impl EnhancedTuiApp {
     fn handle_debug_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Create context and delegate to extracted handler
         let mut ctx = crate::ui::input_handlers::DebugInputContext {
-            buffer_manager: &mut self.buffer_manager,
+            buffer_manager: self.state_container.buffers_mut(),
             debug_widget: &mut self.debug_widget,
             shadow_state: &self.shadow_state,
         };
@@ -3340,7 +3428,7 @@ impl EnhancedTuiApp {
     fn handle_pretty_query_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Create context and delegate to extracted handler
         let mut ctx = crate::ui::input_handlers::DebugInputContext {
-            buffer_manager: &mut self.buffer_manager,
+            buffer_manager: self.state_container.buffers_mut(),
             debug_widget: &mut self.debug_widget,
             shadow_state: &self.shadow_state,
         };
@@ -3550,7 +3638,7 @@ impl EnhancedTuiApp {
             // Use helper to set text through buffer
             self.set_input_text(result.new_text.clone());
             // Set cursor to correct position
-            if let Some(buffer) = self.buffer_manager.current_mut() {
+            if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                 buffer.set_input_cursor_position(result.new_cursor_position);
                 // Sync for rendering
                 if self.buffer().get_edit_mode() == EditMode::SingleLine {
@@ -3594,7 +3682,7 @@ impl EnhancedTuiApp {
             // Use helper to set text through buffer
             self.set_input_text(new_query.clone());
             // Set cursor to correct position
-            if let Some(buffer) = self.buffer_manager.current_mut() {
+            if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                 buffer.set_input_cursor_position(cursor_pos_new);
                 // Sync all input states after undo/redo
                 self.sync_all_input_states();
@@ -5241,8 +5329,8 @@ impl EnhancedTuiApp {
 
     /// Add buffer information to status spans
     fn add_buffer_information(&self, spans: &mut Vec<Span>) {
-        let index = self.buffer_manager.current_index();
-        let total = self.buffer_manager.all_buffers().len();
+        let index = self.state_container.buffers().current_index();
+        let total = self.state_container.buffers().all_buffers().len();
 
         // Show buffer indicator if multiple buffers
         if total > 1 {
@@ -5254,7 +5342,7 @@ impl EnhancedTuiApp {
         }
 
         // Show current buffer name
-        if let Some(buffer) = self.buffer_manager.current() {
+        if let Some(buffer) = self.state_container.buffers().current() {
             spans.push(Span::raw(" "));
             let name = buffer.get_name();
             let modified = if buffer.is_modified() { "*" } else { "" };
@@ -5875,7 +5963,7 @@ impl EnhancedTuiApp {
     fn handle_column_stats_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Create context and delegate to extracted handler
         let mut ctx = crate::ui::input_handlers::StatsInputContext {
-            buffer_manager: &mut self.buffer_manager,
+            buffer_manager: self.state_container.buffers_mut(),
             stats_widget: &mut self.stats_widget,
             shadow_state: &self.shadow_state,
         };
@@ -5950,7 +6038,9 @@ impl EnhancedTuiApp {
     fn handle_buffer_action(&mut self, action: BufferAction) -> Result<bool> {
         match action {
             BufferAction::NextBuffer => {
-                let message = self.buffer_handler.next_buffer(&mut self.buffer_manager);
+                let message = self
+                    .buffer_handler
+                    .next_buffer(self.state_container.buffers_mut());
                 debug!("{}", message);
                 // Update parser schema for the new buffer
                 self.update_parser_for_current_buffer();
@@ -5959,14 +6049,16 @@ impl EnhancedTuiApp {
             BufferAction::PreviousBuffer => {
                 let message = self
                     .buffer_handler
-                    .previous_buffer(&mut self.buffer_manager);
+                    .previous_buffer(self.state_container.buffers_mut());
                 debug!("{}", message);
                 // Update parser schema for the new buffer
                 self.update_parser_for_current_buffer();
                 Ok(false)
             }
             BufferAction::QuickSwitch => {
-                let message = self.buffer_handler.quick_switch(&mut self.buffer_manager);
+                let message = self
+                    .buffer_handler
+                    .quick_switch(self.state_container.buffers_mut());
                 debug!("{}", message);
                 // Update parser schema for the new buffer
                 self.update_parser_for_current_buffer();
@@ -5975,17 +6067,21 @@ impl EnhancedTuiApp {
             BufferAction::NewBuffer => {
                 let message = self
                     .buffer_handler
-                    .new_buffer(&mut self.buffer_manager, &self.config);
+                    .new_buffer(self.state_container.buffers_mut(), &self.config);
                 debug!("{}", message);
                 Ok(false)
             }
             BufferAction::CloseBuffer => {
-                let (success, message) = self.buffer_handler.close_buffer(&mut self.buffer_manager);
+                let (success, message) = self
+                    .buffer_handler
+                    .close_buffer(self.state_container.buffers_mut());
                 debug!("{}", message);
                 Ok(!success) // Exit if we couldn't close (only one left)
             }
             BufferAction::ListBuffers => {
-                let buffer_list = self.buffer_handler.list_buffers(&self.buffer_manager);
+                let buffer_list = self
+                    .buffer_handler
+                    .list_buffers(self.state_container.buffers());
                 // For now, just log the list - later we can show a popup
                 for line in &buffer_list {
                     debug!("{}", line);
@@ -5995,7 +6091,7 @@ impl EnhancedTuiApp {
             BufferAction::SwitchToBuffer(buffer_index) => {
                 let message = self
                     .buffer_handler
-                    .switch_to_buffer(&mut self.buffer_manager, buffer_index);
+                    .switch_to_buffer(self.state_container.buffers_mut(), buffer_index);
                 debug!("{}", message);
 
                 // Update parser schema for the new buffer
@@ -6007,7 +6103,7 @@ impl EnhancedTuiApp {
     }
 
     fn handle_expand_asterisk(&mut self) -> Result<bool> {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
+        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
             if buffer.expand_asterisk(&self.hybrid_parser) {
                 // Sync for rendering if needed
                 if buffer.get_edit_mode() == EditMode::SingleLine {
@@ -6302,7 +6398,7 @@ impl EnhancedTuiApp {
     }
 
     fn show_pretty_query(&mut self) {
-        if let Some(buffer) = self.buffer_manager.current_mut() {
+        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
             self.shadow_state.borrow_mut().set_mode(
                 AppMode::PrettyQuery,
                 buffer,
@@ -7003,7 +7099,7 @@ impl ColumnBehavior for EnhancedTuiApp {
 
 impl InputBehavior for EnhancedTuiApp {
     fn buffer_manager(&mut self) -> &mut BufferManager {
-        &mut self.buffer_manager
+        self.state_container.buffers_mut()
     }
 
     fn cursor_manager(&mut self) -> &mut CursorManager {
@@ -7051,7 +7147,7 @@ impl YankBehavior for EnhancedTuiApp {
 
 impl BufferManagementBehavior for EnhancedTuiApp {
     fn buffer_manager(&mut self) -> &mut BufferManager {
-        &mut self.buffer_manager
+        self.state_container.buffers_mut()
     }
 
     fn buffer_handler(&mut self) -> &mut BufferHandler {
@@ -7079,33 +7175,36 @@ impl BufferManagementBehavior for EnhancedTuiApp {
     }
 
     fn next_buffer(&mut self) -> String {
-        self.buffer_handler.next_buffer(&mut self.buffer_manager)
+        self.buffer_handler
+            .next_buffer(self.state_container.buffers_mut())
     }
 
     fn previous_buffer(&mut self) -> String {
         self.buffer_handler
-            .previous_buffer(&mut self.buffer_manager)
+            .previous_buffer(self.state_container.buffers_mut())
     }
 
     fn quick_switch_buffer(&mut self) -> String {
-        self.buffer_handler.quick_switch(&mut self.buffer_manager)
+        self.buffer_handler
+            .quick_switch(self.state_container.buffers_mut())
     }
 
     fn close_buffer(&mut self) -> (bool, String) {
-        self.buffer_handler.close_buffer(&mut self.buffer_manager)
+        self.buffer_handler
+            .close_buffer(self.state_container.buffers_mut())
     }
 
     fn switch_to_buffer(&mut self, index: usize) -> String {
         self.buffer_handler
-            .switch_to_buffer(&mut self.buffer_manager, index)
+            .switch_to_buffer(self.state_container.buffers_mut(), index)
     }
 
     fn buffer_count(&self) -> usize {
-        self.buffer_manager.all_buffers().len()
+        self.state_container.buffers().all_buffers().len()
     }
 
     fn current_buffer_index(&self) -> usize {
-        self.buffer_manager.current_index()
+        self.state_container.buffers().current_index()
     }
 }
 
@@ -7131,7 +7230,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
 
         // Set the file path for the first buffer if we have multiple files
         if data_files.len() > 1 {
-            if let Some(buffer) = app.buffer_manager.current_mut() {
+            if let Some(buffer) = app.state_container.buffers_mut().current_mut() {
                 buffer.set_file_path(Some(first_file.to_string()));
                 let filename = std::path::Path::new(first_file)
                     .file_name()
@@ -7158,7 +7257,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                         app.new_buffer();
 
                         // Get the current buffer and set it up
-                        if let Some(buffer) = app.buffer_manager.current_mut() {
+                        if let Some(buffer) = app.state_container.buffers_mut().current_mut() {
                             // Create and configure CSV client for this buffer
                             let mut csv_client = CsvApiClient::new();
                             csv_client.set_case_insensitive(case_insensitive);
@@ -7216,7 +7315,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
             }
 
             // Switch back to the first buffer
-            app.buffer_manager.switch_to(0);
+            app.state_container.buffers_mut().switch_to(0);
 
             app.buffer_mut().set_status_message(format!(
                 "Loaded {} files into separate buffers. Use Alt+Tab to switch.",

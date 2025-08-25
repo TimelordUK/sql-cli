@@ -16,7 +16,7 @@ impl EnhancedTuiApp {
         // These will be gradually moved to their own providers
 
         // Add parser info (not yet migrated)
-        if let Some(buffer) = self.buffer_manager.current() {
+        if let Some(buffer) = self.state_container().current_buffer() {
             let query = buffer.input_manager.get_text();
             if !query.is_empty() {
                 let parser_info = self.debug_generate_parser_info(&query);
@@ -83,7 +83,7 @@ impl EnhancedTuiApp {
         if use_registry {
             // Use new registry-based system
             let should_exit_debug = {
-                if let Some(buffer) = self.buffer_manager.current() {
+                if let Some(buffer) = self.state_container().current_buffer() {
                     buffer.mode == crate::buffer::AppMode::Debug
                 } else {
                     false
@@ -91,12 +91,12 @@ impl EnhancedTuiApp {
             };
 
             if should_exit_debug {
-                if let Some(buffer) = self.buffer_manager.current_mut() {
+                if let Some(buffer) = self.state_container_mut().current_buffer_mut() {
                     buffer.mode = crate::buffer::AppMode::Command;
                 }
             } else {
                 // Enter debug mode with registry-generated content
-                if let Some(buffer) = self.buffer_manager.current_mut() {
+                if let Some(buffer) = self.state_container_mut().current_buffer_mut() {
                     buffer.mode = crate::buffer::AppMode::Debug;
                 }
 
