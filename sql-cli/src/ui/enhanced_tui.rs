@@ -2613,7 +2613,7 @@ impl EnhancedTuiApp {
                     }
                     ActionResult::Error(err) => {
                         warn!("Action error: {}", err);
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message(format!("Error: {}", err));
                         return Ok(false);
                     }
@@ -3076,7 +3076,7 @@ impl EnhancedTuiApp {
                             }
                             drop(viewport_manager_borrow);
 
-                            self.buffer_mut()
+                            self.state_container
                                 .set_status_message(format!("Jumped to column: {}", col_name));
                         }
 
@@ -3458,7 +3458,7 @@ impl EnhancedTuiApp {
             .set_last_executed_query(query.to_string());
 
         // 3. Update status
-        self.buffer_mut()
+        self.state_container
             .set_status_message(format!("Executing query: '{}'...", query));
         let start_time = std::time::Instant::now();
 
@@ -3606,7 +3606,7 @@ impl EnhancedTuiApp {
             // New completion context - get fresh suggestions
             let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
             if hybrid_result.suggestions.is_empty() {
-                self.buffer_mut()
+                self.state_container
                     .set_status_message("No completions available".to_string());
                 return;
             }
@@ -3617,7 +3617,7 @@ impl EnhancedTuiApp {
             // Cycle to next suggestion
             self.state_container.next_completion();
         } else {
-            self.buffer_mut()
+            self.state_container
                 .set_status_message("No completions available".to_string());
             return;
         }
@@ -3626,7 +3626,7 @@ impl EnhancedTuiApp {
         let suggestion = if let Some(sugg) = self.state_container.get_current_completion() {
             sugg
         } else {
-            self.buffer_mut()
+            self.state_container
                 .set_status_message("No completion selected".to_string());
             return;
         };
@@ -3688,7 +3688,7 @@ impl EnhancedTuiApp {
             self.state_container
                 .update_completion_context(new_query, cursor_pos_new);
 
-            self.buffer_mut()
+            self.state_container
                 .set_status_message(format!("Inserted: {}", suggestion));
         }
     }
@@ -3747,13 +3747,13 @@ impl EnhancedTuiApp {
                 if pinned_names.contains(&col_name) {
                     // Column is already pinned, unpin it
                     dataview.unpin_column_by_name(&col_name);
-                    self.buffer_mut()
+                    self.state_container
                         .set_status_message(format!("Column '{}' unpinned", col_name));
                 } else {
                     // Try to pin the column by name
                     match dataview.pin_column_by_name(&col_name) {
                         Ok(_) => {
-                            self.buffer_mut()
+                            self.state_container
                                 .set_status_message(format!("Column '{}' pinned [P]", col_name));
                         }
                         Err(e) => {
@@ -3768,7 +3768,7 @@ impl EnhancedTuiApp {
                 }
             }
         } else {
-            self.buffer_mut()
+            self.state_container
                 .set_status_message("No column to pin at current position".to_string());
         }
     }
@@ -3777,7 +3777,7 @@ impl EnhancedTuiApp {
         if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
             dataview.clear_pinned_columns();
         }
-        self.buffer_mut()
+        self.state_container
             .set_status_message("All columns unpinned".to_string());
 
         // Update ViewportManager with the modified DataView
@@ -4101,7 +4101,7 @@ impl EnhancedTuiApp {
             };
 
             if !resumed {
-                self.buffer_mut()
+                self.state_container
                     .set_status_message("No previous search pattern".to_string());
                 return;
             }
@@ -4154,7 +4154,7 @@ impl EnhancedTuiApp {
                 || search_match.row >= current_scroll_row + viewport_height
             {
                 let new_scroll = search_match.row.saturating_sub(viewport_height / 2);
-                self.buffer_mut()
+                self.state_container
                     .set_scroll_offset((new_scroll, current_scroll_col));
                 self.state_container.navigation_mut().scroll_offset =
                     (new_scroll, current_scroll_col);
@@ -4195,7 +4195,7 @@ impl EnhancedTuiApp {
             };
 
             if !resumed {
-                self.buffer_mut()
+                self.state_container
                     .set_status_message("No previous search pattern".to_string());
                 return;
             }
@@ -4251,7 +4251,7 @@ impl EnhancedTuiApp {
                 || search_match.row >= current_scroll_row + viewport_height
             {
                 let new_scroll = search_match.row.saturating_sub(viewport_height / 2);
-                self.buffer_mut()
+                self.state_container
                     .set_scroll_offset((new_scroll, current_scroll_col));
                 self.state_container.navigation_mut().scroll_offset =
                     (new_scroll, current_scroll_col);
@@ -4595,11 +4595,11 @@ impl EnhancedTuiApp {
         // Update buffer state after releasing the borrow
         if pattern.is_empty() {
             self.state_container.set_fuzzy_filter_active(false);
-            self.buffer_mut()
+            self.state_container
                 .set_status_message("Fuzzy filter cleared".to_string());
         } else {
             self.state_container.set_fuzzy_filter_active(true);
-            self.buffer_mut()
+            self.state_container
                 .set_status_message(format!("Fuzzy filter: {} matches", match_count));
 
             // Coordinate viewport with fuzzy filter results
@@ -4652,7 +4652,7 @@ impl EnhancedTuiApp {
             );
 
             if let Err(e) = dataview.toggle_sort(visual_col_idx) {
-                self.buffer_mut()
+                self.state_container
                     .set_status_message(format!("Sort error: {}", e));
             } else {
                 // Get the new sort state for status message
@@ -4686,7 +4686,7 @@ impl EnhancedTuiApp {
             }
         } else {
             // Could not find display position in DataTable
-            self.buffer_mut()
+            self.state_container
                 .set_status_message("Error: Invalid column position".to_string());
         }
     }
@@ -4897,7 +4897,7 @@ impl EnhancedTuiApp {
 
                         self.set_input_text_with_cursor(new_value, cursor_pos + text.len());
 
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message(format!("Pasted {} characters", text.len()));
                     }
                     AppMode::Filter
@@ -4941,13 +4941,13 @@ impl EnhancedTuiApp {
                         }
                     }
                     _ => {
-                        self.buffer_mut()
+                        self.state_container
                             .set_status_message("Paste not available in this mode".to_string());
                     }
                 }
             }
             Err(e) => {
-                self.buffer_mut()
+                self.state_container
                     .set_status_message(format!("Failed to paste: {}", e));
             }
         }
@@ -6023,16 +6023,16 @@ impl EnhancedTuiApp {
                 self.state_container.set_help_visible(true);
                 // Use proper mode synchronization
                 self.set_mode_via_shadow_state(AppMode::Help, "help_requested");
-                self.buffer_mut()
+                self.state_container
                     .set_status_message("Help Mode - Press ESC to return".to_string());
             } else if query == ":exit" || query == ":quit" || query == ":q" {
                 return Ok(true);
             } else {
                 // Execute the SQL query
-                self.buffer_mut()
+                self.state_container
                     .set_status_message(format!("Processing query: '{}'", query));
                 if let Err(e) = self.execute_query(&query) {
-                    self.buffer_mut()
+                    self.state_container
                         .set_status_message(format!("Error executing query: {}", e));
                 }
                 // Don't clear input - preserve query for editing
@@ -6696,13 +6696,13 @@ impl ActionHandlerContext for EnhancedTuiApp {
     // Export operations
     fn export_to_csv(&mut self) {
         // For now, just set a status message - actual implementation will be added later
-        self.buffer_mut()
+        self.state_container
             .set_status_message("CSV export not yet implemented".to_string());
     }
 
     fn export_to_json(&mut self) {
         // For now, just set a status message - actual implementation will be added later
-        self.buffer_mut()
+        self.state_container
             .set_status_message("JSON export not yet implemented".to_string());
     }
 
@@ -6790,7 +6790,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
                 // Clear the filter
                 if let Some(dataview_mut) = self.state_container.get_buffer_dataview_mut() {
                     dataview_mut.clear_filter();
-                    self.buffer_mut()
+                    self.state_container
                         .set_status_message("Filter cleared".to_string());
                 }
 
@@ -6798,11 +6798,11 @@ impl ActionHandlerContext for EnhancedTuiApp {
                 // Sync the dataview to both managers
                 self.sync_dataview_to_managers();
             } else {
-                self.buffer_mut()
+                self.state_container
                     .set_status_message("No active filter to clear".to_string());
             }
         } else {
-            self.buffer_mut()
+            self.state_container
                 .set_status_message("No data loaded".to_string());
         }
     }
@@ -6848,7 +6848,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
                 self.clear_jump_to_row_input();
                 // Clear jump-to-row state (can mutate directly now)
                 self.state_container.jump_to_row_mut().is_active = false;
-                self.buffer_mut()
+                self.state_container
                     .set_status_message("Jump to row cancelled".to_string());
             }
             _ => {
@@ -6914,7 +6914,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
         };
 
         if let Some(result) = result {
-            self.buffer_mut()
+            self.state_container
                 .set_selected_row(Some(result.row_position));
             if result.viewport_changed {
                 let mut offset = self.state_container.get_scroll_offset();
@@ -6939,7 +6939,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
         };
 
         if let Some(result) = result {
-            self.buffer_mut()
+            self.state_container
                 .set_selected_row(Some(result.row_position));
             if result.viewport_changed {
                 let mut offset = self.state_container.get_scroll_offset();
@@ -6964,7 +6964,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
         };
 
         if let Some(result) = result {
-            self.buffer_mut()
+            self.state_container
                 .set_selected_row(Some(result.row_position));
             if result.viewport_changed {
                 let mut offset = self.state_container.get_scroll_offset();
@@ -7056,11 +7056,15 @@ impl ColumnBehavior for EnhancedTuiApp {
     }
 
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
-        self.buffer_mut()
+        self.state_container
+            .current_buffer_mut()
+            .expect("Buffer should exist")
     }
 
     fn buffer(&self) -> &dyn BufferAPI {
-        self.buffer()
+        self.state_container
+            .current_buffer()
+            .expect("Buffer should exist")
     }
 
     fn state_container(&self) -> &AppStateContainer {
@@ -7094,7 +7098,9 @@ impl InputBehavior for EnhancedTuiApp {
     }
 
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
-        self.buffer_mut()
+        self.state_container
+            .current_buffer_mut()
+            .expect("Buffer should exist")
     }
 
     fn set_mode_with_sync(&mut self, mode: AppMode, trigger: &str) {
