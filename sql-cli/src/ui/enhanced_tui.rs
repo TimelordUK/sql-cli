@@ -13,7 +13,6 @@ use crate::config::config::Config;
 use crate::core::search_manager::{SearchConfig, SearchManager};
 use crate::cursor_manager::CursorManager;
 use crate::data::adapters::BufferAdapter;
-use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_provider::DataProvider;
 use crate::data::data_view::DataView;
@@ -70,12 +69,6 @@ use std::io;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
-
-/// File type enum for unified file loading
-enum FileType {
-    Csv,
-    Json,
-}
 
 pub struct EnhancedTuiApp {
     // State container - manages all state (owned directly, no Arc needed)
@@ -1228,14 +1221,6 @@ impl EnhancedTuiApp {
         info!("State coordination setup complete");
     }
 
-    pub fn new_with_csv(csv_path: &str) -> Result<Self> {
-        Self::new_with_file(csv_path, FileType::Csv)
-    }
-
-    pub fn new_with_json(json_path: &str) -> Result<Self> {
-        Self::new_with_file(json_path, FileType::Json)
-    }
-
     /// Create a TUI with a DataView - no file loading knowledge needed
     /// This is the clean separation: TUI only knows about DataViews
     pub fn new_with_dataview(dataview: DataView, source_name: &str) -> Result<Self> {
@@ -1251,7 +1236,13 @@ impl EnhancedTuiApp {
 
         // Set the DataView directly
         buffer.set_dataview(Some(dataview.clone()));
-        buffer.set_name(source_name.to_string());
+        // Use just the filename for the buffer name, not the full path
+        let buffer_name = std::path::Path::new(source_name)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(source_name)
+            .to_string();
+        buffer.set_name(buffer_name);
 
         // Apply config settings to the buffer
         buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
@@ -1287,7 +1278,13 @@ impl EnhancedTuiApp {
 
         // Set the DataView directly
         buffer.set_dataview(Some(dataview.clone()));
-        buffer.set_name(source_name.to_string());
+        // Use just the filename for the buffer name, not the full path
+        let buffer_name = std::path::Path::new(source_name)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(source_name)
+            .to_string();
+        buffer.set_name(buffer_name);
 
         // Apply config settings to the buffer
         buffer.set_case_insensitive(self.config.behavior.case_insensitive_default);
@@ -1327,182 +1324,42 @@ impl EnhancedTuiApp {
         &self.vim_search_adapter
     }
 
-    /// Unified function for loading both CSV and JSON files
-    fn new_with_file(file_path: &str, file_type: FileType) -> Result<Self> {
-        // First create the app to get its config
-        let mut app = Self::new(""); // Empty API URL for file mode
+    /// Pre-populate SQL command with SELECT * FROM table
+    pub fn set_sql_query(&mut self, table_name: &str, raw_table_name: &str) {
+        // Create the initial SQL query
+        let auto_query = format!("SELECT * FROM {}", table_name);
 
-        // Store the data source
-        app.data_source = Some(file_path.to_string());
+        // Pre-populate the input field with the query
+        self.set_input_text(auto_query.clone());
 
-        let raw_name = std::path::Path::new(file_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("data")
-            .to_string();
-
-        // Sanitize the table name to be SQL-friendly
-        let table_name = enhanced_tui_helpers::sanitize_table_name(&raw_name);
-
-        // Direct DataTable loading
-        let (file_type_str, memory_before, memory_after) = match file_type {
-            FileType::Csv => ("CSV", "before_direct_csv_load", "after_direct_csv_load"),
-            FileType::Json => ("JSON", "before_direct_json_load", "after_direct_json_load"),
-        };
-
-        info!(
-            "Using direct DataTable loading for {} (bypassing intermediate format)",
-            file_type_str
-        );
-        crate::utils::memory_tracker::track_memory(memory_before);
-
-        // Load file directly to DataTable
-        let mut datatable = match file_type {
-            FileType::Csv => {
-                // Try advanced loader first for CSV (with string interning)
-                match crate::data::advanced_csv_loader::AdvancedCsvLoader::new()
-                    .load_csv_optimized(file_path, &table_name)
-                {
-                    Ok(dt) => {
-                        info!("Successfully loaded CSV with advanced optimizations");
-                        dt
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Advanced CSV loader failed: {}, falling back to standard loader",
-                            e
-                        );
-                        crate::data::datatable_loaders::load_csv_to_datatable(
-                            file_path,
-                            &table_name,
-                        )?
-                    }
-                }
-            }
-            FileType::Json => {
-                crate::data::datatable_loaders::load_json_to_datatable(file_path, &table_name)?
-            }
-        };
-
-        // Optimize memory after loading
-        datatable.shrink_to_fit();
-
-        crate::utils::memory_tracker::track_memory(memory_after);
-        info!(
-            "Loaded {} rows directly to DataTable from {}, memory: {} MB",
-            datatable.row_count(),
-            file_type_str,
-            datatable.estimate_memory_size() / 1024 / 1024
-        );
-
-        // Create schema from DataTable columns
-        let mut schema = std::collections::HashMap::new();
-        schema.insert(table_name.clone(), datatable.column_names());
-
-        let datatable_opt = Some(datatable);
-
-        // Replace the default buffer with a file buffer using direct DataTable
+        // Update the hybrid parser with the table information
+        if let Some(dataview) = self
+            .state_container
+            .buffers()
+            .current()
+            .and_then(|b| b.get_dataview())
         {
-            // Clear all buffers and add a buffer with DataTable
-            app.state_container.buffers_mut().clear_all();
-            let mut buffer = buffer::Buffer::new(1);
-            buffer.set_datatable(datatable_opt);
-            info!("Created buffer with direct DataTable");
+            let columns = dataview.column_names();
+            self.hybrid_parser
+                .update_single_table(table_name.to_string(), columns);
 
-            // Apply config settings to the buffer - use app's config
-            buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
-            buffer.set_compact_mode(app.config.display.compact_mode);
-            buffer.set_show_row_numbers(app.config.display.show_row_numbers);
-
-            // Apply auto-hide empty columns if configured
-            if app.config.behavior.hide_empty_columns {
-                if let Some(dataview) = buffer.get_dataview_mut() {
-                    let count = dataview.hide_empty_columns();
-                    if count > 0 {
-                        info!("Auto-hidden {} empty columns based on config", count);
-                    }
-                }
-            }
-
-            info!(target: "buffer", "Configured {} buffer with: compact_mode={}, case_insensitive={}, show_row_numbers={}, hide_empty_columns={}",
-                  file_type_str,
-                  app.config.display.compact_mode,
-                  app.config.behavior.case_insensitive_default,
-                  app.config.display.show_row_numbers,
-                  app.config.behavior.hide_empty_columns);
-
-            // Initialize ViewportManager with the DataView
-            if let Some(dataview) = buffer.get_dataview() {
-                let mut new_viewport_manager = ViewportManager::new(Arc::new(dataview.clone()));
-
-                // Update terminal size from current terminal
-                if let Ok((width, height)) = crossterm::terminal::size() {
-                    // Calculate the actual data area height
-                    let data_rows_available = Self::calculate_available_data_rows(height);
-                    new_viewport_manager.update_terminal_size(width, data_rows_available);
-                    debug!(
-                        "Updated new ViewportManager terminal size: {}x{} (data rows)",
-                        width, data_rows_available
-                    );
-                }
-
-                // Initialize viewport by setting current column to 0
-                new_viewport_manager.set_current_column(0);
-
-                *app.viewport_manager.borrow_mut() = Some(new_viewport_manager);
-                debug!("ViewportManager initialized with DataView from loaded file");
-
-                // Update NavigationState with data dimensions
-                app.state_container
-                    .update_data_size(dataview.row_count(), dataview.column_count());
-            }
-
-            app.state_container.buffers_mut().add_buffer(buffer);
-        }
-
-        // Update parser with file columns
-        if let Some(columns) = schema.get(&table_name) {
-            app.hybrid_parser
-                .update_single_table(table_name.clone(), columns.clone());
-            let display_msg = if raw_name != table_name {
+            // Set status message
+            let display_msg = if raw_table_name != table_name {
                 format!(
-                    "{} loaded: '{}' as table '{}' with {} columns",
-                    file_type_str,
-                    raw_name,
+                    "Loaded '{}' as table '{}' with {} columns. Query pre-populated.",
+                    raw_table_name,
                     table_name,
-                    columns.len()
+                    dataview.column_count()
                 )
             } else {
                 format!(
-                    "{} loaded: table '{}' with {} columns",
-                    file_type_str,
+                    "Loaded table '{}' with {} columns. Query pre-populated.",
                     table_name,
-                    columns.len()
+                    dataview.column_count()
                 )
             };
-            app.state_container.set_status_message(display_msg);
+            self.state_container.set_status_message(display_msg);
         }
-
-        // Auto-execute SELECT * FROM table_name to show data immediately (if configured)
-        let auto_query = format!("SELECT * FROM {}", table_name);
-
-        // Populate the input field with the query for easy editing
-        app.set_input_text(auto_query.clone());
-
-        if app.config.behavior.auto_execute_on_load {
-            if let Err(e) = app.execute_query_v2(&auto_query) {
-                // If auto-query fails, just log it in status but don't fail the load
-                app.state_container.set_status_message(format!(
-                    "{} loaded: table '{}' ({} columns) - Note: {}",
-                    file_type_str,
-                    table_name,
-                    schema.get(&table_name).map(|c| c.len()).unwrap_or(0),
-                    e
-                ));
-            }
-        }
-
-        Ok(app)
     }
 
     pub fn run(mut self) -> Result<()> {
@@ -4190,6 +4047,58 @@ impl EnhancedTuiApp {
 
         // Update selected row AND column AFTER dropping the viewport borrow
         if let Some((ref search_match, _)) = result {
+            // Log what we're updating
+            info!(target: "search", 
+                "=== UPDATING TUI STATE FOR VIM SEARCH ===");
+            info!(target: "search", 
+                "Setting selected row to: {}", search_match.row);
+            info!(target: "search", 
+                "Setting selected column to: {} (visual col)", search_match.col);
+
+            // Verify what's actually at this position
+            if let Some(dataview) = self.state_container.get_buffer_dataview() {
+                if let Some(row_data) = dataview.get_row(search_match.row) {
+                    if search_match.col < row_data.values.len() {
+                        let actual_value = &row_data.values[search_match.col];
+                        info!(target: "search", 
+                            "Actual value at row {} col {}: '{}'", 
+                            search_match.row, search_match.col, actual_value);
+
+                        // Check if it actually contains the pattern
+                        let pattern = self
+                            .vim_search_adapter
+                            .borrow()
+                            .get_pattern()
+                            .unwrap_or_default();
+                        let contains_pattern = actual_value
+                            .to_string()
+                            .to_lowercase()
+                            .contains(&pattern.to_lowercase());
+                        if !contains_pattern {
+                            warn!(target: "search", 
+                                "WARNING: Cell at ({}, {}) = '{}' does NOT contain pattern '{}'!", 
+                                search_match.row, search_match.col, actual_value, pattern);
+                        } else {
+                            info!(target: "search", 
+                                "✓ Confirmed: Cell contains pattern '{}'", pattern);
+                        }
+                    } else {
+                        warn!(target: "search", 
+                            "Column {} is out of bounds for row {} (row has {} values)", 
+                            search_match.col, search_match.row, row_data.values.len());
+                    }
+                } else {
+                    warn!(target: "search", 
+                        "Could not get row data for row {}", search_match.row);
+                }
+
+                // Also log display columns to understand the mapping
+                let display_columns = dataview.get_display_columns();
+                info!(target: "search", 
+                    "Display columns mapping (first 10): {:?}", 
+                    display_columns.iter().take(10).collect::<Vec<_>>());
+            }
+
             self.state_container
                 .set_table_selected_row(Some(search_match.row));
             self.state_container
@@ -5401,18 +5310,8 @@ impl EnhancedTuiApp {
             ));
         }
 
-        // Show current buffer name
-        if let Some(buffer) = self.state_container.buffers().current() {
-            spans.push(Span::raw(" "));
-            let name = buffer.get_name();
-            let modified = if buffer.is_modified() { "*" } else { "" };
-            spans.push(Span::styled(
-                format!("{}{}", name, modified),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ));
-        }
+        // Don't show buffer name if it's the same as the data source
+        // The data source is already displayed, so we avoid duplication
 
         // Get buffer name from the current buffer
         let buffer_name = self.state_container.get_buffer_name();
@@ -7265,113 +7164,31 @@ impl BufferManagementBehavior for EnhancedTuiApp {
 
 pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()> {
     let app = if !data_files.is_empty() {
-        // Load the first file using existing logic
-        let first_file = data_files[0];
-        let extension = std::path::Path::new(first_file)
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("");
+        // Use ApplicationOrchestrator for clean data source separation
+        use crate::services::ApplicationOrchestrator;
 
-        let mut app = match extension.to_lowercase().as_str() {
-            "csv" => EnhancedTuiApp::new_with_csv(first_file)?,
-            "json" => EnhancedTuiApp::new_with_json(first_file)?,
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "Unsupported file type: {}. Use .csv or .json files.",
-                    first_file
-                ))
-            }
-        };
+        // Get config for orchestrator setup
+        let config = Config::default();
+        let orchestrator = ApplicationOrchestrator::new(
+            config.behavior.case_insensitive_default,
+            config.behavior.hide_empty_columns,
+        );
 
-        // Set the file path for the first buffer if we have multiple files
-        if data_files.len() > 1 {
-            if let Some(buffer) = app.state_container.buffers_mut().current_mut() {
-                buffer.set_file_path(Some(first_file.to_string()));
-                let filename = std::path::Path::new(first_file)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy();
-                buffer.set_name(filename.to_string());
+        // Load the first file through the orchestrator
+        let mut app = orchestrator.create_tui_with_file(data_files[0])?;
+
+        // Load additional files into separate buffers
+        for file_path in data_files.iter().skip(1) {
+            if let Err(e) = orchestrator.load_additional_file(&mut app, file_path) {
+                app.state_container
+                    .set_status_message(format!("Error loading {}: {}", file_path, e));
+                continue;
             }
         }
 
-        // Load additional files into separate buffers
+        // Switch back to the first buffer if we loaded multiple
         if data_files.len() > 1 {
-            for (_index, file_path) in data_files.iter().skip(1).enumerate() {
-                let extension = std::path::Path::new(file_path)
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .unwrap_or("");
-
-                match extension.to_lowercase().as_str() {
-                    "csv" | "json" => {
-                        // Get config value before mutable borrow
-                        let case_insensitive = app.config.behavior.case_insensitive_default;
-
-                        // Create a new buffer for each additional file
-                        app.new_buffer();
-
-                        // Get the current buffer and set it up
-                        if let Some(buffer) = app.state_container.buffers_mut().current_mut() {
-                            // Create and configure CSV client for this buffer
-                            let mut csv_client = CsvApiClient::new();
-                            csv_client.set_case_insensitive(case_insensitive);
-
-                            // Get table name from file
-                            let raw_name = std::path::Path::new(file_path)
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or("data")
-                                .to_string();
-                            let table_name = enhanced_tui_helpers::sanitize_table_name(&raw_name);
-
-                            // Load the data
-                            if extension.to_lowercase() == "csv" {
-                                if let Err(e) = csv_client.load_csv(file_path, &table_name) {
-                                    app.state_container.set_status_message(format!(
-                                        "Error loading {}: {}",
-                                        file_path, e
-                                    ));
-                                    continue;
-                                }
-                            } else {
-                                if let Err(e) = csv_client.load_json(file_path, &table_name) {
-                                    app.state_container.set_status_message(format!(
-                                        "Error loading {}: {}",
-                                        file_path, e
-                                    ));
-                                    continue;
-                                }
-                            }
-                            info!(target: "buffer", "Loaded {} file '{}' into buffer {}: table='{}', case_insensitive={}", 
-                                  extension.to_uppercase(), file_path, buffer.get_id(), table_name, case_insensitive);
-
-                            // Set query
-                            let query = format!("SELECT * FROM {}", table_name);
-                            buffer.set_input_text(query);
-
-                            // Store the file path and name
-                            buffer.set_file_path(Some(file_path.to_string()));
-                            let filename = std::path::Path::new(file_path)
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy();
-                            buffer.set_name(filename.to_string());
-                        }
-                    }
-                    _ => {
-                        app.state_container.set_status_message(format!(
-                            "Skipping unsupported file: {}",
-                            file_path
-                        ));
-                        continue;
-                    }
-                }
-            }
-
-            // Switch back to the first buffer
             app.state_container.buffers_mut().switch_to(0);
-
             app.state_container.set_status_message(format!(
                 "Loaded {} files into separate buffers. Use Alt+Tab to switch.",
                 data_files.len()

@@ -1,6 +1,7 @@
 use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataTable;
+use crate::ui::enhanced_tui_helpers;
 use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
@@ -26,15 +27,18 @@ impl DataLoaderService {
             .and_then(|e| e.to_str())
             .ok_or_else(|| anyhow::anyhow!("File has no extension: {}", file_path))?;
 
-        let table_name = path
+        let raw_table_name = path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("data")
             .to_string();
 
+        // Sanitize the table name to be SQL-friendly
+        let table_name = enhanced_tui_helpers::sanitize_table_name(&raw_table_name);
+
         match extension.to_lowercase().as_str() {
-            "csv" => self.load_csv(file_path, &table_name),
-            "json" => self.load_json(file_path, &table_name),
+            "csv" => self.load_csv(file_path, &table_name, &raw_table_name),
+            "json" => self.load_json(file_path, &table_name, &raw_table_name),
             _ => Err(anyhow::anyhow!(
                 "Unsupported file type: {}. Use .csv or .json files.",
                 extension
@@ -43,7 +47,12 @@ impl DataLoaderService {
     }
 
     /// Load a CSV file
-    fn load_csv(&self, file_path: &str, table_name: &str) -> Result<DataLoadResult> {
+    fn load_csv(
+        &self,
+        file_path: &str,
+        table_name: &str,
+        raw_table_name: &str,
+    ) -> Result<DataLoadResult> {
         info!("Loading CSV file: {}", file_path);
         let start = std::time::Instant::now();
 
@@ -64,18 +73,35 @@ impl DataLoaderService {
             }
         };
 
-        self.create_result(datatable, file_path.to_string(), start.elapsed())
+        self.create_result(
+            datatable,
+            file_path.to_string(),
+            table_name.to_string(),
+            raw_table_name.to_string(),
+            start.elapsed(),
+        )
     }
 
     /// Load a JSON file
-    fn load_json(&self, file_path: &str, table_name: &str) -> Result<DataLoadResult> {
+    fn load_json(
+        &self,
+        file_path: &str,
+        table_name: &str,
+        raw_table_name: &str,
+    ) -> Result<DataLoadResult> {
         info!("Loading JSON file: {}", file_path);
         let start = std::time::Instant::now();
 
         let datatable =
             crate::data::datatable_loaders::load_json_to_datatable(file_path, table_name)?;
 
-        self.create_result(datatable, file_path.to_string(), start.elapsed())
+        self.create_result(
+            datatable,
+            file_path.to_string(),
+            table_name.to_string(),
+            raw_table_name.to_string(),
+            start.elapsed(),
+        )
     }
 
     /// Load data using CsvApiClient (for additional files)
@@ -84,11 +110,14 @@ impl DataLoaderService {
         csv_client.set_case_insensitive(self.case_insensitive);
 
         let path = Path::new(file_path);
-        let table_name = path
+        let raw_table_name = path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("data")
             .to_string();
+
+        // Sanitize the table name to be SQL-friendly
+        let table_name = enhanced_tui_helpers::sanitize_table_name(&raw_table_name);
 
         let extension = path
             .extension()
@@ -108,7 +137,13 @@ impl DataLoaderService {
             .get_datatable()
             .ok_or_else(|| anyhow::anyhow!("Failed to load data from {}", file_path))?;
 
-        self.create_result(datatable, file_path.to_string(), start.elapsed())
+        self.create_result(
+            datatable,
+            file_path.to_string(),
+            table_name,
+            raw_table_name,
+            start.elapsed(),
+        )
     }
 
     /// Create a DataLoadResult from a DataTable
@@ -116,6 +151,8 @@ impl DataLoaderService {
         &self,
         datatable: DataTable,
         source_path: String,
+        table_name: String,
+        raw_table_name: String,
         load_time: std::time::Duration,
     ) -> Result<DataLoadResult> {
         // Create initial DataView
@@ -128,6 +165,8 @@ impl DataLoaderService {
         Ok(DataLoadResult {
             dataview,
             source_path,
+            table_name,
+            raw_table_name,
             initial_row_count,
             initial_column_count,
             load_time,
@@ -147,6 +186,12 @@ pub struct DataLoadResult {
 
     /// Path to the source file
     pub source_path: String,
+
+    /// SQL-friendly table name
+    pub table_name: String,
+
+    /// Original table name (before sanitization)
+    pub raw_table_name: String,
 
     /// Initial row count (before any filtering)
     pub initial_row_count: usize,

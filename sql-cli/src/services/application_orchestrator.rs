@@ -29,12 +29,17 @@ impl ApplicationOrchestrator {
         // Get the status message before moving dataview
         let status_message = load_result.status_message();
         let source_path = load_result.source_path.clone();
+        let table_name = load_result.table_name.clone();
+        let raw_table_name = load_result.raw_table_name.clone();
 
         // Create the TUI with just a DataView
         let mut app = EnhancedTuiApp::new_with_dataview(load_result.dataview, &source_path)?;
 
         // Set the initial status message
         app.set_status_message(status_message);
+
+        // Pre-populate the SQL command with SELECT * FROM table
+        app.set_sql_query(&table_name, &raw_table_name);
 
         Ok(app)
     }
@@ -49,12 +54,17 @@ impl ApplicationOrchestrator {
         // Get the status message before moving dataview
         let status_message = load_result.status_message();
         let source_path = load_result.source_path.clone();
+        let table_name = load_result.table_name.clone();
+        let raw_table_name = load_result.raw_table_name.clone();
 
         // Add to the TUI (it will create a new buffer)
         app.add_dataview(load_result.dataview, &source_path)?;
 
         // Set status message
         app.set_status_message(status_message);
+
+        // Pre-populate the SQL command with SELECT * FROM table for new buffer
+        app.set_sql_query(&table_name, &raw_table_name);
 
         Ok(())
     }

@@ -1,0 +1,22 @@
+[wsl2]
+# Memory - Set to 10GB (leaving 6GB for Windows + IDE)
+memory=10GB
+
+# CPU - Use 12 of your 20 logical cores (leaving 8 for Windows)
+processors=12
+
+# Swap - 4GB swap for overflow
+swap=4GB
+swapFile=C:\\temp\\wsl-swap.vhdx
+
+# Disk cache - Helps with I/O performance
+pageReporting=false
+guiApplications=false
+
+# Network optimizations
+localhostForwarding=true
+
+# Memory reclaim - Important for long-running sessions
+# This helps WSL2 release unused memory back to Windows
+memoryReclaimEnable=true
+sparseVhd=true

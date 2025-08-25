@@ -141,13 +141,34 @@ impl VimSearchManager {
                     return None;
                 }
 
+                // Log current state before moving
+                info!(target: "vim_search", 
+                    "=== 'n' KEY PRESSED - BEFORE NAVIGATION ===");
+                info!(target: "vim_search", 
+                    "Current match index: {}/{}, Pattern: '{}'", 
+                    *current_index + 1, matches.len(), pattern);
+                info!(target: "vim_search", 
+                    "Current viewport - rows: {:?}, cols: {:?}", 
+                    viewport.get_viewport_rows(), viewport.viewport_cols());
+                info!(target: "vim_search", 
+                    "Current crosshair position: row={}, col={}", 
+                    viewport.get_crosshair_row(), viewport.get_crosshair_col());
+
                 // Wrap around to beginning
                 *current_index = (*current_index + 1) % matches.len();
                 let match_item = matches[*current_index].clone();
 
                 info!(target: "vim_search", 
-                    "Navigating to next match {}/{} at ({}, {})", 
-                    *current_index + 1, matches.len(), match_item.row, match_item.col);
+                    "=== NEXT MATCH DETAILS ===");
+                info!(target: "vim_search", 
+                    "Match {}/{}: row={}, visual_col={}, value='{}'", 
+                    *current_index + 1, matches.len(),
+                    match_item.row, match_item.col, match_item.value);
+
+                // Log what we expect to find at this position
+                info!(target: "vim_search", 
+                    "Expected: Cell at row {} col {} should contain substring '{}'", 
+                    match_item.row, match_item.col, pattern);
 
                 Some(match_item)
             }
@@ -159,7 +180,22 @@ impl VimSearchManager {
 
         // Then navigate to it if we have a match
         if let Some(ref match_item) = match_to_navigate {
+            info!(target: "vim_search", 
+                "=== NAVIGATING TO MATCH ===");
             self.navigate_to_match(match_item, viewport);
+
+            // Log state after navigation
+            info!(target: "vim_search", 
+                "=== AFTER NAVIGATION ===");
+            info!(target: "vim_search", 
+                "New viewport - rows: {:?}, cols: {:?}", 
+                viewport.get_viewport_rows(), viewport.viewport_cols());
+            info!(target: "vim_search", 
+                "New crosshair position: row={}, col={}", 
+                viewport.get_crosshair_row(), viewport.get_crosshair_col());
+            info!(target: "vim_search", 
+                "Crosshair should be at: row={}, col={} (visual coordinates)", 
+                match_item.row, match_item.col);
         }
 
         match_to_navigate
@@ -366,18 +402,30 @@ impl VimSearchManager {
                         // For vim-like behavior, we prioritize the first match in each row
                         // This prevents jumping between columns on the same row
                         if first_match_in_row.is_none() {
+                            // IMPORTANT: The enum_idx is the position in row.values array,
+                            // which corresponds to the position in display_columns.
+                            // Since we're searching in visual/display order, we use enum_idx directly
+                            // as the visual column index for the viewport to understand.
+
+                            // Map enum_idx back to the actual DataTable column for debugging
+                            let actual_col = if enum_idx < display_columns.len() {
+                                display_columns[enum_idx]
+                            } else {
+                                enum_idx // Fallback, shouldn't happen
+                            };
+
                             debug!(target: "vim_search", 
-                                "Found first match in row {} at col {}: '{}'", 
-                                row_idx, enum_idx, value_str);
+                                "Found first match in row {} at visual col {} (DataTable col {}, value '{}')", 
+                                row_idx, enum_idx, actual_col, value_str);
                             first_match_in_row = Some(SearchMatch {
                                 row: row_idx,
-                                col: enum_idx, // Use the enumeration index as the visual column index
+                                col: enum_idx, // This is the visual column index in display order
                                 value: value_str,
                             });
                         } else {
                             debug!(target: "vim_search", 
-                                "Skipping additional match in row {} at col {}: '{}'", 
-                                row_idx, enum_idx, value_str);
+                                "Skipping additional match in row {} at visual col {} (enum_idx {}): '{}'", 
+                                row_idx, enum_idx, enum_idx, value_str);
                         }
                     }
                 }
