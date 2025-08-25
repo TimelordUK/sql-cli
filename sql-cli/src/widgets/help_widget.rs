@@ -1,6 +1,6 @@
 use crate::debug_service::DebugProvider;
 use crate::help_text::HelpText;
-use crate::service_container::ServiceContainer;
+// ServiceContainer removed - no longer used
 use crate::widget_traits::DebugInfoProvider;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -78,39 +78,24 @@ impl Default for HelpState {
 /// Help widget that manages its own state and rendering
 pub struct HelpWidget {
     state: HelpState,
-    services: Option<ServiceContainer>,
+    // ServiceContainer removed - debug service no longer tracked here
 }
 
 impl HelpWidget {
     pub fn new() -> Self {
         Self {
             state: HelpState::default(),
-            services: None,
         }
     }
 
-    /// Set the service container for debug capabilities
-    pub fn set_services(&mut self, services: ServiceContainer) {
-        self.services = Some(services);
-        self.log_debug("HelpWidget initialized with services");
-    }
+    // set_services method removed - ServiceContainer no longer used
 
-    /// Log a debug message if services are available
-    fn log_debug(&self, message: &str) {
-        if let Some(ref services) = self.services {
-            services
-                .debug_service
-                .info("HelpWidget", message.to_string());
-        }
-    }
+    // log_debug method removed - ServiceContainer no longer used
 
     /// Handle key input
     pub fn handle_key(&mut self, key: KeyEvent) -> HelpAction {
-        self.log_debug(&format!("Handling key: {:?}", key));
-
         // F5 should exit help and show debug - let main app handle it
         if key.code == KeyCode::F(5) {
-            self.log_debug("F5 pressed - exiting help to show debug");
             return HelpAction::Exit;
         }
 
@@ -121,7 +106,6 @@ impl HelpWidget {
                     self.state.search_active = false;
                     self.state.search_query.clear();
                     self.state.search_matches.clear();
-                    self.log_debug("Search mode exited");
                     return HelpAction::None;
                 }
                 KeyCode::Enter => {
@@ -142,17 +126,10 @@ impl HelpWidget {
 
         // Normal mode key handling
         match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => {
-                self.log_debug("Exit requested");
-                HelpAction::Exit
-            }
-            KeyCode::F(1) => {
-                self.log_debug("Help exit via F1");
-                HelpAction::Exit
-            }
+            KeyCode::Esc | KeyCode::Char('q') => HelpAction::Exit,
+            KeyCode::F(1) => HelpAction::Exit,
             KeyCode::Char('/') => {
                 self.state.search_active = true;
-                self.log_debug("Search mode activated");
                 HelpAction::None
             }
             KeyCode::Char('j') | KeyCode::Down => {
@@ -191,37 +168,31 @@ impl HelpWidget {
             KeyCode::Char('1') => {
                 self.state.selected_section = HelpSection::General;
                 self.state.scroll_offset = 0;
-                self.log_debug("Switched to General section");
                 HelpAction::None
             }
             KeyCode::Char('2') => {
                 self.state.selected_section = HelpSection::Commands;
                 self.state.scroll_offset = 0;
-                self.log_debug("Switched to Commands section");
                 HelpAction::None
             }
             KeyCode::Char('3') => {
                 self.state.selected_section = HelpSection::Navigation;
                 self.state.scroll_offset = 0;
-                self.log_debug("Switched to Navigation section");
                 HelpAction::None
             }
             KeyCode::Char('4') => {
                 self.state.selected_section = HelpSection::Search;
                 self.state.scroll_offset = 0;
-                self.log_debug("Switched to Search section");
                 HelpAction::None
             }
             KeyCode::Char('5') => {
                 self.state.selected_section = HelpSection::Advanced;
                 self.state.scroll_offset = 0;
-                self.log_debug("Switched to Advanced section");
                 HelpAction::None
             }
             KeyCode::Char('6') => {
                 self.state.selected_section = HelpSection::Debug;
                 self.state.scroll_offset = 0;
-                self.log_debug("Switched to Debug section");
                 HelpAction::None
             }
             _ => HelpAction::None,
@@ -230,7 +201,6 @@ impl HelpWidget {
 
     /// Perform search within help content
     fn perform_search(&mut self) {
-        self.log_debug(&format!("Searching for: {}", self.state.search_query));
         // TODO: Implement actual search logic
         self.state.search_matches.clear();
     }
@@ -266,12 +236,6 @@ impl HelpWidget {
 
     /// Render the help widget
     pub fn render(&mut self, f: &mut Frame, area: Rect) {
-        // Log that we're rendering help
-        self.log_debug(&format!(
-            "Rendering help - section: {:?}, scroll: {}/{}",
-            self.state.selected_section, self.state.scroll_offset, self.state.max_scroll
-        ));
-
         // Simple rendering - no split screen
         self.render_help_content(f, area);
     }
@@ -592,30 +556,7 @@ Debug Information Available:
 "#,
         );
 
-        // Add current debug status if services available
-        if let Some(ref services) = self.services {
-            help.push_str(&format!(
-                "\nDebug Status: {}\n",
-                if services.debug_service.is_enabled() {
-                    "ENABLED"
-                } else {
-                    "DISABLED"
-                }
-            ));
-
-            let entries = services.debug_service.get_recent_entries(5);
-            if !entries.is_empty() {
-                help.push_str("\nRecent Debug Entries:\n");
-                for entry in entries {
-                    help.push_str(&format!(
-                        "  [{} ms] {} - {}\n",
-                        &entry.timestamp[9..], // Just show milliseconds part
-                        entry.component,
-                        entry.message
-                    ));
-                }
-            }
-        }
+        // Debug status display removed - ServiceContainer no longer used
 
         help
     }
@@ -656,21 +597,17 @@ Debug Information Available:
     /// Reset the widget state
     pub fn reset(&mut self) {
         self.state = HelpState::default();
-        self.log_debug("HelpWidget state reset");
     }
 
     /// Called when help mode is entered
     pub fn on_enter(&mut self) {
-        self.log_debug("Help mode entered");
         // Reset to general section when entering
         self.state.selected_section = HelpSection::General;
         self.state.scroll_offset = 0;
     }
 
     /// Called when help mode is exited
-    pub fn on_exit(&mut self) {
-        self.log_debug("Help mode exited");
-    }
+    pub fn on_exit(&mut self) {}
 }
 
 impl DebugProvider for HelpWidget {

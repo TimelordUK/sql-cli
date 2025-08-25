@@ -8,12 +8,12 @@ use crate::app_state_container::AppStateContainer;
 use crate::buffer::BufferAPI;
 use crate::data::data_view::DataView;
 use crate::widgets::search_modes_widget::SearchMode;
-use std::sync::Arc;
+// Arc import removed - no longer needed
 
 /// Context for search operations
 /// Provides the minimal interface needed for search operations
 pub struct SearchContext<'a> {
-    pub state_container: &'a Arc<AppStateContainer>,
+    pub state_container: &'a AppStateContainer,
     pub buffer: &'a mut dyn BufferAPI,
     pub current_data: Option<&'a DataView>,
 }

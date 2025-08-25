@@ -163,11 +163,10 @@ mod tests {
     #[ignore] // Test disabled - ESC handling has changed
     fn test_esc_cancels_search() {
         let (state_container, mut buffer_manager) = create_test_context();
-        let state_arc = Arc::new(state_container);
         let shadow_state = RefCell::new(ShadowStateManager::new());
 
         let mut ctx = HistoryInputContext {
-            state_container: &state_arc,
+            state_container: &state_container,
             buffer_manager: &mut buffer_manager,
             shadow_state: &shadow_state,
         };
@@ -190,11 +189,10 @@ mod tests {
     #[test]
     fn test_up_down_navigation() {
         let (state_container, mut buffer_manager) = create_test_context();
-        let state_arc = Arc::new(state_container);
         let shadow_state = RefCell::new(ShadowStateManager::new());
 
         let mut ctx = HistoryInputContext {
-            state_container: &state_arc,
+            state_container: &state_container,
             buffer_manager: &mut buffer_manager,
             shadow_state: &shadow_state,
         };
