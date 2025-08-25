@@ -1,0 +1,33 @@
+#!/usr/bin/expect -f
+
+set timeout 3
+spawn ./target/release/sql-cli test_f5.csv -e "select * from data"
+
+# Wait for the TUI to start
+sleep 0.5
+
+# Press F5 to enter debug mode
+send "\033\[15~"
+sleep 0.5
+
+# Should enter debug mode without hanging
+expect {
+    timeout { 
+        puts "FAIL: Timeout waiting for debug mode"
+        exit 1 
+    }
+    eof { 
+        puts "FAIL: Process exited unexpectedly"
+        exit 1 
+    }
+}
+
+# Press F5 again to exit debug mode
+send "\033\[15~"
+sleep 0.5
+
+# Press q to quit
+send "q"
+expect eof
+
+puts "SUCCESS: F5 debug mode works without hanging"

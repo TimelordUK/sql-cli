@@ -189,8 +189,8 @@ impl DebugContext for EnhancedTuiApp {
     }
 
     fn debug_current_buffer(&mut self) {
-        // Call the existing method - will need to be defined below
-        EnhancedTuiApp::debug_current_buffer(self)
+        // Debug output disabled - was corrupting TUI display
+        // Use tracing/logging instead if debugging is needed
     }
 
     fn get_input_cursor(&self) -> usize {
