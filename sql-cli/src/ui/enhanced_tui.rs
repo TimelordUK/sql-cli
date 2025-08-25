@@ -20,7 +20,6 @@ use crate::data::data_view::DataView;
 use crate::debug::{DebugRegistry, MemoryTracker};
 use crate::debug_service::DebugService;
 use crate::help_text::HelpText;
-// use crate::service_container::ServiceContainer; // Removed - not needed
 use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::state::StateDispatcher;
