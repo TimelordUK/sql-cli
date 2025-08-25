@@ -1,6 +1,4 @@
 /// Scroll and cursor position utilities extracted from enhanced_tui
-/// Contains scroll offset calculations and cursor position management
-
 /// Calculate horizontal scroll offset for input field
 pub fn calculate_horizontal_scroll(cursor_pos: usize, terminal_width: u16) -> u16 {
     let inner_width = terminal_width.saturating_sub(3) as usize; // Account for borders + padding

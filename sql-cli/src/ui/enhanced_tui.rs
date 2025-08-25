@@ -3716,8 +3716,6 @@ impl EnhancedTuiApp {
 
     // ========== NAVIGATION METHODS ==========
 
-    /// Helper to apply column navigation result to all state locations
-
     // ========== COLUMN PIN/HIDE ==========
 
     fn toggle_column_pin_impl(&mut self) {
@@ -6128,7 +6126,6 @@ impl EnhancedTuiApp {
             .get_detailed_debug_info(query, query.len())
     }
 
-    /// Generate the buffer state debug section
     // debug_generate_buffer_state and debug_generate_results_state moved to DebugContext trait defaults
 
     // debug_generate_memory_info moved to DebugContext trait default implementation

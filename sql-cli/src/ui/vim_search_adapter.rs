@@ -83,6 +83,7 @@ impl VimSearchAdapter {
     }
 
     /// Handle a key press through AppStateContainer (simplified interface)
+    /// Note: This version requires the caller to handle viewport management
     pub fn handle_key(&mut self, key: KeyCode, state: &mut AppStateContainer) -> bool {
         let mode = state.get_mode();
 
@@ -116,21 +117,21 @@ impl VimSearchAdapter {
             return false;
         }
 
-        // Handle search navigation keys
+        // For n/N keys, let them go through the normal action system
+        // The TUI will map them to NextSearchMatch/PreviousSearchMatch actions
+        // which will then call vim_search_next()/vim_search_previous()
         match key {
-            KeyCode::Char('n') => {
-                info!("VimSearchAdapter: Next match requested");
-                // TODO: state.vim_search_next();
-                true
-            }
-            KeyCode::Char('N') => {
-                info!("VimSearchAdapter: Previous match requested");
-                // TODO: state.vim_search_previous();
-                true
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                info!(
+                    "VimSearchAdapter: Navigation key '{}' - letting TUI handle via action system",
+                    if key == KeyCode::Char('n') { "n" } else { "N" }
+                );
+                // Don't handle - let TUI map to NextSearchMatch/PreviousSearchMatch actions
+                false
             }
             KeyCode::Enter => {
-                info!("VimSearchAdapter: Confirming search");
-                // TODO: state.confirm_vim_search();
+                info!("VimSearchAdapter: Confirming search - will need dataview and viewport from TUI");
+                // Signal that this key was handled - the TUI needs to provide dataview and viewport
                 true
             }
             _ => false,

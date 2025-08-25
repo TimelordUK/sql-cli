@@ -1,6 +1,4 @@
 /// Text processing utilities extracted from enhanced_tui
-/// Contains cursor management, word extraction, and text manipulation functions
-
 /// Extract a partial word at the cursor position in a query string
 /// Used for completion and search functionality
 pub fn extract_partial_word_at_cursor(query: &str, cursor_pos: usize) -> Option<String> {
