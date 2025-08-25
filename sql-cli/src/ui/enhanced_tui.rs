@@ -958,13 +958,9 @@ impl EnhancedTuiApp {
 
     // Helper to set input text with specific cursor position
     fn set_input_text_with_cursor(&mut self, text: String, cursor_pos: usize) {
-        let (old_text, old_cursor, mode) = {
-            let buffer = self.buffer();
-            let old_text = buffer.get_input_text();
-            let old_cursor = buffer.get_input_cursor_position();
-            let mode = buffer.get_mode();
-            (old_text, old_cursor, mode)
-        };
+        let old_text = self.state_container.get_buffer_input_text();
+        let old_cursor = self.state_container.get_input_cursor_position();
+        let mode = self.state_container.get_mode();
 
         // Log every input text change with cursor position
         info!(target: "input", "SET_INPUT_TEXT_WITH_CURSOR: '{}' (cursor {}) -> '{}' (cursor {}) (mode: {:?})",
@@ -974,19 +970,13 @@ impl EnhancedTuiApp {
               cursor_pos,
               mode);
 
-        // Transaction-like block for input updates
-        {
-            self.state_container
-                .set_input_text_with_cursor(text.clone(), cursor_pos);
-        }
+        // Use the proper proxy method that syncs both buffer and command_input
+        self.state_container
+            .set_buffer_input_text_with_cursor(text.clone(), cursor_pos);
 
         // Always update the input field for consistency
         // TODO: Eventually migrate special modes to use buffer input
         self.input = tui_input::Input::new(text.clone()).with_cursor(cursor_pos);
-
-        // IMPORTANT: Also sync with AppStateContainer's command_input to prevent desync
-        self.state_container
-            .set_input_text_with_cursor(text, cursor_pos);
     }
 
     // MASTER SYNC METHOD - Use this whenever input changes!
@@ -3632,19 +3622,8 @@ impl EnhancedTuiApp {
                 &suggestion,
             );
 
-            // Use helper to set text through buffer
-            self.set_input_text(result.new_text.clone());
-            // Set cursor to correct position
-            if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
-                buffer.set_input_cursor_position(result.new_cursor_position);
-                // Sync for rendering
-                if self.state_container.get_edit_mode() == Some(EditMode::SingleLine) {
-                    self.set_input_text_with_cursor(
-                        result.new_text.clone(),
-                        result.new_cursor_position,
-                    );
-                }
-            }
+            // Use helper to set text and cursor together - this ensures sync
+            self.set_input_text_with_cursor(result.new_text.clone(), result.new_cursor_position);
 
             // Update completion state for next tab press
             self.state_container

@@ -5744,6 +5744,20 @@ impl AppStateContainer {
             .unwrap_or_default()
     }
 
+    /// Set input text with cursor position (proxy to Buffer) - properly syncs both
+    pub fn set_buffer_input_text_with_cursor(&mut self, text: String, cursor: usize) {
+        // Update the actual buffer
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_text(text.clone());
+            buffer.set_input_cursor_position(cursor);
+        }
+
+        // Also update command_input for compatibility
+        let mut input = self.command_input.borrow_mut();
+        input.text = text;
+        input.cursor_position = cursor;
+    }
+
     /// Set current column (proxy to Buffer)
     pub fn set_current_column_buffer(&mut self, col: usize) {
         if let Some(buffer) = self.current_buffer_mut() {
