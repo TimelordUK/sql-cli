@@ -212,11 +212,11 @@ pub trait NavigationBehavior {
         if let Ok(row_num) = input.parse::<usize>() {
             self.goto_line(row_num);
         } else {
-            self.buffer_mut()
+            self.state_container_mut()
                 .set_status_message("Invalid row number".to_string());
         }
 
-        self.buffer_mut().set_mode(AppMode::Results);
+        self.state_container_mut().set_mode(AppMode::Results);
 
         // Clear jump-to-row state
         let jump_state = self.state_container_mut().jump_to_row_mut();

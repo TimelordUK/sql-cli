@@ -205,7 +205,7 @@ pub trait InputBehavior {
 
         match key.code {
             KeyCode::Esc => {
-                self.buffer_mut().set_mode(AppMode::Results);
+                self.state_container_mut().set_mode(AppMode::Results);
                 self.clear_jump_to_row_input();
 
                 // Clear is_active flag
