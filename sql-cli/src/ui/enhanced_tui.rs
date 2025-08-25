@@ -336,19 +336,23 @@ impl DebugContext for EnhancedTuiApp {
     // debug_generate_viewport_state now uses default implementation from trait
 
     fn debug_generate_navigation_state(&self) -> String {
-        EnhancedTuiApp::debug_generate_navigation_state(self)
+        // Call the actual implementation method on self (defined below in impl EnhancedTuiApp)
+        Self::debug_generate_navigation_state(self)
     }
 
     fn debug_generate_column_search_state(&self) -> String {
-        EnhancedTuiApp::debug_generate_column_search_state(self)
+        // Call the actual implementation method on self (defined below in impl EnhancedTuiApp)
+        Self::debug_generate_column_search_state(self)
     }
 
     fn debug_generate_trace_logs(&self) -> String {
-        EnhancedTuiApp::debug_generate_trace_logs(self)
+        // Call the actual implementation method on self (defined below in impl EnhancedTuiApp)
+        Self::debug_generate_trace_logs(self)
     }
 
     fn debug_generate_state_logs(&self) -> String {
-        EnhancedTuiApp::debug_generate_state_logs(self)
+        // Call the actual implementation method on self (defined below in impl EnhancedTuiApp)
+        Self::debug_generate_state_logs(self)
     }
 }
 
