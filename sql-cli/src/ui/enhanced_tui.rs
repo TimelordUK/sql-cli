@@ -310,9 +310,7 @@ impl DebugContext for EnhancedTuiApp {
         EnhancedTuiApp::debug_generate_datatable_schema(self)
     }
 
-    fn debug_generate_dataview_state(&self) -> String {
-        EnhancedTuiApp::debug_generate_dataview_state(self)
-    }
+    // debug_generate_dataview_state now uses default implementation from trait
 
     // debug_generate_viewport_state now uses default implementation from trait
 
@@ -6075,91 +6073,7 @@ impl EnhancedTuiApp {
         debug_info
     }
 
-    fn debug_generate_dataview_state(&self) -> String {
-        let mut debug_info = String::new();
-        if let Some(buffer) = self.buffer_manager.current() {
-            if let Some(dataview) = buffer.get_dataview() {
-                debug_info.push_str("\n========== DATAVIEW STATE ==========\n");
-
-                // Add the detailed column mapping info
-                debug_info.push_str(&dataview.get_column_debug_info());
-                debug_info.push_str("\n");
-
-                // Show visible columns in order with both indices
-                let visible_columns = dataview.column_names();
-                let column_mappings = dataview.get_column_index_mapping();
-                debug_info.push_str(&format!(
-                    "Visible Columns ({}) with Index Mapping:\n",
-                    visible_columns.len()
-                ));
-                for (visible_idx, col_name, datatable_idx) in &column_mappings {
-                    debug_info.push_str(&format!(
-                        "  V[{:3}] → DT[{:3}] : {}\n",
-                        visible_idx, datatable_idx, col_name
-                    ));
-                }
-
-                // Show row information
-                debug_info.push_str(&format!("\nVisible Rows: {}\n", dataview.row_count()));
-
-                // Show internal visible_columns array (source column indices)
-                debug_info.push_str("\n--- Internal State ---\n");
-
-                // Get the visible_columns indices from DataView
-                let visible_indices = dataview.get_visible_column_indices();
-                debug_info.push_str(&format!("visible_columns array: {:?}\n", visible_indices));
-
-                // Show pinned columns
-                let pinned_names = dataview.get_pinned_column_names();
-                if !pinned_names.is_empty() {
-                    debug_info.push_str(&format!("Pinned Columns ({}):\n", pinned_names.len()));
-                    for (idx, name) in pinned_names.iter().enumerate() {
-                        // Find source index for this pinned column
-                        let source_idx = dataview.source().get_column_index(name).unwrap_or(999);
-                        debug_info.push_str(&format!(
-                            "  [{}] {} (source_idx: {})\n",
-                            idx, name, source_idx
-                        ));
-                    }
-                } else {
-                    debug_info.push_str("Pinned Columns: None\n");
-                }
-
-                // Show sort state
-                let sort_state = dataview.get_sort_state();
-                match sort_state.order {
-                    crate::data::data_view::SortOrder::None => {
-                        debug_info.push_str("Sort State: None\n");
-                    }
-                    crate::data::data_view::SortOrder::Ascending => {
-                        if let Some(col_idx) = sort_state.column {
-                            let col_name = visible_columns
-                                .get(col_idx)
-                                .map(|s| s.as_str())
-                                .unwrap_or("unknown");
-                            debug_info.push_str(&format!(
-                                "Sort State: Ascending on column '{}' (idx: {})\n",
-                                col_name, col_idx
-                            ));
-                        }
-                    }
-                    crate::data::data_view::SortOrder::Descending => {
-                        if let Some(col_idx) = sort_state.column {
-                            let col_name = visible_columns
-                                .get(col_idx)
-                                .map(|s| s.as_str())
-                                .unwrap_or("unknown");
-                            debug_info.push_str(&format!(
-                                "Sort State: Descending on column '{}' (idx: {})\n",
-                                col_name, col_idx
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-        debug_info
-    }
+    // debug_generate_dataview_state moved to DebugContext trait default implementation
 
     // debug_generate_viewport_state moved to DebugContext trait default implementation
 
