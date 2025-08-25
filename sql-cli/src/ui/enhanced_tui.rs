@@ -1236,6 +1236,97 @@ impl EnhancedTuiApp {
         Self::new_with_file(json_path, FileType::Json)
     }
 
+    /// Create a TUI with a DataView - no file loading knowledge needed
+    /// This is the clean separation: TUI only knows about DataViews
+    pub fn new_with_dataview(dataview: DataView, source_name: &str) -> Result<Self> {
+        // Create the base app
+        let mut app = Self::new("");
+
+        // Store the data source name
+        app.data_source = Some(source_name.to_string());
+
+        // Create a buffer with the DataView
+        app.state_container.buffers_mut().clear_all();
+        let mut buffer = buffer::Buffer::new(1);
+
+        // Set the DataView directly
+        buffer.set_dataview(Some(dataview.clone()));
+        buffer.set_name(source_name.to_string());
+
+        // Apply config settings to the buffer
+        buffer.set_case_insensitive(app.config.behavior.case_insensitive_default);
+        buffer.set_compact_mode(app.config.display.compact_mode);
+        buffer.set_show_row_numbers(app.config.display.show_row_numbers);
+
+        // Add the buffer
+        app.state_container.buffers_mut().add_buffer(buffer);
+
+        // Update state container with the DataView
+        app.state_container.set_dataview(Some(dataview.clone()));
+
+        // Initialize viewport manager with the DataView
+        app.viewport_manager = RefCell::new(Some(ViewportManager::new(Arc::new(dataview.clone()))));
+
+        // Calculate initial column widths
+        app.calculate_optimal_column_widths();
+
+        // Set initial navigation state
+        let row_count = dataview.row_count();
+        let column_count = dataview.column_count();
+        app.state_container
+            .update_data_size(row_count, column_count);
+
+        Ok(app)
+    }
+
+    /// Add a DataView to the existing TUI (creates a new buffer)
+    pub fn add_dataview(&mut self, dataview: DataView, source_name: &str) -> Result<()> {
+        // Create a new buffer with the DataView
+        let buffer_id = self.state_container.buffers().all_buffers().len() + 1;
+        let mut buffer = buffer::Buffer::new(buffer_id);
+
+        // Set the DataView directly
+        buffer.set_dataview(Some(dataview.clone()));
+        buffer.set_name(source_name.to_string());
+
+        // Apply config settings to the buffer
+        buffer.set_case_insensitive(self.config.behavior.case_insensitive_default);
+        buffer.set_compact_mode(self.config.display.compact_mode);
+        buffer.set_show_row_numbers(self.config.display.show_row_numbers);
+
+        // Add the buffer and switch to it
+        self.state_container.buffers_mut().add_buffer(buffer);
+        let new_index = self.state_container.buffers().all_buffers().len() - 1;
+        self.state_container.buffers_mut().switch_to(new_index);
+
+        // Update state container with the DataView
+        self.state_container.set_dataview(Some(dataview.clone()));
+
+        // Update viewport manager
+        self.update_viewport_with_dataview(dataview.clone());
+
+        // Calculate column widths for the new view
+        self.calculate_optimal_column_widths();
+
+        // Update navigation state
+        let row_count = dataview.row_count();
+        let column_count = dataview.column_count();
+        self.state_container
+            .update_data_size(row_count, column_count);
+
+        Ok(())
+    }
+
+    /// Update the viewport with a new DataView
+    pub fn update_viewport_with_dataview(&mut self, dataview: DataView) {
+        self.viewport_manager = RefCell::new(Some(ViewportManager::new(Arc::new(dataview))));
+    }
+
+    /// Get vim search adapter (public for orchestrator)
+    pub fn vim_search_adapter(&self) -> &RefCell<VimSearchAdapter> {
+        &self.vim_search_adapter
+    }
+
     /// Unified function for loading both CSV and JSON files
     fn new_with_file(file_path: &str, file_type: FileType) -> Result<Self> {
         // First create the app to get its config
@@ -3454,7 +3545,7 @@ impl EnhancedTuiApp {
         crate::ui::input_handlers::handle_pretty_query_input(&mut ctx, key)
     }
 
-    fn execute_query_v2(&mut self, query: &str) -> Result<()> {
+    pub fn execute_query_v2(&mut self, query: &str) -> Result<()> {
         // Use orchestrator to handle all the query execution logic
         let context = self.query_orchestrator.execute_query(
             query,
@@ -4707,7 +4798,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn reset_table_state(&mut self) {
+    pub fn reset_table_state(&mut self) {
         // Reset state container navigation state using the new reset method
         self.state_container.navigation_mut().reset();
         self.state_container.set_table_selected_row(Some(0));
@@ -4794,7 +4885,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    fn calculate_optimal_column_widths(&mut self) {
+    pub fn calculate_optimal_column_widths(&mut self) {
         // Delegate to ViewportManager for optimal column width calculations
         let widths_from_viewport = {
             let mut viewport_opt = self.viewport_manager.borrow_mut();
@@ -4812,7 +4903,7 @@ impl EnhancedTuiApp {
 
     /// Centralized method for setting status messages
     /// Ensures consistent logging and state synchronization
-    fn set_status_message(&mut self, message: impl Into<String>) {
+    pub fn set_status_message(&mut self, message: impl Into<String>) {
         let msg = message.into();
         debug!("Status: {}", msg);
         self.state_container.set_status_message(msg.clone());
