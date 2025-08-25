@@ -385,20 +385,23 @@ impl EnhancedTuiApp {
 
     /// Build action context from current state
     fn build_action_context(&self) -> ActionContext {
-        let buffer = self.buffer();
         let nav = self.state_container.navigation();
+        let dataview = self.state_container.get_buffer_dataview();
 
         ActionContext {
-            mode: buffer.get_mode(),
+            mode: self.state_container.get_mode(),
             selection_mode: self.state_container.get_selection_mode(),
-            has_results: buffer.get_dataview().is_some(),
-            has_filter: !buffer.get_filter_pattern().is_empty()
-                || !buffer.get_fuzzy_filter_pattern().is_empty(),
-            has_search: !buffer.get_search_pattern().is_empty()
-                || self.vim_search_adapter.borrow().should_handle_key(buffer)
+            has_results: dataview.is_some(),
+            has_filter: !self.state_container.get_filter_pattern().is_empty()
+                || !self.state_container.get_fuzzy_filter_pattern().is_empty(),
+            has_search: !self.state_container.get_search_pattern().is_empty()
+                || self
+                    .vim_search_adapter
+                    .borrow()
+                    .should_handle_key(&self.state_container)
                 || self.state_container.column_search().is_active,
-            row_count: buffer.get_dataview().map_or(0, |v| v.row_count()),
-            column_count: buffer.get_dataview().map_or(0, |v| v.column_count()),
+            row_count: dataview.as_ref().map_or(0, |v| v.row_count()),
+            column_count: dataview.as_ref().map_or(0, |v| v.column_count()),
             current_row: nav.selected_row,
             current_column: nav.selected_column,
         }
@@ -545,7 +548,7 @@ impl EnhancedTuiApp {
 
                 // Sync the updated DataView back to the Buffer if columns were hidden
                 if let Some(updated_dataview) = updated_dataview {
-                    self.buffer_mut().set_dataview(Some(updated_dataview));
+                    self.state_container.set_dataview(Some(updated_dataview));
                 }
 
                 tracing::info!("Hidden {} empty columns", count);
@@ -577,9 +580,9 @@ impl EnhancedTuiApp {
                         // Otherwise, switch to Command mode as usual
                         // Save current position before switching to Command mode
                         if let Some(selected) = self.state_container.get_table_selected_row() {
-                            self.buffer_mut().set_last_results_row(Some(selected));
+                            self.state_container.set_last_results_row(Some(selected));
                             let scroll_offset = self.state_container.get_scroll_offset();
-                            self.buffer_mut().set_last_scroll_offset(scroll_offset);
+                            self.state_container.set_last_scroll_offset(scroll_offset);
                         }
 
                         // Restore the last executed query to input_text for editing
@@ -763,7 +766,7 @@ impl EnhancedTuiApp {
 
                             let mut new_text = self.state_container.get_input_text();
                             new_text.push_str(clause_text);
-                            self.buffer_mut().set_input_text(new_text.clone());
+                            self.state_container.set_input_text(new_text.clone());
                             self.state_container
                                 .set_input_cursor_position(new_text.len());
                         }
@@ -811,15 +814,7 @@ impl EnhancedTuiApp {
             }
             InsertChar(c) => {
                 if context.mode == AppMode::Command {
-                    let buffer = self.buffer_mut();
-                    buffer.save_state_for_undo();
-                    let pos = buffer.get_input_cursor_position();
-                    let mut text = buffer.get_input_text();
-                    let mut chars: Vec<char> = text.chars().collect();
-                    chars.insert(pos, c);
-                    text = chars.iter().collect();
-                    buffer.set_input_text(text);
-                    buffer.set_input_cursor_position(pos + 1);
+                    self.state_container.insert_char_at_cursor(c);
 
                     // Clear completion state when typing
                     self.state_container.clear_completion();
@@ -964,10 +959,9 @@ impl EnhancedTuiApp {
 
         // Transaction-like block for input updates
         {
-            let buffer = self.buffer_mut();
-            buffer.set_input_text(text.clone());
-            // Also sync cursor position to end of text
-            buffer.set_input_cursor_position(text.len());
+            // Set input text with cursor at end
+            self.state_container
+                .set_input_text_with_cursor(text.clone(), text.len());
         }
 
         // Always update the input field for all modes
@@ -998,9 +992,8 @@ impl EnhancedTuiApp {
 
         // Transaction-like block for input updates
         {
-            let buffer = self.buffer_mut();
-            buffer.set_input_text(text.clone());
-            buffer.set_input_cursor_position(cursor_pos);
+            self.state_container
+                .set_input_text_with_cursor(text.clone(), cursor_pos);
         }
 
         // Always update the input field for consistency
@@ -1066,7 +1059,7 @@ impl EnhancedTuiApp {
             }
             _ => {
                 // Route to buffer's input handling
-                self.buffer_mut().handle_input_key(key)
+                self.state_container.handle_input_key(key)
             }
         }
     }
@@ -1387,7 +1380,7 @@ impl EnhancedTuiApp {
                     columns.len()
                 )
             };
-            app.buffer_mut().set_status_message(display_msg);
+            app.state_container.set_status_message(display_msg);
         }
 
         // Auto-execute SELECT * FROM table_name to show data immediately (if configured)
@@ -1399,7 +1392,7 @@ impl EnhancedTuiApp {
         if app.config.behavior.auto_execute_on_load {
             if let Err(e) = app.execute_query(&auto_query) {
                 // If auto-query fails, just log it in status but don't fail the load
-                app.buffer_mut().set_status_message(format!(
+                app.state_container.set_status_message(format!(
                     "{} loaded: table '{}' ({} columns) - Note: {}",
                     file_type_str,
                     table_name,
@@ -1980,7 +1973,7 @@ impl EnhancedTuiApp {
                 let message = if !self.state_container.is_kill_ring_empty() {
                     format!(
                         "Killed to end of line ('{}' saved to kill ring)",
-                        self.buffer().get_kill_ring()
+                        self.state_container.get_kill_ring()
                     )
                 } else {
                     "Killed to end of line".to_string()
@@ -1994,7 +1987,7 @@ impl EnhancedTuiApp {
                 let message = if !self.state_container.is_kill_ring_empty() {
                     format!(
                         "Killed to beginning of line ('{}' saved to kill ring)",
-                        self.buffer().get_kill_ring()
+                        self.state_container.get_kill_ring()
                     )
                 } else {
                     "Killed to beginning of line".to_string()
@@ -2407,11 +2400,11 @@ impl EnhancedTuiApp {
                         .borrow_mut()
                         .observe_mode_change(AppMode::Results, "down_arrow_to_results");
                     // Restore previous position or default to 0
-                    let row = self.buffer().get_last_results_row().unwrap_or(0);
+                    let row = self.state_container.get_last_results_row().unwrap_or(0);
                     self.state_container.set_table_selected_row(Some(row));
 
                     // Restore the exact scroll offset from when we left
-                    let last_offset = self.buffer().get_last_scroll_offset();
+                    let last_offset = self.state_container.get_last_scroll_offset();
                     self.state_container.set_scroll_offset(last_offset);
                     Ok(Some(false))
                 } else {
@@ -2821,7 +2814,7 @@ impl EnhancedTuiApp {
                     }
 
                     // Also update the buffer's current match to trigger UI updates
-                    self.buffer_mut().set_current_match(Some((row, col)));
+                    self.state_container.set_current_match(Some((row, col)));
 
                     // CRITICAL: Force the visual cursor position to update
                     // The crosshair is set but we need to ensure the visual cursor moves
@@ -3449,7 +3442,7 @@ impl EnhancedTuiApp {
         self.vim_search_adapter.borrow_mut().cancel_search();
 
         // 2. Save query to buffer and state container
-        self.buffer_mut().set_last_query(query.to_string());
+        self.state_container.set_last_query(query.to_string());
         self.state_container
             .set_last_executed_query(query.to_string());
 
@@ -3483,7 +3476,8 @@ impl EnhancedTuiApp {
                 let col_count = new_dataview.column_count();
 
                 // Store the new DataView in buffer
-                self.buffer_mut().set_dataview(Some(new_dataview.clone()));
+                self.state_container
+                    .set_dataview(Some(new_dataview.clone()));
 
                 // Apply auto-hide empty columns if configured
                 if self.config.behavior.hide_empty_columns {
@@ -3881,7 +3875,7 @@ impl EnhancedTuiApp {
         // Calculate total time
         let elapsed = start_total.elapsed();
 
-        self.buffer_mut().set_column_stats(Some(stats));
+        self.state_container.set_column_stats(Some(stats));
 
         // Show timing in status message
         self.state_container.set_status_message(format!(
@@ -3917,7 +3911,7 @@ impl EnhancedTuiApp {
             };
 
             // Update buffer's last_visible_rows
-            self.buffer_mut().set_last_visible_rows(visible_rows);
+            self.state_container.set_last_visible_rows(visible_rows);
 
             // Update NavigationState's viewport dimensions
             self.state_container
@@ -4051,21 +4045,19 @@ impl EnhancedTuiApp {
                 };
                 self.state_container.search_mut().matches = state_matches;
 
-                let buffer = self.buffer_mut();
-                buffer.set_search_matches(buffer_matches.clone());
-                buffer.set_search_match_index(0);
-                buffer.set_current_match(Some((first_row, first_col)));
-                buffer.set_status_message(format!("Found {} matches", match_count));
+                self.state_container
+                    .set_search_matches_with_index(buffer_matches.clone(), 0);
+                self.state_container
+                    .set_current_match(Some((first_row, first_col)));
+                self.state_container
+                    .set_status_message(format!("Found {} matches", match_count));
 
                 info!(target: "search", "Search found {} matches for pattern '{}'", match_count, pattern);
             } else {
                 // Clear search state
                 self.state_container.search_mut().matches.clear();
-
-                let buffer = self.buffer_mut();
-                buffer.set_status_message("No matches found".to_string());
-                buffer.set_search_matches(Vec::new());
-                buffer.set_current_match(None);
+                self.state_container.clear_search_state();
+                self.state_container.set_current_match(None);
 
                 info!(target: "search", "No matches found for pattern '{}'", pattern);
             }
@@ -4748,16 +4740,8 @@ impl EnhancedTuiApp {
         self.state_container.navigation_mut().reset();
         self.state_container.set_table_selected_row(Some(0));
 
-        // Transaction-like block for multiple buffer resets
-        {
-            let buffer = self.buffer_mut();
-            buffer.set_selected_row(Some(0)); // Reset the table's selected row to 0
-            buffer.set_scroll_offset((0, 0));
-            buffer.set_current_column(0);
-            buffer.set_last_results_row(None); // Reset saved position for new results
-            buffer.set_last_scroll_offset((0, 0)); // Reset saved scroll offset for new results
-                                                   // ========== SORT OPERATIONS ==========
-        }
+        // Reset navigation state using grouped operation
+        self.state_container.reset_navigation_state();
 
         // Reset ViewportManager if it exists
         if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
@@ -4779,13 +4763,7 @@ impl EnhancedTuiApp {
         }
 
         // Clear fuzzy filter state to prevent it from persisting across queries
-        {
-            let buffer = self.buffer_mut();
-            buffer.clear_fuzzy_filter();
-            buffer.set_fuzzy_filter_pattern(String::new());
-            buffer.set_fuzzy_filter_active(false);
-            buffer.set_fuzzy_filter_indices(Vec::new());
-        };
+        self.state_container.clear_fuzzy_filter_state();
     }
 
     fn update_parser_for_current_buffer(&mut self) {
@@ -4856,7 +4834,7 @@ impl EnhancedTuiApp {
         };
 
         if let Some(widths) = widths_from_viewport {
-            self.buffer_mut().set_column_widths(widths);
+            self.state_container.set_column_widths(widths);
         }
     }
 
@@ -5378,7 +5356,7 @@ impl EnhancedTuiApp {
         }
 
         // Get buffer name from the current buffer
-        let buffer_name = self.buffer().get_name();
+        let buffer_name = self.state_container.get_buffer_name();
         if !buffer_name.is_empty() && buffer_name != "[Buffer 1]" {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
@@ -6452,7 +6430,7 @@ impl EnhancedTuiApp {
     }
 
     fn add_query_source_indicator(&self, spans: &mut Vec<Span>) {
-        if let Some(source) = self.buffer().get_last_query_source() {
+        if let Some(source) = self.state_container.get_last_query_source() {
             spans.push(Span::raw(" | "));
             let (icon, label, color) = match source.as_str() {
                 "cache" => (
@@ -6512,7 +6490,7 @@ impl EnhancedTuiApp {
     }
 
     fn add_status_message(&self, spans: &mut Vec<Span>) {
-        let status_msg = self.buffer().get_status_message();
+        let status_msg = self.state_container.get_buffer_status_message();
         if !status_msg.is_empty() {
             spans.push(Span::raw(" | "));
             spans.push(Span::styled(
@@ -6828,10 +6806,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn clear_line(&mut self) {
-        let buffer = self.buffer_mut();
-        buffer.save_state_for_undo();
-        buffer.set_input_text(String::new());
-        buffer.set_input_cursor_position(0);
+        self.state_container.clear_line();
     }
 
     // Mode operations
@@ -6859,7 +6834,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
                 // If vim search is active, just exit search mode but stay in Results
                 if self.vim_search_adapter.borrow().is_active() {
                     self.vim_search_adapter.borrow_mut().exit_navigation();
-                    self.buffer_mut()
+                    self.state_container
                         .set_status_message("Search mode exited".to_string());
                     return;
                 }
@@ -7009,20 +6984,11 @@ impl ActionHandlerContext for EnhancedTuiApp {
 
     // Input and text editing methods
     fn move_input_cursor_left(&mut self) {
-        let buffer = self.buffer_mut();
-        let pos = buffer.get_input_cursor_position();
-        if pos > 0 {
-            buffer.set_input_cursor_position(pos - 1);
-        }
+        self.state_container.move_input_cursor_left();
     }
 
     fn move_input_cursor_right(&mut self) {
-        let buffer = self.buffer_mut();
-        let pos = buffer.get_input_cursor_position();
-        let text_len = buffer.get_input_text().chars().count();
-        if pos < text_len {
-            buffer.set_input_cursor_position(pos + 1);
-        }
+        self.state_container.move_input_cursor_right();
     }
 
     fn move_input_cursor_home(&mut self) {
@@ -7035,41 +7001,19 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn backspace(&mut self) {
-        let buffer = self.buffer_mut();
-        let pos = buffer.get_input_cursor_position();
-        if pos > 0 {
-            buffer.save_state_for_undo();
-            let mut text = buffer.get_input_text();
-            let mut chars: Vec<char> = text.chars().collect();
-            if pos <= chars.len() {
-                chars.remove(pos - 1);
-                text = chars.iter().collect();
-                buffer.set_input_text(text);
-                buffer.set_input_cursor_position(pos - 1);
-            }
-        }
+        self.state_container.backspace();
     }
 
     fn delete(&mut self) {
-        let buffer = self.buffer_mut();
-        let pos = buffer.get_input_cursor_position();
-        let mut text = buffer.get_input_text();
-        let chars_len = text.chars().count();
-        if pos < chars_len {
-            buffer.save_state_for_undo();
-            let mut chars: Vec<char> = text.chars().collect();
-            chars.remove(pos);
-            text = chars.iter().collect();
-            buffer.set_input_text(text);
-        }
+        self.state_container.delete();
     }
 
     fn undo(&mut self) {
-        self.buffer_mut().perform_undo();
+        self.state_container.perform_undo();
     }
 
     fn redo(&mut self) {
-        self.buffer_mut().perform_redo();
+        self.state_container.perform_redo();
     }
 }
 
@@ -7299,7 +7243,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                             // Load the data
                             if extension.to_lowercase() == "csv" {
                                 if let Err(e) = csv_client.load_csv(file_path, &table_name) {
-                                    app.buffer_mut().set_status_message(format!(
+                                    app.state_container.set_status_message(format!(
                                         "Error loading {}: {}",
                                         file_path, e
                                     ));
@@ -7307,7 +7251,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                                 }
                             } else {
                                 if let Err(e) = csv_client.load_json(file_path, &table_name) {
-                                    app.buffer_mut().set_status_message(format!(
+                                    app.state_container.set_status_message(format!(
                                         "Error loading {}: {}",
                                         file_path, e
                                     ));
@@ -7331,7 +7275,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
                         }
                     }
                     _ => {
-                        app.buffer_mut().set_status_message(format!(
+                        app.state_container.set_status_message(format!(
                             "Skipping unsupported file: {}",
                             file_path
                         ));
@@ -7343,7 +7287,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
             // Switch back to the first buffer
             app.state_container.buffers_mut().switch_to(0);
 
-            app.buffer_mut().set_status_message(format!(
+            app.state_container.set_status_message(format!(
                 "Loaded {} files into separate buffers. Use Alt+Tab to switch.",
                 data_files.len()
             ));

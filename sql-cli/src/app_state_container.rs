@@ -5778,6 +5778,32 @@ impl AppStateContainer {
             .unwrap_or_default()
     }
 
+    // ========== VIM SEARCH OPERATIONS ==========
+
+    /// Check if vim search should handle the current key
+    pub fn vim_search_should_handle_key(&self) -> bool {
+        let mode = self.get_mode();
+        let pattern = self.get_search_pattern();
+
+        // Handle keys if in search mode or have an active search pattern
+        mode == AppMode::Search || !pattern.is_empty()
+    }
+
+    /// Start vim search mode
+    pub fn start_vim_search(&mut self) {
+        self.set_mode(AppMode::Search);
+        self.set_input_text(String::new());
+        self.set_input_cursor_position(0);
+        self.set_status_message("Search: /".to_string());
+    }
+
+    /// Exit vim search mode
+    pub fn exit_vim_search(&mut self) {
+        self.set_mode(AppMode::Results);
+        self.clear_search_state();
+        self.set_status_message("Search mode exited".to_string());
+    }
+
     /// Get fuzzy filter indices (proxy to Buffer)
     pub fn get_fuzzy_filter_indices(&self) -> Vec<usize> {
         self.current_buffer()
@@ -5789,6 +5815,238 @@ impl AppStateContainer {
     pub fn set_scroll_offset(&mut self, offset: (usize, usize)) {
         if let Some(buffer) = self.current_buffer_mut() {
             buffer.set_scroll_offset(offset);
+        }
+    }
+
+    // ==================== GROUPED OPERATIONS ====================
+    // These combine multiple buffer operations that are commonly done together
+
+    /// Save state for undo (proxy to Buffer)
+    pub fn save_state_for_undo(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.save_state_for_undo();
+        }
+    }
+
+    /// Perform undo (proxy to Buffer)
+    pub fn perform_undo(&mut self) -> bool {
+        self.current_buffer_mut()
+            .map(|b| b.perform_undo())
+            .unwrap_or(false)
+    }
+
+    /// Perform redo (proxy to Buffer)
+    pub fn perform_redo(&mut self) -> bool {
+        self.current_buffer_mut()
+            .map(|b| b.perform_redo())
+            .unwrap_or(false)
+    }
+
+    /// Insert character at cursor position
+    pub fn insert_char_at_cursor(&mut self, c: char) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.save_state_for_undo();
+            let pos = buffer.get_input_cursor_position();
+            let mut text = buffer.get_input_text();
+            let mut chars: Vec<char> = text.chars().collect();
+            chars.insert(pos, c);
+            text = chars.iter().collect();
+            buffer.set_input_text(text);
+            buffer.set_input_cursor_position(pos + 1);
+        }
+    }
+
+    /// Handle input key (proxy to Buffer)
+    pub fn handle_input_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        self.current_buffer_mut()
+            .map(|b| b.handle_input_key(key))
+            .unwrap_or(false)
+    }
+
+    /// Set search matches and update state
+    pub fn set_search_matches_with_index(&mut self, matches: Vec<(usize, usize)>, index: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_search_matches(matches);
+            buffer.set_search_match_index(index);
+        }
+    }
+
+    /// Clear search state completely
+    pub fn clear_search_state(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_search_matches(Vec::new());
+            buffer.set_status_message("No matches found".to_string());
+        }
+    }
+
+    /// Set last state (results row and scroll offset)
+    pub fn set_last_state(&mut self, row: Option<usize>, scroll_offset: (usize, usize)) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_results_row(row);
+            buffer.set_last_scroll_offset(scroll_offset);
+        }
+    }
+
+    /// Clear line - save undo state and clear input (grouped operation)
+    pub fn clear_line(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.save_state_for_undo();
+            buffer.set_input_text(String::new());
+            buffer.set_input_cursor_position(0);
+        }
+    }
+
+    /// Move cursor left (grouped operation)
+    pub fn move_input_cursor_left(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            let pos = buffer.get_input_cursor_position();
+            if pos > 0 {
+                buffer.set_input_cursor_position(pos - 1);
+            }
+        }
+    }
+
+    /// Move cursor right (grouped operation)
+    pub fn move_input_cursor_right(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            let pos = buffer.get_input_cursor_position();
+            let text_len = buffer.get_input_text().chars().count();
+            if pos < text_len {
+                buffer.set_input_cursor_position(pos + 1);
+            }
+        }
+    }
+
+    /// Backspace operation (grouped)
+    pub fn backspace(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            let pos = buffer.get_input_cursor_position();
+            if pos > 0 {
+                buffer.save_state_for_undo();
+                let mut text = buffer.get_input_text();
+                let mut chars: Vec<char> = text.chars().collect();
+                chars.remove(pos - 1);
+                text = chars.iter().collect();
+                buffer.set_input_text(text);
+                buffer.set_input_cursor_position(pos - 1);
+            }
+        }
+    }
+
+    /// Delete character at cursor (grouped)
+    pub fn delete(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            let pos = buffer.get_input_cursor_position();
+            let mut text = buffer.get_input_text();
+            let chars_len = text.chars().count();
+            if pos < chars_len {
+                buffer.save_state_for_undo();
+                let mut chars: Vec<char> = text.chars().collect();
+                chars.remove(pos);
+                text = chars.iter().collect();
+                buffer.set_input_text(text);
+            }
+        }
+    }
+
+    /// Reset navigation state (grouped operation)
+    pub fn reset_navigation_state(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_selected_row(Some(0));
+            buffer.set_scroll_offset((0, 0));
+            buffer.set_current_column(0);
+            buffer.set_last_results_row(None);
+            buffer.set_last_scroll_offset((0, 0));
+        }
+    }
+
+    /// Clear fuzzy filter (grouped operation)
+    pub fn clear_fuzzy_filter_state(&mut self) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.clear_fuzzy_filter();
+            buffer.set_fuzzy_filter_pattern(String::new());
+            buffer.set_fuzzy_filter_active(false);
+            buffer.set_fuzzy_filter_indices(Vec::new());
+        }
+    }
+
+    /// Get filter pattern (proxy to Buffer)
+    pub fn get_filter_pattern(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_filter_pattern())
+            .unwrap_or_default()
+    }
+
+    /// Set column statistics (proxy to Buffer)
+    pub fn set_column_stats(&mut self, stats: Option<crate::buffer::ColumnStatistics>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_column_stats(stats);
+        }
+    }
+
+    /// Set column widths (proxy to Buffer)
+    pub fn set_column_widths(&mut self, widths: Vec<u16>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_column_widths(widths);
+        }
+    }
+
+    /// Set current match (proxy to Buffer)
+    pub fn set_current_match(&mut self, match_pos: Option<(usize, usize)>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_current_match(match_pos);
+        }
+    }
+
+    /// Get kill ring (proxy to Buffer)
+    pub fn get_kill_ring(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_kill_ring())
+            .unwrap_or_default()
+    }
+
+    /// Get status message (proxy to Buffer)
+    pub fn get_buffer_status_message(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_status_message())
+            .unwrap_or_default()
+    }
+
+    /// Get buffer name (proxy to Buffer)
+    pub fn get_buffer_name(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_name())
+            .unwrap_or_else(|| "No Buffer".to_string())
+    }
+
+    /// Get last results row (proxy to Buffer)
+    pub fn get_last_results_row(&self) -> Option<usize> {
+        self.current_buffer()?.get_last_results_row()
+    }
+
+    /// Get last scroll offset (proxy to Buffer)
+    pub fn get_last_scroll_offset(&self) -> (usize, usize) {
+        self.current_buffer()
+            .map(|b| b.get_last_scroll_offset())
+            .unwrap_or((0, 0))
+    }
+
+    /// Set last query (proxy to Buffer)
+    pub fn set_last_query(&mut self, query: String) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_query(query);
+        }
+    }
+
+    /// Get last query source (proxy to Buffer)
+    pub fn get_last_query_source(&self) -> Option<String> {
+        self.current_buffer()?.get_last_query_source()
+    }
+
+    /// Set last visible rows (proxy to Buffer)
+    pub fn set_last_visible_rows(&mut self, rows: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_visible_rows(rows);
         }
     }
 }

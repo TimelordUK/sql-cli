@@ -1,5 +1,6 @@
 //! Adapter to make VimSearchManager work with StateDispatcher
 
+use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, Buffer, BufferAPI};
 use crate::data::data_view::DataView;
 use crate::state::{StateEvent, StateSubscriber};
@@ -23,14 +24,30 @@ impl VimSearchAdapter {
         }
     }
 
-    /// Check if vim search should handle a key based on Buffer state
-    pub fn should_handle_key(&self, buffer: &dyn BufferAPI) -> bool {
+    /// Check if vim search should handle a key based on AppStateContainer state
+    pub fn should_handle_key(&self, state: &AppStateContainer) -> bool {
+        // Use AppStateContainer's vim search check
+        let should_handle = state.vim_search_should_handle_key();
+
+        debug!(
+            "VimSearchAdapter: should_handle_key? mode={:?}, pattern='{}', active={}, result={}",
+            state.get_mode(),
+            state.get_search_pattern(),
+            self.is_active,
+            should_handle
+        );
+
+        should_handle || self.is_active
+    }
+
+    /// Check if vim search should handle a key based on Buffer state (legacy - for compatibility)
+    pub fn should_handle_key_buffer(&self, buffer: &dyn BufferAPI) -> bool {
         // Check Buffer's state, not internal state
         let in_search_mode = buffer.get_mode() == AppMode::Search;
         let has_pattern = !buffer.get_search_pattern().is_empty();
 
         debug!(
-            "VimSearchAdapter: should_handle_key? mode={:?}, pattern='{}', active={}",
+            "VimSearchAdapter: should_handle_key_buffer? mode={:?}, pattern='{}', active={}",
             buffer.get_mode(),
             buffer.get_search_pattern(),
             self.is_active
@@ -57,8 +74,43 @@ impl VimSearchAdapter {
         &mut self.manager
     }
 
-    /// Handle a key press - delegates to VimSearchManager if appropriate
-    pub fn handle_key(
+    /// Handle a key press through AppStateContainer (simplified interface)
+    pub fn handle_key(&mut self, key: KeyCode, state: &mut AppStateContainer) -> bool {
+        // First check if we should handle keys at all
+        if !self.should_handle_key(state) {
+            debug!("VimSearchAdapter: Not handling key - search not active");
+            return false;
+        }
+
+        // Handle search navigation keys through state container
+        match key {
+            KeyCode::Char('n') => {
+                info!("VimSearchAdapter: Next match requested");
+                // TODO: state.vim_search_next();
+                true
+            }
+            KeyCode::Char('N') => {
+                info!("VimSearchAdapter: Previous match requested");
+                // TODO: state.vim_search_previous();
+                true
+            }
+            KeyCode::Enter => {
+                info!("VimSearchAdapter: Confirming search");
+                // TODO: state.confirm_vim_search();
+                true
+            }
+            KeyCode::Esc => {
+                info!("VimSearchAdapter: Exiting search");
+                state.exit_vim_search();
+                self.clear();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Handle a key press - delegates to VimSearchManager if appropriate (legacy)
+    pub fn handle_key_legacy(
         &mut self,
         key: KeyCode,
         dataview: &DataView,
@@ -66,7 +118,7 @@ impl VimSearchAdapter {
         buffer: &dyn BufferAPI,
     ) -> bool {
         // First check if we should handle keys at all
-        if !self.should_handle_key(buffer) {
+        if !self.should_handle_key_buffer(buffer) {
             debug!("VimSearchAdapter: Not handling key - search not active");
             return false;
         }
