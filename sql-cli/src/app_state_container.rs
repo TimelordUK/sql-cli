@@ -5804,28 +5804,6 @@ impl AppStateContainer {
         self.set_status_message("Search mode exited".to_string());
     }
 
-    /// Navigate to a specific position (for search results)
-    pub fn navigate_to_position(&mut self, row: usize, col: usize) {
-        // Update all the various state fields that track position
-        self.set_table_selected_row(Some(row));
-        self.set_selected_row(Some(row));
-        self.set_current_column_buffer(col);
-
-        // Update navigation state
-        self.navigation_mut().selected_row = row;
-        self.navigation_mut().selected_column = col;
-
-        // Update scroll offset if needed
-        let viewport_height = 79; // TODO: Get actual viewport height
-        let (current_scroll_row, current_scroll_col) = self.get_scroll_offset();
-
-        if row < current_scroll_row || row >= current_scroll_row + viewport_height {
-            let new_scroll = row.saturating_sub(viewport_height / 2);
-            self.set_scroll_offset((new_scroll, current_scroll_col));
-            self.navigation_mut().scroll_offset = (new_scroll, current_scroll_col);
-        }
-    }
-
     /// Get fuzzy filter indices (proxy to Buffer)
     pub fn get_fuzzy_filter_indices(&self) -> Vec<usize> {
         self.current_buffer()
