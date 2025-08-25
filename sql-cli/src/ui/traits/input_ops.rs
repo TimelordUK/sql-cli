@@ -15,6 +15,9 @@ pub trait InputBehavior {
     fn state_container_mut(&mut self) -> &mut AppStateContainer; // Added for mutable access
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI;
 
+    // Mode switching method that needs to be implemented by EnhancedTui to handle shadow_state
+    fn set_mode_with_sync(&mut self, mode: AppMode, trigger: &str);
+
     // Helper method to get current input state
     fn get_current_input(&mut self) -> (String, usize) {
         if let Some(buffer) = self.buffer_manager().current() {
@@ -205,7 +208,8 @@ pub trait InputBehavior {
 
         match key.code {
             KeyCode::Esc => {
-                self.state_container_mut().set_mode(AppMode::Results);
+                // Use proper mode synchronization that updates both buffer and shadow_state
+                self.set_mode_with_sync(AppMode::Results, "escape_from_jump_to_row");
                 self.clear_jump_to_row_input();
 
                 // Clear is_active flag

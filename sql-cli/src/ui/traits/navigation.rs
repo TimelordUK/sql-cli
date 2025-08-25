@@ -15,6 +15,9 @@ pub trait NavigationBehavior {
     fn state_container_mut(&mut self) -> &mut AppStateContainer; // Added for mutable access
     fn get_row_count(&self) -> usize;
 
+    // Mode switching method that needs to be implemented by EnhancedTui to handle shadow_state
+    fn set_mode_with_sync(&mut self, mode: AppMode, trigger: &str);
+
     // Helper method that stays in the trait
     fn apply_row_navigation_result(&mut self, result: RowNavigationResult) {
         // Use centralized sync method
@@ -216,7 +219,8 @@ pub trait NavigationBehavior {
                 .set_status_message("Invalid row number".to_string());
         }
 
-        self.state_container_mut().set_mode(AppMode::Results);
+        // Use proper mode synchronization that updates both buffer and shadow_state
+        self.set_mode_with_sync(AppMode::Results, "jump_to_row_completed");
 
         // Clear jump-to-row state
         let jump_state = self.state_container_mut().jump_to_row_mut();

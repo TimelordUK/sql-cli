@@ -207,9 +207,18 @@ impl DebugContext for EnhancedTuiApp {
 
     fn set_mode_via_shadow_state(&mut self, mode: AppMode, trigger: &str) {
         if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
+            debug!(
+                "set_mode_via_shadow_state: Setting mode to {:?} with trigger '{}'",
+                mode, trigger
+            );
             self.shadow_state
                 .borrow_mut()
                 .set_mode(mode, buffer, trigger);
+        } else {
+            error!(
+                "set_mode_via_shadow_state: No buffer available! Cannot set mode to {:?}",
+                mode
+            );
         }
     }
 
@@ -612,25 +621,19 @@ impl EnhancedTuiApp {
                     }
                     AppMode::Help => {
                         // Return to previous mode (usually Results)
-                        self.state_container.set_mode(AppMode::Results);
-                        self.shadow_state
-                            .borrow_mut()
-                            .observe_mode_change(AppMode::Results, "escape_from_help");
+                        // Use proper mode synchronization
+                        self.set_mode_via_shadow_state(AppMode::Results, "escape_from_help");
                         self.state_container.set_help_visible(false);
                     }
                     AppMode::Debug => {
                         // Return to Results mode
-                        self.state_container.set_mode(AppMode::Results);
-                        self.shadow_state
-                            .borrow_mut()
-                            .observe_mode_change(AppMode::Results, "escape_from_debug");
+                        // Use proper mode synchronization
+                        self.set_mode_via_shadow_state(AppMode::Results, "escape_from_debug");
                     }
                     _ => {
                         // For other modes, generally go back to Command
-                        self.state_container.set_mode(AppMode::Command);
-                        self.shadow_state
-                            .borrow_mut()
-                            .observe_mode_change(AppMode::Command, "escape_to_command");
+                        // Use proper mode synchronization
+                        self.set_mode_via_shadow_state(AppMode::Command, "escape_to_command");
                     }
                 }
                 Ok(ActionResult::Handled)
@@ -1596,6 +1599,10 @@ impl EnhancedTuiApp {
     /// Dispatch key to appropriate mode handler, returns true if exit is requested
     fn try_handle_mode_dispatch(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         let mode = self.shadow_state.borrow().get_mode();
+        debug!(
+            "try_handle_mode_dispatch: mode={:?}, key={:?}",
+            mode, key.code
+        );
         match mode {
             AppMode::Command => self.handle_command_input(key),
             AppMode::Results => {
@@ -1842,10 +1849,8 @@ impl EnhancedTuiApp {
             }
             EditorAction::ShowHelp => {
                 self.state_container.set_help_visible(true);
-                self.state_container.set_mode(AppMode::Help);
-                self.shadow_state
-                    .borrow_mut()
-                    .observe_mode_change(AppMode::Help, "help_requested");
+                // Use proper mode synchronization
+                self.set_mode_via_shadow_state(AppMode::Help, "help_requested");
                 return Ok(Some(false));
             }
             EditorAction::ShowDebug => {
@@ -1922,16 +1927,15 @@ impl EnhancedTuiApp {
                     } else {
                         AppMode::Command
                     };
-                    self.state_container.set_mode(mode);
+                    // Use proper mode synchronization
+                    self.set_mode_via_shadow_state(mode, "exit_help");
                     self.state_container.set_help_visible(false);
                     self.help_widget.on_exit();
                 } else {
                     // Enter help mode
                     self.state_container.set_help_visible(true);
-                    self.state_container.set_mode(AppMode::Help);
-                    self.shadow_state
-                        .borrow_mut()
-                        .observe_mode_change(AppMode::Help, "help_requested");
+                    // Use proper mode synchronization
+                    self.set_mode_via_shadow_state(AppMode::Help, "help_requested");
                     self.help_widget.on_enter();
                 }
                 Ok(Some(false))
@@ -2368,10 +2372,8 @@ impl EnhancedTuiApp {
                     // Check for special commands
                     if query == ":help" {
                         self.state_container.set_help_visible(true);
-                        self.state_container.set_mode(AppMode::Help);
-                        self.shadow_state
-                            .borrow_mut()
-                            .observe_mode_change(AppMode::Help, "help_requested");
+                        // Use proper mode synchronization
+                        self.set_mode_via_shadow_state(AppMode::Help, "help_requested");
                         self.state_container
                             .set_status_message("Help Mode - Press ESC to return".to_string());
                     } else if query == ":exit" || query == ":quit" || query == ":q" {
@@ -2533,10 +2535,8 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.state_container.set_help_visible(true);
-                self.state_container.set_mode(AppMode::Help);
-                self.shadow_state
-                    .borrow_mut()
-                    .observe_mode_change(AppMode::Help, "help_requested");
+                // Use proper mode synchronization
+                self.set_mode_via_shadow_state(AppMode::Help, "help_requested");
                 self.help_widget.on_enter();
                 Ok(Some(false))
             }
@@ -3262,19 +3262,19 @@ impl EnhancedTuiApp {
             crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => {
                 self.help_widget.on_exit();
                 self.state_container.set_help_visible(false);
-                let _mode = if let Some(buffer) = self.state_container.current_buffer() {
-                    buffer.mode.clone()
+
+                // Return to Results mode if we have data, otherwise Command mode
+                let target_mode = if self.state_container.has_dataview() {
+                    AppMode::Results
                 } else {
-                    crate::buffer::AppMode::Command
+                    AppMode::Command
                 };
-                if let Some(buffer) = self.state_container.current_buffer_mut() {
-                    self.shadow_state.borrow_mut().set_mode(
-                        crate::buffer::AppMode::Command,
-                        buffer,
-                        "help_exit",
-                    );
-                }
-                Ok(true)
+
+                // Use proper mode synchronization
+                self.set_mode_via_shadow_state(target_mode, "escape_from_help");
+
+                // Return false to stay in the TUI (not exit)
+                Ok(false)
             }
             _ => {
                 // Delegate other keys to help widget
@@ -6021,10 +6021,8 @@ impl EnhancedTuiApp {
             // Check for special commands
             if query == ":help" {
                 self.state_container.set_help_visible(true);
-                self.state_container.set_mode(AppMode::Help);
-                self.shadow_state
-                    .borrow_mut()
-                    .observe_mode_change(AppMode::Help, "help_requested");
+                // Use proper mode synchronization
+                self.set_mode_via_shadow_state(AppMode::Help, "help_requested");
                 self.buffer_mut()
                     .set_status_message("Help Mode - Press ESC to return".to_string());
             } else if query == ":exit" || query == ":quit" || query == ":q" {
@@ -6664,7 +6662,8 @@ impl ActionHandlerContext for EnhancedTuiApp {
 
     // Mode and UI state
     fn set_mode(&mut self, mode: AppMode) {
-        self.state_container.set_mode(mode);
+        // Use the proper synchronization method that updates both buffer and shadow_state
+        self.set_mode_via_shadow_state(mode, "action_handler");
     }
 
     fn get_mode(&self) -> AppMode {
@@ -7043,6 +7042,11 @@ impl NavigationBehavior for EnhancedTuiApp {
     fn get_row_count(&self) -> usize {
         self.get_row_count()
     }
+
+    fn set_mode_with_sync(&mut self, mode: AppMode, trigger: &str) {
+        // Use the existing method that properly synchronizes both buffer and shadow_state
+        self.set_mode_via_shadow_state(mode, trigger);
+    }
 }
 
 // Implement ColumnBehavior trait for EnhancedTuiApp
@@ -7091,6 +7095,11 @@ impl InputBehavior for EnhancedTuiApp {
 
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
         self.buffer_mut()
+    }
+
+    fn set_mode_with_sync(&mut self, mode: AppMode, trigger: &str) {
+        // Use the existing method that properly synchronizes both buffer and shadow_state
+        self.set_mode_via_shadow_state(mode, trigger);
     }
 }
 
