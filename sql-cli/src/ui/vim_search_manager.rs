@@ -399,44 +399,54 @@ impl VimSearchManager {
             "Navigating to match at row={}, col={}", 
             match_item.row, match_item.col);
 
+        // Get terminal dimensions to preserve width
+        let terminal_width = viewport.get_terminal_width();
+        let terminal_height = viewport.get_terminal_height();
+
         // Ensure row is visible
         let viewport_rows = viewport.get_viewport_rows();
         let viewport_height = viewport_rows.end - viewport_rows.start;
 
-        // If row is not visible, scroll to center it
-        if match_item.row < viewport_rows.start || match_item.row >= viewport_rows.end {
-            // Calculate new viewport start to center the match
-            let new_start = match_item.row.saturating_sub(viewport_height / 2);
-            let viewport_cols = viewport.viewport_cols();
-            let col_width = (viewport_cols.end - viewport_cols.start) as u16;
-            viewport.set_viewport(
-                new_start,
-                viewport_cols.start,
-                col_width,
-                viewport_height as u16,
-            );
-            debug!(target: "vim_search", 
-                "Scrolled viewport to show row {}, new viewport: {:?}", 
-                match_item.row, viewport.get_viewport_rows());
-        }
+        // Calculate new row start if needed
+        let new_row_start =
+            if match_item.row < viewport_rows.start || match_item.row >= viewport_rows.end {
+                // Calculate new viewport start to center the match
+                let centered_start = match_item.row.saturating_sub(viewport_height / 2);
+                debug!(target: "vim_search", 
+                "Row {} not visible in viewport {:?}, centering to row {}", 
+                match_item.row, viewport_rows, centered_start);
+                centered_start
+            } else {
+                viewport_rows.start
+            };
 
         // Ensure column is visible
         let viewport_cols = viewport.viewport_cols();
-        if match_item.col < viewport_cols.start || match_item.col >= viewport_cols.end {
-            // Scroll horizontally to show the column
-            let col_width = viewport_cols.end - viewport_cols.start;
-            let new_col_start = match_item.col.saturating_sub(col_width / 4);
-            let viewport_rows_for_set = viewport.get_viewport_rows();
-            viewport.set_viewport(
-                viewport_rows_for_set.start,
-                new_col_start,
-                col_width as u16,
-                viewport_height as u16,
-            );
-            debug!(target: "vim_search", 
-                "Scrolled viewport to show column {}, new viewport: {:?}", 
-                match_item.col, viewport.viewport_cols());
-        }
+        let new_col_start =
+            if match_item.col < viewport_cols.start || match_item.col >= viewport_cols.end {
+                // Scroll horizontally to show the column
+                // Try to center the column in view if possible
+                let col_width = viewport_cols.end - viewport_cols.start;
+                let centered_start = match_item.col.saturating_sub(col_width / 2);
+                debug!(target: "vim_search", 
+                "Column {} not visible in viewport {:?}, centering to column {}", 
+                match_item.col, viewport_cols, centered_start);
+                centered_start
+            } else {
+                viewport_cols.start
+            };
+
+        // Update viewport with preserved terminal dimensions
+        viewport.set_viewport(
+            new_row_start,
+            new_col_start,
+            terminal_width, // Use actual terminal width, not column count!
+            terminal_height as u16,
+        );
+
+        debug!(target: "vim_search", 
+            "Updated viewport: rows {:?}, cols {:?}", 
+            viewport.get_viewport_rows(), viewport.viewport_cols());
 
         // Set crosshair position to the match
         // IMPORTANT: The crosshair uses ABSOLUTE coordinates, not viewport-relative
@@ -444,11 +454,19 @@ impl VimSearchManager {
         viewport.set_crosshair(match_item.row, match_item.col);
 
         // Verify the match is actually visible in the viewport after scrolling
-        let viewport_rows = viewport.get_viewport_rows();
-        if match_item.row < viewport_rows.start || match_item.row >= viewport_rows.end {
+        let final_viewport_rows = viewport.get_viewport_rows();
+        let final_viewport_cols = viewport.viewport_cols();
+
+        if match_item.row < final_viewport_rows.start || match_item.row >= final_viewport_rows.end {
             warn!(target: "vim_search", 
                 "Match row {} is outside viewport {:?} after scrolling", 
-                match_item.row, viewport_rows);
+                match_item.row, final_viewport_rows);
+        }
+
+        if match_item.col < final_viewport_cols.start || match_item.col >= final_viewport_cols.end {
+            warn!(target: "vim_search", 
+                "Match column {} is outside viewport {:?} after scrolling", 
+                match_item.col, final_viewport_cols);
         }
 
         info!(target: "vim_search", 

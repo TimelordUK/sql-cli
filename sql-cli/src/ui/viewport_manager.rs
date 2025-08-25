@@ -741,6 +741,16 @@ impl ViewportManager {
         self.dataview.column_count()
     }
 
+    /// Get terminal width in characters
+    pub fn get_terminal_width(&self) -> u16 {
+        self.terminal_width
+    }
+
+    /// Get terminal height in rows
+    pub fn get_terminal_height(&self) -> usize {
+        self.terminal_height as usize
+    }
+
     /// Force cache recalculation on next access
     pub fn invalidate_cache(&mut self) {
         self.cache_dirty = true;
