@@ -335,7 +335,9 @@ impl DebugContext for EnhancedTuiApp {
 
     // debug_generate_viewport_state now uses default implementation from trait
 
-    // debug_generate_navigation_state uses default implementation from trait
+    fn debug_generate_navigation_state(&self) -> String {
+        EnhancedTuiApp::debug_generate_navigation_state(self)
+    }
 
     fn debug_generate_column_search_state(&self) -> String {
         EnhancedTuiApp::debug_generate_column_search_state(self)
@@ -6105,8 +6107,121 @@ impl EnhancedTuiApp {
     // debug_generate_memory_info moved to DebugContext trait default implementation
     // debug_generate_datatable_schema moved to DebugContext trait default implementation
 
-    // Moved to DebugContext trait as default implementation
-    // Now uses the trait's implementation which only needs state_container
+    fn debug_generate_navigation_state(&self) -> String {
+        let mut debug_info = String::new();
+        debug_info.push_str("\n========== NAVIGATION DEBUG ==========\n");
+        let current_column = self.state_container.get_current_column();
+        let scroll_offset = self.state_container.get_scroll_offset();
+        let nav_state = self.state_container.navigation();
+
+        debug_info.push_str(&format!("Buffer Column Position: {}\n", current_column));
+        debug_info.push_str(&format!(
+            "Buffer Scroll Offset: row={}, col={}\n",
+            scroll_offset.0, scroll_offset.1
+        ));
+        debug_info.push_str(&format!(
+            "NavigationState Column: {}\n",
+            nav_state.selected_column
+        ));
+        debug_info.push_str(&format!(
+            "NavigationState Row: {:?}\n",
+            nav_state.selected_row
+        ));
+        debug_info.push_str(&format!(
+            "NavigationState Scroll Offset: row={}, col={}\n",
+            nav_state.scroll_offset.0, nav_state.scroll_offset.1
+        ));
+
+        // Show if synchronization is correct
+        if current_column != nav_state.selected_column {
+            debug_info.push_str(&format!(
+                "⚠️  WARNING: Column mismatch! Buffer={}, Nav={}\n",
+                current_column, nav_state.selected_column
+            ));
+        }
+        if scroll_offset.1 != nav_state.scroll_offset.1 {
+            debug_info.push_str(&format!(
+                "⚠️  WARNING: Scroll column mismatch! Buffer={}, Nav={}\n",
+                scroll_offset.1, nav_state.scroll_offset.1
+            ));
+        }
+
+        debug_info.push_str("\n--- Navigation Flow ---\n");
+        debug_info.push_str(
+            "(Enable RUST_LOG=sql_cli::ui::viewport_manager=debug,navigation=debug to see flow)\n",
+        );
+
+        // Show pinned column info for navigation context
+        if let Some(dataview) = self.state_container.get_buffer_dataview() {
+            let pinned_count = dataview.get_pinned_columns().len();
+            let pinned_names = dataview.get_pinned_column_names();
+            debug_info.push_str(&format!("Pinned Column Count: {}\n", pinned_count));
+            if !pinned_names.is_empty() {
+                debug_info.push_str(&format!("Pinned Column Names: {:?}\n", pinned_names));
+            }
+            debug_info.push_str(&format!("First Scrollable Column: {}\n", pinned_count));
+
+            // Show if current column is in pinned or scrollable area
+            if current_column < pinned_count {
+                debug_info.push_str(&format!(
+                    "Current Position: PINNED area (column {})\n",
+                    current_column
+                ));
+            } else {
+                debug_info.push_str(&format!(
+                    "Current Position: SCROLLABLE area (column {}, scrollable index {})\n",
+                    current_column,
+                    current_column - pinned_count
+                ));
+            }
+
+            // Show display column order
+            let display_columns = dataview.get_display_columns();
+            debug_info.push_str(&format!("\n--- COLUMN ORDERING ---\n"));
+            debug_info.push_str(&format!(
+                "Display column order (first 10): {:?}\n",
+                &display_columns[..display_columns.len().min(10)]
+            ));
+            if display_columns.len() > 10 {
+                debug_info.push_str(&format!(
+                    "... and {} more columns\n",
+                    display_columns.len() - 10
+                ));
+            }
+
+            // Find current column in display order
+            if let Some(display_idx) = display_columns
+                .iter()
+                .position(|&idx| idx == current_column)
+            {
+                debug_info.push_str(&format!(
+                    "Current column {} is at display index {}/{}\n",
+                    current_column,
+                    display_idx,
+                    display_columns.len()
+                ));
+
+                // Show what happens on next move
+                if display_idx + 1 < display_columns.len() {
+                    let next_col = display_columns[display_idx + 1];
+                    debug_info.push_str(&format!(
+                        "Next 'l' press should move to column {} (display index {})\n",
+                        next_col,
+                        display_idx + 1
+                    ));
+                } else {
+                    debug_info.push_str("Next 'l' press should wrap to first column\n");
+                }
+            } else {
+                debug_info.push_str(&format!(
+                    "WARNING: Current column {} not found in display order!\n",
+                    current_column
+                ));
+            }
+        }
+        debug_info.push_str("==========================================\n");
+        debug_info
+    }
 
     fn debug_generate_column_search_state(&self) -> String {
         let mut debug_info = String::new();
