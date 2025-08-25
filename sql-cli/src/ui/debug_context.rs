@@ -468,6 +468,16 @@ pub trait DebugContext {
         debug_info
     }
 
+    // Rendering methods with default implementations
+    fn render_debug(&self, f: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+        self.get_debug_widget().render(f, area, AppMode::Debug);
+    }
+
+    fn render_pretty_query(&self, f: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+        self.get_debug_widget()
+            .render(f, area, AppMode::PrettyQuery);
+    }
+
     // Methods that need to be implemented by the TUI (need access to TUI fields)
     fn debug_generate_parser_info(&self, query: &str) -> String;
     fn debug_generate_navigation_state(&self) -> String;

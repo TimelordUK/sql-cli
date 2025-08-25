@@ -4985,10 +4985,6 @@ impl EnhancedTuiApp {
 
     /// Debug method to dump current buffer state (disabled to prevent TUI corruption)
     #[allow(dead_code)]
-    fn debug_current_buffer(&self) {
-        // Debug output disabled - was corrupting TUI display
-        // Use tracing/logging instead if debugging is needed
-    }
 
     fn ui(&mut self, f: &mut Frame) {
         // Always use single-line mode input height
@@ -5746,11 +5742,11 @@ impl EnhancedTuiApp {
     }
 
     fn render_debug(&self, f: &mut Frame, area: Rect) {
-        self.debug_widget.render(f, area, AppMode::Debug);
+        <Self as DebugContext>::render_debug(self, f, area);
     }
 
     fn render_pretty_query(&self, f: &mut Frame, area: Rect) {
-        self.debug_widget.render(f, area, AppMode::PrettyQuery);
+        <Self as DebugContext>::render_pretty_query(self, f, area);
     }
 
     fn render_history(&self, f: &mut Frame, area: Rect) {
