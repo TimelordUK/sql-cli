@@ -2,7 +2,7 @@ use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, BufferAPI};
 use crate::ui::viewport_manager::{RowNavigationResult, ViewportManager};
 use std::cell::RefCell;
-use std::sync::Arc;
+// Arc import removed - no longer needed
 
 /// Trait that provides navigation behavior for TUI components
 /// This extracts navigation methods from EnhancedTui to reduce coupling
@@ -11,7 +11,8 @@ pub trait NavigationBehavior {
     fn viewport_manager(&self) -> &RefCell<Option<ViewportManager>>;
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI;
     fn buffer(&self) -> &dyn BufferAPI;
-    fn state_container(&self) -> &Arc<AppStateContainer>;
+    fn state_container(&self) -> &AppStateContainer;
+    fn state_container_mut(&mut self) -> &mut AppStateContainer; // Added for mutable access
     fn get_row_count(&self) -> usize;
 
     // Helper method that stays in the trait
@@ -218,10 +219,8 @@ pub trait NavigationBehavior {
         self.buffer_mut().set_mode(AppMode::Results);
 
         // Clear jump-to-row state
-        let container_ptr = Arc::as_ptr(self.state_container()) as *mut AppStateContainer;
-        unsafe {
-            (*container_ptr).jump_to_row_mut().input.clear();
-            (*container_ptr).jump_to_row_mut().is_active = false;
-        }
+        let jump_state = self.state_container_mut().jump_to_row_mut();
+        jump_state.input.clear();
+        jump_state.is_active = false;
     }
 }

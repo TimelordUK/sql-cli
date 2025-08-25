@@ -8,12 +8,12 @@ use crate::buffer::{AppMode, BufferAPI, BufferManager};
 use crate::ui::shadow_state::ShadowStateManager;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::cell::RefCell;
-use std::sync::Arc;
+// Arc import removed - no longer needed
 
 /// Context for history input operations
 /// Provides the minimal interface needed for history search operations
 pub struct HistoryInputContext<'a> {
-    pub state_container: &'a Arc<AppStateContainer>,
+    pub state_container: &'a AppStateContainer,
     pub buffer_manager: &'a mut BufferManager,
     pub shadow_state: &'a RefCell<ShadowStateManager>,
 }

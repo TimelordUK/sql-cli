@@ -18,8 +18,9 @@ use crate::data::data_analyzer::DataAnalyzer;
 use crate::data::data_provider::DataProvider;
 use crate::data::data_view::DataView;
 use crate::debug::{DebugRegistry, MemoryTracker};
+use crate::debug_service::DebugService;
 use crate::help_text::HelpText;
-use crate::service_container::ServiceContainer;
+// use crate::service_container::ServiceContainer; // Removed - not needed
 use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::state::StateDispatcher;
@@ -78,10 +79,10 @@ enum FileType {
 }
 
 pub struct EnhancedTuiApp {
-    // State container - manages all state
-    state_container: std::sync::Arc<AppStateContainer>,
-    // Service container for dependency injection
-    service_container: Option<ServiceContainer>,
+    // State container - manages all state (owned directly, no Arc needed)
+    state_container: AppStateContainer,
+    // Debug service for logging (ServiceContainer removed)
+    debug_service: Option<DebugService>,
 
     input: Input,
     cursor_manager: CursorManager, // New: manages cursor/navigation logic
@@ -435,11 +436,8 @@ impl EnhancedTuiApp {
                     .observe_mode_change(AppMode::JumpToRow, "jump_to_row_requested");
                 self.clear_jump_to_row_input();
 
-                // Set jump-to-row state as active
-                let container_ptr = Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
-                unsafe {
-                    (*container_ptr).jump_to_row_mut().is_active = true;
-                }
+                // Set jump-to-row state as active (can mutate directly now)
+                self.state_container.jump_to_row_mut().is_active = true;
 
                 self.buffer_mut()
                     .set_status_message("Enter row number (1-based):".to_string());
@@ -1130,32 +1128,26 @@ impl EnhancedTuiApp {
         container_buffer.set_show_row_numbers(config.display.show_row_numbers);
         container_buffer_manager.add_buffer(container_buffer);
 
-        // Initialize state container as Arc
-        let state_container = match AppStateContainer::new(container_buffer_manager) {
-            Ok(container) => std::sync::Arc::new(container),
+        // Initialize state container (no Arc needed)
+        let mut state_container = match AppStateContainer::new(container_buffer_manager) {
+            Ok(container) => container,
             Err(e) => {
                 panic!("Failed to initialize AppStateContainer: {}", e);
             }
         };
 
-        // Initialize service container and help widget
-        let services = ServiceContainer::new(state_container.clone());
+        // Initialize debug service directly (no ServiceContainer needed)
+        let debug_service = DebugService::new(1000); // Keep last 1000 debug entries
+        debug_service.set_enabled(true); // Enable the debug service
+        state_container.set_debug_service(debug_service.clone_service());
 
-        // Inject debug service into AppStateContainer (now works with RefCell)
-        state_container.set_debug_service(services.debug_service.clone_service());
-
-        // IMPORTANT: Enable the debug service so it actually logs!
-        services.enable_debug();
-
-        // Create help widget and set services
-        let mut help_widget = HelpWidget::new();
-        help_widget.set_services(services.clone_for_widget());
-
-        let service_container = Some(services);
+        // Create help widget
+        let help_widget = HelpWidget::new();
+        // Note: help_widget.set_services() removed - ServiceContainer no longer exists
 
         let mut app = Self {
             state_container,
-            service_container,
+            debug_service: Some(debug_service),
             input: Input::default(),
             cursor_manager: CursorManager::new(),
             data_analyzer: DataAnalyzer::new(),
@@ -6279,10 +6271,10 @@ impl EnhancedTuiApp {
     pub(crate) fn debug_generate_state_logs(&self) -> String {
         let mut debug_info = String::new();
 
-        if let Some(ref services) = self.service_container {
+        if let Some(ref debug_service) = self.debug_service {
             debug_info.push_str("\n========== STATE CHANGE LOGS ==========\n");
             debug_info.push_str("(Most recent at bottom, from DebugService)\n");
-            let debug_entries = services.debug_service.get_entries();
+            let debug_entries = debug_service.get_entries();
             let recent = debug_entries.iter().rev().take(50).rev();
             for entry in recent {
                 debug_info.push_str(&format!(
@@ -6761,10 +6753,8 @@ impl ActionHandlerContext for EnhancedTuiApp {
             AppMode::JumpToRow => {
                 self.buffer_mut().set_mode(AppMode::Results);
                 self.clear_jump_to_row_input();
-                let container_ptr = Arc::as_ptr(&self.state_container) as *mut AppStateContainer;
-                unsafe {
-                    (*container_ptr).jump_to_row_mut().is_active = false;
-                }
+                // Clear jump-to-row state (can mutate directly now)
+                self.state_container.jump_to_row_mut().is_active = false;
                 self.buffer_mut()
                     .set_status_message("Jump to row cancelled".to_string());
             }
@@ -6975,8 +6965,12 @@ impl NavigationBehavior for EnhancedTuiApp {
         self.buffer()
     }
 
-    fn state_container(&self) -> &Arc<AppStateContainer> {
+    fn state_container(&self) -> &AppStateContainer {
         &self.state_container
+    }
+
+    fn state_container_mut(&mut self) -> &mut AppStateContainer {
+        &mut self.state_container
     }
 
     fn get_row_count(&self) -> usize {
@@ -6998,7 +6992,7 @@ impl ColumnBehavior for EnhancedTuiApp {
         self.buffer()
     }
 
-    fn state_container(&self) -> &Arc<AppStateContainer> {
+    fn state_container(&self) -> &AppStateContainer {
         &self.state_container
     }
 
@@ -7020,8 +7014,12 @@ impl InputBehavior for EnhancedTuiApp {
         self.set_input_text_with_cursor(text, cursor)
     }
 
-    fn state_container(&self) -> &Arc<AppStateContainer> {
+    fn state_container(&self) -> &AppStateContainer {
         &self.state_container
+    }
+
+    fn state_container_mut(&mut self) -> &mut AppStateContainer {
+        &mut self.state_container
     }
 
     fn buffer_mut(&mut self) -> &mut dyn BufferAPI {
@@ -7038,7 +7036,7 @@ impl YankBehavior for EnhancedTuiApp {
         self.buffer_mut()
     }
 
-    fn state_container(&self) -> &Arc<AppStateContainer> {
+    fn state_container(&self) -> &AppStateContainer {
         &self.state_container
     }
 
