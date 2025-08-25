@@ -3534,18 +3534,30 @@ impl EnhancedTuiApp {
         let cursor_pos = self.get_input_cursor();
         let query = self.get_input_text();
 
-        // Use AppStateContainer for completion
+        // Get the current completion suggestion
+        let suggestion = match self.get_or_refresh_completion(&query, cursor_pos) {
+            Some(s) => s,
+            None => return,
+        };
+
+        // Apply the completion to the text
+        self.apply_completion_to_input(&query, cursor_pos, &suggestion);
+    }
+
+    /// Get current completion or refresh if context changed
+    /// Returns None if no completions available
+    fn get_or_refresh_completion(&mut self, query: &str, cursor_pos: usize) -> Option<String> {
         let is_same_context = self
             .state_container
-            .is_same_completion_context(&query, cursor_pos);
+            .is_same_completion_context(query, cursor_pos);
 
         if !is_same_context {
             // New completion context - get fresh suggestions
-            let hybrid_result = self.hybrid_parser.get_completions(&query, cursor_pos);
+            let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
             if hybrid_result.suggestions.is_empty() {
                 self.state_container
                     .set_status_message("No completions available".to_string());
-                return;
+                return None;
             }
 
             self.state_container
@@ -3556,78 +3568,99 @@ impl EnhancedTuiApp {
         } else {
             self.state_container
                 .set_status_message("No completions available".to_string());
-            return;
+            return None;
         }
 
         // Get the current suggestion from AppStateContainer
-        let suggestion = if let Some(sugg) = self.state_container.get_current_completion() {
-            sugg
-        } else {
-            self.state_container
-                .set_status_message("No completion selected".to_string());
-            return;
-        };
+        match self.state_container.get_current_completion() {
+            Some(sugg) => Some(sugg),
+            None => {
+                self.state_container
+                    .set_status_message("No completion selected".to_string());
+                None
+            }
+        }
+    }
+
+    /// Apply a completion suggestion to the input
+    fn apply_completion_to_input(&mut self, query: &str, cursor_pos: usize, suggestion: &str) {
         let partial_word =
-            crate::ui::text_operations::extract_partial_word_at_cursor(&query, cursor_pos);
+            crate::ui::text_operations::extract_partial_word_at_cursor(query, cursor_pos);
 
         if let Some(partial) = partial_word {
-            // Use extracted completion logic
-            let result = crate::ui::text_operations::apply_completion_to_text(
-                &query,
-                cursor_pos,
-                &partial,
-                &suggestion,
-            );
-
-            // Use helper to set text and cursor together - this ensures sync
-            self.set_input_text_with_cursor(result.new_text.clone(), result.new_cursor_position);
-
-            // Update completion state for next tab press
-            self.state_container
-                .update_completion_context(result.new_text.clone(), result.new_cursor_position);
-
-            let completion = self.state_container.completion();
-            let suggestion_info = if completion.suggestions.len() > 1 {
-                format!(
-                    "Completed: {} ({}/{} - Tab for next)",
-                    suggestion,
-                    completion.current_index + 1,
-                    completion.suggestions.len()
-                )
-            } else {
-                format!("Completed: {}", suggestion)
-            };
-            drop(completion);
-            self.state_container.set_status_message(suggestion_info);
+            self.apply_partial_completion(query, cursor_pos, &partial, suggestion);
         } else {
-            // Just insert the suggestion at cursor position
-            let before_cursor = &query[..cursor_pos];
-            let after_cursor = &query[cursor_pos..];
-            let new_query = format!("{}{}{}", before_cursor, suggestion, after_cursor);
-
-            // Special case: if we completed a string method like Contains(''), position cursor inside quotes
-            let cursor_pos_new = if suggestion.ends_with("('')") {
-                // Position cursor between the quotes
-                cursor_pos + suggestion.len() - 2
-            } else {
-                cursor_pos + suggestion.len()
-            };
-            // Use helper to set text through buffer
-            self.set_input_text(new_query.clone());
-            // Set cursor to correct position
-            if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
-                buffer.set_input_cursor_position(cursor_pos_new);
-                // Sync all input states after undo/redo
-                self.sync_all_input_states();
-            }
-
-            // Update completion state
-            self.state_container
-                .update_completion_context(new_query, cursor_pos_new);
-
-            self.state_container
-                .set_status_message(format!("Inserted: {}", suggestion));
+            self.apply_full_insertion(query, cursor_pos, suggestion);
         }
+    }
+
+    /// Apply completion when we have a partial word to complete
+    fn apply_partial_completion(
+        &mut self,
+        query: &str,
+        cursor_pos: usize,
+        partial: &str,
+        suggestion: &str,
+    ) {
+        // Use extracted completion logic
+        let result = crate::ui::text_operations::apply_completion_to_text(
+            query, cursor_pos, partial, suggestion,
+        );
+
+        // Use helper to set text and cursor together - this ensures sync
+        self.set_input_text_with_cursor(result.new_text.clone(), result.new_cursor_position);
+
+        // Update completion state for next tab press
+        self.state_container
+            .update_completion_context(result.new_text.clone(), result.new_cursor_position);
+
+        // Generate status message
+        let completion = self.state_container.completion();
+        let suggestion_info = if completion.suggestions.len() > 1 {
+            format!(
+                "Completed: {} ({}/{} - Tab for next)",
+                suggestion,
+                completion.current_index + 1,
+                completion.suggestions.len()
+            )
+        } else {
+            format!("Completed: {}", suggestion)
+        };
+        drop(completion);
+        self.state_container.set_status_message(suggestion_info);
+    }
+
+    /// Apply completion as a full insertion at cursor position
+    fn apply_full_insertion(&mut self, query: &str, cursor_pos: usize, suggestion: &str) {
+        // Just insert the suggestion at cursor position
+        let before_cursor = &query[..cursor_pos];
+        let after_cursor = &query[cursor_pos..];
+        let new_query = format!("{}{}{}", before_cursor, suggestion, after_cursor);
+
+        // Special case: if we completed a string method like Contains(''), position cursor inside quotes
+        let cursor_pos_new = if suggestion.ends_with("('')") {
+            // Position cursor between the quotes
+            cursor_pos + suggestion.len() - 2
+        } else {
+            cursor_pos + suggestion.len()
+        };
+
+        // Use helper to set text through buffer
+        self.set_input_text(new_query.clone());
+
+        // Set cursor to correct position
+        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
+            buffer.set_input_cursor_position(cursor_pos_new);
+            // Sync all input states after undo/redo
+            self.sync_all_input_states();
+        }
+
+        // Update completion state
+        self.state_container
+            .update_completion_context(new_query, cursor_pos_new);
+
+        self.state_container
+            .set_status_message(format!("Inserted: {}", suggestion));
     }
 
     // Note: expand_asterisk and get_table_columns removed - moved to Buffer and use hybrid_parser directly
