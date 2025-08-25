@@ -293,7 +293,8 @@ impl DebugContext for EnhancedTuiApp {
     fn collect_debug_info(&self) -> String {
         // Simplified version - the full version is in toggle_debug_mode
         let mut debug_info = String::new();
-        debug_info.push_str(&self.debug_generate_parser_info(&self.buffer().get_input_text()));
+        debug_info
+            .push_str(&self.debug_generate_parser_info(&self.state_container.get_input_text()));
         debug_info.push_str(&self.debug_generate_memory_info());
         debug_info
     }
@@ -444,7 +445,7 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             StartJumpToRow => {
-                self.buffer_mut().set_mode(AppMode::JumpToRow);
+                self.state_container.set_mode(AppMode::JumpToRow);
                 self.shadow_state
                     .borrow_mut()
                     .observe_mode_change(AppMode::JumpToRow, "jump_to_row_requested");
@@ -475,7 +476,7 @@ impl EnhancedTuiApp {
                     } else {
                         "Cursor lock OFF"
                     };
-                    self.buffer_mut().set_status_message(msg.to_string());
+                    self.state_container.set_status_message(msg.to_string());
 
                     // Log for shadow state learning (not tracking as state change yet)
                     info!(target: "shadow_state",
@@ -504,7 +505,7 @@ impl EnhancedTuiApp {
                     } else {
                         "Viewport lock OFF"
                     };
-                    self.buffer_mut().set_status_message(msg.to_string());
+                    self.state_container.set_status_message(msg.to_string());
 
                     // Log for shadow state learning (not tracking as state change yet)
                     info!(target: "shadow_state",
@@ -556,7 +557,7 @@ impl EnhancedTuiApp {
                 } else {
                     "No empty columns found".to_string()
                 };
-                self.buffer_mut().set_status_message(message);
+                self.state_container.set_status_message(message);
                 Ok(ActionResult::Handled)
             }
             // MoveColumnLeft, MoveColumnRight - handled by ColumnArrangementActionHandler
@@ -577,13 +578,13 @@ impl EnhancedTuiApp {
                         // Save current position before switching to Command mode
                         if let Some(selected) = self.state_container.get_table_selected_row() {
                             self.buffer_mut().set_last_results_row(Some(selected));
-                            let scroll_offset = self.buffer().get_scroll_offset();
+                            let scroll_offset = self.state_container.get_scroll_offset();
                             self.buffer_mut().set_last_scroll_offset(scroll_offset);
                         }
 
                         // Restore the last executed query to input_text for editing
-                        let last_query = self.buffer().get_last_query();
-                        let current_input = self.buffer().get_input_text();
+                        let last_query = self.state_container.get_last_query();
+                        let current_input = self.state_container.get_input_text();
                         debug!(target: "mode", "Exiting Results mode: current input_text='{}', last_query='{}'", current_input, last_query);
 
                         if !last_query.is_empty() {
@@ -597,7 +598,7 @@ impl EnhancedTuiApp {
                         }
 
                         debug!(target: "mode", "Switching from Results to Command mode");
-                        self.buffer_mut().set_mode(AppMode::Command);
+                        self.state_container.set_mode(AppMode::Command);
                         self.shadow_state
                             .borrow_mut()
                             .observe_mode_change(AppMode::Command, "escape_from_results");
@@ -605,7 +606,7 @@ impl EnhancedTuiApp {
                     }
                     AppMode::Help => {
                         // Return to previous mode (usually Results)
-                        self.buffer_mut().set_mode(AppMode::Results);
+                        self.state_container.set_mode(AppMode::Results);
                         self.shadow_state
                             .borrow_mut()
                             .observe_mode_change(AppMode::Results, "escape_from_help");
@@ -613,14 +614,14 @@ impl EnhancedTuiApp {
                     }
                     AppMode::Debug => {
                         // Return to Results mode
-                        self.buffer_mut().set_mode(AppMode::Results);
+                        self.state_container.set_mode(AppMode::Results);
                         self.shadow_state
                             .borrow_mut()
                             .observe_mode_change(AppMode::Results, "escape_from_debug");
                     }
                     _ => {
                         // For other modes, generally go back to Command
-                        self.buffer_mut().set_mode(AppMode::Command);
+                        self.state_container.set_mode(AppMode::Command);
                         self.shadow_state
                             .borrow_mut()
                             .observe_mode_change(AppMode::Command, "escape_to_command");
@@ -633,12 +634,12 @@ impl EnhancedTuiApp {
                 // For Command->Results, only switch if we have results
                 if target_mode == AppMode::Results && !context.has_results {
                     // Can't switch to Results mode without results
-                    self.buffer_mut().set_status_message(
+                    self.state_container.set_status_message(
                         "No results to display. Run a query first.".to_string(),
                     );
                     Ok(ActionResult::Handled)
                 } else {
-                    self.buffer_mut().set_mode(target_mode.clone());
+                    self.state_container.set_mode(target_mode.clone());
 
                     // Observe the mode change in shadow state
                     let trigger = match target_mode {
@@ -660,7 +661,7 @@ impl EnhancedTuiApp {
                         _ => "",
                     };
                     if !msg.is_empty() {
-                        self.buffer_mut().set_status_message(msg.to_string());
+                        self.state_container.set_status_message(msg.to_string());
                     }
                     Ok(ActionResult::Handled)
                 }
@@ -669,7 +670,7 @@ impl EnhancedTuiApp {
                 use crate::ui::actions::{CursorPosition, SqlClause};
 
                 // Switch to the target mode
-                self.buffer_mut().set_mode(target_mode.clone());
+                self.state_container.set_mode(target_mode.clone());
 
                 // Observe the mode change in shadow state
                 let trigger = match cursor_position {
@@ -688,12 +689,12 @@ impl EnhancedTuiApp {
                     }
                     CursorPosition::End => {
                         // Move cursor to end of input
-                        let text_len = self.buffer().get_input_text().len();
-                        self.buffer_mut().set_input_cursor_position(text_len);
+                        let text_len = self.state_container.get_input_text().len();
+                        self.state_container.set_input_cursor_position(text_len);
                     }
                     CursorPosition::AfterClause(clause) => {
                         // Use the SQL parser to find the clause position
-                        let input_text = self.buffer().get_input_text();
+                        let input_text = self.state_container.get_input_text();
 
                         // Use the lexer to tokenize with positions
                         use crate::sql::recursive_parser::Lexer;
@@ -747,7 +748,7 @@ impl EnhancedTuiApp {
                         // If we found the clause, position cursor after it
                         // If not found, append at the end with the clause
                         if let Some(pos) = cursor_pos {
-                            self.buffer_mut().set_input_cursor_position(pos);
+                            self.state_container.set_input_cursor_position(pos);
                         } else {
                             // Clause not found, append it at the end
                             let clause_text = match clause {
@@ -760,10 +761,11 @@ impl EnhancedTuiApp {
                                 SqlClause::From => " FROM ",
                             };
 
-                            let mut new_text = self.buffer().get_input_text();
+                            let mut new_text = self.state_container.get_input_text();
                             new_text.push_str(clause_text);
                             self.buffer_mut().set_input_text(new_text.clone());
-                            self.buffer_mut().set_input_cursor_position(new_text.len());
+                            self.state_container
+                                .set_input_cursor_position(new_text.len());
                         }
                     }
                 }
@@ -774,7 +776,7 @@ impl EnhancedTuiApp {
                     _ => "",
                 };
                 if !msg.is_empty() {
-                    self.buffer_mut().set_status_message(msg.to_string());
+                    self.state_container.set_status_message(msg.to_string());
                 }
 
                 Ok(ActionResult::Handled)
@@ -855,12 +857,12 @@ impl EnhancedTuiApp {
             StartHistorySearch => {
                 // Switch to Command mode first if needed
                 if self.shadow_state.borrow().is_in_results_mode() {
-                    let last_query = self.buffer().get_last_query();
+                    let last_query = self.state_container.get_last_query();
                     if !last_query.is_empty() {
                         // Use helper to sync all states
                         self.set_input_text(last_query.clone());
                     }
-                    self.buffer_mut().set_mode(AppMode::Command);
+                    self.state_container.set_mode(AppMode::Command);
                     self.shadow_state
                         .borrow_mut()
                         .observe_mode_change(AppMode::Command, "history_search_from_results");
@@ -880,7 +882,7 @@ impl EnhancedTuiApp {
                     .set_status_message(format!("History search: {} matches", match_count));
 
                 // Switch to History mode to show the search interface
-                self.buffer_mut().set_mode(AppMode::History);
+                self.state_container.set_mode(AppMode::History);
                 self.shadow_state
                     .borrow_mut()
                     .observe_mode_change(AppMode::History, "history_search_started");
@@ -895,7 +897,7 @@ impl EnhancedTuiApp {
                     let new_mode = viewport_manager.cycle_packing_mode();
                     format!("Column packing: {}", new_mode.display_name())
                 };
-                self.buffer_mut().set_status_message(message);
+                self.state_container.set_status_message(message);
                 Ok(ActionResult::Handled)
             }
             _ => {
@@ -933,7 +935,7 @@ impl EnhancedTuiApp {
             self.input.value().to_string() // TODO: Migrate to buffer-based input
         } else {
             // All other modes use the buffer
-            self.buffer().get_input_text()
+            self.state_container.get_input_text()
         }
     }
 
@@ -945,17 +947,17 @@ impl EnhancedTuiApp {
             self.input.cursor()
         } else {
             // All other modes use the buffer
-            self.buffer().get_input_cursor_position()
+            self.state_container.get_input_cursor_position()
         }
     }
 
     // Helper to set input text through buffer and sync input field
     fn set_input_text(&mut self, text: String) {
-        let old_text = self.buffer().get_input_text();
+        let old_text = self.state_container.get_input_text();
         let mode = self.shadow_state.borrow().get_mode();
 
         // Log every input text change with context
-        info!(target: "input", "SET_INPUT_TEXT: '{}' -> '{}' (mode: {:?})", 
+        info!(target: "input", "SET_INPUT_TEXT: '{}' -> '{}' (mode: {:?})",
               if old_text.len() > 50 { format!("{}...", &old_text[..50]) } else { old_text.clone() },
               if text.len() > 50 { format!("{}...", &text[..50]) } else { text.clone() },
               mode);
@@ -987,7 +989,7 @@ impl EnhancedTuiApp {
         };
 
         // Log every input text change with cursor position
-        info!(target: "input", "SET_INPUT_TEXT_WITH_CURSOR: '{}' (cursor {}) -> '{}' (cursor {}) (mode: {:?})", 
+        info!(target: "input", "SET_INPUT_TEXT_WITH_CURSOR: '{}' (cursor {}) -> '{}' (cursor {}) (mode: {:?})",
               if old_text.len() > 50 { format!("{}...", &old_text[..50]) } else { old_text.clone() },
               old_cursor,
               if text.len() > 50 { format!("{}...", &text[..50]) } else { text.clone() },
@@ -1046,7 +1048,7 @@ impl EnhancedTuiApp {
         // Update scroll to ensure cursor is visible
         self.update_horizontal_scroll(120); // Will be properly updated on next render
 
-        info!(target: "input", "SYNC_ALL [{}]: text='{}', cursor={}, mode={:?}, scroll_reset", 
+        info!(target: "input", "SYNC_ALL [{}]: text='{}', cursor={}, mode={:?}, scroll_reset",
               caller,
               if text.len() > 50 { format!("{}...", &text[..50]) } else { text.clone() },
               cursor,
@@ -1479,16 +1481,16 @@ impl EnhancedTuiApp {
             match action {
                 SearchModesAction::ExecuteDebounced(mode, pattern) => {
                     info!(target: "search", "=== DEBOUNCED SEARCH EXECUTING ===");
-                    info!(target: "search", "Mode: {:?}, Pattern: '{}', AppMode: {:?}", 
+                    info!(target: "search", "Mode: {:?}, Pattern: '{}', AppMode: {:?}",
                           mode, pattern, self.shadow_state.borrow().get_mode());
 
                     // Log current position before search
                     {
                         let nav = self.state_container.navigation();
-                        info!(target: "search", "BEFORE: nav.selected_row={}, nav.selected_column={}", 
+                        info!(target: "search", "BEFORE: nav.selected_row={}, nav.selected_column={}",
                               nav.selected_row, nav.selected_column);
-                        info!(target: "search", "BEFORE: buffer.selected_row={:?}, buffer.current_column={}", 
-                              self.buffer().get_selected_row(), self.buffer().get_current_column());
+                        info!(target: "search", "BEFORE: buffer.selected_row={:?}, buffer.current_column={}",
+                              self.state_container.get_buffer_selected_row(), self.state_container.get_current_column());
                     }
 
                     self.execute_search_action(mode, pattern);
@@ -1496,10 +1498,10 @@ impl EnhancedTuiApp {
                     // Log position after search
                     {
                         let nav = self.state_container.navigation();
-                        info!(target: "search", "AFTER: nav.selected_row={}, nav.selected_column={}", 
+                        info!(target: "search", "AFTER: nav.selected_row={}, nav.selected_column={}",
                               nav.selected_row, nav.selected_column);
-                        info!(target: "search", "AFTER: buffer.selected_row={:?}, buffer.current_column={}", 
-                              self.buffer().get_selected_row(), self.buffer().get_current_column());
+                        info!(target: "search", "AFTER: buffer.selected_row={:?}, buffer.current_column={}",
+                              self.state_container.get_buffer_selected_row(), self.state_container.get_current_column());
 
                         // Check ViewportManager state
                         let viewport_manager = self.viewport_manager.borrow();
@@ -1518,7 +1520,7 @@ impl EnhancedTuiApp {
 
             // Redraw immediately if search moved the cursor OR if TableWidgetManager needs render
             if needs_redraw || self.table_widget_manager.borrow().needs_render() {
-                info!(target: "search", "Triggering redraw: needs_redraw={}, table_needs_render={}", 
+                info!(target: "search", "Triggering redraw: needs_redraw={}, table_needs_render={}",
                       needs_redraw, self.table_widget_manager.borrow().needs_render());
                 terminal.draw(|f| self.ui(f))?;
                 self.table_widget_manager.borrow_mut().rendered();
@@ -1548,20 +1550,20 @@ impl EnhancedTuiApp {
                     &ActionContext {
                         mode: current_mode,
                         selection_mode: self.state_container.get_selection_mode(),
-                        has_results: self.buffer().get_dataview().is_some(),
+                        has_results: self.state_container.get_buffer_dataview().is_some(),
                         has_filter: false,
                         has_search: false,
                         row_count: self.get_row_count(),
                         column_count: self.get_column_count(),
                         current_row: self.state_container.get_table_selected_row().unwrap_or(0),
-                        current_column: self.buffer().get_current_column(),
+                        current_column: self.state_container.get_current_column(),
                     },
                 )?;
                 Ok(false)
             }
             ChordResult::PartialChord(description) => {
                 // Update status to show chord mode
-                self.buffer_mut().set_status_message(description.clone());
+                self.state_container.set_status_message(description.clone());
                 // Update chord mode in renderer with available completions
                 // Extract the completions from the description
                 if description.contains("y=row") {
@@ -1649,7 +1651,7 @@ impl EnhancedTuiApp {
         Ok(false)
     }
 
-    /// Handle all events, returns true if exit is requested  
+    /// Handle all events, returns true if exit is requested
     fn try_handle_events<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<bool> {
         // Use poll with timeout to allow checking for debounced actions
         if event::poll(std::time::Duration::from_millis(50))? {
@@ -1836,7 +1838,7 @@ impl EnhancedTuiApp {
             }
             EditorAction::ShowHelp => {
                 self.state_container.set_help_visible(true);
-                self.buffer_mut().set_mode(AppMode::Help);
+                self.state_container.set_mode(AppMode::Help);
                 self.shadow_state
                     .borrow_mut()
                     .observe_mode_change(AppMode::Help, "help_requested");
@@ -1911,18 +1913,18 @@ impl EnhancedTuiApp {
                 // Toggle between Help mode and previous mode
                 if self.shadow_state.borrow().is_in_help_mode() {
                     // Exit help mode
-                    let mode = if self.buffer().has_dataview() {
+                    let mode = if self.state_container.has_dataview() {
                         AppMode::Results
                     } else {
                         AppMode::Command
                     };
-                    self.buffer_mut().set_mode(mode);
+                    self.state_container.set_mode(mode);
                     self.state_container.set_help_visible(false);
                     self.help_widget.on_exit();
                 } else {
                     // Enter help mode
                     self.state_container.set_help_visible(true);
-                    self.buffer_mut().set_mode(AppMode::Help);
+                    self.state_container.set_mode(AppMode::Help);
                     self.shadow_state
                         .borrow_mut()
                         .observe_mode_change(AppMode::Help, "help_requested");
@@ -1942,9 +1944,9 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(6) => {
                 // Toggle row numbers
-                let current = self.buffer().is_show_row_numbers();
-                self.buffer_mut().set_show_row_numbers(!current);
-                self.buffer_mut().set_status_message(format!(
+                let current = self.state_container.is_show_row_numbers();
+                self.state_container.set_show_row_numbers(!current);
+                self.state_container.set_status_message(format!(
                     "Row numbers: {}",
                     if !current { "ON" } else { "OFF" }
                 ));
@@ -1952,21 +1954,21 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(7) => {
                 // Toggle compact mode
-                let current_mode = self.buffer().is_compact_mode();
-                self.buffer_mut().set_compact_mode(!current_mode);
+                let current_mode = self.state_container.is_compact_mode();
+                self.state_container.set_compact_mode(!current_mode);
                 let message = if !current_mode {
                     "Compact mode enabled"
                 } else {
                     "Compact mode disabled"
                 };
-                self.buffer_mut().set_status_message(message.to_string());
+                self.state_container.set_status_message(message.to_string());
                 Ok(Some(false))
             }
             KeyCode::F(8) => {
                 // Toggle case-insensitive string comparisons
-                let current = self.buffer().is_case_insensitive();
-                self.buffer_mut().set_case_insensitive(!current);
-                self.buffer_mut().set_status_message(format!(
+                let current = self.state_container.is_case_insensitive();
+                self.state_container.set_case_insensitive(!current);
+                self.state_container.set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
                     if !current { "ON" } else { "OFF" }
                 ));
@@ -1975,7 +1977,7 @@ impl EnhancedTuiApp {
             KeyCode::F(9) => {
                 // F9 as alternative for kill line (for terminals that intercept Ctrl+K)
                 self.kill_line();
-                let message = if !self.buffer().is_kill_ring_empty() {
+                let message = if !self.state_container.is_kill_ring_empty() {
                     format!(
                         "Killed to end of line ('{}' saved to kill ring)",
                         self.buffer().get_kill_ring()
@@ -1983,13 +1985,13 @@ impl EnhancedTuiApp {
                 } else {
                     "Killed to end of line".to_string()
                 };
-                self.buffer_mut().set_status_message(message);
+                self.state_container.set_status_message(message);
                 Ok(Some(false))
             }
             KeyCode::F(10) => {
                 // F10 as alternative for kill line backward
                 self.kill_line_backward();
-                let message = if !self.buffer().is_kill_ring_empty() {
+                let message = if !self.state_container.is_kill_ring_empty() {
                     format!(
                         "Killed to beginning of line ('{}' saved to kill ring)",
                         self.buffer().get_kill_ring()
@@ -1997,7 +1999,7 @@ impl EnhancedTuiApp {
                 } else {
                     "Killed to beginning of line".to_string()
                 };
-                self.buffer_mut().set_status_message(message);
+                self.state_container.set_status_message(message);
                 Ok(Some(false))
             }
             KeyCode::F(12) => {
@@ -2005,7 +2007,7 @@ impl EnhancedTuiApp {
                 let enabled = !self.key_indicator.enabled;
                 self.key_indicator.set_enabled(enabled);
                 self.key_sequence_renderer.set_enabled(enabled);
-                self.buffer_mut().set_status_message(format!(
+                self.state_container.set_status_message(format!(
                     "Key press indicator {}",
                     if enabled { "enabled" } else { "disabled" }
                 ));
@@ -2105,11 +2107,11 @@ impl EnhancedTuiApp {
                 // Get status
                 let match_count = self.state_container.history_search().matches.len();
 
-                self.buffer_mut().set_mode(AppMode::History);
+                self.state_container.set_mode(AppMode::History);
                 self.shadow_state
                     .borrow_mut()
                     .observe_mode_change(AppMode::History, "history_search_started");
-                self.buffer_mut().set_status_message(format!(
+                self.state_container.set_status_message(format!(
                     "History search started (Ctrl+R) - {} matches",
                     match_count
                 ));
@@ -2362,7 +2364,7 @@ impl EnhancedTuiApp {
                     // Check for special commands
                     if query == ":help" {
                         self.state_container.set_help_visible(true);
-                        self.buffer_mut().set_mode(AppMode::Help);
+                        self.state_container.set_mode(AppMode::Help);
                         self.shadow_state
                             .borrow_mut()
                             .observe_mode_change(AppMode::Help, "help_requested");
@@ -2392,15 +2394,15 @@ impl EnhancedTuiApp {
             }
             KeyCode::Down => {
                 debug!(target: "shadow_state", "Down arrow pressed in Command mode. has_dataview={}, edit_mode={:?}",
-                    self.buffer().has_dataview(),
-                    self.buffer().get_edit_mode());
+                    self.state_container.has_dataview(),
+                    self.state_container.get_edit_mode());
 
-                if self.buffer().has_dataview()
-                    && self.buffer().get_edit_mode() == EditMode::SingleLine
+                if self.state_container.has_dataview()
+                    && self.state_container.get_edit_mode() == Some(EditMode::SingleLine)
                 {
                     debug!(target: "shadow_state", "Down arrow conditions met, switching to Results via set_mode");
                     // Switch to Results mode and restore state
-                    self.buffer_mut().set_mode(AppMode::Results);
+                    self.state_container.set_mode(AppMode::Results);
                     self.shadow_state
                         .borrow_mut()
                         .observe_mode_change(AppMode::Results, "down_arrow_to_results");
@@ -2410,7 +2412,7 @@ impl EnhancedTuiApp {
 
                     // Restore the exact scroll offset from when we left
                     let last_offset = self.buffer().get_last_scroll_offset();
-                    self.buffer_mut().set_scroll_offset(last_offset);
+                    self.state_container.set_scroll_offset(last_offset);
                     Ok(Some(false))
                 } else {
                     debug!(target: "shadow_state", "Down arrow conditions not met, falling through");
@@ -2482,7 +2484,7 @@ impl EnhancedTuiApp {
                         // In row mode, 'y' is handled by chord handler (yy, yc, ya)
                         // The chord handler will process the key sequence
                         debug!("'y' pressed in row mode - waiting for chord completion");
-                        self.buffer_mut().set_status_message(
+                        self.state_container.set_status_message(
                             "Press second key for chord: yy=row, yc=column, ya=all, yv=cell"
                                 .to_string(),
                         );
@@ -2527,7 +2529,7 @@ impl EnhancedTuiApp {
         match key.code {
             KeyCode::F(1) | KeyCode::Char('?') => {
                 self.state_container.set_help_visible(true);
-                self.buffer_mut().set_mode(AppMode::Help);
+                self.state_container.set_mode(AppMode::Help);
                 self.shadow_state
                     .borrow_mut()
                     .observe_mode_change(AppMode::Help, "help_requested");
@@ -2540,9 +2542,9 @@ impl EnhancedTuiApp {
 
     fn handle_results_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Simple fix: If Escape is pressed and there's an active search, clear it
-        if key.code == KeyCode::Esc && !self.buffer().get_search_pattern().is_empty() {
+        if key.code == KeyCode::Esc && !self.state_container.get_search_pattern().is_empty() {
             info!("Escape pressed in Results mode with active search - clearing search");
-            self.buffer_mut().set_search_pattern(String::new());
+            self.state_container.set_search_pattern(String::new());
             self.state_container.clear_search();
             self.buffer_mut()
                 .set_status_message("Search cleared".to_string());
@@ -2602,7 +2604,7 @@ impl EnhancedTuiApp {
                     }
                     ActionResult::SwitchMode(mode) => {
                         debug!("Action requested mode switch to {:?}", mode);
-                        self.buffer_mut().set_mode(mode);
+                        self.state_container.set_mode(mode);
                         return Ok(false);
                     }
                     ActionResult::Error(err) => {
@@ -2673,21 +2675,21 @@ impl EnhancedTuiApp {
     // ========== SEARCH OPERATIONS ==========
 
     fn execute_search_action(&mut self, mode: SearchMode, pattern: String) {
-        debug!(target: "search", "execute_search_action called: mode={:?}, pattern='{}', current_app_mode={:?}, thread={:?}", 
+        debug!(target: "search", "execute_search_action called: mode={:?}, pattern='{}', current_app_mode={:?}, thread={:?}",
                mode, pattern, self.shadow_state.borrow().get_mode(), std::thread::current().id());
         match mode {
             SearchMode::Search => {
                 debug!(target: "search", "Executing search with pattern: '{}', app_mode={:?}", pattern, self.shadow_state.borrow().get_mode());
-                debug!(target: "search", "Search: current results count={}", 
-                       self.buffer().get_dataview().map(|v| v.source().row_count()).unwrap_or(0));
+                debug!(target: "search", "Search: current results count={}",
+                       self.state_container.get_buffer_dataview().map(|v| v.source().row_count()).unwrap_or(0));
 
                 // Set search pattern in AppStateContainer
                 self.state_container.start_search(pattern.clone());
 
-                self.buffer_mut().set_search_pattern(pattern.clone());
+                self.state_container.set_search_pattern(pattern.clone());
                 self.perform_search();
                 let matches_count = self.state_container.search().matches.len();
-                debug!(target: "search", "After perform_search, app_mode={:?}, matches_found={}", 
+                debug!(target: "search", "After perform_search, app_mode={:?}, matches_found={}",
                        self.shadow_state.borrow().get_mode(),
                        matches_count);
 
@@ -2704,8 +2706,8 @@ impl EnhancedTuiApp {
                     };
 
                     // Sync to VimSearchManager
-                    if let Some(dataview) = self.buffer().get_dataview() {
-                        info!(target: "search", "Syncing {} matches to VimSearchManager for pattern '{}'", 
+                    if let Some(dataview) = self.state_container.get_buffer_dataview() {
+                        info!(target: "search", "Syncing {} matches to VimSearchManager for pattern '{}'",
                               matches_for_vim.len(), pattern);
                         self.vim_search_adapter
                             .borrow_mut()
@@ -2740,7 +2742,7 @@ impl EnhancedTuiApp {
                     // Navigate to the match position
                     // Set the row position
                     self.state_container.set_table_selected_row(Some(row));
-                    self.buffer_mut().set_selected_row(Some(row));
+                    self.state_container.set_selected_row(Some(row));
                     info!(target: "search", "  Set row position to {}", row);
 
                     // Set the column position
@@ -2748,7 +2750,7 @@ impl EnhancedTuiApp {
                         let mut nav = self.state_container.navigation_mut();
                         nav.selected_column = col;
                     }
-                    self.buffer_mut().set_current_column(col);
+                    self.state_container.set_current_column_buffer(col);
                     info!(target: "search", "  Set column position to {}", col);
 
                     // CRITICAL: Update TableWidgetManager for debounced search navigation
@@ -2766,7 +2768,7 @@ impl EnhancedTuiApp {
                             let viewport_width = self.state_container.navigation().viewport_columns;
                             let current_scroll = self.state_container.navigation().scroll_offset.0;
 
-                            info!(target: "search", "  Viewport dimensions: {}x{}, current_scroll: {}", 
+                            info!(target: "search", "  Viewport dimensions: {}x{}, current_scroll: {}",
                                   viewport_height, viewport_width, current_scroll);
 
                             // Calculate new scroll offset if needed to show the match
@@ -2790,7 +2792,7 @@ impl EnhancedTuiApp {
                                 col // Match is to the left, scroll left
                             } else if col >= current_col_scroll + viewport_width.saturating_sub(1) {
                                 let centered = col.saturating_sub(viewport_width / 4);
-                                info!(target: "search", "  Match column {} is right of viewport (scroll={}, width={}), scrolling to {}", 
+                                info!(target: "search", "  Match column {} is right of viewport (scroll={}, width={}), scrolling to {}",
                                       col, current_col_scroll, viewport_width, centered);
                                 centered // Match is to the right, scroll right but keep some context
                             } else {
@@ -2831,7 +2833,7 @@ impl EnhancedTuiApp {
                     info!(target: "search", "  Forced navigation state to row={}, col={}", row, col);
 
                     // Update status to show we're at match 1 of N
-                    self.buffer_mut().set_status_message(format!(
+                    self.state_container.set_status_message(format!(
                         "Match 1/{} at row {}, col {}",
                         matches_count,
                         row + 1,
@@ -2840,28 +2842,28 @@ impl EnhancedTuiApp {
                 }
             }
             SearchMode::Filter => {
-                debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}, thread={:?}", 
+                debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}, thread={:?}",
                        pattern, self.shadow_state.borrow().get_mode(), std::thread::current().id());
-                debug!(target: "search", "Filter: case_insensitive={}, current results count={}", 
-                       self.buffer().is_case_insensitive(),
-                       self.buffer().get_dataview().map(|v| v.source().row_count()).unwrap_or(0));
-                self.buffer_mut().set_filter_pattern(pattern.clone());
+                debug!(target: "search", "Filter: case_insensitive={}, current results count={}",
+                       self.state_container.is_case_insensitive(),
+                       self.state_container.get_buffer_dataview().map(|v| v.source().row_count()).unwrap_or(0));
+                self.state_container.set_filter_pattern(pattern.clone());
                 self.state_container
                     .filter_mut()
                     .set_pattern(pattern.clone());
                 self.apply_filter(&pattern); // <-- Actually apply the filter!
-                debug!(target: "search", "After apply_filter, app_mode={:?}, filtered_count={}", 
+                debug!(target: "search", "After apply_filter, app_mode={:?}, filtered_count={}",
                        self.shadow_state.borrow().get_mode(),
-                self.buffer().get_dataview().map(|v| v.row_count()).unwrap_or(0));
+                self.state_container.get_buffer_dataview().map(|v| v.row_count()).unwrap_or(0));
             }
             SearchMode::FuzzyFilter => {
                 debug!(target: "search", "Executing fuzzy filter with pattern: '{}', app_mode={:?}", pattern, self.shadow_state.borrow().get_mode());
-                debug!(target: "search", "FuzzyFilter: current results count={}", 
-                       self.buffer().get_dataview().map(|v| v.source().row_count()).unwrap_or(0));
-                self.buffer_mut().set_fuzzy_filter_pattern(pattern);
+                debug!(target: "search", "FuzzyFilter: current results count={}",
+                       self.state_container.get_buffer_dataview().map(|v| v.source().row_count()).unwrap_or(0));
+                self.state_container.set_fuzzy_filter_pattern(pattern);
                 self.apply_fuzzy_filter();
-                let indices_count = self.buffer().get_fuzzy_filter_indices().len();
-                debug!(target: "search", "After apply_fuzzy_filter, app_mode={:?}, matched_indices={}", 
+                let indices_count = self.state_container.get_fuzzy_filter_indices().len();
+                debug!(target: "search", "After apply_fuzzy_filter, app_mode={:?}, matched_indices={}",
                        self.shadow_state.borrow().get_mode(), indices_count);
             }
             SearchMode::ColumnSearch => {
@@ -2876,7 +2878,7 @@ impl EnhancedTuiApp {
                 // IMPORTANT: Ensure we stay in ColumnSearch mode after search
                 if self.shadow_state.borrow().get_mode() != AppMode::ColumnSearch {
                     debug!(target: "search", "WARNING: Mode changed after search_columns, restoring to ColumnSearch");
-                    self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                    self.state_container.set_mode(AppMode::ColumnSearch);
                     self.shadow_state.borrow_mut().observe_search_start(
                         crate::ui::shadow_state::SearchType::Column,
                         "column_search_restored",
@@ -2888,13 +2890,13 @@ impl EnhancedTuiApp {
     }
 
     fn enter_search_mode(&mut self, mode: SearchMode) {
-        debug!(target: "search", "enter_search_mode called for {:?}, current_mode={:?}, input_text='{}'", 
-               mode, self.shadow_state.borrow().get_mode(), self.buffer().get_input_text());
+        debug!(target: "search", "enter_search_mode called for {:?}, current_mode={:?}, input_text='{}'",
+               mode, self.shadow_state.borrow().get_mode(), self.state_container.get_input_text());
 
         // Get the SQL text based on the current mode
         let current_sql = if self.shadow_state.borrow().is_in_results_mode() {
             // In Results mode, use the last executed query
-            let last_query = self.buffer().get_last_query();
+            let last_query = self.state_container.get_last_query();
             if !last_query.is_empty() {
                 debug!("Using last_query for search mode: '{}'", last_query);
                 last_query
@@ -2923,7 +2925,7 @@ impl EnhancedTuiApp {
 
         // Set the app mode
         debug!(target: "mode", "Setting app mode from {:?} to {:?}", self.shadow_state.borrow().get_mode(), mode.to_app_mode());
-        self.buffer_mut().set_mode(mode.to_app_mode());
+        self.state_container.set_mode(mode.to_app_mode());
 
         // Observe the search mode start in shadow state
         let search_type = match mode {
@@ -2948,21 +2950,21 @@ impl EnhancedTuiApp {
             SearchMode::Search => {
                 // Clear search in AppStateContainer
                 self.state_container.clear_search();
-                self.buffer_mut().set_search_pattern(String::new());
+                self.state_container.set_search_pattern(String::new());
             }
             SearchMode::Filter => {
-                self.buffer_mut().set_filter_pattern(String::new());
+                self.state_container.set_filter_pattern(String::new());
                 self.state_container.filter_mut().clear();
             }
             SearchMode::FuzzyFilter => {
-                self.buffer_mut().set_fuzzy_filter_pattern(String::new());
-                self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
-                self.buffer_mut().set_fuzzy_filter_active(false);
+                self.state_container.set_fuzzy_filter_pattern(String::new());
+                self.state_container.set_fuzzy_filter_indices(Vec::new());
+                self.state_container.set_fuzzy_filter_active(false);
             }
             SearchMode::ColumnSearch => {
                 // Clear column search in both AppStateContainer and DataView
                 self.state_container.clear_column_search();
-                if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+                if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
                     dataview.clear_column_search();
                 }
 
@@ -2996,16 +2998,16 @@ impl EnhancedTuiApp {
                 // Update the stored pattern
                 match mode {
                     SearchMode::Search => {
-                        self.buffer_mut().set_search_pattern(pattern);
+                        self.state_container.set_search_pattern(pattern);
                     }
                     SearchMode::Filter => {
-                        self.buffer_mut().set_filter_pattern(pattern.clone());
+                        self.state_container.set_filter_pattern(pattern.clone());
                         let mut filter = self.state_container.filter_mut();
                         filter.pattern = pattern.clone();
                         filter.is_active = true;
                     }
                     SearchMode::FuzzyFilter => {
-                        self.buffer_mut().set_fuzzy_filter_pattern(pattern);
+                        self.state_container.set_fuzzy_filter_pattern(pattern);
                     }
                     SearchMode::ColumnSearch => {
                         // Pattern is stored in AppStateContainer via start_column_search
@@ -3026,25 +3028,25 @@ impl EnhancedTuiApp {
                         debug!(target: "search", "Search Apply: Applying search with pattern '{}'", pattern);
                         // Use execute_search_action to get the navigation to first match
                         self.execute_search_action(SearchMode::Search, pattern);
-                        debug!(target: "search", "Search Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                        debug!(target: "search", "Search Apply: last_query='{}', will restore saved SQL from widget", self.state_container.get_last_query());
                         // For search, we always want to exit to Results mode after applying
                     }
                     SearchMode::Filter => {
                         debug!(target: "search", "Filter Apply: Applying filter with pattern '{}'", pattern);
-                        self.buffer_mut().set_filter_pattern(pattern.clone());
+                        self.state_container.set_filter_pattern(pattern.clone());
                         {
                             let mut filter = self.state_container.filter_mut();
                             filter.pattern = pattern.clone();
                             filter.is_active = true;
                         } // filter borrow ends here
                         self.apply_filter(&pattern); // Use the actual pattern, not empty string
-                        debug!(target: "search", "Filter Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                        debug!(target: "search", "Filter Apply: last_query='{}', will restore saved SQL from widget", self.state_container.get_last_query());
                     }
                     SearchMode::FuzzyFilter => {
                         debug!(target: "search", "FuzzyFilter Apply: Applying filter with pattern '{}'", pattern);
-                        self.buffer_mut().set_fuzzy_filter_pattern(pattern);
+                        self.state_container.set_fuzzy_filter_pattern(pattern);
                         self.apply_fuzzy_filter();
-                        debug!(target: "search", "FuzzyFilter Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                        debug!(target: "search", "FuzzyFilter Apply: last_query='{}', will restore saved SQL from widget", self.state_container.get_last_query());
                     }
                     SearchMode::ColumnSearch => {
                         // For column search, Apply (Enter key) jumps to the current match and exits
@@ -3061,7 +3063,7 @@ impl EnhancedTuiApp {
 
                         if let Some((col_idx, col_name)) = column_info {
                             self.state_container.set_current_column(col_idx);
-                            self.buffer_mut().set_current_column(col_idx);
+                            self.state_container.set_current_column_buffer(col_idx);
 
                             // Update ViewportManager to ensure the column is visible
                             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
@@ -3077,7 +3079,7 @@ impl EnhancedTuiApp {
                         // IMPORTANT: Don't modify input_text when exiting column search!
                         // The widget will restore the original SQL that was saved when entering the mode
                         debug!(target: "search", "ColumnSearch Apply: Exiting without modifying input_text");
-                        debug!(target: "search", "ColumnSearch Apply: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                        debug!(target: "search", "ColumnSearch Apply: last_query='{}', will restore saved SQL from widget", self.state_container.get_last_query());
                         // Note: We'll exit the mode below and the widget will restore the saved SQL
                     }
                 }
@@ -3088,8 +3090,8 @@ impl EnhancedTuiApp {
 
                 if let Some((sql, cursor)) = saved_state {
                     debug!(target: "search", "Exiting search mode. Original SQL was: '{}', cursor: {}", sql, cursor);
-                    debug!(target: "buffer", "Returning to Results mode, preserving last_query: '{}'", 
-                           self.buffer().get_last_query());
+                    debug!(target: "buffer", "Returning to Results mode, preserving last_query: '{}'",
+                           self.state_container.get_last_query());
 
                     // IMPORTANT: Restore the saved SQL to input_text!
                     // This is the SQL that was saved when we entered the search mode
@@ -3106,7 +3108,7 @@ impl EnhancedTuiApp {
                 }
 
                 // ALWAYS switch back to Results mode after Apply for all search modes
-                self.buffer_mut().set_mode(AppMode::Results);
+                self.state_container.set_mode(AppMode::Results);
                 self.shadow_state
                     .borrow_mut()
                     .observe_mode_change(AppMode::Results, "filter_applied");
@@ -3114,7 +3116,7 @@ impl EnhancedTuiApp {
                 // Show status message
                 let filter_msg = match mode {
                     SearchMode::FuzzyFilter => {
-                        let query = self.buffer().get_last_query();
+                        let query = self.state_container.get_last_query();
                         format!(
                             "Fuzzy filter applied. Query: '{}'. Press 'f' again to modify.",
                             if query.len() > 30 {
@@ -3135,7 +3137,7 @@ impl EnhancedTuiApp {
                     }
                     SearchMode::ColumnSearch => "Column search complete.".to_string(),
                 };
-                self.buffer_mut().set_status_message(filter_msg);
+                self.state_container.set_status_message(filter_msg);
             }
             SearchModesAction::Cancel => {
                 // Clear the filter and restore original SQL
@@ -3144,17 +3146,17 @@ impl EnhancedTuiApp {
                     AppMode::FuzzyFilter => {
                         // Clear fuzzy filter - must apply empty filter to DataView
                         debug!(target: "search", "FuzzyFilter Cancel: Clearing fuzzy filter");
-                        self.buffer_mut().set_fuzzy_filter_pattern(String::new());
+                        self.state_container.set_fuzzy_filter_pattern(String::new());
                         self.apply_fuzzy_filter(); // This will clear the filter in DataView
-                        self.buffer_mut().set_fuzzy_filter_indices(Vec::new());
-                        self.buffer_mut().set_fuzzy_filter_active(false);
+                        self.state_container.set_fuzzy_filter_indices(Vec::new());
+                        self.state_container.set_fuzzy_filter_active(false);
                     }
                     AppMode::Filter => {
                         // Clear both local and buffer filter state
                         debug!(target: "search", "Filter Cancel: Clearing filter pattern and state");
                         self.state_container.filter_mut().clear();
-                        self.buffer_mut().set_filter_pattern(String::new());
-                        self.buffer_mut().set_filter_active(false);
+                        self.state_container.set_filter_pattern(String::new());
+                        self.state_container.set_filter_active(false);
                         // Re-apply empty filter to restore all results
                         self.apply_filter("");
                     }
@@ -3163,7 +3165,7 @@ impl EnhancedTuiApp {
                         self.state_container.clear_column_search();
                         // The widget will restore the original SQL that was saved when entering the mode
                         debug!(target: "search", "ColumnSearch Cancel: Exiting without modifying input_text");
-                        debug!(target: "search", "ColumnSearch Cancel: last_query='{}', will restore saved SQL from widget", self.buffer().get_last_query());
+                        debug!(target: "search", "ColumnSearch Cancel: last_query='{}', will restore saved SQL from widget", self.state_container.get_last_query());
                     }
                     _ => {}
                 }
@@ -3189,7 +3191,7 @@ impl EnhancedTuiApp {
                     .observe_search_end("search_cancelled");
 
                 // Switch back to Results mode
-                self.buffer_mut().set_mode(AppMode::Results);
+                self.state_container.set_mode(AppMode::Results);
 
                 // Observe mode change
                 self.shadow_state
@@ -3197,7 +3199,7 @@ impl EnhancedTuiApp {
                     .observe_mode_change(AppMode::Results, "return_from_search");
             }
             SearchModesAction::NextMatch => {
-                debug!(target: "search", "NextMatch action, current_mode={:?}, widget_mode={:?}", 
+                debug!(target: "search", "NextMatch action, current_mode={:?}, widget_mode={:?}",
                        self.shadow_state.borrow().get_mode(), self.search_modes_widget.current_mode());
 
                 // Check both shadow state and widget mode for consistency
@@ -3208,7 +3210,7 @@ impl EnhancedTuiApp {
                     // Ensure mode is correctly set
                     if !self.shadow_state.borrow().is_in_column_search() {
                         debug!(target: "search", "WARNING: Mode mismatch - fixing");
-                        self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                        self.state_container.set_mode(AppMode::ColumnSearch);
                         self.shadow_state.borrow_mut().observe_search_start(
                             crate::ui::shadow_state::SearchType::Column,
                             "column_search_mode_fix_next",
@@ -3220,7 +3222,7 @@ impl EnhancedTuiApp {
                 }
             }
             SearchModesAction::PreviousMatch => {
-                debug!(target: "search", "PreviousMatch action, current_mode={:?}, widget_mode={:?}", 
+                debug!(target: "search", "PreviousMatch action, current_mode={:?}, widget_mode={:?}",
                        self.shadow_state.borrow().get_mode(), self.search_modes_widget.current_mode());
 
                 // Check both buffer mode and widget mode for consistency
@@ -3231,7 +3233,7 @@ impl EnhancedTuiApp {
                     // Ensure mode is correctly set
                     if self.shadow_state.borrow().get_mode() != AppMode::ColumnSearch {
                         debug!(target: "search", "WARNING: Mode mismatch - fixing");
-                        self.buffer_mut().set_mode(AppMode::ColumnSearch);
+                        self.state_container.set_mode(AppMode::ColumnSearch);
                         self.shadow_state.borrow_mut().observe_search_start(
                             crate::ui::shadow_state::SearchType::Column,
                             "column_search_mode_fix_prev",
@@ -3376,7 +3378,7 @@ impl EnhancedTuiApp {
     fn update_history_matches_in_container(&mut self) {
         // Get current schema columns and data source for better matching
         let (current_columns, current_source_str) =
-            if let Some(dataview) = self.buffer().get_dataview() {
+            if let Some(dataview) = self.state_container.get_buffer_dataview() {
                 (
                     dataview.column_names(),              // Gets visible columns
                     Some(dataview.source().name.clone()), // Gets table name from DataTable
@@ -3458,10 +3460,10 @@ impl EnhancedTuiApp {
 
         // 3. Execute query on DataView
         let query_start = std::time::Instant::now();
-        let result = if let Some(dataview) = self.buffer().get_dataview() {
+        let result = if let Some(dataview) = self.state_container.get_buffer_dataview() {
             // Get the DataTable Arc (should add source_arc() method to DataView to avoid cloning)
             let table_arc = Arc::new(dataview.source().clone());
-            let case_insensitive = self.buffer().is_case_insensitive();
+            let case_insensitive = self.state_container.is_case_insensitive();
 
             // Execute using QueryEngine
             let engine =
@@ -3485,7 +3487,7 @@ impl EnhancedTuiApp {
 
                 // Apply auto-hide empty columns if configured
                 if self.config.behavior.hide_empty_columns {
-                    if let Some(dataview_mut) = self.buffer_mut().get_dataview_mut() {
+                    if let Some(dataview_mut) = self.state_container.get_buffer_dataview_mut() {
                         let count = dataview_mut.hide_empty_columns();
                         if count > 0 {
                             info!("Auto-hidden {} empty columns after query execution", count);
@@ -3508,7 +3510,7 @@ impl EnhancedTuiApp {
                 self.calculate_optimal_column_widths();
 
                 // Update status
-                self.buffer_mut().set_status_message(format!(
+                self.state_container.set_status_message(format!(
                     "Query executed: {} rows, {} columns ({} ms)",
                     row_count,
                     col_count,
@@ -3539,13 +3541,13 @@ impl EnhancedTuiApp {
                     )?;
 
                 // 6. Clear any active filters (new query should start with clean state)
-                self.buffer_mut().set_filter_pattern(String::new());
-                self.buffer_mut().set_fuzzy_filter_pattern(String::new());
-                self.buffer_mut().set_filter_active(false);
-                self.buffer_mut().set_fuzzy_filter_active(false);
+                self.state_container.set_filter_pattern(String::new());
+                self.state_container.set_fuzzy_filter_pattern(String::new());
+                self.state_container.set_filter_active(false);
+                self.state_container.set_fuzzy_filter_active(false);
 
                 // 7. Switch to results mode and reset navigation using centralized reset
-                self.buffer_mut().set_mode(AppMode::Results);
+                self.state_container.set_mode(AppMode::Results);
 
                 // Observe state transition
                 self.shadow_state
@@ -3558,7 +3560,7 @@ impl EnhancedTuiApp {
             }
             Err(e) => {
                 let error_msg = format!("Query error: {}", e);
-                self.buffer_mut().set_status_message(error_msg.clone());
+                self.state_container.set_status_message(error_msg.clone());
 
                 // Add failed query to history
                 self.state_container.command_history_mut().add_entry(
@@ -3579,7 +3581,7 @@ impl EnhancedTuiApp {
 
         let hybrid_result = self.hybrid_parser.get_completions(query, cursor_pos);
         if !hybrid_result.suggestions.is_empty() {
-            self.buffer_mut().set_status_message(format!(
+            self.state_container.set_status_message(format!(
                 "Suggestions: {}",
                 hybrid_result.suggestions.join(", ")
             ));
@@ -3641,7 +3643,7 @@ impl EnhancedTuiApp {
             if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                 buffer.set_input_cursor_position(result.new_cursor_position);
                 // Sync for rendering
-                if self.buffer().get_edit_mode() == EditMode::SingleLine {
+                if self.state_container.get_edit_mode() == Some(EditMode::SingleLine) {
                     self.set_input_text_with_cursor(
                         result.new_text.clone(),
                         result.new_cursor_position,
@@ -3665,7 +3667,7 @@ impl EnhancedTuiApp {
                 format!("Completed: {}", suggestion)
             };
             drop(completion);
-            self.buffer_mut().set_status_message(suggestion_info);
+            self.state_container.set_status_message(suggestion_info);
         } else {
             // Just insert the suggestion at cursor position
             let before_cursor = &query[..cursor_pos];
@@ -3739,7 +3741,7 @@ impl EnhancedTuiApp {
         };
 
         // Get column name at visual position
-        let column_name = if let Some(dataview) = self.buffer().get_dataview() {
+        let column_name = if let Some(dataview) = self.state_container.get_buffer_dataview() {
             let all_columns = dataview.column_names();
             all_columns.get(visual_col_idx).cloned()
         } else {
@@ -3747,7 +3749,7 @@ impl EnhancedTuiApp {
         };
 
         if let Some(col_name) = column_name {
-            if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+            if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
                 // Check if this column name is already pinned
                 let pinned_names = dataview.get_pinned_column_names();
                 if pinned_names.contains(&col_name) {
@@ -3763,13 +3765,13 @@ impl EnhancedTuiApp {
                                 .set_status_message(format!("Column '{}' pinned [P]", col_name));
                         }
                         Err(e) => {
-                            self.buffer_mut().set_status_message(e.to_string());
+                            self.state_container.set_status_message(e.to_string());
                         }
                     }
                 }
 
                 // Update ViewportManager with the modified DataView
-                if let Some(updated_dataview) = self.buffer().get_dataview() {
+                if let Some(updated_dataview) = self.state_container.get_buffer_dataview() {
                     self.update_viewport_manager(Some(updated_dataview.clone()));
                 }
             }
@@ -3780,14 +3782,14 @@ impl EnhancedTuiApp {
     }
 
     fn clear_all_pinned_columns_impl(&mut self) {
-        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+        if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
             dataview.clear_pinned_columns();
         }
         self.buffer_mut()
             .set_status_message("All columns unpinned".to_string());
 
         // Update ViewportManager with the modified DataView
-        if let Some(updated_dataview) = self.buffer().get_dataview() {
+        if let Some(updated_dataview) = self.state_container.get_buffer_dataview() {
             self.update_viewport_manager(Some(updated_dataview.clone()));
         }
     }
@@ -3805,7 +3807,7 @@ impl EnhancedTuiApp {
                 return;
             }
 
-            let current_column = self.buffer().get_current_column();
+            let current_column = self.state_container.get_current_column();
             if current_column >= headers.len() {
                 return;
             }
@@ -3882,14 +3884,14 @@ impl EnhancedTuiApp {
         self.buffer_mut().set_column_stats(Some(stats));
 
         // Show timing in status message
-        self.buffer_mut().set_status_message(format!(
+        self.state_container.set_status_message(format!(
             "Column stats: {:.1}ms for {} values ({} unique)",
             elapsed.as_secs_f64() * 1000.0,
             data_to_analyze.len(),
             analyzer_stats.unique_values
         ));
 
-        self.buffer_mut().set_mode(AppMode::ColumnStats);
+        self.state_container.set_mode(AppMode::ColumnStats);
         self.shadow_state
             .borrow_mut()
             .observe_mode_change(AppMode::ColumnStats, "column_stats_requested");
@@ -3938,22 +3940,22 @@ impl EnhancedTuiApp {
                 .collect();
 
             // Get search pattern from buffer
-            let pattern = self.buffer().get_search_pattern().to_string();
+            let pattern = self.state_container.get_search_pattern().to_string();
 
             info!(target: "search", "=== SEARCH START ===");
-            info!(target: "search", "Pattern: '{}', case_insensitive: {}", 
-                  pattern, self.buffer().is_case_insensitive());
-            info!(target: "search", "Data dimensions: {} rows x {} columns", 
+            info!(target: "search", "Pattern: '{}', case_insensitive: {}",
+                  pattern, self.state_container.is_case_insensitive());
+            info!(target: "search", "Data dimensions: {} rows x {} columns",
                   data.len(), data.first().map(|r| r.len()).unwrap_or(0));
 
             // Log column names to understand ordering
             let column_names = dataview.column_names();
-            info!(target: "search", "Column names (first 5): {:?}", 
+            info!(target: "search", "Column names (first 5): {:?}",
                   column_names.iter().take(5).collect::<Vec<_>>());
 
             // Log the first few rows of data we're searching
             for (i, row) in data.iter().take(10).enumerate() {
-                info!(target: "search", "  Data row {}: [{}]", i, 
+                info!(target: "search", "  Data row {}: [{}]", i,
                       row.iter().take(5).map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(", "));
             }
 
@@ -3969,8 +3971,8 @@ impl EnhancedTuiApp {
                 info!(target: "search", "Cleared previous search results");
 
                 // Update case sensitivity based on current setting
-                search_manager.set_case_sensitive(!self.buffer().is_case_insensitive());
-                info!(target: "search", "Set case_sensitive to {}", !self.buffer().is_case_insensitive());
+                search_manager.set_case_sensitive(!self.state_container.is_case_insensitive());
+                info!(target: "search", "Set case_sensitive to {}", !self.state_container.is_case_insensitive());
 
                 // Perform the search
                 let count = search_manager.search(&pattern, &data, visible_columns);
@@ -3987,7 +3989,7 @@ impl EnhancedTuiApp {
                     let search_manager = self.search_manager.borrow();
                     if let Some(first_match) = search_manager.first_match() {
                         info!(target: "search", "FIRST MATCH DETAILS:");
-                        info!(target: "search", "  Data coordinates: row={}, col={}", 
+                        info!(target: "search", "  Data coordinates: row={}, col={}",
                               first_match.row, first_match.column);
                         info!(target: "search", "  Matched value: '{}'", first_match.value);
                         info!(target: "search", "  Highlight range: {:?}", first_match.highlight_range);
@@ -4096,7 +4098,7 @@ impl EnhancedTuiApp {
             let resumed = {
                 let mut viewport_borrow = self.viewport_manager.borrow_mut();
                 if let Some(ref mut viewport) = *viewport_borrow {
-                    if let Some(dataview) = self.buffer().get_dataview() {
+                    if let Some(dataview) = self.state_container.get_buffer_dataview() {
                         self.vim_search_adapter
                             .borrow_mut()
                             .resume_last_search(dataview, viewport)
@@ -4135,17 +4137,19 @@ impl EnhancedTuiApp {
         if let Some((ref search_match, _)) = result {
             self.state_container
                 .set_table_selected_row(Some(search_match.row));
-            self.buffer_mut().set_selected_row(Some(search_match.row));
+            self.state_container
+                .set_selected_row(Some(search_match.row));
 
             // IMPORTANT: Also update the selected column to match the search match
-            self.buffer_mut().set_current_column(search_match.col);
+            self.state_container
+                .set_current_column_buffer(search_match.col);
             self.state_container.navigation_mut().selected_column = search_match.col;
 
             // CRITICAL: Also update navigation's selected_row to trigger proper rendering
             self.state_container.navigation_mut().selected_row = search_match.row;
 
             // CRITICAL: Update TableWidgetManager to trigger re-render
-            info!(target: "search", "Updating TableWidgetManager for vim search navigation to ({}, {})", 
+            info!(target: "search", "Updating TableWidgetManager for vim search navigation to ({}, {})",
                   search_match.row, search_match.col);
             self.table_widget_manager
                 .borrow_mut()
@@ -4153,7 +4157,7 @@ impl EnhancedTuiApp {
 
             // Update scroll offset if row changed significantly
             let viewport_height = 79; // Typical viewport height
-            let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
+            let (current_scroll_row, current_scroll_col) = self.state_container.get_scroll_offset();
 
             // If the match is outside current viewport, update scroll
             if search_match.row < current_scroll_row
@@ -4170,7 +4174,7 @@ impl EnhancedTuiApp {
         // Update status without borrow conflicts
         if let Some((search_match, match_info)) = result {
             if let Some((current, total)) = match_info {
-                self.buffer_mut().set_status_message(format!(
+                self.state_container.set_status_message(format!(
                     "Match {}/{} at ({}, {})",
                     current,
                     total,
@@ -4188,7 +4192,7 @@ impl EnhancedTuiApp {
             let resumed = {
                 let mut viewport_borrow = self.viewport_manager.borrow_mut();
                 if let Some(ref mut viewport) = *viewport_borrow {
-                    if let Some(dataview) = self.buffer().get_dataview() {
+                    if let Some(dataview) = self.state_container.get_buffer_dataview() {
                         self.vim_search_adapter
                             .borrow_mut()
                             .resume_last_search(dataview, viewport)
@@ -4230,17 +4234,19 @@ impl EnhancedTuiApp {
         if let Some((ref search_match, _)) = result {
             self.state_container
                 .set_table_selected_row(Some(search_match.row));
-            self.buffer_mut().set_selected_row(Some(search_match.row));
+            self.state_container
+                .set_selected_row(Some(search_match.row));
 
             // IMPORTANT: Also update the selected column to match the search match
-            self.buffer_mut().set_current_column(search_match.col);
+            self.state_container
+                .set_current_column_buffer(search_match.col);
             self.state_container.navigation_mut().selected_column = search_match.col;
 
             // CRITICAL: Also update navigation's selected_row to trigger proper rendering
             self.state_container.navigation_mut().selected_row = search_match.row;
 
             // CRITICAL: Update TableWidgetManager to trigger re-render
-            info!(target: "search", "Updating TableWidgetManager for vim search navigation to ({}, {})", 
+            info!(target: "search", "Updating TableWidgetManager for vim search navigation to ({}, {})",
                   search_match.row, search_match.col);
             self.table_widget_manager
                 .borrow_mut()
@@ -4248,7 +4254,7 @@ impl EnhancedTuiApp {
 
             // Update scroll offset if row changed significantly
             let viewport_height = 79; // Typical viewport height
-            let (current_scroll_row, current_scroll_col) = self.buffer().get_scroll_offset();
+            let (current_scroll_row, current_scroll_col) = self.state_container.get_scroll_offset();
 
             // If the match is outside current viewport, update scroll
             if search_match.row < current_scroll_row
@@ -4265,7 +4271,7 @@ impl EnhancedTuiApp {
         // Update status without borrow conflicts
         if let Some((search_match, match_info)) = result {
             if let Some((current, total)) = match_info {
-                self.buffer_mut().set_status_message(format!(
+                self.state_container.set_status_message(format!(
                     "Match {}/{} at ({}, {})",
                     current,
                     total,
@@ -4297,9 +4303,9 @@ impl EnhancedTuiApp {
             pattern,
             std::thread::current().id()
         );
-        let case_insensitive = { self.buffer().is_case_insensitive() };
+        let case_insensitive = { self.state_container.is_case_insensitive() };
 
-        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+        if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
             let rows_before = dataview.row_count();
             info!("Rows before filter: {}", rows_before);
 
@@ -4314,7 +4320,7 @@ impl EnhancedTuiApp {
                 format!("Filter applied: '{}' - {} matches", pattern, rows_after)
             };
             info!("Filter status: {}", status);
-            self.buffer_mut().set_status_message(status);
+            self.state_container.set_status_message(status);
         } else {
             warn!("No DataView available for filtering");
         }
@@ -4357,7 +4363,9 @@ impl EnhancedTuiApp {
         }
 
         // Update DataView's column search and get matches
-        let matching_columns = if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+        let matching_columns = if let Some(dataview) =
+            self.state_container.get_buffer_dataview_mut()
+        {
             dataview.search_columns(&pattern);
 
             // Get matching columns from DataView
@@ -4389,7 +4397,7 @@ impl EnhancedTuiApp {
             let first_match_name = &matching_columns[0].1;
 
             // Convert visual index to DataTable index for Buffer/AppStateContainer (legacy compatibility)
-            let datatable_idx = if let Some(dataview) = self.buffer().get_dataview() {
+            let datatable_idx = if let Some(dataview) = self.state_container.get_buffer_dataview() {
                 let display_columns = dataview.get_display_columns();
                 if first_match_visual_idx < display_columns.len() {
                     display_columns[first_match_visual_idx]
@@ -4401,7 +4409,8 @@ impl EnhancedTuiApp {
             };
 
             self.state_container.set_current_column(datatable_idx);
-            self.buffer_mut().set_current_column(datatable_idx);
+            self.state_container
+                .set_current_column_buffer(datatable_idx);
 
             // Update viewport to show the first match using ViewportManager
             // ViewportManager expects VISUAL index
@@ -4414,22 +4423,23 @@ impl EnhancedTuiApp {
                     // Sync navigation state with updated viewport
                     if viewport_changed {
                         let new_viewport = viewport_manager.viewport_cols().clone();
-                        let pinned_count = if let Some(dv) = self.buffer().get_dataview() {
-                            dv.get_pinned_columns().len()
-                        } else {
-                            0
-                        };
+                        let pinned_count =
+                            if let Some(dv) = self.state_container.get_buffer_dataview() {
+                                dv.get_pinned_columns().len()
+                            } else {
+                                0
+                            };
                         let scrollable_offset = new_viewport.start.saturating_sub(pinned_count);
                         self.state_container.navigation_mut().scroll_offset.1 = scrollable_offset;
 
-                        debug!(target: "navigation", 
-                            "Column search initial: Jumped to column {} '{}', viewport adjusted to {:?}", 
+                        debug!(target: "navigation",
+                            "Column search initial: Jumped to column {} '{}', viewport adjusted to {:?}",
                             first_match_visual_idx, first_match_name, new_viewport);
                     }
                 }
             }
 
-            debug!(target: "search", "Setting current column to visual index {} ('{}')", 
+            debug!(target: "search", "Setting current column to visual index {} ('{}')",
                    first_match_visual_idx, first_match_name);
             let status_msg = format!(
                 "Found {} columns matching '{}'. Tab/Shift-Tab to navigate.",
@@ -4437,13 +4447,13 @@ impl EnhancedTuiApp {
                 pattern
             );
             debug!(target: "search", "Setting status: {}", status_msg);
-            self.buffer_mut().set_status_message(status_msg);
+            self.state_container.set_status_message(status_msg);
 
             // Column search matches are now managed by AppStateContainer
         } else {
             let status_msg = format!("No columns matching '{}'", pattern);
             debug!(target: "search", "Setting status: {}", status_msg);
-            self.buffer_mut().set_status_message(status_msg);
+            self.state_container.set_status_message(status_msg);
         }
 
         // Matching columns are now stored in AppStateContainer
@@ -4451,7 +4461,7 @@ impl EnhancedTuiApp {
 
     fn next_column_match(&mut self) {
         // Use DataView's column search navigation
-        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+        if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
             if let Some(visual_idx) = dataview.next_column_match() {
                 // Get the column name and match info
                 let matching_columns = dataview.get_matching_columns();
@@ -4473,7 +4483,8 @@ impl EnhancedTuiApp {
 
                 // Update both AppStateContainer and Buffer with DataTable index (for legacy compatibility)
                 self.state_container.set_current_column(datatable_idx);
-                self.buffer_mut().set_current_column(datatable_idx);
+                self.state_container
+                    .set_current_column_buffer(datatable_idx);
 
                 // Update viewport to show the column using ViewportManager
                 // ViewportManager's set_current_column now expects VISUAL index
@@ -4485,23 +4496,24 @@ impl EnhancedTuiApp {
                         // Sync navigation state with updated viewport
                         if viewport_changed {
                             let new_viewport = viewport_manager.viewport_cols().clone();
-                            let pinned_count = if let Some(dv) = self.buffer().get_dataview() {
-                                dv.get_pinned_columns().len()
-                            } else {
-                                0
-                            };
+                            let pinned_count =
+                                if let Some(dv) = self.state_container.get_buffer_dataview() {
+                                    dv.get_pinned_columns().len()
+                                } else {
+                                    0
+                                };
                             let scrollable_offset = new_viewport.start.saturating_sub(pinned_count);
                             self.state_container.navigation_mut().scroll_offset.1 =
                                 scrollable_offset;
 
-                            debug!(target: "navigation", 
-                                "Column search: Jumped to visual column {} (datatable: {}) '{}', viewport adjusted to {:?}", 
+                            debug!(target: "navigation",
+                                "Column search: Jumped to visual column {} (datatable: {}) '{}', viewport adjusted to {:?}",
                                 visual_idx, datatable_idx, col_name, new_viewport);
                         }
                     }
                 }
 
-                self.buffer_mut().set_status_message(format!(
+                self.state_container.set_status_message(format!(
                     "Column {}/{}: {} - Tab/Shift-Tab to navigate",
                     current_match, total_matches, col_name
                 ));
@@ -4511,7 +4523,7 @@ impl EnhancedTuiApp {
 
     fn previous_column_match(&mut self) {
         // Use DataView's column search navigation
-        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+        if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
             if let Some(visual_idx) = dataview.prev_column_match() {
                 // Get the column name and match info
                 let matching_columns = dataview.get_matching_columns();
@@ -4533,7 +4545,8 @@ impl EnhancedTuiApp {
 
                 // Update both AppStateContainer and Buffer with DataTable index (for legacy compatibility)
                 self.state_container.set_current_column(datatable_idx);
-                self.buffer_mut().set_current_column(datatable_idx);
+                self.state_container
+                    .set_current_column_buffer(datatable_idx);
 
                 // Update viewport to show the column using ViewportManager
                 // ViewportManager's set_current_column now expects VISUAL index
@@ -4545,23 +4558,24 @@ impl EnhancedTuiApp {
                         // Sync navigation state with updated viewport
                         if viewport_changed {
                             let new_viewport = viewport_manager.viewport_cols().clone();
-                            let pinned_count = if let Some(dv) = self.buffer().get_dataview() {
-                                dv.get_pinned_columns().len()
-                            } else {
-                                0
-                            };
+                            let pinned_count =
+                                if let Some(dv) = self.state_container.get_buffer_dataview() {
+                                    dv.get_pinned_columns().len()
+                                } else {
+                                    0
+                                };
                             let scrollable_offset = new_viewport.start.saturating_sub(pinned_count);
                             self.state_container.navigation_mut().scroll_offset.1 =
                                 scrollable_offset;
 
-                            debug!(target: "navigation", 
-                                "Column search (prev): Jumped to visual column {} (datatable: {}) '{}', viewport adjusted to {:?}", 
+                            debug!(target: "navigation",
+                                "Column search (prev): Jumped to visual column {} (datatable: {}) '{}', viewport adjusted to {:?}",
                                 visual_idx, datatable_idx, col_name, new_viewport);
                         }
                     }
                 }
 
-                self.buffer_mut().set_status_message(format!(
+                self.state_container.set_status_message(format!(
                     "Column {}/{}: {} - Tab/Shift-Tab to navigate",
                     current_match, total_matches, col_name
                 ));
@@ -4574,26 +4588,27 @@ impl EnhancedTuiApp {
             "apply_fuzzy_filter called on thread {:?}",
             std::thread::current().id()
         );
-        let pattern = self.buffer().get_fuzzy_filter_pattern();
-        let case_insensitive = self.buffer().is_case_insensitive();
+        let pattern = self.state_container.get_fuzzy_filter_pattern();
+        let case_insensitive = self.state_container.is_case_insensitive();
 
         // Apply filter and get results
-        let (match_count, indices) = if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
-            dataview.apply_fuzzy_filter(&pattern, case_insensitive);
-            let match_count = dataview.row_count();
-            let indices = dataview.get_fuzzy_filter_indices();
-            (match_count, indices)
-        } else {
-            (0, Vec::new())
-        };
+        let (match_count, indices) =
+            if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
+                dataview.apply_fuzzy_filter(&pattern, case_insensitive);
+                let match_count = dataview.row_count();
+                let indices = dataview.get_fuzzy_filter_indices();
+                (match_count, indices)
+            } else {
+                (0, Vec::new())
+            };
 
         // Update buffer state after releasing the borrow
         if pattern.is_empty() {
-            self.buffer_mut().set_fuzzy_filter_active(false);
+            self.state_container.set_fuzzy_filter_active(false);
             self.buffer_mut()
                 .set_status_message("Fuzzy filter cleared".to_string());
         } else {
-            self.buffer_mut().set_fuzzy_filter_active(true);
+            self.state_container.set_fuzzy_filter_active(true);
             self.buffer_mut()
                 .set_status_message(format!("Fuzzy filter: {} matches", match_count));
 
@@ -4601,23 +4616,23 @@ impl EnhancedTuiApp {
             // Reset to first match to avoid confusion where last match appears first in viewport
             if match_count > 0 {
                 // Get current column offset before modifying buffer
-                let col_offset = self.buffer().get_scroll_offset().1;
+                let col_offset = self.state_container.get_scroll_offset().1;
 
                 // Reset to first row of filtered results
-                self.buffer_mut().set_selected_row(Some(0));
-                self.buffer_mut().set_scroll_offset((0, col_offset));
+                self.state_container.set_selected_row(Some(0));
+                self.state_container.set_scroll_offset((0, col_offset));
 
                 // Update navigation state to be consistent
                 self.state_container.set_table_selected_row(Some(0));
                 self.state_container.navigation_mut().scroll_offset.0 = 0;
 
-                debug!(target: "fuzzy_filter", 
+                debug!(target: "fuzzy_filter",
                       "Reset viewport to first match: {} total matches", match_count);
             }
         }
 
         // Update fuzzy filter indices for compatibility
-        self.buffer_mut().set_fuzzy_filter_indices(indices);
+        self.state_container.set_fuzzy_filter_indices(indices);
 
         // Update ViewportManager with the filtered DataView
         // Sync the dataview to both managers
@@ -4632,7 +4647,7 @@ impl EnhancedTuiApp {
             0
         };
 
-        if let Some(dataview) = self.buffer_mut().get_dataview_mut() {
+        if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
             // DataView.toggle_sort expects VISIBLE column index
             // Get column name for display
             let column_names = dataview.column_names();
@@ -4663,10 +4678,10 @@ impl EnhancedTuiApp {
                         format!("Cleared sort on '{}'", col_name)
                     }
                 };
-                self.buffer_mut().set_status_message(message);
+                self.state_container.set_status_message(message);
 
                 // Update ViewportManager with the sorted DataView to keep them in sync
-                if let Some(updated_dataview) = self.buffer().get_dataview() {
+                if let Some(updated_dataview) = self.state_container.get_buffer_dataview() {
                     // Update TableWidgetManager with the sorted dataview as well
                     self.table_widget_manager
                         .borrow_mut()
@@ -4687,15 +4702,15 @@ impl EnhancedTuiApp {
     }
 
     fn get_current_data(&self) -> Option<&DataView> {
-        self.buffer().get_dataview()
+        self.state_container.get_buffer_dataview()
     }
 
     fn get_row_count(&self) -> usize {
         // Check if fuzzy filter is active first (most specific filter)
-        if self.buffer().is_fuzzy_filter_active() {
+        if self.state_container.is_fuzzy_filter_active() {
             // Return the count of fuzzy filtered indices
-            self.buffer().get_fuzzy_filter_indices().len()
-        } else if let Some(dataview) = self.buffer().get_dataview() {
+            self.state_container.get_fuzzy_filter_indices().len()
+        } else if let Some(dataview) = self.state_container.get_buffer_dataview() {
             // Return count from WHERE clause or other filters
             dataview.row_count()
         } else if let Some(provider) = self.get_data_provider() {
@@ -4708,7 +4723,7 @@ impl EnhancedTuiApp {
 
     /// Helper to sync dataview to both ViewportManager and TableWidgetManager
     fn sync_dataview_to_managers(&self) {
-        if let Some(dataview) = self.buffer().get_dataview() {
+        if let Some(dataview) = self.state_container.get_buffer_dataview() {
             let arc_dataview = Arc::new(dataview.clone());
 
             // Update ViewportManager
@@ -4778,7 +4793,7 @@ impl EnhancedTuiApp {
         self.sync_all_input_states();
 
         // Update parser schema from DataView
-        if let Some(dataview) = self.buffer().get_dataview() {
+        if let Some(dataview) = self.state_container.get_buffer_dataview() {
             let table_name = dataview.source().name.clone();
             let columns = dataview.source().column_names();
 
@@ -4791,7 +4806,7 @@ impl EnhancedTuiApp {
     fn update_viewport_manager(&mut self, dataview: Option<DataView>) {
         if let Some(dv) = dataview {
             // Get current column position to preserve it
-            let current_column = self.buffer().get_current_column();
+            let current_column = self.state_container.get_current_column();
 
             // Create new ViewportManager with the new DataView
             let mut new_viewport_manager = ViewportManager::new(Arc::new(dv));
@@ -4814,7 +4829,7 @@ impl EnhancedTuiApp {
             } else {
                 // If current column is out of bounds, reset to first column
                 new_viewport_manager.set_current_column(0);
-                self.buffer_mut().set_current_column(0);
+                self.state_container.set_current_column_buffer(0);
             }
 
             *self.viewport_manager.borrow_mut() = Some(new_viewport_manager);
@@ -4850,7 +4865,7 @@ impl EnhancedTuiApp {
     fn set_status_message(&mut self, message: impl Into<String>) {
         let msg = message.into();
         debug!("Status: {}", msg);
-        self.buffer_mut().set_status_message(msg.clone());
+        self.state_container.set_status_message(msg.clone());
         // Future: Could also sync to state_container if needed
         // self.state_container.set_status(msg);
     }
@@ -4933,12 +4948,12 @@ impl EnhancedTuiApp {
                             }
                             AppMode::FuzzyFilter => {
                                 let input_text = self.get_input_text();
-                                self.buffer_mut().set_fuzzy_filter_pattern(input_text);
+                                self.state_container.set_fuzzy_filter_pattern(input_text);
                                 self.apply_fuzzy_filter();
                             }
                             AppMode::Search => {
                                 let search_text = self.get_input_text();
-                                self.buffer_mut().set_search_pattern(search_text);
+                                self.state_container.set_search_pattern(search_text);
                                 // TODO: self.search_in_results();
                             }
                             AppMode::ColumnSearch => {
@@ -5130,8 +5145,8 @@ impl EnhancedTuiApp {
 
             let input_paragraph = match self.shadow_state.borrow().get_mode() {
                 AppMode::Command => {
-                    match self.buffer().get_edit_mode() {
-                        EditMode::SingleLine => {
+                    match self.state_container.get_edit_mode() {
+                        Some(EditMode::SingleLine) => {
                             // Use syntax highlighting for SQL command input with horizontal scrolling
                             let highlighted_line =
                                 self.sql_highlighter.simple_sql_highlight(input_text);
@@ -5139,8 +5154,16 @@ impl EnhancedTuiApp {
                                 .block(input_block)
                                 .scroll((0, self.get_horizontal_scroll_offset()))
                         }
-                        EditMode::MultiLine => {
+                        Some(EditMode::MultiLine) => {
                             // MultiLine mode is no longer supported, always use single-line
+                            let highlighted_line =
+                                self.sql_highlighter.simple_sql_highlight(input_text);
+                            Paragraph::new(Text::from(vec![highlighted_line]))
+                                .block(input_block)
+                                .scroll((0, self.get_horizontal_scroll_offset()))
+                        }
+                        None => {
+                            // Default to single-line mode
                             let highlighted_line =
                                 self.sql_highlighter.simple_sql_highlight(input_text);
                             Paragraph::new(Text::from(vec![highlighted_line]))
@@ -5241,7 +5264,7 @@ impl EnhancedTuiApp {
             AppMode::Debug => self.render_debug(f, results_area),
             AppMode::PrettyQuery => self.render_pretty_query(f, results_area),
             AppMode::ColumnStats => self.render_column_stats(f, results_area),
-            _ if self.buffer().has_dataview() => {
+            _ if self.state_container.has_dataview() => {
                 // Calculate viewport using DataView
                 // V50: Render using DataProvider which works with DataTable
                 if let Some(provider) = self.get_data_provider() {
@@ -5468,7 +5491,7 @@ impl EnhancedTuiApp {
                     // Add 2 for left border and padding, add 3 for header rows
                     let terminal_x = x_pos + 2;
                     let terminal_y = (selected as u16)
-                        .saturating_sub(self.buffer().get_scroll_offset().0 as u16)
+                        .saturating_sub(self.state_container.get_scroll_offset().0 as u16)
                         + 3;
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
@@ -5479,7 +5502,7 @@ impl EnhancedTuiApp {
             }
 
             // Column information
-            if let Some(dataview) = self.buffer().get_dataview() {
+            if let Some(dataview) = self.state_container.get_buffer_dataview() {
                 let headers = dataview.column_names();
 
                 // Get ViewportManager's crosshair position (visual coordinates)
@@ -5652,8 +5675,8 @@ impl EnhancedTuiApp {
             .map(|dv| dv.get_sort_state().clone());
 
         // Get filter info
-        let fuzzy_filter_pattern = if self.buffer().is_fuzzy_filter_active() {
-            let pattern = self.buffer().get_fuzzy_filter_pattern();
+        let fuzzy_filter_pattern = if self.state_container.is_fuzzy_filter_active() {
+            let pattern = self.state_container.get_fuzzy_filter_pattern();
             if !pattern.is_empty() {
                 Some(pattern)
             } else {
@@ -5684,10 +5707,13 @@ impl EnhancedTuiApp {
             .row_viewport(row_viewport_start..row_viewport_end)
             .sort_state(sort_state)
             .display_options(
-                self.buffer().is_show_row_numbers(),
+                self.state_container.is_show_row_numbers(),
                 self.shadow_state.borrow().get_mode(),
             )
-            .filter(fuzzy_filter_pattern, self.buffer().is_case_insensitive())
+            .filter(
+                fuzzy_filter_pattern,
+                self.state_container.is_case_insensitive(),
+            )
             .dimensions(available_width, available_height)
             .build()
     }
@@ -6013,7 +6039,7 @@ impl EnhancedTuiApp {
             // Check for special commands
             if query == ":help" {
                 self.state_container.set_help_visible(true);
-                self.buffer_mut().set_mode(AppMode::Help);
+                self.state_container.set_mode(AppMode::Help);
                 self.shadow_state
                     .borrow_mut()
                     .observe_mode_change(AppMode::Help, "help_requested");
@@ -6139,8 +6165,8 @@ impl EnhancedTuiApp {
     fn debug_generate_navigation_state(&self) -> String {
         let mut debug_info = String::new();
         debug_info.push_str("\n========== NAVIGATION DEBUG ==========\n");
-        let current_column = self.buffer().get_current_column();
-        let scroll_offset = self.buffer().get_scroll_offset();
+        let current_column = self.state_container.get_current_column();
+        let scroll_offset = self.state_container.get_scroll_offset();
         let nav_state = self.state_container.navigation();
 
         debug_info.push_str(&format!("Buffer Column Position: {}\n", current_column));
@@ -6181,7 +6207,7 @@ impl EnhancedTuiApp {
         );
 
         // Show pinned column info for navigation context
-        if let Some(dataview) = self.buffer().get_dataview() {
+        if let Some(dataview) = self.state_container.get_buffer_dataview() {
             let pinned_count = dataview.get_pinned_columns().len();
             let pinned_names = dataview.get_pinned_column_names();
             debug_info.push_str(&format!("Pinned Column Count: {}\n", pinned_count));
@@ -6461,7 +6487,7 @@ impl EnhancedTuiApp {
     }
 
     fn add_case_sensitivity_indicator(&self, spans: &mut Vec<Span>) {
-        let case_insensitive = self.buffer().is_case_insensitive();
+        let case_insensitive = self.state_container.is_case_insensitive();
         if case_insensitive {
             spans.push(Span::raw(" | "));
             let icon = self.config.display.icons.case_insensitive.clone();
@@ -6643,7 +6669,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
     fn goto_column(&mut self, col: usize) {
         // For now, implement basic column navigation
         // TODO: Implement proper goto_column functionality
-        let current_col = self.buffer().get_current_column();
+        let current_col = self.state_container.get_current_column();
         if col < current_col {
             for _ in 0..(current_col - col) {
                 <Self as ColumnBehavior>::move_column_left(self);
@@ -6657,7 +6683,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
 
     // Mode and UI state
     fn set_mode(&mut self, mode: AppMode) {
-        self.buffer_mut().set_mode(mode);
+        self.state_container.set_mode(mode);
     }
 
     fn get_mode(&self) -> AppMode {
@@ -6665,7 +6691,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn set_status_message(&mut self, message: String) {
-        self.buffer_mut().set_status_message(message);
+        self.state_container.set_status_message(message);
     }
 
     // Column operations - delegate to trait implementations
@@ -6730,37 +6756,37 @@ impl ActionHandlerContext for EnhancedTuiApp {
             SelectionMode::Row => "Row mode - Navigate to select rows",
             SelectionMode::Column => "Column mode - Navigate to select columns",
         };
-        self.buffer_mut().set_status_message(msg.to_string());
+        self.state_container.set_status_message(msg.to_string());
     }
 
     fn toggle_row_numbers(&mut self) {
-        let current = self.buffer().is_show_row_numbers();
-        self.buffer_mut().set_show_row_numbers(!current);
+        let current = self.state_container.is_show_row_numbers();
+        self.state_container.set_show_row_numbers(!current);
         let message = if !current {
             "Row numbers: ON (showing line numbers)".to_string()
         } else {
             "Row numbers: OFF".to_string()
         };
-        self.buffer_mut().set_status_message(message);
+        self.state_container.set_status_message(message);
         // Recalculate column widths with new mode
         self.calculate_optimal_column_widths();
     }
 
     fn toggle_compact_mode(&mut self) {
-        let current_mode = self.buffer().is_compact_mode();
-        self.buffer_mut().set_compact_mode(!current_mode);
+        let current_mode = self.state_container.is_compact_mode();
+        self.state_container.set_compact_mode(!current_mode);
         let message = if !current_mode {
             "Compact mode enabled"
         } else {
             "Compact mode disabled"
         };
-        self.buffer_mut().set_status_message(message.to_string());
+        self.state_container.set_status_message(message.to_string());
     }
 
     fn toggle_case_insensitive(&mut self) {
-        let current = self.buffer().is_case_insensitive();
-        self.buffer_mut().set_case_insensitive(!current);
-        self.buffer_mut().set_status_message(format!(
+        let current = self.state_container.is_case_insensitive();
+        self.state_container.set_case_insensitive(!current);
+        self.state_container.set_status_message(format!(
             "Case-insensitive string comparisons: {}",
             if !current { "ON" } else { "OFF" }
         ));
@@ -6770,7 +6796,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
         let enabled = !self.key_indicator.enabled;
         self.key_indicator.set_enabled(enabled);
         self.key_sequence_renderer.set_enabled(enabled);
-        self.buffer_mut().set_status_message(format!(
+        self.state_container.set_status_message(format!(
             "Key press indicator {}",
             if enabled { "enabled" } else { "disabled" }
         ));
@@ -6779,10 +6805,10 @@ impl ActionHandlerContext for EnhancedTuiApp {
     // Clear operations
     fn clear_filter(&mut self) {
         // Check if we have an active filter to clear
-        if let Some(dataview) = self.buffer().get_dataview() {
+        if let Some(dataview) = self.state_container.get_buffer_dataview() {
             if dataview.has_filter() {
                 // Clear the filter
-                if let Some(dataview_mut) = self.buffer_mut().get_dataview_mut() {
+                if let Some(dataview_mut) = self.state_container.get_buffer_dataview_mut() {
                     dataview_mut.clear_filter();
                     self.buffer_mut()
                         .set_status_message("Filter cleared".to_string());
@@ -6838,16 +6864,16 @@ impl ActionHandlerContext for EnhancedTuiApp {
                     return;
                 }
                 // Otherwise, switch to Command mode as usual
-                self.buffer_mut().set_mode(AppMode::Command);
+                self.state_container.set_mode(AppMode::Command);
             }
             AppMode::Command => {
-                self.buffer_mut().set_mode(AppMode::Results);
+                self.state_container.set_mode(AppMode::Results);
             }
             AppMode::Help => {
-                self.buffer_mut().set_mode(AppMode::Results);
+                self.state_container.set_mode(AppMode::Results);
             }
             AppMode::JumpToRow => {
-                self.buffer_mut().set_mode(AppMode::Results);
+                self.state_container.set_mode(AppMode::Results);
                 self.clear_jump_to_row_input();
                 // Clear jump-to-row state (can mutate directly now)
                 self.state_container.jump_to_row_mut().is_active = false;
@@ -6856,7 +6882,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
             }
             _ => {
                 // For any other mode, return to Results
-                self.buffer_mut().set_mode(AppMode::Results);
+                self.state_container.set_mode(AppMode::Results);
             }
         }
     }
@@ -6902,7 +6928,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
             let new_mode = viewport_manager.cycle_packing_mode();
             format!("Column packing: {}", new_mode.display_name())
         };
-        self.buffer_mut().set_status_message(message);
+        self.state_container.set_status_message(message);
     }
 
     // Viewport navigation
@@ -6920,9 +6946,9 @@ impl ActionHandlerContext for EnhancedTuiApp {
             self.buffer_mut()
                 .set_selected_row(Some(result.row_position));
             if result.viewport_changed {
-                let mut offset = self.buffer().get_scroll_offset();
+                let mut offset = self.state_container.get_scroll_offset();
                 offset.0 = result.row_scroll_offset;
-                self.buffer_mut().set_scroll_offset(offset);
+                self.state_container.set_scroll_offset(offset);
             }
             self.state_container.navigation_mut().selected_row = result.row_position;
             if result.viewport_changed {
@@ -6945,9 +6971,9 @@ impl ActionHandlerContext for EnhancedTuiApp {
             self.buffer_mut()
                 .set_selected_row(Some(result.row_position));
             if result.viewport_changed {
-                let mut offset = self.buffer().get_scroll_offset();
+                let mut offset = self.state_container.get_scroll_offset();
                 offset.0 = result.row_scroll_offset;
-                self.buffer_mut().set_scroll_offset(offset);
+                self.state_container.set_scroll_offset(offset);
             }
             self.state_container.navigation_mut().selected_row = result.row_position;
             if result.viewport_changed {
@@ -6970,9 +6996,9 @@ impl ActionHandlerContext for EnhancedTuiApp {
             self.buffer_mut()
                 .set_selected_row(Some(result.row_position));
             if result.viewport_changed {
-                let mut offset = self.buffer().get_scroll_offset();
+                let mut offset = self.state_container.get_scroll_offset();
                 offset.0 = result.row_scroll_offset;
-                self.buffer_mut().set_scroll_offset(offset);
+                self.state_container.set_scroll_offset(offset);
             }
             self.state_container.navigation_mut().selected_row = result.row_position;
             if result.viewport_changed {
@@ -7000,12 +7026,12 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn move_input_cursor_home(&mut self) {
-        self.buffer_mut().set_input_cursor_position(0);
+        self.state_container.set_input_cursor_position(0);
     }
 
     fn move_input_cursor_end(&mut self) {
-        let text_len = self.buffer().get_input_text().chars().count();
-        self.buffer_mut().set_input_cursor_position(text_len);
+        let text_len = self.state_container.get_input_text().chars().count();
+        self.state_container.set_input_cursor_position(text_len);
     }
 
     fn backspace(&mut self) {

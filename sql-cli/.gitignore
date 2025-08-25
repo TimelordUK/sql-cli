@@ -6,3 +6,6 @@
 trades_*.json
 test_shift_g.rs
 test_*.csv
+*.json
+test_state_comparison
+test_results.txt

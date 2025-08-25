@@ -1,5 +1,5 @@
 use crate::api_client::QueryResponse;
-use crate::buffer::{AppMode, BufferManager, SortOrder};
+use crate::buffer::{AppMode, BufferAPI, BufferManager, SortOrder};
 use crate::debug_service::DebugLevel;
 use crate::help_widget::HelpWidget;
 use crate::history::CommandHistory;
@@ -5385,6 +5385,411 @@ impl AppStateContainer {
     /// Pretty print the state for debugging
     pub fn pretty_print(&self) -> String {
         format!("{:#?}", self)
+    }
+
+    // ==================== STATE DELEGATION METHODS ====================
+    // These methods delegate to the current Buffer to eliminate state duplication
+    // Eventually, the duplicate state fields in AppStateContainer will be removed
+
+    // --- Navigation State Delegation ---
+
+    /// Get selected row from current buffer
+    pub fn delegated_selected_row(&self) -> Option<usize> {
+        self.current_buffer()?.get_selected_row()
+    }
+
+    /// Set selected row in current buffer
+    pub fn set_delegated_selected_row(&mut self, row: Option<usize>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_selected_row(row);
+        }
+    }
+
+    /// Get current column from current buffer
+    pub fn delegated_current_column(&self) -> usize {
+        self.current_buffer()
+            .map(|b| b.get_current_column())
+            .unwrap_or(0)
+    }
+
+    /// Set current column in current buffer
+    pub fn set_delegated_current_column(&mut self, col: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_current_column(col);
+        }
+    }
+
+    /// Get scroll offset from current buffer
+    pub fn delegated_scroll_offset(&self) -> (usize, usize) {
+        self.current_buffer()
+            .map(|b| b.get_scroll_offset())
+            .unwrap_or((0, 0))
+    }
+
+    /// Set scroll offset in current buffer
+    pub fn set_delegated_scroll_offset(&mut self, offset: (usize, usize)) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_scroll_offset(offset);
+        }
+    }
+
+    // --- Search State Delegation ---
+
+    /// Get search pattern from current buffer
+    pub fn delegated_search_pattern(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_search_pattern())
+            .unwrap_or_default()
+    }
+
+    /// Set search pattern in current buffer
+    pub fn set_delegated_search_pattern(&mut self, pattern: String) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_search_pattern(pattern);
+        }
+    }
+
+    /// Get search matches from current buffer
+    pub fn delegated_search_matches(&self) -> Vec<(usize, usize)> {
+        self.current_buffer()
+            .map(|b| b.get_search_matches())
+            .unwrap_or_default()
+    }
+
+    /// Set search matches in current buffer
+    pub fn set_delegated_search_matches(&mut self, matches: Vec<(usize, usize)>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_search_matches(matches);
+        }
+    }
+
+    // --- Filter State Delegation ---
+
+    /// Get filter pattern from current buffer
+    pub fn delegated_filter_pattern(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_filter_pattern())
+            .unwrap_or_default()
+    }
+
+    /// Set filter pattern in current buffer
+    pub fn set_delegated_filter_pattern(&mut self, pattern: String) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_filter_pattern(pattern);
+        }
+    }
+
+    /// Check if filter is active in current buffer
+    pub fn delegated_filter_active(&self) -> bool {
+        self.current_buffer()
+            .map(|b| b.is_filter_active())
+            .unwrap_or(false)
+    }
+
+    /// Set filter active state in current buffer
+    pub fn set_delegated_filter_active(&mut self, active: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_filter_active(active);
+        }
+    }
+
+    // --- Sort State Delegation ---
+
+    /// Get sort column from current buffer
+    pub fn delegated_sort_column(&self) -> Option<usize> {
+        self.current_buffer()?.get_sort_column()
+    }
+
+    /// Set sort column in current buffer
+    pub fn set_delegated_sort_column(&mut self, column: Option<usize>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_sort_column(column);
+        }
+    }
+
+    /// Get sort order from current buffer
+    pub fn delegated_sort_order(&self) -> SortOrder {
+        self.current_buffer()
+            .map(|b| b.get_sort_order())
+            .unwrap_or(SortOrder::None)
+    }
+
+    /// Set sort order in current buffer
+    pub fn set_delegated_sort_order(&mut self, order: SortOrder) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_sort_order(order);
+        }
+    }
+
+    // ==================== BUFFER PROXY METHODS ====================
+    // These methods proxy Buffer operations that TUI currently calls directly
+    // This is part of migrating to AppStateContainer as the single entry point
+
+    /// Set the current mode (proxy to Buffer)
+    pub fn set_mode(&mut self, mode: AppMode) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_mode(mode);
+        }
+        // TODO: Add any side effects or state synchronization here
+    }
+
+    /// Get the current mode (proxy to Buffer)
+    pub fn get_mode(&self) -> AppMode {
+        self.current_buffer()
+            .map(|b| b.get_mode())
+            .unwrap_or(AppMode::Command)
+    }
+
+    /// Set status message (proxy to Buffer)
+    pub fn set_status_message(&mut self, message: String) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_status_message(message);
+        }
+    }
+
+    /// Get status message (proxy to Buffer)
+    pub fn get_status_message(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_status_message())
+            .unwrap_or_default()
+    }
+
+    /// Set dataview (proxy to Buffer)
+    pub fn set_dataview(&mut self, dataview: Option<crate::data::data_view::DataView>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_dataview(dataview);
+        }
+    }
+
+    /// Get dataview (proxy to Buffer)
+    pub fn get_dataview(&self) -> Option<&crate::data::data_view::DataView> {
+        self.current_buffer()?.dataview.as_ref()
+    }
+
+    /// Set last results row (proxy to Buffer)
+    pub fn set_last_results_row(&mut self, row: Option<usize>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_results_row(row);
+        }
+    }
+
+    /// Set last scroll offset (proxy to Buffer)
+    pub fn set_last_scroll_offset(&mut self, offset: (usize, usize)) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_last_scroll_offset(offset);
+        }
+    }
+
+    /// Get input text (proxy to Buffer)
+    pub fn get_input_text(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_input_text())
+            .unwrap_or_default()
+    }
+
+    /// Get input cursor position (proxy to Buffer)
+    pub fn get_input_cursor_position(&self) -> usize {
+        self.current_buffer()
+            .map(|b| b.get_input_cursor_position())
+            .unwrap_or(0)
+    }
+
+    /// Get last query (proxy to Buffer)
+    pub fn get_last_query(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_last_query())
+            .unwrap_or_default()
+    }
+
+    // Note: set_input_text, set_input_cursor_position, get_scroll_offset,
+    // and set_scroll_offset already exist in this file
+
+    /// Check if buffer is modified (proxy to Buffer)
+    pub fn is_buffer_modified(&self) -> bool {
+        self.current_buffer()
+            .map(|b| b.is_modified())
+            .unwrap_or(false)
+    }
+
+    /// Set buffer modified state (proxy to Buffer)
+    pub fn set_buffer_modified(&mut self, modified: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_modified(modified);
+        }
+    }
+
+    /// Get dataview (proxy to Buffer) - returns reference
+    pub fn get_buffer_dataview(&self) -> Option<&crate::data::data_view::DataView> {
+        self.current_buffer()?.dataview.as_ref()
+    }
+
+    /// Get mutable dataview (proxy to Buffer)
+    pub fn get_buffer_dataview_mut(&mut self) -> Option<&mut crate::data::data_view::DataView> {
+        self.current_buffer_mut()?.dataview.as_mut()
+    }
+
+    /// Check if buffer has dataview (proxy to Buffer)
+    pub fn has_dataview(&self) -> bool {
+        self.current_buffer()
+            .map(|b| b.has_dataview())
+            .unwrap_or(false)
+    }
+
+    /// Check if case insensitive mode (proxy to Buffer)
+    pub fn is_case_insensitive(&self) -> bool {
+        self.current_buffer()
+            .map(|b| b.is_case_insensitive())
+            .unwrap_or(false)
+    }
+
+    /// Get edit mode (proxy to Buffer)
+    pub fn get_edit_mode(&self) -> Option<crate::buffer::EditMode> {
+        self.current_buffer().map(|b| b.get_edit_mode())
+    }
+
+    /// Check if show row numbers (proxy to Buffer)
+    pub fn is_show_row_numbers(&self) -> bool {
+        self.current_buffer()
+            .map(|b| b.is_show_row_numbers())
+            .unwrap_or(false)
+    }
+
+    /// Check if compact mode (proxy to Buffer)
+    pub fn is_compact_mode(&self) -> bool {
+        self.current_buffer()
+            .map(|b| b.is_compact_mode())
+            .unwrap_or(false)
+    }
+
+    /// Set input cursor position (proxy to Buffer)
+    pub fn set_input_cursor_position(&mut self, pos: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_input_cursor(pos);
+        }
+    }
+
+    /// Set search pattern (proxy to Buffer)
+    pub fn set_search_pattern(&mut self, pattern: String) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_search_pattern(pattern);
+        }
+    }
+
+    /// Set filter pattern (proxy to Buffer)
+    pub fn set_filter_pattern(&mut self, pattern: String) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_filter_pattern(pattern);
+        }
+    }
+
+    /// Set fuzzy filter pattern (proxy to Buffer)
+    pub fn set_fuzzy_filter_pattern(&mut self, pattern: String) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_fuzzy_filter_pattern(pattern);
+        }
+    }
+
+    /// Set fuzzy filter active (proxy to Buffer)
+    pub fn set_fuzzy_filter_active(&mut self, active: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_fuzzy_filter_active(active);
+        }
+    }
+
+    /// Is fuzzy filter active (proxy to Buffer)
+    pub fn is_fuzzy_filter_active(&self) -> bool {
+        self.current_buffer()
+            .map(|b| b.is_fuzzy_filter_active())
+            .unwrap_or(false)
+    }
+
+    /// Set fuzzy filter indices (proxy to Buffer)
+    pub fn set_fuzzy_filter_indices(&mut self, indices: Vec<usize>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_fuzzy_filter_indices(indices);
+        }
+    }
+
+    /// Is kill ring empty (proxy to Buffer)
+    pub fn is_kill_ring_empty(&self) -> bool {
+        self.current_buffer()
+            .map(|b| b.is_kill_ring_empty())
+            .unwrap_or(true)
+    }
+
+    /// Set selected row (proxy to Buffer)
+    pub fn set_selected_row(&mut self, row: Option<usize>) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_selected_row(row);
+        }
+    }
+
+    /// Set current column (proxy to Buffer)
+    pub fn set_current_column_buffer(&mut self, col: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_current_column(col);
+        }
+    }
+
+    /// Set show row numbers (proxy to Buffer)
+    pub fn set_show_row_numbers(&mut self, show: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_show_row_numbers(show);
+        }
+    }
+
+    /// Set filter active (proxy to Buffer)
+    pub fn set_filter_active(&mut self, active: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_filter_active(active);
+        }
+    }
+
+    /// Set compact mode (proxy to Buffer)
+    pub fn set_compact_mode(&mut self, compact: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_compact_mode(compact);
+        }
+    }
+
+    /// Set case insensitive (proxy to Buffer)
+    pub fn set_case_insensitive(&mut self, insensitive: bool) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_case_insensitive(insensitive);
+        }
+    }
+
+    /// Get selected row from buffer (proxy to Buffer)
+    pub fn get_buffer_selected_row(&self) -> Option<usize> {
+        self.current_buffer()?.get_selected_row()
+    }
+
+    /// Get search pattern from buffer (proxy to Buffer)
+    pub fn get_search_pattern(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_search_pattern())
+            .unwrap_or_default()
+    }
+
+    /// Get fuzzy filter pattern (proxy to Buffer)
+    pub fn get_fuzzy_filter_pattern(&self) -> String {
+        self.current_buffer()
+            .map(|b| b.get_fuzzy_filter_pattern())
+            .unwrap_or_default()
+    }
+
+    /// Get fuzzy filter indices (proxy to Buffer)
+    pub fn get_fuzzy_filter_indices(&self) -> Vec<usize> {
+        self.current_buffer()
+            .map(|b| b.get_fuzzy_filter_indices().clone())
+            .unwrap_or_default()
+    }
+
+    /// Set scroll offset (proxy to Buffer)
+    pub fn set_scroll_offset(&mut self, offset: (usize, usize)) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.set_scroll_offset(offset);
+        }
     }
 }
 
