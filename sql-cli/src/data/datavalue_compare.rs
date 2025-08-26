@@ -41,13 +41,19 @@ pub fn compare_datavalues(a: &DataValue, b: &DataValue) -> Ordering {
         (DataValue::Boolean(_), DataValue::DateTime(_)) => Ordering::Less,
 
         (DataValue::Integer(_), DataValue::Boolean(_)) => Ordering::Greater,
-        (DataValue::Integer(_), DataValue::Float(_)) => Ordering::Less,
+        (DataValue::Integer(i), DataValue::Float(f)) => {
+            // Compare actual numeric values, not types
+            (*i as f64).partial_cmp(f).unwrap_or(Ordering::Equal)
+        }
         (DataValue::Integer(_), DataValue::String(_)) => Ordering::Less,
         (DataValue::Integer(_), DataValue::InternedString(_)) => Ordering::Less,
         (DataValue::Integer(_), DataValue::DateTime(_)) => Ordering::Less,
 
         (DataValue::Float(_), DataValue::Boolean(_)) => Ordering::Greater,
-        (DataValue::Float(_), DataValue::Integer(_)) => Ordering::Greater,
+        (DataValue::Float(f), DataValue::Integer(i)) => {
+            // Compare actual numeric values, not types
+            f.partial_cmp(&(*i as f64)).unwrap_or(Ordering::Equal)
+        }
         (DataValue::Float(_), DataValue::String(_)) => Ordering::Less,
         (DataValue::Float(_), DataValue::InternedString(_)) => Ordering::Less,
         (DataValue::Float(_), DataValue::DateTime(_)) => Ordering::Less,
