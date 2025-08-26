@@ -170,21 +170,21 @@ mod tests {
             compare_datavalues(&DataValue::Boolean(true), &DataValue::Integer(1)),
             Ordering::Less
         );
-        
+
         // Integer and Float now compare by numeric value, not type
         assert_eq!(
             compare_datavalues(&DataValue::Integer(1), &DataValue::Float(1.0)),
-            Ordering::Equal  // 1 == 1.0
+            Ordering::Equal // 1 == 1.0
         );
         assert_eq!(
             compare_datavalues(&DataValue::Integer(1), &DataValue::Float(1.5)),
-            Ordering::Less  // 1 < 1.5
+            Ordering::Less // 1 < 1.5
         );
         assert_eq!(
             compare_datavalues(&DataValue::Integer(2), &DataValue::Float(1.5)),
-            Ordering::Greater  // 2 > 1.5
+            Ordering::Greater // 2 > 1.5
         );
-        
+
         assert_eq!(
             compare_datavalues(&DataValue::Float(1.0), &DataValue::String("a".to_string())),
             Ordering::Less
