@@ -164,9 +164,13 @@ impl VimSearchManager {
                     "Match {}/{}: row={}, visual_col={}, stored_value='{}'", 
                     *current_index + 1, matches.len(),
                     match_item.row, match_item.col, match_item.value);
-                    
+
                 // Double-check: Does this value actually contain our pattern?
-                if !match_item.value.to_lowercase().contains(&pattern.to_lowercase()) {
+                if !match_item
+                    .value
+                    .to_lowercase()
+                    .contains(&pattern.to_lowercase())
+                {
                     error!(target: "vim_search",
                         "CRITICAL ERROR: Match value '{}' does NOT contain search pattern '{}'!",
                         match_item.value, pattern);
@@ -495,7 +499,7 @@ impl VimSearchManager {
         let viewport_cols = viewport.viewport_cols();
         let viewport_height = viewport_rows.end - viewport_rows.start;
         let viewport_width = viewport_cols.end - viewport_cols.start;
-        
+
         info!(target: "vim_search",
             "Current viewport BEFORE changes:");
         info!(target: "vim_search",
@@ -527,7 +531,7 @@ impl VimSearchManager {
         info!(target: "vim_search",
             "Will call set_viewport with: row_start={}, col_start={}, width={}, height={}",
             new_row_start, new_col_start, terminal_width, terminal_height);
-            
+
         // Update viewport with preserved terminal dimensions
         viewport.set_viewport(
             new_row_start,
@@ -539,11 +543,11 @@ impl VimSearchManager {
         // Get the updated viewport state
         let final_viewport_rows = viewport.get_viewport_rows();
         let final_viewport_cols = viewport.viewport_cols();
-        
+
         info!(target: "vim_search", 
             "Viewport AFTER set_viewport: rows {:?}, cols {:?}", 
             final_viewport_rows, final_viewport_cols);
-            
+
         // CRITICAL: Check if our target column is actually in the viewport!
         if match_item.col < final_viewport_cols.start || match_item.col >= final_viewport_cols.end {
             error!(target: "vim_search",
@@ -561,13 +565,15 @@ impl VimSearchManager {
         info!(target: "vim_search",
             "Setting crosshair to ABSOLUTE position: row={}, col={}",
             match_item.row, match_item.col);
-            
+
         viewport.set_crosshair(match_item.row, match_item.col);
-        
+
         // Verify the match is centered in the viewport
-        let center_row = final_viewport_rows.start + (final_viewport_rows.end - final_viewport_rows.start) / 2;
-        let center_col = final_viewport_cols.start + (final_viewport_cols.end - final_viewport_cols.start) / 2;
-        
+        let center_row =
+            final_viewport_rows.start + (final_viewport_rows.end - final_viewport_rows.start) / 2;
+        let center_col =
+            final_viewport_cols.start + (final_viewport_cols.end - final_viewport_cols.start) / 2;
+
         info!(target: "vim_search",
             "Viewport center is at: row={}, col={}",
             center_row, center_col);
@@ -578,7 +584,7 @@ impl VimSearchManager {
             "Distance from center: row_diff={}, col_diff={}",
             (match_item.row as i32 - center_row as i32).abs(),
             (match_item.col as i32 - center_col as i32).abs());
-            
+
         // Get the viewport-relative position for verification
         if let Some((vp_row, vp_col)) = viewport.get_crosshair_viewport_position() {
             info!(target: "vim_search",
@@ -600,7 +606,7 @@ impl VimSearchManager {
         // Verify the match is actually visible in the viewport after scrolling
         info!(target: "vim_search",
             "=== VERIFICATION ===");
-            
+
         if match_item.row < final_viewport_rows.start || match_item.row >= final_viewport_rows.end {
             error!(target: "vim_search", 
                 "ERROR: Match row {} is OUTSIDE viewport {:?} after scrolling!", 

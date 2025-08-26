@@ -105,6 +105,14 @@ pub trait ActionHandlerContext {
     fn delete(&mut self);
     fn undo(&mut self);
     fn redo(&mut self);
+
+    // Jump-to-row operations
+    fn start_jump_to_row(&mut self);
+    fn clear_jump_to_row_input(&mut self);
+
+    // Viewport lock operations
+    fn toggle_cursor_lock(&mut self);
+    fn toggle_viewport_lock(&mut self);
 }
 
 /// Handler for navigation actions (Up, Down, Left, Right, PageUp, etc.)
@@ -615,6 +623,42 @@ impl ActionHandler for InputCursorActionHandler {
     }
 }
 
+/// Handler for debug and viewport control operations
+pub struct DebugViewportActionHandler;
+
+impl ActionHandler for DebugViewportActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        _context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        match action {
+            Action::ShowDebugInfo => {
+                tui.toggle_debug_mode();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::StartJumpToRow => {
+                tui.start_jump_to_row();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ToggleCursorLock => {
+                tui.toggle_cursor_lock();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ToggleViewportLock => {
+                tui.toggle_viewport_lock();
+                Some(Ok(ActionResult::Handled))
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "DebugViewport"
+    }
+}
+
 /// Handler for text editing actions in Command mode
 pub struct TextEditActionHandler;
 
@@ -679,6 +723,7 @@ impl ActionDispatcher {
             Box::new(InputCursorActionHandler),
             Box::new(TextEditActionHandler),
             Box::new(ViewportNavigationHandler),
+            Box::new(DebugViewportActionHandler),
         ];
 
         Self { handlers }
@@ -895,6 +940,22 @@ mod tests {
             self.last_action = "navigate_to_viewport_bottom".to_string();
         }
 
+        // Jump-to-row operations
+        fn start_jump_to_row(&mut self) {
+            self.last_action = "start_jump_to_row".to_string();
+        }
+        fn clear_jump_to_row_input(&mut self) {
+            self.last_action = "clear_jump_to_row_input".to_string();
+        }
+
+        // Viewport lock operations
+        fn toggle_cursor_lock(&mut self) {
+            self.last_action = "toggle_cursor_lock".to_string();
+        }
+        fn toggle_viewport_lock(&mut self) {
+            self.last_action = "toggle_viewport_lock".to_string();
+        }
+
         // Input and text editing
         fn move_input_cursor_left(&mut self) {
             self.last_action = "move_input_cursor_left".to_string();
@@ -920,6 +981,55 @@ mod tests {
         fn redo(&mut self) {
             self.last_action = "redo".to_string();
         }
+    }
+
+    #[test]
+    fn test_debug_viewport_handler() {
+        let mut tui = MockTui::new();
+        let handler = DebugViewportActionHandler;
+        let context = ActionContext {
+            mode: AppMode::Results,
+            selection_mode: crate::app_state_container::SelectionMode::Cell,
+            has_results: true,
+            has_filter: false,
+            has_search: false,
+            row_count: 100,
+            column_count: 10,
+            current_row: 0,
+            current_column: 0,
+        };
+
+        // Test ShowDebugInfo
+        let result = handler
+            .handle_action(&Action::ShowDebugInfo, &context, &mut tui)
+            .unwrap();
+        assert!(matches!(result, Ok(ActionResult::Handled)));
+        assert_eq!(tui.last_action, "toggle_debug_mode");
+
+        // Test StartJumpToRow
+        let result = handler
+            .handle_action(&Action::StartJumpToRow, &context, &mut tui)
+            .unwrap();
+        assert!(matches!(result, Ok(ActionResult::Handled)));
+        assert_eq!(tui.last_action, "start_jump_to_row");
+
+        // Test ToggleCursorLock
+        let result = handler
+            .handle_action(&Action::ToggleCursorLock, &context, &mut tui)
+            .unwrap();
+        assert!(matches!(result, Ok(ActionResult::Handled)));
+        assert_eq!(tui.last_action, "toggle_cursor_lock");
+
+        // Test ToggleViewportLock
+        let result = handler
+            .handle_action(&Action::ToggleViewportLock, &context, &mut tui)
+            .unwrap();
+        assert!(matches!(result, Ok(ActionResult::Handled)));
+        assert_eq!(tui.last_action, "toggle_viewport_lock");
+
+        // Test unhandled action
+        let result = handler.handle_action(&Action::Quit, &context, &mut tui);
+        assert!(result.is_none());
     }
 
     #[test]

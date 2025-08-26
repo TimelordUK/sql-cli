@@ -19,14 +19,13 @@ use crate::data::data_view::DataView;
 use crate::debug::{DebugRegistry, MemoryTracker};
 use crate::debug_service::DebugService;
 use crate::help_text::HelpText;
-use crate::services::{QueryExecutionService, QueryOrchestrator};
+use crate::services::QueryOrchestrator;
 use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::state::StateDispatcher;
 use crate::ui::action_handlers::ActionHandlerContext;
 use crate::ui::actions::{Action, ActionContext, ActionResult};
 use crate::ui::debug_context::DebugContext;
-use crate::ui::enhanced_tui_helpers;
 use crate::ui::key_chord_handler::{ChordResult, KeyChordHandler};
 use crate::ui::key_dispatcher::KeyDispatcher;
 use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
@@ -320,14 +319,6 @@ impl DebugContext for EnhancedTuiApp {
         EnhancedTuiApp::debug_generate_parser_info(self, query)
     }
 
-    // debug_generate_buffer_state now uses default implementation from trait
-    // debug_generate_results_state now uses default implementation from trait
-    // debug_generate_memory_info now uses default implementation from trait
-    // debug_generate_datatable_schema now uses default implementation from trait
-    // debug_generate_dataview_state now uses default implementation from trait
-
-    // debug_generate_viewport_state now uses default implementation from trait
-
     fn debug_generate_navigation_state(&self) -> String {
         // Call the actual implementation method on self (defined below in impl EnhancedTuiApp)
         Self::debug_generate_navigation_state(self)
@@ -462,83 +453,8 @@ impl EnhancedTuiApp {
             // - Export operations: ExportActionHandler
             // - Yank operations: YankActionHandler
             // - UI operations: UIActionHandler (ShowHelp)
-            ShowDebugInfo => {
-                // Use the existing toggle_debug_mode which generates all debug info
-                self.toggle_debug_mode();
-                Ok(ActionResult::Handled)
-            }
-            StartJumpToRow => {
-                self.state_container.set_mode(AppMode::JumpToRow);
-                self.shadow_state
-                    .borrow_mut()
-                    .observe_mode_change(AppMode::JumpToRow, "jump_to_row_requested");
-                self.clear_jump_to_row_input();
+            // - Debug/Viewport operations: DebugViewportActionHandler (ShowDebugInfo, StartJumpToRow, ToggleCursorLock, ToggleViewportLock)
 
-                // Set jump-to-row state as active (can mutate directly now)
-                self.state_container.jump_to_row_mut().is_active = true;
-
-                self.state_container
-                    .set_status_message("Enter row number (1-based):".to_string());
-                Ok(ActionResult::Handled)
-            }
-            ToggleCursorLock => {
-                // Toggle cursor lock in ViewportManager
-                let is_locked = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        viewport_manager.toggle_cursor_lock();
-                        Some(viewport_manager.is_cursor_locked())
-                    } else {
-                        None
-                    }
-                }; // Borrow is dropped here
-
-                if let Some(is_locked) = is_locked {
-                    let msg = if is_locked {
-                        "Cursor lock ON - cursor stays in viewport position while scrolling"
-                    } else {
-                        "Cursor lock OFF"
-                    };
-                    self.state_container.set_status_message(msg.to_string());
-
-                    // Log for shadow state learning (not tracking as state change yet)
-                    info!(target: "shadow_state",
-                        "Cursor lock toggled: {} (in {:?} mode)",
-                        if is_locked { "ON" } else { "OFF" },
-                        self.shadow_state.borrow().get_mode()
-                    );
-                }
-                Ok(ActionResult::Handled)
-            }
-            ToggleViewportLock => {
-                // Toggle viewport lock in ViewportManager
-                let is_locked = {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                        viewport_manager.toggle_viewport_lock();
-                        Some(viewport_manager.is_viewport_locked())
-                    } else {
-                        None
-                    }
-                }; // Borrow is dropped here
-
-                if let Some(is_locked) = is_locked {
-                    let msg = if is_locked {
-                        "Viewport lock ON - navigation constrained to current viewport"
-                    } else {
-                        "Viewport lock OFF"
-                    };
-                    self.state_container.set_status_message(msg.to_string());
-
-                    // Log for shadow state learning (not tracking as state change yet)
-                    info!(target: "shadow_state",
-                        "Viewport lock toggled: {} (in {:?} mode)",
-                        if is_locked { "ON" } else { "OFF" },
-                        self.shadow_state.borrow().get_mode()
-                    );
-                }
-                Ok(ActionResult::Handled)
-            }
             // NextColumn and PreviousColumn are now handled by NavigationActionHandler in visitor pattern
             Sort(_column_idx) => {
                 // For now, always sort by current column (like 's' key does)
@@ -4123,7 +4039,7 @@ impl EnhancedTuiApp {
             info!(target: "search",
                 "Setting column to visual index {}",
                 search_match.col);
-            
+
             // Update all column-related state to the visual column index
             self.state_container
                 .set_current_column_buffer(search_match.col);
@@ -4133,7 +4049,7 @@ impl EnhancedTuiApp {
             self.state_container.select_column(search_match.col);
             info!(target: "search", 
                 "Updated SelectionState column to: {}", search_match.col);
-            
+
             // Log the current state of all column-related fields
             info!(target: "search", 
                 "Column state after update: nav.selected_column={}, buffer.current_column={}, selection.selected_column={}", 
@@ -4143,22 +4059,24 @@ impl EnhancedTuiApp {
 
             // CRITICAL: Also update navigation's selected_row to trigger proper rendering
             self.state_container.navigation_mut().selected_row = search_match.row;
-            
+
             // CRITICAL: Update navigation scroll offset to match the viewport!
             // The viewport manager has scrolled, but we need to sync that back to navigation state
             if let Some(ref viewport) = *self.viewport_manager.borrow() {
                 let viewport_rows = viewport.get_viewport_rows();
                 let viewport_cols = viewport.viewport_cols();
-                
+
                 info!(target: "search",
                     "Syncing navigation scroll to viewport: row_offset={}, col_offset={}",
                     viewport_rows.start, viewport_cols.start);
-                    
+
                 // Update the navigation scroll offset to match viewport
-                self.state_container.navigation_mut().scroll_offset = (viewport_rows.start, viewport_cols.start);
-                
+                self.state_container.navigation_mut().scroll_offset =
+                    (viewport_rows.start, viewport_cols.start);
+
                 // Also update the buffer scroll offset
-                self.state_container.set_scroll_offset((viewport_rows.start, viewport_cols.start));
+                self.state_container
+                    .set_scroll_offset((viewport_rows.start, viewport_cols.start));
             }
 
             // CRITICAL: Update TableWidgetManager to trigger re-render
@@ -4167,7 +4085,7 @@ impl EnhancedTuiApp {
             self.table_widget_manager
                 .borrow_mut()
                 .navigate_to(search_match.row, search_match.col);
-                
+
             // Log column state after TableWidgetManager update
             info!(target: "search", 
                 "After TableWidgetManager update: nav.selected_column={}, buffer.current_column={}, selection.selected_column={}", 
@@ -4215,28 +4133,36 @@ impl EnhancedTuiApp {
                     search_match.col + 1
                 ));
             }
-            
+
             // Final column state logging
             info!(target: "search", 
                 "FINAL vim_search_next state: nav.selected_column={}, buffer.current_column={}, selection.selected_column={}", 
                 self.state_container.navigation().selected_column,
                 self.state_container.get_current_column(),
                 self.state_container.selection().selected_column);
-                
+
             // CRITICAL: Verify what's actually at the final position
             if let Some(dataview) = self.state_container.get_buffer_dataview() {
                 let final_row = self.state_container.navigation().selected_row;
                 let final_col = self.state_container.navigation().selected_column;
-                
+
                 if let Some(row_data) = dataview.get_row(final_row) {
                     if final_col < row_data.values.len() {
                         let actual_value = &row_data.values[final_col];
                         info!(target: "search", 
                             "VERIFICATION: Cell at final position ({}, {}) contains: '{}'",
                             final_row, final_col, actual_value);
-                            
-                        let pattern = self.vim_search_adapter.borrow().get_pattern().unwrap_or_default();
-                        if !actual_value.to_string().to_lowercase().contains(&pattern.to_lowercase()) {
+
+                        let pattern = self
+                            .vim_search_adapter
+                            .borrow()
+                            .get_pattern()
+                            .unwrap_or_default();
+                        if !actual_value
+                            .to_string()
+                            .to_lowercase()
+                            .contains(&pattern.to_lowercase())
+                        {
                             error!(target: "search",
                                 "ERROR: Final cell '{}' does NOT contain search pattern '{}'!",
                                 actual_value, pattern);
@@ -4304,7 +4230,7 @@ impl EnhancedTuiApp {
             info!(target: "search",
                 "Setting column to visual index {}",
                 search_match.col);
-            
+
             // Update all column-related state to the visual column index
             self.state_container
                 .set_current_column_buffer(search_match.col);
@@ -4314,7 +4240,7 @@ impl EnhancedTuiApp {
             self.state_container.select_column(search_match.col);
             info!(target: "search", 
                 "Updated SelectionState column to: {}", search_match.col);
-            
+
             // Log the current state of all column-related fields
             info!(target: "search", 
                 "Column state after update: nav.selected_column={}, buffer.current_column={}, selection.selected_column={}", 
@@ -4324,22 +4250,24 @@ impl EnhancedTuiApp {
 
             // CRITICAL: Also update navigation's selected_row to trigger proper rendering
             self.state_container.navigation_mut().selected_row = search_match.row;
-            
+
             // CRITICAL: Update navigation scroll offset to match the viewport!
             // The viewport manager has scrolled, but we need to sync that back to navigation state
             if let Some(ref viewport) = *self.viewport_manager.borrow() {
                 let viewport_rows = viewport.get_viewport_rows();
                 let viewport_cols = viewport.viewport_cols();
-                
+
                 info!(target: "search",
                     "Syncing navigation scroll to viewport: row_offset={}, col_offset={}",
                     viewport_rows.start, viewport_cols.start);
-                    
+
                 // Update the navigation scroll offset to match viewport
-                self.state_container.navigation_mut().scroll_offset = (viewport_rows.start, viewport_cols.start);
-                
+                self.state_container.navigation_mut().scroll_offset =
+                    (viewport_rows.start, viewport_cols.start);
+
                 // Also update the buffer scroll offset
-                self.state_container.set_scroll_offset((viewport_rows.start, viewport_cols.start));
+                self.state_container
+                    .set_scroll_offset((viewport_rows.start, viewport_cols.start));
             }
 
             // CRITICAL: Update TableWidgetManager to trigger re-render
@@ -4348,7 +4276,7 @@ impl EnhancedTuiApp {
             self.table_widget_manager
                 .borrow_mut()
                 .navigate_to(search_match.row, search_match.col);
-                
+
             // Log column state after TableWidgetManager update
             info!(target: "search", 
                 "After TableWidgetManager update: nav.selected_column={}, buffer.current_column={}, selection.selected_column={}", 
@@ -5723,13 +5651,14 @@ impl EnhancedTuiApp {
             // Get the crosshair's viewport-relative position for rendering
             // The viewport manager stores crosshair in absolute coordinates
             // but we need viewport-relative for rendering
-            let crosshair_column_position = if let Some((_, col_pos)) = viewport_manager.get_crosshair_viewport_position() {
-                col_pos
-            } else {
-                // Crosshair is outside viewport, default to 0
-                0
-            };
-            
+            let crosshair_column_position =
+                if let Some((_, col_pos)) = viewport_manager.get_crosshair_viewport_position() {
+                    col_pos
+                } else {
+                    // Crosshair is outside viewport, default to 0
+                    0
+                };
+
             let crosshair_visual = viewport_manager.get_crosshair_col();
 
             (info.1, crosshair_column_position, crosshair_visual)
@@ -6250,11 +6179,6 @@ impl EnhancedTuiApp {
         self.hybrid_parser
             .get_detailed_debug_info(query, query.len())
     }
-
-    // debug_generate_buffer_state and debug_generate_results_state moved to DebugContext trait defaults
-
-    // debug_generate_memory_info moved to DebugContext trait default implementation
-    // debug_generate_datatable_schema moved to DebugContext trait default implementation
 
     fn debug_generate_navigation_state(&self) -> String {
         let mut debug_info = String::new();
@@ -6960,7 +6884,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
             }
             AppMode::JumpToRow => {
                 self.state_container.set_mode(AppMode::Results);
-                self.clear_jump_to_row_input();
+                <Self as InputBehavior>::clear_jump_to_row_input(self);
                 // Clear jump-to-row state (can mutate directly now)
                 self.state_container.jump_to_row_mut().is_active = false;
                 self.state_container
@@ -7125,6 +7049,82 @@ impl ActionHandlerContext for EnhancedTuiApp {
 
     fn redo(&mut self) {
         self.state_container.perform_redo();
+    }
+
+    fn start_jump_to_row(&mut self) {
+        self.state_container.set_mode(AppMode::JumpToRow);
+        self.shadow_state
+            .borrow_mut()
+            .observe_mode_change(AppMode::JumpToRow, "jump_to_row_requested");
+        <Self as InputBehavior>::clear_jump_to_row_input(self);
+
+        // Set jump-to-row state as active (can mutate directly now)
+        self.state_container.jump_to_row_mut().is_active = true;
+
+        self.state_container
+            .set_status_message("Enter row number (1-based):".to_string());
+    }
+
+    fn clear_jump_to_row_input(&mut self) {
+        <Self as InputBehavior>::clear_jump_to_row_input(self);
+    }
+
+    fn toggle_cursor_lock(&mut self) {
+        // Toggle cursor lock in ViewportManager
+        let is_locked = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                viewport_manager.toggle_cursor_lock();
+                Some(viewport_manager.is_cursor_locked())
+            } else {
+                None
+            }
+        };
+
+        if let Some(is_locked) = is_locked {
+            let msg = if is_locked {
+                "Cursor lock ON - cursor stays in viewport position while scrolling"
+            } else {
+                "Cursor lock OFF"
+            };
+            self.state_container.set_status_message(msg.to_string());
+
+            // Log for shadow state learning (not tracking as state change yet)
+            info!(target: "shadow_state",
+                "Cursor lock toggled: {} (in {:?} mode)",
+                if is_locked { "ON" } else { "OFF" },
+                self.shadow_state.borrow().get_mode()
+            );
+        }
+    }
+
+    fn toggle_viewport_lock(&mut self) {
+        // Toggle viewport lock in ViewportManager
+        let is_locked = {
+            let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
+                viewport_manager.toggle_viewport_lock();
+                Some(viewport_manager.is_viewport_locked())
+            } else {
+                None
+            }
+        };
+
+        if let Some(is_locked) = is_locked {
+            let msg = if is_locked {
+                "Viewport lock ON - navigation constrained to current viewport"
+            } else {
+                "Viewport lock OFF"
+            };
+            self.state_container.set_status_message(msg.to_string());
+
+            // Log for shadow state learning (not tracking as state change yet)
+            info!(target: "shadow_state",
+                "Viewport lock toggled: {} (in {:?} mode)",
+                if is_locked { "ON" } else { "OFF" },
+                self.shadow_state.borrow().get_mode()
+            );
+        }
     }
 }
 
