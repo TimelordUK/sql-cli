@@ -8,7 +8,18 @@ fn test_history_protection_integration() {
 
     // Create temp directory for test
     let temp_dir = TempDir::new().unwrap();
-    std::env::set_var("HOME", temp_dir.path());
+
+    // Set environment variables for cross-platform compatibility
+    // Windows uses APPDATA/LOCALAPPDATA, Unix uses HOME
+    #[cfg(windows)]
+    {
+        std::env::set_var("APPDATA", temp_dir.path());
+        std::env::set_var("LOCALAPPDATA", temp_dir.path());
+    }
+    #[cfg(unix)]
+    {
+        std::env::set_var("HOME", temp_dir.path());
+    }
 
     // Create history instance
     let mut history = CommandHistory::new().unwrap();
@@ -23,12 +34,12 @@ fn test_history_protection_integration() {
     let entries = history.get_all();
     assert_eq!(entries.len(), 5, "Should have 5 entries");
 
-    // Check backup directory exists
-    let backup_dir = temp_dir.path().join(".sql_cli").join("history_backups");
+    // Check backup directory exists - use sql-cli directory (cross-platform)
+    let backup_dir = temp_dir.path().join("sql-cli").join("history_backups");
 
     // Directory might not exist until first backup, so let's trigger one
     // by saving after adding entries
-    let history_file = temp_dir.path().join(".sql_cli").join("history.json");
+    let history_file = temp_dir.path().join("sql-cli").join("history.json");
     if history_file.exists() {
         println!("History file exists at: {:?}", history_file);
     }
