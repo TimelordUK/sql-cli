@@ -181,11 +181,143 @@ pub struct ViewportManager {
 - [ ] ViewportManager reduced to orchestration role
 - [ ] Each subsystem has clear, focused responsibility
 
+## Phase 1 Status: ✅ COMPLETED
+- [x] ColumnWidthCalculator successfully extracted
+- [x] All functionality preserved, tests pass
+- [x] 150 lines moved to focused component
+- [x] Comprehensive unit tests added
+- [x] Merged to main branch
+
+## Phase 2 Prep: Comprehensive Testing Strategy
+
+**⚠️ CRITICAL: Test-First Approach Required**
+
+Given the complexity of viewport management and recent navigation issues, we must write comprehensive tests BEFORE attempting Phase 2 refactoring.
+
+### Why Test-First is Essential:
+1. **Complex Domain**: Viewport involves coordinate transformations, boundary calculations, state sync
+2. **Recent Bug History**: Just fixed major scrolling issues - likely more edge cases exist
+3. **High-Risk Refactoring**: Core TUI functionality - breaking these methods breaks everything
+4. **Hard to Debug**: Viewport issues are visual and difficult to reproduce consistently
+
+### Phase 2 Scope (ViewportBoundsCalculator)
+Methods to extract:
+- `calculate_visible_column_indices()`
+- `calculate_visible_column_indices_with_offset()`  
+- `calculate_scroll_offset_for_visual_column()` *(recently fixed!)*
+- `determine_viewport_bounds()`
+
+### Comprehensive Test Plan
+
+#### 1. Crosshair Placement Tests
+```rust
+// Test crosshair positioning with pinned columns
+test_crosshair_with_pinned_columns()
+
+// Test crosshair at viewport boundaries (first/last visible column)
+test_crosshair_at_viewport_boundaries()
+
+// Test crosshair persistence during scrolling
+test_crosshair_persistence_during_scroll()
+
+// Test coordinate space conversions (visual ↔ DataTable)
+test_crosshair_coordinate_conversions()
+```
+
+#### 2. Viewport Scrolling Tests
+```rust
+// Test smooth scrolling vs jumping behavior
+test_smooth_scrolling_behavior()
+
+// Test boundary conditions (first column, last column)
+test_viewport_boundary_conditions()
+
+// Test scroll offset calculations with different column widths
+test_scroll_offset_calculations()
+
+// Test the exact scenario we just fixed (column 20 → 21)
+test_navigation_column_20_to_21_no_jumping()
+```
+
+#### 3. Pinned Columns Integration Tests
+```rust
+// Test navigation with pinned columns
+test_pinned_columns_navigation()
+
+// Test viewport boundaries with mixed pinned/scrollable columns
+test_mixed_pinned_scrollable_boundaries()
+
+// Edge case: more pinned columns than viewport width
+test_excessive_pinned_columns()
+```
+
+#### 4. Coordinate System Tests
+```rust
+// Test visual index ↔ DataTable index conversions
+test_coordinate_system_conversions()
+
+// Test display columns array handling
+test_display_columns_handling()
+
+// Test column visibility calculations
+test_column_visibility_calculations()
+```
+
+#### 5. Edge Case Tests
+```rust
+// Test very wide columns (exceed viewport)
+test_oversized_columns()
+
+// Test very narrow columns (sub-pixel widths)
+test_narrow_columns()
+
+// Test empty datasets
+test_empty_dataset_handling()
+
+// Test single column datasets
+test_single_column_dataset()
+
+// Test terminal resize scenarios
+test_terminal_resize_handling()
+```
+
+### Testing Architecture
+
+**Integration Tests** (most valuable for viewport):
+- Test complete user scenarios (navigation, scrolling, resizing)
+- Verify no regression in recently fixed bugs
+- Test crosshair placement accuracy
+- Test coordinate system consistency
+
+**Unit Tests** (for extracted components):
+- Test individual methods in isolation
+- Test boundary conditions and edge cases
+- Test mathematical correctness of calculations
+
+### Implementation Strategy
+
+#### Day 1: Test Foundation
+1. **Morning**: Write comprehensive viewport integration tests
+2. **Afternoon**: Run tests, fix any revealed bugs  
+3. **Evening**: Ensure 100% test coverage for target methods
+
+#### Day 2: Phase 2 Refactoring
+1. Extract ViewportBoundsCalculator with confidence
+2. Run full test suite after each change
+3. Refactor fearlessly knowing tests catch regressions
+
+### Benefits of Test-First Approach
+1. **Safety Net**: Comprehensive coverage before refactoring
+2. **Regression Prevention**: Catch Phase 2 breaking changes immediately
+3. **Documentation**: Tests serve as executable specification  
+4. **Confidence**: Refactor fearlessly with test protection
+5. **Better Design**: Testing often reveals design flaws early
+
 ## Next Steps
-1. Create branch for Phase 1 (ColumnWidthCalculator extraction)
-2. Implement proof of concept
-3. Validate approach and adjust plan as needed
-4. Continue with subsequent phases
+1. ✅ Phase 1 Complete - ColumnWidthCalculator extracted
+2. 🧪 **NEXT: Write comprehensive viewport tests** 
+3. 🔧 Phase 2: Extract ViewportBoundsCalculator (test-driven)
+4. 🚀 Continue with remaining phases
 
 ---
 
