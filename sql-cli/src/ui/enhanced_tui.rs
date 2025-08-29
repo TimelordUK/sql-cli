@@ -352,6 +352,100 @@ impl EnhancedTuiApp {
         &mut self.state_container
     }
 
+    // ========== STATE SYNCHRONIZATION ==========
+
+    /// Synchronize ViewportManager state with NavigationState
+    /// This ensures single source of truth for crosshair position
+    pub(crate) fn sync_viewport_with_navigation(&self) {
+        let nav = self.state_container.navigation();
+        let mut viewport_borrow = self.viewport_manager.borrow_mut();
+
+        if let Some(ref mut viewport) = viewport_borrow.as_mut() {
+            // Update ViewportManager's crosshair from NavigationState
+            viewport.set_crosshair(nav.selected_row, nav.selected_column);
+
+            // If scroll offsets don't match, update ViewportManager
+            let current_offset = viewport.get_scroll_offset();
+            if current_offset != nav.scroll_offset {
+                viewport.set_scroll_offset(nav.scroll_offset.0, nav.scroll_offset.1);
+            }
+        }
+    }
+
+    /// Synchronize NavigationState with ViewportManager
+    /// This is the reverse - update NavigationState from ViewportManager
+    pub(crate) fn sync_navigation_with_viewport(&self) {
+        let viewport_borrow = self.viewport_manager.borrow();
+
+        if let Some(ref viewport) = viewport_borrow.as_ref() {
+            let mut nav = self.state_container.navigation_mut();
+
+            // Update NavigationState from ViewportManager's authoritative position
+            nav.selected_row = viewport.get_selected_row();
+            nav.selected_column = viewport.get_selected_column();
+            nav.scroll_offset = viewport.get_scroll_offset();
+        }
+    }
+
+    /// Save current ViewportManager state to the current buffer
+    fn save_viewport_to_current_buffer(&mut self) {
+        let viewport_borrow = self.viewport_manager.borrow();
+
+        if let Some(ref viewport) = viewport_borrow.as_ref() {
+            if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
+                // Save crosshair position
+                buffer.set_selected_row(Some(viewport.get_selected_row()));
+                buffer.set_current_column(viewport.get_selected_column());
+
+                // Save scroll offset
+                buffer.set_scroll_offset(viewport.get_scroll_offset());
+            }
+        }
+    }
+
+    /// Restore ViewportManager state from the current buffer
+    fn restore_viewport_from_current_buffer(&mut self) {
+        if let Some(buffer) = self.state_container.buffers().current() {
+            // Check if this buffer has a DataView
+            if let Some(dataview) = buffer.get_dataview() {
+                // Check if we need to create or update ViewportManager
+                let needs_new_viewport = {
+                    let viewport_borrow = self.viewport_manager.borrow();
+                    viewport_borrow.is_none()
+                };
+
+                if needs_new_viewport {
+                    // Create new ViewportManager for this buffer's DataView
+                    self.viewport_manager =
+                        RefCell::new(Some(ViewportManager::new(Arc::new(dataview.clone()))));
+                } else {
+                    // Update existing ViewportManager with new DataView
+                    let mut viewport_borrow = self.viewport_manager.borrow_mut();
+                    if let Some(ref mut viewport) = viewport_borrow.as_mut() {
+                        viewport.set_dataview(Arc::new(dataview.clone()));
+                    }
+                }
+
+                // Now restore the position
+                let mut viewport_borrow = self.viewport_manager.borrow_mut();
+                if let Some(ref mut viewport) = viewport_borrow.as_mut() {
+                    // Restore crosshair position
+                    let row = buffer.get_selected_row().unwrap_or(0);
+                    let col = buffer.get_current_column();
+                    viewport.set_crosshair(row, col);
+
+                    // Restore scroll offset
+                    let scroll_offset = buffer.get_scroll_offset();
+                    viewport.set_scroll_offset(scroll_offset.0, scroll_offset.1);
+
+                    // Also update NavigationState for consistency
+                    drop(viewport_borrow);
+                    self.sync_navigation_with_viewport();
+                }
+            }
+        }
+    }
+
     // ========== VIEWPORT CALCULATIONS ==========
 
     /// Calculate the number of data rows available for the table
@@ -4057,27 +4151,13 @@ impl EnhancedTuiApp {
                 self.state_container.get_current_column(),
                 self.state_container.selection().selected_column);
 
-            // CRITICAL: Also update navigation's selected_row to trigger proper rendering
-            self.state_container.navigation_mut().selected_row = search_match.row;
+            // CRITICAL: Sync NavigationState with ViewportManager after vim search navigation
+            // ViewportManager has the correct state after navigation, sync it back
+            self.sync_navigation_with_viewport();
 
-            // CRITICAL: Update navigation scroll offset to match the viewport!
-            // The viewport manager has scrolled, but we need to sync that back to navigation state
-            if let Some(ref viewport) = *self.viewport_manager.borrow() {
-                let viewport_rows = viewport.get_viewport_rows();
-                let viewport_cols = viewport.viewport_cols();
-
-                info!(target: "search",
-                    "Syncing navigation scroll to viewport: row_offset={}, col_offset={}",
-                    viewport_rows.start, viewport_cols.start);
-
-                // Update the navigation scroll offset to match viewport
-                self.state_container.navigation_mut().scroll_offset =
-                    (viewport_rows.start, viewport_cols.start);
-
-                // Also update the buffer scroll offset
-                self.state_container
-                    .set_scroll_offset((viewport_rows.start, viewport_cols.start));
-            }
+            // Also update the buffer scroll offset
+            let scroll_offset = self.state_container.navigation().scroll_offset;
+            self.state_container.set_scroll_offset(scroll_offset);
 
             // CRITICAL: Update TableWidgetManager to trigger re-render
             info!(target: "search", "Updating TableWidgetManager for vim search navigation to ({}, {})",
@@ -4093,33 +4173,9 @@ impl EnhancedTuiApp {
                 self.state_container.get_current_column(),
                 self.state_container.selection().selected_column);
 
-            // Update scroll offset if row changed significantly
-            let viewport_height = 79; // Typical viewport height
-            let (current_scroll_row, _) = self.state_container.get_scroll_offset();
-
-            // Get the column scroll offset from the viewport manager
-            // The viewport manager has already updated the column viewport
-            let new_col_scroll = if let Some(ref viewport) = *self.viewport_manager.borrow() {
-                viewport.viewport_cols().start
-            } else {
-                0
-            };
-
-            // If the match is outside current viewport, update scroll
-            if search_match.row < current_scroll_row
-                || search_match.row >= current_scroll_row + viewport_height
-            {
-                let new_scroll = search_match.row.saturating_sub(viewport_height / 2);
-                self.state_container
-                    .set_scroll_offset((new_scroll, new_col_scroll));
-                self.state_container.navigation_mut().scroll_offset = (new_scroll, new_col_scroll);
-            } else {
-                // Even if row didn't change, we need to update column scroll
-                self.state_container
-                    .set_scroll_offset((current_scroll_row, new_col_scroll));
-                self.state_container.navigation_mut().scroll_offset =
-                    (current_scroll_row, new_col_scroll);
-            }
+            // The ViewportManager has already handled all scrolling logic
+            // Our sync_navigation_with_viewport() call above has updated NavigationState
+            // No need for additional manual scroll updates
         }
 
         // Update status without borrow conflicts
@@ -4248,27 +4304,13 @@ impl EnhancedTuiApp {
                 self.state_container.get_current_column(),
                 self.state_container.selection().selected_column);
 
-            // CRITICAL: Also update navigation's selected_row to trigger proper rendering
-            self.state_container.navigation_mut().selected_row = search_match.row;
+            // CRITICAL: Sync NavigationState with ViewportManager after vim search navigation
+            // ViewportManager has the correct state after navigation, sync it back
+            self.sync_navigation_with_viewport();
 
-            // CRITICAL: Update navigation scroll offset to match the viewport!
-            // The viewport manager has scrolled, but we need to sync that back to navigation state
-            if let Some(ref viewport) = *self.viewport_manager.borrow() {
-                let viewport_rows = viewport.get_viewport_rows();
-                let viewport_cols = viewport.viewport_cols();
-
-                info!(target: "search",
-                    "Syncing navigation scroll to viewport: row_offset={}, col_offset={}",
-                    viewport_rows.start, viewport_cols.start);
-
-                // Update the navigation scroll offset to match viewport
-                self.state_container.navigation_mut().scroll_offset =
-                    (viewport_rows.start, viewport_cols.start);
-
-                // Also update the buffer scroll offset
-                self.state_container
-                    .set_scroll_offset((viewport_rows.start, viewport_cols.start));
-            }
+            // Also update the buffer scroll offset
+            let scroll_offset = self.state_container.navigation().scroll_offset;
+            self.state_container.set_scroll_offset(scroll_offset);
 
             // CRITICAL: Update TableWidgetManager to trigger re-render
             info!(target: "search", "Updating TableWidgetManager for vim search navigation to ({}, {})",
@@ -4284,33 +4326,9 @@ impl EnhancedTuiApp {
                 self.state_container.get_current_column(),
                 self.state_container.selection().selected_column);
 
-            // Update scroll offset if row changed significantly
-            let viewport_height = 79; // Typical viewport height
-            let (current_scroll_row, _) = self.state_container.get_scroll_offset();
-
-            // Get the column scroll offset from the viewport manager
-            // The viewport manager has already updated the column viewport
-            let new_col_scroll = if let Some(ref viewport) = *self.viewport_manager.borrow() {
-                viewport.viewport_cols().start
-            } else {
-                0
-            };
-
-            // If the match is outside current viewport, update scroll
-            if search_match.row < current_scroll_row
-                || search_match.row >= current_scroll_row + viewport_height
-            {
-                let new_scroll = search_match.row.saturating_sub(viewport_height / 2);
-                self.state_container
-                    .set_scroll_offset((new_scroll, new_col_scroll));
-                self.state_container.navigation_mut().scroll_offset = (new_scroll, new_col_scroll);
-            } else {
-                // Even if row didn't change, we need to update column scroll
-                self.state_container
-                    .set_scroll_offset((current_scroll_row, new_col_scroll));
-                self.state_container.navigation_mut().scroll_offset =
-                    (current_scroll_row, new_col_scroll);
-            }
+            // The ViewportManager has already handled all scrolling logic
+            // Our sync_navigation_with_viewport() call above has updated NavigationState
+            // No need for additional manual scroll updates
         }
 
         // Update status without borrow conflicts
@@ -6953,16 +6971,17 @@ impl ActionHandlerContext for EnhancedTuiApp {
         };
 
         if let Some(result) = result {
+            // ViewportManager has updated, sync NavigationState from it
+            self.sync_navigation_with_viewport();
+
+            // Update buffer's selected row
             self.state_container
                 .set_selected_row(Some(result.row_position));
+
+            // Update buffer's scroll offset
             if result.viewport_changed {
-                let mut offset = self.state_container.get_scroll_offset();
-                offset.0 = result.row_scroll_offset;
-                self.state_container.set_scroll_offset(offset);
-            }
-            self.state_container.navigation_mut().selected_row = result.row_position;
-            if result.viewport_changed {
-                self.state_container.navigation_mut().scroll_offset.0 = result.row_scroll_offset;
+                let scroll_offset = self.state_container.navigation().scroll_offset;
+                self.state_container.set_scroll_offset(scroll_offset);
             }
         }
     }
@@ -6978,16 +6997,17 @@ impl ActionHandlerContext for EnhancedTuiApp {
         };
 
         if let Some(result) = result {
+            // ViewportManager has updated, sync NavigationState from it
+            self.sync_navigation_with_viewport();
+
+            // Update buffer's selected row
             self.state_container
                 .set_selected_row(Some(result.row_position));
+
+            // Update buffer's scroll offset
             if result.viewport_changed {
-                let mut offset = self.state_container.get_scroll_offset();
-                offset.0 = result.row_scroll_offset;
-                self.state_container.set_scroll_offset(offset);
-            }
-            self.state_container.navigation_mut().selected_row = result.row_position;
-            if result.viewport_changed {
-                self.state_container.navigation_mut().scroll_offset.0 = result.row_scroll_offset;
+                let scroll_offset = self.state_container.navigation().scroll_offset;
+                self.state_container.set_scroll_offset(scroll_offset);
             }
         }
     }
@@ -7003,16 +7023,17 @@ impl ActionHandlerContext for EnhancedTuiApp {
         };
 
         if let Some(result) = result {
+            // ViewportManager has updated, sync NavigationState from it
+            self.sync_navigation_with_viewport();
+
+            // Update buffer's selected row
             self.state_container
                 .set_selected_row(Some(result.row_position));
+
+            // Update buffer's scroll offset
             if result.viewport_changed {
-                let mut offset = self.state_container.get_scroll_offset();
-                offset.0 = result.row_scroll_offset;
-                self.state_container.set_scroll_offset(offset);
-            }
-            self.state_container.navigation_mut().selected_row = result.row_position;
-            if result.viewport_changed {
-                self.state_container.navigation_mut().scroll_offset.0 = result.row_scroll_offset;
+                let scroll_offset = self.state_container.navigation().scroll_offset;
+                self.state_container.set_scroll_offset(scroll_offset);
             }
         }
     }
@@ -7284,18 +7305,45 @@ impl BufferManagementBehavior for EnhancedTuiApp {
     }
 
     fn next_buffer(&mut self) -> String {
-        self.buffer_handler
-            .next_buffer(self.state_container.buffers_mut())
+        // Save current viewport state to current buffer before switching
+        self.save_viewport_to_current_buffer();
+
+        let result = self
+            .buffer_handler
+            .next_buffer(self.state_container.buffers_mut());
+
+        // Restore viewport state from new buffer after switching
+        self.restore_viewport_from_current_buffer();
+
+        result
     }
 
     fn previous_buffer(&mut self) -> String {
-        self.buffer_handler
-            .previous_buffer(self.state_container.buffers_mut())
+        // Save current viewport state to current buffer before switching
+        self.save_viewport_to_current_buffer();
+
+        let result = self
+            .buffer_handler
+            .previous_buffer(self.state_container.buffers_mut());
+
+        // Restore viewport state from new buffer after switching
+        self.restore_viewport_from_current_buffer();
+
+        result
     }
 
     fn quick_switch_buffer(&mut self) -> String {
-        self.buffer_handler
-            .quick_switch(self.state_container.buffers_mut())
+        // Save current viewport state to current buffer before switching
+        self.save_viewport_to_current_buffer();
+
+        let result = self
+            .buffer_handler
+            .quick_switch(self.state_container.buffers_mut());
+
+        // Restore viewport state from new buffer after switching
+        self.restore_viewport_from_current_buffer();
+
+        result
     }
 
     fn close_buffer(&mut self) -> (bool, String) {
@@ -7304,8 +7352,18 @@ impl BufferManagementBehavior for EnhancedTuiApp {
     }
 
     fn switch_to_buffer(&mut self, index: usize) -> String {
-        self.buffer_handler
-            .switch_to_buffer(self.state_container.buffers_mut(), index)
+        // Save current viewport state to current buffer before switching
+        self.save_viewport_to_current_buffer();
+
+        // Switch buffer
+        let result = self
+            .buffer_handler
+            .switch_to_buffer(self.state_container.buffers_mut(), index);
+
+        // Restore viewport state from new buffer after switching
+        self.restore_viewport_from_current_buffer();
+
+        result
     }
 
     fn buffer_count(&self) -> usize {
