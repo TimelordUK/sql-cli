@@ -1,24 +1,45 @@
 /// Test that ViewportManager is correctly synced with the current buffer
 /// when loading multiple files
-use sql_cli::app_state_container::AppStateContainer;
 use sql_cli::buffer::{Buffer, BufferAPI, BufferManager};
 use sql_cli::data::data_view::DataView;
-use sql_cli::data::datatable::DataTable;
+use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use std::sync::Arc;
 
 #[test]
 fn test_viewport_sync_after_multi_file_load() {
     // Create mock DataTables with distinct data
-    let mut datatable1 = DataTable::new();
-    datatable1.set_headers(vec!["id".to_string(), "name".to_string()]);
-    datatable1.add_row(vec!["1".to_string(), "first_buffer".to_string()]);
-    datatable1.add_row(vec!["2".to_string(), "first_buffer".to_string()]);
+    let mut datatable1 = DataTable::new("table1");
+    datatable1.add_column(DataColumn::new("id"));
+    datatable1.add_column(DataColumn::new("name"));
+    datatable1
+        .add_row(DataRow::new(vec![
+            DataValue::String("1".to_string()),
+            DataValue::String("first_buffer".to_string()),
+        ]))
+        .unwrap();
+    datatable1
+        .add_row(DataRow::new(vec![
+            DataValue::String("2".to_string()),
+            DataValue::String("first_buffer".to_string()),
+        ]))
+        .unwrap();
     let dataview1 = DataView::new(Arc::new(datatable1));
 
-    let mut datatable2 = DataTable::new();
-    datatable2.set_headers(vec!["code".to_string(), "desc".to_string()]);
-    datatable2.add_row(vec!["A".to_string(), "second_buffer".to_string()]);
-    datatable2.add_row(vec!["B".to_string(), "second_buffer".to_string()]);
+    let mut datatable2 = DataTable::new("table2");
+    datatable2.add_column(DataColumn::new("code"));
+    datatable2.add_column(DataColumn::new("desc"));
+    datatable2
+        .add_row(DataRow::new(vec![
+            DataValue::String("A".to_string()),
+            DataValue::String("second_buffer".to_string()),
+        ]))
+        .unwrap();
+    datatable2
+        .add_row(DataRow::new(vec![
+            DataValue::String("B".to_string()),
+            DataValue::String("second_buffer".to_string()),
+        ]))
+        .unwrap();
     let dataview2 = DataView::new(Arc::new(datatable2));
 
     // Create a BufferManager and add buffers
@@ -53,7 +74,7 @@ fn test_viewport_sync_after_multi_file_load() {
     let buffer_dataview = current_buffer.get_dataview().unwrap();
 
     assert_eq!(
-        buffer_dataview.headers(),
+        buffer_dataview.column_names(),
         vec!["id", "name"],
         "Buffer 1 should have first dataview headers"
     );
@@ -68,14 +89,22 @@ fn test_viewport_sync_after_multi_file_load() {
 #[test]
 fn test_buffer_switching_preserves_dataview() {
     // Create two DataTables with different data
-    let mut datatable1 = DataTable::new();
-    datatable1.set_headers(vec!["col1".to_string()]);
-    datatable1.add_row(vec!["buffer1_data".to_string()]);
+    let mut datatable1 = DataTable::new("table1");
+    datatable1.add_column(DataColumn::new("col1"));
+    datatable1
+        .add_row(DataRow::new(vec![DataValue::String(
+            "buffer1_data".to_string(),
+        )]))
+        .unwrap();
     let dataview1 = DataView::new(Arc::new(datatable1));
 
-    let mut datatable2 = DataTable::new();
-    datatable2.set_headers(vec!["col2".to_string()]);
-    datatable2.add_row(vec!["buffer2_data".to_string()]);
+    let mut datatable2 = DataTable::new("table2");
+    datatable2.add_column(DataColumn::new("col2"));
+    datatable2
+        .add_row(DataRow::new(vec![DataValue::String(
+            "buffer2_data".to_string(),
+        )]))
+        .unwrap();
     let dataview2 = DataView::new(Arc::new(datatable2));
 
     // Create BufferManager
@@ -99,7 +128,7 @@ fn test_buffer_switching_preserves_dataview() {
         let current = buffer_manager.current().unwrap();
         let dataview = current.get_dataview().unwrap();
         assert_eq!(
-            dataview.headers(),
+            dataview.column_names(),
             vec!["col1"],
             "Buffer 1 should have col1 header"
         );
@@ -109,7 +138,7 @@ fn test_buffer_switching_preserves_dataview() {
         let current = buffer_manager.current().unwrap();
         let dataview = current.get_dataview().unwrap();
         assert_eq!(
-            dataview.headers(),
+            dataview.column_names(),
             vec!["col2"],
             "Buffer 2 should have col2 header"
         );
