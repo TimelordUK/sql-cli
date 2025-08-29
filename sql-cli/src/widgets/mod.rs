@@ -11,3 +11,4 @@ pub mod help_widget;
 pub mod history_widget;
 pub mod search_modes_widget;
 pub mod stats_widget;
+pub mod tab_bar_widget;

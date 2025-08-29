@@ -45,6 +45,7 @@ use crate::widgets::editor_widget::{BufferAction, EditorAction, EditorWidget};
 use crate::widgets::help_widget::HelpWidget;
 use crate::widgets::search_modes_widget::{SearchMode, SearchModesAction, SearchModesWidget};
 use crate::widgets::stats_widget::StatsWidget;
+use crate::widgets::tab_bar_widget::TabBarWidget;
 use crate::{buffer, data_analyzer, dual_logging};
 use anyhow::Result;
 use crossterm::{
@@ -5098,10 +5099,16 @@ impl EnhancedTuiApp {
         // Always use single-line mode input height
         let input_height = INPUT_AREA_HEIGHT;
 
+        // Check if we need a tab bar (more than one buffer)
+        let buffer_count = self.state_container.buffers().all_buffers().len();
+        let needs_tab_bar = buffer_count > 1;
+        let tab_bar_height = if needs_tab_bar { 2 } else { 0 };
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
                 [
+                    Constraint::Length(tab_bar_height),    // Tab bar (if needed)
                     Constraint::Length(input_height),      // Command input area
                     Constraint::Min(0),                    // Results
                     Constraint::Length(STATUS_BAR_HEIGHT), // Status bar
@@ -5110,8 +5117,28 @@ impl EnhancedTuiApp {
             )
             .split(f.area());
 
+        // Render tab bar if we have multiple buffers
+        if needs_tab_bar {
+            let buffer_names: Vec<String> = self
+                .state_container
+                .buffers()
+                .all_buffers()
+                .iter()
+                .map(|b| b.get_name())
+                .collect();
+            let current_index = self.state_container.buffers().current_index();
+
+            let tab_widget = TabBarWidget::new(current_index, buffer_names);
+            tab_widget.render(f, chunks[0]);
+        }
+
+        // Adjust chunk indices based on whether tab bar is present
+        let input_chunk_idx = if needs_tab_bar { 1 } else { 0 };
+        let results_chunk_idx = if needs_tab_bar { 2 } else { 1 };
+        let status_chunk_idx = if needs_tab_bar { 3 } else { 2 };
+
         // Update horizontal scroll based on actual terminal width
-        self.update_horizontal_scroll(chunks[0].width);
+        self.update_horizontal_scroll(chunks[input_chunk_idx].width);
 
         // Command input area
         // Get the current input text length and cursor position for display
@@ -5166,7 +5193,7 @@ impl EnhancedTuiApp {
 
         if use_search_widget {
             // Let the search modes widget render the input field with debounce indicator
-            self.search_modes_widget.render(f, chunks[0]);
+            self.search_modes_widget.render(f, chunks[input_chunk_idx]);
         } else {
             // Always get input text through the buffer API for consistency
             let input_text_string = self.get_input_text();
@@ -5245,9 +5272,9 @@ impl EnhancedTuiApp {
             };
 
             // Render the input paragraph (single-line mode)
-            f.render_widget(input_paragraph, chunks[0]);
+            f.render_widget(input_paragraph, chunks[input_chunk_idx]);
         }
-        let results_area = chunks[1];
+        let results_area = chunks[results_chunk_idx];
 
         // Set cursor position for input modes (skip if search widget is handling it)
         if !use_search_widget {
@@ -5255,7 +5282,7 @@ impl EnhancedTuiApp {
                 AppMode::Command => {
                     // Always use single-line cursor handling
                     // Calculate cursor position with horizontal scrolling
-                    let inner_width = chunks[0].width.saturating_sub(2) as usize;
+                    let inner_width = chunks[input_chunk_idx].width.saturating_sub(2) as usize;
                     let cursor_pos = self.get_visual_cursor().1; // Get column position for single-line
                     let scroll_offset = self.get_horizontal_scroll_offset() as usize;
 
@@ -5263,44 +5290,47 @@ impl EnhancedTuiApp {
                     if cursor_pos >= scroll_offset && cursor_pos < scroll_offset + inner_width {
                         let visible_pos = cursor_pos - scroll_offset;
                         f.set_cursor_position((
-                            chunks[0].x + visible_pos as u16 + 1,
-                            chunks[0].y + 1,
+                            chunks[input_chunk_idx].x + visible_pos as u16 + 1,
+                            chunks[input_chunk_idx].y + 1,
                         ));
                     }
                 }
                 AppMode::Search => {
                     f.set_cursor_position((
-                        chunks[0].x + self.get_input_cursor() as u16 + 1,
-                        chunks[0].y + 1,
+                        chunks[input_chunk_idx].x + self.get_input_cursor() as u16 + 1,
+                        chunks[input_chunk_idx].y + 1,
                     ));
                 }
                 AppMode::Filter => {
                     f.set_cursor_position((
-                        chunks[0].x + self.get_input_cursor() as u16 + 1,
-                        chunks[0].y + 1,
+                        chunks[input_chunk_idx].x + self.get_input_cursor() as u16 + 1,
+                        chunks[input_chunk_idx].y + 1,
                     ));
                 }
                 AppMode::FuzzyFilter => {
                     f.set_cursor_position((
-                        chunks[0].x + self.get_input_cursor() as u16 + 1,
-                        chunks[0].y + 1,
+                        chunks[input_chunk_idx].x + self.get_input_cursor() as u16 + 1,
+                        chunks[input_chunk_idx].y + 1,
                     ));
                 }
                 AppMode::ColumnSearch => {
                     f.set_cursor_position((
-                        chunks[0].x + self.get_input_cursor() as u16 + 1,
-                        chunks[0].y + 1,
+                        chunks[input_chunk_idx].x + self.get_input_cursor() as u16 + 1,
+                        chunks[input_chunk_idx].y + 1,
                     ));
                 }
                 AppMode::JumpToRow => {
                     f.set_cursor_position((
-                        chunks[0].x + self.get_jump_to_row_input().len() as u16 + 1,
-                        chunks[0].y + 1,
+                        chunks[input_chunk_idx].x + self.get_jump_to_row_input().len() as u16 + 1,
+                        chunks[input_chunk_idx].y + 1,
                     ));
                 }
                 AppMode::History => {
                     let query_len = self.state_container.history_search().query.len();
-                    f.set_cursor_position((chunks[0].x + query_len as u16 + 1, chunks[0].y + 1));
+                    f.set_cursor_position((
+                        chunks[input_chunk_idx].x + query_len as u16 + 1,
+                        chunks[input_chunk_idx].y + 1,
+                    ));
                 }
                 _ => {}
             }
@@ -5331,7 +5361,7 @@ impl EnhancedTuiApp {
         }
 
         // Render mode-specific status line
-        self.render_status_line(f, chunks[2]);
+        self.render_status_line(f, chunks[status_chunk_idx]);
         // ========== RENDERING ==========
     }
 
