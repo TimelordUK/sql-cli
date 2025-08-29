@@ -1384,6 +1384,18 @@ impl EnhancedTuiApp {
             };
             self.state_container.set_status_message(display_msg);
         }
+
+        // Set initial mode based on config
+        let initial_mode = match self.config.behavior.start_mode.to_lowercase().as_str() {
+            "results" => AppMode::Results,
+            "command" => AppMode::Command,
+            _ => AppMode::Results, // Default to results if invalid config
+        };
+
+        self.state_container.set_mode(initial_mode.clone());
+        self.shadow_state
+            .borrow_mut()
+            .observe_mode_change(initial_mode, "initial_load_from_config");
     }
 
     pub fn run(mut self) -> Result<()> {
