@@ -190,7 +190,10 @@ fn test_direct_buffer_viewstate_access() {
     assert_eq!(buffer.view_state.selection_mode, SelectionMode::Column);
     assert_eq!(buffer.view_state.viewport_lock, true);
 
-    // Also verify through BufferAPI methods (which we updated to use ViewState)
+    // Use the proper API method to set selected row (which syncs both ViewState and table_state)
+    buffer.set_selected_row(Some(15));
+
+    // Now verify through BufferAPI methods
     assert_eq!(buffer.get_selected_row(), Some(15));
     assert_eq!(buffer.get_current_column(), 7);
     assert_eq!(buffer.is_viewport_lock(), true);

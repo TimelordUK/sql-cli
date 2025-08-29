@@ -603,9 +603,9 @@ impl BufferAPI for Buffer {
 
     // --- Table Navigation ---
     fn get_selected_row(&self) -> Option<usize> {
-        // Return the crosshair_row from ViewState
-        // Note: Using Some() because crosshair always has a position
-        Some(self.view_state.crosshair_row)
+        // For backward compatibility, check if table_state has a selection
+        // This maintains the old API behavior where None means no selection
+        self.table_state.selected()
     }
 
     fn set_selected_row(&mut self, row: Option<usize>) {
@@ -614,7 +614,7 @@ impl BufferAPI for Buffer {
             // Also update table_state for compatibility during migration
             self.table_state.select(Some(r));
         } else {
-            // Default to 0 if None
+            // When setting to None, reset crosshair to 0 but clear table selection
             self.view_state.crosshair_row = 0;
             self.table_state.select(None);
         }
