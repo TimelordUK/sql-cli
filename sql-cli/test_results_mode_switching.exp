@@ -1,0 +1,39 @@
+#!/usr/bin/expect -f
+
+# Test buffer switching in Results mode
+set timeout 5
+
+# Start application with multiple buffers
+spawn ./target/release/sql-cli test_buffer1.csv test_buffer2.csv test_buffer3.csv
+
+# Wait for initial load
+sleep 1
+
+# Execute a query to get into Results mode
+send "select * from data\r"
+sleep 1
+
+# Now we're in Results mode - test buffer switching
+
+# Test Ctrl-6 (quick switch)
+send "\006"  ;# Ctrl-6
+sleep 0.5
+send "\006"  ;# Ctrl-6 again to switch back
+sleep 0.5
+
+# Test F12 (next buffer)
+send "\033\[24~"  ;# F12
+sleep 0.5
+
+# Test F11 (previous buffer)
+send "\033\[23~"  ;# F11  
+sleep 0.5
+
+# Test Alt-2 (switch to buffer 2)
+send "\0332"  ;# Alt-2
+sleep 0.5
+
+# Exit
+send "\003"  ;# Ctrl-C
+
+expect eof

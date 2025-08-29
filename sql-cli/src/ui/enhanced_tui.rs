@@ -1508,6 +1508,11 @@ impl EnhancedTuiApp {
             }
         }
 
+        // SECOND: Try buffer operations (F11/F12, Ctrl-6, etc) - these should work in Results mode too
+        if let Some(result) = self.try_handle_buffer_operations(&key)? {
+            return Ok(result);
+        }
+
         let chord_result = self.key_chord_handler.process_key(key);
         debug!("Chord handler returned: {:?}", chord_result);
 

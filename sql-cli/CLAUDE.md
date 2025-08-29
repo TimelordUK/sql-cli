@@ -38,6 +38,9 @@ cargo clippy
 - use the rust build fixer to fix any compilation issues
 - use the unit test fixer to correct unit test breaks
 
+## docs
+- place all docs in the docs folder
+
 ## Project Structure
 - `src/ui/enhanced_tui.rs` - Main TUI interface (key handling to be migrated)
 - `src/app_state_container.rs` - Central state management
