@@ -33,10 +33,8 @@ impl TabBarWidget {
 
     /// Render the tab bar
     pub fn render(&self, f: &mut Frame, area: Rect) {
-        // Don't render if only one buffer
-        if self.buffer_names.len() <= 1 {
-            return;
-        }
+        // Always render tab bar to maintain consistent layout
+        // Even with one buffer, showing the tab provides visual consistency
 
         // Create tab titles with optional shortcuts
         let titles: Vec<Line> = self
@@ -89,11 +87,8 @@ impl TabBarWidget {
 
     /// Calculate the height needed for the tab bar
     pub fn height(&self) -> u16 {
-        if self.buffer_names.len() <= 1 {
-            0 // Don't take space if only one buffer
-        } else {
-            2 // Tab bar with border
-        }
+        // Always reserve space for tab bar to maintain consistent layout
+        2 // Tab bar with border
     }
 }
 

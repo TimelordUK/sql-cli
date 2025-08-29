@@ -430,6 +430,9 @@ impl EnhancedTuiApp {
                 // Now restore the position
                 let mut viewport_borrow = self.viewport_manager.borrow_mut();
                 if let Some(ref mut viewport) = viewport_borrow.as_mut() {
+                    // The data dimensions are already updated by set_dataview above
+                    // Just restore the saved position
+
                     // Restore crosshair position
                     let row = buffer.get_selected_row().unwrap_or(0);
                     let col = buffer.get_current_column();
@@ -439,10 +442,20 @@ impl EnhancedTuiApp {
                     let scroll_offset = buffer.get_scroll_offset();
                     viewport.set_scroll_offset(scroll_offset.0, scroll_offset.1);
 
+                    // Update terminal size to trigger viewport recalculation
+                    let term_width = viewport.get_terminal_width();
+                    let term_height = viewport.get_terminal_height() as u16;
+                    viewport.update_terminal_size(term_width, term_height);
+
                     // Also update NavigationState for consistency
                     drop(viewport_borrow);
                     self.sync_navigation_with_viewport();
                 }
+
+                // Also update TableWidgetManager with the new DataView
+                let mut table_manager = self.table_widget_manager.borrow_mut();
+                table_manager.set_dataview(Arc::new(dataview.clone()));
+                table_manager.force_render(); // Force a re-render with new data
             }
         }
     }
@@ -2010,24 +2023,42 @@ impl EnhancedTuiApp {
             match action {
                 "quit" => return Ok(Some(true)),
                 "next_buffer" => {
+                    // Save viewport state before switching
+                    self.save_viewport_to_current_buffer();
+
                     let message = self
                         .buffer_handler
                         .next_buffer(self.state_container.buffers_mut());
                     debug!("{}", message);
+
+                    // Restore viewport state after switching
+                    self.restore_viewport_from_current_buffer();
                     return Ok(Some(false));
                 }
                 "previous_buffer" => {
+                    // Save viewport state before switching
+                    self.save_viewport_to_current_buffer();
+
                     let message = self
                         .buffer_handler
                         .previous_buffer(self.state_container.buffers_mut());
                     debug!("{}", message);
+
+                    // Restore viewport state after switching
+                    self.restore_viewport_from_current_buffer();
                     return Ok(Some(false));
                 }
                 "quick_switch_buffer" => {
+                    // Save viewport state before switching
+                    self.save_viewport_to_current_buffer();
+
                     let message = self
                         .buffer_handler
                         .quick_switch(self.state_container.buffers_mut());
                     debug!("{}", message);
+
+                    // Restore viewport state after switching
+                    self.restore_viewport_from_current_buffer();
                     return Ok(Some(false));
                 }
                 "new_buffer" => {
@@ -2056,11 +2087,17 @@ impl EnhancedTuiApp {
                 action if action.starts_with("switch_to_buffer_") => {
                     if let Some(buffer_num_str) = action.strip_prefix("switch_to_buffer_") {
                         if let Ok(buffer_num) = buffer_num_str.parse::<usize>() {
+                            // Save viewport state before switching
+                            self.save_viewport_to_current_buffer();
+
                             let message = self.buffer_handler.switch_to_buffer(
                                 self.state_container.buffers_mut(),
                                 buffer_num - 1,
                             );
                             debug!("{}", message);
+
+                            // Restore viewport state after switching
+                            self.restore_viewport_from_current_buffer();
                         }
                     }
                     return Ok(Some(false));
@@ -5099,16 +5136,15 @@ impl EnhancedTuiApp {
         // Always use single-line mode input height
         let input_height = INPUT_AREA_HEIGHT;
 
-        // Check if we need a tab bar (more than one buffer)
+        // Always show tab bar for consistent layout
         let buffer_count = self.state_container.buffers().all_buffers().len();
-        let needs_tab_bar = buffer_count > 1;
-        let tab_bar_height = if needs_tab_bar { 2 } else { 0 };
+        let tab_bar_height = 2; // Always reserve space for tab bar
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
                 [
-                    Constraint::Length(tab_bar_height),    // Tab bar (if needed)
+                    Constraint::Length(tab_bar_height),    // Tab bar (always shown)
                     Constraint::Length(input_height),      // Command input area
                     Constraint::Min(0),                    // Results
                     Constraint::Length(STATUS_BAR_HEIGHT), // Status bar
@@ -5117,8 +5153,8 @@ impl EnhancedTuiApp {
             )
             .split(f.area());
 
-        // Render tab bar if we have multiple buffers
-        if needs_tab_bar {
+        // Always render tab bar (even with single buffer)
+        if buffer_count > 0 {
             let buffer_names: Vec<String> = self
                 .state_container
                 .buffers()
@@ -5132,10 +5168,10 @@ impl EnhancedTuiApp {
             tab_widget.render(f, chunks[0]);
         }
 
-        // Adjust chunk indices based on whether tab bar is present
-        let input_chunk_idx = if needs_tab_bar { 1 } else { 0 };
-        let results_chunk_idx = if needs_tab_bar { 2 } else { 1 };
-        let status_chunk_idx = if needs_tab_bar { 3 } else { 2 };
+        // Fixed chunk indices since tab bar is always present
+        let input_chunk_idx = 1;
+        let results_chunk_idx = 2;
+        let status_chunk_idx = 3;
 
         // Update horizontal scroll based on actual terminal width
         self.update_horizontal_scroll(chunks[input_chunk_idx].width);
@@ -5409,25 +5445,8 @@ impl EnhancedTuiApp {
 
     /// Add data source display to status spans
     fn add_data_source_display(&self, spans: &mut Vec<Span>) {
-        if let Some(ref source) = self.data_source {
-            spans.push(Span::raw(" "));
-            let source_display = if source.starts_with("http://") || source.starts_with("https://")
-            {
-                // For API endpoints, show a shortened version
-                format!("[API: {}]", source.split('/').nth(2).unwrap_or("unknown"))
-            } else {
-                // For files, show just the filename
-                let filename = std::path::Path::new(source)
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(source);
-                format!("[{}]", filename)
-            };
-            spans.push(Span::styled(
-                source_display,
-                Style::default().fg(Color::Cyan),
-            ));
-        }
+        // Skip showing data source in status line since tab bar shows file names
+        // This avoids redundancy like "[trades.csv] [1/2] trades.csv"
     }
 
     /// Add buffer information to status spans
@@ -5444,19 +5463,28 @@ impl EnhancedTuiApp {
             ));
         }
 
-        // Don't show buffer name if it's the same as the data source
-        // The data source is already displayed, so we avoid duplication
+        // Show table name from current query (simplified)
+        // Since tab bar shows file names, we just show the table being queried
+        if let Some(buffer) = self.state_container.buffers().current() {
+            let query = buffer.get_input_text();
+            // Simple extraction of table name from "SELECT ... FROM table" pattern
+            if let Some(from_pos) = query.to_uppercase().find(" FROM ") {
+                let after_from = &query[from_pos + 6..];
+                // Take the first word after FROM as the table name
+                if let Some(table_name) = after_from.split_whitespace().next() {
+                    // Clean up the table name (remove quotes, etc.)
+                    let clean_name = table_name
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .trim_matches('`');
 
-        // Get buffer name from the current buffer
-        let buffer_name = self.state_container.get_buffer_name();
-        if !buffer_name.is_empty() && buffer_name != "[Buffer 1]" {
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                buffer_name,
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ));
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(
+                        clean_name.to_string(),
+                        Style::default().fg(Color::Cyan),
+                    ));
+                }
+            }
         }
     }
 
@@ -7437,6 +7465,8 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
         // Switch back to the first buffer if we loaded multiple
         if data_files.len() > 1 {
             app.state_container.buffers_mut().switch_to(0);
+            // CRITICAL: Sync ViewportManager with the current buffer after switching
+            app.restore_viewport_from_current_buffer();
             app.state_container.set_status_message(format!(
                 "Loaded {} files into separate buffers. Use Alt+Tab to switch.",
                 data_files.len()
