@@ -3765,21 +3765,25 @@ impl ViewportManager {
                    scrollable_column, scrollable_column);
             scrollable_column
         } else {
-            // Column is to the right or at current position, find optimal scroll offset
-            // Work backwards from the target column to find how many columns fit
-            let mut test_scroll_offset = scrollable_column;
-            let mut found_valid_offset = false;
+            // Column is to the right of viewport, use MINIMAL scrolling to make it visible
+            // Strategy: Try the current offset first, then increment by small steps
 
-            // Try different scroll offsets, working backwards from the target column
-            while test_scroll_offset > 0 {
+            debug!(target: "viewport_manager",
+                   "Checking if column {} can be made visible with minimal scrolling from offset {}",
+                   scrollable_column, current_scroll_offset);
+
+            // Try starting from current offset and incrementing until target column fits
+            let mut test_scroll_offset = current_scroll_offset;
+            let max_scrollable_columns = display_columns.len().saturating_sub(pinned_count);
+
+            while test_scroll_offset <= scrollable_column
+                && test_scroll_offset < max_scrollable_columns
+            {
                 let mut used_width = 0u16;
-                let mut columns_fit = 0;
                 let mut target_column_fits = false;
 
-                // Test if we can fit columns starting from this scroll offset
-                for test_scrollable_idx in
-                    test_scroll_offset..display_columns.len().saturating_sub(pinned_count)
-                {
+                // Test columns from this scroll offset
+                for test_scrollable_idx in test_scroll_offset..max_scrollable_columns {
                     let visual_idx = pinned_count + test_scrollable_idx;
                     if visual_idx < display_columns.len() {
                         let dt_idx = display_columns[visual_idx];
@@ -3791,37 +3795,36 @@ impl ViewportManager {
 
                         if used_width + width + separator_width <= available_for_scrollable {
                             used_width += width + separator_width;
-                            columns_fit += 1;
                             if test_scrollable_idx == scrollable_column {
                                 target_column_fits = true;
+                                break; // Found it, no need to check more columns
                             }
                         } else {
-                            break;
+                            break; // No more columns fit
                         }
                     }
                 }
 
                 debug!(target: "viewport_manager", 
-                       "Testing scroll_offset={}: columns_fit={}, target_fits={}, used_width={}", 
-                       test_scroll_offset, columns_fit, target_column_fits, used_width);
+                       "Testing scroll_offset={}: target_fits={}, used_width={}", 
+                       test_scroll_offset, target_column_fits, used_width);
 
                 if target_column_fits {
-                    found_valid_offset = true;
-                    break;
+                    debug!(target: "viewport_manager", 
+                           "Found minimal scroll offset {} for column {} (current was {})", 
+                           test_scroll_offset, scrollable_column, current_scroll_offset);
+                    return test_scroll_offset;
                 }
 
-                test_scroll_offset = test_scroll_offset.saturating_sub(1);
+                // If target column doesn't fit, try next offset (scroll one column right)
+                test_scroll_offset += 1;
             }
 
-            if found_valid_offset {
-                debug!(target: "viewport_manager", 
-                       "Found optimal scroll offset {} for column {}", test_scroll_offset, scrollable_column);
-                test_scroll_offset
-            } else {
-                debug!(target: "viewport_manager", 
-                       "Could not find valid offset, keeping current offset {}", current_scroll_offset);
-                current_scroll_offset
-            }
+            // If we couldn't find a minimal scroll, fall back to placing target column at start
+            debug!(target: "viewport_manager", 
+                   "Could not find minimal scroll, placing column {} at scroll offset {}", 
+                   scrollable_column, scrollable_column);
+            scrollable_column
         }
     }
 
@@ -4460,7 +4463,9 @@ mod tests {
             );
 
             visual_positions.push(new_visual);
-            datatable_positions.push(result.column_position);
+            // Get the actual DataTable index at this visual position
+            let display_cols = vm.dataview.get_display_columns();
+            datatable_positions.push(display_cols[new_visual]);
         }
 
         // Verify we visited columns in sequential visual order (0,1,2,3...11)
