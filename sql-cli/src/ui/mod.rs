@@ -36,6 +36,7 @@ pub mod tui_app;
 pub mod tui_renderer;
 pub mod tui_state;
 pub mod ui_layout_utils;
+pub mod viewport;
 pub mod viewport_manager;
 pub mod vim_search_adapter;
 pub mod vim_search_manager;

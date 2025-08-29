@@ -17,6 +17,11 @@ use tracing::debug;
 
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataRow;
+use crate::ui::viewport::column_width_calculator::{
+    COLUMN_PADDING, DEFAULT_COL_WIDTH, MAX_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS,
+    MAX_HEADER_TO_DATA_RATIO, MIN_COL_WIDTH, MIN_HEADER_WIDTH_DATA_FOCUS,
+};
+use crate::ui::viewport::{ColumnPackingMode, ColumnWidthCalculator};
 
 /// Result of a navigation operation
 #[derive(Debug, Clone)]
@@ -99,52 +104,7 @@ impl ColumnOperationResult {
 }
 
 /// Column packing mode for optimizing data display
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ColumnPackingMode {
-    /// Focus on showing full data values (up to reasonable limit)
-    /// Headers may be truncated if needed to show more data
-    DataFocus,
-    /// Focus on showing full headers
-    /// Data may be truncated if needed to show complete column names
-    HeaderFocus,
-    /// Balanced approach - compromise between header and data visibility
-    Balanced,
-}
-
-impl ColumnPackingMode {
-    /// Cycle to the next mode
-    pub fn cycle(&self) -> Self {
-        match self {
-            Self::DataFocus => Self::HeaderFocus,
-            Self::HeaderFocus => Self::Balanced,
-            Self::Balanced => Self::DataFocus,
-        }
-    }
-
-    /// Get display name for the mode
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            Self::DataFocus => "Data Focus",
-            Self::HeaderFocus => "Header Focus",
-            Self::Balanced => "Balanced",
-        }
-    }
-}
-
-/// Minimum column width in characters
-const MIN_COL_WIDTH: u16 = 3;
-/// Minimum header width in DataFocus mode (aggressive truncation)
-const MIN_HEADER_WIDTH_DATA_FOCUS: u16 = 5;
-/// Maximum column width in characters  
-const MAX_COL_WIDTH: u16 = 50;
-/// Maximum column width for data-focused mode (can be larger)
-const MAX_COL_WIDTH_DATA_FOCUS: u16 = 100;
-/// Default column width if no data
-const DEFAULT_COL_WIDTH: u16 = 15;
-/// Padding to add to column widths
-const COLUMN_PADDING: u16 = 2;
-/// Max ratio of header width to data width (to prevent huge columns for long headers with short data)
-const MAX_HEADER_TO_DATA_RATIO: f32 = 1.5;
+/// Default column width if no data (used as fallback)
 
 /// Number of rows used by the table widget chrome (header + borders)
 /// This includes:
@@ -169,8 +129,8 @@ pub struct ViewportManager {
     terminal_width: u16,
     terminal_height: u16,
 
-    /// Cached column widths for current viewport
-    column_widths: Vec<u16>,
+    /// Column width calculator (extracted subsystem)
+    width_calculator: ColumnWidthCalculator,
 
     /// Cache of visible row indices (for efficient scrolling)
     visible_row_cache: Vec<usize>,
@@ -195,13 +155,6 @@ pub struct ViewportManager {
     viewport_lock: bool,
     /// The viewport boundaries when locked (prevents scrolling beyond these)
     viewport_lock_boundaries: Option<std::ops::Range<usize>>,
-
-    /// Column packing mode for width calculation
-    packing_mode: ColumnPackingMode,
-
-    /// Debug info for column width calculations
-    /// (column_name, header_width, max_data_width_sampled, final_width, sample_count)
-    column_width_debug: Vec<(String, u16, u16, u16, u32)>,
 }
 
 impl ViewportManager {
@@ -542,7 +495,7 @@ impl ViewportManager {
             viewport_cols: initial_viewport_cols,
             terminal_width: 80,
             terminal_height: 24,
-            column_widths: vec![DEFAULT_COL_WIDTH; total_col_count], // Size for all DataTable columns
+            width_calculator: ColumnWidthCalculator::new(),
             visible_row_cache: Vec::new(),
             cache_signature: 0,
             cache_dirty: true,
@@ -552,8 +505,6 @@ impl ViewportManager {
             cursor_lock_position: None,
             viewport_lock: false,
             viewport_lock_boundaries: None,
-            packing_mode: ColumnPackingMode::Balanced,
-            column_width_debug: Vec::new(),
         }
     }
 
@@ -573,22 +524,20 @@ impl ViewportManager {
 
     /// Get the current column packing mode
     pub fn get_packing_mode(&self) -> ColumnPackingMode {
-        self.packing_mode
+        self.width_calculator.get_packing_mode()
     }
 
     /// Set the column packing mode and recalculate widths
     pub fn set_packing_mode(&mut self, mode: ColumnPackingMode) {
-        if self.packing_mode != mode {
-            self.packing_mode = mode;
-            self.invalidate_cache();
-        }
+        self.width_calculator.set_packing_mode(mode);
+        self.invalidate_cache();
     }
 
     /// Cycle to the next packing mode
     pub fn cycle_packing_mode(&mut self) -> ColumnPackingMode {
-        self.packing_mode = self.packing_mode.cycle();
+        self.width_calculator.cycle_packing_mode();
         self.invalidate_cache();
-        self.packing_mode
+        self.width_calculator.get_packing_mode()
     }
 
     /// Update viewport position and size
@@ -717,21 +666,14 @@ impl ViewportManager {
 
     /// Get calculated column widths for current viewport
     pub fn get_column_widths(&mut self) -> &[u16] {
-        if self.cache_dirty {
-            self.recalculate_column_widths();
-        }
-        &self.column_widths
+        self.width_calculator
+            .get_all_column_widths(&self.dataview, &self.viewport_rows)
     }
 
     /// Get column width for a specific column
     pub fn get_column_width(&mut self, col_idx: usize) -> u16 {
-        if self.cache_dirty {
-            self.recalculate_column_widths();
-        }
-        self.column_widths
-            .get(col_idx)
-            .copied()
-            .unwrap_or(DEFAULT_COL_WIDTH)
+        self.width_calculator
+            .get_column_width(&self.dataview, &self.viewport_rows, col_idx)
     }
 
     /// Get visible rows in the current viewport
@@ -814,156 +756,14 @@ impl ViewportManager {
     /// Force cache recalculation on next access
     pub fn invalidate_cache(&mut self) {
         self.cache_dirty = true;
-    }
-
-    /// Recalculate column widths based on visible data and packing mode
-    fn recalculate_column_widths(&mut self) {
-        let col_count = self.dataview.column_count();
-        self.column_widths.resize(col_count, DEFAULT_COL_WIDTH);
-
-        // Clear debug info
-        self.column_width_debug.clear();
-
-        // Get column headers for width calculation
-        let headers = self.dataview.column_names();
-
-        // Calculate width for each column based on header and visible data
-        for col_idx in 0..col_count {
-            // Track header width separately
-            let header_width = headers.get(col_idx).map(|h| h.len() as u16).unwrap_or(0);
-
-            // Track actual data width
-            let mut max_data_width = 0u16;
-            let mut total_data_width = 0u64;
-            let mut data_samples = 0u32;
-
-            // Sample visible rows (limit sampling for performance)
-            let sample_size = 100.min(self.viewport_rows.len());
-            let sample_step = if self.viewport_rows.len() > sample_size {
-                self.viewport_rows.len() / sample_size
-            } else {
-                1
-            };
-
-            for (i, row_idx) in self.viewport_rows.clone().enumerate() {
-                // Sample every nth row for performance
-                if i % sample_step != 0 && i != 0 && i != self.viewport_rows.len() - 1 {
-                    continue;
-                }
-
-                if let Some(row) = self.dataview.get_row(row_idx) {
-                    if col_idx < row.values.len() {
-                        let cell_str = row.values[col_idx].to_string();
-                        let cell_width = cell_str.len() as u16;
-
-                        max_data_width = max_data_width.max(cell_width);
-                        total_data_width += cell_width as u64;
-                        data_samples += 1;
-
-                        // Early exit if we hit max width (depends on mode)
-                        let mode_max = match self.packing_mode {
-                            ColumnPackingMode::DataFocus => MAX_COL_WIDTH_DATA_FOCUS,
-                            _ => MAX_COL_WIDTH,
-                        };
-                        if max_data_width >= mode_max {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Calculate optimal width based on packing mode
-            let optimal_width = match self.packing_mode {
-                ColumnPackingMode::DataFocus => {
-                    // Aggressively prioritize showing full data values
-                    if data_samples > 0 {
-                        // ULTRA AGGRESSIVE for very short data (2-3 chars)
-                        // This handles currency codes (USD), country codes (US), etc.
-                        if max_data_width <= 3 {
-                            // For 2-3 char data, just use data width + padding
-                            // Don't enforce minimum header width - let it truncate heavily
-                            max_data_width + COLUMN_PADDING
-                        } else if max_data_width <= 10 && header_width > max_data_width * 2 {
-                            // Short data (4-10 chars) with long header - still aggressive
-                            // but ensure at least 5 chars for some header visibility
-                            (max_data_width + COLUMN_PADDING).max(MIN_HEADER_WIDTH_DATA_FOCUS)
-                        } else {
-                            // Normal data - use full width but don't exceed limit
-                            let data_width =
-                                (max_data_width + COLUMN_PADDING).min(MAX_COL_WIDTH_DATA_FOCUS);
-
-                            // Ensure at least minimum header visibility
-                            data_width.max(MIN_HEADER_WIDTH_DATA_FOCUS)
-                        }
-                    } else {
-                        // No data samples - use header width but constrain it
-                        header_width
-                            .min(DEFAULT_COL_WIDTH)
-                            .max(MIN_HEADER_WIDTH_DATA_FOCUS)
-                    }
-                }
-                ColumnPackingMode::HeaderFocus => {
-                    // Prioritize showing full headers
-                    let header_with_padding = header_width + COLUMN_PADDING;
-
-                    if data_samples > 0 {
-                        // Ensure we show the full header, but respect data if it's wider
-                        header_with_padding.max(max_data_width.min(MAX_COL_WIDTH))
-                    } else {
-                        header_with_padding
-                    }
-                }
-                ColumnPackingMode::Balanced => {
-                    // Original balanced approach
-                    if data_samples > 0 {
-                        let data_based_width = max_data_width + COLUMN_PADDING;
-
-                        if header_width > max_data_width {
-                            let max_allowed_header =
-                                (max_data_width as f32 * MAX_HEADER_TO_DATA_RATIO) as u16;
-                            data_based_width.max(header_width.min(max_allowed_header))
-                        } else {
-                            data_based_width.max(header_width)
-                        }
-                    } else {
-                        header_width.max(DEFAULT_COL_WIDTH)
-                    }
-                }
-            };
-
-            // Apply constraints based on mode
-            let (min_width, max_width) = match self.packing_mode {
-                ColumnPackingMode::DataFocus => (MIN_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS),
-                _ => (MIN_COL_WIDTH, MAX_COL_WIDTH),
-            };
-
-            let final_width = optimal_width.clamp(min_width, max_width);
-            self.column_widths[col_idx] = final_width;
-
-            // Store debug info
-            let column_name = headers
-                .get(col_idx)
-                .map(|s| s.clone())
-                .unwrap_or_else(|| format!("col_{}", col_idx));
-            self.column_width_debug.push((
-                column_name,
-                header_width,
-                max_data_width,
-                final_width,
-                data_samples,
-            ));
-        }
-
-        self.cache_dirty = false;
+        self.width_calculator.mark_dirty();
     }
 
     /// Calculate optimal column layout for available width
     /// Returns a RANGE of visual column indices (0..n) that should be displayed
     /// This works entirely in visual coordinate space - no DataTable indices!
     pub fn calculate_visible_column_indices(&mut self, available_width: u16) -> Vec<usize> {
-        if self.cache_dirty {
-            self.recalculate_column_widths();
-        }
+        // Width calculation is now handled by ColumnWidthCalculator
 
         // Get the display columns from DataView (these are DataTable indices for visible columns)
         let display_columns = self.dataview.get_display_columns();
@@ -1006,11 +806,11 @@ impl ViewportManager {
             }
 
             let datatable_idx = display_columns[visual_idx];
-            let width = self
-                .column_widths
-                .get(datatable_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                datatable_idx,
+            );
 
             // Always include pinned columns, even if they exceed available width
             used_width += width + separator_width;
@@ -1046,11 +846,11 @@ impl ViewportManager {
             // Get the DataTable index for this visual position
             let datatable_idx = display_columns[visual_idx];
 
-            let width = self
-                .column_widths
-                .get(datatable_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                datatable_idx,
+            );
 
             if used_width + width + separator_width <= available_width {
                 used_width += width + separator_width;
@@ -1083,20 +883,18 @@ impl ViewportManager {
     /// Calculate how many columns we can fit starting from a given column index
     /// This helps determine optimal scrolling positions
     pub fn calculate_columns_that_fit(&mut self, start_col: usize, available_width: u16) -> usize {
-        if self.cache_dirty {
-            self.recalculate_column_widths();
-        }
+        // Width calculation is now handled by ColumnWidthCalculator
 
         let mut used_width = 0u16;
         let mut column_count = 0usize;
         let separator_width = 1u16;
 
         for col_idx in start_col..self.dataview.column_count() {
-            let width = self
-                .column_widths
-                .get(col_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
             if used_width + width + separator_width <= available_width {
                 used_width += width + separator_width;
                 column_count += 1;
@@ -1111,17 +909,11 @@ impl ViewportManager {
     /// Get calculated widths for specific columns
     /// This is useful for rendering when we know which columns will be displayed
     pub fn get_column_widths_for(&mut self, column_indices: &[usize]) -> Vec<u16> {
-        if self.cache_dirty {
-            self.recalculate_column_widths();
-        }
-
         column_indices
             .iter()
             .map(|&idx| {
-                self.column_widths
-                    .get(idx)
-                    .copied()
-                    .unwrap_or(DEFAULT_COL_WIDTH)
+                self.width_calculator
+                    .get_column_width(&self.dataview, &self.viewport_rows, idx)
             })
             .collect()
     }
@@ -1153,9 +945,7 @@ impl ViewportManager {
     /// This backtracks from the end to find the best viewport position
     /// Returns the scroll offset in terms of scrollable columns (excluding pinned)
     pub fn calculate_optimal_offset_for_last_column(&mut self, available_width: u16) -> usize {
-        if self.cache_dirty {
-            self.recalculate_column_widths();
-        }
+        // Width calculation is now handled by ColumnWidthCalculator
 
         // Get the display columns (visible columns only, in display order)
         let display_columns = self.dataview.get_display_columns();
@@ -1170,11 +960,11 @@ impl ViewportManager {
         let mut pinned_width = 0u16;
         let separator_width = 1u16;
         for &col_idx in pinned {
-            let width = self
-                .column_widths
-                .get(col_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
             pinned_width += width + separator_width;
         }
 
@@ -1194,11 +984,11 @@ impl ViewportManager {
 
         // Get the last scrollable column
         let last_col_idx = *scrollable_columns.last().unwrap();
-        let last_col_width = self
-            .column_widths
-            .get(last_col_idx)
-            .copied()
-            .unwrap_or(DEFAULT_COL_WIDTH);
+        let last_col_width = self.width_calculator.get_column_width(
+            &self.dataview,
+            &self.viewport_rows,
+            last_col_idx,
+        );
 
         tracing::debug!(
             "Starting calculation: last_col_idx={}, width={}w, available={}w, scrollable_cols={}",
@@ -1213,11 +1003,11 @@ impl ViewportManager {
 
         // Now work backwards through scrollable columns to find how many more we can fit
         for (idx, &col_idx) in scrollable_columns.iter().enumerate().rev().skip(1) {
-            let width = self
-                .column_widths
-                .get(col_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
 
             let width_with_separator = width + separator_width;
 
@@ -1257,11 +1047,11 @@ impl ViewportManager {
         let mut can_see_last = false;
         for idx in best_offset..scrollable_columns.len() {
             let col_idx = scrollable_columns[idx];
-            let width = self
-                .column_widths
-                .get(col_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
             test_width += width + separator_width;
 
             if test_width > available_for_scrollable {
@@ -1288,11 +1078,11 @@ impl ViewportManager {
             test_width = 0;
             for idx in best_offset..scrollable_columns.len() {
                 let col_idx = scrollable_columns[idx];
-                let width = self
-                    .column_widths
-                    .get(col_idx)
-                    .copied()
-                    .unwrap_or(DEFAULT_COL_WIDTH);
+                let width = self.width_calculator.get_column_width(
+                    &self.dataview,
+                    &self.viewport_rows,
+                    col_idx,
+                );
                 test_width += width + separator_width;
 
                 if test_width > available_for_scrollable {
@@ -1319,9 +1109,7 @@ impl ViewportManager {
 
     /// Debug dump of ViewportManager state for F5 diagnostics
     pub fn debug_dump(&mut self, available_width: u16) -> String {
-        if self.cache_dirty {
-            self.recalculate_column_widths();
-        }
+        // Width calculation is now handled by ColumnWidthCalculator
 
         let mut output = String::new();
         output.push_str("========== VIEWPORT MANAGER DEBUG ==========\n");
@@ -1336,27 +1124,31 @@ impl ViewportManager {
         output.push_str(&format!("Current viewport: {:?}\n", self.viewport_cols));
         output.push_str(&format!(
             "Packing mode: {} (Alt+S to cycle)\n",
-            self.packing_mode.display_name()
+            self.width_calculator.get_packing_mode().display_name()
         ));
         output.push_str("\n");
 
         // Show detailed column width calculations
         output.push_str("=== COLUMN WIDTH CALCULATIONS ===\n");
-        output.push_str(&format!("Mode: {}\n", self.packing_mode.display_name()));
+        output.push_str(&format!(
+            "Mode: {}\n",
+            self.width_calculator.get_packing_mode().display_name()
+        ));
 
         // Show debug info for visible columns in viewport
-        if !self.column_width_debug.is_empty() {
+        let debug_info = self.width_calculator.get_debug_info();
+        if !debug_info.is_empty() {
             output.push_str("Visible columns in viewport:\n");
 
             // Only show columns that are currently visible
             let mut visible_count = 0;
             for col_idx in self.viewport_cols.clone() {
-                if col_idx < self.column_width_debug.len() {
+                if col_idx < debug_info.len() {
                     let (ref col_name, header_width, max_data_width, final_width, sample_count) =
-                        self.column_width_debug[col_idx];
+                        debug_info[col_idx];
 
                     // Determine why this width was chosen
-                    let reason = match self.packing_mode {
+                    let reason = match self.width_calculator.get_packing_mode() {
                         ColumnPackingMode::DataFocus => {
                             if max_data_width <= 3 {
                                 format!("Ultra aggressive (data:{}≤3 chars)", max_data_width)
@@ -1414,7 +1206,10 @@ impl ViewportManager {
 
         // Show column widths summary
         output.push_str("Column width summary (all columns):\n");
-        for (idx, &width) in self.column_widths.iter().enumerate() {
+        let all_widths = self
+            .width_calculator
+            .get_all_column_widths(&self.dataview, &self.viewport_rows);
+        for (idx, &width) in all_widths.iter().enumerate() {
             if idx >= 20 && idx < total_cols - 10 {
                 if idx == 20 {
                     output.push_str("  ... (showing only first 20 and last 10)\n");
@@ -1428,13 +1223,21 @@ impl ViewportManager {
         // Test optimal offset calculation step by step
         output.push_str("=== OPTIMAL OFFSET CALCULATION ===\n");
         let last_col_idx = total_cols - 1;
-        let last_col_width = self.column_widths.get(last_col_idx).copied().unwrap_or(15);
+        let last_col_width = self.width_calculator.get_column_width(
+            &self.dataview,
+            &self.viewport_rows,
+            last_col_idx,
+        );
 
         // Calculate available width for scrollable columns
         let separator_width = 1u16;
         let mut pinned_width = 0u16;
         for &col_idx in pinned {
-            let width = self.column_widths.get(col_idx).copied().unwrap_or(15);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
             pinned_width += width + separator_width;
         }
         let available_for_scrollable = available_width.saturating_sub(pinned_width);
@@ -1461,7 +1264,11 @@ impl ViewportManager {
         ));
 
         for col_idx in (pinned_count..last_col_idx).rev() {
-            let width = self.column_widths.get(col_idx).copied().unwrap_or(15);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
             let width_with_sep = width + separator_width;
 
             if accumulated_width + width_with_sep <= available_for_scrollable {
@@ -1495,7 +1302,11 @@ impl ViewportManager {
         let mut can_show_last = true;
 
         for test_idx in best_offset..=last_col_idx {
-            let width = self.column_widths.get(test_idx).copied().unwrap_or(15);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                test_idx,
+            );
             verify_width += width + separator_width;
 
             output.push_str(&format!(
@@ -1609,11 +1420,11 @@ impl ViewportManager {
 
         for &col_idx in &visible_indices {
             x_positions.push(current_x);
-            let width = self
-                .column_widths
-                .get(col_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
             current_x += width + separator_width;
         }
 
@@ -1631,9 +1442,7 @@ impl ViewportManager {
 
     /// Get visible column indices that fit in available width, preserving DataView's order
     pub fn calculate_visible_column_indices_ordered(&mut self, available_width: u16) -> Vec<usize> {
-        if self.cache_dirty {
-            self.recalculate_column_widths();
-        }
+        // Width calculation is now handled by ColumnWidthCalculator
 
         // Get DataView's preferred column order (pinned first)
         let ordered_columns = self.dataview.get_display_columns();
@@ -1649,11 +1458,11 @@ impl ViewportManager {
 
         // Process columns in DataView's order (pinned first, then display order)
         for &col_idx in &ordered_columns {
-            let width = self
-                .column_widths
-                .get(col_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
 
             if used_width + width + separator_width <= available_width {
                 visible_indices.push(col_idx);
@@ -1816,10 +1625,12 @@ impl ViewportManager {
         let widths: Vec<u16> = visible_column_indices
             .iter()
             .map(|&dt_idx| {
-                self.column_widths
-                    .get(dt_idx)
-                    .copied()
-                    .unwrap_or(DEFAULT_COL_WIDTH)
+                Some(self.width_calculator.get_column_width(
+                    &self.dataview,
+                    &self.viewport_rows,
+                    dt_idx,
+                ))
+                .unwrap_or(DEFAULT_COL_WIDTH)
             })
             .collect();
 
@@ -1915,11 +1726,11 @@ impl ViewportManager {
         let separator_width = 1u16;
 
         for &col_idx in &visible_indices {
-            let width = self
-                .column_widths
-                .get(col_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
             used_width += width + separator_width;
         }
 
@@ -1933,8 +1744,12 @@ impl ViewportManager {
         // Find the next column that didn't fit
         let next_column_width = if !visible_indices.is_empty() {
             let last_visible = *visible_indices.last().unwrap();
-            if last_visible + 1 < self.column_widths.len() {
-                Some(self.column_widths[last_visible + 1])
+            if last_visible + 1 < self.dataview.column_count() {
+                Some(self.width_calculator.get_column_width(
+                    &self.dataview,
+                    &self.viewport_rows,
+                    last_visible + 1,
+                ))
             } else {
                 None
             }
@@ -1945,7 +1760,10 @@ impl ViewportManager {
         // Find ALL columns that COULD fit in the wasted space
         let mut columns_that_could_fit = Vec::new();
         if wasted_space > MIN_COL_WIDTH + separator_width {
-            for (idx, &width) in self.column_widths.iter().enumerate() {
+            let all_widths = self
+                .width_calculator
+                .get_all_column_widths(&self.dataview, &self.viewport_rows);
+            for (idx, &width) in all_widths.iter().enumerate() {
                 // Skip already visible columns
                 if !visible_indices.contains(&idx) {
                     if width + separator_width <= wasted_space {
@@ -1970,10 +1788,12 @@ impl ViewportManager {
             column_widths: visible_indices
                 .iter()
                 .map(|&idx| {
-                    self.column_widths
-                        .get(idx)
-                        .copied()
-                        .unwrap_or(DEFAULT_COL_WIDTH)
+                    Some(self.width_calculator.get_column_width(
+                        &self.dataview,
+                        &self.viewport_rows,
+                        idx,
+                    ))
+                    .unwrap_or(DEFAULT_COL_WIDTH)
                 })
                 .collect(),
             next_column_width,
@@ -2087,7 +1907,11 @@ impl ViewportManager {
         let mut pinned_width = 0u16;
         for i in 0..pinned_count {
             let col_idx = display_columns[i];
-            let width = self.column_widths.get(col_idx).copied().unwrap_or(15);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
             pinned_width += width + 3; // separator width
         }
 
@@ -2100,7 +1924,11 @@ impl ViewportManager {
         // Work backwards from the last column to find the best scroll position
         for visual_idx in (pinned_count..=last_visual_column).rev() {
             let col_idx = display_columns[visual_idx];
-            let width = self.column_widths.get(col_idx).copied().unwrap_or(15);
+            let width = self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                col_idx,
+            );
             accumulated_width += width + 3; // separator width
 
             if accumulated_width > available_for_scrollable {
@@ -3568,11 +3396,9 @@ impl ViewportManager {
         let display_columns = self.dataview.get_display_columns();
         let mut total_width_needed = 0u16;
         for &dt_idx in &display_columns {
-            let width = self
-                .column_widths
-                .get(dt_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
+            let width =
+                self.width_calculator
+                    .get_column_width(&self.dataview, &self.viewport_rows, dt_idx);
             total_width_needed += width + 1; // +1 for separator
         }
 
@@ -3643,11 +3469,11 @@ impl ViewportManager {
             for visual_idx in 0..pinned_count {
                 if visual_idx < display_columns.len() {
                     let dt_idx = display_columns[visual_idx];
-                    let width = self
-                        .column_widths
-                        .get(dt_idx)
-                        .copied()
-                        .unwrap_or(DEFAULT_COL_WIDTH);
+                    let width = self.width_calculator.get_column_width(
+                        &self.dataview,
+                        &self.viewport_rows,
+                        dt_idx,
+                    );
                     used_width += width + separator_width;
                 }
             }
@@ -3658,11 +3484,11 @@ impl ViewportManager {
 
             for visual_idx in visual_start..display_columns.len() {
                 let dt_idx = display_columns[visual_idx];
-                let width = self
-                    .column_widths
-                    .get(dt_idx)
-                    .copied()
-                    .unwrap_or(DEFAULT_COL_WIDTH);
+                let width = self.width_calculator.get_column_width(
+                    &self.dataview,
+                    &self.viewport_rows,
+                    dt_idx,
+                );
                 if used_width + width + separator_width <= terminal_width {
                     used_width += width + separator_width;
                     scrollable_columns_that_fit += 1;
@@ -3742,11 +3568,11 @@ impl ViewportManager {
         for visual_idx in 0..pinned_count {
             if visual_idx < display_columns.len() {
                 let dt_idx = display_columns[visual_idx];
-                let width = self
-                    .column_widths
-                    .get(dt_idx)
-                    .copied()
-                    .unwrap_or(DEFAULT_COL_WIDTH);
+                let width = self.width_calculator.get_column_width(
+                    &self.dataview,
+                    &self.viewport_rows,
+                    dt_idx,
+                );
                 pinned_width += width + separator_width;
             }
         }
@@ -3787,11 +3613,11 @@ impl ViewportManager {
                     let visual_idx = pinned_count + test_scrollable_idx;
                     if visual_idx < display_columns.len() {
                         let dt_idx = display_columns[visual_idx];
-                        let width = self
-                            .column_widths
-                            .get(dt_idx)
-                            .copied()
-                            .unwrap_or(DEFAULT_COL_WIDTH);
+                        let width = self.width_calculator.get_column_width(
+                            &self.dataview,
+                            &self.viewport_rows,
+                            dt_idx,
+                        );
 
                         if used_width + width + separator_width <= available_for_scrollable {
                             used_width += width + separator_width;
@@ -4136,7 +3962,7 @@ impl ViewportEfficiency {
             self.wasted_space,
             self.efficiency_percent,
             self.visible_columns,
-            self.column_widths,
+            self.column_widths.clone(),
             avg_width,
             efficiency_analysis
         )

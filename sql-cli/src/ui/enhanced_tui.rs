@@ -36,7 +36,8 @@ use crate::ui::table_widget_manager::TableWidgetManager;
 use crate::ui::traits::{
     BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
 };
-use crate::ui::viewport_manager::{ColumnPackingMode, ViewportEfficiency, ViewportManager};
+use crate::ui::viewport::ColumnPackingMode;
+use crate::ui::viewport_manager::{ViewportEfficiency, ViewportManager};
 use crate::ui::vim_search_adapter::VimSearchAdapter;
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
