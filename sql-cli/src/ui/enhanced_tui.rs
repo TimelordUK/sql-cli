@@ -5734,12 +5734,27 @@ impl EnhancedTuiApp {
         }
 
         // Get structured column information from ViewportManager
-        let (pinned_indices, crosshair_column_position, _) = {
+        let (pinned_visual_positions, crosshair_column_position, _) = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             let viewport_manager = viewport_manager_borrow
                 .as_mut()
                 .expect("ViewportManager must exist for rendering");
             let info = viewport_manager.get_visible_columns_info(available_width);
+
+            // info.0 = visible_indices (all visible column source indices)
+            // info.1 = pinned_visible (pinned column source indices)
+            // info.2 = scrollable_visible (scrollable column source indices)
+            let visible_indices = &info.0;
+            let pinned_source_indices = &info.1;
+
+            // Convert pinned source indices to visual positions
+            // The TableRenderContext expects visual positions (0-based positions in the visible array)
+            let mut pinned_visual_positions = Vec::new();
+            for &source_idx in pinned_source_indices {
+                if let Some(visual_pos) = visible_indices.iter().position(|&x| x == source_idx) {
+                    pinned_visual_positions.push(visual_pos);
+                }
+            }
 
             // Get the crosshair's viewport-relative position for rendering
             // The viewport manager stores crosshair in absolute coordinates
@@ -5754,7 +5769,11 @@ impl EnhancedTuiApp {
 
             let crosshair_visual = viewport_manager.get_crosshair_col();
 
-            (info.1, crosshair_column_position, crosshair_visual)
+            (
+                pinned_visual_positions,
+                crosshair_column_position,
+                crosshair_visual,
+            )
         };
 
         // Calculate row viewport
@@ -5811,7 +5830,7 @@ impl EnhancedTuiApp {
             .row_count(row_count)
             .visible_rows(visible_row_indices.clone(), data_to_display)
             .columns(column_headers, column_widths_visual)
-            .pinned_columns(pinned_indices)
+            .pinned_columns(pinned_visual_positions)
             .selection(
                 selected_row,
                 selected_col,

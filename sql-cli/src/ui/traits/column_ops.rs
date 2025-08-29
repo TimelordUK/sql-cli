@@ -21,20 +21,29 @@ pub trait ColumnBehavior {
 
     // Helper method to apply column navigation results
     fn apply_column_navigation_result(&mut self, result: NavigationResult, direction: &str) {
-        // Get the visual position from ViewportManager after navigation
-        let visual_position = {
-            let viewport_borrow = self.viewport_manager().borrow();
-            viewport_borrow
-                .as_ref()
-                .map(|vm| vm.get_crosshair_col())
-                .unwrap_or(0)
-        };
+        // Use the column position from the navigation result - this is the visual/display index
+        // IMPORTANT: Don't re-query ViewportManager as that may have stale state
+        let visual_position = result.column_position;
+
+        tracing::debug!(
+            "[COLUMN_OPS] apply_column_navigation_result: direction={}, visual_position={}",
+            direction,
+            visual_position
+        );
 
         // Update Buffer's current column
         self.buffer_mut().set_current_column(visual_position);
+        tracing::debug!(
+            "[COLUMN_OPS] apply_column_navigation_result: set buffer column to {}",
+            visual_position
+        );
 
         // Update navigation state
         self.state_container().navigation_mut().selected_column = visual_position;
+        tracing::debug!(
+            "[COLUMN_OPS] apply_column_navigation_result: set navigation column to {}",
+            visual_position
+        );
 
         // Update scroll offset if viewport changed
         if result.viewport_changed {
@@ -179,9 +188,22 @@ pub trait ColumnBehavior {
                 .as_mut()
                 .expect("ViewportManager must exist for navigation");
             let current_visual = vm.get_crosshair_col();
-            vm.navigate_column_right(current_visual)
+            tracing::debug!(
+                "[COLUMN_OPS] move_column_right: current_visual from VM = {}",
+                current_visual
+            );
+            let result = vm.navigate_column_right(current_visual);
+            tracing::debug!(
+                "[COLUMN_OPS] move_column_right: navigation result column_position = {}",
+                result.column_position
+            );
+            result
         };
 
+        tracing::debug!(
+            "[COLUMN_OPS] move_column_right: applying result with column_position = {}",
+            nav_result.column_position
+        );
         self.apply_column_navigation_result(nav_result, "right");
     }
 

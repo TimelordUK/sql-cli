@@ -64,49 +64,62 @@ fn build_header_row(ctx: &TableRenderContext) -> Row<'static> {
         );
     }
 
-    // Add data headers
-    header_cells.extend(
-        ctx.column_headers
-            .iter()
-            .enumerate()
-            .map(|(visual_pos, header)| {
-                // Get sort indicator
-                let sort_indicator = ctx.get_sort_indicator(visual_pos);
+    // Add data headers with separator between pinned and scrollable columns
+    let mut last_was_pinned = false;
+    for (visual_pos, header) in ctx.column_headers.iter().enumerate() {
+        let is_pinned = ctx.is_pinned_column(visual_pos);
 
-                // Check if this is the current column
-                let is_crosshair = ctx.is_selected_column(visual_pos);
-                let column_indicator = if is_crosshair { " [*]" } else { "" };
-
-                // Check if this column is pinned
-                let is_pinned = ctx.is_pinned_column(visual_pos);
-
-                // Determine styling
-                let mut style = if is_pinned {
-                    // Pinned columns get blue background
+        // Add separator if transitioning from pinned to non-pinned
+        if last_was_pinned && !is_pinned && ctx.pinned_count > 0 {
+            // Add a visual separator column
+            header_cells.push(
+                Cell::from("│").style(
                     Style::default()
-                        .bg(Color::Blue)
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    // Regular columns
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD)
-                };
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            );
+        }
 
-                if is_crosshair {
-                    // Current column gets yellow text
-                    style = if is_pinned {
-                        style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED)
-                    } else {
-                        style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED)
-                    };
-                }
+        // Get sort indicator
+        let sort_indicator = ctx.get_sort_indicator(visual_pos);
 
-                Cell::from(format!("{}{}{}", header, sort_indicator, column_indicator)).style(style)
-            })
-            .collect::<Vec<Cell>>(),
-    );
+        // Check if this is the current column
+        let is_crosshair = ctx.is_selected_column(visual_pos);
+        let column_indicator = if is_crosshair { " [*]" } else { "" };
+
+        // Add pin indicator for pinned columns
+        let pin_indicator = if is_pinned { "📌 " } else { "" };
+
+        // Determine styling
+        let mut style = if is_pinned {
+            // Pinned columns get special styling
+            Style::default()
+                .bg(Color::Rgb(40, 40, 80)) // Darker blue background
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            // Regular columns
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        };
+
+        if is_crosshair {
+            // Current column gets yellow text
+            style = style.fg(Color::Yellow).add_modifier(Modifier::UNDERLINED);
+        }
+
+        header_cells.push(
+            Cell::from(format!(
+                "{}{}{}{}",
+                pin_indicator, header, sort_indicator, column_indicator
+            ))
+            .style(style),
+        );
+
+        last_was_pinned = is_pinned;
+    }
 
     Row::new(header_cells)
 }
@@ -130,16 +143,27 @@ fn build_data_rows(ctx: &TableRenderContext) -> Vec<Row<'static>> {
             // Check if this is the current row
             let is_current_row = ctx.is_selected_row(row_idx);
 
-            // Add data cells with appropriate styling
-            cells.extend(row_data.iter().enumerate().map(|(col_idx, val)| {
-                let is_selected_column = ctx.is_selected_column(col_idx);
+            // Add data cells with separator between pinned and scrollable
+            let mut last_was_pinned = false;
+            for (col_idx, val) in row_data.iter().enumerate() {
                 let is_pinned = ctx.is_pinned_column(col_idx);
 
+                // Add separator if transitioning from pinned to non-pinned
+                if last_was_pinned && !is_pinned && ctx.pinned_count > 0 {
+                    cells.push(Cell::from("│").style(Style::default().fg(Color::DarkGray)));
+                }
+
+                let is_selected_column = ctx.is_selected_column(col_idx);
                 let mut cell = Cell::from(val.clone());
 
                 // Apply fuzzy filter highlighting
                 if !is_current_row && ctx.cell_matches_filter(val) {
                     cell = cell.style(Style::default().fg(Color::Magenta));
+                }
+
+                // Apply background for pinned columns
+                if is_pinned && !is_current_row {
+                    cell = cell.style(Style::default().bg(Color::Rgb(20, 20, 40)));
                 }
 
                 // Apply selection styling based on mode
@@ -183,8 +207,9 @@ fn build_data_rows(ctx: &TableRenderContext) -> Vec<Row<'static>> {
                     _ => cell,
                 };
 
-                cell
-            }));
+                cells.push(cell);
+                last_was_pinned = is_pinned;
+            }
 
             // Apply row highlighting
             let row_style = if is_current_row {
@@ -209,9 +234,18 @@ fn calculate_column_widths(ctx: &TableRenderContext) -> Vec<Constraint> {
         widths.push(Constraint::Length(8)); // Fixed width for row numbers
     }
 
-    // Add widths for visible data columns
-    for &width in &ctx.column_widths {
+    // Add widths for visible data columns with separator
+    let mut last_was_pinned = false;
+    for (idx, &width) in ctx.column_widths.iter().enumerate() {
+        let is_pinned = ctx.is_pinned_column(idx);
+
+        // Add separator width if transitioning from pinned to non-pinned
+        if last_was_pinned && !is_pinned && ctx.pinned_count > 0 {
+            widths.push(Constraint::Length(1)); // Separator column
+        }
+
         widths.push(Constraint::Length(width));
+        last_was_pinned = is_pinned;
     }
 
     widths

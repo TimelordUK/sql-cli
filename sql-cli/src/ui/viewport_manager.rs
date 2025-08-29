@@ -277,18 +277,38 @@ impl ViewportManager {
     /// Returns (row_offset, col_offset) within the viewport, or None if outside
     pub fn get_crosshair_viewport_position(&self) -> Option<(usize, usize)> {
         // Check if crosshair is within the current viewport
-        if self.crosshair_row >= self.viewport_rows.start
-            && self.crosshair_row < self.viewport_rows.end
-            && self.crosshair_col >= self.viewport_cols.start
-            && self.crosshair_col < self.viewport_cols.end
+        // For rows, standard check
+        if self.crosshair_row < self.viewport_rows.start
+            || self.crosshair_row >= self.viewport_rows.end
         {
-            Some((
-                self.crosshair_row - self.viewport_rows.start,
-                self.crosshair_col - self.viewport_cols.start,
-            ))
-        } else {
-            None
+            return None;
         }
+
+        // For columns, we need to account for pinned columns
+        let pinned_count = self.dataview.get_pinned_columns().len();
+
+        // If crosshair is on a pinned column, it's always visible
+        if self.crosshair_col < pinned_count {
+            return Some((
+                self.crosshair_row - self.viewport_rows.start,
+                self.crosshair_col, // Pinned columns are always at the start
+            ));
+        }
+
+        // For scrollable columns, check if it's in the viewport
+        // Convert visual column to scrollable column index
+        let scrollable_col = self.crosshair_col - pinned_count;
+        if scrollable_col >= self.viewport_cols.start && scrollable_col < self.viewport_cols.end {
+            // Calculate the visual position in the rendered output
+            // Pinned columns come first, then the visible scrollable columns
+            let visual_col_in_viewport = pinned_count + (scrollable_col - self.viewport_cols.start);
+            return Some((
+                self.crosshair_row - self.viewport_rows.start,
+                visual_col_in_viewport,
+            ));
+        }
+
+        None
     }
 
     /// Navigate up one row
@@ -953,19 +973,75 @@ impl ViewportManager {
             return Vec::new();
         }
 
+        // Get pinned columns - they're always visible
+        let pinned_columns = self.dataview.get_pinned_columns();
+        let pinned_count = pinned_columns.len();
+
         let mut used_width = 0u16;
         let separator_width = 1u16;
+        let mut result = Vec::new();
 
-        // Work in visual coordinate space!
-        // Visual indices are 0, 1, 2, 3... (contiguous, no gaps)
-        let visual_start = self.viewport_cols.start.min(total_visual_columns);
-        let mut visual_end = visual_start;
+        tracing::debug!("[PIN_DEBUG] === calculate_visible_column_indices ===");
+        tracing::debug!(
+            "[PIN_DEBUG] available_width={}, total_visual_columns={}",
+            available_width,
+            total_visual_columns
+        );
+        tracing::debug!(
+            "[PIN_DEBUG] pinned_columns={:?} (count={})",
+            pinned_columns,
+            pinned_count
+        );
+        tracing::debug!("[PIN_DEBUG] viewport_cols={:?}", self.viewport_cols);
+        tracing::debug!("[PIN_DEBUG] display_columns={:?}", display_columns);
 
         debug!(target: "viewport_manager",
-               "calculate_visible_column_indices: available_width={}, total_visual_columns={}, viewport_start={}",
-               available_width, total_visual_columns, visual_start);
+               "calculate_visible_column_indices: available_width={}, total_visual_columns={}, pinned_count={}, viewport_start={}",
+               available_width, total_visual_columns, pinned_count, self.viewport_cols.start);
 
-        // Calculate how many visual columns we can fit starting from visual_start
+        // First, always add all pinned columns (they're at the beginning of display_columns)
+        for visual_idx in 0..pinned_count {
+            if visual_idx >= display_columns.len() {
+                break;
+            }
+
+            let datatable_idx = display_columns[visual_idx];
+            let width = self
+                .column_widths
+                .get(datatable_idx)
+                .copied()
+                .unwrap_or(DEFAULT_COL_WIDTH);
+
+            // Always include pinned columns, even if they exceed available width
+            used_width += width + separator_width;
+            result.push(datatable_idx);
+            tracing::debug!(
+                "[PIN_DEBUG] Added pinned column: visual_idx={}, datatable_idx={}, width={}",
+                visual_idx,
+                datatable_idx,
+                width
+            );
+        }
+
+        // IMPORTANT FIX: viewport_cols represents SCROLLABLE column indices (0-based, excluding pinned)
+        // To get the visual column index, we need to add pinned_count to the scrollable index
+        let scrollable_start = self.viewport_cols.start;
+        let visual_start = scrollable_start + pinned_count;
+
+        tracing::debug!(
+            "[PIN_DEBUG] viewport_cols.start={} is SCROLLABLE index",
+            self.viewport_cols.start
+        );
+        tracing::debug!(
+            "[PIN_DEBUG] visual_start={} (scrollable_start {} + pinned_count {})",
+            visual_start,
+            scrollable_start,
+            pinned_count
+        );
+
+        let visual_start = visual_start.min(total_visual_columns);
+
+        // Calculate how many columns we can fit from the viewport
         for visual_idx in visual_start..total_visual_columns {
             // Get the DataTable index for this visual position
             let datatable_idx = display_columns[visual_idx];
@@ -978,33 +1054,30 @@ impl ViewportManager {
 
             if used_width + width + separator_width <= available_width {
                 used_width += width + separator_width;
-                visual_end = visual_idx + 1;
+                result.push(datatable_idx);
+                tracing::debug!("[PIN_DEBUG] Added scrollable column: visual_idx={}, datatable_idx={}, width={}", visual_idx, datatable_idx, width);
             } else {
+                tracing::debug!(
+                    "[PIN_DEBUG] Stopped at visual_idx={} - would exceed width",
+                    visual_idx
+                );
                 break;
             }
         }
 
-        // If we couldn't fit anything, ensure we show at least one column
-        if visual_end == visual_start && visual_start < total_visual_columns {
-            visual_end = visual_start + 1;
+        // If we couldn't fit any scrollable columns but have pinned columns, that's okay
+        // If we have no columns at all, ensure we show at least one column
+        if result.is_empty() && total_visual_columns > 0 {
+            result.push(display_columns[0]);
         }
 
-        // Now we need to return DataTable indices for compatibility with the renderer
-        // (until we fully refactor the renderer to work in visual space)
-        let mut result = Vec::new();
-        for visual_idx in visual_start..visual_end {
-            if visual_idx < display_columns.len() {
-                result.push(display_columns[visual_idx]);
-            }
-        }
-
+        tracing::debug!("[PIN_DEBUG] Final result: {:?}", result);
+        tracing::debug!("[PIN_DEBUG] === End calculate_visible_column_indices ===");
         debug!(target: "viewport_manager",
-               "calculate_visible_column_indices RESULT: visual range {}..{} -> DataTable indices {:?}",
-               visual_start, visual_end, result);
+               "calculate_visible_column_indices RESULT: pinned={}, viewport_start={}, visual_start={} -> DataTable indices {:?}",
+               pinned_count, self.viewport_cols.start, visual_start, result);
 
         result
-
-        // Removed the complex optimization logic - we now work with simple ranges
     }
 
     /// Calculate how many columns we can fit starting from a given column index
@@ -1674,24 +1747,37 @@ impl ViewportManager {
                "get_visual_display: Using viewport_rows {:?} -> row_indices: {:?} (first 5)",
                self.viewport_rows,
                row_indices.iter().take(5).collect::<Vec<_>>());
+        // IMPORTANT: Use calculate_visible_column_indices to get the correct columns
+        // This properly handles pinned columns that should always be visible
+        let visible_column_indices = self.calculate_visible_column_indices(available_width);
+
+        tracing::debug!(
+            "[RENDER_DEBUG] visible_column_indices from calculate: {:?}",
+            visible_column_indices
+        );
+
         // Get ALL visual columns from DataView (already filtered for hidden columns)
         let all_headers = self.dataview.get_display_column_names();
+        let display_columns = self.dataview.get_display_columns();
         let total_visual_columns = all_headers.len();
 
         debug!(target: "viewport_manager",
                "get_visual_display: {} total visual columns, viewport: {:?}",
                total_visual_columns, self.viewport_cols);
 
-        // Determine visual range to display
-        let visual_start = self.viewport_cols.start.min(total_visual_columns);
-        let visual_end = self.viewport_cols.end.min(total_visual_columns);
+        // Build headers from the visible column indices (DataTable indices)
+        let headers: Vec<String> = visible_column_indices
+            .iter()
+            .filter_map(|&dt_idx| {
+                // Find the visual position for this DataTable index
+                display_columns
+                    .iter()
+                    .position(|&x| x == dt_idx)
+                    .and_then(|visual_idx| all_headers.get(visual_idx).cloned())
+            })
+            .collect();
 
-        debug!(target: "viewport_manager",
-               "Showing visual columns {}..{} (of {})",
-               visual_start, visual_end, total_visual_columns);
-
-        // Get headers for the visual range
-        let headers: Vec<String> = all_headers[visual_start..visual_end].to_vec();
+        tracing::debug!("[RENDER_DEBUG] headers: {:?}", headers);
 
         // Get data from DataView in visual column order
         // IMPORTANT: row_indices contains display row indices (0-based positions in the result set)
@@ -1711,20 +1797,29 @@ impl ViewportManager {
                     }
                 }
                 row_data.map(|full_row| {
-                    // Slice to just the visible columns
-                    full_row[visual_start..visual_end.min(full_row.len())].to_vec()
+                    // Extract the columns we need based on visible_column_indices
+                    visible_column_indices
+                        .iter()
+                        .filter_map(|&dt_idx| {
+                            // Find the visual position for this DataTable index
+                            display_columns
+                                .iter()
+                                .position(|&x| x == dt_idx)
+                                .and_then(|visual_idx| full_row.get(visual_idx).cloned())
+                        })
+                        .collect()
                 })
             })
             .collect();
 
         // Get the actual calculated widths for the visible columns
-        let widths: Vec<u16> = (visual_start..visual_end)
-            .map(|idx| {
-                if idx < self.column_widths.len() {
-                    self.column_widths[idx]
-                } else {
-                    DEFAULT_COL_WIDTH
-                }
+        let widths: Vec<u16> = visible_column_indices
+            .iter()
+            .map(|&dt_idx| {
+                self.column_widths
+                    .get(dt_idx)
+                    .copied()
+                    .unwrap_or(DEFAULT_COL_WIDTH)
             })
             .collect();
 
@@ -2099,9 +2194,9 @@ impl ViewportManager {
         // Vim-like behavior: don't wrap, stay at boundary
         if current_display_index == 0 {
             // Already at first column, don't move
-            let first_display_column = display_columns.get(0).copied().unwrap_or(0);
+            // Already at first column, return visual index 0
             return NavigationResult {
-                column_position: first_display_column,
+                column_position: 0, // Visual position, not DataTable index
                 scroll_offset: self.viewport_cols.start,
                 description: "Already at first column".to_string(),
                 viewport_changed: false,
@@ -2133,8 +2228,7 @@ impl ViewportManager {
         // Use set_current_column to handle viewport adjustment automatically (this takes DataTable index)
         let viewport_changed = self.set_current_column(new_display_index);
 
-        // Update crosshair to the new visual position
-        self.crosshair_col = new_display_index;
+        // crosshair_col is already updated by set_current_column, no need to set it again
 
         let column_names = self.dataview.column_names();
         let column_name = display_columns
@@ -2154,7 +2248,7 @@ impl ViewportManager {
                old_scroll_offset, self.viewport_cols.start, viewport_changed);
 
         NavigationResult {
-            column_position: new_visual_column, // Return DataTable index for Buffer
+            column_position: new_display_index, // Return visual/display index
             scroll_offset: self.viewport_cols.start,
             description,
             viewport_changed,
@@ -2164,6 +2258,14 @@ impl ViewportManager {
     /// Navigate one column to the right with intelligent wrapping and scrolling
     /// IMPORTANT: current_display_position is a logical display position (0,1,2,3...), NOT a DataTable index
     pub fn navigate_column_right(&mut self, current_display_position: usize) -> NavigationResult {
+        debug!(target: "viewport_manager",
+               "=== CRITICAL DEBUG: navigate_column_right CALLED ===");
+        debug!(target: "viewport_manager",
+               "Input current_display_position: {}", current_display_position);
+        debug!(target: "viewport_manager",
+               "Current crosshair_col: {}", self.crosshair_col);
+        debug!(target: "viewport_manager",
+               "Current viewport_cols: {:?}", self.viewport_cols);
         // Check viewport lock first - prevent scrolling entirely
         if self.viewport_lock {
             debug!(target: "viewport_manager", 
@@ -2192,20 +2294,52 @@ impl ViewportManager {
 
         let display_columns = self.dataview.get_display_columns();
         let total_display_columns = display_columns.len();
+        let column_names = self.dataview.column_names();
 
+        // Enhanced logging to debug the external_id issue
         debug!(target: "viewport_manager", 
-               "navigate_column_right ENTRY: current_display_pos={}, display_columns={:?}", 
-               current_display_position, display_columns);
+               "=== navigate_column_right DETAILED DEBUG ===");
+        debug!(target: "viewport_manager", 
+               "ENTRY: current_display_pos={}, total_display_columns={}", 
+               current_display_position, total_display_columns);
+        debug!(target: "viewport_manager",
+               "display_columns (DataTable indices): {:?}", display_columns);
+
+        // Log column names at each position
+        if current_display_position < display_columns.len() {
+            let current_dt_idx = display_columns[current_display_position];
+            let current_name = column_names
+                .get(current_dt_idx)
+                .map(|s| s.as_str())
+                .unwrap_or("unknown");
+            debug!(target: "viewport_manager",
+                   "Current position {} -> column '{}' (dt_idx={})", 
+                   current_display_position, current_name, current_dt_idx);
+        }
+
+        if current_display_position + 1 < display_columns.len() {
+            let next_dt_idx = display_columns[current_display_position + 1];
+            let next_name = column_names
+                .get(next_dt_idx)
+                .map(|s| s.as_str())
+                .unwrap_or("unknown");
+            debug!(target: "viewport_manager",
+                   "Next position {} -> column '{}' (dt_idx={})", 
+                   current_display_position + 1, next_name, next_dt_idx);
+        }
 
         // Validate current position
         let current_display_index = if current_display_position < total_display_columns {
             current_display_position
         } else {
+            debug!(target: "viewport_manager",
+                   "WARNING: current_display_position {} >= total_display_columns {}, resetting to 0",
+                   current_display_position, total_display_columns);
             0 // Reset to first if out of bounds
         };
 
         debug!(target: "viewport_manager", 
-               "navigate_column_right: using display_index={}", 
+               "Validated: current_display_index={}", 
                current_display_index);
 
         // Calculate new display position (move right without wrapping)
@@ -2213,12 +2347,11 @@ impl ViewportManager {
         if current_display_index + 1 >= total_display_columns {
             // Already at last column, don't move
             let last_display_index = total_display_columns.saturating_sub(1);
-            let last_visual_column = display_columns
-                .get(last_display_index)
-                .copied()
-                .unwrap_or(0);
+            debug!(target: "viewport_manager",
+                   "At last column boundary: current={}, total={}, returning last_display_index={}",
+                   current_display_index, total_display_columns, last_display_index);
             return NavigationResult {
-                column_position: last_visual_column,
+                column_position: last_display_index, // Return visual/display index
                 scroll_offset: self.viewport_cols.start,
                 description: "Already at last column".to_string(),
                 viewport_changed: false,
@@ -2232,8 +2365,17 @@ impl ViewportManager {
             .get(new_display_index)
             .copied()
             .unwrap_or_else(|| {
-                // Fallback: if something goes wrong, use first column
-                display_columns.get(0).copied().unwrap_or(0)
+                // This fallback should never be hit since we already checked bounds
+                tracing::error!(
+                    "[NAV_ERROR] Failed to get display column at index {}, total={}",
+                    new_display_index,
+                    display_columns.len()
+                );
+                // Return the current column instead of wrapping to first
+                display_columns
+                    .get(current_display_index)
+                    .copied()
+                    .unwrap_or(0)
             });
 
         debug!(target: "viewport_manager", 
@@ -2251,17 +2393,17 @@ impl ViewportManager {
                "navigate_column_right: moving to datatable_column={}, current viewport={:?}", 
                new_visual_column, self.viewport_cols);
 
-        // Use set_current_column to handle viewport adjustment automatically (this takes DataTable index)
+        // Use set_current_column to handle viewport adjustment automatically
+        // IMPORTANT: set_current_column expects a VISUAL index, and we're passing new_display_index which IS a visual index
         debug!(target: "viewport_manager", 
-               "navigate_column_right: before set_current_column({}), viewport={:?}", 
-               new_visual_column, self.viewport_cols);
+               "navigate_column_right: before set_current_column(visual_idx={}), viewport={:?}", 
+               new_display_index, self.viewport_cols);
         let viewport_changed = self.set_current_column(new_display_index);
         debug!(target: "viewport_manager", 
-               "navigate_column_right: after set_current_column({}), viewport={:?}, changed={}", 
-               new_visual_column, self.viewport_cols, viewport_changed);
+               "navigate_column_right: after set_current_column(visual_idx={}), viewport={:?}, changed={}", 
+               new_display_index, self.viewport_cols, viewport_changed);
 
-        // Update crosshair to the new visual position
-        self.crosshair_col = new_display_index;
+        // crosshair_col is already updated by set_current_column, no need to set it again
 
         let column_names = self.dataview.column_names();
         let column_name = display_columns
@@ -2275,13 +2417,27 @@ impl ViewportManager {
             new_display_index + 1
         );
 
+        // Final logging with clear indication of what we're returning
+        debug!(target: "viewport_manager", 
+               "=== navigate_column_right RESULT ===");
+        debug!(target: "viewport_manager",
+               "Returning: column_position={} (visual/display index)", new_display_index);
+        debug!(target: "viewport_manager",
+               "Movement: {} -> {} (visual indices)", current_display_index, new_display_index);
+        debug!(target: "viewport_manager",
+               "Viewport: {:?}, changed={}", self.viewport_cols, viewport_changed);
+        debug!(target: "viewport_manager",
+               "Description: {}", description);
+
+        tracing::debug!("[NAV_DEBUG] Final result: column_position={} (visual/display idx), viewport_changed={}", 
+                       new_display_index, viewport_changed);
         debug!(target: "viewport_manager", 
                "navigate_column_right EXIT: display_pos {}→{}, datatable_col: {}, viewport: {:?}, scroll: {}→{}, viewport_changed={}", 
                current_display_index, new_display_index, new_visual_column,
                self.viewport_cols, old_scroll_offset, self.viewport_cols.start, viewport_changed);
 
         NavigationResult {
-            column_position: new_visual_column, // Return DataTable index for Buffer
+            column_position: new_display_index, // Return visual/display index
             scroll_offset: self.viewport_cols.start,
             description,
             viewport_changed,
@@ -3375,6 +3531,18 @@ impl ViewportManager {
         let terminal_width = self.terminal_width.saturating_sub(TABLE_BORDER_WIDTH); // Account for borders
         let total_visual_columns = self.dataview.get_display_columns().len();
 
+        tracing::debug!("[PIN_DEBUG] === set_current_column ===");
+        tracing::debug!(
+            "[PIN_DEBUG] visual_column={}, viewport_cols={:?}",
+            visual_column,
+            self.viewport_cols
+        );
+        tracing::debug!(
+            "[PIN_DEBUG] terminal_width={}, total_visual_columns={}",
+            terminal_width,
+            total_visual_columns
+        );
+
         debug!(target: "viewport_manager", 
                "set_current_column ENTRY: visual_column={}, current_viewport={:?}, terminal_width={}, total_visual={}", 
                visual_column, self.viewport_cols, terminal_width, total_visual_columns);
@@ -3382,12 +3550,18 @@ impl ViewportManager {
         // Validate the visual column
         if visual_column >= total_visual_columns {
             debug!(target: "viewport_manager", "Visual column {} out of bounds (max {})", visual_column, total_visual_columns);
+            tracing::debug!(
+                "[PIN_DEBUG] Column {} out of bounds (max {})",
+                visual_column,
+                total_visual_columns
+            );
             return false;
         }
 
         // Update the crosshair position
         self.crosshair_col = visual_column;
         debug!(target: "viewport_manager", "Updated crosshair_col to {}", visual_column);
+        tracing::debug!("[PIN_DEBUG] Updated crosshair_col to {}", visual_column);
 
         // Check if we're in optimal layout mode (all columns fit)
         // This needs to calculate based on visual columns
@@ -3406,11 +3580,36 @@ impl ViewportManager {
             // All columns fit - no viewport adjustment needed, all columns are visible
             debug!(target: "viewport_manager", 
                    "Visual column {} in optimal layout mode (all columns fit), no adjustment needed", visual_column);
+            tracing::debug!("[PIN_DEBUG] All columns fit, no adjustment needed");
+            tracing::debug!("[PIN_DEBUG] === End set_current_column (all fit) ===");
             return false;
         }
 
         // Check if the visual column is already visible in the viewport
-        let is_visible = self.viewport_cols.contains(&visual_column);
+        // We need to check what's ACTUALLY visible, not just what's in the viewport range
+        let pinned_count = self.dataview.get_pinned_columns().len();
+        tracing::debug!("[PIN_DEBUG] pinned_count={}", pinned_count);
+
+        // Calculate which columns are actually visible with the current viewport
+        let visible_columns = self.calculate_visible_column_indices(terminal_width);
+        let display_columns = self.dataview.get_display_columns();
+
+        // Check if the target visual column's DataTable index is in the visible set
+        let target_dt_idx = if visual_column < display_columns.len() {
+            display_columns[visual_column]
+        } else {
+            tracing::debug!("[PIN_DEBUG] Column {} out of bounds", visual_column);
+            return false;
+        };
+
+        let is_visible = visible_columns.contains(&target_dt_idx);
+        tracing::debug!(
+            "[PIN_DEBUG] Column {} (dt_idx={}) visible check: visible_columns={:?}, is_visible={}",
+            visual_column,
+            target_dt_idx,
+            visible_columns,
+            is_visible
+        );
 
         debug!(target: "viewport_manager", 
                "set_current_column CHECK: visual_column={}, viewport={:?}, is_visible={}", 
@@ -3419,6 +3618,8 @@ impl ViewportManager {
         if is_visible {
             debug!(target: "viewport_manager", "Visual column {} already visible in viewport {:?}, no adjustment needed", 
                    visual_column, self.viewport_cols);
+            tracing::debug!("[PIN_DEBUG] Column already visible, no adjustment");
+            tracing::debug!("[PIN_DEBUG] === End set_current_column (no change) ===");
             return false;
         }
 
@@ -3431,13 +3632,31 @@ impl ViewportManager {
                new_scroll_offset, old_scroll_offset);
 
         if new_scroll_offset != old_scroll_offset {
-            // Calculate how many columns fit from the new offset
+            // Calculate how many scrollable columns fit from the new offset
+            // This is similar logic to calculate_visible_column_indices
             let display_columns = self.dataview.get_display_columns();
-            let mut new_end = new_scroll_offset;
+            let pinned_count = self.dataview.get_pinned_columns().len();
             let mut used_width = 0u16;
             let separator_width = 1u16;
 
-            for visual_idx in new_scroll_offset..display_columns.len() {
+            // First account for pinned column widths
+            for visual_idx in 0..pinned_count {
+                if visual_idx < display_columns.len() {
+                    let dt_idx = display_columns[visual_idx];
+                    let width = self
+                        .column_widths
+                        .get(dt_idx)
+                        .copied()
+                        .unwrap_or(DEFAULT_COL_WIDTH);
+                    used_width += width + separator_width;
+                }
+            }
+
+            // Now calculate how many scrollable columns fit
+            let mut scrollable_columns_that_fit = 0;
+            let visual_start = pinned_count + new_scroll_offset;
+
+            for visual_idx in visual_start..display_columns.len() {
                 let dt_idx = display_columns[visual_idx];
                 let width = self
                     .column_widths
@@ -3446,12 +3665,14 @@ impl ViewportManager {
                     .unwrap_or(DEFAULT_COL_WIDTH);
                 if used_width + width + separator_width <= terminal_width {
                     used_width += width + separator_width;
-                    new_end = visual_idx + 1;
+                    scrollable_columns_that_fit += 1;
                 } else {
                     break;
                 }
             }
 
+            // viewport_cols represents scrollable columns only
+            let new_end = new_scroll_offset + scrollable_columns_that_fit;
             self.viewport_cols = new_scroll_offset..new_end;
             self.cache_dirty = true; // Mark cache as dirty since viewport changed
 
@@ -3486,41 +3707,121 @@ impl ViewportManager {
     }
 
     /// Calculate the optimal scroll offset to keep a visual column visible
+    /// Returns scroll offset in terms of scrollable columns (excluding pinned)
     fn calculate_scroll_offset_for_visual_column(&mut self, visual_column: usize) -> usize {
-        let current_offset = self.viewport_cols.start;
-        let terminal_width = self.terminal_width.saturating_sub(TABLE_BORDER_WIDTH); // Account for borders
+        debug!(target: "viewport_manager",
+               "=== calculate_scroll_offset_for_visual_column ENTRY ===");
+        debug!(target: "viewport_manager",
+               "visual_column={}, current_viewport={:?}", visual_column, self.viewport_cols);
 
-        // Calculate how many columns fit from current offset
+        let pinned_count = self.dataview.get_pinned_columns().len();
+        debug!(target: "viewport_manager",
+               "pinned_count={}", pinned_count);
+
+        // If it's a pinned column, it's always visible, no scrolling needed
+        if visual_column < pinned_count {
+            debug!(target: "viewport_manager",
+                   "Visual column {} is pinned, returning current offset {}", 
+                   visual_column, self.viewport_cols.start);
+            return self.viewport_cols.start; // Keep current offset
+        }
+
+        // Convert to scrollable column index
+        let scrollable_column = visual_column - pinned_count;
+        debug!(target: "viewport_manager",
+               "Converted to scrollable_column={}", scrollable_column);
+
+        let current_scroll_offset = self.viewport_cols.start;
+        let terminal_width = self.terminal_width.saturating_sub(TABLE_BORDER_WIDTH);
+
+        // Calculate how much width pinned columns use
         let display_columns = self.dataview.get_display_columns();
-        let mut columns_that_fit = 0;
-        let mut used_width = 0u16;
+        let mut pinned_width = 0u16;
         let separator_width = 1u16;
 
-        for visual_idx in current_offset..display_columns.len() {
-            let dt_idx = display_columns[visual_idx];
-            let width = self
-                .column_widths
-                .get(dt_idx)
-                .copied()
-                .unwrap_or(DEFAULT_COL_WIDTH);
-            if used_width + width + separator_width <= terminal_width {
-                used_width += width + separator_width;
-                columns_that_fit += 1;
-            } else {
-                break;
+        for visual_idx in 0..pinned_count {
+            if visual_idx < display_columns.len() {
+                let dt_idx = display_columns[visual_idx];
+                let width = self
+                    .column_widths
+                    .get(dt_idx)
+                    .copied()
+                    .unwrap_or(DEFAULT_COL_WIDTH);
+                pinned_width += width + separator_width;
             }
         }
 
-        // Smart scrolling logic in visual space
-        if visual_column < current_offset {
+        // Available width for scrollable columns
+        let available_for_scrollable = terminal_width.saturating_sub(pinned_width);
+
+        debug!(target: "viewport_manager",
+               "Scroll offset calculation: target_scrollable_col={}, current_offset={}, available_width={}", 
+               scrollable_column, current_scroll_offset, available_for_scrollable);
+
+        // Smart scrolling logic in scrollable column space
+        if scrollable_column < current_scroll_offset {
             // Column is to the left of viewport, scroll left to show it
-            visual_column
-        } else if columns_that_fit > 0 && visual_column >= current_offset + columns_that_fit {
-            // Column is to the right of viewport, scroll right to show it
-            visual_column.saturating_sub(columns_that_fit - 1)
+            debug!(target: "viewport_manager", "Column {} is left of viewport, scrolling left to offset {}", 
+                   scrollable_column, scrollable_column);
+            scrollable_column
         } else {
-            // Column is already visible, keep current offset
-            current_offset
+            // Column is to the right or at current position, find optimal scroll offset
+            // Work backwards from the target column to find how many columns fit
+            let mut test_scroll_offset = scrollable_column;
+            let mut found_valid_offset = false;
+
+            // Try different scroll offsets, working backwards from the target column
+            while test_scroll_offset > 0 {
+                let mut used_width = 0u16;
+                let mut columns_fit = 0;
+                let mut target_column_fits = false;
+
+                // Test if we can fit columns starting from this scroll offset
+                for test_scrollable_idx in
+                    test_scroll_offset..display_columns.len().saturating_sub(pinned_count)
+                {
+                    let visual_idx = pinned_count + test_scrollable_idx;
+                    if visual_idx < display_columns.len() {
+                        let dt_idx = display_columns[visual_idx];
+                        let width = self
+                            .column_widths
+                            .get(dt_idx)
+                            .copied()
+                            .unwrap_or(DEFAULT_COL_WIDTH);
+
+                        if used_width + width + separator_width <= available_for_scrollable {
+                            used_width += width + separator_width;
+                            columns_fit += 1;
+                            if test_scrollable_idx == scrollable_column {
+                                target_column_fits = true;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                debug!(target: "viewport_manager", 
+                       "Testing scroll_offset={}: columns_fit={}, target_fits={}, used_width={}", 
+                       test_scroll_offset, columns_fit, target_column_fits, used_width);
+
+                if target_column_fits {
+                    found_valid_offset = true;
+                    break;
+                }
+
+                test_scroll_offset = test_scroll_offset.saturating_sub(1);
+            }
+
+            if found_valid_offset {
+                debug!(target: "viewport_manager", 
+                       "Found optimal scroll offset {} for column {}", test_scroll_offset, scrollable_column);
+                test_scroll_offset
+            } else {
+                debug!(target: "viewport_manager", 
+                       "Could not find valid offset, keeping current offset {}", current_scroll_offset);
+                current_scroll_offset
+            }
         }
     }
 
