@@ -233,6 +233,46 @@ impl ViewportManager {
         self.crosshair_row
     }
 
+    /// Get selected row (alias for crosshair_row for compatibility)
+    pub fn get_selected_row(&self) -> usize {
+        self.crosshair_row
+    }
+
+    /// Get selected column (alias for crosshair_col for compatibility)
+    pub fn get_selected_column(&self) -> usize {
+        self.crosshair_col
+    }
+
+    /// Get scroll offset as (row_offset, col_offset)
+    pub fn get_scroll_offset(&self) -> (usize, usize) {
+        (self.viewport_rows.start, self.viewport_cols.start)
+    }
+
+    /// Set scroll offset and update viewport accordingly
+    pub fn set_scroll_offset(&mut self, row_offset: usize, col_offset: usize) {
+        let viewport_height = self.viewport_rows.end - self.viewport_rows.start;
+        let viewport_width = self.viewport_cols.end - self.viewport_cols.start;
+
+        // Update viewport ranges based on new scroll offset
+        self.viewport_rows = row_offset..(row_offset + viewport_height);
+        self.viewport_cols = col_offset..(col_offset + viewport_width);
+
+        // Ensure crosshair stays within new viewport
+        if self.crosshair_row < self.viewport_rows.start {
+            self.crosshair_row = self.viewport_rows.start;
+        } else if self.crosshair_row >= self.viewport_rows.end {
+            self.crosshair_row = self.viewport_rows.end.saturating_sub(1);
+        }
+
+        if self.crosshair_col < self.viewport_cols.start {
+            self.crosshair_col = self.viewport_cols.start;
+        } else if self.crosshair_col >= self.viewport_cols.end {
+            self.crosshair_col = self.viewport_cols.end.saturating_sub(1);
+        }
+
+        self.cache_dirty = true;
+    }
+
     /// Get crosshair position relative to current viewport for rendering
     /// Returns (row_offset, col_offset) within the viewport, or None if outside
     pub fn get_crosshair_viewport_position(&self) -> Option<(usize, usize)> {

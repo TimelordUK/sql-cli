@@ -1607,6 +1607,166 @@ impl SelectionState {
     }
 }
 
+// ========== Proxy Structures for Buffer ViewState ==========
+// These proxies allow AppStateContainer to access navigation and selection state
+// directly from the current buffer's ViewState, eliminating state duplication
+
+/// Read-only proxy for navigation state
+pub struct NavigationProxy<'a> {
+    buffer: Option<&'a crate::buffer::Buffer>,
+}
+
+impl<'a> NavigationProxy<'a> {
+    pub fn new(buffer: Option<&'a crate::buffer::Buffer>) -> Self {
+        Self { buffer }
+    }
+
+    pub fn selected_row(&self) -> usize {
+        self.buffer.map(|b| b.view_state.crosshair_row).unwrap_or(0)
+    }
+
+    pub fn selected_column(&self) -> usize {
+        self.buffer.map(|b| b.view_state.crosshair_col).unwrap_or(0)
+    }
+
+    pub fn scroll_offset(&self) -> (usize, usize) {
+        self.buffer
+            .map(|b| b.view_state.scroll_offset)
+            .unwrap_or((0, 0))
+    }
+
+    pub fn viewport_lock(&self) -> bool {
+        self.buffer
+            .map(|b| b.view_state.viewport_lock)
+            .unwrap_or(false)
+    }
+
+    pub fn cursor_lock(&self) -> bool {
+        self.buffer
+            .map(|b| b.view_state.cursor_lock)
+            .unwrap_or(false)
+    }
+
+    pub fn total_rows(&self) -> usize {
+        self.buffer.map(|b| b.view_state.total_rows).unwrap_or(0)
+    }
+
+    pub fn total_columns(&self) -> usize {
+        self.buffer.map(|b| b.view_state.total_columns).unwrap_or(0)
+    }
+}
+
+/// Mutable proxy for navigation state
+pub struct NavigationProxyMut<'a> {
+    buffer: Option<&'a mut crate::buffer::Buffer>,
+}
+
+impl<'a> NavigationProxyMut<'a> {
+    pub fn new(buffer: Option<&'a mut crate::buffer::Buffer>) -> Self {
+        Self { buffer }
+    }
+
+    pub fn set_selected_row(&mut self, row: usize) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.view_state.crosshair_row = row;
+        }
+    }
+
+    pub fn set_selected_column(&mut self, col: usize) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.view_state.crosshair_col = col;
+        }
+    }
+
+    pub fn set_scroll_offset(&mut self, offset: (usize, usize)) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.view_state.scroll_offset = offset;
+        }
+    }
+
+    pub fn set_viewport_lock(&mut self, locked: bool) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.view_state.viewport_lock = locked;
+        }
+    }
+
+    pub fn set_cursor_lock(&mut self, locked: bool) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.view_state.cursor_lock = locked;
+        }
+    }
+
+    pub fn update_totals(&mut self, rows: usize, columns: usize) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.view_state.total_rows = rows;
+            buffer.view_state.total_columns = columns;
+        }
+    }
+}
+
+/// Read-only proxy for selection state
+pub struct SelectionProxy<'a> {
+    buffer: Option<&'a crate::buffer::Buffer>,
+}
+
+impl<'a> SelectionProxy<'a> {
+    pub fn new(buffer: Option<&'a crate::buffer::Buffer>) -> Self {
+        Self { buffer }
+    }
+
+    pub fn mode(&self) -> crate::buffer::SelectionMode {
+        self.buffer
+            .map(|b| b.view_state.selection_mode.clone())
+            .unwrap_or(crate::buffer::SelectionMode::Row)
+    }
+
+    pub fn selected_cells(&self) -> Vec<(usize, usize)> {
+        self.buffer
+            .map(|b| b.view_state.selected_cells.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn selection_anchor(&self) -> Option<(usize, usize)> {
+        self.buffer.and_then(|b| b.view_state.selection_anchor)
+    }
+}
+
+/// Mutable proxy for selection state
+pub struct SelectionProxyMut<'a> {
+    buffer: Option<&'a mut crate::buffer::Buffer>,
+}
+
+impl<'a> SelectionProxyMut<'a> {
+    pub fn new(buffer: Option<&'a mut crate::buffer::Buffer>) -> Self {
+        Self { buffer }
+    }
+
+    pub fn set_mode(&mut self, mode: crate::buffer::SelectionMode) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.view_state.selection_mode = mode;
+        }
+    }
+
+    pub fn add_selected_cell(&mut self, cell: (usize, usize)) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.view_state.selected_cells.push(cell);
+        }
+    }
+
+    pub fn clear_selections(&mut self) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.view_state.selected_cells.clear();
+            buffer.view_state.selection_anchor = None;
+        }
+    }
+
+    pub fn set_selection_anchor(&mut self, anchor: Option<(usize, usize)>) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.view_state.selection_anchor = anchor;
+        }
+    }
+}
+
 /// History search state (for Ctrl+R functionality)
 #[derive(Debug, Clone)]
 pub struct HistorySearchState {
@@ -3010,14 +3170,23 @@ impl AppStateContainer {
             .advance_sort_state(column_index, column_name, new_order);
     }
 
-    /// Get current selection state (read-only)
+    /// Get current selection state (read-only) - DEPRECATED: Will be removed after migration
     pub fn selection(&self) -> std::cell::Ref<SelectionState> {
         self.selection.borrow()
     }
 
-    /// Get current selection state (mutable)
+    /// Get current selection state (mutable) - DEPRECATED: Will be removed after migration
     pub fn selection_mut(&self) -> std::cell::RefMut<SelectionState> {
         self.selection.borrow_mut()
+    }
+
+    /// NEW: Proxy-based selection access (single source of truth)
+    pub fn selection_proxy(&self) -> SelectionProxy {
+        SelectionProxy::new(self.buffers.current())
+    }
+
+    pub fn selection_proxy_mut(&mut self) -> SelectionProxyMut {
+        SelectionProxyMut::new(self.buffers.current_mut())
     }
 
     /// Set selection mode
@@ -3789,13 +3958,22 @@ impl AppStateContainer {
         self.navigation.borrow().cursor_lock
     }
 
-    // Navigation state access
+    // Navigation state access - DEPRECATED: Will be removed after migration
     pub fn navigation(&self) -> std::cell::Ref<'_, NavigationState> {
         self.navigation.borrow()
     }
 
     pub fn navigation_mut(&self) -> std::cell::RefMut<'_, NavigationState> {
         self.navigation.borrow_mut()
+    }
+
+    // NEW: Proxy-based navigation access (single source of truth)
+    pub fn navigation_proxy(&self) -> NavigationProxy {
+        NavigationProxy::new(self.buffers.current())
+    }
+
+    pub fn navigation_proxy_mut(&mut self) -> NavigationProxyMut {
+        NavigationProxyMut::new(self.buffers.current_mut())
     }
 
     // get_current_position is defined earlier in the file at line 2946

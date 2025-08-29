@@ -68,6 +68,9 @@ pub struct BehaviorConfig {
     /// Case-insensitive by default
     pub case_insensitive_default: bool,
 
+    /// Start mode when loading files: "command" or "results"
+    pub start_mode: String,
+
     /// Maximum rows to display without pagination warning
     pub max_display_rows: usize,
 
@@ -203,6 +206,7 @@ impl Default for BehaviorConfig {
         Self {
             auto_execute_on_load: true,
             case_insensitive_default: true, // Default to case-insensitive for practical use
+            start_mode: "results".to_string(), // Default to results mode for immediate data view
             max_display_rows: 10000,
             cache_dir: None,
             enable_history: true,
@@ -266,6 +270,10 @@ impl Config {
         info.push_str(&format!(
             "  case_insensitive_default = {}\n",
             self.behavior.case_insensitive_default
+        ));
+        info.push_str(&format!(
+            "  start_mode = \"{}\"\n",
+            self.behavior.start_mode
         ));
         info.push_str(&format!(
             "  max_display_rows = {}\n",
@@ -404,6 +412,11 @@ auto_execute_on_load = true
 
 # Use case-insensitive string comparisons by default (recommended for practical use)
 case_insensitive_default = true
+
+# Start mode when loading files: "command" or "results"
+# - "command": Start in command mode (focus on SQL input)
+# - "results": Start in results mode (focus on data, press 'i' to edit query)
+start_mode = "results"
 
 # Maximum rows to display without warning
 max_display_rows = 10000

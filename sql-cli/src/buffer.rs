@@ -130,6 +130,63 @@ impl Default for SearchState {
 
 // ColumnSearchState: MIGRATED to AppStateContainer
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum SelectionMode {
+    Row,
+    Cell,
+    Column,
+}
+
+/// ViewState consolidates all view-related state for a buffer
+/// This is the single source of truth for navigation, selection, and viewport state
+#[derive(Clone, Debug)]
+pub struct ViewState {
+    // Position
+    pub crosshair_row: usize,
+    pub crosshair_col: usize,
+    pub scroll_offset: (usize, usize),
+
+    // Selection
+    pub selection_mode: SelectionMode,
+    pub selected_cells: Vec<(usize, usize)>,
+    pub selection_anchor: Option<(usize, usize)>,
+
+    // Viewport config
+    pub viewport_lock: bool,
+    pub cursor_lock: bool,
+
+    // Navigation history
+    pub navigation_history: Vec<(usize, usize)>,
+    pub history_index: usize,
+
+    // Viewport dimensions (cached from last render)
+    pub viewport_rows: usize,
+    pub viewport_columns: usize,
+    pub total_rows: usize,
+    pub total_columns: usize,
+}
+
+impl Default for ViewState {
+    fn default() -> Self {
+        Self {
+            crosshair_row: 0,
+            crosshair_col: 0,
+            scroll_offset: (0, 0),
+            selection_mode: SelectionMode::Row,
+            selected_cells: Vec::new(),
+            selection_anchor: None,
+            viewport_lock: false,
+            cursor_lock: false,
+            navigation_history: Vec::new(),
+            history_index: 0,
+            viewport_rows: 0,
+            viewport_columns: 0,
+            total_rows: 0,
+            total_columns: 0,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ColumnType {
     String,
@@ -371,13 +428,12 @@ pub struct Buffer {
 
     pub column_stats: Option<ColumnStatistics>,
 
-    // --- View State ---
+    // --- View State (Consolidated) ---
+    pub view_state: ViewState,
+
+    // --- Display Options (not navigation-related) ---
     pub column_widths: Vec<u16>,
-    pub scroll_offset: (usize, usize),
-    pub current_column: usize,
     pub compact_mode: bool,
-    pub viewport_lock: bool,
-    pub viewport_lock_row: Option<usize>,
     pub show_row_numbers: bool,
     pub case_insensitive: bool,
 
@@ -547,31 +603,37 @@ impl BufferAPI for Buffer {
 
     // --- Table Navigation ---
     fn get_selected_row(&self) -> Option<usize> {
+        // For backward compatibility, check if table_state has a selection
+        // This maintains the old API behavior where None means no selection
         self.table_state.selected()
     }
 
     fn set_selected_row(&mut self, row: Option<usize>) {
         if let Some(r) = row {
+            self.view_state.crosshair_row = r;
+            // Also update table_state for compatibility during migration
             self.table_state.select(Some(r));
         } else {
+            // When setting to None, reset crosshair to 0 but clear table selection
+            self.view_state.crosshair_row = 0;
             self.table_state.select(None);
         }
     }
 
     fn get_current_column(&self) -> usize {
-        self.current_column
+        self.view_state.crosshair_col
     }
 
     fn set_current_column(&mut self, col: usize) {
-        self.current_column = col;
+        self.view_state.crosshair_col = col;
     }
 
     fn get_scroll_offset(&self) -> (usize, usize) {
-        self.scroll_offset
+        self.view_state.scroll_offset
     }
 
     fn set_scroll_offset(&mut self, offset: (usize, usize)) {
-        self.scroll_offset = offset;
+        self.view_state.scroll_offset = offset;
     }
 
     fn get_last_results_row(&self) -> Option<usize> {
@@ -725,19 +787,28 @@ impl BufferAPI for Buffer {
     }
 
     fn is_viewport_lock(&self) -> bool {
-        self.viewport_lock
+        self.view_state.viewport_lock
     }
 
     fn set_viewport_lock(&mut self, locked: bool) {
-        self.viewport_lock = locked;
+        self.view_state.viewport_lock = locked;
     }
 
     fn get_viewport_lock_row(&self) -> Option<usize> {
-        self.viewport_lock_row
+        // Return current crosshair row when viewport is locked
+        if self.view_state.viewport_lock {
+            Some(self.view_state.crosshair_row)
+        } else {
+            None
+        }
     }
 
     fn set_viewport_lock_row(&mut self, row: Option<usize>) {
-        self.viewport_lock_row = row;
+        // When setting viewport lock row, update the crosshair position
+        if let Some(r) = row {
+            self.view_state.crosshair_row = r;
+            self.view_state.viewport_lock = true;
+        }
     }
 
     fn get_column_widths(&self) -> &Vec<u16> {
@@ -972,8 +1043,14 @@ impl BufferAPI for Buffer {
             "Selected Row: {:?}\n",
             self.table_state.selected()
         ));
-        output.push_str(&format!("Current Column: {}\n", self.current_column));
-        output.push_str(&format!("Scroll Offset: {:?}\n", self.scroll_offset));
+        output.push_str(&format!(
+            "Current Column: {}\n",
+            self.view_state.crosshair_col
+        ));
+        output.push_str(&format!(
+            "Scroll Offset: {:?}\n",
+            self.view_state.scroll_offset
+        ));
         output.push_str("\n--- Filtering ---\n");
         output.push_str(&format!("Filter Active: {}\n", self.filter_state.active));
         output.push_str(&format!(
@@ -1029,11 +1106,7 @@ impl BufferAPI for Buffer {
             output.push_str("Pinned Columns: []\n");
         }
         output.push_str(&format!("Column Widths: {:?}\n", self.column_widths));
-        output.push_str(&format!("Viewport Lock: {}\n", self.viewport_lock));
-        output.push_str(&format!(
-            "Viewport Lock Row: {:?}\n",
-            self.viewport_lock_row
-        ));
+        output.push_str(&format!("ViewState: {:?}\n", self.view_state));
         output.push_str("\n--- Data Source ---\n");
         output.push_str("Legacy CSV/Cache fields removed - using DataTable/DataView\n");
         output.push_str("\n--- Undo/Redo ---\n");
@@ -1149,7 +1222,7 @@ impl BufferAPI for Buffer {
         // DataView handles filtering
         self.table_state.select(None);
         self.last_results_row = None;
-        self.scroll_offset = (0, 0);
+        self.view_state.scroll_offset = (0, 0);
         self.last_scroll_offset = (0, 0);
         self.column_widths.clear();
         self.status_message = "Results cleared".to_string();
@@ -1196,12 +1269,9 @@ impl Buffer {
             // column_search_state: MIGRATED to AppStateContainer
             column_stats: None,
 
+            view_state: ViewState::default(),
             column_widths: Vec::new(),
-            scroll_offset: (0, 0),
-            current_column: 0,
             compact_mode: false,
-            viewport_lock: false,
-            viewport_lock_row: None,
             show_row_numbers: false,
             case_insensitive: false,
 
@@ -1547,13 +1617,10 @@ impl Clone for Buffer {
             fuzzy_filter_state: self.fuzzy_filter_state.clone(),
             search_state: self.search_state.clone(),
             // column_search_state: MIGRATED to AppStateContainer
-            column_widths: self.column_widths.clone(),
-            scroll_offset: self.scroll_offset,
-            current_column: self.current_column,
             column_stats: self.column_stats.clone(),
+            view_state: self.view_state.clone(),
+            column_widths: self.column_widths.clone(),
             compact_mode: self.compact_mode,
-            viewport_lock: self.viewport_lock,
-            viewport_lock_row: self.viewport_lock_row,
             show_row_numbers: self.show_row_numbers,
             case_insensitive: self.case_insensitive,
             undo_stack: self.undo_stack.clone(),

@@ -61,17 +61,18 @@ impl HelpText {
             Line::from("  Alt+[    - Jump to previous SQL token"),
             Line::from("  Alt+]    - Jump to next SQL token"),
             Line::from(""),
-            Line::from("BUFFER MANAGEMENT").style(
+            Line::from("BUFFER MANAGEMENT (works in Command & Results modes)").style(
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ),
             Line::from("  F11/Ctrl+PgUp - Previous buffer"),
             Line::from("  F12/Ctrl+PgDn - Next buffer"),
-            Line::from("  Ctrl+6        - Quick switch"),
+            Line::from("  Ctrl+6        - Quick switch (toggle last two)"),
             Line::from("  Alt+N         - New buffer"),
             Line::from("  Alt+W         - Close buffer"),
             Line::from("  Alt+B         - List buffers"),
+            Line::from("  Alt+1-9       - Switch to buffer N"),
             Line::from(""),
             Line::from("VIEW MODES").style(
                 Style::default()
