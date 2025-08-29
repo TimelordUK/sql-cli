@@ -295,7 +295,8 @@ impl Default for ColumnWidthCalculator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::{DataColumn, DataRow, DataTable, DataValue};
+    use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
+    use std::sync::Arc;
 
     fn create_test_dataview() -> DataView {
         let mut table = DataTable::new("test");
