@@ -3106,18 +3106,20 @@ impl EnhancedTuiApp {
                     debug!(target: "buffer", "Returning to Results mode, preserving last_query: '{}'",
                            self.state_container.get_last_query());
 
-                    // IMPORTANT: Restore the saved SQL to input_text!
-                    // This is the SQL that was saved when we entered the search mode
-                    if !sql.is_empty() {
-                        debug!(target: "search", "Restoring saved SQL to input_text: '{}'", sql);
-                        // Use helper to sync all states
-                        self.set_input_text_with_cursor(sql, cursor);
-                    } else {
-                        debug!(target: "search", "No saved SQL to restore, keeping input_text as is");
-                    }
+                    // IMPORTANT: Always restore the saved SQL to input_text!
+                    // This includes empty strings - we need to clear the search term
+                    debug!(target: "search", "Restoring saved SQL to input_text: '{}'", sql);
+                    // Use helper to sync all states
+                    self.set_input_text_with_cursor(sql, cursor);
                 } else {
-                    // Widget didn't have saved state, but we still need to preserve the SQL
-                    debug!(target: "search", "No saved state from widget, keeping current SQL");
+                    // Widget didn't have saved state - for column search, clear the input
+                    // since it would have the column name
+                    if mode == SearchMode::ColumnSearch {
+                        debug!(target: "search", "Column search: No saved state, clearing input");
+                        self.set_input_text(String::new());
+                    } else {
+                        debug!(target: "search", "No saved state from widget, keeping current SQL");
+                    }
                 }
 
                 // ALWAYS switch back to Results mode after Apply for all search modes
