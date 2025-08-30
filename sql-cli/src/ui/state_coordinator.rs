@@ -337,6 +337,166 @@ impl StateCoordinator {
         Self::sync_mode_with_refs(state_container, shadow_state, mode, trigger);
     }
 
+    // ========== FILTER MANAGEMENT ==========
+
+    /// Apply text filter and coordinate all state updates
+    /// Returns the number of matching rows
+    pub fn apply_text_filter_with_refs(
+        state_container: &mut AppStateContainer,
+        pattern: &str,
+    ) -> usize {
+        let case_insensitive = state_container.is_case_insensitive();
+
+        debug!(
+            "StateCoordinator::apply_text_filter_with_refs: Applying text filter with pattern '{}', case_sensitive: {}",
+            pattern, !case_insensitive
+        );
+
+        // Apply filter to DataView and get results
+        let rows_after = if let Some(dataview) = state_container.get_buffer_dataview_mut() {
+            let rows_before = dataview.row_count();
+            dataview.apply_text_filter(pattern, !case_insensitive);
+            let rows_after = dataview.row_count();
+            debug!(
+                "Text filter: {} rows before, {} rows after",
+                rows_before, rows_after
+            );
+            rows_after
+        } else {
+            debug!("No DataView available for text filtering");
+            0
+        };
+
+        // Update status message
+        let status = if pattern.is_empty() {
+            "Filter cleared".to_string()
+        } else {
+            format!("Filter applied: '{}' - {} matches", pattern, rows_after)
+        };
+        state_container.set_status_message(status);
+
+        debug!(
+            "StateCoordinator: Text filter applied - {} matches for pattern '{}'",
+            rows_after, pattern
+        );
+
+        rows_after
+    }
+
+    /// Apply fuzzy filter and coordinate all state updates
+    /// Returns (match_count, filter_indices)
+    pub fn apply_fuzzy_filter_with_refs(
+        state_container: &mut AppStateContainer,
+        viewport_manager: &RefCell<Option<ViewportManager>>,
+    ) -> (usize, Vec<usize>) {
+        let pattern = state_container.get_fuzzy_filter_pattern();
+        let case_insensitive = state_container.is_case_insensitive();
+
+        debug!(
+            "StateCoordinator::apply_fuzzy_filter_with_refs: Applying fuzzy filter with pattern '{}', case_insensitive: {}",
+            pattern, case_insensitive
+        );
+
+        // Apply filter to DataView and get results
+        let (match_count, indices) =
+            if let Some(dataview) = state_container.get_buffer_dataview_mut() {
+                dataview.apply_fuzzy_filter(&pattern, case_insensitive);
+                let match_count = dataview.row_count();
+                let indices = dataview.get_fuzzy_filter_indices();
+                (match_count, indices)
+            } else {
+                (0, Vec::new())
+            };
+
+        // Update state based on filter results
+        if pattern.is_empty() {
+            state_container.set_fuzzy_filter_active(false);
+            state_container.set_status_message("Fuzzy filter cleared".to_string());
+        } else {
+            state_container.set_fuzzy_filter_active(true);
+            state_container.set_status_message(format!("Fuzzy filter: {} matches", match_count));
+
+            // Reset navigation to first match if we have results
+            if match_count > 0 {
+                // Get current column offset to preserve horizontal scroll
+                let col_offset = state_container.get_scroll_offset().1;
+
+                // Reset to first row of filtered results
+                state_container.set_selected_row(Some(0));
+                state_container.set_scroll_offset((0, col_offset));
+                state_container.set_table_selected_row(Some(0));
+
+                // Update navigation state
+                let mut nav = state_container.navigation_mut();
+                nav.selected_row = 0;
+                nav.scroll_offset.0 = 0;
+
+                // Update ViewportManager if present
+                if let Ok(mut vm_borrow) = viewport_manager.try_borrow_mut() {
+                    if let Some(ref mut vm) = *vm_borrow {
+                        vm.set_crosshair_row(0);
+                        vm.set_scroll_offset(0, col_offset);
+                        debug!(
+                            "StateCoordinator: Reset viewport to first match (row 0) with {} total matches",
+                            match_count
+                        );
+                    }
+                }
+            }
+        }
+
+        debug!(
+            "StateCoordinator: Fuzzy filter applied - {} matches, pattern: '{}'",
+            match_count, pattern
+        );
+
+        (match_count, indices)
+    }
+
+    // ========== TABLE STATE MANAGEMENT ==========
+
+    /// Reset all table-related state to initial values
+    /// This is typically called when switching data sources or after queries
+    pub fn reset_table_state_with_refs(
+        state_container: &mut AppStateContainer,
+        viewport_manager: &RefCell<Option<ViewportManager>>,
+    ) {
+        debug!("StateCoordinator::reset_table_state_with_refs: Resetting all table state");
+
+        // Reset navigation state
+        state_container.navigation_mut().reset();
+        state_container.set_table_selected_row(Some(0));
+        state_container.reset_navigation_state();
+
+        // Reset ViewportManager if it exists
+        if let Ok(mut vm_borrow) = viewport_manager.try_borrow_mut() {
+            if let Some(ref mut vm) = *vm_borrow {
+                vm.reset_crosshair();
+                debug!("StateCoordinator: Reset ViewportManager crosshair position");
+            }
+        }
+
+        // Clear filter state
+        state_container.filter_mut().clear();
+
+        // Clear search state
+        {
+            let mut search = state_container.search_mut();
+            search.pattern.clear();
+            search.current_match = 0;
+            search.matches.clear();
+            search.is_active = false;
+        }
+
+        // Clear fuzzy filter state
+        state_container.clear_fuzzy_filter_state();
+
+        // Clear column search state (added for completeness)
+        state_container.clear_column_search();
+
+        debug!("StateCoordinator: Table state reset complete");
+    }
+
     // ========== DATAVIEW MANAGEMENT ==========
 
     /// Add a new DataView and coordinate all necessary state updates

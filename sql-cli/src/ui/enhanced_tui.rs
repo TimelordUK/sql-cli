@@ -4476,27 +4476,11 @@ impl EnhancedTuiApp {
             pattern,
             std::thread::current().id()
         );
-        let case_insensitive = { self.state_container.is_case_insensitive() };
 
-        if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
-            let rows_before = dataview.row_count();
-            info!("Rows before filter: {}", rows_before);
-
-            dataview.apply_text_filter(pattern, !case_insensitive);
-
-            let rows_after = dataview.row_count();
-            info!("Rows after filter: {}", rows_after);
-
-            let status = if pattern.is_empty() {
-                "Filter cleared".to_string()
-            } else {
-                format!("Filter applied: '{}' - {} matches", pattern, rows_after)
-            };
-            info!("Filter status: {}", status);
-            self.state_container.set_status_message(status);
-        } else {
-            warn!("No DataView available for filtering");
-        }
+        // Delegate state coordination to StateCoordinator
+        use crate::ui::state_coordinator::StateCoordinator;
+        let _rows_after =
+            StateCoordinator::apply_text_filter_with_refs(&mut self.state_container, pattern);
 
         // Update ViewportManager with the filtered DataView
         // Sync the dataview to both managers
@@ -4825,48 +4809,13 @@ impl EnhancedTuiApp {
             "apply_fuzzy_filter called on thread {:?}",
             std::thread::current().id()
         );
-        let pattern = self.state_container.get_fuzzy_filter_pattern();
-        let case_insensitive = self.state_container.is_case_insensitive();
 
-        // Apply filter and get results
-        let (match_count, indices) =
-            if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
-                dataview.apply_fuzzy_filter(&pattern, case_insensitive);
-                let match_count = dataview.row_count();
-                let indices = dataview.get_fuzzy_filter_indices();
-                (match_count, indices)
-            } else {
-                (0, Vec::new())
-            };
-
-        // Update buffer state after releasing the borrow
-        if pattern.is_empty() {
-            self.state_container.set_fuzzy_filter_active(false);
-            self.state_container
-                .set_status_message("Fuzzy filter cleared".to_string());
-        } else {
-            self.state_container.set_fuzzy_filter_active(true);
-            self.state_container
-                .set_status_message(format!("Fuzzy filter: {} matches", match_count));
-
-            // Coordinate viewport with fuzzy filter results
-            // Reset to first match to avoid confusion where last match appears first in viewport
-            if match_count > 0 {
-                // Get current column offset before modifying buffer
-                let col_offset = self.state_container.get_scroll_offset().1;
-
-                // Reset to first row of filtered results
-                self.state_container.set_selected_row(Some(0));
-                self.state_container.set_scroll_offset((0, col_offset));
-
-                // Update navigation state to be consistent
-                self.state_container.set_table_selected_row(Some(0));
-                self.state_container.navigation_mut().scroll_offset.0 = 0;
-
-                debug!(target: "fuzzy_filter",
-                      "Reset viewport to first match: {} total matches", match_count);
-            }
-        }
+        // Delegate all state coordination to StateCoordinator
+        use crate::ui::state_coordinator::StateCoordinator;
+        let (_match_count, indices) = StateCoordinator::apply_fuzzy_filter_with_refs(
+            &mut self.state_container,
+            &self.viewport_manager,
+        );
 
         // Update fuzzy filter indices for compatibility
         self.state_container.set_fuzzy_filter_indices(indices);
@@ -4981,34 +4930,12 @@ impl EnhancedTuiApp {
     }
 
     pub fn reset_table_state(&mut self) {
-        // Reset state container navigation state using the new reset method
-        self.state_container.navigation_mut().reset();
-        self.state_container.set_table_selected_row(Some(0));
-
-        // Reset navigation state using grouped operation
-        self.state_container.reset_navigation_state();
-
-        // Reset ViewportManager if it exists
-        if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
-            viewport_manager.reset_crosshair();
-            debug!("Reset ViewportManager crosshair position");
-        }
-
-        // Clear filter state to prevent old filtered data from persisting
-        // Clear filter state in container
-        self.state_container.filter_mut().clear();
-
-        // Clear search state
-        {
-            let mut search = self.state_container.search_mut();
-            search.pattern = String::new();
-            search.current_match = 0;
-            search.matches = Vec::new();
-            search.is_active = false;
-        }
-
-        // Clear fuzzy filter state to prevent it from persisting across queries
-        self.state_container.clear_fuzzy_filter_state();
+        // Delegate all state reset coordination to StateCoordinator
+        use crate::ui::state_coordinator::StateCoordinator;
+        StateCoordinator::reset_table_state_with_refs(
+            &mut self.state_container,
+            &self.viewport_manager,
+        );
     }
 
     fn update_parser_for_current_buffer(&mut self) {
