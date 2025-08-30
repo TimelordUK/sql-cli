@@ -4,7 +4,7 @@
 //! go through a single interface, properly triggering re-renders.
 
 use crate::data::data_view::DataView;
-use crate::ui::render_state::RenderState;
+use crate::ui::rendering::render_state::RenderState;
 use crate::ui::viewport_manager::ViewportManager;
 use std::sync::Arc;
 use tracing::{debug, info, trace};

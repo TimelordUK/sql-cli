@@ -1,15 +1,15 @@
-/// Rendering module for TUI components
-/// This module contains all the rendering logic extracted from enhanced_tui.rs
-
-pub mod status_line;
+pub mod cell_renderer;
+pub mod render_state;
+pub mod table_render_context;
 pub mod table_renderer;
-pub mod help_renderer;
-pub mod debug_renderer;
-pub mod history_renderer;
+pub mod table_widget_manager;
+pub mod tui_renderer;
+pub mod ui_layout_utils;
 
-// Re-export commonly used items
-pub use status_line::render_status_line;
-pub use table_renderer::render_table_with_provider;
-pub use help_renderer::{render_help, render_help_two_column};
-pub use debug_renderer::{render_debug, render_pretty_query};
-pub use history_renderer::{render_history, render_history_list};
+pub use cell_renderer::CellRenderer;
+pub use render_state::RenderState;
+pub use table_render_context::TableRenderContext;
+pub use table_renderer::render_table;
+pub use table_widget_manager::TableWidgetManager;
+pub use tui_renderer::TuiRenderer;
+pub use ui_layout_utils::*;

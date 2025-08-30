@@ -2,7 +2,7 @@
 
 use crate::buffer::{AppMode, Buffer, FilterState, FuzzyFilterState, SearchState};
 use crate::state::events::{StateChange, StateEvent};
-use crate::ui::shadow_state::SearchType;
+use crate::ui::state::shadow_state::SearchType;
 use tracing::{debug, info};
 
 /// Trait for coordinating state changes

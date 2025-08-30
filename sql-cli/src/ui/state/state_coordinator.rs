@@ -19,7 +19,7 @@ pub struct StateCoordinator {
     pub state_container: AppStateContainer,
 
     /// Shadow state for tracking mode transitions
-    pub shadow_state: Rc<RefCell<crate::ui::shadow_state::ShadowStateManager>>,
+    pub shadow_state: Rc<RefCell<crate::ui::state::shadow_state::ShadowStateManager>>,
 
     /// Viewport manager for display state
     pub viewport_manager: Rc<RefCell<Option<ViewportManager>>>,
@@ -36,7 +36,7 @@ impl StateCoordinator {
     /// Static version of sync_mode that works with references
     pub fn sync_mode_with_refs(
         state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
         mode: AppMode,
         trigger: &str,
     ) {
@@ -76,7 +76,7 @@ impl StateCoordinator {
 
     pub fn new(
         state_container: AppStateContainer,
-        shadow_state: Rc<RefCell<crate::ui::shadow_state::ShadowStateManager>>,
+        shadow_state: Rc<RefCell<crate::ui::state::shadow_state::ShadowStateManager>>,
         viewport_manager: Rc<RefCell<Option<ViewportManager>>>,
         hybrid_parser: HybridParser,
     ) -> Self {
@@ -175,10 +175,10 @@ impl StateCoordinator {
 
         // Also observe the search mode start in shadow state for search-specific tracking
         let search_type = match mode {
-            SearchMode::ColumnSearch => crate::ui::shadow_state::SearchType::Column,
-            SearchMode::Search => crate::ui::shadow_state::SearchType::Data,
+            SearchMode::ColumnSearch => crate::ui::state::shadow_state::SearchType::Column,
+            SearchMode::Search => crate::ui::state::shadow_state::SearchType::Data,
             SearchMode::FuzzyFilter | SearchMode::Filter => {
-                crate::ui::shadow_state::SearchType::Fuzzy
+                crate::ui::state::shadow_state::SearchType::Fuzzy
             }
         };
         self.shadow_state
@@ -214,8 +214,10 @@ impl StateCoordinator {
     /// Static version for delegation pattern with vim search adapter
     pub fn cancel_search_with_refs(
         state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
-        vim_search_adapter: Option<&RefCell<crate::ui::vim_search_adapter::VimSearchAdapter>>,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
+        vim_search_adapter: Option<
+            &RefCell<crate::ui::search::vim_search_adapter::VimSearchAdapter>,
+        >,
     ) {
         debug!("StateCoordinator::cancel_search_with_refs: Canceling search and clearing all search state");
 
@@ -250,7 +252,9 @@ impl StateCoordinator {
     /// Returns true only if there's an active search (not cancelled with Escape)
     pub fn should_handle_next_match(
         state_container: &AppStateContainer,
-        vim_search_adapter: Option<&RefCell<crate::ui::vim_search_adapter::VimSearchAdapter>>,
+        vim_search_adapter: Option<
+            &RefCell<crate::ui::search::vim_search_adapter::VimSearchAdapter>,
+        >,
     ) -> bool {
         // 'n' should only work if there's a search pattern AND it hasn't been cancelled
         let has_search = !state_container.get_search_pattern().is_empty();
@@ -280,7 +284,9 @@ impl StateCoordinator {
     /// Returns true only if there's an active search (not cancelled with Escape)
     pub fn should_handle_previous_match(
         state_container: &AppStateContainer,
-        vim_search_adapter: Option<&RefCell<crate::ui::vim_search_adapter::VimSearchAdapter>>,
+        vim_search_adapter: Option<
+            &RefCell<crate::ui::search::vim_search_adapter::VimSearchAdapter>,
+        >,
     ) -> bool {
         // 'N' should only work if there's a search pattern AND it hasn't been cancelled
         let has_search = !state_container.get_search_pattern().is_empty();
@@ -308,8 +314,10 @@ impl StateCoordinator {
     /// This keeps the pattern for n/N navigation but marks search as complete
     pub fn complete_search_with_refs(
         state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
-        vim_search_adapter: Option<&RefCell<crate::ui::vim_search_adapter::VimSearchAdapter>>,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
+        vim_search_adapter: Option<
+            &RefCell<crate::ui::search::vim_search_adapter::VimSearchAdapter>,
+        >,
         mode: AppMode,
         trigger: &str,
     ) {
@@ -573,7 +581,7 @@ impl StateCoordinator {
     /// This centralizes the complex logic of setting up SQL query state
     pub fn set_sql_query_with_refs(
         state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
         parser: &mut HybridParser,
         table_name: &str,
         raw_table_name: &str,
@@ -641,7 +649,7 @@ impl StateCoordinator {
     /// Returns true if application should exit
     pub fn handle_execute_query_with_refs(
         state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
         query: &str,
     ) -> Result<bool, anyhow::Error> {
         debug!(
@@ -690,7 +698,7 @@ impl StateCoordinator {
     /// Static version for delegation
     pub fn switch_to_results_after_query_with_refs(
         state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
     ) {
         Self::sync_mode_with_refs(
             state_container,
@@ -705,7 +713,7 @@ impl StateCoordinator {
     /// Apply filter search with proper state coordination
     pub fn apply_filter_search_with_refs(
         state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
         pattern: &str,
     ) {
         debug!(
@@ -744,7 +752,7 @@ impl StateCoordinator {
     /// Apply fuzzy filter search with proper state coordination
     pub fn apply_fuzzy_filter_search_with_refs(
         state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
         pattern: &str,
     ) {
         debug!(
@@ -777,7 +785,7 @@ impl StateCoordinator {
     /// Apply column search with proper state coordination
     pub fn apply_column_search_with_refs(
         state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
         pattern: &str,
     ) {
         debug!(
@@ -814,7 +822,7 @@ impl StateCoordinator {
     /// Start history search with proper state transitions
     pub fn start_history_search_with_refs(
         state_container: &mut AppStateContainer,
-        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
         current_input: String,
     ) -> (String, usize) {
         debug!("StateCoordinator::start_history_search_with_refs: Starting history search");
@@ -869,7 +877,9 @@ impl StateCoordinator {
     /// Coordinate goto first row with vim search state
     pub fn goto_first_row_with_refs(
         state_container: &mut AppStateContainer,
-        vim_search_adapter: Option<&RefCell<crate::ui::vim_search_adapter::VimSearchAdapter>>,
+        vim_search_adapter: Option<
+            &RefCell<crate::ui::search::vim_search_adapter::VimSearchAdapter>,
+        >,
         viewport_manager: Option<&RefCell<Option<ViewportManager>>>,
     ) {
         debug!("StateCoordinator::goto_first_row_with_refs: Going to first row");

@@ -1,7 +1,7 @@
 // Navigation key handler
 // Handles all movement-related key events in Results mode
 
-use crate::ui::actions::{Action, NavigateAction};
+use crate::ui::input::actions::{Action, NavigateAction};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub struct NavigationHandler;

@@ -4,7 +4,7 @@ use crossterm::{
 };
 use sql_cli::app_state_container::SelectionMode;
 use sql_cli::buffer::AppMode;
-use sql_cli::ui::actions::{Action, ActionContext};
+use sql_cli::ui::input::actions::{Action, ActionContext};
 use sql_cli::ui::key_handling::{ChordResult, KeyChordHandler, KeyMapper};
 use std::io::{self, Write};
 
@@ -100,7 +100,7 @@ fn main() -> io::Result<()> {
                         io::stdout().flush().unwrap();
 
                         // Check for quit action
-                        if matches!(action, sql_cli::ui::actions::Action::Quit) {
+                        if matches!(action, sql_cli::ui::input::actions::Action::Quit) {
                             break;
                         }
                         continue;

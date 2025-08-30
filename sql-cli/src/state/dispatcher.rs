@@ -122,12 +122,15 @@ impl StateDispatcher {
     }
 
     /// Dispatch a search start event
-    pub fn dispatch_search_start(&mut self, search_type: crate::ui::shadow_state::SearchType) {
+    pub fn dispatch_search_start(
+        &mut self,
+        search_type: crate::ui::state::shadow_state::SearchType,
+    ) {
         self.dispatch(StateEvent::SearchStarted { search_type });
     }
 
     /// Dispatch a search end event
-    pub fn dispatch_search_end(&mut self, search_type: crate::ui::shadow_state::SearchType) {
+    pub fn dispatch_search_end(&mut self, search_type: crate::ui::state::shadow_state::SearchType) {
         self.dispatch(StateEvent::SearchEnded { search_type });
     }
 
@@ -152,13 +155,13 @@ impl StateSubscriber for VimSearchSubscriber {
     fn on_state_event(&mut self, event: &StateEvent, buffer: &Buffer) {
         match event {
             StateEvent::SearchStarted { search_type } => {
-                if matches!(search_type, crate::ui::shadow_state::SearchType::Vim) {
+                if matches!(search_type, crate::ui::state::shadow_state::SearchType::Vim) {
                     info!("VimSearchSubscriber: Activating for vim search");
                     self.active = true;
                 }
             }
             StateEvent::SearchEnded { search_type } => {
-                if matches!(search_type, crate::ui::shadow_state::SearchType::Vim) {
+                if matches!(search_type, crate::ui::state::shadow_state::SearchType::Vim) {
                     info!("VimSearchSubscriber: Deactivating - search ended");
                     self.active = false;
                 }

@@ -13,7 +13,7 @@ use ratatui::{
 };
 use sql_cli::app_state_container::SelectionMode;
 use sql_cli::buffer::AppMode;
-use sql_cli::ui::actions::{Action, ActionContext};
+use sql_cli::ui::input::actions::{Action, ActionContext};
 use sql_cli::ui::key_handling::{ChordResult, KeyChordHandler, KeyMapper};
 use std::collections::VecDeque;
 use std::io;

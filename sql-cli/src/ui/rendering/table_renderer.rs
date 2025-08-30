@@ -2,7 +2,7 @@
 // This is completely decoupled from TUI internals
 
 use crate::app_state_container::SelectionMode;
-use crate::ui::table_render_context::TableRenderContext;
+use crate::ui::rendering::table_render_context::TableRenderContext;
 use ratatui::{
     layout::Constraint,
     prelude::*,

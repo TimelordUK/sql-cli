@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 
 use crate::buffer::AppMode;
-use crate::ui::actions::{Action, ActionContext, CursorPosition, NavigateAction};
+use crate::ui::input::actions::{Action, ActionContext, CursorPosition, NavigateAction};
 
 /// Maps keyboard input to actions based on context
 pub struct KeyMapper {

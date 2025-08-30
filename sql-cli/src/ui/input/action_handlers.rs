@@ -4,7 +4,7 @@
 //! allowing us to break down the massive try_handle_action function into manageable chunks.
 
 use crate::buffer::AppMode;
-use crate::ui::actions::{Action, ActionContext, ActionResult, NavigateAction, YankTarget};
+use crate::ui::input::actions::{Action, ActionContext, ActionResult, NavigateAction, YankTarget};
 use anyhow::Result;
 
 /// Trait for handling groups of related actions
@@ -862,7 +862,7 @@ impl Default for ActionDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::actions::{Action, NavigateAction};
+    use crate::ui::input::actions::{Action, NavigateAction};
 
     // Mock implementation for testing
     struct MockTui {

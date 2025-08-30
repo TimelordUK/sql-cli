@@ -4,9 +4,9 @@ use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, Buffer, BufferAPI};
 use crate::data::data_view::DataView;
 use crate::state::{StateEvent, StateSubscriber};
-use crate::ui::shadow_state::SearchType;
+use crate::ui::search::vim_search_manager::VimSearchManager;
+use crate::ui::state::shadow_state::SearchType;
 use crate::ui::viewport_manager::ViewportManager;
-use crate::ui::vim_search_manager::VimSearchManager;
 use crossterm::event::KeyCode;
 use tracing::{debug, info};
 
@@ -263,7 +263,7 @@ impl VimSearchAdapter {
     pub fn next_match(
         &mut self,
         viewport: &mut ViewportManager,
-    ) -> Option<crate::ui::vim_search_manager::SearchMatch> {
+    ) -> Option<crate::ui::search::vim_search_manager::SearchMatch> {
         self.manager.next_match(viewport)
     }
 
@@ -271,7 +271,7 @@ impl VimSearchAdapter {
     pub fn previous_match(
         &mut self,
         viewport: &mut ViewportManager,
-    ) -> Option<crate::ui::vim_search_manager::SearchMatch> {
+    ) -> Option<crate::ui::search::vim_search_manager::SearchMatch> {
         self.manager.previous_match(viewport)
     }
 
@@ -304,7 +304,7 @@ impl VimSearchAdapter {
     pub fn reset_to_first_match(
         &mut self,
         viewport: &mut ViewportManager,
-    ) -> Option<crate::ui::vim_search_manager::SearchMatch> {
+    ) -> Option<crate::ui::search::vim_search_manager::SearchMatch> {
         self.manager.reset_to_first_match(viewport)
     }
 }

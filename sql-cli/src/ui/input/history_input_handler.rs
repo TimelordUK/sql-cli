@@ -5,7 +5,7 @@
 
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, BufferAPI, BufferManager};
-use crate::ui::shadow_state::ShadowStateManager;
+use crate::ui::state::shadow_state::ShadowStateManager;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::cell::RefCell;
 // Arc import removed - no longer needed
@@ -112,7 +112,7 @@ mod tests {
     use super::*;
     use crate::app_state_container::AppStateContainer;
     use crate::buffer::{AppMode, BufferManager};
-    use crate::ui::shadow_state::ShadowStateManager;
+    use crate::ui::state::shadow_state::ShadowStateManager;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use std::cell::RefCell;
 

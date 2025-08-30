@@ -1,7 +1,7 @@
 use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataTable;
-use crate::ui::enhanced_tui_helpers;
+use crate::ui::utils::enhanced_tui_helpers;
 use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;

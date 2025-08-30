@@ -1,4 +1,4 @@
-use crate::ui::actions::{Action, YankTarget};
+use crate::ui::input::actions::{Action, YankTarget};
 use chrono::Local;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
@@ -93,7 +93,7 @@ impl KeyChordHandler {
     /// Set up default chord mappings
     fn setup_default_chords(&mut self) {
         use crate::buffer::AppMode;
-        use crate::ui::actions::{CursorPosition, SqlClause};
+        use crate::ui::input::actions::{CursorPosition, SqlClause};
 
         // Yank chords - these are the only actual chords in use
         self.register_chord_action("yy", Action::Yank(YankTarget::Row));

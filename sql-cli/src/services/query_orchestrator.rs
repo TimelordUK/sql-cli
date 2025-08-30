@@ -1,7 +1,7 @@
 use crate::app_state_container::AppStateContainer;
 use crate::data::data_view::DataView;
 use crate::services::{QueryExecutionResult, QueryExecutionService};
-use crate::ui::vim_search_adapter::VimSearchAdapter;
+use crate::ui::search::vim_search_adapter::VimSearchAdapter;
 use anyhow::Result;
 use std::cell::RefCell;
 use tracing::info;

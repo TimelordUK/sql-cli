@@ -1,6 +1,6 @@
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::BufferAPI;
-use crate::ui::actions::{Action, YankTarget};
+use crate::ui::input::actions::{Action, YankTarget};
 use crate::yank_manager::YankManager;
 use anyhow::Result;
 use tracing::debug;

@@ -23,21 +23,21 @@ use crate::services::QueryOrchestrator;
 use crate::sql::hybrid_parser::HybridParser;
 use crate::sql_highlighter::SqlHighlighter;
 use crate::state::StateDispatcher;
-use crate::ui::action_handlers::ActionHandlerContext;
-use crate::ui::actions::{Action, ActionContext, ActionResult};
 use crate::ui::debug::DebugContext;
+use crate::ui::input::action_handlers::ActionHandlerContext;
+use crate::ui::input::actions::{Action, ActionContext, ActionResult};
 use crate::ui::key_handling::{
     format_key_for_display, ChordResult, KeyChordHandler, KeyDispatcher, KeyMapper,
     KeyPressIndicator, KeySequenceRenderer,
 };
-use crate::ui::shadow_state::ShadowStateManager;
-use crate::ui::table_widget_manager::TableWidgetManager;
+use crate::ui::rendering::table_widget_manager::TableWidgetManager;
+use crate::ui::search::vim_search_adapter::VimSearchAdapter;
+use crate::ui::state::shadow_state::ShadowStateManager;
 use crate::ui::traits::{
     BufferManagementBehavior, ColumnBehavior, InputBehavior, NavigationBehavior, YankBehavior,
 };
 use crate::ui::viewport::ColumnPackingMode;
 use crate::ui::viewport_manager::{ViewportEfficiency, ViewportManager};
-use crate::ui::vim_search_adapter::VimSearchAdapter;
 use crate::utils::logging::LogRingBuffer;
 use crate::widget_traits::DebugInfoProvider;
 use crate::widgets::debug_widget::DebugWidget;
@@ -119,7 +119,7 @@ pub struct EnhancedTuiApp {
     viewport_efficiency: RefCell<Option<ViewportEfficiency>>,
 
     // Shadow state manager for observing state transitions
-    shadow_state: RefCell<crate::ui::shadow_state::ShadowStateManager>,
+    shadow_state: RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
 
     // Table widget manager for centralized table state/rendering
     table_widget_manager: RefCell<TableWidgetManager>,
@@ -390,7 +390,7 @@ impl EnhancedTuiApp {
     fn sync_mode(&mut self, mode: AppMode, trigger: &str) {
         debug!(target: "column_search_sync", "sync_mode: ENTRY - mode: {:?}, trigger: '{}'", mode, trigger);
         // Delegate to StateCoordinator for centralized sync logic
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
         StateCoordinator::sync_mode_with_refs(
             &mut self.state_container,
             &self.shadow_state,
@@ -477,13 +477,13 @@ impl EnhancedTuiApp {
     /// Calculate the number of data rows available for the table
     /// This accounts for all UI chrome (input area, status bar) and table chrome (header, borders)
     fn calculate_available_data_rows(terminal_height: u16) -> u16 {
-        crate::ui::ui_layout_utils::calculate_available_data_rows(terminal_height)
+        crate::ui::rendering::ui_layout_utils::calculate_available_data_rows(terminal_height)
     }
 
     /// Calculate the number of data rows available for a table area
     /// This accounts only for table chrome (header, borders)
     fn calculate_table_data_rows(table_area_height: u16) -> u16 {
-        crate::ui::ui_layout_utils::calculate_table_data_rows(table_area_height)
+        crate::ui::rendering::ui_layout_utils::calculate_table_data_rows(table_area_height)
     }
 
     // ========== BUFFER MANAGEMENT ==========
@@ -539,7 +539,7 @@ impl EnhancedTuiApp {
     ) -> Result<ActionResult> {
         // First, try the visitor pattern action handlers
         // Create a temporary dispatcher to avoid borrowing conflicts
-        let temp_dispatcher = crate::ui::action_handlers::ActionDispatcher::new();
+        let temp_dispatcher = crate::ui::input::action_handlers::ActionDispatcher::new();
         match temp_dispatcher.dispatch(&action, context, self) {
             Ok(ActionResult::NotHandled) => {
                 // Action not handled by visitor pattern, fall back to existing switch
@@ -704,7 +704,7 @@ impl EnhancedTuiApp {
                 }
             }
             SwitchModeWithCursor(target_mode, cursor_position) => {
-                use crate::ui::actions::{CursorPosition, SqlClause};
+                use crate::ui::input::actions::{CursorPosition, SqlClause};
 
                 // Switch to the target mode
                 self.state_container.set_mode(target_mode.clone());
@@ -872,7 +872,7 @@ impl EnhancedTuiApp {
                 // n key: navigate to next search match only if search is active (not after Escape)
                 debug!(target: "column_search_sync", "NextSearchMatch: 'n' key pressed, checking if search navigation should be handled");
                 // Use StateCoordinator to determine if search navigation should be handled
-                use crate::ui::state_coordinator::StateCoordinator;
+                use crate::ui::state::state_coordinator::StateCoordinator;
                 let should_handle = StateCoordinator::should_handle_next_match(
                     &self.state_container,
                     Some(&self.vim_search_adapter),
@@ -890,7 +890,7 @@ impl EnhancedTuiApp {
             PreviousSearchMatch => {
                 // Shift+N behavior: search navigation only if vim search is active, otherwise toggle row numbers
                 // Use StateCoordinator to determine if search navigation should be handled
-                use crate::ui::state_coordinator::StateCoordinator;
+                use crate::ui::state::state_coordinator::StateCoordinator;
                 if StateCoordinator::should_handle_previous_match(
                     &self.state_container,
                     Some(&self.vim_search_adapter),
@@ -907,7 +907,7 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             StartHistorySearch => {
-                use crate::ui::state_coordinator::StateCoordinator;
+                use crate::ui::state::state_coordinator::StateCoordinator;
 
                 // Get current input before delegating
                 let current_input = self.get_input_text();
@@ -1223,7 +1223,7 @@ impl EnhancedTuiApp {
             },
             viewport_manager: RefCell::new(None), // Will be initialized when DataView is set
             viewport_efficiency: RefCell::new(None),
-            shadow_state: RefCell::new(crate::ui::shadow_state::ShadowStateManager::new()),
+            shadow_state: RefCell::new(crate::ui::state::shadow_state::ShadowStateManager::new()),
             table_widget_manager: RefCell::new(TableWidgetManager::new()),
             query_orchestrator: QueryOrchestrator::new(
                 config.behavior.case_insensitive_default,
@@ -1306,7 +1306,7 @@ impl EnhancedTuiApp {
     /// Add a DataView to the existing TUI (creates a new buffer)
     pub fn add_dataview(&mut self, dataview: DataView, source_name: &str) -> Result<()> {
         // Delegate all the complex state coordination to StateCoordinator
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
 
         StateCoordinator::add_dataview_with_refs(
             &mut self.state_container,
@@ -1334,7 +1334,7 @@ impl EnhancedTuiApp {
 
     /// Pre-populate SQL command with SELECT * FROM table
     pub fn set_sql_query(&mut self, table_name: &str, raw_table_name: &str) {
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
 
         // Delegate all state coordination to StateCoordinator
         let auto_query = StateCoordinator::set_sql_query_with_refs(
@@ -2565,7 +2565,7 @@ impl EnhancedTuiApp {
                 );
 
                 // Use StateCoordinator to handle ALL search cancellation logic
-                use crate::ui::state_coordinator::StateCoordinator;
+                use crate::ui::state::state_coordinator::StateCoordinator;
                 StateCoordinator::cancel_search_with_refs(
                     &mut self.state_container,
                     &self.shadow_state,
@@ -2882,7 +2882,7 @@ impl EnhancedTuiApp {
                 }
             }
             SearchMode::Filter => {
-                use crate::ui::state_coordinator::StateCoordinator;
+                use crate::ui::state::state_coordinator::StateCoordinator;
 
                 // Use StateCoordinator for all state transitions
                 StateCoordinator::apply_filter_search_with_refs(
@@ -2898,7 +2898,7 @@ impl EnhancedTuiApp {
                     self.state_container.get_buffer_dataview().map(|v| v.row_count()).unwrap_or(0));
             }
             SearchMode::FuzzyFilter => {
-                use crate::ui::state_coordinator::StateCoordinator;
+                use crate::ui::state::state_coordinator::StateCoordinator;
 
                 // Use StateCoordinator for all state transitions
                 StateCoordinator::apply_fuzzy_filter_search_with_refs(
@@ -2914,7 +2914,7 @@ impl EnhancedTuiApp {
                 debug!(target: "search", "After apply_fuzzy_filter, matched_indices={}", indices_count);
             }
             SearchMode::ColumnSearch => {
-                use crate::ui::state_coordinator::StateCoordinator;
+                use crate::ui::state::state_coordinator::StateCoordinator;
 
                 debug!(target: "search", "Executing column search with pattern: '{}'", pattern);
 
@@ -2987,10 +2987,10 @@ impl EnhancedTuiApp {
 
         // Also observe the search mode start in shadow state for search-specific tracking
         let search_type = match mode {
-            SearchMode::ColumnSearch => crate::ui::shadow_state::SearchType::Column,
-            SearchMode::Search => crate::ui::shadow_state::SearchType::Data,
+            SearchMode::ColumnSearch => crate::ui::state::shadow_state::SearchType::Column,
+            SearchMode::Search => crate::ui::state::shadow_state::SearchType::Data,
             SearchMode::FuzzyFilter | SearchMode::Filter => {
-                crate::ui::shadow_state::SearchType::Fuzzy
+                crate::ui::state::shadow_state::SearchType::Fuzzy
             }
         };
         self.shadow_state
@@ -3180,7 +3180,7 @@ impl EnhancedTuiApp {
                 }
 
                 // ALWAYS switch back to Results mode after Apply for all search modes
-                use crate::ui::state_coordinator::StateCoordinator;
+                use crate::ui::state::state_coordinator::StateCoordinator;
 
                 // For column search, we cancel completely (no n/N navigation)
                 // For regular search, we complete but keep pattern for n/N
@@ -3283,7 +3283,7 @@ impl EnhancedTuiApp {
 
                 // Use StateCoordinator to properly cancel search and restore state
                 // StateCoordinator handles clearing vim search adapter too
-                use crate::ui::state_coordinator::StateCoordinator;
+                use crate::ui::state::state_coordinator::StateCoordinator;
                 StateCoordinator::cancel_search_with_refs(
                     &mut self.state_container,
                     &self.shadow_state,
@@ -3304,7 +3304,7 @@ impl EnhancedTuiApp {
                         debug!(target: "search", "WARNING: Mode mismatch - fixing");
                         self.state_container.set_mode(AppMode::ColumnSearch);
                         self.shadow_state.borrow_mut().observe_search_start(
-                            crate::ui::shadow_state::SearchType::Column,
+                            crate::ui::state::shadow_state::SearchType::Column,
                             "column_search_mode_fix_next",
                         );
                     }
@@ -3327,7 +3327,7 @@ impl EnhancedTuiApp {
                         debug!(target: "search", "WARNING: Mode mismatch - fixing");
                         self.state_container.set_mode(AppMode::ColumnSearch);
                         self.shadow_state.borrow_mut().observe_search_start(
-                            crate::ui::shadow_state::SearchType::Column,
+                            crate::ui::state::shadow_state::SearchType::Column,
                             "column_search_mode_fix_prev",
                         );
                     }
@@ -3382,7 +3382,7 @@ impl EnhancedTuiApp {
 
         let result = match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                crate::ui::history_input_handler::HistoryInputResult::Exit
+                crate::ui::input::history_input_handler::HistoryInputResult::Exit
             }
             KeyCode::Esc => {
                 // Cancel history search and restore original input
@@ -3395,10 +3395,9 @@ impl EnhancedTuiApp {
                     );
                     buffer.set_status_message("History search cancelled".to_string());
                 }
-                crate::ui::history_input_handler::HistoryInputResult::SwitchToCommand(Some((
-                    original_input,
-                    0,
-                )))
+                crate::ui::input::history_input_handler::HistoryInputResult::SwitchToCommand(Some(
+                    (original_input, 0),
+                ))
             }
             KeyCode::Enter => {
                 // Accept the selected history command
@@ -3414,50 +3413,52 @@ impl EnhancedTuiApp {
                         );
                     }
                     // Return command with cursor at the beginning for better visibility
-                    crate::ui::history_input_handler::HistoryInputResult::SwitchToCommand(Some((
-                        command, 0,
-                    )))
+                    crate::ui::input::history_input_handler::HistoryInputResult::SwitchToCommand(
+                        Some((command, 0)),
+                    )
                 } else {
-                    crate::ui::history_input_handler::HistoryInputResult::Continue
+                    crate::ui::input::history_input_handler::HistoryInputResult::Continue
                 }
             }
             KeyCode::Up => {
                 self.state_container.history_search_previous();
-                crate::ui::history_input_handler::HistoryInputResult::Continue
+                crate::ui::input::history_input_handler::HistoryInputResult::Continue
             }
             KeyCode::Down => {
                 self.state_container.history_search_next();
-                crate::ui::history_input_handler::HistoryInputResult::Continue
+                crate::ui::input::history_input_handler::HistoryInputResult::Continue
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Ctrl+R cycles through matches
                 self.state_container.history_search_next();
-                crate::ui::history_input_handler::HistoryInputResult::Continue
+                crate::ui::input::history_input_handler::HistoryInputResult::Continue
             }
             KeyCode::Backspace => {
                 self.state_container.history_search_backspace();
-                crate::ui::history_input_handler::HistoryInputResult::Continue
+                crate::ui::input::history_input_handler::HistoryInputResult::Continue
             }
             KeyCode::Char(c) => {
                 self.state_container.history_search_add_char(c);
-                crate::ui::history_input_handler::HistoryInputResult::Continue
+                crate::ui::input::history_input_handler::HistoryInputResult::Continue
             }
-            _ => crate::ui::history_input_handler::HistoryInputResult::Continue,
+            _ => crate::ui::input::history_input_handler::HistoryInputResult::Continue,
         };
 
         // Handle the result
         match result {
-            crate::ui::history_input_handler::HistoryInputResult::Exit => return Ok(true),
-            crate::ui::history_input_handler::HistoryInputResult::SwitchToCommand(input_data) => {
+            crate::ui::input::history_input_handler::HistoryInputResult::Exit => return Ok(true),
+            crate::ui::input::history_input_handler::HistoryInputResult::SwitchToCommand(
+                input_data,
+            ) => {
                 if let Some((text, cursor_pos)) = input_data {
                     self.set_input_text_with_cursor(text, cursor_pos);
                     // Sync to ensure scroll is reset properly
                     self.sync_all_input_states();
                 }
             }
-            crate::ui::history_input_handler::HistoryInputResult::Continue => {
+            crate::ui::input::history_input_handler::HistoryInputResult::Continue => {
                 // Update history matches if needed
-                if crate::ui::history_input_handler::key_updates_search(key) {
+                if crate::ui::input::history_input_handler::key_updates_search(key) {
                     self.update_history_matches_in_container();
                 }
             }
@@ -3491,13 +3492,13 @@ impl EnhancedTuiApp {
 
     fn handle_debug_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Create context and delegate to extracted handler
-        let mut ctx = crate::ui::input_handlers::DebugInputContext {
+        let mut ctx = crate::ui::input::input_handlers::DebugInputContext {
             buffer_manager: self.state_container.buffers_mut(),
             debug_widget: &mut self.debug_widget,
             shadow_state: &self.shadow_state,
         };
 
-        let should_quit = crate::ui::input_handlers::handle_debug_input(&mut ctx, key)?;
+        let should_quit = crate::ui::input::input_handlers::handle_debug_input(&mut ctx, key)?;
 
         // If the extracted handler didn't handle these special keys, we still do them here
         // (until we can extract yank operations too)
@@ -3521,13 +3522,13 @@ impl EnhancedTuiApp {
 
     fn handle_pretty_query_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Create context and delegate to extracted handler
-        let mut ctx = crate::ui::input_handlers::DebugInputContext {
+        let mut ctx = crate::ui::input::input_handlers::DebugInputContext {
             buffer_manager: self.state_container.buffers_mut(),
             debug_widget: &mut self.debug_widget,
             shadow_state: &self.shadow_state,
         };
 
-        crate::ui::input_handlers::handle_pretty_query_input(&mut ctx, key)
+        crate::ui::input::input_handlers::handle_pretty_query_input(&mut ctx, key)
     }
 
     pub fn execute_query_v2(&mut self, query: &str) -> Result<()> {
@@ -3660,7 +3661,7 @@ impl EnhancedTuiApp {
     /// Apply a completion suggestion to the input
     fn apply_completion_to_input(&mut self, query: &str, cursor_pos: usize, suggestion: &str) {
         let partial_word =
-            crate::ui::text_operations::extract_partial_word_at_cursor(query, cursor_pos);
+            crate::ui::utils::text_operations::extract_partial_word_at_cursor(query, cursor_pos);
 
         if let Some(partial) = partial_word {
             self.apply_partial_completion(query, cursor_pos, &partial, suggestion);
@@ -3678,7 +3679,7 @@ impl EnhancedTuiApp {
         suggestion: &str,
     ) {
         // Use extracted completion logic
-        let result = crate::ui::text_operations::apply_completion_to_text(
+        let result = crate::ui::utils::text_operations::apply_completion_to_text(
             query, cursor_pos, partial, suggestion,
         );
 
@@ -3935,7 +3936,7 @@ impl EnhancedTuiApp {
     }
 
     fn check_parser_error(&self, query: &str) -> Option<String> {
-        crate::ui::simple_operations::check_parser_error(query)
+        crate::ui::operations::simple_operations::check_parser_error(query)
     }
 
     fn update_viewport_size(&mut self) {
@@ -4118,7 +4119,7 @@ impl EnhancedTuiApp {
 
         // Observe search start
         self.shadow_state.borrow_mut().observe_search_start(
-            crate::ui::shadow_state::SearchType::Vim,
+            crate::ui::state::shadow_state::SearchType::Vim,
             "slash_key_pressed",
         );
 
@@ -4478,7 +4479,7 @@ impl EnhancedTuiApp {
         );
 
         // Delegate state coordination to StateCoordinator
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
         let _rows_after =
             StateCoordinator::apply_text_filter_with_refs(&mut self.state_container, pattern);
 
@@ -4811,7 +4812,7 @@ impl EnhancedTuiApp {
         );
 
         // Delegate all state coordination to StateCoordinator
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
         let (_match_count, indices) = StateCoordinator::apply_fuzzy_filter_with_refs(
             &mut self.state_container,
             &self.viewport_manager,
@@ -4931,7 +4932,7 @@ impl EnhancedTuiApp {
 
     pub fn reset_table_state(&mut self) {
         // Delegate all state reset coordination to StateCoordinator
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
         StateCoordinator::reset_table_state_with_refs(
             &mut self.state_container,
             &self.viewport_manager,
@@ -4943,7 +4944,7 @@ impl EnhancedTuiApp {
         self.sync_all_input_states();
 
         // Delegate parser update to StateCoordinator
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
         StateCoordinator::update_parser_with_refs(&self.state_container, &mut self.hybrid_parser);
     }
 
@@ -5036,17 +5037,17 @@ impl EnhancedTuiApp {
 
     fn export_to_csv(&mut self) {
         let result = {
-            let ctx = crate::ui::data_export_operations::DataExportContext {
+            let ctx = crate::ui::operations::data_export_operations::DataExportContext {
                 data_provider: self.get_data_provider(),
             };
-            crate::ui::data_export_operations::export_to_csv(&ctx)
+            crate::ui::operations::data_export_operations::export_to_csv(&ctx)
         };
 
         match result {
-            crate::ui::data_export_operations::ExportResult::Success(message) => {
+            crate::ui::operations::data_export_operations::ExportResult::Success(message) => {
                 self.set_status_message(message);
             }
-            crate::ui::data_export_operations::ExportResult::Error(error) => {
+            crate::ui::operations::data_export_operations::ExportResult::Error(error) => {
                 self.set_error_status("Export failed", error);
             }
         }
@@ -5137,17 +5138,17 @@ impl EnhancedTuiApp {
     fn export_to_json(&mut self) {
         // TODO: Handle filtered data in future DataView implementation
         let result = {
-            let ctx = crate::ui::data_export_operations::DataExportContext {
+            let ctx = crate::ui::operations::data_export_operations::DataExportContext {
                 data_provider: self.get_data_provider(),
             };
-            crate::ui::data_export_operations::export_to_json(&ctx)
+            crate::ui::operations::data_export_operations::export_to_json(&ctx)
         };
 
         match result {
-            crate::ui::data_export_operations::ExportResult::Success(message) => {
+            crate::ui::operations::data_export_operations::ExportResult::Success(message) => {
                 self.set_status_message(message);
             }
-            crate::ui::data_export_operations::ExportResult::Error(error) => {
+            crate::ui::operations::data_export_operations::ExportResult::Error(error) => {
                 self.set_error_status("Export failed", error);
             }
         }
@@ -5179,19 +5180,19 @@ impl EnhancedTuiApp {
     }
 
     fn get_cursor_token_position(&self) -> (usize, usize) {
-        let ctx = crate::ui::simple_operations::TextNavigationContext {
+        let ctx = crate::ui::operations::simple_operations::TextNavigationContext {
             query: &self.get_input_text(),
             cursor_pos: self.get_input_cursor(),
         };
-        crate::ui::simple_operations::get_cursor_token_position(&ctx)
+        crate::ui::operations::simple_operations::get_cursor_token_position(&ctx)
     }
 
     fn get_token_at_cursor(&self) -> Option<String> {
-        let ctx = crate::ui::simple_operations::TextNavigationContext {
+        let ctx = crate::ui::operations::simple_operations::TextNavigationContext {
             query: &self.get_input_text(),
             cursor_pos: self.get_input_cursor(),
         };
-        crate::ui::simple_operations::get_token_at_cursor(&ctx)
+        crate::ui::operations::simple_operations::get_token_at_cursor(&ctx)
     }
 
     /// Debug method to dump current buffer state (disabled to prevent TUI corruption)
@@ -5757,8 +5758,8 @@ impl EnhancedTuiApp {
         &self,
         area: Rect,
         provider: &dyn DataProvider,
-    ) -> crate::ui::table_render_context::TableRenderContext {
-        use crate::ui::table_render_context::TableRenderContextBuilder;
+    ) -> crate::ui::rendering::table_render_context::TableRenderContext {
+        use crate::ui::rendering::table_render_context::TableRenderContextBuilder;
 
         let row_count = provider.get_row_count();
         let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH) as u16;
@@ -5910,7 +5911,7 @@ impl EnhancedTuiApp {
         let context = self.build_table_context(area, provider);
 
         // Use the pure table renderer
-        crate::ui::table_renderer::render_table(f, area, &context);
+        crate::ui::rendering::table_renderer::render_table(f, area, &context);
     }
 
     fn render_help(&mut self, f: &mut Frame, area: Rect) {
@@ -6173,13 +6174,13 @@ impl EnhancedTuiApp {
 
     fn handle_column_stats_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Create context and delegate to extracted handler
-        let mut ctx = crate::ui::input_handlers::StatsInputContext {
+        let mut ctx = crate::ui::input::input_handlers::StatsInputContext {
             buffer_manager: self.state_container.buffers_mut(),
             stats_widget: &mut self.stats_widget,
             shadow_state: &self.shadow_state,
         };
 
-        let result = crate::ui::input_handlers::handle_column_stats_input(&mut ctx, key)?;
+        let result = crate::ui::input::input_handlers::handle_column_stats_input(&mut ctx, key)?;
 
         // Check if mode changed to Results (happens when stats view is closed)
         if self.shadow_state.borrow().get_mode() == AppMode::Results {
@@ -6223,7 +6224,7 @@ impl EnhancedTuiApp {
     // These methods handle the actions returned by the editor widget
 
     fn handle_execute_query(&mut self) -> Result<bool> {
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
 
         let query = self.get_input_text().trim().to_string();
         debug!(target: "action", "Executing query: {}", query);
@@ -6590,7 +6591,7 @@ impl EnhancedTuiApp {
 
     /// Extract time in milliseconds from a timing string
     pub(crate) fn debug_extract_timing(&self, s: &str) -> Option<f64> {
-        crate::ui::ui_layout_utils::extract_timing_from_debug_string(s)
+        crate::ui::rendering::ui_layout_utils::extract_timing_from_debug_string(s)
     }
 
     fn show_pretty_query(&mut self) {
@@ -6801,7 +6802,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn goto_first_row(&mut self) {
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
 
         // Always perform the normal goto first row behavior
         <Self as NavigationBehavior>::goto_first_row(self);
@@ -6815,7 +6816,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn goto_last_row(&mut self) {
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
 
         // Perform the normal goto last row behavior
         <Self as NavigationBehavior>::goto_last_row(self);
@@ -6833,7 +6834,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn goto_row(&mut self, row: usize) {
-        use crate::ui::state_coordinator::StateCoordinator;
+        use crate::ui::state::state_coordinator::StateCoordinator;
 
         // Perform the normal goto line behavior
         <Self as NavigationBehavior>::goto_line(self, row + 1); // Convert to 1-indexed

@@ -1,7 +1,7 @@
 //! State events and changes
 
 use crate::buffer::{AppMode, FilterState, FuzzyFilterState, SearchState};
-use crate::ui::shadow_state::SearchType;
+use crate::ui::state::shadow_state::SearchType;
 
 /// Events that can trigger state changes
 #[derive(Debug, Clone)]

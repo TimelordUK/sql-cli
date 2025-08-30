@@ -5,7 +5,7 @@
 
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, Buffer, BufferAPI, BufferManager};
-use crate::ui::shadow_state::ShadowStateManager;
+use crate::ui::state::shadow_state::ShadowStateManager;
 use crate::ui::viewport_manager::ViewportManager;
 use crate::widgets::debug_widget::DebugWidget;
 use std::cell::RefCell;

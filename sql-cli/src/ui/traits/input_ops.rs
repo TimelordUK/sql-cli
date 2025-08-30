@@ -1,7 +1,7 @@
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, BufferAPI, BufferManager, EditMode};
 use crate::cursor_manager::CursorManager;
-use crate::ui::text_operations::{self, CursorMovementResult, TextOperationResult};
+use crate::ui::utils::text_operations::{self, CursorMovementResult, TextOperationResult};
 // Arc import removed - no longer needed
 
 /// Trait that provides input operation behavior for TUI components

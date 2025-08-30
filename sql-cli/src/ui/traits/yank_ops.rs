@@ -1,7 +1,7 @@
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::BufferAPI;
 use crate::handlers::YankHandler;
-use crate::ui::actions::{Action, YankTarget};
+use crate::ui::input::actions::{Action, YankTarget};
 // Arc import removed - no longer needed
 
 /// Trait that provides yank operation behavior for TUI components

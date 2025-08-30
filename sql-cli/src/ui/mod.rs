@@ -2,36 +2,17 @@
 //!
 //! This module contains the main TUI application and related UI components.
 
-pub mod action_handlers;
-pub mod actions;
 pub mod behaviors;
-pub mod cell_renderer;
-pub mod column_utils;
-pub mod data_export_operations;
 pub mod debug;
 pub mod enhanced_tui;
-pub mod enhanced_tui_helpers;
-pub mod history_input_handler;
-pub mod input_handlers;
+pub mod input;
 pub mod key_handling;
-pub mod query_engine_integration;
-pub mod render_state;
-pub mod scroll_utils;
-pub mod search_operations;
-pub mod shadow_state;
-pub mod simple_operations;
-pub mod state_coordinator;
-pub mod table_render_context;
-pub mod table_renderer;
-pub mod table_widget_manager;
-pub mod text_operations;
-pub mod text_utils;
+pub mod operations;
+pub mod rendering;
+pub mod search;
+pub mod state;
 pub mod traits;
 pub mod tui_app;
-pub mod tui_renderer;
-pub mod tui_state;
-pub mod ui_layout_utils;
+pub mod utils;
 pub mod viewport;
 pub mod viewport_manager;
-pub mod vim_search_adapter;
-pub mod vim_search_manager;
