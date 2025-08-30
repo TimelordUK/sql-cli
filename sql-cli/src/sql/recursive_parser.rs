@@ -682,11 +682,12 @@ impl Parser {
     fn parse_select_items(&mut self) -> Result<Vec<SelectItem>, String> {
         let mut items = Vec::new();
 
-        if matches!(self.current_token, Token::Star) {
-            items.push(SelectItem::Star);
-            self.advance();
-        } else {
-            loop {
+        loop {
+            // Check for * first
+            if matches!(self.current_token, Token::Star) {
+                items.push(SelectItem::Star);
+                self.advance();
+            } else {
                 // Parse expression or column
                 let expr = self.parse_additive()?; // Use additive to support arithmetic
 
@@ -727,12 +728,13 @@ impl Parser {
                 };
 
                 items.push(item);
+            }
 
-                if matches!(self.current_token, Token::Comma) {
-                    self.advance();
-                } else {
-                    break;
-                }
+            // Check for comma to continue
+            if matches!(self.current_token, Token::Comma) {
+                self.advance();
+            } else {
+                break;
             }
         }
 

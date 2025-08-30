@@ -179,14 +179,26 @@ impl QueryEngine {
         // But this table is only used for the current query result
         let mut computed_table = DataTable::new("query_result");
 
-        // Add columns based on SelectItems
+        // First, expand any Star selectors to actual columns
+        let mut expanded_items = Vec::new();
         for item in select_items {
+            match item {
+                SelectItem::Star => {
+                    // Expand * to all columns from source table
+                    for col_name in source_table.column_names() {
+                        expanded_items.push(SelectItem::Column(col_name));
+                    }
+                }
+                _ => expanded_items.push(item.clone()),
+            }
+        }
+
+        // Add columns based on expanded SelectItems
+        for item in &expanded_items {
             let column_name = match item {
                 SelectItem::Column(name) => name.clone(),
                 SelectItem::Expression { alias, .. } => alias.clone(),
-                SelectItem::Star => {
-                    return Err(anyhow::anyhow!("Star selector mixed with other items"))
-                }
+                SelectItem::Star => unreachable!("Star should have been expanded"),
             };
             computed_table.add_column(DataColumn::new(&column_name));
         }
@@ -197,7 +209,7 @@ impl QueryEngine {
         for &row_idx in visible_rows {
             let mut row_values = Vec::new();
 
-            for item in select_items {
+            for item in &expanded_items {
                 let value = match item {
                     SelectItem::Column(col_name) => {
                         // Simple column reference
@@ -215,7 +227,7 @@ impl QueryEngine {
                         // Computed expression
                         evaluator.evaluate(expr, row_idx)?
                     }
-                    SelectItem::Star => unreachable!("Star handled above"),
+                    SelectItem::Star => unreachable!("Star should have been expanded"),
                 };
                 row_values.push(value);
             }
@@ -249,9 +261,10 @@ impl QueryEngine {
                     indices.push(index);
                 }
                 SelectItem::Star => {
-                    return Err(anyhow::anyhow!(
-                        "Star selector not supported in this context"
-                    ));
+                    // Expand * to all column indices
+                    for i in 0..table_columns.len() {
+                        indices.push(i);
+                    }
                 }
                 SelectItem::Expression { .. } => {
                     return Err(anyhow::anyhow!(
