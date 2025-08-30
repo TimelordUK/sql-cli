@@ -2585,11 +2585,33 @@ impl EnhancedTuiApp {
     }
 
     fn handle_results_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
-        // Simple fix: If Escape is pressed and there's an active search, clear it
-        if key.code == KeyCode::Esc && !self.state_container.get_search_pattern().is_empty() {
-            info!("Escape pressed in Results mode with active search - clearing search");
+        // Check if vim search is active/navigating
+        let is_vim_navigating = self.vim_search_adapter.borrow().is_navigating();
+        let has_search_pattern = !self.state_container.get_search_pattern().is_empty();
+
+        // If Escape is pressed and there's an active search or vim navigation, handle it properly
+        if key.code == KeyCode::Esc && (is_vim_navigating || has_search_pattern) {
+            info!("Escape pressed in Results mode with active search/navigation - properly clearing and syncing");
+
+            // Clear vim search navigation state
+            if is_vim_navigating {
+                self.vim_search_adapter.borrow_mut().exit_navigation();
+            }
+
+            // Clear search pattern
             self.state_container.set_search_pattern(String::new());
             self.state_container.clear_search();
+
+            // Use StateCoordinator to properly sync mode to Results
+            // This ensures we stay in Results mode and all state is synchronized
+            use crate::ui::state_coordinator::StateCoordinator;
+            StateCoordinator::sync_mode_with_refs(
+                &mut self.state_container,
+                &self.shadow_state,
+                AppMode::Results,
+                "vim_search_cancelled",
+            );
+
             self.state_container
                 .set_status_message("Search cleared".to_string());
             return Ok(false);
@@ -3155,10 +3177,8 @@ impl EnhancedTuiApp {
                 }
 
                 // ALWAYS switch back to Results mode after Apply for all search modes
-                self.state_container.set_mode(AppMode::Results);
-                self.shadow_state
-                    .borrow_mut()
-                    .observe_mode_change(AppMode::Results, "filter_applied");
+                // Use sync_mode to ensure proper synchronization
+                self.sync_mode(AppMode::Results, "filter_applied");
 
                 // Show status message
                 let filter_msg = match mode {
