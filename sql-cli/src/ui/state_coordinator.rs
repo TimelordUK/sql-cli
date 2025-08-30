@@ -404,11 +404,318 @@ impl StateCoordinator {
         Ok(())
     }
 
+    // ========== QUERY MANAGEMENT ==========
+
+    /// Set SQL query and update all related state
+    /// This centralizes the complex logic of setting up SQL query state
+    pub fn set_sql_query_with_refs(
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        parser: &mut HybridParser,
+        table_name: &str,
+        raw_table_name: &str,
+        config: &Config,
+    ) -> String {
+        debug!(
+            "StateCoordinator::set_sql_query_with_refs: Setting query for table '{}'",
+            table_name
+        );
+
+        // Create the initial SQL query
+        let auto_query = format!("SELECT * FROM {}", table_name);
+
+        // Update the hybrid parser with the table information
+        if let Some(dataview) = state_container
+            .buffers()
+            .current()
+            .and_then(|b| b.get_dataview())
+        {
+            let columns = dataview.column_names();
+            parser.update_single_table(table_name.to_string(), columns);
+
+            // Set status message
+            let display_msg = if raw_table_name != table_name {
+                format!(
+                    "Loaded '{}' as table '{}' with {} columns. Query pre-populated.",
+                    raw_table_name,
+                    table_name,
+                    dataview.column_count()
+                )
+            } else {
+                format!(
+                    "Loaded table '{}' with {} columns. Query pre-populated.",
+                    table_name,
+                    dataview.column_count()
+                )
+            };
+            state_container.set_status_message(display_msg);
+        }
+
+        // Set initial mode based on config
+        let initial_mode = match config.behavior.start_mode.to_lowercase().as_str() {
+            "results" => AppMode::Results,
+            "command" => AppMode::Command,
+            _ => AppMode::Results, // Default to results if invalid config
+        };
+
+        // Sync mode across all state containers
+        Self::sync_mode_with_refs(
+            state_container,
+            shadow_state,
+            initial_mode.clone(),
+            "initial_load_from_config",
+        );
+
+        debug!(
+            "StateCoordinator: SQL query set to '{}', mode set to {:?}",
+            auto_query, initial_mode
+        );
+
+        auto_query
+    }
+
+    /// Handle query execution and all related state changes
+    /// Returns true if application should exit
+    pub fn handle_execute_query_with_refs(
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        query: &str,
+    ) -> Result<bool, anyhow::Error> {
+        debug!(
+            "StateCoordinator::handle_execute_query_with_refs: Processing query '{}'",
+            query
+        );
+
+        let trimmed = query.trim();
+
+        if trimmed.is_empty() {
+            state_container
+                .set_status_message("Empty query - please enter a SQL command".to_string());
+            return Ok(false);
+        }
+
+        // Check for special commands
+        if trimmed == ":help" {
+            state_container.set_help_visible(true);
+            Self::sync_mode_with_refs(
+                state_container,
+                shadow_state,
+                AppMode::Help,
+                "help_requested",
+            );
+            state_container.set_status_message("Help Mode - Press ESC to return".to_string());
+            Ok(false)
+        } else if trimmed == ":exit" || trimmed == ":quit" || trimmed == ":q" {
+            Ok(true) // Signal exit
+        } else if trimmed == ":tui" {
+            state_container.set_status_message("Already in TUI mode".to_string());
+            Ok(false)
+        } else {
+            // Regular SQL query - execution handled by TUI
+            state_container.set_status_message(format!("Processing query: '{}'", trimmed));
+            Ok(false)
+        }
+    }
+
     // ========== QUERY EXECUTION SYNCHRONIZATION ==========
 
     /// Switch to Results mode after successful query execution
     pub fn switch_to_results_after_query(&mut self) {
         self.sync_mode(AppMode::Results, "execute_query_success");
+    }
+
+    /// Static version for delegation
+    pub fn switch_to_results_after_query_with_refs(
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+    ) {
+        Self::sync_mode_with_refs(
+            state_container,
+            shadow_state,
+            AppMode::Results,
+            "execute_query_success",
+        );
+    }
+
+    // ========== SEARCH STATE TRANSITIONS ==========
+
+    /// Apply filter search with proper state coordination
+    pub fn apply_filter_search_with_refs(
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        pattern: &str,
+    ) {
+        debug!(
+            "StateCoordinator::apply_filter_search_with_refs: Applying filter with pattern '{}'",
+            pattern
+        );
+
+        // Update filter pattern in multiple places for consistency
+        state_container.set_filter_pattern(pattern.to_string());
+        state_container
+            .filter_mut()
+            .set_pattern(pattern.to_string());
+
+        // Log the state before and after
+        let before_count = state_container
+            .get_buffer_dataview()
+            .map(|v| v.source().row_count())
+            .unwrap_or(0);
+
+        debug!(
+            "StateCoordinator: Filter search - case_insensitive={}, rows_before={}",
+            state_container.is_case_insensitive(),
+            before_count
+        );
+
+        // Note: The actual apply_filter() call will be done by TUI
+        // as it has the implementation
+
+        debug!(
+            "StateCoordinator: Filter pattern set to '{}', mode={:?}",
+            pattern,
+            shadow_state.borrow().get_mode()
+        );
+    }
+
+    /// Apply fuzzy filter search with proper state coordination
+    pub fn apply_fuzzy_filter_search_with_refs(
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        pattern: &str,
+    ) {
+        debug!(
+            "StateCoordinator::apply_fuzzy_filter_search_with_refs: Applying fuzzy filter with pattern '{}'",
+            pattern
+        );
+
+        let before_count = state_container
+            .get_buffer_dataview()
+            .map(|v| v.source().row_count())
+            .unwrap_or(0);
+
+        // Set the fuzzy filter pattern
+        state_container.set_fuzzy_filter_pattern(pattern.to_string());
+
+        debug!(
+            "StateCoordinator: Fuzzy filter - rows_before={}, pattern='{}'",
+            before_count, pattern
+        );
+
+        // Note: The actual apply_fuzzy_filter() call will be done by TUI
+        // After applying, we can check the results
+
+        debug!(
+            "StateCoordinator: Fuzzy filter pattern set, mode={:?}",
+            shadow_state.borrow().get_mode()
+        );
+    }
+
+    /// Apply column search with proper state coordination
+    pub fn apply_column_search_with_refs(
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        pattern: &str,
+    ) {
+        debug!(
+            "StateCoordinator::apply_column_search_with_refs: Starting column search with pattern '{}'",
+            pattern
+        );
+
+        // Start column search through AppStateContainer
+        state_container.start_column_search(pattern.to_string());
+
+        // Ensure we stay in ColumnSearch mode
+        let current_mode = shadow_state.borrow().get_mode();
+        if current_mode != AppMode::ColumnSearch {
+            debug!(
+                "StateCoordinator: WARNING - Mode was {:?}, restoring to ColumnSearch",
+                current_mode
+            );
+            Self::sync_mode_with_refs(
+                state_container,
+                shadow_state,
+                AppMode::ColumnSearch,
+                "column_search_mode_restore",
+            );
+        }
+
+        debug!(
+            "StateCoordinator: Column search started with pattern '{}'",
+            pattern
+        );
+    }
+
+    // ========== NAVIGATION COORDINATION ==========
+
+    /// Coordinate goto first row with vim search state
+    pub fn goto_first_row_with_refs(
+        state_container: &mut AppStateContainer,
+        vim_search_adapter: Option<&RefCell<crate::ui::vim_search_adapter::VimSearchAdapter>>,
+        viewport_manager: Option<&RefCell<Option<ViewportManager>>>,
+    ) {
+        debug!("StateCoordinator::goto_first_row_with_refs: Going to first row");
+
+        // Set position to first row
+        state_container.set_table_selected_row(Some(0));
+        state_container.set_scroll_offset((0, 0));
+
+        // If vim search is active and navigating, reset to first match
+        if let Some(adapter) = vim_search_adapter {
+            let is_navigating = adapter.borrow().is_navigating();
+
+            if is_navigating {
+                if let Some(viewport_ref) = viewport_manager {
+                    let mut vim_search_mut = adapter.borrow_mut();
+                    let mut viewport_borrow = viewport_ref.borrow_mut();
+                    if let Some(ref mut viewport) = *viewport_borrow {
+                        if let Some(first_match) = vim_search_mut.reset_to_first_match(viewport) {
+                            debug!(
+                                "StateCoordinator: Reset vim search to first match at ({}, {})",
+                                first_match.row, first_match.col
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Coordinate goto last row
+    pub fn goto_last_row_with_refs(state_container: &mut AppStateContainer) {
+        debug!("StateCoordinator::goto_last_row_with_refs: Going to last row");
+
+        // Get total rows from dataview if available
+        if let Some(dataview) = state_container.get_buffer_dataview() {
+            let last_row = dataview.row_count().saturating_sub(1);
+            state_container.set_table_selected_row(Some(last_row));
+
+            // Adjust scroll to show last row
+            // This is simplified - actual viewport calculation would be more complex
+            let scroll_row = last_row.saturating_sub(20); // Assume ~20 visible rows
+            state_container.set_scroll_offset((scroll_row, 0));
+        }
+    }
+
+    /// Coordinate goto specific row
+    pub fn goto_row_with_refs(state_container: &mut AppStateContainer, row: usize) {
+        debug!("StateCoordinator::goto_row_with_refs: Going to row {}", row);
+
+        // Validate row is within bounds
+        if let Some(dataview) = state_container.get_buffer_dataview() {
+            let max_row = dataview.row_count().saturating_sub(1);
+            let target_row = row.min(max_row);
+
+            state_container.set_table_selected_row(Some(target_row));
+
+            // Adjust scroll if needed
+            let current_scroll = state_container.get_scroll_offset().0;
+            if target_row < current_scroll || target_row > current_scroll + 20 {
+                // Center the target row in viewport
+                let new_scroll = target_row.saturating_sub(10);
+                state_container.set_scroll_offset((new_scroll, 0));
+            }
+        }
     }
 
     // ========== STATE ACCESS ==========

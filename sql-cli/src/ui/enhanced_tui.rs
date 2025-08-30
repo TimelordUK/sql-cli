@@ -1351,52 +1351,20 @@ impl EnhancedTuiApp {
 
     /// Pre-populate SQL command with SELECT * FROM table
     pub fn set_sql_query(&mut self, table_name: &str, raw_table_name: &str) {
-        // Create the initial SQL query
-        let auto_query = format!("SELECT * FROM {}", table_name);
+        use crate::ui::state_coordinator::StateCoordinator;
+
+        // Delegate all state coordination to StateCoordinator
+        let auto_query = StateCoordinator::set_sql_query_with_refs(
+            &mut self.state_container,
+            &self.shadow_state,
+            &mut self.hybrid_parser,
+            table_name,
+            raw_table_name,
+            &self.config,
+        );
 
         // Pre-populate the input field with the query
-        self.set_input_text(auto_query.clone());
-
-        // Update the hybrid parser with the table information
-        if let Some(dataview) = self
-            .state_container
-            .buffers()
-            .current()
-            .and_then(|b| b.get_dataview())
-        {
-            let columns = dataview.column_names();
-            self.hybrid_parser
-                .update_single_table(table_name.to_string(), columns);
-
-            // Set status message
-            let display_msg = if raw_table_name != table_name {
-                format!(
-                    "Loaded '{}' as table '{}' with {} columns. Query pre-populated.",
-                    raw_table_name,
-                    table_name,
-                    dataview.column_count()
-                )
-            } else {
-                format!(
-                    "Loaded table '{}' with {} columns. Query pre-populated.",
-                    table_name,
-                    dataview.column_count()
-                )
-            };
-            self.state_container.set_status_message(display_msg);
-        }
-
-        // Set initial mode based on config
-        let initial_mode = match self.config.behavior.start_mode.to_lowercase().as_str() {
-            "results" => AppMode::Results,
-            "command" => AppMode::Command,
-            _ => AppMode::Results, // Default to results if invalid config
-        };
-
-        self.state_container.set_mode(initial_mode.clone());
-        self.shadow_state
-            .borrow_mut()
-            .observe_mode_change(initial_mode, "initial_load_from_config");
+        self.set_input_text(auto_query);
     }
 
     pub fn run(mut self) -> Result<()> {
@@ -2922,48 +2890,52 @@ impl EnhancedTuiApp {
                 }
             }
             SearchMode::Filter => {
-                debug!(target: "search", "Executing filter with pattern: '{}', app_mode={:?}, thread={:?}",
-                       pattern, self.shadow_state.borrow().get_mode(), std::thread::current().id());
-                debug!(target: "search", "Filter: case_insensitive={}, current results count={}",
-                       self.state_container.is_case_insensitive(),
-                       self.state_container.get_buffer_dataview().map(|v| v.source().row_count()).unwrap_or(0));
-                self.state_container.set_filter_pattern(pattern.clone());
-                self.state_container
-                    .filter_mut()
-                    .set_pattern(pattern.clone());
-                self.apply_filter(&pattern); // <-- Actually apply the filter!
-                debug!(target: "search", "After apply_filter, app_mode={:?}, filtered_count={}",
-                       self.shadow_state.borrow().get_mode(),
-                self.state_container.get_buffer_dataview().map(|v| v.row_count()).unwrap_or(0));
+                use crate::ui::state_coordinator::StateCoordinator;
+
+                // Use StateCoordinator for all state transitions
+                StateCoordinator::apply_filter_search_with_refs(
+                    &mut self.state_container,
+                    &self.shadow_state,
+                    &pattern,
+                );
+
+                // Apply the actual filter (implementation stays in TUI)
+                self.apply_filter(&pattern);
+
+                debug!(target: "search", "After apply_filter, filtered_count={}",
+                    self.state_container.get_buffer_dataview().map(|v| v.row_count()).unwrap_or(0));
             }
             SearchMode::FuzzyFilter => {
-                debug!(target: "search", "Executing fuzzy filter with pattern: '{}', app_mode={:?}", pattern, self.shadow_state.borrow().get_mode());
-                debug!(target: "search", "FuzzyFilter: current results count={}",
-                       self.state_container.get_buffer_dataview().map(|v| v.source().row_count()).unwrap_or(0));
-                self.state_container.set_fuzzy_filter_pattern(pattern);
+                use crate::ui::state_coordinator::StateCoordinator;
+
+                // Use StateCoordinator for all state transitions
+                StateCoordinator::apply_fuzzy_filter_search_with_refs(
+                    &mut self.state_container,
+                    &self.shadow_state,
+                    &pattern,
+                );
+
+                // Apply the actual fuzzy filter (implementation stays in TUI)
                 self.apply_fuzzy_filter();
+
                 let indices_count = self.state_container.get_fuzzy_filter_indices().len();
-                debug!(target: "search", "After apply_fuzzy_filter, app_mode={:?}, matched_indices={}",
-                       self.shadow_state.borrow().get_mode(), indices_count);
+                debug!(target: "search", "After apply_fuzzy_filter, matched_indices={}", indices_count);
             }
             SearchMode::ColumnSearch => {
-                debug!(target: "search", "Executing column search with pattern: '{}', app_mode={:?}", pattern, self.shadow_state.borrow().get_mode());
+                use crate::ui::state_coordinator::StateCoordinator;
 
-                // Use AppStateContainer for column search
-                self.state_container.start_column_search(pattern.clone());
+                debug!(target: "search", "Executing column search with pattern: '{}'", pattern);
 
-                // Pattern is now stored in AppStateContainer via start_column_search()
+                // Use StateCoordinator for all state transitions
+                StateCoordinator::apply_column_search_with_refs(
+                    &mut self.state_container,
+                    &self.shadow_state,
+                    &pattern,
+                );
+
+                // Apply the actual column search (implementation stays in TUI)
                 self.search_columns();
 
-                // IMPORTANT: Ensure we stay in ColumnSearch mode after search
-                if self.shadow_state.borrow().get_mode() != AppMode::ColumnSearch {
-                    debug!(target: "search", "WARNING: Mode changed after search_columns, restoring to ColumnSearch");
-                    self.state_container.set_mode(AppMode::ColumnSearch);
-                    self.shadow_state.borrow_mut().observe_search_start(
-                        crate::ui::shadow_state::SearchType::Column,
-                        "column_search_restored",
-                    );
-                }
                 debug!(target: "search", "After search_columns, app_mode={:?}", self.shadow_state.borrow().get_mode());
             }
         }
@@ -6217,30 +6189,31 @@ impl EnhancedTuiApp {
     // These methods handle the actions returned by the editor widget
 
     fn handle_execute_query(&mut self) -> Result<bool> {
-        // Get the current query text and execute it directly
+        use crate::ui::state_coordinator::StateCoordinator;
+
         let query = self.get_input_text().trim().to_string();
         debug!(target: "action", "Executing query: {}", query);
-        if !query.is_empty() {
-            // Check for special commands
-            if query == ":help" {
-                self.state_container.set_help_visible(true);
-                // Use proper mode synchronization
-                self.set_mode_via_shadow_state(AppMode::Help, "help_requested");
-                self.state_container
-                    .set_status_message("Help Mode - Press ESC to return".to_string());
-            } else if query == ":exit" || query == ":quit" || query == ":q" {
-                return Ok(true);
-            } else {
-                // Execute the SQL query
-                self.state_container
-                    .set_status_message(format!("Processing query: '{}'", query));
-                if let Err(e) = self.execute_query_v2(&query) {
-                    self.state_container
-                        .set_status_message(format!("Error executing query: {}", e));
-                }
-                // Don't clear input - preserve query for editing
-            }
+
+        // Use StateCoordinator to handle special commands and state changes
+        let should_exit = StateCoordinator::handle_execute_query_with_refs(
+            &mut self.state_container,
+            &self.shadow_state,
+            &query,
+        )?;
+
+        if should_exit {
+            return Ok(true);
         }
+
+        // If not a special command and not empty, execute the SQL query
+        if !query.is_empty() && !query.starts_with(':') {
+            if let Err(e) = self.execute_query_v2(&query) {
+                self.state_container
+                    .set_status_message(format!("Error executing query: {}", e));
+            }
+            // Don't clear input - preserve query for editing
+        }
+
         Ok(false) // Continue running, don't exit
     }
 
@@ -6808,27 +6781,27 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn goto_first_row(&mut self) {
+        use crate::ui::state_coordinator::StateCoordinator;
+
         // Always perform the normal goto first row behavior
         <Self as NavigationBehavior>::goto_first_row(self);
 
-        // Additionally, if we're in vim search navigation mode, reset search to first match
-        let is_navigating = self.vim_search_adapter.borrow().is_navigating();
-
-        if is_navigating {
-            // Reset search index to first match
-            let mut vim_search_mut = self.vim_search_adapter.borrow_mut();
-            let mut viewport_borrow = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport) = *viewport_borrow {
-                if let Some(first_match) = vim_search_mut.reset_to_first_match(viewport) {
-                    info!(target: "vim_search", "'g' key: reset search to first match at ({}, {}) while also going to origin", 
-                          first_match.row, first_match.col);
-                }
-            }
-        }
+        // Use StateCoordinator to handle vim search coordination
+        StateCoordinator::goto_first_row_with_refs(
+            &mut self.state_container,
+            Some(&self.vim_search_adapter),
+            Some(&self.viewport_manager),
+        );
     }
 
     fn goto_last_row(&mut self) {
+        use crate::ui::state_coordinator::StateCoordinator;
+
+        // Perform the normal goto last row behavior
         <Self as NavigationBehavior>::goto_last_row(self);
+
+        // Use StateCoordinator for additional coordination
+        StateCoordinator::goto_last_row_with_refs(&mut self.state_container);
     }
 
     fn goto_first_column(&mut self) {
@@ -6840,7 +6813,13 @@ impl ActionHandlerContext for EnhancedTuiApp {
     }
 
     fn goto_row(&mut self, row: usize) {
+        use crate::ui::state_coordinator::StateCoordinator;
+
+        // Perform the normal goto line behavior
         <Self as NavigationBehavior>::goto_line(self, row + 1); // Convert to 1-indexed
+
+        // Use StateCoordinator for additional coordination
+        StateCoordinator::goto_row_with_refs(&mut self.state_container, row);
     }
 
     fn goto_column(&mut self, col: usize) {
