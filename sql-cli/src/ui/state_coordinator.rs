@@ -3,7 +3,6 @@ use std::rc::Rc;
 
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, Buffer, BufferAPI, BufferManager};
-use crate::data::data_view::DataView;
 use crate::sql::hybrid_parser::HybridParser;
 use crate::ui::viewport_manager::ViewportManager;
 use crate::widgets::search_modes_widget::SearchMode;
@@ -184,6 +183,53 @@ impl StateCoordinator {
             .observe_search_start(search_type, trigger);
 
         trigger.to_string()
+    }
+
+    // ========== SEARCH CANCELLATION ==========
+
+    /// Cancel search and properly restore state
+    /// This handles all the complex state synchronization when Escape is pressed during search
+    pub fn cancel_search(&mut self) -> (Option<String>, Option<usize>) {
+        debug!("StateCoordinator::cancel_search: Canceling search and restoring state");
+
+        // Clear search state in state container
+        self.state_container.clear_search();
+
+        // Observe search end in shadow state
+        self.shadow_state
+            .borrow_mut()
+            .observe_search_end("search_cancelled");
+
+        // Switch back to Results mode with proper synchronization
+        self.sync_mode(AppMode::Results, "search_cancelled");
+
+        // Return saved SQL and cursor position for restoration
+        // This would come from search widget's saved state
+        (None, None)
+    }
+
+    /// Static version for delegation pattern
+    pub fn cancel_search_with_refs(
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+    ) {
+        debug!("StateCoordinator::cancel_search_with_refs: Canceling search");
+
+        // Clear search state
+        state_container.clear_search();
+
+        // Observe search end
+        shadow_state
+            .borrow_mut()
+            .observe_search_end("search_cancelled");
+
+        // Sync back to Results mode
+        Self::sync_mode_with_refs(
+            state_container,
+            shadow_state,
+            AppMode::Results,
+            "search_cancelled",
+        );
     }
 
     // ========== QUERY EXECUTION SYNCHRONIZATION ==========

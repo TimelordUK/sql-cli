@@ -3228,22 +3228,15 @@ impl EnhancedTuiApp {
                     debug!(target: "search", "Cancel: No saved SQL from widget");
                 }
 
-                // Clear all search navigation state (so n/N keys work properly after escape)
-                self.state_container.clear_search();
+                // Clear vim search adapter state
                 self.vim_search_adapter.borrow_mut().cancel_search();
 
-                // Observe search end
-                self.shadow_state
-                    .borrow_mut()
-                    .observe_search_end("search_cancelled");
-
-                // Switch back to Results mode
-                self.state_container.set_mode(AppMode::Results);
-
-                // Observe mode change
-                self.shadow_state
-                    .borrow_mut()
-                    .observe_mode_change(AppMode::Results, "return_from_search");
+                // Use StateCoordinator to properly cancel search and restore state
+                use crate::ui::state_coordinator::StateCoordinator;
+                StateCoordinator::cancel_search_with_refs(
+                    &mut self.state_container,
+                    &self.shadow_state,
+                );
             }
             SearchModesAction::NextMatch => {
                 debug!(target: "search", "NextMatch action, current_mode={:?}, widget_mode={:?}",
