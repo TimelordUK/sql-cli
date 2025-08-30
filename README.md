@@ -34,6 +34,14 @@ SELECT * FROM trades_10k where exchange in ('nyse') and instrumentName.Length() 
 
 ![Description](docs/images/./query1.gif)
 
+
+```sql
+SELECT (price - cost) * quantity as profit,  * FROM test_arithmetic order by profit desc limit 5
+```
+
+
+![Description](docs/images/./query_expression.png)
+
 ### 🔌 REST API Data Source (Advanced)
 ```bash
 # Optionally connect to a proxy server for remote data

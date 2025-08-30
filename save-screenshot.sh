@@ -11,7 +11,7 @@ else
 fi
 
 # Save screenshot from clipboard (WSL2 method)
-powershell.exe -c "
+powershell.exe -NoProfile -c "
 \$img = Get-Clipboard -Format Image
 if (\$img) {
     \$img.Save('$(wslpath -w $(pwd))/docs/images/$filename')
