@@ -156,9 +156,9 @@ fn test_buffer_state_preserved_on_switch() {
 
 #[test]
 fn test_proxy_with_no_buffer() {
-    // Create empty BufferManager
-    let buffer_manager = BufferManager::new();
-    let state = AppStateContainer::new(buffer_manager).unwrap();
+    // Create AppStateContainer with empty BufferManager using Default impl
+    // This avoids file system access issues in tests
+    let state = AppStateContainer::default();
 
     // Test that proxies return defaults when no buffer exists
     let nav_proxy = state.navigation_proxy();

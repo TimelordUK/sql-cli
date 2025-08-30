@@ -6267,6 +6267,46 @@ impl AppStateContainer {
     }
 }
 
+impl Default for AppStateContainer {
+    fn default() -> Self {
+        // Create a minimal AppStateContainer for testing
+        // Uses CommandHistory::default() which handles errors gracefully
+        let command_history = CommandHistory::default();
+        let mut widgets = WidgetStates::new();
+        widgets.set_history(HistoryWidget::new(command_history.clone()));
+
+        Self {
+            buffers: BufferManager::new(),
+            current_buffer_id: 0,
+            command_input: RefCell::new(InputState::new()),
+            search: RefCell::new(SearchState::new()),
+            filter: RefCell::new(FilterState::new()),
+            column_search: RefCell::new(ColumnSearchState::new()),
+            history_search: RefCell::new(HistorySearchState::new()),
+            sort: RefCell::new(SortState::new()),
+            selection: RefCell::new(SelectionState::new()),
+            completion: RefCell::new(CompletionState::default()),
+            widgets,
+            cache_list: CacheListState::new(),
+            column_stats: ColumnStatsState::new(),
+            jump_to_row: JumpToRowState::new(),
+            navigation: RefCell::new(NavigationState::new()),
+            command_history: RefCell::new(command_history),
+            key_press_history: RefCell::new(KeyPressHistory::new(100)),
+            results: RefCell::new(ResultsState::default()),
+            clipboard: RefCell::new(ClipboardState::default()),
+            chord: RefCell::new(ChordState::default()),
+            undo_redo: RefCell::new(UndoRedoState::default()),
+            scroll: RefCell::new(ScrollState::default()),
+            results_cache: ResultsCache::new(100),
+            mode_stack: Vec::new(),
+            debug_enabled: false,
+            debug_service: RefCell::new(None),
+            help: RefCell::new(HelpState::new()),
+        }
+    }
+}
+
 impl fmt::Debug for AppStateContainer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AppStateContainer")
