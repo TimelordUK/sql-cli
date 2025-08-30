@@ -3,7 +3,7 @@ use crate::data::query_engine::QueryEngine;
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Result of executing a query
 pub struct QueryExecutionResult {
@@ -48,12 +48,39 @@ impl QueryExecutionService {
         &self,
         query: &str,
         current_dataview: Option<&DataView>,
+        original_source: Option<&crate::data::datatable::DataTable>,
     ) -> Result<QueryExecutionResult> {
-        // 1. Get the source DataTable
-        let source = current_dataview.ok_or_else(|| anyhow::anyhow!("No data loaded"))?;
+        // 1. Get the source DataTable - prefer original source if available
+        let source_table = if let Some(original) = original_source {
+            // Use the original unmodified DataTable for queries
+            info!(
+                "QueryExecutionService: Using original source with {} columns: {:?}",
+                original.column_count(),
+                original.column_names()
+            );
+            debug!(
+                "QueryExecutionService: DEBUG - Using original source with {} columns for query",
+                original.column_count()
+            );
+            original.clone()
+        } else if let Some(view) = current_dataview {
+            // Fallback to current view's source if no original available
+            info!(
+                "QueryExecutionService: WARNING - No original source, using current view's source with {} columns: {:?}",
+                view.source().column_count(),
+                view.source().column_names()
+            );
+            debug!(
+                "QueryExecutionService: DEBUG WARNING - No original source, using view source with {} columns",
+                view.source().column_count()
+            );
+            view.source().clone()
+        } else {
+            return Err(anyhow::anyhow!("No data loaded"));
+        };
 
         // Clone the Arc to the DataTable (cheap - just increments ref count)
-        let table_arc = Arc::new(source.source().clone());
+        let table_arc = Arc::new(source_table);
 
         // 2. Execute the query
         let query_start = std::time::Instant::now();

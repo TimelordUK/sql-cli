@@ -234,6 +234,7 @@ pub trait BufferAPI: Send + Sync {
     fn get_datatable_mut(&mut self) -> Option<&mut DataTable>;
     fn has_datatable(&self) -> bool;
     fn set_datatable(&mut self, datatable: Option<DataTable>);
+    fn get_original_source(&self) -> Option<&DataTable>;
     /// V50: Helper to convert QueryResponse to DataTable and store it
     fn set_results_as_datatable(&mut self, response: Option<QueryResponse>) -> Result<(), String>;
 
@@ -404,6 +405,8 @@ pub struct Buffer {
 
     // --- Data State ---
     pub datatable: Option<DataTable>,
+    /// Original unmodified DataTable (preserved for query operations)
+    pub original_source: Option<DataTable>,
     /// DataView for applying filters like hidden columns without modifying the DataTable
     pub dataview: Option<DataView>,
 
@@ -494,11 +497,43 @@ impl BufferAPI for Buffer {
         self.datatable.is_some()
     }
 
+    fn get_original_source(&self) -> Option<&DataTable> {
+        self.original_source.as_ref()
+    }
+
     fn set_datatable(&mut self, datatable: Option<DataTable>) {
         debug!(
-            "V50: Setting DataTable with {} rows",
-            datatable.as_ref().map(|d| d.row_count()).unwrap_or(0)
+            "V50: Setting DataTable with {} rows, {} columns",
+            datatable.as_ref().map(|d| d.row_count()).unwrap_or(0),
+            datatable.as_ref().map(|d| d.column_count()).unwrap_or(0)
         );
+
+        // Log current state
+        if let Some(ref current) = self.datatable {
+            debug!(
+                "V50: Current DataTable has {} columns: {:?}",
+                current.column_count(),
+                current.column_names()
+            );
+        }
+
+        if let Some(ref original) = self.original_source {
+            debug!(
+                "V50: Original source has {} columns: {:?}",
+                original.column_count(),
+                original.column_names()
+            );
+        }
+
+        // Preserve the original source if this is the first data load
+        // Only update original_source if we don't have one yet
+        if datatable.is_some() && self.original_source.is_none() {
+            self.original_source = datatable.clone();
+            debug!(
+                "V50: Preserving original source DataTable with {} columns",
+                datatable.as_ref().map(|d| d.column_count()).unwrap_or(0)
+            );
+        }
 
         // When setting a DataTable, also create a DataView for it
         // This ensures we always have a DataView as the source of truth for column visibility
@@ -526,6 +561,22 @@ impl BufferAPI for Buffer {
             self.dataview = Some(view);
         } else {
             self.dataview = None;
+        }
+
+        // IMPORTANT: Never replace the datatable if we have an original source
+        // and the new table has fewer columns (indicating it's a query result)
+        if let Some(ref original) = self.original_source {
+            if let Some(ref new_dt) = datatable {
+                if new_dt.column_count() < original.column_count() {
+                    debug!(
+                        "V50: WARNING - Attempted to replace datatable with fewer columns ({} < {}). Keeping original.",
+                        new_dt.column_count(),
+                        original.column_count()
+                    );
+                    // Don't replace the datatable with a reduced one
+                    return;
+                }
+            }
         }
 
         self.datatable = datatable;
@@ -1246,6 +1297,7 @@ impl Buffer {
 
             // Legacy CSV/Cache fields removed
             datatable: None,
+            original_source: None,
             dataview: None,
 
             mode: AppMode::Command,
@@ -1602,6 +1654,7 @@ impl Clone for Buffer {
             modified: self.modified,
             // Legacy CSV/Cache fields removed
             datatable: self.datatable.clone(),
+            original_source: self.original_source.clone(),
             dataview: self.dataview.clone(),
             mode: self.mode.clone(),
             edit_mode: self.edit_mode.clone(),

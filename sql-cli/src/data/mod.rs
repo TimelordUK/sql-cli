@@ -7,6 +7,7 @@ pub mod adapters;
 pub mod converters;
 
 // Core data modules
+pub mod computed_view;
 pub mod data_provider;
 pub mod data_view;
 pub mod datatable;
@@ -29,6 +30,7 @@ pub mod datasource_trait;
 pub mod direct_csv_loader;
 
 // Query execution
+pub mod arithmetic_evaluator;
 pub mod query_engine;
 pub mod query_executor;
 pub mod recursive_where_evaluator;

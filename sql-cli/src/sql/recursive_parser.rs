@@ -17,6 +17,7 @@ pub enum Token {
     OrderBy,
     GroupBy,
     Having,
+    As,
     Asc,
     Desc,
     Limit,
@@ -41,6 +42,11 @@ pub enum Token {
     GreaterThan,
     LessThanOrEqual,
     GreaterThanOrEqual,
+
+    // Arithmetic operators
+    Plus,
+    Minus,
+    Divide,
 
     // Special
     Eof,
@@ -132,7 +138,17 @@ impl Lexer {
             None => Token::Eof,
             Some('*') => {
                 self.advance();
-                Token::Star
+                // Context-sensitive: could be SELECT * or multiplication
+                // The parser will distinguish based on context
+                Token::Star // We'll handle multiplication in parser
+            }
+            Some('+') => {
+                self.advance();
+                Token::Plus
+            }
+            Some('/') => {
+                self.advance();
+                Token::Divide
             }
             Some('.') => {
                 self.advance();
@@ -196,6 +212,11 @@ impl Lexer {
                 let num = self.read_number();
                 Token::NumberLiteral(format!("-{}", num))
             }
+            Some('-') => {
+                // Handle subtraction operator
+                self.advance();
+                Token::Minus
+            }
             Some(ch) if ch.is_numeric() => {
                 let num = self.read_number();
                 Token::NumberLiteral(num)
@@ -225,6 +246,7 @@ impl Lexer {
                         Token::GroupBy
                     }
                     "HAVING" => Token::Having,
+                    "AS" => Token::As,
                     "ASC" => Token::Asc,
                     "DESC" => Token::Desc,
                     "LIMIT" => Token::Limit,
@@ -370,9 +392,21 @@ pub struct OrderByColumn {
     pub direction: SortDirection,
 }
 
+/// Represents a SELECT item - either a simple column or a computed expression with alias
+#[derive(Debug, Clone)]
+pub enum SelectItem {
+    /// Simple column reference: "column_name"
+    Column(String),
+    /// Computed expression with alias: "expr AS alias"
+    Expression { expr: SqlExpression, alias: String },
+    /// Star selector: "*"
+    Star,
+}
+
 #[derive(Debug, Clone)]
 pub struct SelectStatement {
-    pub columns: Vec<String>,
+    pub columns: Vec<String>, // Keep for backward compatibility, will be deprecated
+    pub select_items: Vec<SelectItem>, // New field for computed expressions
     pub from_table: Option<String>,
     pub where_clause: Option<WhereClause>,
     pub order_by: Option<Vec<OrderByColumn>>,
@@ -499,7 +533,18 @@ impl Parser {
     fn parse_select_statement(&mut self) -> Result<SelectStatement, String> {
         self.consume(Token::Select)?;
 
-        let columns = self.parse_select_list()?;
+        // Parse SELECT items (supports computed expressions)
+        let select_items = self.parse_select_items()?;
+
+        // Create legacy columns vector for backward compatibility
+        let columns = select_items
+            .iter()
+            .map(|item| match item {
+                SelectItem::Star => "*".to_string(),
+                SelectItem::Column(name) => name.clone(),
+                SelectItem::Expression { alias, .. } => alias.clone(),
+            })
+            .collect();
 
         let from_table = if matches!(self.current_token, Token::From) {
             self.advance();
@@ -591,6 +636,7 @@ impl Parser {
 
         Ok(SelectStatement {
             columns,
+            select_items,
             from_table,
             where_clause,
             order_by,
@@ -630,6 +676,77 @@ impl Parser {
         }
 
         Ok(columns)
+    }
+
+    /// Parse SELECT items that support computed expressions with aliases
+    fn parse_select_items(&mut self) -> Result<Vec<SelectItem>, String> {
+        let mut items = Vec::new();
+
+        loop {
+            // Check for * only at the beginning of a select item
+            // After a comma, * could be either SELECT * or part of multiplication
+            if matches!(self.current_token, Token::Star) {
+                // Determine if this is SELECT * or multiplication
+                // SELECT * is only valid:
+                // 1. As the first item in SELECT
+                // 2. Right after a comma (but not if followed by something that makes it multiplication)
+
+                // For now, treat Star as SELECT * only if we're at the start or just after a comma
+                // and the star is not immediately followed by something that would make it multiplication
+                items.push(SelectItem::Star);
+                self.advance();
+            } else {
+                // Parse expression or column
+                let expr = self.parse_additive()?; // Use additive to support arithmetic
+
+                // Check for AS alias
+                let alias = if matches!(self.current_token, Token::As) {
+                    self.advance();
+                    match &self.current_token {
+                        Token::Identifier(alias_name) => {
+                            let alias = alias_name.clone();
+                            self.advance();
+                            alias
+                        }
+                        Token::QuotedIdentifier(alias_name) => {
+                            let alias = alias_name.clone();
+                            self.advance();
+                            alias
+                        }
+                        _ => return Err("Expected alias name after AS".to_string()),
+                    }
+                } else {
+                    // Generate default alias based on expression
+                    match &expr {
+                        SqlExpression::Column(col_name) => col_name.clone(),
+                        _ => format!("expr_{}", items.len() + 1), // Default alias for computed expressions
+                    }
+                };
+
+                // Create SelectItem based on expression type
+                let item = match expr {
+                    SqlExpression::Column(col_name) if alias == col_name => {
+                        // Simple column reference without alias
+                        SelectItem::Column(col_name)
+                    }
+                    _ => {
+                        // Computed expression or column with different alias
+                        SelectItem::Expression { expr, alias }
+                    }
+                };
+
+                items.push(item);
+            }
+
+            // Check for comma to continue
+            if matches!(self.current_token, Token::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        Ok(items)
     }
 
     fn parse_identifier_list(&mut self) -> Result<Vec<String>, String> {
@@ -781,7 +898,7 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> Result<SqlExpression, String> {
-        let mut left = self.parse_primary()?;
+        let mut left = self.parse_additive()?;
 
         // Handle method calls - support chained calls
         while matches!(self.current_token, Token::Dot) {
@@ -864,10 +981,52 @@ impl Parser {
         // Handle comparison operators
         if let Some(op) = self.get_binary_op() {
             self.advance();
-            let right = self.parse_comparison()?;
+            let right = self.parse_additive()?;
             left = SqlExpression::BinaryOp {
                 left: Box::new(left),
                 op,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_additive(&mut self) -> Result<SqlExpression, String> {
+        let mut left = self.parse_multiplicative()?;
+
+        while matches!(self.current_token, Token::Plus | Token::Minus) {
+            let op = match self.current_token {
+                Token::Plus => "+",
+                Token::Minus => "-",
+                _ => unreachable!(),
+            };
+            self.advance();
+            let right = self.parse_multiplicative()?;
+            left = SqlExpression::BinaryOp {
+                left: Box::new(left),
+                op: op.to_string(),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_multiplicative(&mut self) -> Result<SqlExpression, String> {
+        let mut left = self.parse_primary()?;
+
+        while matches!(self.current_token, Token::Star | Token::Divide) {
+            let op = match self.current_token {
+                Token::Star => "*",
+                Token::Divide => "/",
+                _ => unreachable!(),
+            };
+            self.advance();
+            let right = self.parse_primary()?;
+            left = SqlExpression::BinaryOp {
+                left: Box::new(left),
+                op: op.to_string(),
                 right: Box::new(right),
             };
         }
@@ -1126,6 +1285,16 @@ impl Parser {
             Token::LessThanOrEqual => Some("<=".to_string()),
             Token::GreaterThanOrEqual => Some(">=".to_string()),
             Token::Like => Some("LIKE".to_string()),
+            _ => None,
+        }
+    }
+
+    fn get_arithmetic_op(&self) -> Option<String> {
+        match &self.current_token {
+            Token::Plus => Some("+".to_string()),
+            Token::Minus => Some("-".to_string()),
+            Token::Star => Some("*".to_string()), // Multiplication (context-sensitive)
+            Token::Divide => Some("/".to_string()),
             _ => None,
         }
     }

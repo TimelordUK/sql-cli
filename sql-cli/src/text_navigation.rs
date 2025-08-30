@@ -170,6 +170,7 @@ impl TextNavigator {
             Token::GroupBy => "GROUP BY",
             Token::OrderBy => "ORDER BY",
             Token::Having => "HAVING",
+            Token::As => "AS",
             Token::Asc => "ASC",
             Token::Desc => "DESC",
             Token::And => "AND",
@@ -198,6 +199,9 @@ impl TextNavigator {
             Token::Between => "BETWEEN",
             Token::Limit => "LIMIT",
             Token::Offset => "OFFSET",
+            Token::Plus => "+",
+            Token::Minus => "-",
+            Token::Divide => "/",
             Token::Eof => "EOF",
         }
     }

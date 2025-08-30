@@ -3981,14 +3981,24 @@ impl ViewportManager {
     /// Calculate optimal column widths using smart viewport-based calculations
     /// Returns the calculated widths without modifying any state
     pub fn calculate_optimal_column_widths(&mut self) -> Vec<u16> {
-        // Use the viewport's visible rows for calculation
-        let viewport_start = self.viewport_rows.start;
-        let viewport_end = self.viewport_rows.end;
+        // Use the column width calculator with terminal width awareness
+        self.width_calculator.calculate_with_terminal_width(
+            &self.dataview,
+            &self.viewport_rows,
+            self.terminal_width,
+        );
 
-        // For now, assume non-compact mode (this could be passed as a parameter)
-        let compact_mode = false;
-
-        self.calculate_viewport_column_widths(viewport_start, viewport_end, compact_mode)
+        // Return all calculated widths
+        let col_count = self.dataview.column_count();
+        let mut widths = Vec::with_capacity(col_count);
+        for idx in 0..col_count {
+            widths.push(self.width_calculator.get_column_width(
+                &self.dataview,
+                &self.viewport_rows,
+                idx,
+            ));
+        }
+        widths
     }
 
     /// Ensure the specified column is visible by adjusting the viewport if necessary

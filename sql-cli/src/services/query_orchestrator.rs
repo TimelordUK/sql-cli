@@ -4,7 +4,7 @@ use crate::services::{QueryExecutionResult, QueryExecutionService};
 use crate::ui::search::vim_search_adapter::VimSearchAdapter;
 use anyhow::Result;
 use std::cell::RefCell;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Orchestrates the entire query execution flow
 /// This handles all the side effects and state management around query execution
@@ -39,9 +39,29 @@ impl QueryOrchestrator {
 
         // 4. Execute the query
         let current_dataview = state_container.get_buffer_dataview();
-        let result = self
-            .query_execution_service
-            .execute(query, current_dataview)?;
+        let original_source = state_container.get_original_source();
+
+        // Debug: log what we're passing to the query service
+        if let Some(ref orig) = original_source {
+            debug!(
+                "QueryOrchestrator: Have original source with {} columns",
+                orig.column_count()
+            );
+        } else {
+            debug!("QueryOrchestrator: WARNING - No original source available!");
+        }
+
+        if let Some(ref view) = current_dataview {
+            debug!(
+                "QueryOrchestrator: Current view has {} columns, source has {} columns",
+                view.column_count(),
+                view.source().column_count()
+            );
+        }
+
+        let result =
+            self.query_execution_service
+                .execute(query, current_dataview, original_source)?;
 
         // 5. Clear any active filters (new query should start with clean state)
         self.clear_all_filters(state_container);

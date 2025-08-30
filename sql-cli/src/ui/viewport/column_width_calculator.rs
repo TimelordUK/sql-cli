@@ -98,6 +98,50 @@ impl ColumnWidthCalculator {
         self.cache_dirty = true;
     }
 
+    /// Calculate optimal widths with terminal width awareness
+    pub fn calculate_with_terminal_width(
+        &mut self,
+        dataview: &DataView,
+        viewport_rows: &std::ops::Range<usize>,
+        terminal_width: u16,
+    ) {
+        // First calculate normal widths
+        self.recalculate_column_widths(dataview, viewport_rows);
+
+        // Check if we can auto-expand small columns
+        let total_ideal_width: u16 = self.column_widths.iter().sum();
+        let separators_width = (self.column_widths.len() as u16).saturating_sub(1);
+        let borders_width = 4u16; // Left and right borders plus margins
+
+        let total_needed = total_ideal_width + separators_width + borders_width;
+
+        // If everything fits comfortably, we're good
+        // If not, we might want to expand short columns that were truncated
+        if total_needed < terminal_width {
+            // We have extra space - check if any short columns can be expanded
+            let extra_space = terminal_width - total_needed;
+            let num_columns = self.column_widths.len() as u16;
+            let space_per_column = if num_columns > 0 {
+                extra_space / num_columns
+            } else {
+                0
+            };
+
+            // Find columns that might benefit from expansion
+            for (idx, width) in self.column_widths.iter_mut().enumerate() {
+                if *width <= 10 && idx < self.column_width_debug.len() {
+                    let (_, header_w, data_w, _, _) = &self.column_width_debug[idx];
+                    let ideal = (*header_w).max(*data_w) + COLUMN_PADDING;
+
+                    // If this column was truncated, expand it
+                    if ideal > *width && ideal <= 15 {
+                        *width = ideal.min(*width + space_per_column);
+                    }
+                }
+            }
+        }
+    }
+
     /// Get cached column width for a specific DataTable column index
     pub fn get_column_width(
         &mut self,
@@ -144,14 +188,19 @@ impl ColumnWidthCalculator {
         // Get column headers for width calculation
         let headers = dataview.column_names();
 
-        // Calculate width for each column based on header and visible data
+        // First pass: calculate ideal widths for all columns
+        let mut ideal_widths = Vec::with_capacity(col_count);
+        let mut header_widths = Vec::with_capacity(col_count);
+        let mut max_data_widths = Vec::with_capacity(col_count);
+
+        // First pass: collect all column metrics
         for col_idx in 0..col_count {
-            // Track header width separately
+            // Track header width
             let header_width = headers.get(col_idx).map(|h| h.len() as u16).unwrap_or(0);
+            header_widths.push(header_width);
 
             // Track actual data width
             let mut max_data_width = 0u16;
-            let mut total_data_width = 0u64;
             let mut data_samples = 0u32;
 
             // Sample visible rows (limit sampling for performance)
@@ -172,34 +221,48 @@ impl ColumnWidthCalculator {
                     if col_idx < row.values.len() {
                         let cell_str = row.values[col_idx].to_string();
                         let cell_width = cell_str.len() as u16;
-
                         max_data_width = max_data_width.max(cell_width);
-                        total_data_width += cell_width as u64;
                         data_samples += 1;
-
-                        // Early exit if we hit max width (depends on mode)
-                        let mode_max = match self.packing_mode {
-                            ColumnPackingMode::DataFocus => MAX_COL_WIDTH_DATA_FOCUS,
-                            _ => MAX_COL_WIDTH,
-                        };
-                        if max_data_width >= mode_max {
-                            break;
-                        }
                     }
                 }
             }
 
-            // Calculate optimal width based on packing mode
-            let optimal_width =
-                self.calculate_optimal_width_for_mode(header_width, max_data_width, data_samples);
+            max_data_widths.push(max_data_width);
 
-            // Apply constraints based on mode
-            let (min_width, max_width) = match self.packing_mode {
-                ColumnPackingMode::DataFocus => (MIN_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS),
-                _ => (MIN_COL_WIDTH, MAX_COL_WIDTH),
+            // Calculate ideal width (full content + padding)
+            let ideal_width = header_width.max(max_data_width) + COLUMN_PADDING;
+            ideal_widths.push(ideal_width);
+        }
+
+        // Now decide on final widths based on packing mode
+        for col_idx in 0..col_count {
+            let header_width = header_widths[col_idx];
+            let max_data_width = max_data_widths[col_idx];
+            let ideal_width = ideal_widths[col_idx];
+
+            // For short columns (like "id" with values "1", "2"), always use ideal width
+            // This prevents unnecessary truncation when we have space
+            let final_width = if ideal_width <= 10 {
+                // Short columns should always show at full width
+                ideal_width
+            } else {
+                // For longer columns, use the mode-based calculation
+                let data_samples = if max_data_width > 0 { 1 } else { 0 };
+                let optimal_width = self.calculate_optimal_width_for_mode(
+                    header_width,
+                    max_data_width,
+                    data_samples,
+                );
+
+                // Apply constraints based on mode
+                let (min_width, max_width) = match self.packing_mode {
+                    ColumnPackingMode::DataFocus => (MIN_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS),
+                    _ => (MIN_COL_WIDTH, MAX_COL_WIDTH),
+                };
+
+                optimal_width.clamp(min_width, max_width)
             };
 
-            let final_width = optimal_width.clamp(min_width, max_width);
             self.column_widths[col_idx] = final_width;
 
             // Store debug info
@@ -212,7 +275,7 @@ impl ColumnWidthCalculator {
                 header_width,
                 max_data_width,
                 final_width,
-                data_samples,
+                1, // data_samples simplified
             ));
         }
 
