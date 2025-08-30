@@ -27,6 +27,51 @@ pub struct StateCoordinator {
 }
 
 impl StateCoordinator {
+    // ========== STATIC METHODS FOR DELEGATION ==========
+    // These methods work with references and can be called without owning the components
+    // This allows incremental migration from EnhancedTuiApp
+
+    /// Static version of sync_mode that works with references
+    pub fn sync_mode_with_refs(
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        mode: AppMode,
+        trigger: &str,
+    ) {
+        debug!(
+            "StateCoordinator::sync_mode_with_refs: Setting mode to {:?} with trigger '{}'",
+            mode, trigger
+        );
+
+        // Set in AppStateContainer
+        state_container.set_mode(mode.clone());
+
+        // Set in current buffer
+        if let Some(buffer) = state_container.buffers_mut().current_mut() {
+            buffer.set_mode(mode.clone());
+        }
+
+        // Observe in shadow state
+        shadow_state.borrow_mut().observe_mode_change(mode, trigger);
+    }
+
+    /// Static version of update_parser_for_current_buffer
+    pub fn update_parser_with_refs(state_container: &AppStateContainer, parser: &mut HybridParser) {
+        if let Some(dataview) = state_container.get_buffer_dataview() {
+            let table_name = dataview.source().name.clone();
+            let columns = dataview.source().column_names();
+
+            debug!(
+                "StateCoordinator: Updating parser with {} columns for table '{}'",
+                columns.len(),
+                table_name
+            );
+            parser.update_single_table(table_name, columns);
+        }
+    }
+
+    // ========== CONSTRUCTORS ==========
+
     pub fn new(
         state_container: AppStateContainer,
         shadow_state: Rc<RefCell<crate::ui::shadow_state::ShadowStateManager>>,
@@ -84,6 +129,14 @@ impl StateCoordinator {
     }
 
     // ========== BUFFER SYNCHRONIZATION ==========
+
+    /// Synchronize all state after buffer switch
+    /// This should be called after any buffer switch operation
+    pub fn sync_after_buffer_switch(&mut self) {
+        // For now, just update the parser
+        // TODO: Add viewport sync when we refactor viewport management
+        self.update_parser_for_current_buffer();
+    }
 
     /// Update parser schema from current buffer's DataView
     pub fn update_parser_for_current_buffer(&mut self) {

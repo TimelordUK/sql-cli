@@ -392,23 +392,14 @@ impl EnhancedTuiApp {
     /// Synchronize mode across all state containers
     /// This ensures AppStateContainer, Buffer, and ShadowState are all in sync
     fn sync_mode(&mut self, mode: AppMode, trigger: &str) {
-        debug!(
-            "sync_mode: Setting mode to {:?} with trigger '{}'",
-            mode, trigger
+        // Delegate to StateCoordinator for centralized sync logic
+        use crate::ui::state_coordinator::StateCoordinator;
+        StateCoordinator::sync_mode_with_refs(
+            &mut self.state_container,
+            &self.shadow_state,
+            mode,
+            trigger,
         );
-
-        // Set in AppStateContainer
-        self.state_container.set_mode(mode.clone());
-
-        // Set in current buffer
-        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
-            buffer.set_mode(mode.clone());
-        }
-
-        // Observe in shadow state
-        self.shadow_state
-            .borrow_mut()
-            .observe_mode_change(mode, trigger);
     }
 
     /// Save current ViewportManager state to the current buffer
@@ -4915,14 +4906,9 @@ impl EnhancedTuiApp {
         // Sync input states
         self.sync_all_input_states();
 
-        // Update parser schema from DataView
-        if let Some(dataview) = self.state_container.get_buffer_dataview() {
-            let table_name = dataview.source().name.clone();
-            let columns = dataview.source().column_names();
-
-            debug!(target: "buffer", "Updating parser with {} columns for table '{}'", columns.len(), table_name);
-            self.hybrid_parser.update_single_table(table_name, columns);
-        }
+        // Delegate parser update to StateCoordinator
+        use crate::ui::state_coordinator::StateCoordinator;
+        StateCoordinator::update_parser_with_refs(&self.state_container, &mut self.hybrid_parser);
     }
 
     /// Synchronize all state after buffer switch
