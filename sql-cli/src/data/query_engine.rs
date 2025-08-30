@@ -113,10 +113,20 @@ impl QueryEngine {
         view = view.with_rows(visible_rows);
 
         // Apply column projection or computed expressions (SELECT clause) - do this AFTER filtering
-        if !statement.select_items.is_empty()
-            && !matches!(statement.select_items[0], SelectItem::Star)
-        {
-            view = self.apply_select_items(view, &statement.select_items)?;
+        if !statement.select_items.is_empty() {
+            // Check if we have ANY non-star items (not just the first one)
+            let has_non_star_items = statement
+                .select_items
+                .iter()
+                .any(|item| !matches!(item, SelectItem::Star));
+
+            // Apply select items if:
+            // 1. We have computed expressions or explicit columns
+            // 2. OR we have a mix of star and other items (e.g., SELECT *, computed_col)
+            if has_non_star_items || statement.select_items.len() > 1 {
+                view = self.apply_select_items(view, &statement.select_items)?;
+            }
+            // If it's just a single star, no projection needed
         } else if !statement.columns.is_empty() && statement.columns[0] != "*" {
             // Fallback to legacy column projection for backward compatibility
             let column_indices = self.resolve_column_indices(&*table, &statement.columns)?;

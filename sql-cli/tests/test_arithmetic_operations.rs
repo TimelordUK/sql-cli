@@ -328,13 +328,17 @@ fn test_negative_numbers() {
 }
 
 #[test]
-#[ignore] // Arithmetic in WHERE clauses not yet implemented
+#[ignore] // Arithmetic in WHERE clauses not yet fully implemented
 fn test_where_clause_with_arithmetic() {
     let table = create_arithmetic_test_table();
     let engine = QueryEngine::new();
 
-    // This tests that WHERE clauses can also use arithmetic (when we implement it)
-    // For now, this might not work, but it's a good test case for future extension
+    // This tests that WHERE clauses can also use arithmetic
+    // Currently, the WHERE evaluator only handles comparison operators,
+    // not arithmetic evaluation. To use arithmetic in WHERE, users must
+    // repeat the expression instead of using the alias:
+    // Works: WHERE quantity * price > 200
+    // Doesn't work: WHERE notional > 200 (after SELECT quantity * price as notional)
     let view = engine
         .execute(
             table.clone(),

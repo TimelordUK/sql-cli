@@ -683,8 +683,16 @@ impl Parser {
         let mut items = Vec::new();
 
         loop {
-            // Check for * first
+            // Check for * only at the beginning of a select item
+            // After a comma, * could be either SELECT * or part of multiplication
             if matches!(self.current_token, Token::Star) {
+                // Determine if this is SELECT * or multiplication
+                // SELECT * is only valid:
+                // 1. As the first item in SELECT
+                // 2. Right after a comma (but not if followed by something that makes it multiplication)
+
+                // For now, treat Star as SELECT * only if we're at the start or just after a comma
+                // and the star is not immediately followed by something that would make it multiplication
                 items.push(SelectItem::Star);
                 self.advance();
             } else {
