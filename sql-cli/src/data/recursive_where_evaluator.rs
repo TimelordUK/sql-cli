@@ -246,6 +246,87 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         }
                         (index_value, format!("{}.IndexOf('{}')", object, search_str))
                     }
+                    "trim" => {
+                        if !args.is_empty() {
+                            return Err(anyhow::anyhow!("Trim() takes no arguments"));
+                        }
+                        let col_index = self
+                            .table
+                            .get_column_index(object)
+                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
+
+                        let value = self.table.get_value(row_index, col_index);
+                        let trimmed_value = match value {
+                            Some(DataValue::String(s)) => {
+                                Some(DataValue::String(s.trim().to_string()))
+                            }
+                            Some(DataValue::InternedString(s)) => {
+                                Some(DataValue::String(s.trim().to_string()))
+                            }
+                            Some(DataValue::Integer(n)) => {
+                                Some(DataValue::String(n.to_string().trim().to_string()))
+                            }
+                            Some(DataValue::Float(f)) => {
+                                Some(DataValue::String(f.to_string().trim().to_string()))
+                            }
+                            _ => Some(DataValue::String(String::new())),
+                        };
+                        (trimmed_value, format!("{}.Trim()", object))
+                    }
+                    "trimstart" => {
+                        if !args.is_empty() {
+                            return Err(anyhow::anyhow!("TrimStart() takes no arguments"));
+                        }
+                        let col_index = self
+                            .table
+                            .get_column_index(object)
+                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
+
+                        let value = self.table.get_value(row_index, col_index);
+                        let trimmed_value = match value {
+                            Some(DataValue::String(s)) => {
+                                Some(DataValue::String(s.trim_start().to_string()))
+                            }
+                            Some(DataValue::InternedString(s)) => {
+                                Some(DataValue::String(s.trim_start().to_string()))
+                            }
+                            Some(DataValue::Integer(n)) => {
+                                Some(DataValue::String(n.to_string().trim_start().to_string()))
+                            }
+                            Some(DataValue::Float(f)) => {
+                                Some(DataValue::String(f.to_string().trim_start().to_string()))
+                            }
+                            _ => Some(DataValue::String(String::new())),
+                        };
+                        (trimmed_value, format!("{}.TrimStart()", object))
+                    }
+                    "trimend" => {
+                        if !args.is_empty() {
+                            return Err(anyhow::anyhow!("TrimEnd() takes no arguments"));
+                        }
+                        let col_index = self
+                            .table
+                            .get_column_index(object)
+                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
+
+                        let value = self.table.get_value(row_index, col_index);
+                        let trimmed_value = match value {
+                            Some(DataValue::String(s)) => {
+                                Some(DataValue::String(s.trim_end().to_string()))
+                            }
+                            Some(DataValue::InternedString(s)) => {
+                                Some(DataValue::String(s.trim_end().to_string()))
+                            }
+                            Some(DataValue::Integer(n)) => {
+                                Some(DataValue::String(n.to_string().trim_end().to_string()))
+                            }
+                            Some(DataValue::Float(f)) => {
+                                Some(DataValue::String(f.to_string().trim_end().to_string()))
+                            }
+                            _ => Some(DataValue::String(String::new())),
+                        };
+                        (trimmed_value, format!("{}.TrimEnd()", object))
+                    }
                     _ => {
                         return Err(anyhow::anyhow!(
                             "Method '{}' cannot be used in comparisons",
