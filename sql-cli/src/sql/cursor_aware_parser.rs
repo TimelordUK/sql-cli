@@ -759,8 +759,10 @@ impl CursorAwareParser {
                     "Substring(0, 5)",
                     "ToLower()",
                     "ToUpper()",
-                    "IsNullOrEmpty()",
                     "Trim()",
+                    "TrimStart()",
+                    "TrimEnd()",
+                    "IsNullOrEmpty()",
                     "Replace('', '')",
                     "Length()", // Changed from "Length" to "Length()"
                 ];

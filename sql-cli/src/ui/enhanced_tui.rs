@@ -168,6 +168,18 @@ impl CommandEditor {
                             self.delete_word_forward();
                             return Ok(false);
                         }
+                        'v' | 'V' => {
+                            // Paste from clipboard
+                            // We need to handle this at the parent level since clipboard access
+                            // requires state_container. Return a special indicator.
+                            // For now, just don't handle it here so it falls through to parent
+                            debug!("CommandEditor: Ctrl+V detected, letting parent handle clipboard paste");
+                        }
+                        'y' | 'Y' => {
+                            // Yank (paste from kill ring)
+                            // Similar to Ctrl+V, needs parent handling
+                            debug!("CommandEditor: Ctrl+Y detected, letting parent handle yank");
+                        }
                         _ => {}
                     }
                 }
@@ -2653,21 +2665,6 @@ impl EnhancedTuiApp {
                     self.move_cursor_word_forward();
                     return Ok(Some(false));
                 }
-                // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 4 (SQL navigation)
-                "jump_to_prev_token" => {
-                    self.jump_to_prev_token();
-                    return Ok(Some(false));
-                }
-                // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 4 (SQL navigation)
-                "jump_to_next_token" => {
-                    self.jump_to_next_token();
-                    return Ok(Some(false));
-                }
-                // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 3 (clipboard operations)
-                "paste_from_clipboard" => {
-                    self.paste_from_clipboard();
-                    return Ok(Some(false));
-                }
                 _ => {} // Not a text editing action, fall through
             }
         }
@@ -2699,28 +2696,14 @@ impl EnhancedTuiApp {
                 InputBehavior::kill_line_backward(self);
                 Ok(Some(false))
             }
-            // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 3 (clipboard operations)
-            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Yank - paste from kill ring
-                self.yank();
-                Ok(Some(false))
-            }
-            // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 3 (clipboard operations)
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Paste from system clipboard
                 self.paste_from_clipboard();
                 Ok(Some(false))
             }
-            // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 4 (SQL navigation)
-            KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Jump to previous SQL token
-                self.jump_to_prev_token();
-                Ok(Some(false))
-            }
-            // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 4 (SQL navigation)
-            KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::ALT) => {
-                // Jump to next SQL token
-                self.jump_to_next_token();
+            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Yank - paste from kill ring (if we have one)
+                self.yank();
                 Ok(Some(false))
             }
             // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
@@ -6916,44 +6899,6 @@ impl EnhancedTuiApp {
             ));
             debug_info.push_str("==========================================\n");
         }
-        debug_info
-    }
-
-    fn debug_generate_key_renderer_info(&self) -> String {
-        let mut debug_info = String::new();
-        debug_info.push_str("\n========== KEY SEQUENCE RENDERER ==========\n");
-        debug_info.push_str(&format!(
-            "Enabled: {}\n",
-            self.key_sequence_renderer.is_enabled()
-        ));
-        debug_info.push_str(&format!(
-            "Has Content: {}\n",
-            self.key_sequence_renderer.has_content()
-        ));
-        debug_info.push_str(&format!(
-            "Display String: '{}'\n",
-            self.key_sequence_renderer.get_display()
-        ));
-
-        // Show detailed state if enabled
-        if self.key_sequence_renderer.is_enabled() {
-            debug_info.push_str(&format!(
-                "Chord Mode: {:?}\n",
-                self.key_sequence_renderer.get_chord_mode()
-            ));
-            debug_info.push_str(&format!(
-                "Key History Size: {}\n",
-                self.key_sequence_renderer.sequence_count()
-            ));
-            let sequences = self.key_sequence_renderer.get_sequences();
-            if !sequences.is_empty() {
-                debug_info.push_str("Recent Keys:\n");
-                for (key, count) in sequences {
-                    debug_info.push_str(&format!("  - '{}' ({} times)\n", key, count));
-                }
-            }
-        }
-        debug_info.push_str("==========================================\n");
         debug_info
     }
 
