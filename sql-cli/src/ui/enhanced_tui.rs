@@ -1743,22 +1743,29 @@ impl EnhancedTuiApp {
         // === PHASE 1: Try CommandEditor for basic text input ===
         // This is a proof of concept - we'll gradually move more logic here
         if matches!(normalized_key.code, KeyCode::Char(_) | KeyCode::Backspace) {
-            // Test delegation to CommandEditor
+            // IMPORTANT: Sync state TO CommandEditor before processing
+            // This ensures CommandEditor has the current text/cursor position
+            if self.command_editor.get_text() != self.input.value() {
+                self.command_editor.set_text(self.input.value().to_string());
+            }
+            if self.command_editor.get_cursor() != self.input.cursor() {
+                self.command_editor.set_cursor(self.input.cursor());
+            }
+
+            // Now handle the input with proper state
             let result = self.command_editor.handle_input(
                 normalized_key.clone(),
                 &mut self.state_container,
                 &self.shadow_state,
             )?;
 
-            // Sync the text back to the main input for now
+            // Sync the text back to the main input after processing
             // (This is temporary until we fully migrate)
-            if self.command_editor.get_text() != self.input.value() {
-                let new_text = self.command_editor.get_text();
-                let new_cursor = self.command_editor.get_cursor();
-                self.input = tui_input::Input::new(new_text.clone()).with_cursor(new_cursor);
-                self.state_container.set_input_text(new_text);
-                self.state_container.set_input_cursor_position(new_cursor);
-            }
+            let new_text = self.command_editor.get_text();
+            let new_cursor = self.command_editor.get_cursor();
+            self.input = tui_input::Input::new(new_text.clone()).with_cursor(new_cursor);
+            self.state_container.set_input_text(new_text);
+            self.state_container.set_input_cursor_position(new_cursor);
 
             if result {
                 return Ok(true);
