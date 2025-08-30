@@ -70,6 +70,79 @@ use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
+/// CommandEditor handles all command mode input and state management
+/// This is the first step in extracting command mode from the main TUI
+struct CommandEditor {
+    // References to shared state (will be passed in from TUI)
+    input: Input,
+
+    // Command-specific state
+    scroll_offset: usize,
+    last_cursor_position: usize,
+    history_search_term: Option<String>,
+}
+
+impl CommandEditor {
+    fn new() -> Self {
+        Self {
+            input: Input::default(),
+            scroll_offset: 0,
+            last_cursor_position: 0,
+            history_search_term: None,
+        }
+    }
+
+    /// Handle command mode input, returning true if the app should exit
+    fn handle_input(
+        &mut self,
+        key: KeyEvent,
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
+    ) -> Result<bool> {
+        // This will contain the extracted command mode logic
+        // For now, handle basic text input as a proof of concept
+
+        // Handle character input
+        if let KeyCode::Char(c) = key.code {
+            if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
+                // Simple character input
+                self.input.handle_event(&Event::Key(key));
+                return Ok(false);
+            }
+        }
+
+        // Handle backspace
+        if key.code == KeyCode::Backspace {
+            self.input.handle_event(&Event::Key(key));
+            return Ok(false);
+        }
+
+        // For now, return false for other keys
+        Ok(false)
+    }
+
+    /// Get the current input text
+    fn get_text(&self) -> String {
+        self.input.value().to_string()
+    }
+
+    /// Set the input text
+    fn set_text(&mut self, text: String) {
+        self.input = Input::from(text);
+    }
+
+    /// Get the current cursor position
+    fn get_cursor(&self) -> usize {
+        self.input.cursor()
+    }
+
+    /// Set the cursor position
+    fn set_cursor(&mut self, pos: usize) {
+        let text = self.input.value().to_string();
+        self.input = tui_input::Input::new(text).with_cursor(pos);
+    }
+}
+
 pub struct EnhancedTuiApp {
     // State container - manages all state (owned directly, no Arc needed)
     state_container: AppStateContainer,
@@ -77,6 +150,7 @@ pub struct EnhancedTuiApp {
     debug_service: Option<DebugService>,
 
     input: Input,
+    command_editor: CommandEditor, // New: Handles command mode input and state
     cursor_manager: CursorManager, // New: manages cursor/navigation logic
     data_analyzer: DataAnalyzer,   // New: manages data analysis/statistics
     hybrid_parser: HybridParser,
@@ -1180,6 +1254,7 @@ impl EnhancedTuiApp {
             state_container,
             debug_service: Some(debug_service),
             input: Input::default(),
+            command_editor: CommandEditor::new(),
             cursor_manager: CursorManager::new(),
             data_analyzer: DataAnalyzer::new(),
             hybrid_parser: HybridParser::new(),
@@ -1664,6 +1739,32 @@ impl EnhancedTuiApp {
     fn handle_command_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Normalize and log the key
         let normalized_key = self.normalize_and_log_key(key);
+
+        // === PHASE 1: Try CommandEditor for basic text input ===
+        // This is a proof of concept - we'll gradually move more logic here
+        if matches!(normalized_key.code, KeyCode::Char(_) | KeyCode::Backspace) {
+            // Test delegation to CommandEditor
+            let result = self.command_editor.handle_input(
+                normalized_key.clone(),
+                &mut self.state_container,
+                &self.shadow_state,
+            )?;
+
+            // Sync the text back to the main input for now
+            // (This is temporary until we fully migrate)
+            if self.command_editor.get_text() != self.input.value() {
+                let new_text = self.command_editor.get_text();
+                let new_cursor = self.command_editor.get_cursor();
+                self.input = tui_input::Input::new(new_text.clone()).with_cursor(new_cursor);
+                self.state_container.set_input_text(new_text);
+                self.state_container.set_input_cursor_position(new_cursor);
+            }
+
+            if result {
+                return Ok(true);
+            }
+        }
+        // === END PHASE 1 ===
 
         // Try the new action system first
         if let Some(result) = self.try_action_system(normalized_key.clone())? {
