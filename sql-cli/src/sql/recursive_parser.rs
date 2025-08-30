@@ -190,6 +190,12 @@ impl Lexer {
                 let string_val = self.read_string();
                 Token::StringLiteral(string_val)
             }
+            Some('-') if self.peek(1).map_or(false, |c| c.is_numeric()) => {
+                // Handle negative numbers
+                self.advance(); // skip '-'
+                let num = self.read_number();
+                Token::NumberLiteral(format!("-{}", num))
+            }
             Some(ch) if ch.is_numeric() => {
                 let num = self.read_number();
                 Token::NumberLiteral(num)

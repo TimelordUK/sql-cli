@@ -99,26 +99,253 @@ impl CommandEditor {
         state_container: &mut AppStateContainer,
         shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
     ) -> Result<bool> {
-        // This will contain the extracted command mode logic
-        // For now, handle basic text input as a proof of concept
+        debug!(
+            "CommandEditor::handle_input - key: {:?}, current text: '{}', cursor: {}",
+            key,
+            self.input.value(),
+            self.input.cursor()
+        );
 
-        // Handle character input
-        if let KeyCode::Char(c) = key.code {
-            if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                // Simple character input
+        // Handle comprehensive text editing operations
+        match key.code {
+            // === Character Input ===
+            KeyCode::Char(c) => {
+                if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
+                    // Simple character input
+                    let before = self.input.value().to_string();
+                    let before_cursor = self.input.cursor();
+                    self.input.handle_event(&Event::Key(key));
+                    let after = self.input.value().to_string();
+                    let after_cursor = self.input.cursor();
+                    debug!(
+                        "CommandEditor processed char '{}': text '{}' -> '{}', cursor {} -> {}",
+                        c, before, after, before_cursor, after_cursor
+                    );
+                    return Ok(false);
+                }
+
+                // === Ctrl Key Combinations ===
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    match c {
+                        'a' | 'A' => {
+                            // Move to beginning of line
+                            self.input = self.input.clone().with_cursor(0);
+                            return Ok(false);
+                        }
+                        'e' | 'E' => {
+                            // Move to end of line
+                            let len = self.input.value().len();
+                            self.input = self.input.clone().with_cursor(len);
+                            return Ok(false);
+                        }
+                        'k' | 'K' => {
+                            // Kill line - delete from cursor to end
+                            let cursor = self.input.cursor();
+                            let text = self.input.value();
+                            if cursor < text.len() {
+                                let new_text = text[..cursor].to_string();
+                                self.input = Input::from(new_text).with_cursor(cursor);
+                            }
+                            return Ok(false);
+                        }
+                        'u' | 'U' => {
+                            // Kill line backward - delete from start to cursor
+                            let cursor = self.input.cursor();
+                            let text = self.input.value();
+                            if cursor > 0 {
+                                let new_text = text[cursor..].to_string();
+                                self.input = Input::from(new_text).with_cursor(0);
+                            }
+                            return Ok(false);
+                        }
+                        'w' | 'W' => {
+                            // Delete word backward
+                            self.delete_word_backward();
+                            return Ok(false);
+                        }
+                        'd' | 'D' => {
+                            // Delete word forward (if at word boundary)
+                            self.delete_word_forward();
+                            return Ok(false);
+                        }
+                        _ => {}
+                    }
+                }
+
+                // === Alt Key Combinations ===
+                if key.modifiers.contains(KeyModifiers::ALT) {
+                    match c {
+                        'b' | 'B' => {
+                            // Move word backward
+                            self.move_word_backward();
+                            return Ok(false);
+                        }
+                        'f' | 'F' => {
+                            debug!("CommandEditor: Alt+F - Move word forward");
+                            // Move word forward
+                            self.move_word_forward();
+                            return Ok(false);
+                        }
+                        'd' | 'D' => {
+                            // Delete word forward
+                            self.delete_word_forward();
+                            return Ok(false);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // === Basic Navigation and Editing ===
+            KeyCode::Backspace => {
                 self.input.handle_event(&Event::Key(key));
                 return Ok(false);
             }
+            KeyCode::Delete => {
+                self.input.handle_event(&Event::Key(key));
+                return Ok(false);
+            }
+            KeyCode::Left => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.move_word_backward();
+                } else {
+                    self.input.handle_event(&Event::Key(key));
+                }
+                return Ok(false);
+            }
+            KeyCode::Right => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.move_word_forward();
+                } else {
+                    self.input.handle_event(&Event::Key(key));
+                }
+                return Ok(false);
+            }
+            KeyCode::Home => {
+                self.input = self.input.clone().with_cursor(0);
+                return Ok(false);
+            }
+            KeyCode::End => {
+                let len = self.input.value().len();
+                self.input = self.input.clone().with_cursor(len);
+                return Ok(false);
+            }
+
+            // === Tab Completion ===
+            KeyCode::Tab => {
+                // Tab completion needs access to full TUI state
+                // Let parent handle it by not returning early
+            }
+
+            _ => {}
         }
 
-        // Handle backspace
-        if key.code == KeyCode::Backspace {
-            self.input.handle_event(&Event::Key(key));
-            return Ok(false);
-        }
-
-        // For now, return false for other keys
+        // Key not handled by CommandEditor
         Ok(false)
+    }
+
+    // === Helper Methods for Text Operations ===
+
+    fn delete_word_backward(&mut self) {
+        let cursor = self.input.cursor();
+        let text = self.input.value();
+
+        if cursor == 0 {
+            return;
+        }
+
+        // Find start of current/previous word
+        let chars: Vec<char> = text.chars().collect();
+        let mut pos = cursor;
+
+        // Skip trailing spaces
+        while pos > 0 && chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
+
+        // Skip word characters
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
+
+        // Delete from pos to cursor
+        let new_text = format!("{}{}", &text[..pos], &text[cursor..]);
+        self.input = Input::from(new_text).with_cursor(pos);
+    }
+
+    fn delete_word_forward(&mut self) {
+        let cursor = self.input.cursor();
+        let text = self.input.value();
+
+        if cursor >= text.len() {
+            return;
+        }
+
+        // Find end of current/next word
+        let chars: Vec<char> = text.chars().collect();
+        let mut pos = cursor;
+
+        // Skip word characters
+        while pos < chars.len() && !chars[pos].is_whitespace() {
+            pos += 1;
+        }
+
+        // Skip trailing spaces
+        while pos < chars.len() && chars[pos].is_whitespace() {
+            pos += 1;
+        }
+
+        // Delete from cursor to pos
+        let new_text = format!("{}{}", &text[..cursor], &text[pos..]);
+        self.input = Input::from(new_text).with_cursor(cursor);
+    }
+
+    fn move_word_backward(&mut self) {
+        let cursor = self.input.cursor();
+        let text = self.input.value();
+
+        if cursor == 0 {
+            return;
+        }
+
+        let chars: Vec<char> = text.chars().collect();
+        let mut pos = cursor;
+
+        // Skip trailing spaces
+        while pos > 0 && chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
+
+        // Skip word characters
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
+
+        self.input = self.input.clone().with_cursor(pos);
+    }
+
+    fn move_word_forward(&mut self) {
+        let cursor = self.input.cursor();
+        let text = self.input.value();
+
+        if cursor >= text.len() {
+            return;
+        }
+
+        let chars: Vec<char> = text.chars().collect();
+        let mut pos = cursor;
+
+        // Skip word characters
+        while pos < chars.len() && !chars[pos].is_whitespace() {
+            pos += 1;
+        }
+
+        // Skip trailing spaces
+        while pos < chars.len() && chars[pos].is_whitespace() {
+            pos += 1;
+        }
+
+        self.input = self.input.clone().with_cursor(pos);
     }
 
     /// Get the current input text
@@ -1740,20 +1967,55 @@ impl EnhancedTuiApp {
         // Normalize and log the key
         let normalized_key = self.normalize_and_log_key(key);
 
-        // === PHASE 1: Try CommandEditor for basic text input ===
+        // === PHASE 1: Try CommandEditor for text input and editing ===
         // IMPORTANT: This must come BEFORE try_action_system to properly intercept keys
-        // We handle basic text editing that would otherwise go through the action system
-        if matches!(normalized_key.code, KeyCode::Char(_) | KeyCode::Backspace)
-            && !normalized_key.modifiers.contains(KeyModifiers::CONTROL)
-            && !normalized_key.modifiers.contains(KeyModifiers::ALT)
-        {
+        // We handle comprehensive text editing operations
+        // Let CommandEditor handle most text-related keys (except Tab which needs full TUI state)
+
+        // Check for special Ctrl/Alt combinations that should NOT go to CommandEditor
+        let is_special_combo = if let KeyCode::Char(c) = normalized_key.code {
+            // Special Ctrl combinations
+            (normalized_key.modifiers.contains(KeyModifiers::CONTROL) && matches!(c,
+                'x' | 'X' | // Expand asterisk
+                'p' | 'P' | // Previous history  
+                'n' | 'N' | // Next history
+                'r' | 'R' | // History search
+                'j' | 'J' | // Export JSON
+                'o' | 'O' | // Open buffer
+                'b' | 'B' | // Buffer operations
+                'l' | 'L'   // Clear screen
+            )) ||
+            // Special Alt combinations that aren't word navigation
+            (normalized_key.modifiers.contains(KeyModifiers::ALT) && matches!(c,
+                'x' | 'X'   // Expand asterisk visible only
+            ))
+        } else {
+            false
+        };
+
+        let should_try_command_editor = !is_special_combo
+            && matches!(
+                normalized_key.code,
+                KeyCode::Char(_)
+                    | KeyCode::Backspace
+                    | KeyCode::Delete
+                    | KeyCode::Left
+                    | KeyCode::Right
+                    | KeyCode::Home
+                    | KeyCode::End
+            );
+
+        if should_try_command_editor {
             // IMPORTANT: Sync state TO CommandEditor before processing
             // This ensures CommandEditor has the current text/cursor position
-            if self.command_editor.get_text() != self.input.value() {
-                self.command_editor.set_text(self.input.value().to_string());
+            let before_text = self.input.value().to_string();
+            let before_cursor = self.input.cursor();
+
+            if self.command_editor.get_text() != before_text {
+                self.command_editor.set_text(before_text.clone());
             }
-            if self.command_editor.get_cursor() != self.input.cursor() {
-                self.command_editor.set_cursor(self.input.cursor());
+            if self.command_editor.get_cursor() != before_cursor {
+                self.command_editor.set_cursor(before_cursor);
             }
 
             // Now handle the input with proper state
@@ -1767,7 +2029,26 @@ impl EnhancedTuiApp {
             // (This is temporary until we fully migrate)
             let new_text = self.command_editor.get_text();
             let new_cursor = self.command_editor.get_cursor();
-            self.input = tui_input::Input::new(new_text.clone()).with_cursor(new_cursor);
+
+            // Debug logging to see what's happening
+            if new_text != before_text || new_cursor != before_cursor {
+                debug!(
+                    "CommandEditor changed input: '{}' -> '{}', cursor: {} -> {}",
+                    before_text, new_text, before_cursor, new_cursor
+                );
+            }
+
+            // Use from() instead of new() to preserve any internal state
+            self.input = tui_input::Input::from(new_text.clone()).with_cursor(new_cursor);
+
+            // CRITICAL: Update the buffer, not just command_input!
+            // The rendering uses get_buffer_input_text() which reads from the buffer
+            if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
+                buffer.set_input_text(new_text.clone());
+                buffer.set_input_cursor_position(new_cursor);
+            }
+
+            // Also update command_input for consistency
             self.state_container.set_input_text(new_text);
             self.state_container.set_input_cursor_position(new_cursor);
 
@@ -2338,42 +2619,51 @@ impl EnhancedTuiApp {
                     }
                     return Ok(Some(false));
                 }
+                // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
                 "delete_word_backward" => {
                     use crate::ui::traits::input_ops::InputBehavior;
                     InputBehavior::delete_word_backward(self);
                     return Ok(Some(false));
                 }
+                // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
                 "delete_word_forward" => {
                     use crate::ui::traits::input_ops::InputBehavior;
                     InputBehavior::delete_word_forward(self);
                     return Ok(Some(false));
                 }
+                // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
                 "kill_line" => {
                     use crate::ui::traits::input_ops::InputBehavior;
                     InputBehavior::kill_line(self);
                     return Ok(Some(false));
                 }
+                // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
                 "kill_line_backward" => {
                     use crate::ui::traits::input_ops::InputBehavior;
                     InputBehavior::kill_line_backward(self);
                     return Ok(Some(false));
                 }
+                // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
                 "move_word_backward" => {
                     self.move_cursor_word_backward();
                     return Ok(Some(false));
                 }
+                // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
                 "move_word_forward" => {
                     self.move_cursor_word_forward();
                     return Ok(Some(false));
                 }
+                // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 4 (SQL navigation)
                 "jump_to_prev_token" => {
                     self.jump_to_prev_token();
                     return Ok(Some(false));
                 }
+                // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 4 (SQL navigation)
                 "jump_to_next_token" => {
                     self.jump_to_next_token();
                     return Ok(Some(false));
                 }
+                // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 3 (clipboard operations)
                 "paste_from_clipboard" => {
                     self.paste_from_clipboard();
                     return Ok(Some(false));
@@ -2384,6 +2674,7 @@ impl EnhancedTuiApp {
 
         // Handle hardcoded text editing keys
         match key.code {
+            // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Kill line - delete from cursor to end of line
                 self.state_container
@@ -2392,6 +2683,7 @@ impl EnhancedTuiApp {
                 InputBehavior::kill_line(self);
                 Ok(Some(false))
             }
+            // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Alternative: Alt+K for kill line (for terminals that intercept Ctrl+K)
                 self.state_container
@@ -2400,47 +2692,56 @@ impl EnhancedTuiApp {
                 InputBehavior::kill_line(self);
                 Ok(Some(false))
             }
+            // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Kill line backward - delete from cursor to beginning of line
                 use crate::ui::traits::input_ops::InputBehavior;
                 InputBehavior::kill_line_backward(self);
                 Ok(Some(false))
             }
+            // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 3 (clipboard operations)
             KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Yank - paste from kill ring
                 self.yank();
                 Ok(Some(false))
             }
+            // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 3 (clipboard operations)
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Paste from system clipboard
                 self.paste_from_clipboard();
                 Ok(Some(false))
             }
+            // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 4 (SQL navigation)
             KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Jump to previous SQL token
                 self.jump_to_prev_token();
                 Ok(Some(false))
             }
+            // TODO: NOT IN COMMAND_EDITOR - Keep for Phase 4 (SQL navigation)
             KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Jump to next SQL token
                 self.jump_to_next_token();
                 Ok(Some(false))
             }
+            // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
             KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Move backward one word
                 self.move_cursor_word_backward();
                 Ok(Some(false))
             }
+            // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
             KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Move forward one word
                 self.move_cursor_word_forward();
                 Ok(Some(false))
             }
+            // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
             KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Move backward one word (alt+b like in bash)
                 self.move_cursor_word_backward();
                 Ok(Some(false))
             }
+            // TODO: DUPLICATED IN COMMAND_EDITOR - Can be removed after full migration
             KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Move forward one word (alt+f like in bash)
                 self.move_cursor_word_forward();
