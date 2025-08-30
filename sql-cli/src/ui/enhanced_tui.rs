@@ -1322,44 +1322,19 @@ impl EnhancedTuiApp {
 
     /// Add a DataView to the existing TUI (creates a new buffer)
     pub fn add_dataview(&mut self, dataview: DataView, source_name: &str) -> Result<()> {
-        // Create a new buffer with the DataView
-        let buffer_id = self.state_container.buffers().all_buffers().len() + 1;
-        let mut buffer = buffer::Buffer::new(buffer_id);
+        // Delegate all the complex state coordination to StateCoordinator
+        use crate::ui::state_coordinator::StateCoordinator;
 
-        // Set the DataView directly
-        buffer.set_dataview(Some(dataview.clone()));
-        // Use just the filename for the buffer name, not the full path
-        let buffer_name = std::path::Path::new(source_name)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(source_name)
-            .to_string();
-        buffer.set_name(buffer_name);
+        StateCoordinator::add_dataview_with_refs(
+            &mut self.state_container,
+            &self.viewport_manager,
+            dataview,
+            source_name,
+            &self.config,
+        )?;
 
-        // Apply config settings to the buffer
-        buffer.set_case_insensitive(self.config.behavior.case_insensitive_default);
-        buffer.set_compact_mode(self.config.display.compact_mode);
-        buffer.set_show_row_numbers(self.config.display.show_row_numbers);
-
-        // Add the buffer and switch to it
-        self.state_container.buffers_mut().add_buffer(buffer);
-        let new_index = self.state_container.buffers().all_buffers().len() - 1;
-        self.state_container.buffers_mut().switch_to(new_index);
-
-        // Update state container with the DataView
-        self.state_container.set_dataview(Some(dataview.clone()));
-
-        // Update viewport manager
-        self.update_viewport_with_dataview(dataview.clone());
-
-        // Calculate column widths for the new view
+        // TUI-specific: Calculate optimal column widths for display
         self.calculate_optimal_column_widths();
-
-        // Update navigation state
-        let row_count = dataview.row_count();
-        let column_count = dataview.column_count();
-        self.state_container
-            .update_data_size(row_count, column_count);
 
         Ok(())
     }

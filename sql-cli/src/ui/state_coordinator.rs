@@ -1,8 +1,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, Buffer, BufferAPI, BufferManager};
+use crate::config::config::Config;
+use crate::data::data_view::DataView;
 use crate::sql::hybrid_parser::HybridParser;
 use crate::ui::viewport_manager::ViewportManager;
 use crate::widgets::search_modes_widget::SearchMode;
@@ -329,6 +332,76 @@ impl StateCoordinator {
 
         // Switch to the target mode (usually Results)
         Self::sync_mode_with_refs(state_container, shadow_state, mode, trigger);
+    }
+
+    // ========== DATAVIEW MANAGEMENT ==========
+
+    /// Add a new DataView and coordinate all necessary state updates
+    /// This centralizes the complex logic of adding a new data source
+    pub fn add_dataview_with_refs(
+        state_container: &mut AppStateContainer,
+        viewport_manager: &RefCell<Option<ViewportManager>>,
+        dataview: DataView,
+        source_name: &str,
+        config: &Config,
+    ) -> Result<(), anyhow::Error> {
+        debug!(
+            "StateCoordinator::add_dataview_with_refs: Adding DataView for '{}'",
+            source_name
+        );
+
+        // Create a new buffer with the DataView
+        let buffer_id = state_container.buffers().all_buffers().len() + 1;
+        let mut buffer = crate::buffer::Buffer::new(buffer_id);
+
+        // Set the DataView directly
+        buffer.set_dataview(Some(dataview.clone()));
+
+        // Use just the filename for the buffer name, not the full path
+        let buffer_name = std::path::Path::new(source_name)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(source_name)
+            .to_string();
+        buffer.set_name(buffer_name.clone());
+
+        // Apply config settings to the buffer
+        buffer.set_case_insensitive(config.behavior.case_insensitive_default);
+        buffer.set_compact_mode(config.display.compact_mode);
+        buffer.set_show_row_numbers(config.display.show_row_numbers);
+
+        debug!(
+            "StateCoordinator: Created buffer '{}' with {} rows, {} columns",
+            buffer_name,
+            dataview.row_count(),
+            dataview.column_count()
+        );
+
+        // Add the buffer and switch to it
+        state_container.buffers_mut().add_buffer(buffer);
+        let new_index = state_container.buffers().all_buffers().len() - 1;
+        state_container.buffers_mut().switch_to(new_index);
+
+        // Update state container with the DataView
+        state_container.set_dataview(Some(dataview.clone()));
+
+        // Update viewport manager with the new DataView
+        // Replace the entire ViewportManager with a new one for the DataView
+        *viewport_manager.borrow_mut() = Some(ViewportManager::new(Arc::new(dataview.clone())));
+
+        debug!("StateCoordinator: Created new ViewportManager for DataView");
+
+        // Update navigation state with data dimensions
+        let row_count = dataview.row_count();
+        let column_count = dataview.column_count();
+        state_container.update_data_size(row_count, column_count);
+
+        debug!(
+            "StateCoordinator: DataView '{}' successfully added and all state synchronized",
+            buffer_name
+        );
+
+        Ok(())
     }
 
     // ========== QUERY EXECUTION SYNCHRONIZATION ==========
