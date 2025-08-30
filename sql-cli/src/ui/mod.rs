@@ -26,6 +26,7 @@ pub mod scroll_utils;
 pub mod search_operations;
 pub mod shadow_state;
 pub mod simple_operations;
+pub mod state_coordinator;
 pub mod table_render_context;
 pub mod table_renderer;
 pub mod table_widget_manager;
