@@ -2910,12 +2910,20 @@ impl EnhancedTuiApp {
         let current_sql = if self.shadow_state.borrow().is_in_results_mode() {
             // In Results mode, use the last executed query
             let last_query = self.state_container.get_last_query();
+            let input_text = self.state_container.get_input_text();
+            debug!(target: "search", "COLUMN_SEARCH_SAVE_DEBUG: last_query='{}', input_text='{}'", last_query, input_text);
+
             if !last_query.is_empty() {
-                debug!("Using last_query for search mode: '{}'", last_query);
+                debug!(target: "search", "Using last_query for search mode: '{}'", last_query);
                 last_query
+            } else if !input_text.is_empty() {
+                // If last_query is empty but we have input_text, use that as fallback
+                // This handles the case where data is loaded but no query has been executed yet
+                debug!(target: "search", "No last_query, using input_text as fallback: '{}'", input_text);
+                input_text
             } else {
                 // This shouldn't happen if we're properly saving queries
-                warn!("No last_query found when entering search mode from Results!");
+                warn!(target: "search", "No last_query or input_text found when entering search mode from Results!");
                 String::new()
             }
         } else {
@@ -3112,11 +3120,17 @@ impl EnhancedTuiApp {
                     // Use helper to sync all states
                     self.set_input_text_with_cursor(sql, cursor);
                 } else {
-                    // Widget didn't have saved state - for column search, clear the input
-                    // since it would have the column name
+                    // Widget didn't have saved state - restore appropriate SQL based on mode
                     if mode == SearchMode::ColumnSearch {
-                        debug!(target: "search", "Column search: No saved state, clearing input");
-                        self.set_input_text(String::new());
+                        // For column search, restore the last executed query or pre-populated query
+                        let last_query = self.state_container.get_last_query();
+                        if !last_query.is_empty() {
+                            debug!(target: "search", "Column search: No saved state, restoring last_query: '{}'", last_query);
+                            self.set_input_text(last_query);
+                        } else {
+                            debug!(target: "search", "Column search: No saved state or last_query, clearing input");
+                            self.set_input_text(String::new());
+                        }
                     } else {
                         debug!(target: "search", "No saved state from widget, keeping current SQL");
                     }

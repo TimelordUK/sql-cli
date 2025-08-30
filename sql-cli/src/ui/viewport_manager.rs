@@ -176,6 +176,74 @@ impl ViewportManager {
                "Crosshair set to visual position: row={}, col={}", row, col);
     }
 
+    /// Set crosshair row position in visual coordinates with automatic viewport adjustment
+    pub fn set_crosshair_row(&mut self, row: usize) {
+        let total_rows = self.dataview.row_count();
+
+        // Clamp row to valid range
+        let clamped_row = row.min(total_rows.saturating_sub(1));
+        self.crosshair_row = clamped_row;
+
+        // Don't adjust viewport if viewport is locked
+        if self.viewport_lock {
+            debug!(target: "viewport_manager", 
+                   "Crosshair row set to: {} (viewport locked, no scroll adjustment)", 
+                   clamped_row);
+            return;
+        }
+
+        // Adjust viewport if crosshair is outside current viewport
+        let viewport_height = self.viewport_rows.len();
+        let mut viewport_changed = false;
+
+        if clamped_row < self.viewport_rows.start {
+            // Crosshair is above current viewport - scroll up
+            self.viewport_rows = clamped_row..(clamped_row + viewport_height).min(total_rows);
+            viewport_changed = true;
+        } else if clamped_row >= self.viewport_rows.end {
+            // Crosshair is below current viewport - scroll down
+            let new_start = clamped_row.saturating_sub(viewport_height.saturating_sub(1));
+            self.viewport_rows = new_start..(new_start + viewport_height).min(total_rows);
+            viewport_changed = true;
+        }
+
+        if viewport_changed {
+            debug!(target: "viewport_manager", 
+                   "Crosshair row set to: {}, adjusted viewport to: {:?}", 
+                   clamped_row, self.viewport_rows);
+        } else {
+            debug!(target: "viewport_manager", 
+                   "Crosshair row set to: {}", clamped_row);
+        }
+    }
+
+    /// Set crosshair column position in visual coordinates with automatic viewport adjustment  
+    pub fn set_crosshair_column(&mut self, col: usize) {
+        let total_columns = self.dataview.get_display_columns().len();
+
+        // Clamp column to valid range
+        let clamped_col = col.min(total_columns.saturating_sub(1));
+        self.crosshair_col = clamped_col;
+
+        // Don't adjust viewport if viewport is locked
+        if self.viewport_lock {
+            debug!(target: "viewport_manager", 
+                   "Crosshair column set to: {} (viewport locked, no scroll adjustment)", 
+                   clamped_col);
+            return;
+        }
+
+        // Use the existing smart column adjustment logic
+        let terminal_width = self.terminal_width.saturating_sub(4); // Account for borders
+        if self.set_current_column(clamped_col) {
+            debug!(target: "viewport_manager", 
+                   "Crosshair column set to: {} with viewport adjustment", clamped_col);
+        } else {
+            debug!(target: "viewport_manager", 
+                   "Crosshair column set to: {}", clamped_col);
+        }
+    }
+
     /// Get crosshair column position in visual coordinates
     pub fn get_crosshair_col(&self) -> usize {
         self.crosshair_col
@@ -194,6 +262,11 @@ impl ViewportManager {
     /// Get selected column (alias for crosshair_col for compatibility)
     pub fn get_selected_column(&self) -> usize {
         self.crosshair_col
+    }
+
+    /// Get crosshair position as (row, column) tuple in visual coordinates
+    pub fn get_crosshair_position(&self) -> (usize, usize) {
+        (self.crosshair_row, self.crosshair_col)
     }
 
     /// Get scroll offset as (row_offset, col_offset)
@@ -699,14 +772,16 @@ impl ViewportManager {
         }
     }
 
-    /// Get visible column headers
+    /// Get visible column headers (only non-hidden columns that are in current viewport)
     pub fn get_visible_columns(&self) -> Vec<String> {
-        let all_columns = self.dataview.column_names();
-        let mut visible = Vec::with_capacity(self.viewport_cols.len());
+        // Get display column names (excludes hidden columns)
+        let display_column_names = self.dataview.get_display_column_names();
 
+        // Map viewport column indices to display column names
+        let mut visible = Vec::new();
         for col_idx in self.viewport_cols.clone() {
-            if col_idx < all_columns.len() {
-                visible.push(all_columns[col_idx].clone());
+            if col_idx < display_column_names.len() {
+                visible.push(display_column_names[col_idx].clone());
             }
         }
 
@@ -2972,6 +3047,25 @@ impl ViewportManager {
         self.viewport_lock
     }
 
+    /// Lock the viewport to prevent scrolling
+    pub fn lock_viewport(&mut self) {
+        if !self.viewport_lock {
+            self.viewport_lock = true;
+            self.viewport_lock_boundaries = Some(self.viewport_rows.clone());
+            debug!(target: "viewport_manager", "Viewport locked: rows {}-{}", 
+                   self.viewport_rows.start + 1, self.viewport_rows.end);
+        }
+    }
+
+    /// Unlock the viewport to allow scrolling
+    pub fn unlock_viewport(&mut self) {
+        if self.viewport_lock {
+            self.viewport_lock = false;
+            self.viewport_lock_boundaries = None;
+            debug!(target: "viewport_manager", "Viewport unlocked");
+        }
+    }
+
     /// Move the current column left in the display order (swap with previous column)
     pub fn reorder_column_left(&mut self, current_column: usize) -> ColumnReorderResult {
         debug!(target: "viewport_manager",
@@ -3351,6 +3445,30 @@ impl ViewportManager {
         self.viewport_cols = 0..column_count.min(20); // Show first ~20 columns or all if less
 
         debug!(target: "viewport_manager", "All columns unhidden, viewport reset to {:?}", self.viewport_cols);
+    }
+
+    /// Pin the specified column
+    /// Returns true if the column was pinned successfully, false otherwise
+    pub fn pin_column(&mut self, column_index: usize) -> bool {
+        debug!(target: "viewport_manager", "pin_column: column_index={}", column_index);
+
+        // Clone the DataView, modify it, and replace the Arc
+        let mut new_dataview = (*self.dataview).clone();
+
+        // Try to pin the column in the cloned DataView
+        let success = new_dataview.pin_column(column_index).is_ok();
+
+        if success {
+            // Replace the Arc with the modified DataView
+            self.dataview = Arc::new(new_dataview);
+            self.invalidate_cache(); // Column pinning affects layout, need to recalculate
+
+            debug!(target: "viewport_manager", "Column {} pinned successfully", column_index);
+        } else {
+            debug!(target: "viewport_manager", "Failed to pin column {}", column_index);
+        }
+
+        success
     }
 
     /// Update the current column position and automatically adjust viewport if needed
@@ -3872,6 +3990,96 @@ impl ViewportManager {
         let compact_mode = false;
 
         self.calculate_viewport_column_widths(viewport_start, viewport_end, compact_mode)
+    }
+
+    /// Ensure the specified column is visible by adjusting the viewport if necessary
+    pub fn ensure_column_visible(&mut self, column_index: usize, available_width: u16) {
+        debug!(target: "viewport_manager", "ensure_column_visible: column_index={}, available_width={}", column_index, available_width);
+
+        let total_columns = self.dataview.get_display_columns().len();
+
+        // Clamp column_index to valid range
+        if column_index >= total_columns {
+            debug!(target: "viewport_manager", "Column index {} out of range (max {})", column_index, total_columns.saturating_sub(1));
+            return;
+        }
+
+        // Check if column is already visible
+        let visible_columns = self.calculate_visible_column_indices(available_width);
+        let dt_columns = self.dataview.get_display_columns();
+
+        // Find the DataTable index for the visual column
+        if let Some(&dt_index) = dt_columns.get(column_index) {
+            if visible_columns.contains(&dt_index) {
+                debug!(target: "viewport_manager", "Column {} already visible", column_index);
+                return;
+            }
+        }
+
+        // Column is not visible, need to adjust viewport
+        // Use set_current_column which has the smart viewport adjustment logic
+        if self.set_current_column(column_index) {
+            self.crosshair_col = column_index;
+            debug!(target: "viewport_manager", "Ensured column {} is visible and set crosshair", column_index);
+        } else {
+            debug!(target: "viewport_manager", "Failed to make column {} visible", column_index);
+        }
+    }
+
+    /// Reorder a column from one position to another
+    pub fn reorder_column(&mut self, from_index: usize, to_index: usize) -> bool {
+        debug!(target: "viewport_manager", "reorder_column: from_index={}, to_index={}", from_index, to_index);
+
+        if from_index == to_index {
+            return true; // No move needed
+        }
+
+        // Clone the DataView, modify it, and replace the Arc
+        let mut new_dataview = (*self.dataview).clone();
+
+        let mut current_pos = from_index;
+        let mut success = true;
+
+        // Move the column step by step to the target position
+        if from_index < to_index {
+            // Moving right - use move_column_right repeatedly
+            while current_pos < to_index && success {
+                success = new_dataview.move_column_right(current_pos);
+                if success {
+                    current_pos += 1;
+                }
+            }
+        } else {
+            // Moving left - use move_column_left repeatedly
+            while current_pos > to_index && success {
+                success = new_dataview.move_column_left(current_pos);
+                if success {
+                    current_pos -= 1;
+                }
+            }
+        }
+
+        if success {
+            // Replace the Arc with the modified DataView
+            self.dataview = Arc::new(new_dataview);
+            self.invalidate_cache(); // Column order changed, need to recalculate
+
+            debug!(target: "viewport_manager", "Column moved from {} to {} successfully", from_index, to_index);
+        } else {
+            debug!(target: "viewport_manager", "Failed to move column from {} to {}", from_index, to_index);
+        }
+
+        success
+    }
+
+    /// Calculate column widths for the given available width
+    /// This is a convenience method that returns the calculated widths for all columns
+    pub fn calculate_column_widths(&mut self, available_width: u16) -> Vec<u16> {
+        // Calculate visible column indices first to trigger width calculations
+        let _visible_indices = self.calculate_visible_column_indices(available_width);
+
+        // Return the cached column widths
+        self.get_column_widths().to_vec()
     }
 }
 
