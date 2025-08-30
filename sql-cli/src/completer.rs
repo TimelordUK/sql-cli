@@ -15,6 +15,10 @@ impl SqlCompleter {
             schema: Schema::new(),
         }
     }
+
+    pub fn update_schema(&mut self, table_name: String, columns: Vec<String>) {
+        self.schema.set_single_table(table_name, columns);
+    }
 }
 
 impl Completer for SqlCompleter {

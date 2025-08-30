@@ -389,6 +389,28 @@ impl EnhancedTuiApp {
         }
     }
 
+    /// Synchronize mode across all state containers
+    /// This ensures AppStateContainer, Buffer, and ShadowState are all in sync
+    fn sync_mode(&mut self, mode: AppMode, trigger: &str) {
+        debug!(
+            "sync_mode: Setting mode to {:?} with trigger '{}'",
+            mode, trigger
+        );
+
+        // Set in AppStateContainer
+        self.state_container.set_mode(mode.clone());
+
+        // Set in current buffer
+        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
+            buffer.set_mode(mode.clone());
+        }
+
+        // Observe in shadow state
+        self.shadow_state
+            .borrow_mut()
+            .observe_mode_change(mode, trigger);
+    }
+
     /// Save current ViewportManager state to the current buffer
     fn save_viewport_to_current_buffer(&mut self) {
         let viewport_borrow = self.viewport_manager.borrow();
@@ -2044,8 +2066,8 @@ impl EnhancedTuiApp {
                         .next_buffer(self.state_container.buffers_mut());
                     debug!("{}", message);
 
-                    // Restore viewport state after switching
-                    self.restore_viewport_from_current_buffer();
+                    // Sync all state after buffer switch
+                    self.sync_after_buffer_switch();
                     return Ok(Some(false));
                 }
                 "previous_buffer" => {
@@ -2057,8 +2079,8 @@ impl EnhancedTuiApp {
                         .previous_buffer(self.state_container.buffers_mut());
                     debug!("{}", message);
 
-                    // Restore viewport state after switching
-                    self.restore_viewport_from_current_buffer();
+                    // Sync all state after buffer switch
+                    self.sync_after_buffer_switch();
                     return Ok(Some(false));
                 }
                 "quick_switch_buffer" => {
@@ -2070,8 +2092,9 @@ impl EnhancedTuiApp {
                         .quick_switch(self.state_container.buffers_mut());
                     debug!("{}", message);
 
-                    // Restore viewport state after switching
-                    self.restore_viewport_from_current_buffer();
+                    // Sync all state after buffer switch
+                    self.sync_after_buffer_switch();
+
                     return Ok(Some(false));
                 }
                 "new_buffer" => {
@@ -2109,8 +2132,8 @@ impl EnhancedTuiApp {
                             );
                             debug!("{}", message);
 
-                            // Restore viewport state after switching
-                            self.restore_viewport_from_current_buffer();
+                            // Sync all state after buffer switch
+                            self.sync_after_buffer_switch();
                         }
                     }
                     return Ok(Some(false));
@@ -2956,23 +2979,23 @@ impl EnhancedTuiApp {
         self.search_modes_widget
             .enter_mode(mode.clone(), current_sql, cursor_pos);
 
-        // Set the app mode
+        // Set the app mode - use sync_mode to ensure all state is synchronized
         debug!(target: "mode", "Setting app mode from {:?} to {:?}", self.shadow_state.borrow().get_mode(), mode.to_app_mode());
-        self.state_container.set_mode(mode.to_app_mode());
+        let trigger = match mode {
+            SearchMode::ColumnSearch => "backslash_column_search",
+            SearchMode::Search => "data_search_started",
+            SearchMode::FuzzyFilter => "fuzzy_filter_started",
+            SearchMode::Filter => "filter_started",
+        };
+        self.sync_mode(mode.to_app_mode(), trigger);
 
-        // Observe the search mode start in shadow state
+        // Also observe the search mode start in shadow state for search-specific tracking
         let search_type = match mode {
             SearchMode::ColumnSearch => crate::ui::shadow_state::SearchType::Column,
             SearchMode::Search => crate::ui::shadow_state::SearchType::Data,
             SearchMode::FuzzyFilter | SearchMode::Filter => {
                 crate::ui::shadow_state::SearchType::Fuzzy
             }
-        };
-        let trigger = match mode {
-            SearchMode::ColumnSearch => "backslash_column_search",
-            SearchMode::Search => "data_search_started",
-            SearchMode::FuzzyFilter => "fuzzy_filter_started",
-            SearchMode::Filter => "filter_started",
         };
         self.shadow_state
             .borrow_mut()
@@ -3510,16 +3533,11 @@ impl EnhancedTuiApp {
                         Some(ctx.result.table_name()),
                     )?;
 
-                // Switch to results mode
-                self.state_container.set_mode(AppMode::Results);
+                // Switch to results mode - use sync_mode to ensure all state is synchronized
+                self.sync_mode(AppMode::Results, "execute_query_success");
 
                 // Reset table
                 self.reset_table_state();
-
-                // Handle shadow state (TUI-specific)
-                self.shadow_state
-                    .borrow_mut()
-                    .observe_mode_change(AppMode::Results, "execute_query_success");
 
                 Ok(())
             }
@@ -4907,6 +4925,18 @@ impl EnhancedTuiApp {
         }
     }
 
+    /// Synchronize all state after buffer switch
+    /// This should be called after any buffer switch operation to ensure:
+    /// 1. Viewport is restored from the new buffer
+    /// 2. Parser schema is updated with the new buffer's columns
+    fn sync_after_buffer_switch(&mut self) {
+        // Restore viewport state from new buffer
+        self.restore_viewport_from_current_buffer();
+
+        // Update parser schema for the new buffer
+        self.update_parser_for_current_buffer();
+    }
+
     /// Update ViewportManager when DataView changes
     fn update_viewport_manager(&mut self, dataview: Option<DataView>) {
         if let Some(dv) = dataview {
@@ -6205,8 +6235,8 @@ impl EnhancedTuiApp {
                     .buffer_handler
                     .next_buffer(self.state_container.buffers_mut());
                 debug!("{}", message);
-                // Update parser schema for the new buffer
-                self.update_parser_for_current_buffer();
+                // Sync all state after buffer switch
+                self.sync_after_buffer_switch();
                 Ok(false)
             }
             BufferAction::PreviousBuffer => {
@@ -6214,8 +6244,8 @@ impl EnhancedTuiApp {
                     .buffer_handler
                     .previous_buffer(self.state_container.buffers_mut());
                 debug!("{}", message);
-                // Update parser schema for the new buffer
-                self.update_parser_for_current_buffer();
+                // Sync all state after buffer switch
+                self.sync_after_buffer_switch();
                 Ok(false)
             }
             BufferAction::QuickSwitch => {
@@ -6223,8 +6253,8 @@ impl EnhancedTuiApp {
                     .buffer_handler
                     .quick_switch(self.state_container.buffers_mut());
                 debug!("{}", message);
-                // Update parser schema for the new buffer
-                self.update_parser_for_current_buffer();
+                // Sync all state after buffer switch
+                self.sync_after_buffer_switch();
                 Ok(false)
             }
             BufferAction::NewBuffer => {
@@ -6257,8 +6287,8 @@ impl EnhancedTuiApp {
                     .switch_to_buffer(self.state_container.buffers_mut(), buffer_index);
                 debug!("{}", message);
 
-                // Update parser schema for the new buffer
-                self.update_parser_for_current_buffer();
+                // Sync all state after buffer switch
+                self.sync_after_buffer_switch();
 
                 Ok(false)
             }
@@ -7407,8 +7437,8 @@ impl BufferManagementBehavior for EnhancedTuiApp {
             .buffer_handler
             .next_buffer(self.state_container.buffers_mut());
 
-        // Restore viewport state from new buffer after switching
-        self.restore_viewport_from_current_buffer();
+        // Sync all state after buffer switch
+        self.sync_after_buffer_switch();
 
         result
     }
@@ -7421,8 +7451,8 @@ impl BufferManagementBehavior for EnhancedTuiApp {
             .buffer_handler
             .previous_buffer(self.state_container.buffers_mut());
 
-        // Restore viewport state from new buffer after switching
-        self.restore_viewport_from_current_buffer();
+        // Sync all state after buffer switch
+        self.sync_after_buffer_switch();
 
         result
     }
@@ -7435,8 +7465,8 @@ impl BufferManagementBehavior for EnhancedTuiApp {
             .buffer_handler
             .quick_switch(self.state_container.buffers_mut());
 
-        // Restore viewport state from new buffer after switching
-        self.restore_viewport_from_current_buffer();
+        // Sync all state after buffer switch
+        self.sync_after_buffer_switch();
 
         result
     }
@@ -7455,8 +7485,8 @@ impl BufferManagementBehavior for EnhancedTuiApp {
             .buffer_handler
             .switch_to_buffer(self.state_container.buffers_mut(), index);
 
-        // Restore viewport state from new buffer after switching
-        self.restore_viewport_from_current_buffer();
+        // Sync all state after buffer switch
+        self.sync_after_buffer_switch();
 
         result
     }
@@ -7497,12 +7527,15 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
         // Switch back to the first buffer if we loaded multiple
         if data_files.len() > 1 {
             app.state_container.buffers_mut().switch_to(0);
-            // CRITICAL: Sync ViewportManager with the current buffer after switching
-            app.restore_viewport_from_current_buffer();
+            // Sync all state after buffer switch
+            app.sync_after_buffer_switch();
             app.state_container.set_status_message(format!(
                 "Loaded {} files into separate buffers. Use Alt+Tab to switch.",
                 data_files.len()
             ));
+        } else if data_files.len() == 1 {
+            // Even for single file, ensure parser is initialized
+            app.update_parser_for_current_buffer();
         }
 
         app
