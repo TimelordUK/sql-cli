@@ -270,6 +270,12 @@ impl BufferAPI for DataTableBuffer {
         true // DataTableBuffer always has a DataTable
     }
 
+    fn get_original_source(&self) -> Option<&DataTable> {
+        // DataTableBuffer doesn't maintain separate original source
+        // Return the view's source table
+        Some(self.view.table())
+    }
+
     fn set_datatable(&mut self, datatable: Option<DataTable>) {
         // V50: DataTableBuffer manages its own view, not direct DataTable storage
         // This is a no-op for compatibility

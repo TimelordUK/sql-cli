@@ -54,7 +54,8 @@ impl SqlParser {
             return Ok(ParseState::Start);
         }
 
-        let words: Vec<&str> = trimmed.split_whitespace().collect();
+        // Improved tokenization that handles commas and math operators
+        let words = self.tokenize_for_completion(trimmed);
 
         for (i, word) in words.iter().enumerate() {
             match self.current_state {
@@ -68,13 +69,19 @@ impl SqlParser {
                     if word.eq_ignore_ascii_case("from") {
                         self.tokens.push(SqlToken::From);
                         self.current_state = ParseState::AfterFrom;
+                    } else if word == "," {
+                        // Comma means we're continuing the column list
+                        self.current_state = ParseState::InColumnList;
+                    } else if word == "*" || word == "+" || word == "-" || word == "/" {
+                        // Math operator - stay in column list
+                        self.current_state = ParseState::InColumnList;
                     } else {
-                        self.tokens.push(SqlToken::Column(String::from(*word)));
+                        self.tokens.push(SqlToken::Column(String::from(word)));
                         self.current_state = ParseState::InColumnList;
                     }
                 }
                 ParseState::AfterFrom => {
-                    self.tokens.push(SqlToken::Table(String::from(*word)));
+                    self.tokens.push(SqlToken::Table(String::from(word)));
                     self.current_state = ParseState::AfterTable;
                 }
                 ParseState::AfterTable => {
@@ -95,11 +102,11 @@ impl SqlParser {
                             self.current_state = ParseState::InOrderBy;
                         }
                     } else {
-                        self.tokens.push(SqlToken::Identifier(String::from(*word)));
+                        self.tokens.push(SqlToken::Identifier(String::from(word)));
                     }
                 }
                 ParseState::InOrderBy => {
-                    self.tokens.push(SqlToken::Column(String::from(*word)));
+                    self.tokens.push(SqlToken::Column(String::from(word)));
                 }
                 _ => {}
             }
@@ -125,8 +132,78 @@ impl SqlParser {
         if trimmed.ends_with(' ') {
             None
         } else {
-            trimmed.split_whitespace().last().map(String::from)
+            // Split on both whitespace and special characters to get the actual partial word
+            let chars: Vec<char> = trimmed.chars().collect();
+            let mut word_start = chars.len();
+
+            // Find the start of the last word (skip operators and commas)
+            for i in (0..chars.len()).rev() {
+                if chars[i].is_whitespace()
+                    || chars[i] == ','
+                    || chars[i] == '*'
+                    || chars[i] == '+'
+                    || chars[i] == '-'
+                    || chars[i] == '/'
+                {
+                    break;
+                }
+                word_start = i;
+            }
+
+            if word_start < chars.len() {
+                Some(chars[word_start..].iter().collect())
+            } else {
+                None
+            }
         }
+    }
+
+    /// Tokenize input for completion, handling commas and math operators
+    fn tokenize_for_completion(&self, input: &str) -> Vec<String> {
+        let mut tokens = Vec::new();
+        let mut current_token = String::new();
+        let chars: Vec<char> = input.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            let c = chars[i];
+
+            if c.is_whitespace() {
+                // End current token if any
+                if !current_token.is_empty() {
+                    tokens.push(current_token.clone());
+                    current_token.clear();
+                }
+                i += 1;
+            } else if c == ',' {
+                // Comma is its own token
+                if !current_token.is_empty() {
+                    tokens.push(current_token.clone());
+                    current_token.clear();
+                }
+                tokens.push(",".to_string());
+                i += 1;
+            } else if c == '*' || c == '+' || c == '-' || c == '/' {
+                // Math operators are their own tokens
+                if !current_token.is_empty() {
+                    tokens.push(current_token.clone());
+                    current_token.clear();
+                }
+                tokens.push(c.to_string());
+                i += 1;
+            } else {
+                // Regular character - add to current token
+                current_token.push(c);
+                i += 1;
+            }
+        }
+
+        // Don't forget the last token
+        if !current_token.is_empty() {
+            tokens.push(current_token);
+        }
+
+        tokens
     }
 
     fn extract_selected_columns(&self, input: &str) -> Vec<String> {

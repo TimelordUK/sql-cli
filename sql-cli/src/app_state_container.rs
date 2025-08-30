@@ -5806,6 +5806,11 @@ impl AppStateContainer {
         self.current_buffer_mut()?.dataview.as_mut()
     }
 
+    /// Get original source DataTable (proxy to Buffer)
+    pub fn get_original_source(&self) -> Option<&crate::data::datatable::DataTable> {
+        self.current_buffer()?.get_original_source()
+    }
+
     /// Check if buffer has dataview (proxy to Buffer)
     pub fn has_dataview(&self) -> bool {
         self.current_buffer()

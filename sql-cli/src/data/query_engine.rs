@@ -3,10 +3,13 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
 
+use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
-use crate::data::datatable::DataTable;
+use crate::data::datatable::{DataColumn, DataRow, DataTable};
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
-use crate::sql::recursive_parser::{OrderByColumn, Parser, SelectStatement, SortDirection};
+use crate::sql::recursive_parser::{
+    OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection,
+};
 
 /// Query engine that executes SQL directly on DataTable
 pub struct QueryEngine {
@@ -24,7 +27,7 @@ impl QueryEngine {
         Self { case_insensitive }
     }
 
-    /// Execute a SQL query on a DataTable and return a DataView
+    /// Execute a SQL query on a DataTable and return a DataView (for backward compatibility)
     pub fn execute(&self, table: Arc<DataTable>, sql: &str) -> Result<DataView> {
         let start_time = Instant::now();
 
@@ -55,8 +58,8 @@ impl QueryEngine {
 
     /// Build a DataView from a parsed SQL statement
     fn build_view(&self, table: Arc<DataTable>, statement: SelectStatement) -> Result<DataView> {
-        // Start with a view that shows all data
-        let mut view = DataView::new(table.clone());
+        // Start with all rows visible
+        let mut visible_rows: Vec<usize> = (0..table.row_count()).collect();
 
         // Apply WHERE clause filtering using recursive evaluator
         if let Some(where_clause) = &statement.where_clause {
@@ -65,19 +68,23 @@ impl QueryEngine {
             debug!("QueryEngine: WHERE clause = {:?}", where_clause);
 
             let filter_start = Instant::now();
-            view = view.filter(|table, row_idx| {
+            // Filter visible rows based on WHERE clause
+            let mut filtered_rows = Vec::new();
+            for row_idx in visible_rows {
                 // Only log for first few rows to avoid performance impact
                 if row_idx < 3 {
                     debug!("QueryEngine: Evaluating WHERE clause for row {}", row_idx);
                 }
                 let evaluator =
-                    RecursiveWhereEvaluator::with_case_insensitive(table, self.case_insensitive);
+                    RecursiveWhereEvaluator::with_case_insensitive(&*table, self.case_insensitive);
                 match evaluator.evaluate(where_clause, row_idx) {
                     Ok(result) => {
                         if row_idx < 3 {
                             debug!("QueryEngine: Row {} WHERE result: {}", row_idx, result);
                         }
-                        result
+                        if result {
+                            filtered_rows.push(row_idx);
+                        }
                     }
                     Err(e) => {
                         if row_idx < 3 {
@@ -86,24 +93,33 @@ impl QueryEngine {
                                 row_idx, e
                             );
                         }
-                        false
                     }
                 }
-            });
+            }
+            visible_rows = filtered_rows;
             let filter_duration = filter_start.elapsed();
             info!(
                 "WHERE clause filtering: {} rows -> {} rows in {:?}",
                 total_rows,
-                view.row_count(),
+                visible_rows.len(),
                 filter_duration
             );
 
             // Debug log moved to info level above with timing
         }
 
-        // Apply column projection (SELECT clause) - do this AFTER filtering
-        if !statement.columns.is_empty() && statement.columns[0] != "*" {
-            let column_indices = self.resolve_column_indices(view.source(), &statement.columns)?;
+        // Create initial DataView with filtered rows
+        let mut view = DataView::new(table.clone());
+        view = view.with_rows(visible_rows);
+
+        // Apply column projection or computed expressions (SELECT clause) - do this AFTER filtering
+        if !statement.select_items.is_empty()
+            && !matches!(statement.select_items[0], SelectItem::Star)
+        {
+            view = self.apply_select_items(view, &statement.select_items)?;
+        } else if !statement.columns.is_empty() && statement.columns[0] != "*" {
+            // Fallback to legacy column projection for backward compatibility
+            let column_indices = self.resolve_column_indices(&*table, &statement.columns)?;
             view = view.with_columns(column_indices);
         }
 
@@ -134,6 +150,115 @@ impl QueryEngine {
                 .position(|c| c.eq_ignore_ascii_case(col_name))
                 .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", col_name))?;
             indices.push(index);
+        }
+
+        Ok(indices)
+    }
+
+    /// Apply SELECT items (columns and computed expressions) to create new view
+    fn apply_select_items(&self, view: DataView, select_items: &[SelectItem]) -> Result<DataView> {
+        // Check if we need to create computed columns
+        let has_computed_expressions = select_items
+            .iter()
+            .any(|item| matches!(item, SelectItem::Expression { .. }));
+
+        if !has_computed_expressions {
+            // Simple case: only columns, use existing projection logic
+            let column_indices = self.resolve_select_columns(view.source(), select_items)?;
+            return Ok(view.with_columns(column_indices));
+        }
+
+        // Complex case: we have computed expressions
+        // IMPORTANT: We create a PROJECTED view, not a new table
+        // This preserves the original DataTable reference
+
+        let source_table = view.source();
+        let visible_rows = view.visible_row_indices();
+
+        // Create a temporary table just for the computed result view
+        // But this table is only used for the current query result
+        let mut computed_table = DataTable::new("query_result");
+
+        // Add columns based on SelectItems
+        for item in select_items {
+            let column_name = match item {
+                SelectItem::Column(name) => name.clone(),
+                SelectItem::Expression { alias, .. } => alias.clone(),
+                SelectItem::Star => {
+                    return Err(anyhow::anyhow!("Star selector mixed with other items"))
+                }
+            };
+            computed_table.add_column(DataColumn::new(&column_name));
+        }
+
+        // Calculate values for each row
+        let evaluator = ArithmeticEvaluator::new(source_table);
+
+        for &row_idx in visible_rows {
+            let mut row_values = Vec::new();
+
+            for item in select_items {
+                let value = match item {
+                    SelectItem::Column(col_name) => {
+                        // Simple column reference
+                        let col_idx = source_table
+                            .get_column_index(col_name)
+                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", col_name))?;
+                        let row = source_table
+                            .get_row(row_idx)
+                            .ok_or_else(|| anyhow::anyhow!("Row {} not found", row_idx))?;
+                        row.get(col_idx)
+                            .ok_or_else(|| anyhow::anyhow!("Column {} not found in row", col_idx))?
+                            .clone()
+                    }
+                    SelectItem::Expression { expr, .. } => {
+                        // Computed expression
+                        evaluator.evaluate(expr, row_idx)?
+                    }
+                    SelectItem::Star => unreachable!("Star handled above"),
+                };
+                row_values.push(value);
+            }
+
+            computed_table
+                .add_row(DataRow::new(row_values))
+                .map_err(|e| anyhow::anyhow!("Failed to add row: {}", e))?;
+        }
+
+        // Return a view of the computed result
+        // This is a temporary view for this query only
+        Ok(DataView::new(Arc::new(computed_table)))
+    }
+
+    /// Resolve SelectItem columns to indices (for simple column projections only)
+    fn resolve_select_columns(
+        &self,
+        table: &DataTable,
+        select_items: &[SelectItem],
+    ) -> Result<Vec<usize>> {
+        let mut indices = Vec::new();
+        let table_columns = table.column_names();
+
+        for item in select_items {
+            match item {
+                SelectItem::Column(col_name) => {
+                    let index = table_columns
+                        .iter()
+                        .position(|c| c.eq_ignore_ascii_case(col_name))
+                        .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", col_name))?;
+                    indices.push(index);
+                }
+                SelectItem::Star => {
+                    return Err(anyhow::anyhow!(
+                        "Star selector not supported in this context"
+                    ));
+                }
+                SelectItem::Expression { .. } => {
+                    return Err(anyhow::anyhow!(
+                        "Computed expressions require new table creation"
+                    ));
+                }
+            }
         }
 
         Ok(indices)

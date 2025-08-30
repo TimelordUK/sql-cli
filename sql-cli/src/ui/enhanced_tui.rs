@@ -1581,7 +1581,12 @@ impl EnhancedTuiApp {
         app.state_container.buffers_mut().clear_all();
         let mut buffer = buffer::Buffer::new(1);
 
-        // Set the DataView directly
+        // IMPORTANT: First set the DataTable to preserve the original source
+        // The DataView contains the full DataTable when initially loaded
+        let source_table = dataview.source();
+        buffer.set_datatable(Some((*source_table).clone()));
+
+        // Then set the DataView for display
         buffer.set_dataview(Some(dataview.clone()));
         // Use just the filename for the buffer name, not the full path
         let buffer_name = std::path::Path::new(source_name)
