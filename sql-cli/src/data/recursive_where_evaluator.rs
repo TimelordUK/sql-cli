@@ -163,7 +163,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 method,
                 args,
             } => {
-                // Handle method calls that return values (like Length())
+                // Handle method calls that return values (like Length(), IndexOf())
                 match method.to_lowercase().as_str() {
                     "length" => {
                         if !args.is_empty() {
@@ -189,6 +189,62 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                             _ => Some(DataValue::Integer(0)),
                         };
                         (length_value, format!("{}.Length()", object))
+                    }
+                    "indexof" => {
+                        if args.len() != 1 {
+                            return Err(anyhow::anyhow!("IndexOf() requires exactly 1 argument"));
+                        }
+                        let search_str = self.extract_string_value(&args[0])?;
+                        let col_index = self
+                            .table
+                            .get_column_index(object)
+                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
+
+                        let value = self.table.get_value(row_index, col_index);
+                        let index_value = match value {
+                            Some(DataValue::String(s)) => {
+                                // Case-insensitive search by default, following Contains behavior
+                                let pos = s
+                                    .to_lowercase()
+                                    .find(&search_str.to_lowercase())
+                                    .map(|idx| idx as i64)
+                                    .unwrap_or(-1);
+                                Some(DataValue::Integer(pos))
+                            }
+                            Some(DataValue::InternedString(s)) => {
+                                let pos = s
+                                    .to_lowercase()
+                                    .find(&search_str.to_lowercase())
+                                    .map(|idx| idx as i64)
+                                    .unwrap_or(-1);
+                                Some(DataValue::Integer(pos))
+                            }
+                            Some(DataValue::Integer(n)) => {
+                                let str_val = n.to_string();
+                                let pos = str_val
+                                    .find(&search_str)
+                                    .map(|idx| idx as i64)
+                                    .unwrap_or(-1);
+                                Some(DataValue::Integer(pos))
+                            }
+                            Some(DataValue::Float(f)) => {
+                                let str_val = f.to_string();
+                                let pos = str_val
+                                    .find(&search_str)
+                                    .map(|idx| idx as i64)
+                                    .unwrap_or(-1);
+                                Some(DataValue::Integer(pos))
+                            }
+                            _ => Some(DataValue::Integer(-1)), // Return -1 for not found
+                        };
+
+                        if row_index < 3 {
+                            debug!(
+                                "RecursiveWhereEvaluator: Row {} IndexOf('{}') = {:?}",
+                                row_index, search_str, index_value
+                            );
+                        }
+                        (index_value, format!("{}.IndexOf('{}')", object, search_str))
                     }
                     _ => {
                         return Err(anyhow::anyhow!(
