@@ -208,17 +208,25 @@ impl StateCoordinator {
         (None, None)
     }
 
-    /// Static version for delegation pattern
+    /// Static version for delegation pattern with vim search adapter
     pub fn cancel_search_with_refs(
         state_container: &mut AppStateContainer,
         shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        vim_search_adapter: Option<&RefCell<crate::ui::vim_search_adapter::VimSearchAdapter>>,
     ) {
-        debug!("StateCoordinator::cancel_search_with_refs: Canceling search");
+        debug!("StateCoordinator::cancel_search_with_refs: Canceling search and clearing all search state");
 
-        // Clear search state
+        // Clear vim search adapter if provided
+        if let Some(adapter) = vim_search_adapter {
+            debug!("Clearing vim search adapter state");
+            adapter.borrow_mut().clear();
+        }
+
+        // Clear search pattern in state container
+        state_container.set_search_pattern(String::new());
         state_container.clear_search();
 
-        // Observe search end
+        // Observe search end in shadow state
         shadow_state
             .borrow_mut()
             .observe_search_end("search_cancelled");
@@ -228,8 +236,21 @@ impl StateCoordinator {
             state_container,
             shadow_state,
             AppMode::Results,
-            "search_cancelled",
+            "vim_search_cancelled",
         );
+    }
+
+    /// Check if search navigation should be handled (for n/N keys)
+    pub fn should_handle_search_navigation(state_container: &AppStateContainer) -> bool {
+        // Only handle search navigation if there's an active search pattern
+        let has_search = !state_container.get_search_pattern().is_empty();
+
+        debug!(
+            "StateCoordinator::should_handle_search_navigation: has_search={}",
+            has_search
+        );
+
+        has_search
     }
 
     // ========== QUERY EXECUTION SYNCHRONIZATION ==========

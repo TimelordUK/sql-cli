@@ -880,15 +880,21 @@ impl EnhancedTuiApp {
             }
 
             NextSearchMatch => {
-                // Use VimSearchManager for search navigation
-                self.vim_search_next();
+                // n key: navigate to next search match if search is active
+                // Use StateCoordinator to determine if search navigation should be handled
+                use crate::ui::state_coordinator::StateCoordinator;
+                if StateCoordinator::should_handle_search_navigation(&self.state_container) {
+                    self.vim_search_next();
+                } else {
+                    debug!("NextSearchMatch: No active search, ignoring 'n' key");
+                }
                 Ok(ActionResult::Handled)
             }
             PreviousSearchMatch => {
                 // Shift+N behavior: search navigation if search is active, otherwise toggle row numbers
-                if self.vim_search_adapter.borrow().is_active()
-                    || self.vim_search_adapter.borrow().get_pattern().is_some()
-                {
+                // Use StateCoordinator to determine if search navigation should be handled
+                use crate::ui::state_coordinator::StateCoordinator;
+                if StateCoordinator::should_handle_search_navigation(&self.state_container) {
                     self.vim_search_previous();
                 } else {
                     // Delegate to the ToggleRowNumbers action for consistency
@@ -2591,25 +2597,18 @@ impl EnhancedTuiApp {
 
         // If Escape is pressed and there's an active search or vim navigation, handle it properly
         if key.code == KeyCode::Esc && (is_vim_navigating || has_search_pattern) {
-            info!("Escape pressed in Results mode with active search/navigation - properly clearing and syncing");
+            info!("Escape pressed in Results mode with active search/navigation - using StateCoordinator");
+            debug!(
+                "Vim navigating: {}, Has search pattern: {}",
+                is_vim_navigating, has_search_pattern
+            );
 
-            // Clear vim search navigation state
-            if is_vim_navigating {
-                self.vim_search_adapter.borrow_mut().exit_navigation();
-            }
-
-            // Clear search pattern
-            self.state_container.set_search_pattern(String::new());
-            self.state_container.clear_search();
-
-            // Use StateCoordinator to properly sync mode to Results
-            // This ensures we stay in Results mode and all state is synchronized
+            // Use StateCoordinator to handle ALL search cancellation logic
             use crate::ui::state_coordinator::StateCoordinator;
-            StateCoordinator::sync_mode_with_refs(
+            StateCoordinator::cancel_search_with_refs(
                 &mut self.state_container,
                 &self.shadow_state,
-                AppMode::Results,
-                "vim_search_cancelled",
+                Some(&self.vim_search_adapter),
             );
 
             self.state_container
@@ -3248,14 +3247,13 @@ impl EnhancedTuiApp {
                     debug!(target: "search", "Cancel: No saved SQL from widget");
                 }
 
-                // Clear vim search adapter state
-                self.vim_search_adapter.borrow_mut().cancel_search();
-
                 // Use StateCoordinator to properly cancel search and restore state
+                // StateCoordinator handles clearing vim search adapter too
                 use crate::ui::state_coordinator::StateCoordinator;
                 StateCoordinator::cancel_search_with_refs(
                     &mut self.state_container,
                     &self.shadow_state,
+                    Some(&self.vim_search_adapter),
                 );
             }
             SearchModesAction::NextMatch => {
