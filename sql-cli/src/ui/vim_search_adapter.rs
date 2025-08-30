@@ -83,19 +83,20 @@ impl VimSearchAdapter {
     }
 
     /// Handle a key press through AppStateContainer (simplified interface)
-    /// Note: This version requires the caller to handle viewport management
+    /// Returns true if key was handled, false to let it fall through
     pub fn handle_key(&mut self, key: KeyCode, state: &mut AppStateContainer) -> bool {
         let mode = state.get_mode();
 
-        // Handle Escape key based on current mode
+        // Special handling for Escape key
         if key == KeyCode::Esc {
             match mode {
-                AppMode::Results if self.is_active => {
-                    // In Results mode with active search: just exit search, stay in Results
-                    info!("VimSearchAdapter: Exiting search navigation in Results mode");
-                    state.set_status_message("Search mode exited".to_string());
-                    self.clear();
-                    return true; // We handled it
+                AppMode::Results if self.is_active || self.is_navigating() => {
+                    // In Results mode with active search: Signal that Escape was pressed
+                    // But DON'T handle it here - return false to let StateCoordinator handle it
+                    info!("VimSearchAdapter: Escape detected in Results mode with active search - signaling for StateCoordinator");
+                    // Return false so it falls through to handle_results_input
+                    // where StateCoordinator will properly clear everything
+                    return false;
                 }
                 AppMode::Search => {
                     // In Search mode: exit to Results
@@ -247,6 +248,15 @@ impl VimSearchAdapter {
     pub fn exit_navigation(&mut self) {
         info!("VimSearchAdapter: Exiting navigation");
         self.manager.exit_navigation();
+    }
+
+    /// Mark search as complete (after Apply/Enter)
+    /// Keeps matches for n/N navigation and stays active
+    pub fn mark_search_complete(&mut self) {
+        info!("VimSearchAdapter: Marking search as complete, keeping matches for navigation");
+        // Keep is_active = true so n/N continue to work
+        // The manager stays active with matches
+        // Only clear() or cancel_search() will deactivate
     }
 
     /// Navigate to next match

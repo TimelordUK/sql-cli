@@ -240,17 +240,95 @@ impl StateCoordinator {
         );
     }
 
-    /// Check if search navigation should be handled (for n/N keys)
-    pub fn should_handle_search_navigation(state_container: &AppStateContainer) -> bool {
-        // Only handle search navigation if there's an active search pattern
+    /// Check if 'n' key should navigate to next search match
+    /// Returns true only if there's an active search (not cancelled with Escape)
+    pub fn should_handle_next_match(
+        state_container: &AppStateContainer,
+        vim_search_adapter: Option<&RefCell<crate::ui::vim_search_adapter::VimSearchAdapter>>,
+    ) -> bool {
+        // 'n' should only work if there's a search pattern AND it hasn't been cancelled
         let has_search = !state_container.get_search_pattern().is_empty();
+        let pattern = state_container.get_search_pattern();
+
+        // Check if vim search is active or navigating
+        // After Escape, this will be false
+        let vim_active = if let Some(adapter) = vim_search_adapter {
+            let adapter_ref = adapter.borrow();
+            adapter_ref.is_active() || adapter_ref.is_navigating()
+        } else {
+            false
+        };
 
         debug!(
-            "StateCoordinator::should_handle_search_navigation: has_search={}",
-            has_search
+            "StateCoordinator::should_handle_next_match: pattern='{}', vim_active={}, result={}",
+            pattern,
+            vim_active,
+            has_search && vim_active
         );
 
-        has_search
+        // Only handle if search exists AND hasn't been cancelled with Escape
+        has_search && vim_active
+    }
+
+    /// Check if 'N' key should navigate to previous search match
+    /// Returns true only if there's an active search (not cancelled with Escape)
+    pub fn should_handle_previous_match(
+        state_container: &AppStateContainer,
+        vim_search_adapter: Option<&RefCell<crate::ui::vim_search_adapter::VimSearchAdapter>>,
+    ) -> bool {
+        // 'N' should only work if there's a search pattern AND it hasn't been cancelled
+        let has_search = !state_container.get_search_pattern().is_empty();
+        let pattern = state_container.get_search_pattern();
+
+        // Check if vim search is active or navigating
+        // After Escape, this will be false
+        let vim_active = if let Some(adapter) = vim_search_adapter {
+            let adapter_ref = adapter.borrow();
+            adapter_ref.is_active() || adapter_ref.is_navigating()
+        } else {
+            false
+        };
+
+        debug!(
+            "StateCoordinator::should_handle_previous_match: pattern='{}', vim_active={}, result={}",
+            pattern, vim_active, has_search && vim_active
+        );
+
+        // Only handle if search exists AND hasn't been cancelled with Escape
+        has_search && vim_active
+    }
+
+    /// Complete a search operation (after Apply/Enter is pressed)
+    /// This keeps the pattern for n/N navigation but marks search as complete
+    pub fn complete_search_with_refs(
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        vim_search_adapter: Option<&RefCell<crate::ui::vim_search_adapter::VimSearchAdapter>>,
+        mode: AppMode,
+        trigger: &str,
+    ) {
+        debug!(
+            "StateCoordinator::complete_search_with_refs: Completing search, switching to {:?}",
+            mode
+        );
+
+        // Note: We intentionally DO NOT clear the search pattern here
+        // The pattern remains available for n/N navigation
+
+        // Mark vim search adapter as not actively searching
+        // but keep the matches for navigation
+        if let Some(adapter) = vim_search_adapter {
+            debug!("Marking vim search as complete but keeping matches");
+            adapter.borrow_mut().mark_search_complete();
+        }
+
+        // Observe search completion in shadow state
+        shadow_state
+            .borrow_mut()
+            .observe_search_end("search_completed");
+
+        // Switch to the target mode (usually Results)
+        Self::sync_mode_with_refs(state_container, shadow_state, mode, trigger);
     }
 
     // ========== QUERY EXECUTION SYNCHRONIZATION ==========

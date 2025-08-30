@@ -880,21 +880,27 @@ impl EnhancedTuiApp {
             }
 
             NextSearchMatch => {
-                // n key: navigate to next search match if search is active
+                // n key: navigate to next search match only if search is active (not after Escape)
                 // Use StateCoordinator to determine if search navigation should be handled
                 use crate::ui::state_coordinator::StateCoordinator;
-                if StateCoordinator::should_handle_search_navigation(&self.state_container) {
+                if StateCoordinator::should_handle_next_match(
+                    &self.state_container,
+                    Some(&self.vim_search_adapter),
+                ) {
                     self.vim_search_next();
                 } else {
-                    debug!("NextSearchMatch: No active search, ignoring 'n' key");
+                    debug!("NextSearchMatch: No active search (or cancelled with Escape), ignoring 'n' key");
                 }
                 Ok(ActionResult::Handled)
             }
             PreviousSearchMatch => {
-                // Shift+N behavior: search navigation if search is active, otherwise toggle row numbers
+                // Shift+N behavior: search navigation only if vim search is active, otherwise toggle row numbers
                 // Use StateCoordinator to determine if search navigation should be handled
                 use crate::ui::state_coordinator::StateCoordinator;
-                if StateCoordinator::should_handle_search_navigation(&self.state_container) {
+                if StateCoordinator::should_handle_previous_match(
+                    &self.state_container,
+                    Some(&self.vim_search_adapter),
+                ) {
                     self.vim_search_previous();
                 } else {
                     // Delegate to the ToggleRowNumbers action for consistency
@@ -2591,29 +2597,60 @@ impl EnhancedTuiApp {
     }
 
     fn handle_results_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
+        // Log all keys in Results mode to debug Escape handling
+        debug!(
+            "handle_results_input: Processing key {:?} in Results mode",
+            key
+        );
+
         // Check if vim search is active/navigating
         let is_vim_navigating = self.vim_search_adapter.borrow().is_navigating();
+        let vim_is_active = self.vim_search_adapter.borrow().is_active();
         let has_search_pattern = !self.state_container.get_search_pattern().is_empty();
 
+        debug!(
+            "Search state check: vim_navigating={}, vim_active={}, has_pattern={}, pattern='{}'",
+            is_vim_navigating,
+            vim_is_active,
+            has_search_pattern,
+            self.state_container.get_search_pattern()
+        );
+
         // If Escape is pressed and there's an active search or vim navigation, handle it properly
-        if key.code == KeyCode::Esc && (is_vim_navigating || has_search_pattern) {
-            info!("Escape pressed in Results mode with active search/navigation - using StateCoordinator");
-            debug!(
-                "Vim navigating: {}, Has search pattern: {}",
-                is_vim_navigating, has_search_pattern
-            );
+        if key.code == KeyCode::Esc {
+            info!("ESCAPE KEY DETECTED in Results mode!");
 
-            // Use StateCoordinator to handle ALL search cancellation logic
-            use crate::ui::state_coordinator::StateCoordinator;
-            StateCoordinator::cancel_search_with_refs(
-                &mut self.state_container,
-                &self.shadow_state,
-                Some(&self.vim_search_adapter),
-            );
+            if is_vim_navigating || vim_is_active || has_search_pattern {
+                info!("Escape pressed with active search - clearing via StateCoordinator");
+                debug!(
+                    "Pre-clear state: vim_navigating={}, vim_active={}, pattern='{}'",
+                    is_vim_navigating,
+                    vim_is_active,
+                    self.state_container.get_search_pattern()
+                );
 
-            self.state_container
-                .set_status_message("Search cleared".to_string());
-            return Ok(false);
+                // Use StateCoordinator to handle ALL search cancellation logic
+                use crate::ui::state_coordinator::StateCoordinator;
+                StateCoordinator::cancel_search_with_refs(
+                    &mut self.state_container,
+                    &self.shadow_state,
+                    Some(&self.vim_search_adapter),
+                );
+
+                // Verify clearing worked
+                let post_pattern = self.state_container.get_search_pattern();
+                let post_vim_active = self.vim_search_adapter.borrow().is_active();
+                info!(
+                    "Post-clear state: pattern='{}', vim_active={}",
+                    post_pattern, post_vim_active
+                );
+
+                self.state_container
+                    .set_status_message("Search cleared".to_string());
+                return Ok(false);
+            } else {
+                info!("Escape pressed but no active search to clear");
+            }
         }
 
         let selection_mode = self.state_container.get_selection_mode();
@@ -3176,8 +3213,15 @@ impl EnhancedTuiApp {
                 }
 
                 // ALWAYS switch back to Results mode after Apply for all search modes
-                // Use sync_mode to ensure proper synchronization
-                self.sync_mode(AppMode::Results, "filter_applied");
+                // Use StateCoordinator to properly complete search (keeps pattern for n/N)
+                use crate::ui::state_coordinator::StateCoordinator;
+                StateCoordinator::complete_search_with_refs(
+                    &mut self.state_container,
+                    &self.shadow_state,
+                    Some(&self.vim_search_adapter),
+                    AppMode::Results,
+                    "search_applied",
+                );
 
                 // Show status message
                 let filter_msg = match mode {
