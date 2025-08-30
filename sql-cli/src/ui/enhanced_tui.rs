@@ -355,24 +355,6 @@ impl EnhancedTuiApp {
 
     // ========== STATE SYNCHRONIZATION ==========
 
-    /// Synchronize ViewportManager state with NavigationState
-    /// This ensures single source of truth for crosshair position
-    pub(crate) fn sync_viewport_with_navigation(&self) {
-        let nav = self.state_container.navigation();
-        let mut viewport_borrow = self.viewport_manager.borrow_mut();
-
-        if let Some(ref mut viewport) = viewport_borrow.as_mut() {
-            // Update ViewportManager's crosshair from NavigationState
-            viewport.set_crosshair(nav.selected_row, nav.selected_column);
-
-            // If scroll offsets don't match, update ViewportManager
-            let current_offset = viewport.get_scroll_offset();
-            if current_offset != nav.scroll_offset {
-                viewport.set_scroll_offset(nav.scroll_offset.0, nav.scroll_offset.1);
-            }
-        }
-    }
-
     /// Synchronize NavigationState with ViewportManager
     /// This is the reverse - update NavigationState from ViewportManager
     pub(crate) fn sync_navigation_with_viewport(&self) {
@@ -501,15 +483,6 @@ impl EnhancedTuiApp {
     /// Use this when we know a buffer should always exist
     fn buffer(&self) -> &dyn buffer::BufferAPI {
         self.current_buffer()
-            .expect("No buffer available - this should not happen")
-    }
-
-    /// Get current mutable buffer (panics if none exists)
-    /// Use this when we know a buffer should always exist
-    fn buffer_mut(&mut self) -> &mut buffer::Buffer {
-        self.state_container
-            .buffers_mut()
-            .current_mut()
             .expect("No buffer available - this should not happen")
     }
 
@@ -6463,20 +6436,6 @@ impl EnhancedTuiApp {
                 self.state_container.get_current_column()
             ));
             debug_info.push_str("==========================================\n");
-        }
-        debug_info
-    }
-
-    fn debug_generate_viewport_manager_info(&self) -> String {
-        let mut debug_info = String::new();
-        if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
-            let terminal_width = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80);
-            // Use the same width calculation as actual rendering (subtract 4 for borders)
-            let available_width = terminal_width.saturating_sub(TABLE_BORDER_WIDTH);
-            debug_info.push_str(&viewport_manager.debug_dump(available_width));
-        } else {
-            debug_info.push_str("\n========== VIEWPORT MANAGER ==========\n");
-            debug_info.push_str("Status: Not Available\n");
         }
         debug_info
     }
