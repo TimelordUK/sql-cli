@@ -749,6 +749,8 @@ impl CursorAwareParser {
         match property_type {
             "string" => {
                 // Common Dynamic LINQ string methods
+                // Format: methods with parameters include ('') with cursor placement hint
+                // Methods without parameters include () for consistency
                 let string_methods = vec![
                     "Contains('')",
                     "StartsWith('')",
@@ -760,7 +762,7 @@ impl CursorAwareParser {
                     "IsNullOrEmpty()",
                     "Trim()",
                     "Replace('', '')",
-                    "Length",
+                    "Length()", // Changed from "Length" to "Length()"
                 ];
 
                 if let Some(partial) = partial_word {
@@ -781,8 +783,8 @@ impl CursorAwareParser {
                     "StartsWith('')",
                     "EndsWith('')",
                     "ToString()",
-                    "Length",
-                    // Could add math methods here in the future
+                    "Length()", // Changed from "Length" to "Length()"
+                                // Could add math methods here in the future
                 ];
 
                 if let Some(partial) = partial_word {
@@ -799,16 +801,16 @@ impl CursorAwareParser {
             "datetime" => {
                 // DateTime columns can use both datetime-specific and string methods
                 let datetime_methods = vec![
-                    "Year",
-                    "Month",
-                    "Day",
+                    "Year()",  // Changed from "Year" to "Year()"
+                    "Month()", // Changed from "Month" to "Month()"
+                    "Day()",   // Changed from "Day" to "Day()"
                     "ToString(\"yyyy-MM-dd\")",
                     "AddDays(1)",
                     // String methods via coercion
                     "Contains('')",
                     "StartsWith('')",
                     "EndsWith('')",
-                    "Length",
+                    "Length()", // Changed from "Length" to "Length()"
                 ];
 
                 if let Some(partial) = partial_word {

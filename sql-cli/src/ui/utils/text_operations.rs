@@ -631,19 +631,28 @@ pub fn apply_completion_to_text(
 
     let new_query = format!("{}{}{}", before_partial, suggestion_to_use, after_cursor);
 
-    // Smart cursor positioning for method calls like Contains('')
+    // Smart cursor positioning based on function signature
     let new_cursor_pos = if suggestion_to_use.ends_with("('')") {
-        // Position cursor between the quotes for method calls
+        // Function with parameters - position cursor between the quotes
+        // e.g., Contains('|') where | is cursor
         before_partial.len() + suggestion_to_use.len() - 2
+    } else if suggestion_to_use.ends_with("()") {
+        // Parameterless function - position cursor after closing parenthesis
+        // e.g., Length()| where | is cursor
+        before_partial.len() + suggestion_to_use.len()
     } else {
+        // Regular completion (not a function) - position at end
         before_partial.len() + suggestion_to_use.len()
     };
 
+    // Better description based on completion type
     let description = if suggestion_to_use.ends_with("('')") {
         format!(
             "Completed '{}' with cursor positioned for parameter input",
             suggestion
         )
+    } else if suggestion_to_use.ends_with("()") {
+        format!("Completed parameterless function '{}'", suggestion)
     } else {
         format!("Completed '{}'", suggestion)
     };
