@@ -41,13 +41,25 @@ impl KeyMapper {
         use KeyCode::*;
         use KeyModifiers as Mod;
 
-        // Help is always available
+        // Function keys that work in any mode
         self.global_mappings
             .insert((F(1), Mod::NONE), Action::ShowHelp);
-
-        // Debug info
+        self.global_mappings
+            .insert((F(3), Mod::NONE), Action::ShowPrettyQuery);
         self.global_mappings
             .insert((F(5), Mod::NONE), Action::ShowDebugInfo);
+        self.global_mappings
+            .insert((F(6), Mod::NONE), Action::ToggleRowNumbers);
+        self.global_mappings
+            .insert((F(7), Mod::NONE), Action::ToggleCompactMode);
+        self.global_mappings
+            .insert((F(8), Mod::NONE), Action::ToggleCaseInsensitive);
+        self.global_mappings
+            .insert((F(9), Mod::NONE), Action::KillLine);
+        self.global_mappings
+            .insert((F(10), Mod::NONE), Action::KillLineBackward);
+        self.global_mappings
+            .insert((F(12), Mod::NONE), Action::ToggleKeyIndicator);
 
         // Force quit
         self.global_mappings
@@ -245,12 +257,9 @@ impl KeyMapper {
         mappings.insert((Char('X'), Mod::SHIFT), Action::ToggleCursorLock);
         mappings.insert((Char(' '), Mod::CONTROL), Action::ToggleViewportLock);
 
-        // F-key actions
-        mappings.insert((F(1), Mod::NONE), Action::ShowHelp);
+        // Additional help key
         mappings.insert((Char('?'), Mod::NONE), Action::ShowHelp); // ? also shows help
-        mappings.insert((F(5), Mod::NONE), Action::ShowDebugInfo);
-        mappings.insert((F(8), Mod::NONE), Action::ToggleCaseInsensitive);
-        mappings.insert((F(12), Mod::NONE), Action::ToggleKeyIndicator);
+                                                                   // F-key actions are now handled globally
 
         // Clear pins
         mappings.insert((Char('P'), Mod::SHIFT), Action::ClearAllPins);
@@ -300,16 +309,23 @@ impl KeyMapper {
         mappings.insert((Delete, Mod::NONE), Action::Delete);
         mappings.insert((Char('w'), Mod::CONTROL), Action::DeleteWordBackward);
         mappings.insert((Char('d'), Mod::ALT), Action::DeleteWordForward);
-        mappings.insert((Char('k'), Mod::CONTROL), Action::DeleteToLineEnd);
-        mappings.insert((F(9), Mod::NONE), Action::DeleteToLineEnd); // F9 alternative
-        mappings.insert((F(10), Mod::NONE), Action::DeleteToLineStart); // F10 alternative
+        mappings.insert((Char('k'), Mod::CONTROL), Action::KillLine);
+        // F9 and F10 are now handled globally
 
         // Clipboard operations
         mappings.insert((Char('v'), Mod::CONTROL), Action::Paste);
 
-        // F-key actions (also available in Command mode)
-        mappings.insert((F(8), Mod::NONE), Action::ToggleCaseInsensitive);
-        mappings.insert((F(12), Mod::NONE), Action::ToggleKeyIndicator);
+        // History navigation
+        mappings.insert((Char('p'), Mod::CONTROL), Action::PreviousHistoryCommand);
+        mappings.insert((Char('n'), Mod::CONTROL), Action::NextHistoryCommand);
+        mappings.insert((Up, Mod::ALT), Action::PreviousHistoryCommand);
+        mappings.insert((Down, Mod::ALT), Action::NextHistoryCommand);
+
+        // SQL expansion operations
+        mappings.insert((Char('*'), Mod::CONTROL), Action::ExpandAsterisk);
+        mappings.insert((Char('*'), Mod::ALT), Action::ExpandAsteriskVisible);
+
+        // F-key actions are now handled globally
 
         self.mode_mappings.insert(AppMode::Command, mappings);
     }

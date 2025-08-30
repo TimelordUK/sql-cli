@@ -110,6 +110,23 @@ pub trait ActionHandlerContext {
     fn start_jump_to_row(&mut self);
     fn clear_jump_to_row_input(&mut self);
 
+    // Debug and development
+    fn show_debug_info(&mut self);
+    fn show_pretty_query(&mut self);
+    fn show_help(&mut self);
+
+    // Text editing
+    fn kill_line(&mut self);
+    fn kill_line_backward(&mut self);
+    fn delete_word_backward(&mut self);
+    fn delete_word_forward(&mut self);
+    fn expand_asterisk(&mut self);
+    fn expand_asterisk_visible(&mut self);
+
+    // History navigation
+    fn previous_history_command(&mut self);
+    fn next_history_command(&mut self);
+
     // Viewport lock operations
     fn toggle_cursor_lock(&mut self);
     fn toggle_viewport_lock(&mut self);
@@ -659,6 +676,62 @@ impl ActionHandler for DebugViewportActionHandler {
     }
 }
 
+/// Handler for function key actions (F1-F12)
+pub struct FunctionKeyActionHandler;
+
+impl ActionHandler for FunctionKeyActionHandler {
+    fn handle_action(
+        &self,
+        action: &Action,
+        _context: &ActionContext,
+        tui: &mut dyn ActionHandlerContext,
+    ) -> Option<Result<ActionResult>> {
+        match action {
+            Action::ShowHelp => {
+                tui.show_help();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ShowPrettyQuery => {
+                tui.show_pretty_query();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ShowDebugInfo => {
+                tui.toggle_debug_mode();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ToggleRowNumbers => {
+                tui.toggle_row_numbers();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ToggleCompactMode => {
+                tui.toggle_compact_mode();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ToggleCaseInsensitive => {
+                tui.toggle_case_insensitive();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ToggleKeyIndicator => {
+                tui.toggle_key_indicator();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::KillLine => {
+                tui.kill_line();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::KillLineBackward => {
+                tui.kill_line_backward();
+                Some(Ok(ActionResult::Handled))
+            }
+            _ => None,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "FunctionKey"
+    }
+}
+
 /// Handler for text editing actions in Command mode
 pub struct TextEditActionHandler;
 
@@ -691,6 +764,38 @@ impl ActionHandler for TextEditActionHandler {
                 tui.redo();
                 Some(Ok(ActionResult::Handled))
             }
+            Action::DeleteWordBackward => {
+                tui.delete_word_backward();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::DeleteWordForward => {
+                tui.delete_word_forward();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::KillLine => {
+                tui.kill_line();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::KillLineBackward => {
+                tui.kill_line_backward();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ExpandAsterisk => {
+                tui.expand_asterisk();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::ExpandAsteriskVisible => {
+                tui.expand_asterisk_visible();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::PreviousHistoryCommand => {
+                tui.previous_history_command();
+                Some(Ok(ActionResult::Handled))
+            }
+            Action::NextHistoryCommand => {
+                tui.next_history_command();
+                Some(Ok(ActionResult::Handled))
+            }
             _ => None,
         }
     }
@@ -716,6 +821,7 @@ impl ActionDispatcher {
             Box::new(ToggleActionHandler),
             Box::new(ClearActionHandler),
             Box::new(ExitActionHandler),
+            Box::new(FunctionKeyActionHandler),
             Box::new(ModeActionHandler),
             Box::new(ColumnArrangementActionHandler),
             Box::new(SearchNavigationActionHandler),
@@ -980,6 +1086,45 @@ mod tests {
         }
         fn redo(&mut self) {
             self.last_action = "redo".to_string();
+        }
+
+        // Debug and development methods
+        fn show_debug_info(&mut self) {
+            self.last_action = "show_debug_info".to_string();
+        }
+        fn show_pretty_query(&mut self) {
+            self.last_action = "show_pretty_query".to_string();
+        }
+        fn show_help(&mut self) {
+            self.last_action = "show_help".to_string();
+        }
+
+        // Text editing operations
+        fn kill_line(&mut self) {
+            self.last_action = "kill_line".to_string();
+        }
+        fn kill_line_backward(&mut self) {
+            self.last_action = "kill_line_backward".to_string();
+        }
+        fn delete_word_backward(&mut self) {
+            self.last_action = "delete_word_backward".to_string();
+        }
+        fn delete_word_forward(&mut self) {
+            self.last_action = "delete_word_forward".to_string();
+        }
+        fn expand_asterisk(&mut self) {
+            self.last_action = "expand_asterisk".to_string();
+        }
+        fn expand_asterisk_visible(&mut self) {
+            self.last_action = "expand_asterisk_visible".to_string();
+        }
+
+        // History navigation
+        fn previous_history_command(&mut self) {
+            self.last_action = "previous_history_command".to_string();
+        }
+        fn next_history_command(&mut self) {
+            self.last_action = "next_history_command".to_string();
         }
     }
 

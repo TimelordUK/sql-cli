@@ -18,8 +18,7 @@ use tracing::debug;
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataRow;
 use crate::ui::viewport::column_width_calculator::{
-    COLUMN_PADDING, DEFAULT_COL_WIDTH, MAX_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS,
-    MAX_HEADER_TO_DATA_RATIO, MIN_COL_WIDTH, MIN_HEADER_WIDTH_DATA_FOCUS,
+    COLUMN_PADDING, DEFAULT_COL_WIDTH, MAX_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS, MIN_COL_WIDTH,
 };
 use crate::ui::viewport::{ColumnPackingMode, ColumnWidthCalculator};
 

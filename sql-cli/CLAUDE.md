@@ -34,9 +34,32 @@ cargo clippy
 ./target/release/sql-cli --enhanced <file.json>
 ```
 
-## agents
-- use the rust build fixer to fix any compilation issues
-- use the unit test fixer to correct unit test breaks
+## Agents (IMPORTANT: Always delegate to these specialized agents)
+
+### rust-build-fixer
+**ALWAYS delegate to this agent when:**
+- Any `cargo build` or `cargo build --release` fails
+- User reports compilation errors (e.g., "I'm getting an error...")
+- After writing new Rust code (proactively check compilation)
+- Formatting issues reported (cargo fmt failures)
+- Type errors, borrow checker issues, or any Rust compilation problems
+
+### rust-test-failure-investigator  
+**ALWAYS delegate to this agent when:**
+- `cargo test` reports ANY failures
+- User mentions test failures (e.g., "tests are failing", "test broken")
+- After implementing features that might affect tests
+- CI pipeline test failures are reported
+- Integration test failures occur
+
+### debug-analyzer
+**ALWAYS delegate to this agent when:**
+- User provides F5 debug output
+- Large debug dumps need analysis
+- State inconsistency issues in TUI
+- Performance bottlenecks need investigation
+
+**CRITICAL**: Do NOT try to fix compilation errors or test failures yourself. ALWAYS delegate to the appropriate agent immediately.
 
 ## docs
 - place all docs in the docs folder

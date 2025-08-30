@@ -358,21 +358,37 @@ impl EnhancedTuiApp {
     /// Synchronize NavigationState with ViewportManager
     /// This is the reverse - update NavigationState from ViewportManager
     pub(crate) fn sync_navigation_with_viewport(&self) {
+        debug!(target: "column_search_sync", "sync_navigation_with_viewport: ENTRY");
         let viewport_borrow = self.viewport_manager.borrow();
 
         if let Some(ref viewport) = viewport_borrow.as_ref() {
             let mut nav = self.state_container.navigation_mut();
 
+            // Log current state before sync
+            debug!(target: "column_search_sync", "sync_navigation_with_viewport: BEFORE - nav.selected_column: {}, viewport.crosshair_col: {}", 
+                nav.selected_column, viewport.get_crosshair_col());
+            debug!(target: "column_search_sync", "sync_navigation_with_viewport: BEFORE - nav.selected_row: {}, viewport.crosshair_row: {}", 
+                nav.selected_row, viewport.get_crosshair_row());
+
             // Update NavigationState from ViewportManager's authoritative position
             nav.selected_row = viewport.get_selected_row();
             nav.selected_column = viewport.get_selected_column();
             nav.scroll_offset = viewport.get_scroll_offset();
+
+            // Log state after sync
+            debug!(target: "column_search_sync", "sync_navigation_with_viewport: AFTER - nav.selected_column: {}, nav.selected_row: {}", 
+                nav.selected_column, nav.selected_row);
+            debug!(target: "column_search_sync", "sync_navigation_with_viewport: Successfully synced NavigationState with ViewportManager");
+        } else {
+            debug!(target: "column_search_sync", "sync_navigation_with_viewport: No ViewportManager available to sync with");
         }
+        debug!(target: "column_search_sync", "sync_navigation_with_viewport: EXIT");
     }
 
     /// Synchronize mode across all state containers
     /// This ensures AppStateContainer, Buffer, and ShadowState are all in sync
     fn sync_mode(&mut self, mode: AppMode, trigger: &str) {
+        debug!(target: "column_search_sync", "sync_mode: ENTRY - mode: {:?}, trigger: '{}'", mode, trigger);
         // Delegate to StateCoordinator for centralized sync logic
         use crate::ui::state_coordinator::StateCoordinator;
         StateCoordinator::sync_mode_with_refs(
@@ -381,6 +397,7 @@ impl EnhancedTuiApp {
             mode,
             trigger,
         );
+        debug!(target: "column_search_sync", "sync_mode: EXIT - StateCoordinator::sync_mode_with_refs completed");
     }
 
     /// Save current ViewportManager state to the current buffer
@@ -853,15 +870,20 @@ impl EnhancedTuiApp {
 
             NextSearchMatch => {
                 // n key: navigate to next search match only if search is active (not after Escape)
+                debug!(target: "column_search_sync", "NextSearchMatch: 'n' key pressed, checking if search navigation should be handled");
                 // Use StateCoordinator to determine if search navigation should be handled
                 use crate::ui::state_coordinator::StateCoordinator;
-                if StateCoordinator::should_handle_next_match(
+                let should_handle = StateCoordinator::should_handle_next_match(
                     &self.state_container,
                     Some(&self.vim_search_adapter),
-                ) {
+                );
+                debug!(target: "column_search_sync", "NextSearchMatch: StateCoordinator::should_handle_next_match returned: {}", should_handle);
+                if should_handle {
+                    debug!(target: "column_search_sync", "NextSearchMatch: Calling vim_search_next()");
                     self.vim_search_next();
+                    debug!(target: "column_search_sync", "NextSearchMatch: vim_search_next() completed");
                 } else {
-                    debug!("NextSearchMatch: No active search (or cancelled with Escape), ignoring 'n' key");
+                    debug!(target: "column_search_sync", "NextSearchMatch: No active search (or cancelled with Escape), ignoring 'n' key");
                 }
                 Ok(ActionResult::Handled)
             }
@@ -1915,7 +1937,8 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(9) => {
                 // F9 as alternative for kill line (for terminals that intercept Ctrl+K)
-                self.kill_line();
+                use crate::ui::traits::input_ops::InputBehavior;
+                InputBehavior::kill_line(self);
                 let message = if !self.state_container.is_kill_ring_empty() {
                     format!(
                         "Killed to end of line ('{}' saved to kill ring)",
@@ -1929,7 +1952,8 @@ impl EnhancedTuiApp {
             }
             KeyCode::F(10) => {
                 // F10 as alternative for kill line backward
-                self.kill_line_backward();
+                use crate::ui::traits::input_ops::InputBehavior;
+                InputBehavior::kill_line_backward(self);
                 let message = if !self.state_container.is_kill_ring_empty() {
                     format!(
                         "Killed to beginning of line ('{}' saved to kill ring)",
@@ -2200,19 +2224,23 @@ impl EnhancedTuiApp {
                     return Ok(Some(false));
                 }
                 "delete_word_backward" => {
-                    self.delete_word_backward();
+                    use crate::ui::traits::input_ops::InputBehavior;
+                    InputBehavior::delete_word_backward(self);
                     return Ok(Some(false));
                 }
                 "delete_word_forward" => {
-                    self.delete_word_forward();
+                    use crate::ui::traits::input_ops::InputBehavior;
+                    InputBehavior::delete_word_forward(self);
                     return Ok(Some(false));
                 }
                 "kill_line" => {
-                    self.kill_line();
+                    use crate::ui::traits::input_ops::InputBehavior;
+                    InputBehavior::kill_line(self);
                     return Ok(Some(false));
                 }
                 "kill_line_backward" => {
-                    self.kill_line_backward();
+                    use crate::ui::traits::input_ops::InputBehavior;
+                    InputBehavior::kill_line_backward(self);
                     return Ok(Some(false));
                 }
                 "move_word_backward" => {
@@ -2245,19 +2273,22 @@ impl EnhancedTuiApp {
                 // Kill line - delete from cursor to end of line
                 self.state_container
                     .set_status_message("Ctrl+K pressed - killing to end of line".to_string());
-                self.kill_line();
+                use crate::ui::traits::input_ops::InputBehavior;
+                InputBehavior::kill_line(self);
                 Ok(Some(false))
             }
             KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => {
                 // Alternative: Alt+K for kill line (for terminals that intercept Ctrl+K)
                 self.state_container
                     .set_status_message("Alt+K - killing to end of line".to_string());
-                self.kill_line();
+                use crate::ui::traits::input_ops::InputBehavior;
+                InputBehavior::kill_line(self);
                 Ok(Some(false))
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Kill line backward - delete from cursor to beginning of line
-                self.kill_line_backward();
+                use crate::ui::traits::input_ops::InputBehavior;
+                InputBehavior::kill_line_backward(self);
                 Ok(Some(false))
             }
             KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -3093,6 +3124,18 @@ impl EnhancedTuiApp {
                             }
                             drop(viewport_manager_borrow);
 
+                            // CRITICAL: Sync NavigationState with ViewportManager after column navigation
+                            // This ensures all state systems are consistent (like vim search)
+                            debug!(target: "column_search_sync", "ColumnSearch Apply: About to call sync_navigation_with_viewport() for column: {}", col_name);
+                            debug!(target: "column_search_sync", "ColumnSearch Apply: Pre-sync - viewport current_column: {}", 
+                                if let Some(vm) = self.viewport_manager.try_borrow().ok() {
+                                    vm.as_ref().map(|v| v.get_crosshair_col()).unwrap_or(0)
+                                } else { 0 });
+                            self.sync_navigation_with_viewport();
+                            debug!(target: "column_search_sync", "ColumnSearch Apply: Post-sync - navigation current_column: {}", 
+                                self.state_container.navigation().selected_column);
+                            debug!(target: "column_search_sync", "ColumnSearch Apply: sync_navigation_with_viewport() completed for column: {}", col_name);
+
                             self.state_container
                                 .set_status_message(format!("Jumped to column: {}", col_name));
                         }
@@ -3101,7 +3144,7 @@ impl EnhancedTuiApp {
                         // The widget will restore the original SQL that was saved when entering the mode
                         debug!(target: "search", "ColumnSearch Apply: Exiting without modifying input_text");
                         debug!(target: "search", "ColumnSearch Apply: last_query='{}', will restore saved SQL from widget", self.state_container.get_last_query());
-                        // Note: We'll exit the mode below and the widget will restore the saved SQL
+                        // Note: Column search state will be cleared by cancel_search_with_refs below
                     }
                 }
 
@@ -3137,15 +3180,38 @@ impl EnhancedTuiApp {
                 }
 
                 // ALWAYS switch back to Results mode after Apply for all search modes
-                // Use StateCoordinator to properly complete search (keeps pattern for n/N)
                 use crate::ui::state_coordinator::StateCoordinator;
-                StateCoordinator::complete_search_with_refs(
-                    &mut self.state_container,
-                    &self.shadow_state,
-                    Some(&self.vim_search_adapter),
-                    AppMode::Results,
-                    "search_applied",
-                );
+
+                // For column search, we cancel completely (no n/N navigation)
+                // For regular search, we complete but keep pattern for n/N
+                if mode == SearchMode::ColumnSearch {
+                    debug!(target: "column_search_sync", "ColumnSearch Apply: Canceling column search completely with cancel_search_with_refs()");
+
+                    // Also clear column search in DataView
+                    if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
+                        dataview.clear_column_search();
+                        debug!(target: "column_search_sync", "ColumnSearch Apply: Cleared column search in DataView");
+                    }
+
+                    StateCoordinator::cancel_search_with_refs(
+                        &mut self.state_container,
+                        &self.shadow_state,
+                        Some(&self.vim_search_adapter),
+                    );
+                    // Note: cancel_search_with_refs already switches to Results mode
+                    debug!(target: "column_search_sync", "ColumnSearch Apply: Column search canceled and mode switched to Results");
+                } else {
+                    // For regular search modes, keep pattern for n/N navigation
+                    debug!(target: "column_search_sync", "Search Apply: About to call StateCoordinator::complete_search_with_refs() for mode: {:?}", mode);
+                    StateCoordinator::complete_search_with_refs(
+                        &mut self.state_container,
+                        &self.shadow_state,
+                        Some(&self.vim_search_adapter),
+                        AppMode::Results,
+                        "search_applied",
+                    );
+                    debug!(target: "column_search_sync", "Search Apply: StateCoordinator::complete_search_with_refs() completed - should now be in Results mode");
+                }
 
                 // Show status message
                 let filter_msg = match mode {
@@ -4568,125 +4634,189 @@ impl EnhancedTuiApp {
 
     fn next_column_match(&mut self) {
         // Use DataView's column search navigation
-        if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
-            if let Some(visual_idx) = dataview.next_column_match() {
-                // Get the column name and match info
-                let matching_columns = dataview.get_matching_columns();
-                let current_match = dataview.current_column_match_index() + 1;
-                let total_matches = matching_columns.len();
-                let col_name = matching_columns
-                    .get(dataview.current_column_match_index())
-                    .map(|(_, name)| name.clone())
-                    .unwrap_or_default();
+        // Extract all needed data first to avoid borrow conflicts
+        let column_match_data =
+            if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
+                if let Some(visual_idx) = dataview.next_column_match() {
+                    // Get the column name and match info
+                    let matching_columns = dataview.get_matching_columns();
+                    let current_match_index = dataview.current_column_match_index();
+                    let current_match = current_match_index + 1;
+                    let total_matches = matching_columns.len();
+                    let col_name = matching_columns
+                        .get(current_match_index)
+                        .map(|(_, name)| name.clone())
+                        .unwrap_or_default();
 
-                // Convert visual index to DataTable index for Buffer/AppStateContainer
-                // (they still use DataTable indices for now)
-                let display_columns = dataview.get_display_columns();
-                let datatable_idx = if visual_idx < display_columns.len() {
-                    display_columns[visual_idx]
+                    // Convert visual index to DataTable index for Buffer/AppStateContainer
+                    // (they still use DataTable indices for now)
+                    let display_columns = dataview.get_display_columns();
+                    let datatable_idx = if visual_idx < display_columns.len() {
+                        display_columns[visual_idx]
+                    } else {
+                        visual_idx // Fallback
+                    };
+
+                    Some((
+                        visual_idx,
+                        datatable_idx,
+                        col_name,
+                        current_match,
+                        total_matches,
+                        current_match_index,
+                    ))
                 } else {
-                    visual_idx // Fallback
-                };
-
-                // Update both AppStateContainer and Buffer with DataTable index (for legacy compatibility)
-                self.state_container.set_current_column(datatable_idx);
-                self.state_container
-                    .set_current_column_buffer(datatable_idx);
-
-                // Update viewport to show the column using ViewportManager
-                // ViewportManager's set_current_column now expects VISUAL index
-                {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
-                        let viewport_changed = viewport_manager.set_current_column(visual_idx);
-
-                        // Sync navigation state with updated viewport
-                        if viewport_changed {
-                            let new_viewport = viewport_manager.viewport_cols().clone();
-                            let pinned_count =
-                                if let Some(dv) = self.state_container.get_buffer_dataview() {
-                                    dv.get_pinned_columns().len()
-                                } else {
-                                    0
-                                };
-                            let scrollable_offset = new_viewport.start.saturating_sub(pinned_count);
-                            self.state_container.navigation_mut().scroll_offset.1 =
-                                scrollable_offset;
-
-                            debug!(target: "navigation",
-                                "Column search: Jumped to visual column {} (datatable: {}) '{}', viewport adjusted to {:?}",
-                                visual_idx, datatable_idx, col_name, new_viewport);
-                        }
-                    }
+                    None
                 }
+            } else {
+                None
+            };
 
-                self.state_container.set_status_message(format!(
-                    "Column {}/{}: {} - Tab/Shift-Tab to navigate",
-                    current_match, total_matches, col_name
-                ));
+        // Now process the match data without holding dataview reference
+        if let Some((
+            visual_idx,
+            datatable_idx,
+            col_name,
+            current_match,
+            total_matches,
+            current_match_index,
+        )) = column_match_data
+        {
+            // Update both AppStateContainer and Buffer with DataTable index (for legacy compatibility)
+            self.state_container.set_current_column(datatable_idx);
+            self.state_container
+                .set_current_column_buffer(datatable_idx);
+
+            // Update viewport to show the column using ViewportManager
+            // ViewportManager's set_current_column now expects VISUAL index
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                    viewport_manager.set_current_column(visual_idx);
+                }
             }
+
+            // Always sync navigation state with updated viewport (like vim search)
+            debug!(target: "column_search_sync", "next_column_match: About to call sync_navigation_with_viewport() - visual_idx: {}, datatable_idx: {}", visual_idx, datatable_idx);
+            debug!(target: "column_search_sync", "next_column_match: Pre-sync - viewport current_column: {}", 
+                if let Some(vm) = self.viewport_manager.try_borrow().ok() {
+                    vm.as_ref().map(|v| v.get_crosshair_col()).unwrap_or(0)
+                } else { 0 });
+            self.sync_navigation_with_viewport();
+            debug!(target: "column_search_sync", "next_column_match: Post-sync - navigation current_column: {}", 
+                self.state_container.navigation().selected_column);
+            debug!(target: "column_search_sync", "next_column_match: sync_navigation_with_viewport() completed");
+
+            debug!(target: "navigation",
+                "Column search: Jumped to visual column {} (datatable: {}) '{}', synced with viewport",
+                visual_idx, datatable_idx, col_name);
+
+            // CRITICAL: Update AppStateContainer's column_search.current_match
+            // This ensures Enter key will jump to the correct column
+            {
+                let mut column_search = self.state_container.column_search_mut();
+                column_search.current_match = current_match_index;
+                debug!(target: "column_search_sync", "next_column_match: Updated AppStateContainer column_search.current_match to {}", column_search.current_match);
+            }
+
+            self.state_container.set_status_message(format!(
+                "Column {}/{}: {} - Tab/Shift-Tab to navigate",
+                current_match, total_matches, col_name
+            ));
         }
     }
 
     fn previous_column_match(&mut self) {
         // Use DataView's column search navigation
-        if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
-            if let Some(visual_idx) = dataview.prev_column_match() {
-                // Get the column name and match info
-                let matching_columns = dataview.get_matching_columns();
-                let current_match = dataview.current_column_match_index() + 1;
-                let total_matches = matching_columns.len();
-                let col_name = matching_columns
-                    .get(dataview.current_column_match_index())
-                    .map(|(_, name)| name.clone())
-                    .unwrap_or_default();
+        // Extract all needed data first to avoid borrow conflicts
+        let column_match_data =
+            if let Some(dataview) = self.state_container.get_buffer_dataview_mut() {
+                if let Some(visual_idx) = dataview.prev_column_match() {
+                    // Get the column name and match info
+                    let matching_columns = dataview.get_matching_columns();
+                    let current_match_index = dataview.current_column_match_index();
+                    let current_match = current_match_index + 1;
+                    let total_matches = matching_columns.len();
+                    let col_name = matching_columns
+                        .get(current_match_index)
+                        .map(|(_, name)| name.clone())
+                        .unwrap_or_default();
 
-                // Convert visual index to DataTable index for Buffer/AppStateContainer
-                // (they still use DataTable indices for now)
-                let display_columns = dataview.get_display_columns();
-                let datatable_idx = if visual_idx < display_columns.len() {
-                    display_columns[visual_idx]
+                    // Convert visual index to DataTable index for Buffer/AppStateContainer
+                    // (they still use DataTable indices for now)
+                    let display_columns = dataview.get_display_columns();
+                    let datatable_idx = if visual_idx < display_columns.len() {
+                        display_columns[visual_idx]
+                    } else {
+                        visual_idx // Fallback
+                    };
+
+                    Some((
+                        visual_idx,
+                        datatable_idx,
+                        col_name,
+                        current_match,
+                        total_matches,
+                        current_match_index,
+                    ))
                 } else {
-                    visual_idx // Fallback
-                };
-
-                // Update both AppStateContainer and Buffer with DataTable index (for legacy compatibility)
-                self.state_container.set_current_column(datatable_idx);
-                self.state_container
-                    .set_current_column_buffer(datatable_idx);
-
-                // Update viewport to show the column using ViewportManager
-                // ViewportManager's set_current_column now expects VISUAL index
-                {
-                    let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-                    if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
-                        let viewport_changed = viewport_manager.set_current_column(visual_idx);
-
-                        // Sync navigation state with updated viewport
-                        if viewport_changed {
-                            let new_viewport = viewport_manager.viewport_cols().clone();
-                            let pinned_count =
-                                if let Some(dv) = self.state_container.get_buffer_dataview() {
-                                    dv.get_pinned_columns().len()
-                                } else {
-                                    0
-                                };
-                            let scrollable_offset = new_viewport.start.saturating_sub(pinned_count);
-                            self.state_container.navigation_mut().scroll_offset.1 =
-                                scrollable_offset;
-
-                            debug!(target: "navigation",
-                                "Column search (prev): Jumped to visual column {} (datatable: {}) '{}', viewport adjusted to {:?}",
-                                visual_idx, datatable_idx, col_name, new_viewport);
-                        }
-                    }
+                    None
                 }
+            } else {
+                None
+            };
 
-                self.state_container.set_status_message(format!(
-                    "Column {}/{}: {} - Tab/Shift-Tab to navigate",
-                    current_match, total_matches, col_name
-                ));
+        // Now process the match data without holding dataview reference
+        if let Some((
+            visual_idx,
+            datatable_idx,
+            col_name,
+            current_match,
+            total_matches,
+            current_match_index,
+        )) = column_match_data
+        {
+            // Update both AppStateContainer and Buffer with DataTable index (for legacy compatibility)
+            self.state_container.set_current_column(datatable_idx);
+            self.state_container
+                .set_current_column_buffer(datatable_idx);
+
+            // Update viewport to show the column using ViewportManager
+            // ViewportManager's set_current_column now expects VISUAL index
+            {
+                let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
+                if let Some(viewport_manager) = viewport_manager_borrow.as_mut() {
+                    viewport_manager.set_current_column(visual_idx);
+                }
             }
+
+            // Always sync navigation state with updated viewport (like vim search)
+            debug!(target: "column_search_sync", "previous_column_match: About to call sync_navigation_with_viewport() - visual_idx: {}, datatable_idx: {}", visual_idx, datatable_idx);
+            debug!(target: "column_search_sync", "previous_column_match: Pre-sync - viewport current_column: {}", 
+                if let Some(vm) = self.viewport_manager.try_borrow().ok() {
+                    vm.as_ref().map(|v| v.get_crosshair_col()).unwrap_or(0)
+                } else { 0 });
+            self.sync_navigation_with_viewport();
+            debug!(target: "column_search_sync", "previous_column_match: Post-sync - navigation current_column: {}", 
+                self.state_container.navigation().selected_column);
+            debug!(target: "column_search_sync", "previous_column_match: sync_navigation_with_viewport() completed");
+
+            debug!(target: "navigation",
+                "Column search (prev): Jumped to visual column {} (datatable: {}) '{}', synced with viewport",
+                visual_idx, datatable_idx, col_name);
+
+            // CRITICAL: Update AppStateContainer's column_search.current_match
+            // This ensures Enter key will jump to the correct column
+            {
+                let mut column_search = self.state_container.column_search_mut();
+                column_search.current_match = current_match_index;
+                debug!(target: "column_search_sync", "previous_column_match: Updated AppStateContainer column_search.current_match to {}", column_search.current_match);
+            }
+
+            self.state_container.set_status_message(format!(
+                "Column {}/{}: {} - Tab/Shift-Tab to navigate",
+                current_match, total_matches, col_name
+            ));
         }
     }
 
@@ -7228,6 +7358,122 @@ impl ActionHandlerContext for EnhancedTuiApp {
                 if is_locked { "ON" } else { "OFF" },
                 self.shadow_state.borrow().get_mode()
             );
+        }
+    }
+
+    // Debug and development operations
+    fn show_debug_info(&mut self) {
+        <Self as DebugContext>::toggle_debug_mode(self);
+    }
+
+    fn show_pretty_query(&mut self) {
+        self.show_pretty_query();
+    }
+
+    fn show_help(&mut self) {
+        self.state_container.set_help_visible(true);
+        self.set_mode_via_shadow_state(AppMode::Help, "help_requested");
+        self.help_widget.on_enter();
+    }
+
+    // Text editing operations
+    fn kill_line(&mut self) {
+        use crate::ui::traits::input_ops::InputBehavior;
+        InputBehavior::kill_line(self);
+        let message = if !self.state_container.is_kill_ring_empty() {
+            let kill_ring = self.state_container.get_kill_ring();
+            format!(
+                "Killed to end of line - {} chars in kill ring",
+                kill_ring.len()
+            )
+        } else {
+            "Kill line - nothing to kill".to_string()
+        };
+        self.state_container.set_status_message(message);
+    }
+
+    fn kill_line_backward(&mut self) {
+        use crate::ui::traits::input_ops::InputBehavior;
+        InputBehavior::kill_line_backward(self);
+        let message = if !self.state_container.is_kill_ring_empty() {
+            let kill_ring = self.state_container.get_kill_ring();
+            format!(
+                "Killed to beginning of line - {} chars in kill ring",
+                kill_ring.len()
+            )
+        } else {
+            "Kill line backward - nothing to kill".to_string()
+        };
+        self.state_container.set_status_message(message);
+    }
+
+    fn delete_word_backward(&mut self) {
+        use crate::ui::traits::input_ops::InputBehavior;
+        InputBehavior::delete_word_backward(self);
+    }
+
+    fn delete_word_forward(&mut self) {
+        use crate::ui::traits::input_ops::InputBehavior;
+        InputBehavior::delete_word_forward(self);
+    }
+
+    fn expand_asterisk(&mut self) {
+        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
+            if buffer.expand_asterisk(&self.hybrid_parser) {
+                // Sync for rendering if needed
+                if buffer.get_edit_mode() == EditMode::SingleLine {
+                    let text = buffer.get_input_text();
+                    let cursor = buffer.get_input_cursor_position();
+                    self.set_input_text_with_cursor(text, cursor);
+                }
+            }
+        }
+    }
+
+    fn expand_asterisk_visible(&mut self) {
+        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
+            if buffer.expand_asterisk_visible() {
+                // Sync for rendering if needed
+                if buffer.get_edit_mode() == EditMode::SingleLine {
+                    let text = buffer.get_input_text();
+                    let cursor = buffer.get_input_cursor_position();
+                    self.set_input_text_with_cursor(text, cursor);
+                }
+            }
+        }
+    }
+
+    fn previous_history_command(&mut self) {
+        let history_entries = self
+            .state_container
+            .command_history()
+            .get_navigation_entries();
+        let history_commands: Vec<String> =
+            history_entries.iter().map(|e| e.command.clone()).collect();
+
+        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
+            if buffer.navigate_history_up(&history_commands) {
+                self.sync_all_input_states();
+                self.state_container
+                    .set_status_message("Previous command from history".to_string());
+            }
+        }
+    }
+
+    fn next_history_command(&mut self) {
+        let history_entries = self
+            .state_container
+            .command_history()
+            .get_navigation_entries();
+        let history_commands: Vec<String> =
+            history_entries.iter().map(|e| e.command.clone()).collect();
+
+        if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
+            if buffer.navigate_history_down(&history_commands) {
+                self.sync_all_input_states();
+                self.state_container
+                    .set_status_message("Next command from history".to_string());
+            }
         }
     }
 }

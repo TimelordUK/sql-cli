@@ -229,6 +229,9 @@ impl StateCoordinator {
         state_container.set_search_pattern(String::new());
         state_container.clear_search();
 
+        // Also clear column search state
+        state_container.clear_column_search();
+
         // Observe search end in shadow state
         shadow_state
             .borrow_mut()

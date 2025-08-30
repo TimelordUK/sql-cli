@@ -100,11 +100,14 @@ pub enum Action {
     ExecuteQuery,
     LoadFromHistory(usize),
     StartHistorySearch,
+    PreviousHistoryCommand, // Ctrl+P, Alt+Up
+    NextHistoryCommand,     // Ctrl+N, Alt+Down
 
     // View operations
     RefreshView,
     ShowHelp,
     ShowDebugInfo,
+    ShowPrettyQuery,
     StartJumpToRow,
     NavigateToViewportTop,
     NavigateToViewportMiddle,
@@ -115,6 +118,12 @@ pub enum Action {
     ToggleKeyIndicator,
     ShowColumnStatistics, // For 'S' key
     CycleColumnPacking,   // For Alt-S
+
+    // Text editing operations
+    KillLine,              // F9 - delete from cursor to end
+    KillLineBackward,      // F10 - delete from cursor to beginning
+    ExpandAsterisk,        // Expand * to column names
+    ExpandAsteriskVisible, // Expand * to visible column names only
 
     // Application control
     Quit,

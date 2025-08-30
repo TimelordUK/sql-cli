@@ -1,0 +1,31 @@
+#!/usr/bin/expect -f
+# Generate sample F5 debug output for testing the debug-analyzer agent
+
+set timeout 5
+spawn ./target/release/sql-cli test_nav_simple.csv -e "select * from data"
+expect "sql>"
+
+# Navigate a bit to get some state
+send "l"
+sleep 0.1
+send "l"
+sleep 0.1
+send "j"
+sleep 0.1
+
+# Press F5 to get debug output
+send "\033\[15~"
+expect {
+    "=== APP STATE CONTAINER DEBUG DUMP ===" {
+        # Found debug output, continue reading
+        expect eof
+        set output $expect_out(buffer)
+        puts $output
+    }
+    timeout {
+        puts "Timeout waiting for debug output"
+        exit 1
+    }
+}
+
+exit 0
