@@ -1741,8 +1741,12 @@ impl EnhancedTuiApp {
         let normalized_key = self.normalize_and_log_key(key);
 
         // === PHASE 1: Try CommandEditor for basic text input ===
-        // This is a proof of concept - we'll gradually move more logic here
-        if matches!(normalized_key.code, KeyCode::Char(_) | KeyCode::Backspace) {
+        // IMPORTANT: This must come BEFORE try_action_system to properly intercept keys
+        // We handle basic text editing that would otherwise go through the action system
+        if matches!(normalized_key.code, KeyCode::Char(_) | KeyCode::Backspace)
+            && !normalized_key.modifiers.contains(KeyModifiers::CONTROL)
+            && !normalized_key.modifiers.contains(KeyModifiers::ALT)
+        {
             // IMPORTANT: Sync state TO CommandEditor before processing
             // This ensures CommandEditor has the current text/cursor position
             if self.command_editor.get_text() != self.input.value() {
@@ -1770,6 +1774,9 @@ impl EnhancedTuiApp {
             if result {
                 return Ok(true);
             }
+
+            // For char/backspace, we've handled it - don't let action system process it again
+            return Ok(false);
         }
         // === END PHASE 1 ===
 
