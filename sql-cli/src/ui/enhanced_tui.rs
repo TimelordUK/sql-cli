@@ -25,12 +25,11 @@ use crate::sql_highlighter::SqlHighlighter;
 use crate::state::StateDispatcher;
 use crate::ui::action_handlers::ActionHandlerContext;
 use crate::ui::actions::{Action, ActionContext, ActionResult};
-use crate::ui::debug_context::DebugContext;
-use crate::ui::key_chord_handler::{ChordResult, KeyChordHandler};
-use crate::ui::key_dispatcher::KeyDispatcher;
-use crate::ui::key_indicator::{format_key_for_display, KeyPressIndicator};
-use crate::ui::key_mapper::KeyMapper;
-use crate::ui::key_sequence_renderer::KeySequenceRenderer;
+use crate::ui::debug::DebugContext;
+use crate::ui::key_handling::{
+    format_key_for_display, ChordResult, KeyChordHandler, KeyDispatcher, KeyMapper,
+    KeyPressIndicator, KeySequenceRenderer,
+};
 use crate::ui::shadow_state::ShadowStateManager;
 use crate::ui::table_widget_manager::TableWidgetManager;
 use crate::ui::traits::{

@@ -5,8 +5,7 @@ use crossterm::{
 use sql_cli::app_state_container::SelectionMode;
 use sql_cli::buffer::AppMode;
 use sql_cli::ui::actions::{Action, ActionContext};
-use sql_cli::ui::key_chord_handler::{ChordResult, KeyChordHandler};
-use sql_cli::ui::key_mapper::KeyMapper;
+use sql_cli::ui::key_handling::{ChordResult, KeyChordHandler, KeyMapper};
 use std::io::{self, Write};
 
 fn format_key(key: &KeyEvent) -> String {

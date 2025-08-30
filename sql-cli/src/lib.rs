@@ -108,7 +108,7 @@ pub use data::datatable_view;
 
 // Re-export UI modules for backward compatibility
 pub use ui::enhanced_tui;
-pub use ui::key_dispatcher;
+pub use ui::key_handling::dispatcher as key_dispatcher;
 pub use ui::tui_app;
 pub use ui::tui_renderer;
 pub use ui::tui_state;
