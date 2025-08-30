@@ -885,37 +885,26 @@ impl EnhancedTuiApp {
                 Ok(ActionResult::Handled)
             }
             StartHistorySearch => {
-                // Switch to Command mode first if needed
-                if self.shadow_state.borrow().is_in_results_mode() {
-                    let last_query = self.state_container.get_last_query();
-                    if !last_query.is_empty() {
-                        // Use helper to sync all states
-                        self.set_input_text(last_query.clone());
-                    }
-                    self.state_container.set_mode(AppMode::Command);
-                    self.shadow_state
-                        .borrow_mut()
-                        .observe_mode_change(AppMode::Command, "history_search_from_results");
-                    self.state_container.set_table_selected_row(None);
+                use crate::ui::state_coordinator::StateCoordinator;
+
+                // Get current input before delegating
+                let current_input = self.get_input_text();
+
+                // Use StateCoordinator for all state transitions
+                let (input_to_use, _match_count) = StateCoordinator::start_history_search_with_refs(
+                    &mut self.state_container,
+                    &self.shadow_state,
+                    current_input,
+                );
+
+                // Update input if it changed (e.g., from Results mode)
+                if input_to_use != self.get_input_text() {
+                    self.set_input_text(input_to_use);
                 }
 
-                // Start history search with current input
-                let current_input = self.get_input_text();
-                self.state_container.start_history_search(current_input);
-
-                // Initialize with schema context
+                // Initialize with schema context (implementation stays in TUI)
                 self.update_history_matches_in_container();
 
-                // Get match count and update status
-                let match_count = self.state_container.history_search().matches.len();
-                self.state_container
-                    .set_status_message(format!("History search: {} matches", match_count));
-
-                // Switch to History mode to show the search interface
-                self.state_container.set_mode(AppMode::History);
-                self.shadow_state
-                    .borrow_mut()
-                    .observe_mode_change(AppMode::History, "history_search_started");
                 Ok(ActionResult::Handled)
             }
             CycleColumnPacking => {

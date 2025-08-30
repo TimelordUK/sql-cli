@@ -646,6 +646,61 @@ impl StateCoordinator {
         );
     }
 
+    // ========== HISTORY SEARCH COORDINATION ==========
+
+    /// Start history search with proper state transitions
+    pub fn start_history_search_with_refs(
+        state_container: &mut AppStateContainer,
+        shadow_state: &RefCell<crate::ui::shadow_state::ShadowStateManager>,
+        current_input: String,
+    ) -> (String, usize) {
+        debug!("StateCoordinator::start_history_search_with_refs: Starting history search");
+
+        let mut input_to_use = current_input;
+
+        // If in Results mode, switch to Command mode first
+        if shadow_state.borrow().is_in_results_mode() {
+            let last_query = state_container.get_last_query();
+            if !last_query.is_empty() {
+                input_to_use = last_query.clone();
+                debug!(
+                    "StateCoordinator: Using last query for history search: '{}'",
+                    last_query
+                );
+            }
+
+            // Transition to Command mode
+            state_container.set_mode(AppMode::Command);
+            shadow_state
+                .borrow_mut()
+                .observe_mode_change(AppMode::Command, "history_search_from_results");
+            state_container.set_table_selected_row(None);
+        }
+
+        // Start history search with the input
+        state_container.start_history_search(input_to_use.clone());
+
+        // Note: update_history_matches_in_container() will be called by TUI
+        // as it has the schema context implementation
+
+        // Get match count for status
+        let match_count = state_container.history_search().matches.len();
+        state_container.set_status_message(format!("History search: {} matches", match_count));
+
+        // Switch to History mode
+        state_container.set_mode(AppMode::History);
+        shadow_state
+            .borrow_mut()
+            .observe_mode_change(AppMode::History, "history_search_started");
+
+        debug!(
+            "StateCoordinator: History search started with {} matches, mode=History",
+            match_count
+        );
+
+        (input_to_use, match_count)
+    }
+
     // ========== NAVIGATION COORDINATION ==========
 
     /// Coordinate goto first row with vim search state
