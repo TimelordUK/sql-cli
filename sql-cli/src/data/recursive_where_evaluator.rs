@@ -26,6 +26,148 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         }
     }
 
+    /// Helper function to compare two datetime values based on the operator
+    fn compare_datetime(op: &str, left: &DateTime<Utc>, right: &DateTime<Utc>) -> bool {
+        match op {
+            "=" => left == right,
+            "!=" | "<>" => left != right,
+            ">" => left > right,
+            ">=" => left >= right,
+            "<" => left < right,
+            "<=" => left <= right,
+            _ => false,
+        }
+    }
+
+    /// Evaluate the Length() method on a column value
+    fn evaluate_length(
+        &self,
+        object: &str,
+        row_index: usize,
+    ) -> Result<(Option<DataValue>, String)> {
+        let col_index = self
+            .table
+            .get_column_index(object)
+            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
+
+        let value = self.table.get_value(row_index, col_index);
+        let length_value = match value {
+            Some(DataValue::String(s)) => Some(DataValue::Integer(s.len() as i64)),
+            Some(DataValue::InternedString(s)) => Some(DataValue::Integer(s.len() as i64)),
+            Some(DataValue::Integer(n)) => Some(DataValue::Integer(n.to_string().len() as i64)),
+            Some(DataValue::Float(f)) => Some(DataValue::Integer(f.to_string().len() as i64)),
+            _ => Some(DataValue::Integer(0)),
+        };
+        Ok((length_value, format!("{}.Length()", object)))
+    }
+
+    /// Evaluate the IndexOf() method on a column value
+    fn evaluate_indexof(
+        &self,
+        object: &str,
+        search_str: &str,
+        row_index: usize,
+    ) -> Result<(Option<DataValue>, String)> {
+        let col_index = self
+            .table
+            .get_column_index(object)
+            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
+
+        let value = self.table.get_value(row_index, col_index);
+        let index_value = match value {
+            Some(DataValue::String(s)) => {
+                // Case-insensitive search by default, following Contains behavior
+                let pos = s
+                    .to_lowercase()
+                    .find(&search_str.to_lowercase())
+                    .map(|idx| idx as i64)
+                    .unwrap_or(-1);
+                Some(DataValue::Integer(pos))
+            }
+            Some(DataValue::InternedString(s)) => {
+                let pos = s
+                    .to_lowercase()
+                    .find(&search_str.to_lowercase())
+                    .map(|idx| idx as i64)
+                    .unwrap_or(-1);
+                Some(DataValue::Integer(pos))
+            }
+            Some(DataValue::Integer(n)) => {
+                let str_val = n.to_string();
+                let pos = str_val.find(search_str).map(|idx| idx as i64).unwrap_or(-1);
+                Some(DataValue::Integer(pos))
+            }
+            Some(DataValue::Float(f)) => {
+                let str_val = f.to_string();
+                let pos = str_val.find(search_str).map(|idx| idx as i64).unwrap_or(-1);
+                Some(DataValue::Integer(pos))
+            }
+            _ => Some(DataValue::Integer(-1)), // Return -1 for not found
+        };
+
+        if row_index < 3 {
+            debug!(
+                "RecursiveWhereEvaluator: Row {} IndexOf('{}') = {:?}",
+                row_index, search_str, index_value
+            );
+        }
+        Ok((index_value, format!("{}.IndexOf('{}')", object, search_str)))
+    }
+
+    /// Apply the appropriate trim operation based on trim_type
+    fn apply_trim<'b>(s: &'b str, trim_type: &str) -> &'b str {
+        match trim_type {
+            "trim" => s.trim(),
+            "trimstart" => s.trim_start(),
+            "trimend" => s.trim_end(),
+            _ => s,
+        }
+    }
+
+    /// Evaluate trim methods (Trim, TrimStart, TrimEnd) on a column value
+    fn evaluate_trim(
+        &self,
+        object: &str,
+        row_index: usize,
+        trim_type: &str,
+    ) -> Result<(Option<DataValue>, String)> {
+        let col_index = self
+            .table
+            .get_column_index(object)
+            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
+
+        let value = self.table.get_value(row_index, col_index);
+        let trimmed_value = match value {
+            Some(DataValue::String(s)) => Some(DataValue::String(
+                Self::apply_trim(&s, trim_type).to_string(),
+            )),
+            Some(DataValue::InternedString(s)) => Some(DataValue::String(
+                Self::apply_trim(&s, trim_type).to_string(),
+            )),
+            Some(DataValue::Integer(n)) => {
+                let str_val = n.to_string();
+                Some(DataValue::String(
+                    Self::apply_trim(&str_val, trim_type).to_string(),
+                ))
+            }
+            Some(DataValue::Float(f)) => {
+                let str_val = f.to_string();
+                Some(DataValue::String(
+                    Self::apply_trim(&str_val, trim_type).to_string(),
+                ))
+            }
+            _ => Some(DataValue::String(String::new())),
+        };
+
+        let method_name = match trim_type {
+            "trim" => "Trim",
+            "trimstart" => "TrimStart",
+            "trimend" => "TrimEnd",
+            _ => "Trim",
+        };
+        Ok((trimmed_value, format!("{}.{}()", object, method_name)))
+    }
+
     /// Evaluate a WHERE clause for a specific row
     pub fn evaluate(&self, where_clause: &WhereClause, row_index: usize) -> Result<bool> {
         // Only log for first few rows to avoid performance impact
@@ -170,163 +312,32 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         if !args.is_empty() {
                             return Err(anyhow::anyhow!("Length() takes no arguments"));
                         }
-                        let col_index = self
-                            .table
-                            .get_column_index(object)
-                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
-
-                        let value = self.table.get_value(row_index, col_index);
-                        let length_value = match value {
-                            Some(DataValue::String(s)) => Some(DataValue::Integer(s.len() as i64)),
-                            Some(DataValue::InternedString(s)) => {
-                                Some(DataValue::Integer(s.len() as i64))
-                            }
-                            Some(DataValue::Integer(n)) => {
-                                Some(DataValue::Integer(n.to_string().len() as i64))
-                            }
-                            Some(DataValue::Float(f)) => {
-                                Some(DataValue::Integer(f.to_string().len() as i64))
-                            }
-                            _ => Some(DataValue::Integer(0)),
-                        };
-                        (length_value, format!("{}.Length()", object))
+                        self.evaluate_length(object, row_index)?
                     }
                     "indexof" => {
                         if args.len() != 1 {
                             return Err(anyhow::anyhow!("IndexOf() requires exactly 1 argument"));
                         }
                         let search_str = self.extract_string_value(&args[0])?;
-                        let col_index = self
-                            .table
-                            .get_column_index(object)
-                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
-
-                        let value = self.table.get_value(row_index, col_index);
-                        let index_value = match value {
-                            Some(DataValue::String(s)) => {
-                                // Case-insensitive search by default, following Contains behavior
-                                let pos = s
-                                    .to_lowercase()
-                                    .find(&search_str.to_lowercase())
-                                    .map(|idx| idx as i64)
-                                    .unwrap_or(-1);
-                                Some(DataValue::Integer(pos))
-                            }
-                            Some(DataValue::InternedString(s)) => {
-                                let pos = s
-                                    .to_lowercase()
-                                    .find(&search_str.to_lowercase())
-                                    .map(|idx| idx as i64)
-                                    .unwrap_or(-1);
-                                Some(DataValue::Integer(pos))
-                            }
-                            Some(DataValue::Integer(n)) => {
-                                let str_val = n.to_string();
-                                let pos = str_val
-                                    .find(&search_str)
-                                    .map(|idx| idx as i64)
-                                    .unwrap_or(-1);
-                                Some(DataValue::Integer(pos))
-                            }
-                            Some(DataValue::Float(f)) => {
-                                let str_val = f.to_string();
-                                let pos = str_val
-                                    .find(&search_str)
-                                    .map(|idx| idx as i64)
-                                    .unwrap_or(-1);
-                                Some(DataValue::Integer(pos))
-                            }
-                            _ => Some(DataValue::Integer(-1)), // Return -1 for not found
-                        };
-
-                        if row_index < 3 {
-                            debug!(
-                                "RecursiveWhereEvaluator: Row {} IndexOf('{}') = {:?}",
-                                row_index, search_str, index_value
-                            );
-                        }
-                        (index_value, format!("{}.IndexOf('{}')", object, search_str))
+                        self.evaluate_indexof(object, &search_str, row_index)?
                     }
                     "trim" => {
                         if !args.is_empty() {
                             return Err(anyhow::anyhow!("Trim() takes no arguments"));
                         }
-                        let col_index = self
-                            .table
-                            .get_column_index(object)
-                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
-
-                        let value = self.table.get_value(row_index, col_index);
-                        let trimmed_value = match value {
-                            Some(DataValue::String(s)) => {
-                                Some(DataValue::String(s.trim().to_string()))
-                            }
-                            Some(DataValue::InternedString(s)) => {
-                                Some(DataValue::String(s.trim().to_string()))
-                            }
-                            Some(DataValue::Integer(n)) => {
-                                Some(DataValue::String(n.to_string().trim().to_string()))
-                            }
-                            Some(DataValue::Float(f)) => {
-                                Some(DataValue::String(f.to_string().trim().to_string()))
-                            }
-                            _ => Some(DataValue::String(String::new())),
-                        };
-                        (trimmed_value, format!("{}.Trim()", object))
+                        self.evaluate_trim(object, row_index, "trim")?
                     }
                     "trimstart" => {
                         if !args.is_empty() {
                             return Err(anyhow::anyhow!("TrimStart() takes no arguments"));
                         }
-                        let col_index = self
-                            .table
-                            .get_column_index(object)
-                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
-
-                        let value = self.table.get_value(row_index, col_index);
-                        let trimmed_value = match value {
-                            Some(DataValue::String(s)) => {
-                                Some(DataValue::String(s.trim_start().to_string()))
-                            }
-                            Some(DataValue::InternedString(s)) => {
-                                Some(DataValue::String(s.trim_start().to_string()))
-                            }
-                            Some(DataValue::Integer(n)) => {
-                                Some(DataValue::String(n.to_string().trim_start().to_string()))
-                            }
-                            Some(DataValue::Float(f)) => {
-                                Some(DataValue::String(f.to_string().trim_start().to_string()))
-                            }
-                            _ => Some(DataValue::String(String::new())),
-                        };
-                        (trimmed_value, format!("{}.TrimStart()", object))
+                        self.evaluate_trim(object, row_index, "trimstart")?
                     }
                     "trimend" => {
                         if !args.is_empty() {
                             return Err(anyhow::anyhow!("TrimEnd() takes no arguments"));
                         }
-                        let col_index = self
-                            .table
-                            .get_column_index(object)
-                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", object))?;
-
-                        let value = self.table.get_value(row_index, col_index);
-                        let trimmed_value = match value {
-                            Some(DataValue::String(s)) => {
-                                Some(DataValue::String(s.trim_end().to_string()))
-                            }
-                            Some(DataValue::InternedString(s)) => {
-                                Some(DataValue::String(s.trim_end().to_string()))
-                            }
-                            Some(DataValue::Integer(n)) => {
-                                Some(DataValue::String(n.to_string().trim_end().to_string()))
-                            }
-                            Some(DataValue::Float(f)) => {
-                                Some(DataValue::String(f.to_string().trim_end().to_string()))
-                            }
-                            _ => Some(DataValue::String(String::new())),
-                        };
-                        (trimmed_value, format!("{}.TrimEnd()", object))
+                        self.evaluate_trim(object, row_index, "trimend")?
                     }
                     _ => {
                         return Err(anyhow::anyhow!(
@@ -567,15 +578,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
                 // Try to parse the string as a datetime - first try ISO 8601 with UTC
                 if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
-                    let result = match op_str {
-                        "=" => parsed_dt == *dt,
-                        "!=" | "<>" => parsed_dt != *dt,
-                        ">" => parsed_dt > *dt,
-                        ">=" => parsed_dt >= *dt,
-                        "<" => parsed_dt < *dt,
-                        "<=" => parsed_dt <= *dt,
-                        _ => false,
-                    };
+                    let result = Self::compare_datetime(op_str, &parsed_dt, dt);
                     if row_index < 3 {
                         debug!(
                             "RecursiveWhereEvaluator: DateTime parsed as UTC: '{}' {} '{}' = {}",
@@ -592,15 +595,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%dT%H:%M:%S")
                 {
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = match op_str {
-                        "=" => parsed_utc == *dt,
-                        "!=" | "<>" => parsed_utc != *dt,
-                        ">" => parsed_utc > *dt,
-                        ">=" => parsed_utc >= *dt,
-                        "<" => parsed_utc < *dt,
-                        "<=" => parsed_utc <= *dt,
-                        _ => false,
-                    };
+                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
                     if row_index < 3 {
                         debug!(
                             "RecursiveWhereEvaluator: DateTime parsed as ISO 8601: '{}' {} '{}' = {}",
@@ -617,15 +612,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%d %H:%M:%S")
                 {
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = match op_str {
-                        "=" => parsed_utc == *dt,
-                        "!=" | "<>" => parsed_utc != *dt,
-                        ">" => parsed_utc > *dt,
-                        ">=" => parsed_utc >= *dt,
-                        "<" => parsed_utc < *dt,
-                        "<=" => parsed_utc <= *dt,
-                        _ => false,
-                    };
+                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
                     if row_index < 3 {
                         debug!(
                             "RecursiveWhereEvaluator: DateTime parsed as standard format: '{}' {} '{}' = {}",
@@ -639,15 +626,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     let parsed_dt =
                         NaiveDateTime::new(parsed_date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = match op_str {
-                        "=" => parsed_utc == *dt,
-                        "!=" | "<>" => parsed_utc != *dt,
-                        ">" => parsed_utc > *dt,
-                        ">=" => parsed_utc >= *dt,
-                        "<" => parsed_utc < *dt,
-                        "<=" => parsed_utc <= *dt,
-                        _ => false,
-                    };
+                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
                     if row_index < 3 {
                         debug!(
                             "RecursiveWhereEvaluator: DateTime parsed as date-only: '{}' {} '{}' = {}",
@@ -680,15 +659,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
                 // Try to parse the string as a datetime - first try ISO 8601 with UTC
                 if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
-                    let result = match op_str {
-                        "=" => parsed_dt == *dt,
-                        "!=" | "<>" => parsed_dt != *dt,
-                        ">" => parsed_dt > *dt,
-                        ">=" => parsed_dt >= *dt,
-                        "<" => parsed_dt < *dt,
-                        "<=" => parsed_dt <= *dt,
-                        _ => false,
-                    };
+                    let result = Self::compare_datetime(op_str, &parsed_dt, dt);
                     if row_index < 3 {
                         debug!(
                             "RecursiveWhereEvaluator: DateTime parsed as UTC: '{}' {} '{}' = {}",
@@ -705,15 +676,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     NaiveDateTime::parse_from_str(date_str.as_ref(), "%Y-%m-%dT%H:%M:%S")
                 {
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = match op_str {
-                        "=" => parsed_utc == *dt,
-                        "!=" | "<>" => parsed_utc != *dt,
-                        ">" => parsed_utc > *dt,
-                        ">=" => parsed_utc >= *dt,
-                        "<" => parsed_utc < *dt,
-                        "<=" => parsed_utc <= *dt,
-                        _ => false,
-                    };
+                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
                     if row_index < 3 {
                         debug!(
                             "RecursiveWhereEvaluator: DateTime parsed as ISO 8601: '{}' {} '{}' = {}",
@@ -730,15 +693,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     NaiveDateTime::parse_from_str(date_str.as_ref(), "%Y-%m-%d %H:%M:%S")
                 {
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = match op_str {
-                        "=" => parsed_utc == *dt,
-                        "!=" | "<>" => parsed_utc != *dt,
-                        ">" => parsed_utc > *dt,
-                        ">=" => parsed_utc >= *dt,
-                        "<" => parsed_utc < *dt,
-                        "<=" => parsed_utc <= *dt,
-                        _ => false,
-                    };
+                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
                     if row_index < 3 {
                         debug!(
                             "RecursiveWhereEvaluator: DateTime parsed as standard format: '{}' {} '{}' = {}",
@@ -754,15 +709,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     let parsed_dt =
                         NaiveDateTime::new(parsed_date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = match op_str {
-                        "=" => parsed_utc == *dt,
-                        "!=" | "<>" => parsed_utc != *dt,
-                        ">" => parsed_utc > *dt,
-                        ">=" => parsed_utc >= *dt,
-                        "<" => parsed_utc < *dt,
-                        "<=" => parsed_utc <= *dt,
-                        _ => false,
-                    };
+                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
                     if row_index < 3 {
                         debug!(
                             "RecursiveWhereEvaluator: DateTime parsed as date-only: '{}' {} '{}' = {}",
@@ -795,15 +742,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
                 // Parse the DataValue::DateTime string to DateTime<Utc>
                 if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
-                    let result = match op_str {
-                        "=" => parsed_dt == *dt,
-                        "!=" | "<>" => parsed_dt != *dt,
-                        ">" => parsed_dt > *dt,
-                        ">=" => parsed_dt >= *dt,
-                        "<" => parsed_dt < *dt,
-                        "<=" => parsed_dt <= *dt,
-                        _ => false,
-                    };
+                    let result = Self::compare_datetime(op_str, &parsed_dt, dt);
                     if row_index < 3 {
                         debug!(
                             "RecursiveWhereEvaluator: DateTime vs DateTime parsed successfully: '{}' {} '{}' = {}",
@@ -817,15 +756,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%dT%H:%M:%S")
                 {
                     let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = match op_str {
-                        "=" => parsed_utc == *dt,
-                        "!=" | "<>" => parsed_utc != *dt,
-                        ">" => parsed_utc > *dt,
-                        ">=" => parsed_utc >= *dt,
-                        "<" => parsed_utc < *dt,
-                        "<=" => parsed_utc <= *dt,
-                        _ => false,
-                    };
+                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
                     if row_index < 3 {
                         debug!(
                             "RecursiveWhereEvaluator: DateTime vs DateTime ISO 8601: '{}' {} '{}' = {}",
