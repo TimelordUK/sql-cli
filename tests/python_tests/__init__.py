@@ -1,0 +1,1 @@
+# Python test package for SQL CLI

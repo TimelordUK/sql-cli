@@ -23,6 +23,11 @@ pub enum Token {
     Limit,
     Offset,
     DateTime, // DateTime constructor
+    Case,     // CASE expression
+    When,     // WHEN clause
+    Then,     // THEN clause
+    Else,     // ELSE clause
+    End,      // END keyword
 
     // Literals
     Identifier(String),
@@ -252,6 +257,11 @@ impl Lexer {
                     "LIMIT" => Token::Limit,
                     "OFFSET" => Token::Offset,
                     "DATETIME" => Token::DateTime,
+                    "CASE" => Token::Case,
+                    "WHEN" => Token::When,
+                    "THEN" => Token::Then,
+                    "ELSE" => Token::Else,
+                    "END" => Token::End,
                     _ => Token::Identifier(ident),
                 }
             }
@@ -365,6 +375,16 @@ pub enum SqlExpression {
     Not {
         expr: Box<SqlExpression>,
     },
+    CaseExpression {
+        when_branches: Vec<WhenBranch>,
+        else_branch: Option<Box<SqlExpression>>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct WhenBranch {
+    pub condition: Box<SqlExpression>,
+    pub result: Box<SqlExpression>,
 }
 
 #[derive(Debug, Clone)]
@@ -1076,6 +1096,53 @@ impl Parser {
         Ok(left)
     }
 
+    fn parse_case_expression(&mut self) -> Result<SqlExpression, String> {
+        // Consume CASE keyword
+        self.consume(Token::Case)?;
+
+        let mut when_branches = Vec::new();
+
+        // Parse WHEN clauses
+        while matches!(self.current_token, Token::When) {
+            self.advance(); // consume WHEN
+
+            // Parse the condition
+            let condition = self.parse_expression()?;
+
+            // Expect THEN
+            self.consume(Token::Then)?;
+
+            // Parse the result expression
+            let result = self.parse_expression()?;
+
+            when_branches.push(WhenBranch {
+                condition: Box::new(condition),
+                result: Box::new(result),
+            });
+        }
+
+        // Check for at least one WHEN clause
+        if when_branches.is_empty() {
+            return Err("CASE expression must have at least one WHEN clause".to_string());
+        }
+
+        // Parse optional ELSE clause
+        let else_branch = if matches!(self.current_token, Token::Else) {
+            self.advance(); // consume ELSE
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            None
+        };
+
+        // Expect END keyword
+        self.consume(Token::End)?;
+
+        Ok(SqlExpression::CaseExpression {
+            when_branches,
+            else_branch,
+        })
+    }
+
     fn parse_primary(&mut self) -> Result<SqlExpression, String> {
         // Special case: check if a number literal could actually be a column name
         // This handles cases where columns are named with pure numbers like "202204"
@@ -1089,6 +1156,10 @@ impl Parser {
         }
 
         match &self.current_token {
+            Token::Case => {
+                // Parse CASE expression
+                self.parse_case_expression()
+            }
             Token::DateTime => {
                 self.advance(); // consume DateTime
                 self.consume(Token::LeftParen)?;
@@ -1663,6 +1734,26 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
         }
         SqlExpression::Not { expr } => {
             format!("Not({})", format_expression_ast(expr))
+        }
+        SqlExpression::CaseExpression {
+            when_branches,
+            else_branch,
+        } => {
+            let when_strs: Vec<String> = when_branches
+                .iter()
+                .map(|branch| {
+                    format!(
+                        "WHEN {} THEN {}",
+                        format_expression_ast(&branch.condition),
+                        format_expression_ast(&branch.result)
+                    )
+                })
+                .collect();
+            let else_str = else_branch
+                .as_ref()
+                .map(|e| format!(" ELSE {}", format_expression_ast(e)))
+                .unwrap_or_default();
+            format!("CASE {} {} END", when_strs.join(" "), else_str)
         }
     }
 }
@@ -2247,6 +2338,24 @@ fn format_expression(expr: &SqlExpression) -> String {
                 .join(", ");
             format!("{}({})", name, args_str)
         }
+        SqlExpression::CaseExpression {
+            when_branches,
+            else_branch,
+        } => {
+            let mut result = String::from("CASE");
+            for branch in when_branches {
+                result.push_str(&format!(
+                    " WHEN {} THEN {}",
+                    format_expression(&branch.condition),
+                    format_expression(&branch.result)
+                ));
+            }
+            if let Some(else_expr) = else_branch {
+                result.push_str(&format!(" ELSE {}", format_expression(else_expr)));
+            }
+            result.push_str(" END");
+            result
+        }
     }
 }
 
@@ -2257,6 +2366,11 @@ fn format_token(token: &Token) -> String {
         Token::StringLiteral(s) => format!("'{}'", s),
         Token::NumberLiteral(n) => n.clone(),
         Token::DateTime => "DateTime".to_string(),
+        Token::Case => "CASE".to_string(),
+        Token::When => "WHEN".to_string(),
+        Token::Then => "THEN".to_string(),
+        Token::Else => "ELSE".to_string(),
+        Token::End => "END".to_string(),
         Token::LeftParen => "(".to_string(),
         Token::RightParen => ")".to_string(),
         Token::Comma => ",".to_string(),
