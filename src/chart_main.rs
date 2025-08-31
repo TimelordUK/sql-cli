@@ -5,6 +5,7 @@ use sql_cli::{
     chart::{ChartEngine, ChartTui},
     data::data_view::DataView,
     data::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable},
+    data::query_engine::QueryEngine,
 };
 use std::path::Path;
 
@@ -92,7 +93,18 @@ fn main() -> Result<()> {
         data_view.column_count()
     );
 
-    // Create chart configuration
+    // Execute the SQL query to get filtered data
+    println!("Executing query: {}", query);
+    let query_engine = QueryEngine::new();
+    let filtered_view =
+        query_engine.execute(std::sync::Arc::new(data_view.source().clone()), query)?;
+    println!(
+        "Query result: {} rows, {} columns",
+        filtered_view.row_count(),
+        filtered_view.column_count()
+    );
+
+    // Create chart configuration (query already executed)
     let config = ChartConfig {
         title: title.clone(),
         x_axis: x_axis.clone(),
@@ -101,8 +113,8 @@ fn main() -> Result<()> {
         query: query.clone(),
     };
 
-    // Create chart engine and TUI
-    let chart_engine = ChartEngine::new(data_view);
+    // Create chart engine with filtered data
+    let chart_engine = ChartEngine::new(filtered_view);
     let mut chart_tui = ChartTui::new(config);
 
     println!("Starting chart TUI... Press 'q' to quit");

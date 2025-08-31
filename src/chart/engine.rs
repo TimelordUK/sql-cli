@@ -13,8 +13,8 @@ impl ChartEngine {
     }
 
     pub fn execute_chart_query(&mut self, config: &ChartConfig) -> Result<DataSeries> {
-        // For now, let's work directly with the loaded DataView
-        // TODO: Implement SQL query filtering later
+        // The SQL query has already been executed in chart_main.rs
+        // Just extract chart data from the already-filtered data_view
         self.extract_chart_data(&self.data_view, config)
     }
 
