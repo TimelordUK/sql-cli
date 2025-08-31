@@ -1,7 +1,7 @@
 use crate::chart::types::*;
 use crate::data::data_view::DataView;
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 
 pub struct ChartEngine {
     data_view: DataView,
