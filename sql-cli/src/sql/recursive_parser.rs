@@ -1183,7 +1183,21 @@ impl Parser {
                     // Check if it's a known function
                     if matches!(
                         id_upper.as_str(),
-                        "ROUND" | "ABS" | "FLOOR" | "CEILING" | "CEIL"
+                        "ROUND"
+                            | "ABS"
+                            | "FLOOR"
+                            | "CEILING"
+                            | "CEIL"
+                            | "MOD"
+                            | "QUOTIENT"
+                            | "POWER"
+                            | "POW"
+                            | "SQRT"
+                            | "EXP"
+                            | "LN"
+                            | "LOG"
+                            | "LOG10"
+                            | "PI"
                     ) {
                         self.advance(); // consume (
                         let args = self.parse_function_args()?;

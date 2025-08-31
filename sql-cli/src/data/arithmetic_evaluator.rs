@@ -261,6 +261,218 @@ impl<'a> ArithmeticEvaluator<'a> {
                     _ => Err(anyhow!("CEILING can only be applied to numeric values")),
                 }
             }
+            "MOD" => {
+                if args.len() != 2 {
+                    return Err(anyhow!("MOD requires exactly 2 arguments"));
+                }
+
+                let dividend = self.evaluate(&args[0], row_index)?;
+                let divisor = self.evaluate(&args[1], row_index)?;
+
+                match (&dividend, &divisor) {
+                    (DataValue::Integer(n), DataValue::Integer(d)) => {
+                        if *d == 0 {
+                            return Err(anyhow!("Division by zero in MOD"));
+                        }
+                        Ok(DataValue::Integer(n % d))
+                    }
+                    _ => {
+                        // Convert to float for mixed types
+                        let n = match dividend {
+                            DataValue::Integer(i) => i as f64,
+                            DataValue::Float(f) => f,
+                            _ => return Err(anyhow!("MOD requires numeric arguments")),
+                        };
+                        let d = match divisor {
+                            DataValue::Integer(i) => i as f64,
+                            DataValue::Float(f) => f,
+                            _ => return Err(anyhow!("MOD requires numeric arguments")),
+                        };
+                        if d == 0.0 {
+                            return Err(anyhow!("Division by zero in MOD"));
+                        }
+                        Ok(DataValue::Float(n % d))
+                    }
+                }
+            }
+            "QUOTIENT" => {
+                if args.len() != 2 {
+                    return Err(anyhow!("QUOTIENT requires exactly 2 arguments"));
+                }
+
+                let numerator = self.evaluate(&args[0], row_index)?;
+                let denominator = self.evaluate(&args[1], row_index)?;
+
+                match (&numerator, &denominator) {
+                    (DataValue::Integer(n), DataValue::Integer(d)) => {
+                        if *d == 0 {
+                            return Err(anyhow!("Division by zero in QUOTIENT"));
+                        }
+                        Ok(DataValue::Integer(n / d))
+                    }
+                    _ => {
+                        // Convert to float for mixed types
+                        let n = match numerator {
+                            DataValue::Integer(i) => i as f64,
+                            DataValue::Float(f) => f,
+                            _ => return Err(anyhow!("QUOTIENT requires numeric arguments")),
+                        };
+                        let d = match denominator {
+                            DataValue::Integer(i) => i as f64,
+                            DataValue::Float(f) => f,
+                            _ => return Err(anyhow!("QUOTIENT requires numeric arguments")),
+                        };
+                        if d == 0.0 {
+                            return Err(anyhow!("Division by zero in QUOTIENT"));
+                        }
+                        Ok(DataValue::Integer((n / d).trunc() as i64))
+                    }
+                }
+            }
+            "POWER" | "POW" => {
+                if args.len() != 2 {
+                    return Err(anyhow!("POWER requires exactly 2 arguments"));
+                }
+
+                let base = self.evaluate(&args[0], row_index)?;
+                let exponent = self.evaluate(&args[1], row_index)?;
+
+                match (&base, &exponent) {
+                    (DataValue::Integer(b), DataValue::Integer(e)) => {
+                        if *e >= 0 && *e <= i32::MAX as i64 {
+                            Ok(DataValue::Float((*b as f64).powi(*e as i32)))
+                        } else {
+                            Ok(DataValue::Float((*b as f64).powf(*e as f64)))
+                        }
+                    }
+                    _ => {
+                        // Convert to float for mixed types or floats
+                        let b = match base {
+                            DataValue::Integer(i) => i as f64,
+                            DataValue::Float(f) => f,
+                            _ => return Err(anyhow!("POWER requires numeric arguments")),
+                        };
+                        let e = match exponent {
+                            DataValue::Integer(i) => i as f64,
+                            DataValue::Float(f) => f,
+                            _ => return Err(anyhow!("POWER requires numeric arguments")),
+                        };
+                        Ok(DataValue::Float(b.powf(e)))
+                    }
+                }
+            }
+            "SQRT" => {
+                if args.len() != 1 {
+                    return Err(anyhow!("SQRT requires exactly 1 argument"));
+                }
+
+                let value = self.evaluate(&args[0], row_index)?;
+                match value {
+                    DataValue::Integer(n) => {
+                        if n < 0 {
+                            return Err(anyhow!("SQRT of negative number"));
+                        }
+                        Ok(DataValue::Float((n as f64).sqrt()))
+                    }
+                    DataValue::Float(f) => {
+                        if f < 0.0 {
+                            return Err(anyhow!("SQRT of negative number"));
+                        }
+                        Ok(DataValue::Float(f.sqrt()))
+                    }
+                    _ => Err(anyhow!("SQRT can only be applied to numeric values")),
+                }
+            }
+            "EXP" => {
+                if args.len() != 1 {
+                    return Err(anyhow!("EXP requires exactly 1 argument"));
+                }
+
+                let value = self.evaluate(&args[0], row_index)?;
+                match value {
+                    DataValue::Integer(n) => Ok(DataValue::Float((n as f64).exp())),
+                    DataValue::Float(f) => Ok(DataValue::Float(f.exp())),
+                    _ => Err(anyhow!("EXP can only be applied to numeric values")),
+                }
+            }
+            "LN" => {
+                if args.len() != 1 {
+                    return Err(anyhow!("LN requires exactly 1 argument"));
+                }
+
+                let value = self.evaluate(&args[0], row_index)?;
+                match value {
+                    DataValue::Integer(n) => {
+                        if n <= 0 {
+                            return Err(anyhow!("LN of non-positive number"));
+                        }
+                        Ok(DataValue::Float((n as f64).ln()))
+                    }
+                    DataValue::Float(f) => {
+                        if f <= 0.0 {
+                            return Err(anyhow!("LN of non-positive number"));
+                        }
+                        Ok(DataValue::Float(f.ln()))
+                    }
+                    _ => Err(anyhow!("LN can only be applied to numeric values")),
+                }
+            }
+            "LOG" | "LOG10" => {
+                if name == "LOG" && args.len() == 2 {
+                    // LOG with custom base
+                    let value = self.evaluate(&args[0], row_index)?;
+                    let base = self.evaluate(&args[1], row_index)?;
+
+                    let n = match value {
+                        DataValue::Integer(i) => i as f64,
+                        DataValue::Float(f) => f,
+                        _ => return Err(anyhow!("LOG requires numeric arguments")),
+                    };
+                    let b = match base {
+                        DataValue::Integer(i) => i as f64,
+                        DataValue::Float(f) => f,
+                        _ => return Err(anyhow!("LOG requires numeric arguments")),
+                    };
+
+                    if n <= 0.0 {
+                        return Err(anyhow!("LOG of non-positive number"));
+                    }
+                    if b <= 0.0 || b == 1.0 {
+                        return Err(anyhow!("Invalid LOG base"));
+                    }
+                    Ok(DataValue::Float(n.log(b)))
+                } else if (name == "LOG" && args.len() == 1) || name == "LOG10" {
+                    // LOG10 or LOG with default base 10
+                    if args.len() != 1 {
+                        return Err(anyhow!("{} requires exactly 1 argument", name));
+                    }
+
+                    let value = self.evaluate(&args[0], row_index)?;
+                    match value {
+                        DataValue::Integer(n) => {
+                            if n <= 0 {
+                                return Err(anyhow!("LOG10 of non-positive number"));
+                            }
+                            Ok(DataValue::Float((n as f64).log10()))
+                        }
+                        DataValue::Float(f) => {
+                            if f <= 0.0 {
+                                return Err(anyhow!("LOG10 of non-positive number"));
+                            }
+                            Ok(DataValue::Float(f.log10()))
+                        }
+                        _ => Err(anyhow!("LOG10 can only be applied to numeric values")),
+                    }
+                } else {
+                    Err(anyhow!("LOG requires 1 or 2 arguments"))
+                }
+            }
+            "PI" => {
+                if !args.is_empty() {
+                    return Err(anyhow!("PI takes no arguments"));
+                }
+                Ok(DataValue::Float(std::f64::consts::PI))
+            }
             _ => Err(anyhow!("Unknown function: {}", name)),
         }
     }

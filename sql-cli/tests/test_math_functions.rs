@@ -354,3 +354,177 @@ fn test_functions_with_select_star() {
     // Verify the computed column
     assert_eq!(get_value(&view, 0, 5), DataValue::Float(254.56)); // 10 * 25.456
 }
+
+#[test]
+fn test_mod_function() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test MOD function
+    let view = engine
+        .execute(
+            table.clone(),
+            "SELECT id, MOD(id, 2) as even_odd, MOD(quantity, 3) as q_mod_3 FROM test_math",
+        )
+        .unwrap();
+
+    assert_eq!(view.row_count(), 3);
+
+    // Row 1: MOD(1, 2) = 1 (odd), MOD(10, 3) = 1
+    assert_eq!(get_value(&view, 0, 1), DataValue::Integer(1));
+    assert_eq!(get_value(&view, 0, 2), DataValue::Integer(1));
+
+    // Row 2: MOD(2, 2) = 0 (even), MOD(7, 3) = 1
+    assert_eq!(get_value(&view, 1, 1), DataValue::Integer(0));
+    assert_eq!(get_value(&view, 1, 2), DataValue::Integer(1));
+
+    // Row 3: MOD(3, 2) = 1 (odd), MOD(3, 3) = 0
+    assert_eq!(get_value(&view, 2, 1), DataValue::Integer(1));
+    assert_eq!(get_value(&view, 2, 2), DataValue::Integer(0));
+}
+
+#[test]
+fn test_quotient_function() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test QUOTIENT function (integer division)
+    let view = engine
+        .execute(
+            table.clone(),
+            "SELECT id, QUOTIENT(quantity, 3) as q_div_3, QUOTIENT(ROUND(price), 10) as price_bucket FROM test_math",
+        )
+        .unwrap();
+
+    assert_eq!(view.row_count(), 3);
+
+    // Row 1: QUOTIENT(10, 3) = 3, QUOTIENT(25, 10) = 2
+    assert_eq!(get_value(&view, 0, 1), DataValue::Integer(3));
+    assert_eq!(get_value(&view, 0, 2), DataValue::Integer(2));
+
+    // Row 2: QUOTIENT(7, 3) = 2, QUOTIENT(100, 10) = 10
+    assert_eq!(get_value(&view, 1, 1), DataValue::Integer(2));
+    assert_eq!(get_value(&view, 1, 2), DataValue::Integer(10));
+
+    // Row 3: QUOTIENT(3, 3) = 1, QUOTIENT(15, 10) = 1
+    assert_eq!(get_value(&view, 2, 1), DataValue::Integer(1));
+    assert_eq!(get_value(&view, 2, 2), DataValue::Integer(1));
+}
+
+#[test]
+fn test_power_and_sqrt_functions() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test POWER and SQRT functions
+    let view = engine
+        .execute(
+            table.clone(),
+            "SELECT id, POWER(2, quantity) as two_to_q, SQRT(quantity) as sqrt_q, POW(quantity, 0.5) as pow_half FROM test_math WHERE id <= 2",
+        )
+        .unwrap();
+
+    assert_eq!(view.row_count(), 2);
+
+    // Row 1: POWER(2, 10) = 1024, SQRT(10) ≈ 3.162, POW(10, 0.5) ≈ 3.162
+    assert_eq!(get_value(&view, 0, 1), DataValue::Float(1024.0));
+    let sqrt_10 = get_value(&view, 0, 2);
+    if let DataValue::Float(f) = sqrt_10 {
+        assert!((f - 3.1622776).abs() < 0.0001);
+    }
+
+    // Row 2: POWER(2, 7) = 128, SQRT(7) ≈ 2.646
+    assert_eq!(get_value(&view, 1, 1), DataValue::Float(128.0));
+    let sqrt_7 = get_value(&view, 1, 2);
+    if let DataValue::Float(f) = sqrt_7 {
+        assert!((f - 2.6457513).abs() < 0.0001);
+    }
+}
+
+#[test]
+fn test_logarithm_functions() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test LOG, LOG10, LN, EXP functions
+    let view = engine
+        .execute(
+            table.clone(),
+            "SELECT id, LOG10(100) as log10_100, LN(EXP(1)) as ln_e, LOG(8, 2) as log2_8 FROM test_math WHERE id = 1",
+        )
+        .unwrap();
+
+    assert_eq!(view.row_count(), 1);
+
+    // LOG10(100) = 2, LN(e) = 1, LOG(8, 2) = 3
+    assert_eq!(get_value(&view, 0, 1), DataValue::Float(2.0));
+    assert_eq!(get_value(&view, 0, 2), DataValue::Float(1.0));
+    assert_eq!(get_value(&view, 0, 3), DataValue::Float(3.0));
+}
+
+#[test]
+fn test_pi_function() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test PI function
+    let view = engine
+        .execute(
+            table.clone(),
+            "SELECT id, PI() as pi_value, ROUND(PI(), 5) as pi_rounded FROM test_math WHERE id = 1",
+        )
+        .unwrap();
+
+    assert_eq!(view.row_count(), 1);
+
+    // PI() ≈ 3.14159
+    let pi = get_value(&view, 0, 1);
+    if let DataValue::Float(f) = pi {
+        assert!((f - std::f64::consts::PI).abs() < 0.000001);
+    }
+    assert_eq!(get_value(&view, 0, 2), DataValue::Float(3.14159));
+}
+
+#[test]
+fn test_math_functions_in_where() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test using math functions in WHERE clause
+    let view = engine
+        .execute(
+            table.clone(),
+            "SELECT id, quantity FROM test_math WHERE MOD(quantity, 2) = 0",
+        )
+        .unwrap();
+
+    // Only row 1 has even quantity (10)
+    assert_eq!(view.row_count(), 1);
+    assert_eq!(get_value(&view, 0, 0), DataValue::Integer(1));
+    assert_eq!(get_value(&view, 0, 1), DataValue::Integer(10));
+}
+
+#[test]
+fn test_combined_math_functions() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test combining multiple math functions
+    let view = engine
+        .execute(
+            table.clone(),
+            "SELECT id, ROUND(SQRT(POWER(quantity, 2) + POWER(3, 2)), 2) as hypotenuse FROM test_math",
+        )
+        .unwrap();
+
+    assert_eq!(view.row_count(), 3);
+
+    // Row 1: SQRT(10^2 + 3^2) = SQRT(109) ≈ 10.44
+    assert_eq!(get_value(&view, 0, 1), DataValue::Float(10.44));
+
+    // Row 2: SQRT(7^2 + 3^2) = SQRT(58) ≈ 7.62
+    assert_eq!(get_value(&view, 1, 1), DataValue::Float(7.62));
+
+    // Row 3: SQRT(3^2 + 3^2) = SQRT(18) ≈ 4.24
+    assert_eq!(get_value(&view, 2, 1), DataValue::Float(4.24));
+}

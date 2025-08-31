@@ -54,6 +54,16 @@ impl CursorAwareParser {
                     "FLOOR(".to_string(),
                     "CEILING(".to_string(),
                     "CEIL(".to_string(),
+                    "MOD(".to_string(),
+                    "QUOTIENT(".to_string(),
+                    "POWER(".to_string(),
+                    "POW(".to_string(),
+                    "SQRT(".to_string(),
+                    "EXP(".to_string(),
+                    "LN(".to_string(),
+                    "LOG(".to_string(),
+                    "LOG10(".to_string(),
+                    "PI(".to_string(),
                 ]);
 
                 // NOTE: We intentionally do NOT filter out already selected columns
@@ -78,6 +88,16 @@ impl CursorAwareParser {
                     "FLOOR(".to_string(),
                     "CEILING(".to_string(),
                     "CEIL(".to_string(),
+                    "MOD(".to_string(),
+                    "QUOTIENT(".to_string(),
+                    "POWER(".to_string(),
+                    "POW(".to_string(),
+                    "SQRT(".to_string(),
+                    "EXP(".to_string(),
+                    "LN(".to_string(),
+                    "LOG(".to_string(),
+                    "LOG10(".to_string(),
+                    "PI(".to_string(),
                 ]);
 
                 // Only add SQL keywords if no partial word or if partial doesn't match any columns
@@ -158,6 +178,16 @@ impl CursorAwareParser {
                     "FLOOR(".to_string(),
                     "CEILING(".to_string(),
                     "CEIL(".to_string(),
+                    "MOD(".to_string(),
+                    "QUOTIENT(".to_string(),
+                    "POWER(".to_string(),
+                    "POW(".to_string(),
+                    "SQRT(".to_string(),
+                    "EXP(".to_string(),
+                    "LN(".to_string(),
+                    "LOG(".to_string(),
+                    "LOG10(".to_string(),
+                    "PI(".to_string(),
                     "AND".to_string(),
                     "OR".to_string(),
                 ]);
