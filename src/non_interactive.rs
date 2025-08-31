@@ -44,6 +44,7 @@ pub struct NonInteractiveConfig {
     pub case_insensitive: bool,
     pub auto_hide_empty: bool,
     pub limit: Option<usize>,
+    pub query_plan: bool,
 }
 
 /// Execute a query in non-interactive mode
@@ -66,6 +67,23 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
 
     // 3. Execute the query
     info!("Executing query: {}", config.query);
+
+    // If query_plan is requested, parse and display the AST
+    if config.query_plan {
+        use crate::sql::recursive_parser::Parser;
+        let mut parser = Parser::new(&config.query);
+        match parser.parse() {
+            Ok(statement) => {
+                println!("\n=== QUERY PLAN (AST) ===");
+                println!("{:#?}", statement);
+                println!("=== END QUERY PLAN ===\n");
+            }
+            Err(e) => {
+                eprintln!("Failed to parse query for plan: {}", e);
+            }
+        }
+    }
+
     let query_start = Instant::now();
 
     // Use QueryExecutionService for consistency with interactive mode

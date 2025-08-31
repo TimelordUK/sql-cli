@@ -85,6 +85,16 @@ impl<'a> ArithmeticEvaluator<'a> {
             SqlExpression::FunctionCall { name, args } => {
                 self.evaluate_function(name, args, row_index)
             }
+            SqlExpression::MethodCall {
+                object,
+                method,
+                args,
+            } => self.evaluate_method_call(object, method, args, row_index),
+            SqlExpression::ChainedMethodCall { base, method, args } => {
+                // Evaluate the base expression first, then apply the method
+                let base_value = self.evaluate(base, row_index)?;
+                self.evaluate_method_on_value(&base_value, method, args, row_index)
+            }
             _ => Err(anyhow!(
                 "Unsupported expression type for arithmetic evaluation: {:?}",
                 expr
@@ -897,6 +907,207 @@ impl<'a> ArithmeticEvaluator<'a> {
                 Ok(DataValue::String(values.join(&delimiter)))
             }
             _ => Err(anyhow!("Unknown function: {}", name)),
+        }
+    }
+
+    /// Evaluate a method call on a column (e.g., column.Trim())
+    fn evaluate_method_call(
+        &self,
+        object: &str,
+        method: &str,
+        args: &[SqlExpression],
+        row_index: usize,
+    ) -> Result<DataValue> {
+        // Get column value
+        let col_index = self.table.get_column_index(object).ok_or_else(|| {
+            let suggestion = self.find_similar_column(object);
+            match suggestion {
+                Some(similar) => {
+                    anyhow!("Column '{}' not found. Did you mean '{}'?", object, similar)
+                }
+                None => anyhow!("Column '{}' not found", object),
+            }
+        })?;
+
+        let cell_value = self.table.get_value(row_index, col_index).cloned();
+
+        self.evaluate_method_on_value(
+            &cell_value.unwrap_or(DataValue::Null),
+            method,
+            args,
+            row_index,
+        )
+    }
+
+    /// Evaluate a method on a value
+    fn evaluate_method_on_value(
+        &self,
+        value: &DataValue,
+        method: &str,
+        args: &[SqlExpression],
+        row_index: usize,
+    ) -> Result<DataValue> {
+        match method.to_lowercase().as_str() {
+            "trim" | "trimstart" | "trimend" => {
+                if !args.is_empty() {
+                    return Err(anyhow!("{} takes no arguments", method));
+                }
+
+                // Convert value to string and apply trim
+                let str_val = match value {
+                    DataValue::String(s) => s.clone(),
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Integer(n) => n.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    DataValue::Boolean(b) => b.to_string(),
+                    DataValue::DateTime(dt) => dt.clone(),
+                    DataValue::Null => return Ok(DataValue::Null),
+                };
+
+                let result = match method.to_lowercase().as_str() {
+                    "trim" => str_val.trim().to_string(),
+                    "trimstart" => str_val.trim_start().to_string(),
+                    "trimend" => str_val.trim_end().to_string(),
+                    _ => unreachable!(),
+                };
+
+                Ok(DataValue::String(result))
+            }
+            "length" => {
+                if !args.is_empty() {
+                    return Err(anyhow!("Length takes no arguments"));
+                }
+
+                // Get string length
+                let len = match value {
+                    DataValue::String(s) => s.len(),
+                    DataValue::InternedString(s) => s.len(),
+                    DataValue::Integer(n) => n.to_string().len(),
+                    DataValue::Float(f) => f.to_string().len(),
+                    DataValue::Boolean(b) => b.to_string().len(),
+                    DataValue::DateTime(dt) => dt.len(),
+                    DataValue::Null => return Ok(DataValue::Integer(0)),
+                };
+
+                Ok(DataValue::Integer(len as i64))
+            }
+            "indexof" => {
+                if args.len() != 1 {
+                    return Err(anyhow!("IndexOf requires exactly 1 argument"));
+                }
+
+                // Get the search string from args
+                let search_str = match self.evaluate(&args[0], row_index)? {
+                    DataValue::String(s) => s,
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Integer(n) => n.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    _ => return Err(anyhow!("IndexOf argument must be a string")),
+                };
+
+                // Convert value to string and find index
+                let str_val = match value {
+                    DataValue::String(s) => s.clone(),
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Integer(n) => n.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    DataValue::Boolean(b) => b.to_string(),
+                    DataValue::DateTime(dt) => dt.clone(),
+                    DataValue::Null => return Ok(DataValue::Integer(-1)),
+                };
+
+                let index = str_val.find(&search_str).map(|i| i as i64).unwrap_or(-1);
+
+                Ok(DataValue::Integer(index))
+            }
+            "contains" => {
+                if args.len() != 1 {
+                    return Err(anyhow!("Contains requires exactly 1 argument"));
+                }
+
+                // Get the search string from args
+                let search_str = match self.evaluate(&args[0], row_index)? {
+                    DataValue::String(s) => s,
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Integer(n) => n.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    _ => return Err(anyhow!("Contains argument must be a string")),
+                };
+
+                // Convert value to string and check contains
+                let str_val = match value {
+                    DataValue::String(s) => s.clone(),
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Integer(n) => n.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    DataValue::Boolean(b) => b.to_string(),
+                    DataValue::DateTime(dt) => dt.clone(),
+                    DataValue::Null => return Ok(DataValue::Boolean(false)),
+                };
+
+                // Case-insensitive search
+                let result = str_val.to_lowercase().contains(&search_str.to_lowercase());
+                Ok(DataValue::Boolean(result))
+            }
+            "startswith" => {
+                if args.len() != 1 {
+                    return Err(anyhow!("StartsWith requires exactly 1 argument"));
+                }
+
+                // Get the prefix from args
+                let prefix = match self.evaluate(&args[0], row_index)? {
+                    DataValue::String(s) => s,
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Integer(n) => n.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    _ => return Err(anyhow!("StartsWith argument must be a string")),
+                };
+
+                // Convert value to string and check starts_with
+                let str_val = match value {
+                    DataValue::String(s) => s.clone(),
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Integer(n) => n.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    DataValue::Boolean(b) => b.to_string(),
+                    DataValue::DateTime(dt) => dt.clone(),
+                    DataValue::Null => return Ok(DataValue::Boolean(false)),
+                };
+
+                // Case-insensitive check
+                let result = str_val.to_lowercase().starts_with(&prefix.to_lowercase());
+                Ok(DataValue::Boolean(result))
+            }
+            "endswith" => {
+                if args.len() != 1 {
+                    return Err(anyhow!("EndsWith requires exactly 1 argument"));
+                }
+
+                // Get the suffix from args
+                let suffix = match self.evaluate(&args[0], row_index)? {
+                    DataValue::String(s) => s,
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Integer(n) => n.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    _ => return Err(anyhow!("EndsWith argument must be a string")),
+                };
+
+                // Convert value to string and check ends_with
+                let str_val = match value {
+                    DataValue::String(s) => s.clone(),
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Integer(n) => n.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    DataValue::Boolean(b) => b.to_string(),
+                    DataValue::DateTime(dt) => dt.clone(),
+                    DataValue::Null => return Ok(DataValue::Boolean(false)),
+                };
+
+                // Case-insensitive check
+                let result = str_val.to_lowercase().ends_with(&suffix.to_lowercase());
+                Ok(DataValue::Boolean(result))
+            }
+            _ => Err(anyhow!("Unsupported method: {}", method)),
         }
     }
 }

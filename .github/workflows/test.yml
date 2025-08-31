@@ -39,23 +39,19 @@ jobs:
     - name: Cache cargo build
       uses: actions/cache@v4
       with:
-        path: sql-cli/target
+        path: target
         key: ${{ runner.os }}-${{ matrix.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-${{ matrix.os }}-cargo-build-
     
     - name: Build
-      working-directory: ./sql-cli
       run: cargo build --verbose
     
     - name: Run tests
-      working-directory: ./sql-cli
       run: cargo test --verbose
     
     - name: Run clippy
-      working-directory: ./sql-cli
       run: cargo clippy -- -W warnings
     
     - name: Check formatting
-      working-directory: ./sql-cli
       run: cargo fmt -- --check

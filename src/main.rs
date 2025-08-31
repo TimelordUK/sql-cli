@@ -247,14 +247,37 @@ fn main() -> io::Result<()> {
         .and_then(|pos| args.get(pos + 1))
         .map(|s| s.to_string());
 
+    let query_plan_arg = args
+        .iter()
+        .any(|arg| arg == "--query-plan" || arg == "--query_plan");
+
     let limit_arg = args
         .iter()
         .position(|arg| arg == "-l" || arg == "--limit")
         .and_then(|pos| args.get(pos + 1))
         .and_then(|s| s.parse::<usize>().ok());
 
+    // Initialize unified logging (tracing + dual logging) for both modes
+    // Do this before non-interactive mode so we get debug logs
+    sql_cli::utils::logging::init_tracing_with_dual_logging();
+
+    // Check if running in non-interactive mode
+    let is_non_interactive = query_arg.is_some() || query_file_arg.is_some();
+
+    // Only show log path in interactive mode or if debug logging is enabled
+    if !is_non_interactive || std::env::var("RUST_LOG").is_ok() {
+        if let Some(dual_logger) = sql_cli::utils::dual_logging::get_dual_logger() {
+            if !is_non_interactive {
+                eprintln!("📝 Debug logs will be written to:");
+                eprintln!("   {}", dual_logger.log_path().display());
+                eprintln!("   Tail with: tail -f {}", dual_logger.log_path().display());
+                eprintln!("");
+            }
+        }
+    }
+
     // If we have a query, run in non-interactive mode
-    if query_arg.is_some() || query_file_arg.is_some() {
+    if is_non_interactive {
         // Find the data file (required for non-interactive mode)
         let data_file = args
             .iter()
@@ -285,6 +308,7 @@ fn main() -> io::Result<()> {
                 case_insensitive: args.contains(&"--case-insensitive".to_string()),
                 auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
                 limit: limit_arg,
+                query_plan: query_plan_arg,
             };
 
             return sql_cli::non_interactive::execute_non_interactive(config)
@@ -294,17 +318,6 @@ fn main() -> io::Result<()> {
             eprintln!("Usage: sql-cli <data.csv> -q \"SELECT * FROM table\"");
             std::process::exit(1);
         }
-    }
-
-    // Initialize unified logging (tracing + dual logging)
-    sql_cli::utils::logging::init_tracing_with_dual_logging();
-
-    // Get the dual logger to show the log path
-    if let Some(dual_logger) = sql_cli::utils::dual_logging::get_dual_logger() {
-        eprintln!("📝 Debug logs will be written to:");
-        eprintln!("   {}", dual_logger.log_path().display());
-        eprintln!("   Tail with: tail -f {}", dual_logger.log_path().display());
-        eprintln!("");
     }
 
     // Check for config initialization

@@ -111,6 +111,15 @@ impl QueryEngine {
 
     /// Build a DataView from a parsed SQL statement
     fn build_view(&self, table: Arc<DataTable>, statement: SelectStatement) -> Result<DataView> {
+        debug!(
+            "QueryEngine::build_view - select_items: {:?}",
+            statement.select_items
+        );
+        debug!(
+            "QueryEngine::build_view - where_clause: {:?}",
+            statement.where_clause
+        );
+
         // Start with all rows visible
         let mut visible_rows: Vec<usize> = (0..table.row_count()).collect();
 
@@ -232,10 +241,24 @@ impl QueryEngine {
 
     /// Apply SELECT items (columns and computed expressions) to create new view
     fn apply_select_items(&self, view: DataView, select_items: &[SelectItem]) -> Result<DataView> {
+        debug!(
+            "QueryEngine::apply_select_items - items: {:?}",
+            select_items
+        );
+        debug!(
+            "QueryEngine::apply_select_items - input view has {} rows",
+            view.row_count()
+        );
+
         // Check if we need to create computed columns
         let has_computed_expressions = select_items
             .iter()
             .any(|item| matches!(item, SelectItem::Expression { .. }));
+
+        debug!(
+            "QueryEngine::apply_select_items - has_computed_expressions: {}",
+            has_computed_expressions
+        );
 
         if !has_computed_expressions {
             // Simple case: only columns, use existing projection logic

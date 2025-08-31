@@ -1,0 +1,169 @@
+name: Complete Test Suite
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Rust tests on multiple platforms
+  rust-tests:
+    name: Rust Tests (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        components: rustfmt, clippy
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+    
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-
+    
+    - name: Build
+      run: cargo build --release --verbose
+    
+    - name: Run Rust tests
+      run: cargo test --verbose
+    
+    - name: Run clippy
+      run: cargo clippy -- -W warnings
+    
+    - name: Check formatting
+      run: cargo fmt -- --check
+
+  # Python tests only on Linux (where uv is readily available)
+  python-tests:
+    name: Python Tests (Linux)
+    runs-on: ubuntu-latest
+    needs: rust-tests  # Run after Rust tests to ensure binary builds
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    
+    - name: Set up Rust (for building sql-cli)
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-python-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-python-
+          ${{ runner.os }}-cargo-build-
+    
+    - name: Build SQL CLI
+      run: cargo build --release
+    
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: ${{ runner.os }}-python-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-python-
+    
+    - name: Install Python dependencies
+      run: |
+        uv venv
+        uv pip install -e .
+        uv pip install pytest pytest-cov pandas numpy
+    
+    - name: Generate test data
+      run: |
+        if [ ! -f "data/test_simple_math.csv" ] || [ ! -f "data/test_simple_strings.csv" ]; then
+          uv run python scripts/generate_simple_test.py
+        fi
+    
+    - name: Run Python tests
+      run: |
+        uv run pytest tests/test_sql_engine_pytest.py tests/test_string_methods_comprehensive.py -v --tb=short
+    
+    - name: Upload test results
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-test-results
+        path: |
+          .pytest_cache/
+          **/*.log
+
+  # Integration test combining both
+  integration-test:
+    name: Integration Test (Linux)
+    runs-on: ubuntu-latest
+    needs: [rust-tests, python-tests]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    
+    - name: Build SQL CLI
+      run: cargo build --release
+    
+    - name: Test CLI directly
+      run: |
+        # Generate test data
+        echo "id,value" > test.csv
+        echo "1,10" >> test.csv
+        echo "2,20" >> test.csv
+        echo "3,30" >> test.csv
+        
+        # Test basic query
+        ./target/release/sql-cli test.csv -q "SELECT * FROM test WHERE value > 15" -o csv
+        
+        # Test with string methods
+        echo "id,name" > names.csv
+        echo "1,  Alice  " >> names.csv
+        echo "2,Bob" >> names.csv
+        
+        ./target/release/sql-cli names.csv -q "SELECT id, name.Trim() as trimmed FROM names" -o csv
+    
+    - name: Verify --query-plan works
+      run: |
+        ./target/release/sql-cli test.csv -q "SELECT id FROM test WHERE value > 15" --query-plan

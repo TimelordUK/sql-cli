@@ -17,11 +17,15 @@ Vim-like terminal SQL editor with in-memory query engine for ultra-fast navigati
 ## Build & Test Commands
 ```bash
 # Build
-cargo build --releaseds
+cargo build --release
 
-# Run tests
+# Run Rust tests
 cargo test
 cargo test --test data_view_trades_test  # Important DataView tests
+
+# Run Python tests (IMPORTANT: Run after parser/SQL engine changes)
+./run_python_tests.sh  # Runs comprehensive SQL engine tests
+./run_all_tests.sh     # Runs both Rust and Python tests
 
 # IMPORTANT: Always run before committing!
 cargo fmt  # Required - formats all code to project standards
@@ -32,7 +36,47 @@ cargo clippy
 # Run application
 ./target/release/sql-cli <file.csv>
 ./target/release/sql-cli --enhanced <file.json>
+
+# Test SQL queries non-interactively (use for testing new features)
+./target/release/sql-cli data/test_simple_strings.csv -q "SELECT * FROM test" -o csv
+./target/release/sql-cli data/test_simple_strings.csv -q "SELECT * FROM test" --query-plan  # Shows AST
 ```
+
+## Testing Guidelines (CRITICAL)
+
+### When to Add Python Tests
+**ALWAYS add Python tests when:**
+- Adding new SQL functions or operators
+- Modifying the parser (recursive_parser.rs)
+- Adding new string/math methods
+- Changing WHERE clause evaluation
+- Implementing new SQL features (GROUP BY, aggregates, etc.)
+
+### How to Test SQL Engine Changes
+1. **Use non-interactive mode for quick testing:**
+   ```bash
+   # Test your changes quickly
+   ./target/release/sql-cli data/test_simple_strings.csv -q "YOUR_QUERY" -o csv
+   
+   # Debug parser issues with --query-plan
+   ./target/release/sql-cli data/test_simple_strings.csv -q "YOUR_QUERY" --query-plan
+   ```
+
+2. **Add tests to Python test suite:**
+   - String methods: `tests/test_string_methods_comprehensive.py`
+   - General SQL: `tests/test_sql_engine_pytest.py`
+   - Cross-reference results with pandas for validation
+
+3. **Run Python tests after changes:**
+   ```bash
+   uv run pytest tests/test_sql_engine_pytest.py -v  # Run specific test
+   ./run_python_tests.sh  # Run all Python tests
+   ```
+
+### Test Data Files
+- `data/test_simple_strings.csv` - String operations, text methods
+- `data/test_simple_math.csv` - Arithmetic, math functions
+- Generate new test data in `scripts/` if needed
 
 ## Agents (IMPORTANT: Always delegate to these specialized agents)
 

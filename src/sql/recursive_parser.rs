@@ -904,52 +904,6 @@ impl Parser {
     fn parse_comparison(&mut self) -> Result<SqlExpression, String> {
         let mut left = self.parse_additive()?;
 
-        // Handle method calls - support chained calls
-        while matches!(self.current_token, Token::Dot) {
-            self.advance();
-            if let Token::Identifier(method) = &self.current_token {
-                let method_name = method.clone();
-                self.advance();
-
-                if matches!(self.current_token, Token::LeftParen) {
-                    self.advance();
-                    let args = self.parse_method_args()?;
-                    self.consume(Token::RightParen)?;
-
-                    // Support chained method calls
-                    match left {
-                        SqlExpression::Column(obj) => {
-                            // First method call on a column
-                            left = SqlExpression::MethodCall {
-                                object: obj,
-                                method: method_name,
-                                args,
-                            };
-                        }
-                        SqlExpression::MethodCall { .. }
-                        | SqlExpression::ChainedMethodCall { .. } => {
-                            // Chained method call on a previous method call
-                            left = SqlExpression::ChainedMethodCall {
-                                base: Box::new(left),
-                                method: method_name,
-                                args,
-                            };
-                        }
-                        _ => {
-                            // Other expressions - shouldn't normally happen
-                            return Err(format!("Cannot call method on {:?}", left));
-                        }
-                    }
-                } else {
-                    // No parentheses after identifier - might be column reference like table.column
-                    // Put the identifier back and break
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
         // Handle BETWEEN operator
         if matches!(self.current_token, Token::Between) {
             self.advance(); // consume BETWEEN
@@ -1019,6 +973,54 @@ impl Parser {
 
     fn parse_multiplicative(&mut self) -> Result<SqlExpression, String> {
         let mut left = self.parse_primary()?;
+
+        // Handle method calls on the primary expression
+        while matches!(self.current_token, Token::Dot) {
+            self.advance();
+            if let Token::Identifier(method) = &self.current_token {
+                let method_name = method.clone();
+                self.advance();
+
+                if matches!(self.current_token, Token::LeftParen) {
+                    self.advance();
+                    let args = self.parse_method_args()?;
+                    self.consume(Token::RightParen)?;
+
+                    // Support chained method calls
+                    match left {
+                        SqlExpression::Column(obj) => {
+                            // First method call on a column
+                            left = SqlExpression::MethodCall {
+                                object: obj,
+                                method: method_name,
+                                args,
+                            };
+                        }
+                        SqlExpression::MethodCall { .. }
+                        | SqlExpression::ChainedMethodCall { .. } => {
+                            // Chained method call on a previous method call
+                            left = SqlExpression::ChainedMethodCall {
+                                base: Box::new(left),
+                                method: method_name,
+                                args,
+                            };
+                        }
+                        _ => {
+                            // Method call on any other expression
+                            left = SqlExpression::ChainedMethodCall {
+                                base: Box::new(left),
+                                method: method_name,
+                                args,
+                            };
+                        }
+                    }
+                } else {
+                    return Err(format!("Expected '(' after method name '{}'", method_name));
+                }
+            } else {
+                return Err("Expected method name after '.'".to_string());
+            }
+        }
 
         while matches!(self.current_token, Token::Star | Token::Divide) {
             let op = match self.current_token {

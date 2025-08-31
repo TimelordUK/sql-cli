@@ -46,7 +46,7 @@ jobs:
         id: version
         run: |
           # Get current version from Cargo.toml
-          CURRENT_VERSION=$(grep "^version" sql-cli/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          CURRENT_VERSION=$(grep "^version" Cargo.toml | sed 's/version = "\(.*\)"/\1/')
           echo "Current version: $CURRENT_VERSION"
           
           # Parse version components
@@ -72,7 +72,7 @@ jobs:
 
       - name: Update version in Cargo.toml
         run: |
-          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.new_version }}\"/" sql-cli/Cargo.toml
+          sed -i "s/^version = .*/version = \"${{ steps.version.outputs.new_version }}\"/" Cargo.toml
 
       - name: Generate comprehensive release notes
         id: notes
@@ -255,7 +255,7 @@ jobs:
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add sql-cli/Cargo.toml
+          git add Cargo.toml
           git commit -m "chore: bump version to v${{ steps.version.outputs.new_version }}"
           git push
 
@@ -298,7 +298,6 @@ jobs:
         override: true
     
     - name: Build Release
-      working-directory: ./sql-cli
       run: cargo build --release --target ${{ matrix.target }}
     
     - name: Create artifact directory
@@ -306,11 +305,11 @@ jobs:
     
     - name: Copy binary (Unix)
       if: matrix.os != 'windows-latest'
-      run: cp sql-cli/target/${{ matrix.target }}/release/sql-cli artifacts/${{ matrix.artifact }}
+      run: cp target/${{ matrix.target }}/release/sql-cli artifacts/${{ matrix.artifact }}
     
     - name: Copy binary (Windows)
       if: matrix.os == 'windows-latest'
-      run: cp sql-cli/target/${{ matrix.target }}/release/sql-cli.exe artifacts/${{ matrix.artifact }}.exe
+      run: cp target/${{ matrix.target }}/release/sql-cli.exe artifacts/${{ matrix.artifact }}.exe
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
