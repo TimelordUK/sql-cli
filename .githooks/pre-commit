@@ -4,15 +4,15 @@
 
 echo "Running rustfmt check..."
 
-# Change to the sql-cli directory
-cd sql-cli || exit 1
+# We're already in the project root
+# cd sql-cli || exit 1
 
 # Check if cargo fmt would make changes
 if ! cargo fmt -- --check > /dev/null 2>&1; then
     echo "❌ Rust code is not properly formatted!"
     echo ""
     echo "Please run 'cargo fmt' before committing:"
-    echo "  cd sql-cli && cargo fmt"
+    echo "  cargo fmt"
     echo ""
     echo "Or to automatically format and continue:"
     echo "  cargo fmt && git add -u && git commit"
