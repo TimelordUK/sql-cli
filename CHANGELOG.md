@@ -5,7 +5,15 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.32.0] - 2025-08-31
+
+### 🎯 Major Features
+- **Non-Interactive Query Mode** - Execute SQL queries directly from command line for scripting and automation
+  - Run queries with `-q "SELECT ..."` or from file with `-f query.sql`
+  - Multiple output formats: CSV, JSON, TSV, and pretty tables
+  - Output to file with `-O results.csv`
+  - Perfect for data pipelines and batch processing
+  - Ultra-fast execution with microsecond response times
 
 ### 🚀 Features
 - **Viewport Lock Mode** - Press Space to anchor scrolling position, data scrolls while cursor stays fixed

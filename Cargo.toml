@@ -1,9 +1,9 @@
 [package]
 name = "sql-cli"
-version = "1.31.0"
+version = "1.32.0"
 edition = "2021"
 authors = ["TimelordUK <sjames8888@gmail.com>"]
-description = "Powerful CSV/JSON TUI with advanced SQL engine - vim-inspired terminal interface for data exploration"
+description = "SQL query tool for CSV/JSON with both interactive TUI and non-interactive CLI modes - perfect for exploration and automation"
 license = "MIT"
 repository = "https://github.com/TimelordUK/sql-cli"
 homepage = "https://github.com/TimelordUK/sql-cli"

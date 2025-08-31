@@ -108,10 +108,64 @@ fn print_help() {
         "  {}         - Launch action system debugger (TUI)",
         "--keys".green()
     );
+
+    println!();
+    println!("{}", "Non-Interactive Query Mode:".yellow());
+    println!(
+        "  {}, {} <query>     - Execute SQL query and output results",
+        "-q".green(),
+        "--query".green()
+    );
+    println!(
+        "  {}, {} <file>  - Execute SQL from file",
+        "-f".green(),
+        "--query-file".green()
+    );
+    println!(
+        "  {}, {} <format>   - Output format: csv, json, table, tsv (default: csv)",
+        "-o".green(),
+        "--output".green()
+    );
+    println!(
+        "  {}, {} <file> - Write output to file",
+        "-O".green(),
+        "--output-file".green()
+    );
+    println!(
+        "  {}, {} <n>       - Limit output to n rows",
+        "-l".green(),
+        "--limit".green()
+    );
+    println!(
+        "  {} - Case-insensitive matching",
+        "--case-insensitive".green()
+    );
+    println!(
+        "  {}  - Auto-hide empty columns",
+        "--auto-hide-empty".green()
+    );
     println!(
         "  {}  - Launch action system logger (console)",
         "--keys-simple".green()
     );
+
+    println!();
+    println!("{}", "Examples:".yellow());
+    println!("  # Interactive TUI mode");
+    println!("  sql-cli data.csv");
+    println!();
+    println!("  # Non-interactive query with CSV output");
+    println!("  sql-cli data.csv -q \"SELECT * FROM data WHERE price > 100\"");
+    println!();
+    println!("  # Query with JSON output limited to 10 rows");
+    println!("  sql-cli data.json -q \"SELECT id, name FROM data\" -o json -l 10");
+    println!();
+    println!("  # Query from file with table output");
+    println!("  sql-cli trades.csv -f query.sql -o table");
+    println!();
+    println!("  # Query with output to file");
+    println!("  sql-cli data.csv -q \"SELECT * FROM data\" -O results.csv");
+
     println!();
     println!("{}", "Commands:".yellow());
     println!("  {}  - Execute query and fetch results", "Enter".green());
@@ -165,6 +219,81 @@ fn main() -> io::Result<()> {
     if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
         print_help();
         return Ok(());
+    }
+
+    // Check for non-interactive query mode
+    let query_arg = args
+        .iter()
+        .position(|arg| arg == "-q" || arg == "--query")
+        .and_then(|pos| args.get(pos + 1))
+        .map(|s| s.to_string());
+
+    let query_file_arg = args
+        .iter()
+        .position(|arg| arg == "-f" || arg == "--query-file")
+        .and_then(|pos| args.get(pos + 1))
+        .map(|s| s.to_string());
+
+    let output_format_arg = args
+        .iter()
+        .position(|arg| arg == "-o" || arg == "--output")
+        .and_then(|pos| args.get(pos + 1))
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "csv".to_string());
+
+    let output_file_arg = args
+        .iter()
+        .position(|arg| arg == "-O" || arg == "--output-file")
+        .and_then(|pos| args.get(pos + 1))
+        .map(|s| s.to_string());
+
+    let limit_arg = args
+        .iter()
+        .position(|arg| arg == "-l" || arg == "--limit")
+        .and_then(|pos| args.get(pos + 1))
+        .and_then(|s| s.parse::<usize>().ok());
+
+    // If we have a query, run in non-interactive mode
+    if query_arg.is_some() || query_file_arg.is_some() {
+        // Find the data file (required for non-interactive mode)
+        let data_file = args
+            .iter()
+            .filter(|arg| !arg.starts_with("-"))
+            .filter(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+            .next()
+            .cloned();
+
+        if let Some(data_file) = data_file {
+            // Read query from file if specified
+            let query = if let Some(file) = query_file_arg {
+                std::fs::read_to_string(&file).map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Failed to read query file {}: {}", file, e),
+                    )
+                })?
+            } else {
+                query_arg.unwrap()
+            };
+
+            let config = sql_cli::non_interactive::NonInteractiveConfig {
+                data_file,
+                query,
+                output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
+                output_file: output_file_arg,
+                case_insensitive: args.contains(&"--case-insensitive".to_string()),
+                auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
+                limit: limit_arg,
+            };
+
+            return sql_cli::non_interactive::execute_non_interactive(config)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+        } else {
+            eprintln!("Error: Data file (CSV or JSON) required for non-interactive query mode");
+            eprintln!("Usage: sql-cli <data.csv> -q \"SELECT * FROM table\"");
+            std::process::exit(1);
+        }
     }
 
     // Initialize unified logging (tracing + dual logging)

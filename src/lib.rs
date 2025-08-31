@@ -5,6 +5,7 @@ pub mod core;
 pub mod data;
 pub mod debug;
 pub mod handlers;
+pub mod non_interactive;
 pub mod services;
 pub mod sql;
 pub mod state;

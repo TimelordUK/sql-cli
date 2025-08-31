@@ -1,18 +1,20 @@
-# SQL CLI - Powerful CSV/JSON TUI with Advanced SQL Engine
+# SQL CLI - Powerful CSV/JSON Query Tool with Interactive TUI & CLI Modes
 
-**A vim-inspired terminal UI for CSV and JSON files with sophisticated SQL query capabilities, intelligent completion, and lightning-fast navigation.**
+**A vim-inspired SQL query tool for CSV and JSON files. Features both an interactive terminal UI for data exploration and a non-interactive CLI mode for scripting and automation.**
 
 ![SQL-CLI Overview](sql-cli/demos/overview.gif)
 
 ## 🚀 Why SQL CLI?
 
 **Think `less` for CSV files, but with SQL superpowers:**
+- **🎯 Two Modes**: Interactive TUI for exploration, non-interactive for scripting & automation
 - **📁 Point & Query**: Drop any CSV/JSON file and immediately start querying  
 - **⚡ Lightning Fast**: In-memory engine handles 100K+ rows with sub-second response
-- **🎯 Vim-Inspired**: Modal editing, `hjkl` navigation, powerful keyboard shortcuts
+- **🎮 Vim-Inspired**: Modal editing, `hjkl` navigation, powerful keyboard shortcuts
 - **🧠 Smart Completion**: Context-aware SQL completion with fuzzy matching
 - **🔍 Advanced Filtering**: Regex, fuzzy search, complex WHERE clauses
-- **📊 Rich SQL Features**: JOINs, aggregations, date functions, string manipulation
+- **📊 Rich SQL Features**: Date functions, string manipulation, mathematical operations
+- **📤 Multiple Outputs**: CSV, JSON, TSV, or pretty tables - perfect for pipelines
 
 ![SQL-CLI CSV Demo](sql-cli/demos/overview-optimized.gif)
 
@@ -27,6 +29,69 @@ sql-cli data.csv
 
 # Immediately start querying with full SQL support
 SELECT * FROM data WHERE amount > 1000 ORDER BY date DESC LIMIT 10
+```
+
+## 🎯 Two Powerful Modes
+
+### 🖥️ **Interactive TUI Mode** (Default)
+Launch the full vim-inspired terminal interface for data exploration:
+
+```bash
+# Interactive mode - explore your data with vim keybindings
+sql-cli data.csv
+sql-cli trades.json
+
+# Navigate with hjkl, search with /, execute queries interactively
+```
+
+### 🚀 **Non-Interactive Query Mode** (New!)
+Execute SQL queries directly from the command line - perfect for scripting and automation:
+
+```bash
+# Run a query and get CSV output
+sql-cli data.csv -q "SELECT * FROM data WHERE price > 100"
+
+# Output as JSON
+sql-cli data.csv -q "SELECT id, name, value FROM data" -o json
+
+# Pretty table format
+sql-cli data.csv -q "SELECT * FROM data LIMIT 10" -o table
+
+# Save results to file
+sql-cli data.csv -q "SELECT * FROM data WHERE status='active'" -O results.csv
+
+# Execute SQL from a file
+sql-cli large_dataset.json -f complex_analysis.sql -o table
+
+# Limit output rows
+sql-cli data.csv -q "SELECT * FROM data" -o json -l 100
+```
+
+#### **Non-Interactive Options:**
+- `-q, --query <SQL>` - Execute SQL query directly
+- `-f, --query-file <file>` - Execute SQL from file
+- `-o, --output <format>` - Output format: `csv`, `json`, `table`, `tsv` (default: csv)
+- `-O, --output-file <file>` - Write results to file
+- `-l, --limit <n>` - Limit output to n rows
+- `--case-insensitive` - Case-insensitive string matching
+- `--auto-hide-empty` - Auto-hide empty columns
+
+#### **Use Cases:**
+```bash
+# Data pipeline integration
+sql-cli raw_data.csv -q "SELECT * FROM raw_data WHERE valid=1" | process_further.sh
+
+# Automated reporting
+sql-cli sales.csv -f monthly_report.sql -o json > report_$(date +%Y%m).json
+
+# Quick data analysis
+sql-cli logs.csv -q "SELECT COUNT(*) as errors FROM logs WHERE level='ERROR'" -o table
+
+# Data cleaning
+sql-cli messy_data.csv -q "SELECT * FROM messy_data WHERE email.EndsWith('.com')" -O clean_data.csv
+
+# Complex calculations
+sql-cli finances.csv -q "SELECT date, amount * (1 + tax_rate) as total FROM finances" -o table
 ```
 
 ## 💪 Powerful SQL Engine Features
