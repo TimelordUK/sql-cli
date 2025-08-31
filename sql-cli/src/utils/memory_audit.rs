@@ -1,7 +1,7 @@
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataTable;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::info;
 
 /// Detailed memory audit for tracking memory usage across components
 pub struct MemoryAudit {

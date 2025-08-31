@@ -14,6 +14,7 @@ use crossterm::event::KeyEvent;
 use ratatui::style::Color;
 use ratatui::widgets::TableState;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::debug;
 use tui_input::Input;
 
@@ -276,7 +277,7 @@ impl BufferAPI for DataTableBuffer {
         Some(self.view.table())
     }
 
-    fn set_datatable(&mut self, datatable: Option<DataTable>) {
+    fn set_datatable(&mut self, datatable: Option<Arc<DataTable>>) {
         // V50: DataTableBuffer manages its own view, not direct DataTable storage
         // This is a no-op for compatibility
         if let Some(dt) = datatable {

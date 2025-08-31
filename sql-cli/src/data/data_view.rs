@@ -1245,6 +1245,11 @@ impl DataView {
         &self.source
     }
 
+    /// Get the source DataTable as Arc (for memory-efficient sharing)
+    pub fn source_arc(&self) -> Arc<DataTable> {
+        Arc::clone(&self.source)
+    }
+
     /// Check if a column index is visible (either pinned or regular visible)
     pub fn is_column_visible(&self, index: usize) -> bool {
         self.pinned_columns.contains(&index) || self.visible_columns.contains(&index)

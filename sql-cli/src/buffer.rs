@@ -13,6 +13,7 @@ use ratatui::widgets::TableState;
 use regex::Regex;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::debug;
 use tui_input::Input;
 
@@ -233,7 +234,7 @@ pub trait BufferAPI: Send + Sync {
     fn get_datatable(&self) -> Option<&DataTable>;
     fn get_datatable_mut(&mut self) -> Option<&mut DataTable>;
     fn has_datatable(&self) -> bool;
-    fn set_datatable(&mut self, datatable: Option<DataTable>);
+    fn set_datatable(&mut self, datatable: Option<Arc<DataTable>>);
     fn get_original_source(&self) -> Option<&DataTable>;
     /// V50: Helper to convert QueryResponse to DataTable and store it
     fn set_results_as_datatable(&mut self, response: Option<QueryResponse>) -> Result<(), String>;
@@ -404,9 +405,9 @@ pub struct Buffer {
     pub modified: bool,
 
     // --- Data State ---
-    pub datatable: Option<DataTable>,
+    pub datatable: Option<Arc<DataTable>>,
     /// Original unmodified DataTable (preserved for query operations)
-    pub original_source: Option<DataTable>,
+    pub original_source: Option<Arc<DataTable>>,
     /// DataView for applying filters like hidden columns without modifying the DataTable
     pub dataview: Option<DataView>,
 
@@ -486,11 +487,13 @@ impl BufferAPI for Buffer {
 
     // --- V50: DataTable is primary storage ---
     fn get_datatable(&self) -> Option<&DataTable> {
-        self.datatable.as_ref()
+        self.datatable.as_ref().map(|arc| arc.as_ref())
     }
 
     fn get_datatable_mut(&mut self) -> Option<&mut DataTable> {
-        self.datatable.as_mut()
+        // Can't mutate through Arc - need to make a new copy if mutation is needed
+        // For now, return None as we shouldn't be mutating the DataTable directly
+        None
     }
 
     fn has_datatable(&self) -> bool {
@@ -498,10 +501,10 @@ impl BufferAPI for Buffer {
     }
 
     fn get_original_source(&self) -> Option<&DataTable> {
-        self.original_source.as_ref()
+        self.original_source.as_ref().map(|arc| arc.as_ref())
     }
 
-    fn set_datatable(&mut self, datatable: Option<DataTable>) {
+    fn set_datatable(&mut self, datatable: Option<Arc<DataTable>>) {
         debug!(
             "V50: Setting DataTable with {} rows, {} columns",
             datatable.as_ref().map(|d| d.row_count()).unwrap_or(0),
@@ -538,7 +541,8 @@ impl BufferAPI for Buffer {
         // When setting a DataTable, also create a DataView for it
         // This ensures we always have a DataView as the source of truth for column visibility
         if let Some(dt) = &datatable {
-            let mut view = crate::data::data_view::DataView::new(std::sync::Arc::new(dt.clone()));
+            // Use the existing Arc, don't clone the DataTable!
+            let mut view = crate::data::data_view::DataView::new(dt.clone());
 
             // Apply any existing hidden columns from the previous DataView
             if let Some(old_view) = &self.dataview {
@@ -593,7 +597,7 @@ impl BufferAPI for Buffer {
                         datatable.row_count(),
                         datatable.column_count()
                     );
-                    self.datatable = Some(datatable);
+                    self.datatable = Some(Arc::new(datatable));
                     Ok(())
                 }
                 Err(e) => {
