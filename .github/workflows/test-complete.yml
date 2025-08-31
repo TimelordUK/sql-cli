@@ -117,7 +117,7 @@ jobs:
     
     - name: Run Python tests
       run: |
-        uv run pytest tests/test_sql_engine_pytest.py tests/test_string_methods_comprehensive.py -v --tb=short
+        uv run pytest tests/python_tests/ -v --tb=short
     
     - name: Upload test results
       if: failure()

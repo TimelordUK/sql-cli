@@ -40,7 +40,7 @@ jobs:
         uv run python scripts/generate_arithmetic_test.py || true
         
     - name: Run SQL Engine Tests
-      run: uv run pytest tests/test_sql_engine_pytest.py -v --tb=short
+      run: uv run pytest tests/python_tests/ -v --tb=short
       
     - name: Upload test results
       if: always()
@@ -56,4 +56,4 @@ jobs:
       run: |
         echo "## SQL Engine Test Results" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        uv run pytest tests/test_sql_engine_pytest.py --tb=no -q || true
+        uv run pytest tests/python_tests/ --tb=no -q || true
