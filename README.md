@@ -48,6 +48,20 @@ SELECT (price - cost) * quantity as profit,  * FROM test_arithmetic order by pro
 sql-cli --api-url http://api.example.com
 ```
 
+```sql
+SELECT id, quantity, price, ROUND(quantity * price, 2) as total,  MOD(id, 10) as bucket, QUOTIENT(quantity, 5) as qty_group, ROUND(SQRT(POWER(quantity,2) + POWER(price,2)), 2) as magnitude, POWER(quantity,2) as p_pow2 from test where  MOD(quantity, 5) = 0 
+```
+
+![Description](docs/images/screenshot-20250831-103352.png)
+
+### 🔌 REST API Data Source (Advanced)
+```bash
+# Optionally connect to a proxy server for remote data
+sql-cli --api-url http://api.example.com
+```
+
+
+
 ## Features
 
 ### ✨ Smart SQL Completion
