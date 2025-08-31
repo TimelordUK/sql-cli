@@ -8,7 +8,6 @@ use tracing::{debug, info};
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable};
-use crate::data::query_engine::QueryEngine;
 use crate::services::query_execution_service::QueryExecutionService;
 
 /// Output format for query results

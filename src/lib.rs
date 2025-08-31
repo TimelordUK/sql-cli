@@ -1,5 +1,6 @@
 // New module structure (gradually moving files here)
 pub mod api;
+pub mod chart;
 pub mod config;
 pub mod core;
 pub mod data;
