@@ -649,6 +649,83 @@ impl<'a> ArithmeticEvaluator<'a> {
                 }
                 Ok(DataValue::Float(std::f64::consts::PI))
             }
+            "E" => {
+                // Euler's number (base of natural logarithm)
+                if !args.is_empty() {
+                    return Err(anyhow!("E takes no arguments"));
+                }
+                Ok(DataValue::Float(std::f64::consts::E))
+            }
+            "TAU" => {
+                // Tau = 2π (full circle constant)
+                if !args.is_empty() {
+                    return Err(anyhow!("TAU takes no arguments"));
+                }
+                Ok(DataValue::Float(std::f64::consts::TAU))
+            }
+            "PHI" => {
+                // Golden ratio = (1 + √5) / 2
+                if !args.is_empty() {
+                    return Err(anyhow!("PHI takes no arguments"));
+                }
+                Ok(DataValue::Float(1.618033988749894848))
+            }
+            "C" => {
+                // Speed of light in vacuum (m/s)
+                if !args.is_empty() {
+                    return Err(anyhow!("C takes no arguments"));
+                }
+                Ok(DataValue::Float(299792458.0))
+            }
+            "G" => {
+                // Gravitational constant (m³ kg⁻¹ s⁻²)
+                if !args.is_empty() {
+                    return Err(anyhow!("G takes no arguments"));
+                }
+                Ok(DataValue::Float(6.67430e-11))
+            }
+            "H" => {
+                // Planck constant (J⋅s)
+                if !args.is_empty() {
+                    return Err(anyhow!("H takes no arguments"));
+                }
+                Ok(DataValue::Float(6.62607015e-34))
+            }
+            "NA" => {
+                // Avogadro constant (mol⁻¹)
+                if !args.is_empty() {
+                    return Err(anyhow!("NA takes no arguments"));
+                }
+                Ok(DataValue::Float(6.02214076e23))
+            }
+            "KB" => {
+                // Boltzmann constant (J⋅K⁻¹)
+                if !args.is_empty() {
+                    return Err(anyhow!("KB takes no arguments"));
+                }
+                Ok(DataValue::Float(1.380649e-23))
+            }
+            "ME" => {
+                // Electron mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("ME takes no arguments"));
+                }
+                Ok(DataValue::Float(9.1093837015e-31))
+            }
+            "MP" => {
+                // Proton mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MP takes no arguments"));
+                }
+                Ok(DataValue::Float(1.67262192369e-27))
+            }
+            "MN" => {
+                // Neutron mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MN takes no arguments"));
+                }
+                Ok(DataValue::Float(1.67492749804e-27))
+            }
             "DATEDIFF" => {
                 if args.len() != 3 {
                     return Err(anyhow!(
