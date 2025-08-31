@@ -1075,13 +1075,15 @@ mod tests {
             ],
         );
 
-        // Already selected Company, should not suggest it again
+        // Already selected Company, but we SHOULD still suggest it
+        // Users may want to select the same column multiple times
+        // e.g., for computed expressions like: SELECT q * p as total, q
         let query = "SELECT Company, ";
         let result = parser.get_completions(query, query.len());
 
         assert!(
-            !result.suggestions.iter().any(|s| s == "Company"),
-            "Should not suggest already selected Company"
+            result.suggestions.iter().any(|s| s == "Company"),
+            "Should still suggest Company even though already selected"
         );
         assert!(
             result.suggestions.iter().any(|s| s == "Country"),

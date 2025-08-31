@@ -46,7 +46,7 @@ fn test_original_preserved_after_computed_query() {
     // Create a buffer with test data
     let table = create_test_table();
     let mut buffer = Buffer::new(1);
-    buffer.set_datatable(Some(table));
+    buffer.set_datatable(Some(Arc::new(table)));
 
     // Verify original source is preserved
     let original = buffer.get_original_source().unwrap();
@@ -112,7 +112,7 @@ fn test_orchestrator_preserves_original() {
     // Create a buffer with test data
     let table = create_test_table();
     let mut buffer = Buffer::new(1);
-    buffer.set_datatable(Some(table.clone()));
+    buffer.set_datatable(Some(Arc::new(table.clone())));
 
     // Add buffer to manager
     buffers.add_buffer(buffer);

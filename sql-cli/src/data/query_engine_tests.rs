@@ -1,7 +1,6 @@
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::query_engine::QueryEngine;
-use crate::sql::recursive_parser::{BinaryOp, Expression, SelectItem, SelectStatement};
 use std::sync::Arc;
 
 fn create_test_table() -> DataTable {
@@ -10,16 +9,20 @@ fn create_test_table() -> DataTable {
     table.add_column(DataColumn::new("quantity"));
     table.add_column(DataColumn::new("price"));
 
-    table.add_row(vec![
-        DataValue::Integer(1),
-        DataValue::Integer(10),
-        DataValue::Float(100.5),
-    ]);
-    table.add_row(vec![
-        DataValue::Integer(2),
-        DataValue::Integer(5),
-        DataValue::Float(200.25),
-    ]);
+    table
+        .add_row(DataRow::new(vec![
+            DataValue::Integer(1),
+            DataValue::Integer(10),
+            DataValue::Float(100.5),
+        ]))
+        .unwrap();
+    table
+        .add_row(DataRow::new(vec![
+            DataValue::Integer(2),
+            DataValue::Integer(5),
+            DataValue::Float(200.25),
+        ]))
+        .unwrap();
 
     table
 }

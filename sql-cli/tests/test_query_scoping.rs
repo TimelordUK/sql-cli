@@ -38,7 +38,7 @@ fn test_query_scoping_preserves_original() {
     // Create initial table and set it in a buffer
     let table = create_test_table();
     let mut buffer = Buffer::new(1);
-    buffer.set_datatable(Some(table));
+    buffer.set_datatable(Some(Arc::new(table)));
 
     // First query: SELECT with computed column
     let engine = QueryEngine::new();
@@ -123,7 +123,7 @@ fn test_original_source_preserved_in_buffer() {
     // Create a buffer with initial data
     let table = create_test_table();
     let mut buffer = Buffer::new(1);
-    buffer.set_datatable(Some(table.clone()));
+    buffer.set_datatable(Some(Arc::new(table.clone())));
 
     // Check that original source is preserved
     let original = buffer.get_original_source().unwrap();
@@ -133,7 +133,7 @@ fn test_original_source_preserved_in_buffer() {
     // Even after modifying the datatable, original should remain
     let mut modified_table = table.clone();
     modified_table.add_column(DataColumn::new("computed"));
-    buffer.set_datatable(Some(modified_table));
+    buffer.set_datatable(Some(Arc::new(modified_table)));
 
     // Original source should still have only 3 columns
     let original_after = buffer.get_original_source().unwrap();

@@ -1197,4 +1197,5 @@ mod tests {
 }
 
 #[cfg(test)]
+#[path = "query_engine_tests.rs"]
 mod query_engine_tests;
