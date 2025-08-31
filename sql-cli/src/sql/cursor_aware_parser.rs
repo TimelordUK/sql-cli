@@ -47,6 +47,15 @@ impl CursorAwareParser {
                 let mut cols = self.schema.get_columns(default_table);
                 cols.push("*".to_string());
 
+                // Add math functions
+                cols.extend(vec![
+                    "ROUND(".to_string(),
+                    "ABS(".to_string(),
+                    "FLOOR(".to_string(),
+                    "CEILING(".to_string(),
+                    "CEIL(".to_string(),
+                ]);
+
                 // NOTE: We intentionally do NOT filter out already selected columns
                 // Users may want to select the same column multiple times, especially
                 // when using it in computed expressions like: SELECT q * p as notional, q
@@ -61,6 +70,15 @@ impl CursorAwareParser {
             CursorContext::WhereClause | CursorContext::AfterLogicalOp(_) => {
                 // We're in WHERE clause or after AND/OR - suggest columns
                 let mut suggestions = self.schema.get_columns(default_table);
+
+                // Add math functions that can be used in WHERE
+                suggestions.extend(vec![
+                    "ROUND(".to_string(),
+                    "ABS(".to_string(),
+                    "FLOOR(".to_string(),
+                    "CEILING(".to_string(),
+                    "CEIL(".to_string(),
+                ]);
 
                 // Only add SQL keywords if no partial word or if partial doesn't match any columns
                 let add_keywords = if let Some(ref partial) = partial_word {
@@ -132,7 +150,17 @@ impl CursorAwareParser {
             CursorContext::InExpression => {
                 // Generic expression context - could be anywhere
                 let mut suggestions = self.schema.get_columns(default_table);
-                suggestions.extend(vec!["AND".to_string(), "OR".to_string()]);
+
+                // Add math functions
+                suggestions.extend(vec![
+                    "ROUND(".to_string(),
+                    "ABS(".to_string(),
+                    "FLOOR(".to_string(),
+                    "CEILING(".to_string(),
+                    "CEIL(".to_string(),
+                    "AND".to_string(),
+                    "OR".to_string(),
+                ]);
                 (suggestions, "InExpression".to_string())
             }
             CursorContext::OrderByClause => {
