@@ -66,6 +66,7 @@ impl CursorAwareParser {
                     "PI(".to_string(),
                     "TEXTJOIN(".to_string(),
                     "DATEDIFF(".to_string(),
+                    "DATEADD(".to_string(),
                     "NOW(".to_string(),
                     "TODAY(".to_string(),
                 ]);
@@ -103,6 +104,10 @@ impl CursorAwareParser {
                     "LOG10(".to_string(),
                     "PI(".to_string(),
                     "TEXTJOIN(".to_string(),
+                    "DATEDIFF(".to_string(),
+                    "DATEADD(".to_string(),
+                    "NOW(".to_string(),
+                    "TODAY(".to_string(),
                 ]);
 
                 // Only add SQL keywords if no partial word or if partial doesn't match any columns
