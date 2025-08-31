@@ -28,6 +28,9 @@ impl<'a> ArithmeticEvaluator<'a> {
             SqlExpression::BinaryOp { left, op, right } => {
                 self.evaluate_binary_op(left, op, right, row_index)
             }
+            SqlExpression::FunctionCall { name, args } => {
+                self.evaluate_function(name, args, row_index)
+            }
             _ => Err(anyhow!(
                 "Unsupported expression type for arithmetic evaluation: {:?}",
                 expr
@@ -169,6 +172,96 @@ impl<'a> ArithmeticEvaluator<'a> {
             DataValue::Float(f) => f.to_string(),
             DataValue::String(s) => format!("'{}'", s),
             _ => format!("{:?}", value),
+        }
+    }
+
+    /// Evaluate a function call
+    fn evaluate_function(
+        &self,
+        name: &str,
+        args: &[SqlExpression],
+        row_index: usize,
+    ) -> Result<DataValue> {
+        match name {
+            "ROUND" => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(anyhow!("ROUND requires 1 or 2 arguments"));
+                }
+
+                // Evaluate the value to round
+                let value = self.evaluate(&args[0], row_index)?;
+
+                // Get decimal places (default to 0 if not specified)
+                let decimals = if args.len() == 2 {
+                    match self.evaluate(&args[1], row_index)? {
+                        DataValue::Integer(n) => n as i32,
+                        DataValue::Float(f) => f as i32,
+                        _ => return Err(anyhow!("ROUND precision must be a number")),
+                    }
+                } else {
+                    0
+                };
+
+                // Perform rounding
+                match value {
+                    DataValue::Integer(n) => Ok(DataValue::Integer(n)), // Already an integer
+                    DataValue::Float(f) => {
+                        if decimals >= 0 {
+                            let multiplier = 10_f64.powi(decimals);
+                            let rounded = (f * multiplier).round() / multiplier;
+                            if decimals == 0 {
+                                // Return as integer if rounding to 0 decimals
+                                Ok(DataValue::Integer(rounded as i64))
+                            } else {
+                                Ok(DataValue::Float(rounded))
+                            }
+                        } else {
+                            // Negative decimals round to left of decimal point
+                            let divisor = 10_f64.powi(-decimals);
+                            let rounded = (f / divisor).round() * divisor;
+                            Ok(DataValue::Float(rounded))
+                        }
+                    }
+                    _ => Err(anyhow!("ROUND can only be applied to numeric values")),
+                }
+            }
+            "ABS" => {
+                if args.len() != 1 {
+                    return Err(anyhow!("ABS requires exactly 1 argument"));
+                }
+
+                let value = self.evaluate(&args[0], row_index)?;
+                match value {
+                    DataValue::Integer(n) => Ok(DataValue::Integer(n.abs())),
+                    DataValue::Float(f) => Ok(DataValue::Float(f.abs())),
+                    _ => Err(anyhow!("ABS can only be applied to numeric values")),
+                }
+            }
+            "FLOOR" => {
+                if args.len() != 1 {
+                    return Err(anyhow!("FLOOR requires exactly 1 argument"));
+                }
+
+                let value = self.evaluate(&args[0], row_index)?;
+                match value {
+                    DataValue::Integer(n) => Ok(DataValue::Integer(n)),
+                    DataValue::Float(f) => Ok(DataValue::Integer(f.floor() as i64)),
+                    _ => Err(anyhow!("FLOOR can only be applied to numeric values")),
+                }
+            }
+            "CEILING" | "CEIL" => {
+                if args.len() != 1 {
+                    return Err(anyhow!("CEILING requires exactly 1 argument"));
+                }
+
+                let value = self.evaluate(&args[0], row_index)?;
+                match value {
+                    DataValue::Integer(n) => Ok(DataValue::Integer(n)),
+                    DataValue::Float(f) => Ok(DataValue::Integer(f.ceil() as i64)),
+                    _ => Err(anyhow!("CEILING can only be applied to numeric values")),
+                }
+            }
+            _ => Err(anyhow!("Unknown function: {}", name)),
         }
     }
 }

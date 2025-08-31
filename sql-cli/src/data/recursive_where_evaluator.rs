@@ -337,9 +337,9 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
             }
             SqlExpression::BinaryOp {
-                left: expr_left,
+                left: _expr_left,
                 op: arith_op,
-                right: expr_right,
+                right: _expr_right,
             } if matches!(arith_op.as_str(), "+" | "-" | "*" | "/") => {
                 // Handle arithmetic expressions using ArithmeticEvaluator
                 let evaluator = ArithmeticEvaluator::new(self.table);
@@ -351,6 +351,18 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     );
                 }
                 (Some(computed_value), "computed_expression".to_string())
+            }
+            SqlExpression::FunctionCall { name, .. } => {
+                // Handle function calls using ArithmeticEvaluator
+                let evaluator = ArithmeticEvaluator::new(self.table);
+                let computed_value = evaluator.evaluate(left, row_index)?;
+                if row_index < 3 {
+                    debug!(
+                        "RecursiveWhereEvaluator: evaluate_binary_op() - computed function {} = {:?}",
+                        name, computed_value
+                    );
+                }
+                (Some(computed_value), format!("{}()", name))
             }
             _ => {
                 // Regular column reference

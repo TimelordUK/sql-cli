@@ -340,6 +340,10 @@ pub enum SqlExpression {
         method: String,
         args: Vec<SqlExpression>,
     },
+    FunctionCall {
+        name: String,
+        args: Vec<SqlExpression>,
+    },
     BinaryOp {
         left: Box<SqlExpression>,
         op: String,
@@ -1170,9 +1174,29 @@ impl Parser {
                 })
             }
             Token::Identifier(id) => {
-                let expr = SqlExpression::Column(id.clone());
+                let id_upper = id.to_uppercase();
+                let id_clone = id.clone();
                 self.advance();
-                Ok(expr)
+
+                // Check if this is a function call (identifier followed by parenthesis)
+                if matches!(self.current_token, Token::LeftParen) {
+                    // Check if it's a known function
+                    if matches!(
+                        id_upper.as_str(),
+                        "ROUND" | "ABS" | "FLOOR" | "CEILING" | "CEIL"
+                    ) {
+                        self.advance(); // consume (
+                        let args = self.parse_function_args()?;
+                        self.consume(Token::RightParen)?;
+                        return Ok(SqlExpression::FunctionCall {
+                            name: id_upper,
+                            args,
+                        });
+                    }
+                }
+
+                // Otherwise treat as column
+                Ok(SqlExpression::Column(id_clone))
             }
             Token::QuotedIdentifier(id) => {
                 // If we're in method arguments, treat quoted identifiers as string literals
@@ -1256,6 +1280,25 @@ impl Parser {
 
         // Clear the flag
         self.in_method_args = false;
+
+        Ok(args)
+    }
+
+    fn parse_function_args(&mut self) -> Result<Vec<SqlExpression>, String> {
+        let mut args = Vec::new();
+
+        if !matches!(self.current_token, Token::RightParen) {
+            loop {
+                // Parse each argument as a full expression (could be arithmetic)
+                args.push(self.parse_additive()?);
+
+                if matches!(self.current_token, Token::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
 
         Ok(args)
     }
@@ -1552,6 +1595,14 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
                 method,
                 args_str
             )
+        }
+        SqlExpression::FunctionCall { name, args } => {
+            let args_str = args
+                .iter()
+                .map(|a| format_expression_ast(a))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("FunctionCall({}({}))", name, args_str)
         }
         SqlExpression::BinaryOp { left, op, right } => {
             format!(
@@ -2166,6 +2217,14 @@ fn format_expression(expr: &SqlExpression) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{}.{}({})", format_expression(base), method, args_str)
+        }
+        SqlExpression::FunctionCall { name, args } => {
+            let args_str = args
+                .iter()
+                .map(|arg| format_expression(arg))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}({})", name, args_str)
         }
     }
 }
