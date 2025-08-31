@@ -5,6 +5,27 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.0] - 2025-08-31
+
+### 🐛 Critical Bug Fixes
+- **Fixed SQL Parser Method Call Handling** - Resolved parser failures with string methods containing spaces
+  - Fixed issue where `name.Trim()` would fail if followed by spaces in SELECT clause
+  - Parser now correctly handles whitespace after method calls like `IndexOf(' ')`
+  - Ensures proper tokenization of method calls with arguments
+- **Fixed TEXTJOIN Function** - Corrected argument handling to require ignore_empty flag
+  - Syntax: `TEXTJOIN(delimiter, ignore_empty, value1, value2, ...)`
+  - Fixed to properly handle 3+ arguments as required
+- **Fixed Date Function Syntax** - Standardized date function argument order
+  - DATEDIFF: `DATEDIFF('unit', date1, date2)` 
+  - DATEADD: `DATEADD('unit', amount, date)`
+  - Unit parameter must be a string literal
+
+### ✅ Testing Improvements
+- Added comprehensive test coverage for 40+ SQL functions
+- Created `test_math_date_functions.py` with 23 test cases
+- Updated `run_python_tests.sh` to include all test suites
+- All 69 tests passing (66 pass, 3 skipped for unimplemented aggregates)
+
 ## [1.32.0] - 2025-08-31
 
 ### 🎯 Major Features
