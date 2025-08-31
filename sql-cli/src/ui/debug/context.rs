@@ -238,12 +238,46 @@ pub trait DebugContext {
 
     // Simple methods that don't need TUI state - can be default implementations
     fn debug_generate_memory_info(&self) -> String {
-        format!(
-            "\n========== MEMORY USAGE ==========\n\
-            Current Memory: {} MB\n{}",
-            crate::utils::memory_tracker::get_memory_mb(),
+        let mut output = String::from("\n========== MEMORY USAGE ==========\n");
+
+        // Get current memory
+        let current_mb = crate::utils::memory_tracker::get_memory_mb();
+        output.push_str(&format!("Current Memory: {} MB\n", current_mb));
+
+        // Perform memory audit if we have a buffer
+        if let Some(buffer) = self.get_buffer() {
+            let audits = crate::utils::memory_audit::perform_memory_audit(
+                buffer.get_datatable(),
+                buffer.get_original_source(),
+                buffer.get_dataview(),
+            );
+
+            output.push_str("\nMemory Breakdown:\n");
+            for audit in &audits {
+                output.push_str(&format!(
+                    "  {}: {:.2} MB - {}\n",
+                    audit.component,
+                    audit.mb(),
+                    audit.description
+                ));
+            }
+
+            // Check for duplication warning
+            if audits.iter().any(|a| a.component.contains("DUPLICATE")) {
+                output.push_str("\n⚠️  WARNING: Memory duplication detected!\n");
+                output
+                    .push_str("  DataTable is being stored twice (datatable + original_source)\n");
+                output.push_str("  Consider using Arc<DataTable> to share data\n");
+            }
+        }
+
+        // Add memory history
+        output.push_str(&format!(
+            "\nMemory History:\n{}",
             crate::utils::memory_tracker::format_memory_history()
-        )
+        ));
+
+        output
     }
 
     // Note: debug_extract_timing is already defined above

@@ -101,6 +101,10 @@ path = "integration_tests/test_trades_equality.rs"
 
 
 
+# Windows-specific dependencies
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["processthreadsapi", "psapi", "memoryapi"] }
+
 [dependencies]
 reedline = "0.30"
 crossterm = { version = "0.28", features = ["use-dev-tty"] }

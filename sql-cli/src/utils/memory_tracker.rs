@@ -53,9 +53,22 @@ pub fn get_process_memory_kb() -> Option<usize> {
 
     #[cfg(target_os = "windows")]
     {
-        // Windows implementation would go here
-        // For now, return None
-        None
+        use std::mem;
+        use winapi::um::processthreadsapi::GetCurrentProcess;
+        use winapi::um::psapi::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+
+        unsafe {
+            let h_process = GetCurrentProcess();
+            let mut pmc: PROCESS_MEMORY_COUNTERS = mem::zeroed();
+            pmc.cb = mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+
+            if GetProcessMemoryInfo(h_process, &mut pmc as *mut _ as *mut _, pmc.cb) != 0 {
+                // WorkingSetSize is in bytes, convert to KB
+                Some((pmc.WorkingSetSize / 1024) as usize)
+            } else {
+                None
+            }
+        }
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]

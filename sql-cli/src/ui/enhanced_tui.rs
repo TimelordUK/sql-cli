@@ -1584,7 +1584,26 @@ impl EnhancedTuiApp {
         // IMPORTANT: First set the DataTable to preserve the original source
         // The DataView contains the full DataTable when initially loaded
         let source_table = dataview.source();
+
+        // MEMORY AUDIT: Track memory before and after cloning
+        use crate::utils::memory_audit;
+        use crate::utils::memory_tracker;
+
+        memory_tracker::track_memory("before_datatable_clone");
+
+        // TODO: This is causing memory duplication! We're cloning the entire DataTable.
+        // We should use Arc<DataTable> instead to share the same underlying data.
         buffer.set_datatable(Some((*source_table).clone()));
+
+        memory_tracker::track_memory("after_datatable_clone");
+
+        // Log memory audit
+        let audits = memory_audit::perform_memory_audit(
+            buffer.get_datatable(),
+            buffer.get_original_source(),
+            None,
+        );
+        memory_audit::log_memory_audit(&audits);
 
         // Then set the DataView for display
         buffer.set_dataview(Some(dataview.clone()));
