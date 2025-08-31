@@ -364,6 +364,73 @@ FROM products
 WHERE name.StartsWith('A')
 ```
 
+## 📊 Terminal Charts (NEW!)
+
+SQL CLI now includes a powerful **standalone charting tool** (`sql-cli-chart`) that creates terminal-based visualizations of your SQL query results. Perfect for time series analysis, trend visualization, and data exploration.
+
+### Chart Tool Usage
+
+```bash
+# Basic time series chart
+sql-cli-chart data.csv -q "SELECT time, value FROM data" -x time -y value -t "My Chart"
+
+# Filter data with SQL WHERE clause
+sql-cli-chart trades.csv \
+  -q "SELECT timestamp, price FROM trades WHERE symbol = 'AAPL'" \
+  -x timestamp -y price -t "AAPL Price Chart"
+```
+
+### Real-World Example: VWAP Trading Analysis
+
+Visualize algorithmic trading data with SQL filtering to focus on specific patterns:
+
+```bash
+# Chart fill volume progression for CLIENT orders only
+sql-cli-chart data/production_vwap_final.csv \
+  -q "SELECT snapshot_time, filled_quantity FROM production_vwap_final WHERE order_type LIKE '%CLIENT%'" \
+  -x snapshot_time -y filled_quantity \
+  -t "CLIENT Order Fill Progression"
+
+# Compare with ALL orders (shows chaotic "Christmas tree" pattern)
+sql-cli-chart data/production_vwap_final.csv \
+  -q "SELECT snapshot_time, filled_quantity FROM production_vwap_final" \
+  -x snapshot_time -y filled_quantity \
+  -t "All Orders - Mixed Pattern"
+```
+
+**The Power of SQL Filtering**: The first query filters to show only CLIENT orders (991 rows), displaying a clean upward progression. The second shows all 3320 rows including ALGO and SLICE orders, creating a noisy pattern. This demonstrates how SQL queries let you focus on exactly the data patterns you want to visualize.
+
+### Interactive Chart Controls
+
+Once the chart opens, use these vim-like controls:
+- **hjkl** - Pan left/down/up/right
+- **+/-** - Zoom in/out
+- **r** - Reset view to auto-fit
+- **q/Esc** - Quit
+
+### Example Scripts
+
+Ready-to-use chart examples are in the `scripts/` directory:
+
+```bash
+# VWAP average price over time
+./scripts/chart-vwap-price.sh
+
+# Fill volume progression
+./scripts/chart-vwap-volume.sh
+
+# Compare different order types
+./scripts/chart-vwap-algo-comparison.sh
+```
+
+### Chart Features
+
+- **SQL Query Integration**: Use full SQL power to filter and transform data before charting
+- **Smart Auto-Scaling**: Automatically adapts Y-axis range for optimal visibility
+- **Time Series Support**: Automatic timestamp parsing and time-based X-axis
+- **Interactive Navigation**: Pan and zoom to explore your data
+- **Terminal Native**: Pure terminal graphics, no GUI dependencies
+
 ## 🔧 Development
 
 ### Running Tests
