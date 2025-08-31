@@ -203,13 +203,28 @@ impl QueryEngine {
             }
         }
 
-        // Add columns based on expanded SelectItems
+        // Add columns based on expanded SelectItems, handling duplicates
+        let mut column_name_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+
         for item in &expanded_items {
-            let column_name = match item {
+            let base_name = match item {
                 SelectItem::Column(name) => name.clone(),
                 SelectItem::Expression { alias, .. } => alias.clone(),
                 SelectItem::Star => unreachable!("Star should have been expanded"),
             };
+
+            // Check if this column name has been used before
+            let count = column_name_counts.entry(base_name.clone()).or_insert(0);
+            let column_name = if *count == 0 {
+                // First occurrence, use the name as-is
+                base_name.clone()
+            } else {
+                // Duplicate, append a suffix
+                format!("{}_{}", base_name, count)
+            };
+            *count += 1;
+
             computed_table.add_column(DataColumn::new(&column_name));
         }
 
@@ -1180,3 +1195,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod query_engine_tests;

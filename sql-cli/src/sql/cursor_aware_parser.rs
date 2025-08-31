@@ -47,38 +47,10 @@ impl CursorAwareParser {
                 let mut cols = self.schema.get_columns(default_table);
                 cols.push("*".to_string());
 
-                // Filter out already selected columns
-                // But don't include the partial word at cursor as "selected"
-                let extract_pos = if let Some(ref partial) = partial_word {
-                    cursor_pos.saturating_sub(partial.len())
-                } else {
-                    cursor_pos
-                };
-                let selected_columns = self.extract_selected_columns(query, extract_pos);
-                cols = cols
-                    .into_iter()
-                    .filter(|col| {
-                        // Check if this column is already selected (case-insensitive)
-                        !selected_columns.iter().any(|selected| {
-                            // Strip quotes from both for comparison if needed
-                            let col_clean =
-                                if col.starts_with('"') && col.ends_with('"') && col.len() > 2 {
-                                    &col[1..col.len() - 1]
-                                } else {
-                                    col
-                                };
-                            let selected_clean = if selected.starts_with('"')
-                                && selected.ends_with('"')
-                                && selected.len() > 2
-                            {
-                                &selected[1..selected.len() - 1]
-                            } else {
-                                selected
-                            };
-                            col_clean.eq_ignore_ascii_case(selected_clean)
-                        })
-                    })
-                    .collect();
+                // NOTE: We intentionally do NOT filter out already selected columns
+                // Users may want to select the same column multiple times, especially
+                // when using it in computed expressions like: SELECT q * p as notional, q
+                // Duplicate handling should be done at query execution time if needed
 
                 (cols, "SelectClause".to_string())
             }
