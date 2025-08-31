@@ -20,8 +20,9 @@ Cargo.lock
 *.DotSettings.user
 *.ncrunchsolution
 *.ncrunchproject
-[Dd]ebug/
-[Rr]elease/
+# Only ignore .NET Debug/Release folders at specific paths
+TradeApi*/**/[Dd]ebug/
+TradeApi*/**/[Rr]elease/
 
 # IDE
 .idea/
