@@ -1,31 +1,53 @@
 #!/usr/bin/expect -f
 
+# Test search navigation with interactive search
+
 set timeout 5
-set log_file "search_debug.log"
+set csv_file "test_search_nav.csv"
 
-# Start the application with logging
-spawn env RUST_LOG=search=info ./target/release/sql-cli test_emerging.csv -e "select * from data"
+# Create test data
+exec cat > $csv_file << CSV
+id,book,product
+1,Fixed Income,Corporate
+2,Commodities,Energy
+3,Equities,Tech
+4,Forex,EUR/USD
+5,Derivatives,Options
+6,Fixed Income,emerging
+7,Commodities,Gold
+8,Fixed Income,emerging
+9,Equities,emerging
+CSV
 
-# Wait for the app to load
-sleep 1
+# Run the TUI with logging
+spawn env RUST_LOG=sql_cli::ui::table_widget_manager=info,search=info ./sql-cli/target/release/sql-cli test_search_nav.csv -e "select * from data"
 
-# Press / to start search
-send "/"
+# Wait for initial load
+expect {
+    "INFO" { }
+    timeout { puts "Timeout waiting for initial load"; exit 1 }
+}
+
+# Give it time to render
 sleep 0.5
 
-# Type "emerging"
+# Enter search mode
+send "/"
+sleep 0.2
+
+# Type search pattern
 send "emerging"
-sleep 1
+sleep 0.5
 
-# Press Enter to confirm search
+# Submit search (Enter)
 send "\r"
-sleep 1
+sleep 0.5
 
-# Press F5 to show debug
-send "\033\[15~"
-sleep 1
-
-# Exit
-send "\003"
+# Take a screenshot equivalent - send q to quit
+send "q"
+sleep 0.2
 
 expect eof
+
+# Clean up
+exec rm -f $csv_file

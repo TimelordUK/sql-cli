@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 fn get_test_data_path(filename: &str) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.pop(); // Go up one directory from sql-cli to root
     path.push("data");
     path.push(filename);
     path
@@ -29,8 +28,8 @@ fn test_load_real_trades_json() {
     // Check for expected columns
     let column_names = table.column_names();
     assert!(
-        column_names.contains(&"ticker".to_string()),
-        "Should have ticker column"
+        column_names.contains(&"instrumentId".to_string()),
+        "Should have instrumentId column"
     );
     assert!(
         column_names.contains(&"price".to_string()),
@@ -41,8 +40,8 @@ fn test_load_real_trades_json() {
         "Should have quantity column"
     );
     assert!(
-        column_names.contains(&"side".to_string()),
-        "Should have side column"
+        column_names.contains(&"trader".to_string()),
+        "Should have trader column"
     );
 }
 
@@ -60,12 +59,12 @@ fn test_load_trades_and_inspect_types() {
         );
     }
 
-    if let Some(ticker_col) = table.get_column("ticker") {
-        println!("Ticker column type: {:?}", ticker_col.data_type);
+    if let Some(instrument_col) = table.get_column("instrumentId") {
+        println!("InstrumentId column type: {:?}", instrument_col.data_type);
         assert_eq!(
-            ticker_col.data_type,
+            instrument_col.data_type,
             DataType::String,
-            "Ticker should be string"
+            "InstrumentId should be string"
         );
     }
 

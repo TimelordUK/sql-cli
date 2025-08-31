@@ -8,7 +8,6 @@ mod tests {
 
     fn get_test_data_path(filename: &str) -> PathBuf {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.pop(); // Go up one directory from sql-cli to root
         path.push("data");
         path.push(filename);
         path
@@ -33,13 +32,13 @@ mod tests {
         let table = load_trades_datatable();
         let view = DataView::new(Arc::new(table.clone()));
 
-        // trades.json has 100 rows and 53 columns
+        // trades.json has 100 rows and 15 columns
         assert_eq!(view.row_count(), 100);
-        assert_eq!(view.column_count(), 53);
+        assert_eq!(view.column_count(), 15);
 
         // Check that first few column names are present
         let columns = view.column_names();
-        assert!(columns.contains(&"traderId".to_string()));
+        assert!(columns.contains(&"trader".to_string()));
         assert!(columns.contains(&"instrumentName".to_string()));
         assert!(columns.contains(&"quantity".to_string()));
     }
@@ -49,13 +48,13 @@ mod tests {
         let table = load_trades_datatable();
         let mut view = DataView::new(Arc::new(table));
 
-        // Start with 53 columns
-        assert_eq!(view.column_count(), 53);
+        // Start with 15 columns
+        assert_eq!(view.column_count(), 15);
 
         // Hide the "quantity" column
         view.hide_column_by_name("quantity");
 
-        assert_eq!(view.column_count(), 52);
+        assert_eq!(view.column_count(), 14);
         assert!(view.has_hidden_columns());
 
         let columns = view.column_names();
@@ -73,11 +72,11 @@ mod tests {
         // Hide multiple columns
         view.hide_column_by_name("quantity");
         view.hide_column_by_name("price");
-        assert_eq!(view.column_count(), 51);
+        assert_eq!(view.column_count(), 13);
 
         // Unhide all
         view.unhide_all_columns();
-        assert_eq!(view.column_count(), 53);
+        assert_eq!(view.column_count(), 15);
         assert!(!view.has_hidden_columns());
     }
 
@@ -118,16 +117,16 @@ mod tests {
         let table = load_trades_datatable();
         let mut view = DataView::new(Arc::new(table));
 
-        // Fuzzy filter for "John" should match "John Smith"
-        view.apply_fuzzy_filter("John", false);
-        let john_count = view.row_count();
-        assert!(john_count > 0);
+        // Fuzzy filter for "Johnson" should match "Alice Johnson"
+        view.apply_fuzzy_filter("Johnson", false);
+        let johnson_count = view.row_count();
+        assert!(johnson_count > 0);
 
         // Clear and try exact match with '
         view.clear_filter();
-        view.apply_fuzzy_filter("'Williams", false);
-        let williams_count = view.row_count();
-        assert!(williams_count > 0); // Exact substring match
+        view.apply_fuzzy_filter("'Alice", false);
+        let alice_count = view.row_count();
+        assert!(alice_count > 0); // Exact substring match
 
         // Clear filter
         view.clear_filter();
@@ -139,11 +138,11 @@ mod tests {
         let table = load_trades_datatable();
         let mut view = DataView::new(Arc::new(table));
 
-        // Get the column index for traderId (should be 0 or close to it)
+        // Get the column index for trader (should be 0 or close to it)
         let columns = view.column_names();
-        let trader_id_idx = columns.iter().position(|c| c == "traderId").unwrap();
+        let trader_id_idx = columns.iter().position(|c| c == "trader").unwrap();
 
-        // Sort by traderId ascending
+        // Sort by trader ascending
         view.apply_sort(trader_id_idx, true).unwrap();
 
         // Just verify sorting was applied without error
@@ -156,11 +155,11 @@ mod tests {
         let table = load_trades_datatable();
         let mut view = DataView::new(Arc::new(table));
 
-        // Get the column index for traderId
+        // Get the column index for trader
         let columns = view.column_names();
-        let trader_id_idx = columns.iter().position(|c| c == "traderId").unwrap();
+        let trader_id_idx = columns.iter().position(|c| c == "trader").unwrap();
 
-        // Sort by traderId descending
+        // Sort by trader descending
         view.apply_sort(trader_id_idx, false).unwrap();
 
         // Just verify sorting was applied without error
@@ -173,16 +172,16 @@ mod tests {
         let table = load_trades_datatable();
         let mut view = DataView::new(Arc::new(table));
 
-        // Get column index for traderId
+        // Get column index for trader
         let columns = view.column_names();
-        let trader_id_idx = columns.iter().position(|c| c == "traderId").unwrap();
+        let trader_id_idx = columns.iter().position(|c| c == "trader").unwrap();
 
-        // Sort by traderId descending
+        // Sort by trader descending
         view.apply_sort(trader_id_idx, false).unwrap();
         assert_eq!(view.get_sort_state().column, Some(trader_id_idx));
 
-        // Apply filter for "Williams"
-        view.apply_text_filter("Williams", true);
+        // Apply filter for "Alice"
+        view.apply_text_filter("Alice", true);
         let filtered_count = view.row_count();
         assert!(filtered_count > 0);
         assert!(filtered_count < 100);
@@ -256,7 +255,7 @@ mod tests {
 
         // Clear and try fuzzy filter
         view.clear_filter();
-        view.apply_fuzzy_filter("buy", false);
+        view.apply_fuzzy_filter("EQUITY", false);
         let fuzzy_count = view.row_count();
         assert!(fuzzy_count > 0);
 

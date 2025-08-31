@@ -47,10 +47,15 @@ sql-cli/demos/ttyd
 
 # Large test data files
 data/trades_*.json
+data/trades_*.csv
 !data/trades.json
+!data/trades_10k.json
+trades_100k.json
+trades_100000.csv
 
 # SQL-CLI specific
 trades_*.json
+trades_*.csv
 test_shift_g.rs
 test_*.csv
 test_state_comparison
