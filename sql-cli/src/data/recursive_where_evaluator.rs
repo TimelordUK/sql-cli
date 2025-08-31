@@ -1,3 +1,4 @@
+use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
 use anyhow::Result;
@@ -334,6 +335,22 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         ));
                     }
                 }
+            }
+            SqlExpression::BinaryOp {
+                left: expr_left,
+                op: arith_op,
+                right: expr_right,
+            } if matches!(arith_op.as_str(), "+" | "-" | "*" | "/") => {
+                // Handle arithmetic expressions using ArithmeticEvaluator
+                let evaluator = ArithmeticEvaluator::new(self.table);
+                let computed_value = evaluator.evaluate(left, row_index)?;
+                if row_index < 3 {
+                    debug!(
+                        "RecursiveWhereEvaluator: evaluate_binary_op() - computed arithmetic expression = {:?}",
+                        computed_value
+                    );
+                }
+                (Some(computed_value), "computed_expression".to_string())
             }
             _ => {
                 // Regular column reference

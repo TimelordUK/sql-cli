@@ -1,20 +1,34 @@
 # WHERE Clause with Computed Columns - Design Notes
 
-## Current Limitation
-Currently, computed columns cannot be used in WHERE clauses. For example:
+## ✅ UPDATE: Arithmetic Expressions Now Supported!
+As of v1.30.0, arithmetic expressions ARE supported in WHERE clauses:
+```sql
+-- This now works!
+SELECT id, quantity * price as notional 
+FROM test_arithmetic 
+WHERE quantity * price > 1000  -- ✅ Works!
+
+-- Complex expressions also work
+WHERE (quantity * price) - discount > 500
+WHERE price / quantity > 10
+```
+
+## Current Limitation: Aliases Not Yet Supported
+Computed column **aliases** still cannot be used in WHERE clauses:
 ```sql
 SELECT id, quantity * price as notional 
 FROM test_arithmetic 
-WHERE notional > 1000  -- This will fail
+WHERE notional > 1000  -- ❌ Still doesn't work (alias reference)
+WHERE quantity * price > 1000  -- ✅ Works! (expression directly)
 ```
 
-## Why It Doesn't Work
-The current query execution order is:
-1. **Filter (WHERE)** - Applied directly to source table
-2. **Project (SELECT)** - Compute expressions and select columns  
-3. **Sort (ORDER BY)** - Sort the result set
+## How It Works
+The query execution order remains optimal:
+1. **Filter (WHERE)** - Evaluates expressions directly on source table rows
+2. **Project (SELECT)** - Compute expressions for remaining rows only
+3. **Sort (ORDER BY)** - Sort the result set (can use aliases)
 
-Since computed columns don't exist until step 2, they can't be referenced in step 1.
+This is efficient because we avoid computing SELECT expressions for filtered-out rows.
 
 ## Potential Solutions
 
