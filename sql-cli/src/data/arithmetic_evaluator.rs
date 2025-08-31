@@ -1,6 +1,7 @@
 use crate::data::datatable::{DataTable, DataValue};
 use crate::sql::recursive_parser::SqlExpression;
 use anyhow::{anyhow, Result};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use tracing::debug;
 
 /// Evaluates SQL expressions to compute DataValues (for SELECT clauses)
@@ -12,6 +13,59 @@ pub struct ArithmeticEvaluator<'a> {
 impl<'a> ArithmeticEvaluator<'a> {
     pub fn new(table: &'a DataTable) -> Self {
         Self { table }
+    }
+
+    /// Find a column name similar to the given name using edit distance
+    fn find_similar_column(&self, name: &str) -> Option<String> {
+        let columns = self.table.column_names();
+        let mut best_match: Option<(String, usize)> = None;
+
+        for col in columns {
+            let distance = self.edit_distance(&col.to_lowercase(), &name.to_lowercase());
+            // Only suggest if distance is small (likely a typo)
+            // Allow up to 3 edits for longer names
+            let max_distance = if name.len() > 10 { 3 } else { 2 };
+            if distance <= max_distance {
+                match &best_match {
+                    None => best_match = Some((col, distance)),
+                    Some((_, best_dist)) if distance < *best_dist => {
+                        best_match = Some((col, distance));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        best_match.map(|(name, _)| name)
+    }
+
+    /// Calculate Levenshtein edit distance between two strings
+    fn edit_distance(&self, s1: &str, s2: &str) -> usize {
+        let len1 = s1.len();
+        let len2 = s2.len();
+        let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
+
+        for i in 0..=len1 {
+            matrix[i][0] = i;
+        }
+        for j in 0..=len2 {
+            matrix[0][j] = j;
+        }
+
+        for (i, c1) in s1.chars().enumerate() {
+            for (j, c2) in s2.chars().enumerate() {
+                let cost = if c1 == c2 { 0 } else { 1 };
+                matrix[i + 1][j + 1] = std::cmp::min(
+                    matrix[i][j + 1] + 1, // deletion
+                    std::cmp::min(
+                        matrix[i + 1][j] + 1, // insertion
+                        matrix[i][j] + cost,  // substitution
+                    ),
+                );
+            }
+        }
+
+        matrix[len1][len2]
     }
 
     /// Evaluate an SQL expression to produce a DataValue
@@ -40,10 +94,17 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Evaluate a column reference
     fn evaluate_column(&self, column_name: &str, row_index: usize) -> Result<DataValue> {
-        let col_index = self
-            .table
-            .get_column_index(column_name)
-            .ok_or_else(|| anyhow!("Column '{}' not found", column_name))?;
+        let col_index = self.table.get_column_index(column_name).ok_or_else(|| {
+            let suggestion = self.find_similar_column(column_name);
+            match suggestion {
+                Some(similar) => anyhow!(
+                    "Column '{}' not found. Did you mean '{}'?",
+                    column_name,
+                    similar
+                ),
+                None => anyhow!("Column '{}' not found", column_name),
+            }
+        })?;
 
         if row_index >= self.table.row_count() {
             return Err(anyhow!("Row index {} out of bounds", row_index));
@@ -472,6 +533,143 @@ impl<'a> ArithmeticEvaluator<'a> {
                     return Err(anyhow!("PI takes no arguments"));
                 }
                 Ok(DataValue::Float(std::f64::consts::PI))
+            }
+            "DATEDIFF" => {
+                if args.len() != 3 {
+                    return Err(anyhow!(
+                        "DATEDIFF requires exactly 3 arguments: unit, date1, date2"
+                    ));
+                }
+
+                // First argument: unit (day, month, year, hour, minute, second)
+                let unit = match self.evaluate(&args[0], row_index)? {
+                    DataValue::String(s) => s.to_lowercase(),
+                    DataValue::InternedString(s) => s.to_lowercase(),
+                    _ => return Err(anyhow!("DATEDIFF unit must be a string")),
+                };
+
+                // Helper function to parse date/datetime strings
+                let parse_datetime = |value: DataValue| -> Result<DateTime<Utc>> {
+                    let parse_string = |s: &str| -> Result<DateTime<Utc>> {
+                        // Try various date/datetime formats
+
+                        // ISO formats (most common)
+                        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+                            return Ok(DateTime::from_utc(dt, Utc));
+                        }
+                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+                            return Ok(DateTime::from_utc(dt.and_hms_opt(0, 0, 0).unwrap(), Utc));
+                        }
+
+                        // US format: MM/DD/YYYY or MM-DD-YYYY
+                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
+                            return Ok(DateTime::from_utc(dt.and_hms_opt(0, 0, 0).unwrap(), Utc));
+                        }
+                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
+                            return Ok(DateTime::from_utc(dt.and_hms_opt(0, 0, 0).unwrap(), Utc));
+                        }
+
+                        // European format: DD/MM/YYYY or DD-MM-YYYY
+                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d/%m/%Y") {
+                            return Ok(DateTime::from_utc(dt.and_hms_opt(0, 0, 0).unwrap(), Utc));
+                        }
+                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
+                            return Ok(DateTime::from_utc(dt.and_hms_opt(0, 0, 0).unwrap(), Utc));
+                        }
+
+                        // Excel/Windows format: DD-MMM-YYYY (e.g., 15-Jan-2024)
+                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%b-%Y") {
+                            return Ok(DateTime::from_utc(dt.and_hms_opt(0, 0, 0).unwrap(), Utc));
+                        }
+
+                        // Full month names: January 15, 2024 or 15 January 2024
+                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%B %d, %Y") {
+                            return Ok(DateTime::from_utc(dt.and_hms_opt(0, 0, 0).unwrap(), Utc));
+                        }
+                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d %B %Y") {
+                            return Ok(DateTime::from_utc(dt.and_hms_opt(0, 0, 0).unwrap(), Utc));
+                        }
+
+                        // With time: MM/DD/YYYY HH:MM:SS
+                        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S") {
+                            return Ok(DateTime::from_utc(dt, Utc));
+                        }
+                        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S") {
+                            return Ok(DateTime::from_utc(dt, Utc));
+                        }
+
+                        // ISO 8601 / RFC3339
+                        if let Ok(dt) = s.parse::<DateTime<Utc>>() {
+                            return Ok(dt);
+                        }
+
+                        Err(anyhow!("Could not parse date: {}. Supported formats: YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, DD-MMM-YYYY", s))
+                    };
+
+                    match value {
+                        DataValue::String(s) | DataValue::DateTime(s) => parse_string(&s),
+                        DataValue::InternedString(s) => parse_string(s.as_str()),
+                        _ => Err(anyhow!("DATEDIFF requires date/datetime values")),
+                    }
+                };
+
+                // Parse both dates
+                let date1 = parse_datetime(self.evaluate(&args[1], row_index)?)?;
+                let date2 = parse_datetime(self.evaluate(&args[2], row_index)?)?;
+
+                // Calculate difference based on unit
+                let diff = match unit.as_str() {
+                    "day" | "days" => {
+                        let duration = date2.signed_duration_since(date1);
+                        duration.num_days()
+                    }
+                    "month" | "months" => {
+                        // Approximate months as 30.44 days
+                        let duration = date2.signed_duration_since(date1);
+                        duration.num_days() / 30
+                    }
+                    "year" | "years" => {
+                        // Approximate years as 365.25 days
+                        let duration = date2.signed_duration_since(date1);
+                        duration.num_days() / 365
+                    }
+                    "hour" | "hours" => {
+                        let duration = date2.signed_duration_since(date1);
+                        duration.num_hours()
+                    }
+                    "minute" | "minutes" => {
+                        let duration = date2.signed_duration_since(date1);
+                        duration.num_minutes()
+                    }
+                    "second" | "seconds" => {
+                        let duration = date2.signed_duration_since(date1);
+                        duration.num_seconds()
+                    }
+                    _ => {
+                        return Err(anyhow!(
+                        "Unknown DATEDIFF unit: {}. Use: day, month, year, hour, minute, second",
+                        unit
+                    ))
+                    }
+                };
+
+                Ok(DataValue::Integer(diff))
+            }
+            "NOW" => {
+                if !args.is_empty() {
+                    return Err(anyhow!("NOW takes no arguments"));
+                }
+                let now = Utc::now();
+                Ok(DataValue::DateTime(
+                    now.format("%Y-%m-%d %H:%M:%S").to_string(),
+                ))
+            }
+            "TODAY" => {
+                if !args.is_empty() {
+                    return Err(anyhow!("TODAY takes no arguments"));
+                }
+                let today = Utc::now().date_naive();
+                Ok(DataValue::String(today.format("%Y-%m-%d").to_string()))
             }
             "TEXTJOIN" => {
                 if args.len() < 3 {

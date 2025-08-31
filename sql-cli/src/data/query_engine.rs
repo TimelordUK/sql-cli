@@ -23,6 +23,59 @@ impl QueryEngine {
         }
     }
 
+    /// Find a column name similar to the given name using edit distance
+    fn find_similar_column(&self, table: &DataTable, name: &str) -> Option<String> {
+        let columns = table.column_names();
+        let mut best_match: Option<(String, usize)> = None;
+
+        for col in columns {
+            let distance = self.edit_distance(&col.to_lowercase(), &name.to_lowercase());
+            // Only suggest if distance is small (likely a typo)
+            // Allow up to 3 edits for longer names
+            let max_distance = if name.len() > 10 { 3 } else { 2 };
+            if distance <= max_distance {
+                match &best_match {
+                    None => best_match = Some((col, distance)),
+                    Some((_, best_dist)) if distance < *best_dist => {
+                        best_match = Some((col, distance));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        best_match.map(|(name, _)| name)
+    }
+
+    /// Calculate Levenshtein edit distance between two strings
+    fn edit_distance(&self, s1: &str, s2: &str) -> usize {
+        let len1 = s1.len();
+        let len2 = s2.len();
+        let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
+
+        for i in 0..=len1 {
+            matrix[i][0] = i;
+        }
+        for j in 0..=len2 {
+            matrix[0][j] = j;
+        }
+
+        for (i, c1) in s1.chars().enumerate() {
+            for (j, c2) in s2.chars().enumerate() {
+                let cost = if c1 == c2 { 0 } else { 1 };
+                matrix[i + 1][j + 1] = std::cmp::min(
+                    matrix[i][j + 1] + 1, // deletion
+                    std::cmp::min(
+                        matrix[i + 1][j] + 1, // insertion
+                        matrix[i][j] + cost,  // substitution
+                    ),
+                );
+            }
+        }
+
+        matrix[len1][len2]
+    }
+
     pub fn with_case_insensitive(case_insensitive: bool) -> Self {
         Self { case_insensitive }
     }
@@ -238,9 +291,17 @@ impl QueryEngine {
                 let value = match item {
                     SelectItem::Column(col_name) => {
                         // Simple column reference
-                        let col_idx = source_table
-                            .get_column_index(col_name)
-                            .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", col_name))?;
+                        let col_idx = source_table.get_column_index(col_name).ok_or_else(|| {
+                            let suggestion = self.find_similar_column(source_table, col_name);
+                            match suggestion {
+                                Some(similar) => anyhow::anyhow!(
+                                    "Column '{}' not found. Did you mean '{}'?",
+                                    col_name,
+                                    similar
+                                ),
+                                None => anyhow::anyhow!("Column '{}' not found", col_name),
+                            }
+                        })?;
                         let row = source_table
                             .get_row(row_idx)
                             .ok_or_else(|| anyhow::anyhow!("Row {} not found", row_idx))?;

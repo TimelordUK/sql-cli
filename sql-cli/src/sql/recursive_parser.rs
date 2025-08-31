@@ -1199,6 +1199,10 @@ impl Parser {
                             | "LOG10"
                             | "PI"
                             | "TEXTJOIN"
+                            | "DATEDIFF"
+                            | "DATEADD"
+                            | "NOW"
+                            | "TODAY"
                     ) {
                         self.advance(); // consume (
                         let args = self.parse_function_args()?;

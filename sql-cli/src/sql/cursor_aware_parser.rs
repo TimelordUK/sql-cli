@@ -65,6 +65,9 @@ impl CursorAwareParser {
                     "LOG10(".to_string(),
                     "PI(".to_string(),
                     "TEXTJOIN(".to_string(),
+                    "DATEDIFF(".to_string(),
+                    "NOW(".to_string(),
+                    "TODAY(".to_string(),
                 ]);
 
                 // NOTE: We intentionally do NOT filter out already selected columns
