@@ -85,6 +85,16 @@ fn print_help() {
     println!();
     println!("{}", "Options:".yellow());
     println!(
+        "  {}, {}    - Show version and exit",
+        "--version".green(),
+        "-V".green()
+    );
+    println!(
+        "  {}, {}      - Show this help and exit",
+        "--help".green(),
+        "-h".green()
+    );
+    println!(
         "  {}  - Initialize configuration with wizard",
         "--init-config".green()
     );
@@ -142,6 +152,21 @@ fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::err
 }
 
 fn main() -> io::Result<()> {
+    // Parse arguments first to handle version/help before logging init
+    let args: Vec<String> = std::env::args().collect();
+
+    // Check for version flag
+    if args.contains(&"--version".to_string()) || args.contains(&"-V".to_string()) {
+        println!("sql-cli {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    // Check for help flag
+    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+        print_help();
+        return Ok(());
+    }
+
     // Initialize unified logging (tracing + dual logging)
     sql_cli::utils::logging::init_tracing_with_dual_logging();
 
@@ -152,9 +177,6 @@ fn main() -> io::Result<()> {
         eprintln!("   Tail with: tail -f {}", dual_logger.log_path().display());
         eprintln!("");
     }
-
-    // Check if user wants TUI mode (default) or classic mode
-    let args: Vec<String> = std::env::args().collect();
 
     // Check for config initialization
     if args.contains(&"--init-config".to_string()) {

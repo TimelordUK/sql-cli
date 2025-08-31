@@ -1,7 +1,0 @@
-id,first_name,last_name,email,age,department,salary,hire_date
-1,John,Smith,john.smith@example.com,28,Engineering,75000,2022-01-15
-2,Jane,Doe,jane.doe@example.com,32,Marketing,65000,2021-06-20
-3,Bob,Johnson,bob.j@example.com,45,Sales,80000,2019-03-10
-4,Alice,Williams,alice.w@example.com,29,Engineering,72000,2022-03-01
-5,Charlie,Brown,charlie.b@example.com,38,HR,60000,2020-07-15
-EOF < /dev/null
