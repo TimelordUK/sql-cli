@@ -146,6 +146,8 @@ impl QueryEngine {
                                 row_idx, e
                             );
                         }
+                        // Propagate WHERE clause errors instead of silently ignoring them
+                        return Err(e);
                     }
                 }
             }
@@ -211,7 +213,17 @@ impl QueryEngine {
             let index = table_columns
                 .iter()
                 .position(|c| c.eq_ignore_ascii_case(col_name))
-                .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", col_name))?;
+                .ok_or_else(|| {
+                    let suggestion = self.find_similar_column(table, col_name);
+                    match suggestion {
+                        Some(similar) => anyhow::anyhow!(
+                            "Column '{}' not found. Did you mean '{}'?",
+                            col_name,
+                            similar
+                        ),
+                        None => anyhow::anyhow!("Column '{}' not found", col_name),
+                    }
+                })?;
             indices.push(index);
         }
 
@@ -343,7 +355,17 @@ impl QueryEngine {
                     let index = table_columns
                         .iter()
                         .position(|c| c.eq_ignore_ascii_case(col_name))
-                        .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", col_name))?;
+                        .ok_or_else(|| {
+                            let suggestion = self.find_similar_column(table, col_name);
+                            match suggestion {
+                                Some(similar) => anyhow::anyhow!(
+                                    "Column '{}' not found. Did you mean '{}'?",
+                                    col_name,
+                                    similar
+                                ),
+                                None => anyhow::anyhow!("Column '{}' not found", col_name),
+                            }
+                        })?;
                     indices.push(index);
                 }
                 SelectItem::Star => {
@@ -377,7 +399,17 @@ impl QueryEngine {
             let col_index = view
                 .source()
                 .get_column_index(&order_col.column)
-                .ok_or_else(|| anyhow::anyhow!("Column '{}' not found", order_col.column))?;
+                .ok_or_else(|| {
+                    let suggestion = self.find_similar_column(view.source(), &order_col.column);
+                    match suggestion {
+                        Some(similar) => anyhow::anyhow!(
+                            "Column '{}' not found. Did you mean '{}'?",
+                            order_col.column,
+                            similar
+                        ),
+                        None => anyhow::anyhow!("Column '{}' not found", order_col.column),
+                    }
+                })?;
 
             let ascending = matches!(order_col.direction, SortDirection::Asc);
             sort_columns.push((col_index, ascending));
