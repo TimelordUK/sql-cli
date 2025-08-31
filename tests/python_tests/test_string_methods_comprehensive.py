@@ -15,7 +15,7 @@ class TestStringMethods:
     @classmethod
     def setup_class(cls):
         """Setup test environment"""
-        cls.project_root = Path(__file__).parent.parent
+        cls.project_root = Path(__file__).parent.parent.parent
         cls.sql_cli = str(cls.project_root / "target" / "release" / "sql-cli")
         
         # Build if needed

@@ -24,7 +24,7 @@ cargo test
 cargo test --test data_view_trades_test  # Important DataView tests
 
 # Run Python tests (IMPORTANT: Run after parser/SQL engine changes)
-./run_python_tests.sh  # Runs comprehensive SQL engine tests
+./run_python_tests.sh  # Automatically discovers and runs all tests in tests/python_tests/
 ./run_all_tests.sh     # Runs both Rust and Python tests
 
 # IMPORTANT: Always run before committing!

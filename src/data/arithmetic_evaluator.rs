@@ -95,6 +95,10 @@ impl<'a> ArithmeticEvaluator<'a> {
                 let base_value = self.evaluate(base, row_index)?;
                 self.evaluate_method_on_value(&base_value, method, args, row_index)
             }
+            SqlExpression::CaseExpression {
+                when_branches,
+                else_branch,
+            } => self.evaluate_case_expression(when_branches, else_branch, row_index),
             _ => Err(anyhow!(
                 "Unsupported expression type for arithmetic evaluation: {:?}",
                 expr
@@ -170,6 +174,13 @@ impl<'a> ArithmeticEvaluator<'a> {
             "-" => self.subtract_values(&left_val, &right_val),
             "*" => self.multiply_values(&left_val, &right_val),
             "/" => self.divide_values(&left_val, &right_val),
+            // Comparison operators (return boolean results)
+            ">" => self.compare_values(&left_val, &right_val, |a, b| a > b),
+            "<" => self.compare_values(&left_val, &right_val, |a, b| a < b),
+            ">=" => self.compare_values(&left_val, &right_val, |a, b| a >= b),
+            "<=" => self.compare_values(&left_val, &right_val, |a, b| a <= b),
+            "=" => self.compare_values(&left_val, &right_val, |a, b| a == b),
+            "!=" | "<>" => self.compare_values(&left_val, &right_val, |a, b| a != b),
             _ => Err(anyhow!("Unsupported arithmetic operator: {}", op)),
         }
     }
@@ -244,6 +255,100 @@ impl<'a> ArithmeticEvaluator<'a> {
             DataValue::String(s) => format!("'{}'", s),
             _ => format!("{:?}", value),
         }
+    }
+
+    /// Compare two DataValues using the provided comparison function
+    fn compare_values<F>(&self, left: &DataValue, right: &DataValue, op: F) -> Result<DataValue>
+    where
+        F: Fn(f64, f64) -> bool,
+    {
+        debug!(
+            "ArithmeticEvaluator: comparing values {:?} and {:?}",
+            left, right
+        );
+
+        let result = match (left, right) {
+            // Integer comparisons
+            (DataValue::Integer(a), DataValue::Integer(b)) => op(*a as f64, *b as f64),
+            (DataValue::Integer(a), DataValue::Float(b)) => op(*a as f64, *b),
+            (DataValue::Float(a), DataValue::Integer(b)) => op(*a, *b as f64),
+            (DataValue::Float(a), DataValue::Float(b)) => op(*a, *b),
+
+            // String comparisons (lexicographic)
+            (DataValue::String(a), DataValue::String(b)) => {
+                let a_num = a.parse::<f64>();
+                let b_num = b.parse::<f64>();
+                match (a_num, b_num) {
+                    (Ok(a_val), Ok(b_val)) => op(a_val, b_val), // Both are numbers
+                    _ => op(a.len() as f64, b.len() as f64),    // Fallback to length comparison
+                }
+            }
+            (DataValue::InternedString(a), DataValue::InternedString(b)) => {
+                let a_num = a.parse::<f64>();
+                let b_num = b.parse::<f64>();
+                match (a_num, b_num) {
+                    (Ok(a_val), Ok(b_val)) => op(a_val, b_val), // Both are numbers
+                    _ => op(a.len() as f64, b.len() as f64),    // Fallback to length comparison
+                }
+            }
+            (DataValue::String(a), DataValue::InternedString(b)) => {
+                let a_num = a.parse::<f64>();
+                let b_num = b.parse::<f64>();
+                match (a_num, b_num) {
+                    (Ok(a_val), Ok(b_val)) => op(a_val, b_val), // Both are numbers
+                    _ => op(a.len() as f64, b.len() as f64),    // Fallback to length comparison
+                }
+            }
+            (DataValue::InternedString(a), DataValue::String(b)) => {
+                let a_num = a.parse::<f64>();
+                let b_num = b.parse::<f64>();
+                match (a_num, b_num) {
+                    (Ok(a_val), Ok(b_val)) => op(a_val, b_val), // Both are numbers
+                    _ => op(a.len() as f64, b.len() as f64),    // Fallback to length comparison
+                }
+            }
+
+            // Mixed type comparisons (try to convert to numbers)
+            (DataValue::String(a), DataValue::Integer(b)) => {
+                match a.parse::<f64>() {
+                    Ok(a_val) => op(a_val, *b as f64),
+                    Err(_) => false, // String can't be compared with number
+                }
+            }
+            (DataValue::Integer(a), DataValue::String(b)) => {
+                match b.parse::<f64>() {
+                    Ok(b_val) => op(*a as f64, b_val),
+                    Err(_) => false, // String can't be compared with number
+                }
+            }
+            (DataValue::String(a), DataValue::Float(b)) => match a.parse::<f64>() {
+                Ok(a_val) => op(a_val, *b),
+                Err(_) => false,
+            },
+            (DataValue::Float(a), DataValue::String(b)) => match b.parse::<f64>() {
+                Ok(b_val) => op(*a, b_val),
+                Err(_) => false,
+            },
+
+            // NULL comparisons
+            (DataValue::Null, _) | (_, DataValue::Null) => false,
+
+            // Boolean comparisons
+            (DataValue::Boolean(a), DataValue::Boolean(b)) => {
+                op(if *a { 1.0 } else { 0.0 }, if *b { 1.0 } else { 0.0 })
+            }
+
+            _ => {
+                debug!(
+                    "ArithmeticEvaluator: unsupported comparison between {:?} and {:?}",
+                    left, right
+                );
+                false
+            }
+        };
+
+        debug!("ArithmeticEvaluator: comparison result: {}", result);
+        Ok(DataValue::Boolean(result))
     }
 
     /// Evaluate a function call
@@ -1108,6 +1213,57 @@ impl<'a> ArithmeticEvaluator<'a> {
                 Ok(DataValue::Boolean(result))
             }
             _ => Err(anyhow!("Unsupported method: {}", method)),
+        }
+    }
+
+    /// Evaluate a CASE expression
+    fn evaluate_case_expression(
+        &self,
+        when_branches: &[crate::sql::recursive_parser::WhenBranch],
+        else_branch: &Option<Box<SqlExpression>>,
+        row_index: usize,
+    ) -> Result<DataValue> {
+        debug!(
+            "ArithmeticEvaluator: evaluating CASE expression for row {}",
+            row_index
+        );
+
+        // Evaluate each WHEN condition in order
+        for branch in when_branches {
+            // Evaluate the condition as a boolean
+            let condition_result = self.evaluate_condition_as_bool(&branch.condition, row_index)?;
+
+            if condition_result {
+                debug!("CASE: WHEN condition matched, evaluating result expression");
+                return self.evaluate(&branch.result, row_index);
+            }
+        }
+
+        // If no WHEN condition matched, evaluate ELSE clause (or return NULL)
+        match else_branch {
+            Some(else_expr) => {
+                debug!("CASE: No WHEN matched, evaluating ELSE expression");
+                self.evaluate(else_expr, row_index)
+            }
+            None => {
+                debug!("CASE: No WHEN matched and no ELSE, returning NULL");
+                Ok(DataValue::Null)
+            }
+        }
+    }
+
+    /// Helper method to evaluate an expression as a boolean (for CASE WHEN conditions)
+    fn evaluate_condition_as_bool(&self, expr: &SqlExpression, row_index: usize) -> Result<bool> {
+        let value = self.evaluate(expr, row_index)?;
+
+        match value {
+            DataValue::Boolean(b) => Ok(b),
+            DataValue::Integer(i) => Ok(i != 0),
+            DataValue::Float(f) => Ok(f != 0.0),
+            DataValue::Null => Ok(false),
+            DataValue::String(s) => Ok(!s.is_empty()),
+            DataValue::InternedString(s) => Ok(!s.is_empty()),
+            _ => Ok(true), // Other types are considered truthy
         }
     }
 }

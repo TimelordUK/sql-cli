@@ -61,3 +61,4 @@ test_*.csv
 test_state_comparison
 test_results.txt
 tests/__pycache__/
+__pycache__/

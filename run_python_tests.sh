@@ -37,7 +37,8 @@ echo "Running Python tests..."
 echo "-----------------------------------------"
 
 # Run with verbose output and show summary
-uv run pytest tests/test_sql_engine_pytest.py tests/test_string_methods_comprehensive.py tests/test_math_date_functions.py tests/test_advanced_sql_queries.py tests/test_ast_parser.py -v
+# Automatically discover and run all Python tests in tests/python_tests/
+uv run pytest tests/python_tests/ -v
 
 # Exit code from pytest
 exit_code=$?

@@ -335,6 +335,15 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
                 self.evaluate_method_call(object, method, args, row_index)
             }
+            SqlExpression::CaseExpression {
+                when_branches,
+                else_branch,
+            } => {
+                if row_index < 3 {
+                    debug!("RecursiveWhereEvaluator: evaluate_expression() - found CaseExpression, evaluating");
+                }
+                self.evaluate_case_expression_as_bool(when_branches, else_branch, row_index)
+            }
             _ => {
                 if row_index < 3 {
                     debug!("RecursiveWhereEvaluator: evaluate_expression() - unsupported expression type, returning false");
@@ -1156,6 +1165,78 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 Ok(ExprValue::DateTime(datetime))
             }
             _ => Ok(ExprValue::Null),
+        }
+    }
+
+    /// Evaluate a CASE expression as a boolean (for WHERE clauses)
+    fn evaluate_case_expression_as_bool(
+        &self,
+        when_branches: &[crate::sql::recursive_parser::WhenBranch],
+        else_branch: &Option<Box<SqlExpression>>,
+        row_index: usize,
+    ) -> Result<bool> {
+        debug!(
+            "RecursiveWhereEvaluator: evaluating CASE expression as bool for row {}",
+            row_index
+        );
+
+        // Evaluate each WHEN condition in order
+        for branch in when_branches {
+            // Evaluate the condition as a boolean
+            let condition_result = self.evaluate_expression(&branch.condition, row_index)?;
+
+            if condition_result {
+                debug!("CASE: WHEN condition matched, evaluating result expression as bool");
+                // Evaluate the result and convert to boolean
+                return self.evaluate_expression_as_bool(&branch.result, row_index);
+            }
+        }
+
+        // If no WHEN condition matched, evaluate ELSE clause (or return false)
+        match else_branch {
+            Some(else_expr) => {
+                debug!("CASE: No WHEN matched, evaluating ELSE expression as bool");
+                self.evaluate_expression_as_bool(else_expr, row_index)
+            }
+            None => {
+                debug!("CASE: No WHEN matched and no ELSE, returning false");
+                Ok(false)
+            }
+        }
+    }
+
+    /// Helper method to evaluate any expression as a boolean
+    fn evaluate_expression_as_bool(&self, expr: &SqlExpression, row_index: usize) -> Result<bool> {
+        match expr {
+            // For expressions that naturally return booleans, use the existing evaluator
+            SqlExpression::BinaryOp { .. }
+            | SqlExpression::InList { .. }
+            | SqlExpression::NotInList { .. }
+            | SqlExpression::Between { .. }
+            | SqlExpression::Not { .. }
+            | SqlExpression::MethodCall { .. } => self.evaluate_expression(expr, row_index),
+            // For CASE expressions, recurse
+            SqlExpression::CaseExpression {
+                when_branches,
+                else_branch,
+            } => self.evaluate_case_expression_as_bool(when_branches, else_branch, row_index),
+            // For other expressions (columns, literals), use ArithmeticEvaluator and convert
+            _ => {
+                // Use ArithmeticEvaluator to get the value, then convert to boolean
+                let evaluator =
+                    crate::data::arithmetic_evaluator::ArithmeticEvaluator::new(self.table);
+                let value = evaluator.evaluate(expr, row_index)?;
+
+                match value {
+                    crate::data::datatable::DataValue::Boolean(b) => Ok(b),
+                    crate::data::datatable::DataValue::Integer(i) => Ok(i != 0),
+                    crate::data::datatable::DataValue::Float(f) => Ok(f != 0.0),
+                    crate::data::datatable::DataValue::Null => Ok(false),
+                    crate::data::datatable::DataValue::String(s) => Ok(!s.is_empty()),
+                    crate::data::datatable::DataValue::InternedString(s) => Ok(!s.is_empty()),
+                    _ => Ok(true), // Other types are considered truthy
+                }
+            }
         }
     }
 }
