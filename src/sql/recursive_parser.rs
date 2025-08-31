@@ -1276,6 +1276,10 @@ impl Parser {
                             | "DATEADD"
                             | "NOW"
                             | "TODAY"
+                            | "MID"
+                            | "UPPER"
+                            | "LOWER"
+                            | "TRIM"
                     ) {
                         self.advance(); // consume (
                         let args = self.parse_function_args()?;
