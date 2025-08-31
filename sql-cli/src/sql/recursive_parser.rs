@@ -1198,6 +1198,7 @@ impl Parser {
                             | "LOG"
                             | "LOG10"
                             | "PI"
+                            | "TEXTJOIN"
                     ) {
                         self.advance(); // consume (
                         let args = self.parse_function_args()?;

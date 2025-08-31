@@ -64,6 +64,7 @@ impl CursorAwareParser {
                     "LOG(".to_string(),
                     "LOG10(".to_string(),
                     "PI(".to_string(),
+                    "TEXTJOIN(".to_string(),
                 ]);
 
                 // NOTE: We intentionally do NOT filter out already selected columns
@@ -98,6 +99,7 @@ impl CursorAwareParser {
                     "LOG(".to_string(),
                     "LOG10(".to_string(),
                     "PI(".to_string(),
+                    "TEXTJOIN(".to_string(),
                 ]);
 
                 // Only add SQL keywords if no partial word or if partial doesn't match any columns

@@ -473,6 +473,73 @@ impl<'a> ArithmeticEvaluator<'a> {
                 }
                 Ok(DataValue::Float(std::f64::consts::PI))
             }
+            "TEXTJOIN" => {
+                if args.len() < 3 {
+                    return Err(anyhow!("TEXTJOIN requires at least 3 arguments: delimiter, ignore_empty, text1, [text2, ...]"));
+                }
+
+                // First argument: delimiter
+                let delimiter = match self.evaluate(&args[0], row_index)? {
+                    DataValue::String(s) => s,
+                    DataValue::InternedString(s) => s.to_string(),
+                    DataValue::Integer(n) => n.to_string(),
+                    DataValue::Float(f) => f.to_string(),
+                    DataValue::Boolean(b) => b.to_string(),
+                    DataValue::Null => String::new(),
+                    _ => String::new(),
+                };
+
+                // Second argument: ignore_empty (treat as boolean - 0 is false, anything else is true)
+                let ignore_empty = match self.evaluate(&args[1], row_index)? {
+                    DataValue::Integer(n) => n != 0,
+                    DataValue::Float(f) => f != 0.0,
+                    DataValue::Boolean(b) => b,
+                    DataValue::String(s) => {
+                        !s.is_empty() && s != "0" && s.to_lowercase() != "false"
+                    }
+                    DataValue::InternedString(s) => {
+                        !s.is_empty() && s.as_str() != "0" && s.to_lowercase() != "false"
+                    }
+                    DataValue::Null => false,
+                    _ => true,
+                };
+
+                // Remaining arguments: values to join
+                let mut values = Vec::new();
+                for i in 2..args.len() {
+                    let value = self.evaluate(&args[i], row_index)?;
+                    let string_value = match value {
+                        DataValue::String(s) => Some(s),
+                        DataValue::InternedString(s) => Some(s.to_string()),
+                        DataValue::Integer(n) => Some(n.to_string()),
+                        DataValue::Float(f) => Some(f.to_string()),
+                        DataValue::Boolean(b) => Some(b.to_string()),
+                        DataValue::DateTime(dt) => Some(dt),
+                        DataValue::Null => {
+                            if ignore_empty {
+                                None
+                            } else {
+                                Some(String::new())
+                            }
+                        }
+                        _ => {
+                            if ignore_empty {
+                                None
+                            } else {
+                                Some(String::new())
+                            }
+                        }
+                    };
+
+                    if let Some(s) = string_value {
+                        if !ignore_empty || !s.is_empty() {
+                            values.push(s);
+                        }
+                    }
+                }
+
+                Ok(DataValue::String(values.join(&delimiter)))
+            }
             _ => Err(anyhow!("Unknown function: {}", name)),
         }
     }
