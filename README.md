@@ -467,6 +467,123 @@ Ready-to-use chart examples are in the `scripts/` directory:
 - **Interactive Navigation**: Pan and zoom to explore your data
 - **Terminal Native**: Pure terminal graphics, no GUI dependencies
 
+## 🔄 Unit Conversions
+
+SQL CLI includes a comprehensive unit conversion system accessible through the `CONVERT()` function. Convert between 150+ units across 8 categories, perfect for scientific calculations and data analysis.
+
+### Basic Syntax
+```sql
+SELECT CONVERT(value, 'from_unit', 'to_unit') FROM DUAL
+```
+
+### Supported Categories & Examples
+
+#### **Length Conversions**
+```sql
+-- Metric to Imperial
+SELECT CONVERT(100, 'km', 'miles') as distance FROM DUAL;     -- 62.14 miles
+SELECT CONVERT(5.5, 'meters', 'feet') as height FROM DUAL;     -- 18.04 feet
+SELECT CONVERT(25, 'cm', 'inches') as width FROM DUAL;         -- 9.84 inches
+
+-- Nautical
+SELECT CONVERT(10, 'nautical_mile', 'km') as distance FROM DUAL;  -- 18.52 km
+```
+
+#### **Mass/Weight Conversions**
+```sql
+-- Common conversions
+SELECT CONVERT(75, 'kg', 'lb') as weight FROM DUAL;            -- 165.35 pounds
+SELECT CONVERT(16, 'oz', 'grams') as weight FROM DUAL;         -- 453.59 grams
+SELECT CONVERT(1, 'metric_ton', 'pounds') as heavy FROM DUAL;  -- 2204.62 lbs
+```
+
+#### **Temperature Conversions**
+```sql
+-- Temperature scales
+SELECT CONVERT(32, 'F', 'C') as freezing FROM DUAL;            -- 0°C
+SELECT CONVERT(100, 'C', 'F') as boiling FROM DUAL;            -- 212°F
+SELECT CONVERT(20, 'C', 'K') as room_temp FROM DUAL;           -- 293.15 K
+```
+
+#### **Volume Conversions**
+```sql
+-- Cooking and fuel
+SELECT CONVERT(1, 'cup', 'ml') as volume FROM DUAL;            -- 236.59 ml
+SELECT CONVERT(3.785, 'L', 'gal') as fuel FROM DUAL;           -- 1 gallon
+SELECT CONVERT(750, 'ml', 'fl_oz') as wine FROM DUAL;          -- 25.36 fl oz
+```
+
+#### **Time Conversions**
+```sql
+SELECT CONVERT(1.5, 'hours', 'minutes') as duration FROM DUAL;  -- 90 minutes
+SELECT CONVERT(365, 'days', 'years') as age FROM DUAL;         -- 1 year
+SELECT CONVERT(5000, 'ms', 'seconds') as delay FROM DUAL;      -- 5 seconds
+```
+
+#### **Other Categories**
+```sql
+-- Area
+SELECT CONVERT(100, 'sq_ft', 'm2') as area FROM DUAL;          -- 9.29 m²
+SELECT CONVERT(5, 'acres', 'hectares') as land FROM DUAL;      -- 2.02 hectares
+
+-- Speed
+SELECT CONVERT(65, 'mph', 'kph') as speed FROM DUAL;           -- 104.61 km/h
+SELECT CONVERT(100, 'knots', 'mph') as wind FROM DUAL;         -- 115.08 mph
+
+-- Pressure
+SELECT CONVERT(14.7, 'psi', 'bar') as pressure FROM DUAL;      -- 1.01 bar
+SELECT CONVERT(1, 'atm', 'Pa') as standard FROM DUAL;          -- 101325 Pa
+```
+
+### Complex Calculations with Conversions
+
+```sql
+-- Calculate BMI converting from imperial to metric
+SELECT 
+    CONVERT(180, 'lb', 'kg') as weight_kg,
+    CONVERT(72, 'inches', 'm') as height_m,
+    CONVERT(180, 'lb', 'kg') / 
+    (CONVERT(72, 'inches', 'm') * CONVERT(72, 'inches', 'm')) as BMI
+FROM DUAL;
+
+-- Fuel efficiency conversion (mpg to L/100km)
+SELECT 
+    (CONVERT(100, 'km', 'miles') / 30.0) * CONVERT(1, 'gal', 'L') 
+    as liters_per_100km
+FROM DUAL;  -- 30 mpg = 7.84 L/100km
+
+-- Physics calculations with proper units
+SELECT 
+    0.5 * CONVERT(2000, 'lb', 'kg') * 
+    POWER(CONVERT(60, 'mph', 'm/s'), 2) as kinetic_energy_joules
+FROM DUAL;
+```
+
+### Features
+- **Case-insensitive**: `'KM'`, `'km'`, `'Km'` all work
+- **Unit aliases**: `'kilometer'`, `'kilometers'`, `'km'` are equivalent
+- **High precision**: Maintains floating-point precision throughout conversions
+- **Bidirectional**: All conversions work in both directions
+- **Error handling**: Clear messages for incompatible unit types
+
+### Complete Unit Reference
+
+**Length**: m, meter, km, kilometer, cm, mm, nm, um, mile, yard, foot/feet, inch, nautical_mile
+
+**Mass**: kg, kilogram, g, gram, mg, ug, tonne, metric_ton, lb, pound, oz, ounce, ton, stone
+
+**Temperature**: C, celsius, F, fahrenheit, K, kelvin
+
+**Volume**: L, liter, ml, m3, cm3, cc, gal, gallon, qt, quart, pt, pint, cup, fl_oz, tbsp, tsp
+
+**Time**: s, second, ms, us, ns, minute, hour, day, week, month, year
+
+**Area**: m2, km2, cm2, sq_ft, sq_in, sq_mi, acre, hectare
+
+**Speed**: m/s, kph, mph, knot, fps
+
+**Pressure**: Pa, kPa, MPa, GPa, bar, mbar, atm, psi, torr, mmHg
+
 ## ⚠️ SQL Features Not Yet Supported
 
 While SQL CLI provides extensive SQL functionality, some standard SQL features are not yet implemented:

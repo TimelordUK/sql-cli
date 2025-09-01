@@ -438,6 +438,48 @@ impl<'a> ArithmeticEvaluator<'a> {
                     _ => Err(anyhow!("CEILING can only be applied to numeric values")),
                 }
             }
+            "CONVERT" => {
+                if args.len() != 3 {
+                    return Err(anyhow!(
+                        "CONVERT requires exactly 3 arguments: value, from_unit, to_unit"
+                    ));
+                }
+
+                // Evaluate the value
+                let value = self.evaluate(&args[0], row_index)?;
+                let numeric_value = match value {
+                    DataValue::Integer(n) => n as f64,
+                    DataValue::Float(f) => f,
+                    _ => return Err(anyhow!("CONVERT first argument must be numeric")),
+                };
+
+                // Get unit strings
+                let from_unit = match self.evaluate(&args[1], row_index)? {
+                    DataValue::String(s) => s,
+                    DataValue::InternedString(s) => s.to_string(),
+                    _ => {
+                        return Err(anyhow!(
+                            "CONVERT second argument must be a string (from_unit)"
+                        ))
+                    }
+                };
+
+                let to_unit = match self.evaluate(&args[2], row_index)? {
+                    DataValue::String(s) => s,
+                    DataValue::InternedString(s) => s.to_string(),
+                    _ => return Err(anyhow!("CONVERT third argument must be a string (to_unit)")),
+                };
+
+                // Perform conversion
+                match crate::data::unit_converter::convert_units(
+                    numeric_value,
+                    &from_unit,
+                    &to_unit,
+                ) {
+                    Ok(result) => Ok(DataValue::Float(result)),
+                    Err(e) => Err(anyhow!("Unit conversion error: {}", e)),
+                }
+            }
             "MOD" => {
                 if args.len() != 2 {
                     return Err(anyhow!("MOD requires exactly 2 arguments"));
