@@ -95,6 +95,51 @@ impl Lexer {
         }
     }
 
+    fn skip_whitespace_and_comments(&mut self) {
+        loop {
+            // Skip whitespace
+            while let Some(ch) = self.current_char {
+                if ch.is_whitespace() {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+
+            // Check for comments
+            match self.current_char {
+                Some('-') if self.peek(1) == Some('-') => {
+                    // Single-line comment: skip until end of line
+                    self.advance(); // skip first '-'
+                    self.advance(); // skip second '-'
+                    while let Some(ch) = self.current_char {
+                        self.advance();
+                        if ch == '\n' {
+                            break;
+                        }
+                    }
+                }
+                Some('/') if self.peek(1) == Some('*') => {
+                    // Multi-line comment: skip until */
+                    self.advance(); // skip '/'
+                    self.advance(); // skip '*'
+                    while let Some(ch) = self.current_char {
+                        if ch == '*' && self.peek(1) == Some('/') {
+                            self.advance(); // skip '*'
+                            self.advance(); // skip '/'
+                            break;
+                        }
+                        self.advance();
+                    }
+                }
+                _ => {
+                    // No more comments or whitespace
+                    break;
+                }
+            }
+        }
+    }
+
     fn read_identifier(&mut self) -> String {
         let mut result = String::new();
         while let Some(ch) = self.current_char {
@@ -165,7 +210,7 @@ impl Lexer {
     }
 
     pub fn next_token(&mut self) -> Token {
-        self.skip_whitespace();
+        self.skip_whitespace_and_comments();
 
         match self.current_char {
             None => Token::Eof,
@@ -180,6 +225,13 @@ impl Lexer {
                 Token::Plus
             }
             Some('/') => {
+                // Check if this is a comment start
+                if self.peek(1) == Some('*') {
+                    // This shouldn't happen as comments are skipped above,
+                    // but handle it just in case
+                    self.skip_whitespace_and_comments();
+                    return self.next_token();
+                }
                 self.advance();
                 Token::Divide
             }
@@ -238,6 +290,11 @@ impl Lexer {
                 // Single quotes = string literal
                 let string_val = self.read_string();
                 Token::StringLiteral(string_val)
+            }
+            Some('-') if self.peek(1) == Some('-') => {
+                // This is a comment, skip it and get next token
+                self.skip_whitespace_and_comments();
+                self.next_token()
             }
             Some('-') if self.peek(1).map_or(false, |c| c.is_numeric()) => {
                 // Handle negative numbers
@@ -305,7 +362,7 @@ impl Lexer {
         let saved_pos = self.position;
         let saved_char = self.current_char;
 
-        self.skip_whitespace();
+        self.skip_whitespace_and_comments();
         let next_word = self.read_identifier();
         let matches = next_word.to_uppercase() == keyword;
 
@@ -336,7 +393,7 @@ impl Lexer {
     pub fn tokenize_all_with_positions(&mut self) -> Vec<(usize, usize, Token)> {
         let mut tokens = Vec::new();
         loop {
-            self.skip_whitespace();
+            self.skip_whitespace_and_comments();
             let start_pos = self.position;
             let token = self.next_token();
             let end_pos = self.position;
