@@ -182,6 +182,7 @@ impl TextNavigator {
             Token::Then => "THEN",
             Token::Else => "ELSE",
             Token::End => "END",
+            Token::Distinct => "DISTINCT",
             Token::Identifier(s) => s,
             Token::QuotedIdentifier(s) => s,
             Token::StringLiteral(s) => s,

@@ -28,6 +28,7 @@ pub enum Token {
     Then,     // THEN clause
     Else,     // ELSE clause
     End,      // END keyword
+    Distinct, // DISTINCT keyword for aggregate functions
 
     // Literals
     Identifier(String),
@@ -289,6 +290,7 @@ impl Lexer {
                     "THEN" => Token::Then,
                     "ELSE" => Token::Else,
                     "END" => Token::End,
+                    "DISTINCT" => Token::Distinct,
                     _ => Token::Identifier(ident),
                 }
             }
@@ -484,6 +486,7 @@ pub struct Parser {
     in_method_args: bool, // Track if we're parsing method arguments
     columns: Vec<String>, // Known column names for context-aware parsing
     paren_depth: i32,     // Track parentheses nesting depth
+    #[allow(dead_code)]
     config: ParserConfig, // Parser configuration including case sensitivity
 }
 
@@ -1352,6 +1355,11 @@ impl Parser {
                     return Err("Expected expression after NOT".to_string());
                 }
             }
+            Token::Star => {
+                // Handle * as a literal (like in COUNT(*))
+                self.advance();
+                Ok(SqlExpression::StringLiteral("*".to_string()))
+            }
             _ => Err(format!("Unexpected token: {:?}", self.current_token)),
         }
     }
@@ -1384,15 +1392,25 @@ impl Parser {
         let mut args = Vec::new();
 
         if !matches!(self.current_token, Token::RightParen) {
-            loop {
-                // Parse each argument as a full expression (could be arithmetic)
+            // Check if first argument starts with DISTINCT
+            if matches!(self.current_token, Token::Distinct) {
+                self.advance(); // consume DISTINCT
+                                // Parse the expression after DISTINCT
+                let expr = self.parse_additive()?;
+                // Create a special expression to represent DISTINCT column
+                args.push(SqlExpression::FunctionCall {
+                    name: "DISTINCT".to_string(),
+                    args: vec![expr],
+                });
+            } else {
+                // Parse normal expression
                 args.push(self.parse_additive()?);
+            }
 
-                if matches!(self.current_token, Token::Comma) {
-                    self.advance();
-                } else {
-                    break;
-                }
+            // Parse any remaining arguments
+            while matches!(self.current_token, Token::Comma) {
+                self.advance();
+                args.push(self.parse_additive()?);
             }
         }
 
@@ -2375,6 +2393,7 @@ fn format_token(token: &Token) -> String {
         Token::Then => "THEN".to_string(),
         Token::Else => "ELSE".to_string(),
         Token::End => "END".to_string(),
+        Token::Distinct => "DISTINCT".to_string(),
         Token::LeftParen => "(".to_string(),
         Token::RightParen => ")".to_string(),
         Token::Comma => ",".to_string(),
@@ -2887,6 +2906,7 @@ fn is_sql_keyword(word: &str) -> bool {
             | "HAVING"
             | "ASC"
             | "DESC"
+            | "DISTINCT"
     )
 }
 
