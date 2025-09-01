@@ -50,16 +50,36 @@ pub struct NonInteractiveConfig {
 pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     let start_time = Instant::now();
 
-    // 1. Load the data file
-    info!("Loading data from: {}", config.data_file);
-    let data_table = load_data_file(&config.data_file)?;
-    let table_name = data_table.name.clone();
+    // Check if query uses DUAL or has no FROM clause
+    use crate::sql::recursive_parser::Parser;
+    let mut parser = Parser::new(&config.query);
+    let statement = parser
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
 
-    info!(
-        "Loaded {} rows with {} columns",
-        data_table.row_count(),
-        data_table.column_count()
-    );
+    let uses_dual = statement
+        .from_table
+        .as_ref()
+        .map(|t| t.to_uppercase() == "DUAL")
+        .unwrap_or(false);
+
+    let no_from_clause = statement.from_table.is_none();
+
+    // 1. Load the data file or create DUAL table
+    let (data_table, is_dual) = if uses_dual || no_from_clause || config.data_file.is_empty() {
+        info!("Using DUAL table for expression evaluation");
+        (crate::data::datatable::DataTable::dual(), true)
+    } else {
+        info!("Loading data from: {}", config.data_file);
+        let table = load_data_file(&config.data_file)?;
+        info!(
+            "Loaded {} rows with {} columns",
+            table.row_count(),
+            table.column_count()
+        );
+        (table, false)
+    };
+    let table_name = data_table.name.clone();
 
     // 2. Create a DataView from the table
     let dataview = DataView::new(std::sync::Arc::new(data_table));

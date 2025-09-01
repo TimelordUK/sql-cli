@@ -234,6 +234,17 @@ impl DataTable {
         }
     }
 
+    /// Create a DUAL table (similar to Oracle's DUAL) with one row and one column
+    /// Used for evaluating expressions without a data source
+    pub fn dual() -> Self {
+        let mut table = DataTable::new("DUAL");
+        table.add_column(DataColumn::new("DUMMY").with_type(DataType::String));
+        table
+            .add_row(DataRow::new(vec![DataValue::String("X".to_string())]))
+            .unwrap();
+        table
+    }
+
     pub fn add_column(&mut self, column: DataColumn) -> &mut Self {
         self.columns.push(column);
         self

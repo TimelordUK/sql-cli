@@ -278,7 +278,33 @@ fn main() -> io::Result<()> {
 
     // If we have a query, run in non-interactive mode
     if is_non_interactive {
-        // Find the data file (required for non-interactive mode)
+        // Read query from file if specified
+        let query = if let Some(file) = query_file_arg {
+            std::fs::read_to_string(&file).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed to read query file {}: {}", file, e),
+                )
+            })?
+        } else {
+            query_arg.unwrap()
+        };
+
+        // Check if query uses DUAL or has no FROM clause
+        let uses_dual_or_no_from = {
+            use sql_cli::sql::recursive_parser::Parser;
+            if let Ok(statement) = Parser::new(&query).parse() {
+                statement
+                    .from_table
+                    .as_ref()
+                    .map(|t| t.to_uppercase() == "DUAL")
+                    .unwrap_or(true) // No FROM clause means we can use DUAL
+            } else {
+                false
+            }
+        };
+
+        // Find the data file (optional if using DUAL)
         let data_file = args
             .iter()
             .filter(|arg| !arg.starts_with("-"))
@@ -287,20 +313,24 @@ fn main() -> io::Result<()> {
             .cloned();
 
         if let Some(data_file) = data_file {
-            // Read query from file if specified
-            let query = if let Some(file) = query_file_arg {
-                std::fs::read_to_string(&file).map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("Failed to read query file {}: {}", file, e),
-                    )
-                })?
-            } else {
-                query_arg.unwrap()
-            };
-
             let config = sql_cli::non_interactive::NonInteractiveConfig {
                 data_file,
+                query,
+                output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
+                output_file: output_file_arg,
+                case_insensitive: args.contains(&"--case-insensitive".to_string()),
+                auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
+                limit: limit_arg,
+                query_plan: query_plan_arg,
+            };
+
+            return sql_cli::non_interactive::execute_non_interactive(config)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+        } else if uses_dual_or_no_from {
+            // Use empty string for data_file when using DUAL
+            let config = sql_cli::non_interactive::NonInteractiveConfig {
+                data_file: String::new(),
                 query,
                 output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
@@ -316,6 +346,7 @@ fn main() -> io::Result<()> {
         } else {
             eprintln!("Error: Data file (CSV or JSON) required for non-interactive query mode");
             eprintln!("Usage: sql-cli <data.csv> -q \"SELECT * FROM table\"");
+            eprintln!("       sql-cli -q \"SELECT expression FROM DUAL\"");
             std::process::exit(1);
         }
     }

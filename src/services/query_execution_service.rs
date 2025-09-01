@@ -50,8 +50,26 @@ impl QueryExecutionService {
         current_dataview: Option<&DataView>,
         original_source: Option<&crate::data::datatable::DataTable>,
     ) -> Result<QueryExecutionResult> {
-        // 1. Get the source DataTable - prefer original source if available
-        let source_table = if let Some(original) = original_source {
+        // Check if query is using DUAL table or has no FROM clause
+        use crate::sql::recursive_parser::Parser;
+        let mut parser = Parser::new(query);
+        let statement = parser
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+
+        let uses_dual = statement
+            .from_table
+            .as_ref()
+            .map(|t| t.to_uppercase() == "DUAL")
+            .unwrap_or(false);
+
+        let no_from_clause = statement.from_table.is_none();
+
+        // 1. Get the source DataTable - use DUAL for special cases
+        let source_table = if uses_dual || no_from_clause {
+            info!("QueryExecutionService: Using DUAL table for expression evaluation");
+            crate::data::datatable::DataTable::dual()
+        } else if let Some(original) = original_source {
             // Use the original unmodified DataTable for queries
             info!(
                 "QueryExecutionService: Using original source with {} columns: {:?}",

@@ -125,10 +125,37 @@ impl Lexer {
 
     fn read_number(&mut self) -> String {
         let mut result = String::new();
+        let mut has_e = false;
+
+        // Read the main number part (including decimal point)
         while let Some(ch) = self.current_char {
-            if ch.is_numeric() || ch == '.' {
+            if !has_e && (ch.is_numeric() || ch == '.') {
                 result.push(ch);
                 self.advance();
+            } else if (ch == 'e' || ch == 'E') && !has_e && !result.is_empty() {
+                // Handle scientific notation
+                result.push(ch);
+                self.advance();
+                has_e = true;
+
+                // Check for optional sign after 'e'
+                if let Some(sign) = self.current_char {
+                    if sign == '+' || sign == '-' {
+                        result.push(sign);
+                        self.advance();
+                    }
+                }
+
+                // Read exponent digits
+                while let Some(digit) = self.current_char {
+                    if digit.is_numeric() {
+                        result.push(digit);
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+                break; // Done reading the number
             } else {
                 break;
             }
@@ -1253,42 +1280,15 @@ impl Parser {
 
                 // Check if this is a function call (identifier followed by parenthesis)
                 if matches!(self.current_token, Token::LeftParen) {
-                    // Check if it's a known function
-                    if matches!(
-                        id_upper.as_str(),
-                        "ROUND"
-                            | "ABS"
-                            | "FLOOR"
-                            | "CEILING"
-                            | "CEIL"
-                            | "MOD"
-                            | "QUOTIENT"
-                            | "POWER"
-                            | "POW"
-                            | "SQRT"
-                            | "EXP"
-                            | "LN"
-                            | "LOG"
-                            | "LOG10"
-                            | "PI"
-                            | "TEXTJOIN"
-                            | "DATEDIFF"
-                            | "DATEADD"
-                            | "NOW"
-                            | "TODAY"
-                            | "MID"
-                            | "UPPER"
-                            | "LOWER"
-                            | "TRIM"
-                    ) {
-                        self.advance(); // consume (
-                        let args = self.parse_function_args()?;
-                        self.consume(Token::RightParen)?;
-                        return Ok(SqlExpression::FunctionCall {
-                            name: id_upper,
-                            args,
-                        });
-                    }
+                    // Treat any identifier followed by () as a potential function call
+                    // The evaluator will validate if it's a known function
+                    self.advance(); // consume (
+                    let args = self.parse_function_args()?;
+                    self.consume(Token::RightParen)?;
+                    return Ok(SqlExpression::FunctionCall {
+                        name: id_upper,
+                        args,
+                    });
                 }
 
                 // Otherwise treat as column

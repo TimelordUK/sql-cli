@@ -223,7 +223,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         // Check for division by zero first
         let is_zero = match right {
             DataValue::Integer(0) => true,
-            DataValue::Float(f) if f.abs() < f64::EPSILON => true,
+            DataValue::Float(f) if *f == 0.0 => true, // Only check for exact zero, not epsilon
             _ => false,
         };
 
@@ -358,7 +358,8 @@ impl<'a> ArithmeticEvaluator<'a> {
         args: &[SqlExpression],
         row_index: usize,
     ) -> Result<DataValue> {
-        match name {
+        // Convert function name to uppercase for case-insensitive matching
+        match name.to_uppercase().as_str() {
             "ROUND" => {
                 if args.is_empty() || args.len() > 2 {
                     return Err(anyhow!("ROUND requires 1 or 2 arguments"));
@@ -1010,6 +1011,203 @@ impl<'a> ArithmeticEvaluator<'a> {
                 }
 
                 Ok(DataValue::String(values.join(&delimiter)))
+            }
+            "PI" => {
+                // PI constant - no arguments
+                if !args.is_empty() {
+                    return Err(anyhow!("PI() takes no arguments"));
+                }
+                Ok(DataValue::Float(std::f64::consts::PI))
+            }
+            "EULER" => {
+                // Euler's number constant - no arguments
+                if !args.is_empty() {
+                    return Err(anyhow!("EULER() takes no arguments"));
+                }
+                Ok(DataValue::Float(std::f64::consts::E))
+            }
+            "TAU" => {
+                // Tau constant (2*PI) - no arguments
+                if !args.is_empty() {
+                    return Err(anyhow!("TAU() takes no arguments"));
+                }
+                Ok(DataValue::Float(std::f64::consts::TAU))
+            }
+            "PHI" => {
+                // Golden ratio constant - no arguments
+                if !args.is_empty() {
+                    return Err(anyhow!("PHI() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.618033988749895))
+            }
+            "SQRT2" => {
+                // Square root of 2 constant - no arguments
+                if !args.is_empty() {
+                    return Err(anyhow!("SQRT2() takes no arguments"));
+                }
+                Ok(DataValue::Float(std::f64::consts::SQRT_2))
+            }
+            "LN2" => {
+                // Natural logarithm of 2 - no arguments
+                if !args.is_empty() {
+                    return Err(anyhow!("LN2() takes no arguments"));
+                }
+                Ok(DataValue::Float(std::f64::consts::LN_2))
+            }
+            "LN10" => {
+                // Natural logarithm of 10 - no arguments
+                if !args.is_empty() {
+                    return Err(anyhow!("LN10() takes no arguments"));
+                }
+                Ok(DataValue::Float(std::f64::consts::LN_10))
+            }
+            // Physics Constants - Fundamental Constants
+            "C" | "SPEED_OF_LIGHT" => {
+                // Speed of light in vacuum (m/s)
+                if !args.is_empty() {
+                    return Err(anyhow!("C() takes no arguments"));
+                }
+                Ok(DataValue::Float(299792458.0))
+            }
+            "G" | "GRAVITATIONAL_CONSTANT" => {
+                // Gravitational constant (m^3 kg^-1 s^-2)
+                if !args.is_empty() {
+                    return Err(anyhow!("G() takes no arguments"));
+                }
+                Ok(DataValue::Float(6.67430e-11))
+            }
+            "H" | "PLANCK" => {
+                // Planck constant (J⋅s)
+                if !args.is_empty() {
+                    return Err(anyhow!("PLANCK() takes no arguments"));
+                }
+                Ok(DataValue::Float(6.62607015e-34))
+            }
+            "HBAR" => {
+                // Reduced Planck constant ℏ = h/(2π) (J⋅s)
+                if !args.is_empty() {
+                    return Err(anyhow!("HBAR() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.054571817e-34))
+            }
+            "K" | "BOLTZMANN" => {
+                // Boltzmann constant (J/K)
+                if !args.is_empty() {
+                    return Err(anyhow!("BOLTZMANN() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.380649e-23))
+            }
+            "NA" | "AVOGADRO" => {
+                // Avogadro's number (mol^-1)
+                if !args.is_empty() {
+                    return Err(anyhow!("AVOGADRO() takes no arguments"));
+                }
+                Ok(DataValue::Float(6.02214076e23))
+            }
+            "R" | "GAS_CONSTANT" => {
+                // Universal gas constant (J mol^-1 K^-1)
+                if !args.is_empty() {
+                    return Err(anyhow!("R() takes no arguments"));
+                }
+                Ok(DataValue::Float(8.314462618))
+            }
+            // Physics Constants - Electromagnetic
+            "E0" | "EPSILON0" | "PERMITTIVITY" => {
+                // Electric permittivity of vacuum (F/m)
+                if !args.is_empty() {
+                    return Err(anyhow!("E0() takes no arguments"));
+                }
+                Ok(DataValue::Float(8.8541878128e-12))
+            }
+            "MU0" | "PERMEABILITY" => {
+                // Magnetic permeability of vacuum (N/A^2)
+                if !args.is_empty() {
+                    return Err(anyhow!("MU0() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.25663706212e-6))
+            }
+            "QE" | "ELEMENTARY_CHARGE" => {
+                // Elementary charge (C)
+                if !args.is_empty() {
+                    return Err(anyhow!("QE() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.602176634e-19))
+            }
+            // Physics Constants - Particle Masses
+            "ME" | "MASS_ELECTRON" => {
+                // Electron mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("ME() takes no arguments"));
+                }
+                Ok(DataValue::Float(9.1093837015e-31))
+            }
+            "MP" | "MASS_PROTON" => {
+                // Proton mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MP() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.67262192369e-27))
+            }
+            "MN" | "MASS_NEUTRON" => {
+                // Neutron mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MN() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.67492749804e-27))
+            }
+            "AMU" | "ATOMIC_MASS_UNIT" => {
+                // Atomic mass unit (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("AMU() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.66053906660e-27))
+            }
+            // Physics Constants - Other
+            "ALPHA" | "FINE_STRUCTURE" => {
+                // Fine structure constant (dimensionless)
+                if !args.is_empty() {
+                    return Err(anyhow!("ALPHA() takes no arguments"));
+                }
+                Ok(DataValue::Float(7.2973525693e-3))
+            }
+            "RY" | "RYDBERG" => {
+                // Rydberg constant (m^-1)
+                if !args.is_empty() {
+                    return Err(anyhow!("RYDBERG() takes no arguments"));
+                }
+                Ok(DataValue::Float(10973731.568160))
+            }
+            "SIGMA" | "STEFAN_BOLTZMANN" => {
+                // Stefan-Boltzmann constant (W m^-2 K^-4)
+                if !args.is_empty() {
+                    return Err(anyhow!("SIGMA() takes no arguments"));
+                }
+                Ok(DataValue::Float(5.670374419e-8))
+            }
+            // Angle conversion functions (demonstrating easy extensibility)
+            "DEGREES" => {
+                // Convert radians to degrees
+                if args.len() != 1 {
+                    return Err(anyhow!("DEGREES requires exactly 1 argument"));
+                }
+                let radians = match self.evaluate(&args[0], row_index)? {
+                    DataValue::Integer(n) => n as f64,
+                    DataValue::Float(f) => f,
+                    _ => return Err(anyhow!("DEGREES requires a numeric argument")),
+                };
+                Ok(DataValue::Float(radians * 180.0 / std::f64::consts::PI))
+            }
+            "RADIANS" => {
+                // Convert degrees to radians
+                if args.len() != 1 {
+                    return Err(anyhow!("RADIANS requires exactly 1 argument"));
+                }
+                let degrees = match self.evaluate(&args[0], row_index)? {
+                    DataValue::Integer(n) => n as f64,
+                    DataValue::Float(f) => f,
+                    _ => return Err(anyhow!("RADIANS requires a numeric argument")),
+                };
+                Ok(DataValue::Float(degrees * std::f64::consts::PI / 180.0))
             }
             "MID" => {
                 // MID(text, start_position, length) - Excel-compatible, 1-based indexing

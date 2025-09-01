@@ -149,7 +149,42 @@ WHERE SQRT(area) BETWEEN 10 AND 50
 ```
 
 **Available Math Functions:**
-`ROUND`, `ABS`, `FLOOR`, `CEILING`, `MOD`, `QUOTIENT`, `POWER`, `SQRT`, `EXP`, `LN`, `LOG`, `LOG10`, `PI()`
+`ROUND`, `ABS`, `FLOOR`, `CEILING`, `MOD`, `QUOTIENT`, `POWER`, `SQRT`, `EXP`, `LN`, `LOG`, `LOG10`
+
+#### **🧮 Scientific Calculator Mode with DUAL Table**
+```sql
+-- Use DUAL table for calculations (Oracle-compatible)
+SELECT PI() * POWER(5, 2) as circle_area FROM DUAL;
+SELECT DEGREES(PI()/2) as right_angle FROM DUAL;
+
+-- Scientific notation support
+SELECT 1e-10 * 3.14e5 as tiny_times_huge FROM DUAL;
+SELECT 6.022e23 / 1000 as molecules_per_liter FROM DUAL;
+
+-- Physics constants for scientific computing
+SELECT 
+    C() as speed_of_light,        -- 299792458 m/s
+    ME() as electron_mass,        -- 9.109e-31 kg
+    PLANCK() as planck_constant,  -- 6.626e-34 J⋅s
+    NA() as avogadro_number       -- 6.022e23 mol⁻¹
+FROM DUAL;
+
+-- Complex physics calculations
+SELECT PLANCK() * C() / 500e-9 as photon_energy_500nm FROM DUAL;
+SELECT MP() / ME() as proton_electron_mass_ratio FROM DUAL;
+
+-- No FROM clause needed for simple calculations
+SELECT 2 + 2;
+SELECT SQRT(2) * PI();
+```
+
+**Scientific Constants Available:**
+- **Math**: `PI()`, `EULER()`, `TAU()`, `PHI()`, `SQRT2()`, `LN2()`, `LN10()`
+- **Physics - Fundamental**: `C()`, `G()`, `PLANCK()`, `HBAR()`, `BOLTZMANN()`, `AVOGADRO()`, `R()`
+- **Physics - Electromagnetic**: `E0()`, `MU0()`, `QE()`
+- **Physics - Particles**: `ME()`, `MP()`, `MN()`, `AMU()`
+- **Physics - Other**: `ALPHA()`, `RYDBERG()`, `SIGMA()`
+- **Conversions**: `DEGREES(radians)`, `RADIANS(degrees)`
 
 #### **String & Text Functions**
 ```sql
@@ -237,6 +272,7 @@ LIMIT 100
 ## 🖥️ Vim-Inspired Terminal UI
 
 ### **Lightning-Fast Navigation**
+- **Help**: Press `F1` for comprehensive help and keybindings
 - **Vim Keybindings**: `hjkl` movement, `g`/`G` for top/bottom, `/` and `?` for search
 - **Column Operations**: Sort (`s`), Pin (`p`), Hide (`H`) columns with single keystrokes  
 - **Smart Search**: Column search, data search, fuzzy matching with `n`/`N` navigation
@@ -247,7 +283,7 @@ LIMIT 100
 - **Key History**: See your last 10 keystrokes with 2s fade
 - **Query Caching**: Results cached for instant re-filtering
 - **Export**: `Ctrl+S` to save current view as CSV
-- **Debug Mode**: `F5` for internal state inspection
+- **Debug View**: Press `F5` to see internal state and diagnostics
 
 ## 🚀 **Why Choose SQL CLI?**
 
@@ -430,6 +466,39 @@ Ready-to-use chart examples are in the `scripts/` directory:
 - **Time Series Support**: Automatic timestamp parsing and time-based X-axis
 - **Interactive Navigation**: Pan and zoom to explore your data
 - **Terminal Native**: Pure terminal graphics, no GUI dependencies
+
+## ⚠️ SQL Features Not Yet Supported
+
+While SQL CLI provides extensive SQL functionality, some standard SQL features are not yet implemented:
+
+### **Aggregate Functions**
+- `COUNT(*)`, `COUNT(column)` - Row counting
+- `SUM(column)` - Sum of values
+- `AVG(column)` - Average calculation
+- `MIN(column)`, `MAX(column)` - Min/max values
+- `STDDEV()`, `VARIANCE()` - Statistical functions
+
+### **Grouping & Aggregation**
+- `GROUP BY` clause - Grouping rows
+- `HAVING` clause - Filtering groups
+- Aggregate expressions in SELECT
+
+### **Joins & Subqueries**
+- `JOIN`, `LEFT JOIN`, `RIGHT JOIN` - Table joins
+- `UNION`, `INTERSECT`, `EXCEPT` - Set operations
+- Subqueries and correlated queries
+- Common Table Expressions (CTEs)
+
+### **Data Modification**
+- `INSERT`, `UPDATE`, `DELETE` - Data modification
+- `CREATE TABLE`, `ALTER TABLE` - DDL operations
+
+### **Other Features**
+- `DISTINCT` keyword - Unique values only
+- Window functions (`ROW_NUMBER()`, `RANK()`, etc.)
+- `EXISTS`, `ALL`, `ANY` operators
+
+**Note**: SQL CLI is designed for read-only data analysis and exploration. For full SQL database functionality, consider using a traditional database system.
 
 ## 🔧 Development
 
