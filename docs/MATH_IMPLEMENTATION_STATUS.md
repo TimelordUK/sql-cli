@@ -97,16 +97,45 @@ SELECT id, a,
 FROM test_simple_math
 ```
 
-### Date Functions (Bonus)
+### Date Functions (Bonus) - ✅ COMPLETED!
 - ✅ `DATEDIFF('unit', date1, date2)` - Date difference
 - ✅ `DATEADD('unit', amount, date)` - Date arithmetic  
 - ✅ `NOW()` - Current timestamp
 - ✅ `TODAY()` - Current date
 
-### String Functions (Bonus)
+### String Functions (Bonus) - ✅ COMPLETED!
 - ✅ `TEXTJOIN(delimiter, ignore_empty, val1, val2, ...)` - Join values
 - ✅ Method calls: `name.Trim()`, `name.Length()`, `email.Contains('@')`
 - ✅ String methods: `StartsWith()`, `EndsWith()`, `IndexOf()`
+- ✅ `MID(string, start, length)` - Substring extraction
+- ✅ `UPPER(string)` - Convert to uppercase
+- ✅ `LOWER(string)` - Convert to lowercase
+- ✅ `TRIM(string)` - Remove leading/trailing spaces
+
+### Physics Constants - ✅ COMPLETED! (v1.35.0)
+Over 27 physics and mathematical constants as zero-argument functions:
+- ✅ **Fundamental**: `C()`, `G()`, `PLANCK()`, `HBAR()`, `K()`, `NA()`
+- ✅ **Electromagnetic**: `E0()`, `MU0()`, `QE()`, `ALPHA()`
+- ✅ **Particle Masses**: `ME()`, `MP()`, `MN()`, `AMU()`
+- ✅ **Mathematical**: `PI()`, `EULER()`, `TAU()`, `PHI()`, `SQRT2()`
+- ✅ **Other**: `R()`, `SIGMA()`, `RY()`
+
+### Unit Conversions - ✅ COMPLETED! (v1.35.0)
+- ✅ `CONVERT(value, from_unit, to_unit)` - Convert between 150+ units
+- ✅ **8 Categories**: Length, Mass, Temperature, Volume, Time, Area, Speed, Pressure
+- ✅ **Case-insensitive** with multiple aliases
+- ✅ **SI normalization** for accuracy
+
+### SQL Comments - ✅ COMPLETED! (v1.36.0)
+- ✅ **Single-line comments** with `--`
+- ✅ **Block comments** with `/* */`
+- ✅ **Works everywhere** - inline, multi-line, nested
+- ✅ **Perfect for documentation** in query files
+
+### DUAL Table Support - ✅ COMPLETED! (v1.35.0)
+- ✅ **Oracle-compatible** single-row table
+- ✅ **No FROM clause needed** - implicit DUAL
+- ✅ **Scientific calculator** functionality
 
 ## 📊 Overall Progress
 
@@ -119,30 +148,131 @@ FROM test_simple_math
 | **Bonus**: Date Functions | ✅ Complete | 4/4 | 100% |
 | **Bonus**: String Functions | ✅ Complete | 6+/6+ | 100% |
 
-## 🚀 Next Priority Recommendations
+## 🚀 Development Roadmap (Priority Order)
 
-### Option 1: Add Missing Math Functions (1-2 hours) ⭐ RECOMMENDED
-**Quick Wins, High Value**
-- Implement `GREATEST(a, b, ...)` and `LEAST(a, b, ...)`
-- Complete Phase 2 to 100%
-- Build on existing function infrastructure
+### ⭐ PHASE 1: Basic Aggregations WITHOUT GROUP BY (Next Sprint)
+**HIGH PRIORITY - Foundation for data analysis**
 
-### Option 2: Start Aggregate Functions (1-2 weeks)
-**High Impact, High Effort**
-- Implement SUM, AVG, COUNT, MIN, MAX
-- Add GROUP BY parsing and execution
-- Major architecture changes required
+#### Core Aggregates (Day 1-2)
+- `COUNT(*)` - Count all rows
+- `COUNT(column)` - Count non-null values  
+- `COUNT(DISTINCT column)` - Count unique values
+- `SUM(column)` - Sum of values
+- `AVG(column)` - Average value
+- `MIN(column)` - Minimum value
+- `MAX(column)` - Maximum value
 
-### Option 3: Advanced Math Functions (2-3 hours)
-**Nice to Have**
-- Trigonometric: `SIN`, `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`
-- More statistical: `MEDIAN`, `MODE`, `PERCENTILE`
+#### Statistical Aggregates (Day 3)
+- `STDDEV(column)` / `STDEV(column)` - Standard deviation
+- `VARIANCE(column)` / `VAR(column)` - Variance  
+- `MEDIAN(column)` - Median value
+- `MODE(column)` - Most frequent value
 
-### Option 4: CASE WHEN Enhancements (3-5 hours)
-**Polish Existing Feature**
-- Add CASE support in WHERE clauses
-- Implement modulo operator (%) in parser
-- Add CAST function for type conversions
+**Example Usage:**
+```sql
+-- Works with WHERE clauses
+SELECT 
+    COUNT(*) as total_trades,
+    AVG(price) as avg_price,
+    STDDEV(price) as price_volatility,
+    MIN(timestamp) as first_trade,
+    MAX(timestamp) as last_trade
+FROM trades
+WHERE category = 'EQUITY' 
+  AND price > 100
+```
+
+### ⭐ PHASE 2: Comparison & Utility Functions (Quick Wins)
+**MEDIUM PRIORITY - High value, easy implementation**
+
+#### Comparison Functions (Day 4)
+- `GREATEST(a, b, c, ...)` - Return largest value
+- `LEAST(a, b, c, ...)` - Return smallest value
+- `COALESCE(a, b, c, ...)` - First non-null value
+- `NULLIF(a, b)` - Return NULL if a = b
+
+#### Number Theory Functions (Day 5)
+- `ISPRIME(n)` - Check if number is prime
+- `PRIME(n)` - Return nth prime number
+- `NEXTPRIME(n)` - Next prime after n
+- `GCD(a, b)` - Greatest common divisor
+- `LCM(a, b)` - Least common multiple
+- `FACTORIAL(n)` - n!
+
+**Example Usage:**
+```sql
+SELECT 
+    GREATEST(bid, ask, last) as high_price,
+    COALESCE(preferred_price, market_price, 0) as price,
+    PRIME(10) as tenth_prime,  -- Returns 29
+    GCD(48, 18) as common_divisor  -- Returns 6
+FROM data
+```
+
+### ⭐ PHASE 3: Financial Functions (Domain-Specific)
+**MEDIUM PRIORITY - High value for financial users**
+
+#### Time Value of Money (Week 2)
+- `PV(rate, nper, pmt, [fv], [type])` - Present value
+- `FV(rate, nper, pmt, [pv], [type])` - Future value  
+- `PMT(rate, nper, pv, [fv], [type])` - Payment amount
+- `RATE(nper, pmt, pv, [fv], [type])` - Interest rate
+- `NPER(rate, pmt, pv, [fv], [type])` - Number of periods
+
+#### Investment Analysis
+- `NPV(rate, cashflow1, cashflow2, ...)` - Net present value
+- `IRR(cashflow1, cashflow2, ...)` - Internal rate of return
+- `XIRR(values, dates)` - IRR for irregular periods
+- `COMPOUND(principal, rate, periods)` - Compound interest
+
+**Example Usage:**
+```sql
+SELECT 
+    -- Monthly payment for $200,000 loan at 5% for 30 years
+    PMT(0.05/12, 30*12, -200000) as monthly_payment,
+    
+    -- Future value of $100/month for 10 years at 7% annual
+    FV(0.07/12, 10*12, -100) as savings_value
+FROM DUAL
+```
+
+### ⭐ PHASE 4: Single-Column GROUP BY
+**HIGH COMPLEXITY - Major feature addition**
+
+#### Basic Implementation (Week 3)
+- Parse GROUP BY clause
+- Build groups in memory
+- Apply aggregates per group
+- Support HAVING clause
+
+**Example Usage:**
+```sql
+SELECT 
+    category,
+    COUNT(*) as count,
+    AVG(price) as avg_price,
+    SUM(quantity) as total_volume
+FROM trades
+WHERE date >= '2024-01-01'
+GROUP BY category
+HAVING COUNT(*) > 10
+```
+
+### ⭐ PHASE 5: Advanced Statistical Functions
+**LOWER PRIORITY - Nice to have**
+
+#### Distribution Functions
+- `PERCENTILE(column, p)` - Percentile value
+- `QUARTILE(column, q)` - Quartile (1, 2, or 3)
+- `CORR(col1, col2)` - Correlation coefficient
+- `COVAR(col1, col2)` - Covariance
+- `SKEW(column)` - Skewness
+- `KURTOSIS(column)` - Kurtosis
+
+#### Window Functions (Future)
+- `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()`
+- `LAG()`, `LEAD()`
+- `FIRST_VALUE()`, `LAST_VALUE()`
 
 ## 🎯 Recommendation: Add GREATEST/LEAST Functions
 
