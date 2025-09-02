@@ -1,43 +1,40 @@
-# SQL CLI v1.35.0
+# SQL CLI v1.36.0
 
-**Release Date:** September 01, 2025
+**Release Date:** September 02, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 12
-- **Files updated:** 31
+- **Commits in this release:** 7
+- **Files updated:** 21
 
 ## ✨ Highlights
 
-### 🎨 Visual Improvements
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- Add scientific calculator mode with DUAL table and physics constants
-- Add string functions MID, UPPER, LOWER, TRIM
-- Add SQL-driven charting with real-world VWAP examples
-- Add standalone charting system with time series support
+- Add astronomical constants for solar system calculations
+- Add configurable date notation support (US vs European)
+- Add SQL comment support for better documentation
+- Add comprehensive unit conversion system with CONVERT() function
 
 ### 🐛 Bug Fixes
-- Add support for DISTINCT in aggregate functions
-- Remove unused imports to fix CI build
-- Update GitHub Actions workflows to use new Python test directory
+- Change hide_empty_columns default to false
+
+### 📚 Documentation
+- Update math implementation roadmap with priorities
 
 <details>
 <summary>📋 View all commits</summary>
 
-- fix: Add support for DISTINCT in aggregate functions (TimelordUK)
-- chore: Bump version to 1.35.0 for release (TimelordUK)
-- feat: Add scientific calculator mode with DUAL table and physics constants (TimelordUK)
-- feat: Add string functions MID, UPPER, LOWER, TRIM (TimelordUK)
-- ci: Disable redundant SQL Engine Tests workflow (TimelordUK)
-- Merge pull request #18 from TimelordUK/chart_eng_v1 (TimelordUK)
-- fix: Remove unused imports to fix CI build (TimelordUK)
-- feat: Add SQL-driven charting with real-world VWAP examples (TimelordUK)
-- charting (TimelordUK)
-- feat: Add standalone charting system with time series support (TimelordUK)
-- trigger: Re-run workflows with updated test paths (TimelordUK)
-- fix: Update GitHub Actions workflows to use new Python test directory (TimelordUK)
+- chore: Release v1.36.0 - Astronomical Constants & Solar System Calculations (TimelordUK)
+- feat: Add astronomical constants for solar system calculations (TimelordUK)
+- fix: Change hide_empty_columns default to false (TimelordUK)
+- feat: Add configurable date notation support (US vs European) (TimelordUK)
+- docs: Update math implementation roadmap with priorities (TimelordUK)
+- feat: Add SQL comment support for better documentation (TimelordUK)
+- feat: Add comprehensive unit conversion system with CONVERT() function (TimelordUK)
 
 </details>
 
