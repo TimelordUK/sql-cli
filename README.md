@@ -584,6 +584,85 @@ FROM DUAL;
 
 **Pressure**: Pa, kPa, MPa, GPa, bar, mbar, atm, psi, torr, mmHg
 
+## 🌌 Astronomical Constants & Calculations
+
+SQL CLI includes comprehensive astronomical constants for solar system calculations and astrophysics:
+
+### **Solar System Constants**
+```sql
+-- Calculate Earth's surface gravity (should be ~9.82 m/s²)
+SELECT G() * MASS_EARTH() / POWER(6.371e6, 2) as earth_gravity FROM DUAL;
+
+-- Compare planetary masses
+SELECT 
+    MASS_JUPITER() / MASS_EARTH() as jupiter_earth_ratio,  -- ~318x
+    MASS_EARTH() / MASS_MOON() as earth_moon_ratio        -- ~81x
+FROM DUAL;
+
+-- Orbital distances in AU (Astronomical Units)
+SELECT 
+    DIST_MARS() / AU() as mars_au,        -- ~1.52 AU
+    DIST_JUPITER() / AU() as jupiter_au,  -- ~5.2 AU
+    DIST_NEPTUNE() / AU() as neptune_au   -- ~30.1 AU
+FROM DUAL;
+```
+
+### **Astrophysics Calculations**
+```sql
+-- Escape velocity from celestial bodies
+SELECT 
+    SQRT(2 * G() * MASS_EARTH() / 6.371e6) as earth_escape_ms,  -- ~11,200 m/s
+    SQRT(2 * G() * MASS_MOON() / 1.737e6) as moon_escape_ms     -- ~2,380 m/s
+FROM DUAL;
+
+-- Schwarzschild radius (black hole event horizon)
+SELECT 
+    2 * G() * MASS_SUN() / (C() * C()) as sun_schwarzschild_m  -- ~2,954 m
+FROM DUAL;
+
+-- Kepler's Third Law: Calculate orbital period
+SELECT 
+    SQRT(4 * PI() * PI() * POWER(DIST_EARTH(), 3) / (G() * MASS_SUN())) 
+    / (365.25 * 24 * 3600) as earth_period_years  -- Should be ~1.0
+FROM DUAL;
+```
+
+### **Combined with Unit Conversions**
+```sql
+-- Convert astronomical distances to human-scale units
+SELECT 
+    CONVERT(DIST_EARTH(), 'm', 'miles') as earth_orbit_miles,  -- ~93 million
+    CONVERT(LIGHTYEAR(), 'm', 'km') as lightyear_km,          -- ~9.46 trillion
+    CONVERT(PARSEC(), 'm', 'lightyear') as parsec_in_ly       -- ~3.26
+FROM DUAL;
+
+-- Calculate with mixed units
+SELECT 
+    G() * MASS_EARTH() / POWER(CONVERT(6371, 'km', 'm'), 2) as g_from_km
+FROM DUAL;
+```
+
+### **Available Astronomical Constants**
+
+**Particle Radii**:
+- `RE()` - Classical electron radius (2.82×10⁻¹⁵ m)
+- `RP()` - Proton radius (8.41×10⁻¹⁶ m)
+- `RN()` - Neutron radius (8.4×10⁻¹⁶ m)
+
+**Solar System Masses** (kg):
+- `MASS_SUN()` - 1.989×10³⁰
+- `MASS_EARTH()` - 5.972×10²⁴
+- `MASS_MOON()` - 7.342×10²²
+- `MASS_MERCURY()`, `MASS_VENUS()`, `MASS_MARS()`, `MASS_JUPITER()`, `MASS_SATURN()`, `MASS_URANUS()`, `MASS_NEPTUNE()`
+
+**Orbital Distances** (meters from Sun):
+- `DIST_MERCURY()` through `DIST_NEPTUNE()`
+- `AU()` - Astronomical Unit (1.496×10¹¹ m)
+
+**Distance Units**:
+- `PARSEC()` - 3.086×10¹⁶ m
+- `LIGHTYEAR()` - 9.461×10¹⁵ m
+
 ## ⚠️ SQL Features Not Yet Supported
 
 While SQL CLI provides extensive SQL functionality, some standard SQL features are not yet implemented:

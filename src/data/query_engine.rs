@@ -118,7 +118,6 @@ impl QueryEngine {
         matrix[len1][len2]
     }
 
-
     /// Execute a SQL query on a DataTable and return a DataView (for backward compatibility)
     pub fn execute(&self, table: Arc<DataTable>, sql: &str) -> Result<DataView> {
         let start_time = Instant::now();

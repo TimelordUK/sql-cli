@@ -114,7 +114,10 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
 
     // Use QueryExecutionService with full BehaviorConfig
     let mut behavior_config = app_config.behavior.clone();
-    debug!("Using date notation: {}", behavior_config.default_date_notation);
+    debug!(
+        "Using date notation: {}",
+        behavior_config.default_date_notation
+    );
     // Command line args override config file settings
     if config.case_insensitive {
         behavior_config.case_insensitive_default = true;
@@ -122,7 +125,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     if config.auto_hide_empty {
         behavior_config.hide_empty_columns = true;
     }
-    
+
     let query_service = QueryExecutionService::with_behavior_config(behavior_config);
     let result = query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))?;
 

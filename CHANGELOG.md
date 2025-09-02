@@ -5,6 +5,51 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.0] - 2025-09-02
+
+### 🌌 Astronomical Constants & Solar System Calculations
+
+This release transforms SQL CLI into a powerful scientific calculator with comprehensive astronomical constants for astrophysics and solar system calculations.
+
+### ✨ New Features
+
+#### **Astronomical Constants**
+- **Particle Radii** - `RE()`, `RP()`, `RN()` for electron, proton, and neutron radii
+- **Solar System Masses** - All planets, Sun, and Moon masses in kg
+  - `MASS_SUN()` - 1.989×10³⁰ kg
+  - `MASS_EARTH()` - 5.972×10²⁴ kg  
+  - `MASS_MOON()` - 7.342×10²² kg
+  - `MASS_MERCURY()` through `MASS_NEPTUNE()` for all planets
+- **Orbital Distances** - Precise distances from Sun in meters
+  - `DIST_MERCURY()` through `DIST_NEPTUNE()`
+  - `AU()` - Astronomical Unit (1.496×10¹¹ m)
+- **Distance Units** - `PARSEC()` and `LIGHTYEAR()` constants
+
+#### **Scientific Calculations Now Possible**
+```sql
+-- Calculate Earth's surface gravity (9.82 m/s²)
+SELECT G() * MASS_EARTH() / POWER(6.371e6, 2) FROM DUAL;
+
+-- Escape velocity from Moon
+SELECT SQRT(2 * G() * MASS_MOON() / 1.737e6) FROM DUAL;
+
+-- Schwarzschild radius of the Sun
+SELECT 2 * G() * MASS_SUN() / (C() * C()) FROM DUAL;
+
+-- Kepler's Third Law orbital periods
+SELECT SQRT(4*PI()*PI()*POWER(DIST_MARS(),3)/(G()*MASS_SUN()))/(365.25*24*3600) FROM DUAL;
+```
+
+### 🧪 Testing
+- Added comprehensive test suite with 21 tests for astronomical calculations
+- Tests cover Kepler's laws, escape velocities, gravitational forces, and planetary densities
+- All 243 Python tests passing
+
+### 📚 Documentation
+- Updated README with dedicated astronomical constants section
+- Added examples for astrophysics calculations
+- Documented all available constants with scientific notation
+
 ## [1.33.0] - 2025-08-31
 
 ### 🐛 Critical Bug Fixes

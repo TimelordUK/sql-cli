@@ -1,6 +1,6 @@
 [package]
 name = "sql-cli"
-version = "1.35.0"
+version = "1.36.0"
 edition = "2021"
 authors = ["TimelordUK <sjames8888@gmail.com>"]
 description = "SQL query tool for CSV/JSON with both interactive TUI and non-interactive CLI modes - perfect for exploration and automation"
