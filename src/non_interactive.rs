@@ -5,6 +5,7 @@ use std::path::Path;
 use std::time::Instant;
 use tracing::{debug, info};
 
+use crate::config::config::Config;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable};
@@ -105,8 +106,24 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
 
     let query_start = Instant::now();
 
-    // Use QueryExecutionService for consistency with interactive mode
-    let query_service = QueryExecutionService::new(config.case_insensitive, config.auto_hide_empty);
+    // Load configuration file to get date notation and other settings
+    let app_config = Config::load().unwrap_or_else(|e| {
+        debug!("Could not load config file: {}. Using defaults.", e);
+        Config::default()
+    });
+
+    // Use QueryExecutionService with full BehaviorConfig
+    let mut behavior_config = app_config.behavior.clone();
+    debug!("Using date notation: {}", behavior_config.default_date_notation);
+    // Command line args override config file settings
+    if config.case_insensitive {
+        behavior_config.case_insensitive_default = true;
+    }
+    if config.auto_hide_empty {
+        behavior_config.hide_empty_columns = true;
+    }
+    
+    let query_service = QueryExecutionService::with_behavior_config(behavior_config);
     let result = query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))?;
 
     let query_time = query_start.elapsed();

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
 
+use crate::config::config::BehaviorConfig;
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable};
@@ -14,12 +15,53 @@ use crate::sql::recursive_parser::{
 /// Query engine that executes SQL directly on DataTable
 pub struct QueryEngine {
     case_insensitive: bool,
+    date_notation: String,
+    behavior_config: Option<BehaviorConfig>,
 }
 
 impl QueryEngine {
     pub fn new() -> Self {
         Self {
             case_insensitive: false,
+            date_notation: "us".to_string(),
+            behavior_config: None,
+        }
+    }
+
+    pub fn with_behavior_config(config: BehaviorConfig) -> Self {
+        let case_insensitive = config.case_insensitive_default;
+        let date_notation = config.default_date_notation.clone();
+        Self {
+            case_insensitive,
+            date_notation,
+            behavior_config: Some(config),
+        }
+    }
+
+    pub fn with_date_notation(date_notation: String) -> Self {
+        Self {
+            case_insensitive: false,
+            date_notation,
+            behavior_config: None,
+        }
+    }
+
+    pub fn with_case_insensitive(case_insensitive: bool) -> Self {
+        Self {
+            case_insensitive,
+            date_notation: "us".to_string(),
+            behavior_config: None,
+        }
+    }
+
+    pub fn with_case_insensitive_and_date_notation(
+        case_insensitive: bool,
+        date_notation: String,
+    ) -> Self {
+        Self {
+            case_insensitive,
+            date_notation,
+            behavior_config: None,
         }
     }
 
@@ -76,9 +118,6 @@ impl QueryEngine {
         matrix[len1][len2]
     }
 
-    pub fn with_case_insensitive(case_insensitive: bool) -> Self {
-        Self { case_insensitive }
-    }
 
     /// Execute a SQL query on a DataTable and return a DataView (for backward compatibility)
     pub fn execute(&self, table: Arc<DataTable>, sql: &str) -> Result<DataView> {
@@ -137,8 +176,11 @@ impl QueryEngine {
                 if row_idx < 3 {
                     debug!("QueryEngine: Evaluating WHERE clause for row {}", row_idx);
                 }
-                let evaluator =
-                    RecursiveWhereEvaluator::with_case_insensitive(&*table, self.case_insensitive);
+                let evaluator = RecursiveWhereEvaluator::with_config(
+                    &*table,
+                    self.case_insensitive,
+                    self.date_notation.clone(),
+                );
                 match evaluator.evaluate(where_clause, row_idx) {
                     Ok(result) => {
                         if row_idx < 3 {
@@ -317,7 +359,8 @@ impl QueryEngine {
         }
 
         // Calculate values for each row
-        let evaluator = ArithmeticEvaluator::new(source_table);
+        let evaluator =
+            ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone());
 
         for &row_idx in visible_rows {
             let mut row_values = Vec::new();

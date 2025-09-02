@@ -1539,10 +1539,7 @@ impl EnhancedTuiApp {
             viewport_efficiency: RefCell::new(None),
             shadow_state: RefCell::new(crate::ui::state::shadow_state::ShadowStateManager::new()),
             table_widget_manager: RefCell::new(TableWidgetManager::new()),
-            query_orchestrator: QueryOrchestrator::new(
-                config.behavior.case_insensitive_default,
-                config.behavior.hide_empty_columns,
-            ),
+            query_orchestrator: QueryOrchestrator::with_behavior_config(config.behavior.clone()),
             debug_registry: DebugRegistry::new(),
             memory_tracker: MemoryTracker::new(100),
         };

@@ -1,4 +1,5 @@
 use crate::app_state_container::AppStateContainer;
+use crate::config::config::BehaviorConfig;
 use crate::data::data_view::DataView;
 use crate::services::{QueryExecutionResult, QueryExecutionService};
 use crate::ui::search::vim_search_adapter::VimSearchAdapter;
@@ -16,6 +17,12 @@ impl QueryOrchestrator {
     pub fn new(case_insensitive: bool, auto_hide_empty: bool) -> Self {
         Self {
             query_execution_service: QueryExecutionService::new(case_insensitive, auto_hide_empty),
+        }
+    }
+
+    pub fn with_behavior_config(behavior_config: BehaviorConfig) -> Self {
+        Self {
+            query_execution_service: QueryExecutionService::with_behavior_config(behavior_config),
         }
     }
 

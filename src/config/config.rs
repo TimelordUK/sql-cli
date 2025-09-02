@@ -85,6 +85,10 @@ pub struct BehaviorConfig {
 
     /// Automatically hide empty/null columns on data load
     pub hide_empty_columns: bool,
+
+    /// Default date notation: "us" (MM/DD/YYYY) or "european" (DD/MM/YYYY)
+    /// This determines how ambiguous dates like 04/09/2025 are interpreted
+    pub default_date_notation: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +216,7 @@ impl Default for BehaviorConfig {
             enable_history: true,
             max_history_entries: 1000,
             hide_empty_columns: true, // Default to true for cleaner display with large datasets
+            default_date_notation: "us".to_string(), // Default to US format (MM/DD/YYYY)
         }
     }
 }
@@ -290,6 +295,10 @@ impl Config {
         info.push_str(&format!(
             "  hide_empty_columns = {}\n",
             self.behavior.hide_empty_columns
+        ));
+        info.push_str(&format!(
+            "  default_date_notation = \"{}\"\n",
+            self.behavior.default_date_notation
         ));
 
         // Keybindings configuration
@@ -432,6 +441,11 @@ max_history_entries = 1000
 
 # Automatically hide empty/null columns when data is loaded (can be toggled with 'E' key)
 hide_empty_columns = true
+
+# Default date notation for parsing ambiguous dates
+# "us" = MM/DD/YYYY format (e.g., 04/09/2025 = April 9, 2025)
+# "european" = DD/MM/YYYY format (e.g., 04/09/2025 = September 4, 2025)
+default_date_notation = "us"
 
 [theme]
 # Color scheme: "default", "dark", "light", "solarized"

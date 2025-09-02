@@ -9,6 +9,7 @@ use tracing::debug;
 pub struct RecursiveWhereEvaluator<'a> {
     table: &'a DataTable,
     case_insensitive: bool,
+    date_notation: String,
 }
 
 impl<'a> RecursiveWhereEvaluator<'a> {
@@ -16,6 +17,15 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         Self {
             table,
             case_insensitive: false,
+            date_notation: "us".to_string(),
+        }
+    }
+
+    pub fn with_date_notation(table: &'a DataTable, date_notation: String) -> Self {
+        Self {
+            table,
+            case_insensitive: false,
+            date_notation,
         }
     }
 
@@ -76,6 +86,19 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         Self {
             table,
             case_insensitive,
+            date_notation: "us".to_string(),
+        }
+    }
+
+    pub fn with_config(
+        table: &'a DataTable,
+        case_insensitive: bool,
+        date_notation: String,
+    ) -> Self {
+        Self {
+            table,
+            case_insensitive,
+            date_notation,
         }
     }
 
@@ -430,7 +453,8 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 right: _expr_right,
             } if matches!(arith_op.as_str(), "+" | "-" | "*" | "/") => {
                 // Handle arithmetic expressions using ArithmeticEvaluator
-                let evaluator = ArithmeticEvaluator::new(self.table);
+                let evaluator =
+                    ArithmeticEvaluator::with_date_notation(self.table, self.date_notation.clone());
                 let computed_value = evaluator.evaluate(left, row_index)?;
                 if row_index < 3 {
                     debug!(
@@ -442,7 +466,8 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             }
             SqlExpression::FunctionCall { name, .. } => {
                 // Handle function calls using ArithmeticEvaluator
-                let evaluator = ArithmeticEvaluator::new(self.table);
+                let evaluator =
+                    ArithmeticEvaluator::with_date_notation(self.table, self.date_notation.clone());
                 let computed_value = evaluator.evaluate(left, row_index)?;
                 if row_index < 3 {
                     debug!(
@@ -1224,7 +1249,10 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             _ => {
                 // Use ArithmeticEvaluator to get the value, then convert to boolean
                 let evaluator =
-                    crate::data::arithmetic_evaluator::ArithmeticEvaluator::new(self.table);
+                    crate::data::arithmetic_evaluator::ArithmeticEvaluator::with_date_notation(
+                        self.table,
+                        self.date_notation.clone(),
+                    );
                 let value = evaluator.evaluate(expr, row_index)?;
 
                 match value {

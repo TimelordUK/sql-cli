@@ -1,3 +1,4 @@
+use crate::config::config::BehaviorConfig;
 use crate::data::data_view::DataView;
 use crate::data::query_engine::QueryEngine;
 use anyhow::Result;
@@ -32,6 +33,8 @@ pub struct QueryStats {
 pub struct QueryExecutionService {
     case_insensitive: bool,
     auto_hide_empty: bool,
+    date_notation: String,
+    behavior_config: Option<BehaviorConfig>,
 }
 
 impl QueryExecutionService {
@@ -39,6 +42,33 @@ impl QueryExecutionService {
         Self {
             case_insensitive,
             auto_hide_empty,
+            date_notation: "us".to_string(),
+            behavior_config: None,
+        }
+    }
+
+    pub fn with_behavior_config(behavior_config: BehaviorConfig) -> Self {
+        let case_insensitive = behavior_config.case_insensitive_default;
+        let auto_hide_empty = behavior_config.hide_empty_columns;
+        let date_notation = behavior_config.default_date_notation.clone();
+        Self {
+            case_insensitive,
+            auto_hide_empty,
+            date_notation,
+            behavior_config: Some(behavior_config),
+        }
+    }
+
+    pub fn with_date_notation(
+        case_insensitive: bool,
+        auto_hide_empty: bool,
+        date_notation: String,
+    ) -> Self {
+        Self {
+            case_insensitive,
+            auto_hide_empty,
+            date_notation,
+            behavior_config: None,
         }
     }
 
@@ -102,7 +132,14 @@ impl QueryExecutionService {
 
         // 2. Execute the query
         let query_start = std::time::Instant::now();
-        let engine = QueryEngine::with_case_insensitive(self.case_insensitive);
+        let engine = if let Some(ref config) = self.behavior_config {
+            QueryEngine::with_behavior_config(config.clone())
+        } else {
+            QueryEngine::with_case_insensitive_and_date_notation(
+                self.case_insensitive,
+                self.date_notation.clone(),
+            )
+        };
         let mut new_dataview = engine.execute(table_arc, query)?;
         let query_engine_time = query_start.elapsed();
 
@@ -141,6 +178,10 @@ impl QueryExecutionService {
 
     pub fn set_auto_hide_empty(&mut self, auto_hide: bool) {
         self.auto_hide_empty = auto_hide;
+    }
+
+    pub fn set_date_notation(&mut self, date_notation: String) {
+        self.date_notation = date_notation;
     }
 }
 
