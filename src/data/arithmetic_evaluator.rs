@@ -1273,6 +1273,193 @@ impl<'a> ArithmeticEvaluator<'a> {
                 }
                 Ok(DataValue::Float(5.670374419e-8))
             }
+            // Particle Radii Constants
+            "RE" | "RADIUS_ELECTRON" => {
+                // Classical electron radius (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("RE() takes no arguments"));
+                }
+                Ok(DataValue::Float(2.8179403262e-15))
+            }
+            "RP" | "RADIUS_PROTON" => {
+                // Proton radius (m) - CODATA 2018 value
+                if !args.is_empty() {
+                    return Err(anyhow!("RP() takes no arguments"));
+                }
+                Ok(DataValue::Float(8.414e-16))
+            }
+            "RN" | "RADIUS_NEUTRON" => {
+                // Neutron radius (m) - approximate
+                if !args.is_empty() {
+                    return Err(anyhow!("RN() takes no arguments"));
+                }
+                Ok(DataValue::Float(8.4e-16))
+            }
+            // Astronomical Constants - Solar System
+            "MASS_SUN" | "MSUN" => {
+                // Solar mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MASS_SUN() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.98892e30))
+            }
+            "RADIUS_SUN" | "RSUN" => {
+                // Solar radius (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("RADIUS_SUN() takes no arguments"));
+                }
+                Ok(DataValue::Float(6.96342e8))
+            }
+            "MASS_EARTH" | "MEARTH" => {
+                // Earth mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MASS_EARTH() takes no arguments"));
+                }
+                Ok(DataValue::Float(5.97237e24))
+            }
+            "RADIUS_EARTH" | "REARTH" => {
+                // Earth mean radius (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("RADIUS_EARTH() takes no arguments"));
+                }
+                Ok(DataValue::Float(6.371e6))
+            }
+            "MASS_MOON" | "MMOON" => {
+                // Moon mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MASS_MOON() takes no arguments"));
+                }
+                Ok(DataValue::Float(7.342e22))
+            }
+            "RADIUS_MOON" | "RMOON" => {
+                // Moon mean radius (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("RADIUS_MOON() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.7374e6))
+            }
+            // Planets
+            "MASS_MERCURY" => {
+                // Mercury mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MASS_MERCURY() takes no arguments"));
+                }
+                Ok(DataValue::Float(3.3011e23))
+            }
+            "MASS_VENUS" => {
+                // Venus mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MASS_VENUS() takes no arguments"));
+                }
+                Ok(DataValue::Float(4.8675e24))
+            }
+            "MASS_MARS" => {
+                // Mars mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MASS_MARS() takes no arguments"));
+                }
+                Ok(DataValue::Float(6.4171e23))
+            }
+            "MASS_JUPITER" => {
+                // Jupiter mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MASS_JUPITER() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.8982e27))
+            }
+            "MASS_SATURN" => {
+                // Saturn mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MASS_SATURN() takes no arguments"));
+                }
+                Ok(DataValue::Float(5.6834e26))
+            }
+            "MASS_URANUS" => {
+                // Uranus mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MASS_URANUS() takes no arguments"));
+                }
+                Ok(DataValue::Float(8.6810e25))
+            }
+            "MASS_NEPTUNE" => {
+                // Neptune mass (kg)
+                if !args.is_empty() {
+                    return Err(anyhow!("MASS_NEPTUNE() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.02413e26))
+            }
+            // Orbital distances (mean distance from Sun in meters)
+            "DIST_MERCURY" | "AU_MERCURY" => {
+                // Mercury mean distance from Sun (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("DIST_MERCURY() takes no arguments"));
+                }
+                Ok(DataValue::Float(5.791e10))
+            }
+            "DIST_VENUS" | "AU_VENUS" => {
+                // Venus mean distance from Sun (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("DIST_VENUS() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.082e11))
+            }
+            "DIST_EARTH" | "AU_EARTH" | "AU" => {
+                // Earth mean distance from Sun = 1 AU (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("AU() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.495978707e11))
+            }
+            "DIST_MARS" | "AU_MARS" => {
+                // Mars mean distance from Sun (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("DIST_MARS() takes no arguments"));
+                }
+                Ok(DataValue::Float(2.279e11))
+            }
+            "DIST_JUPITER" | "AU_JUPITER" => {
+                // Jupiter mean distance from Sun (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("DIST_JUPITER() takes no arguments"));
+                }
+                Ok(DataValue::Float(7.786e11))
+            }
+            "DIST_SATURN" | "AU_SATURN" => {
+                // Saturn mean distance from Sun (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("DIST_SATURN() takes no arguments"));
+                }
+                Ok(DataValue::Float(1.4335e12))
+            }
+            "DIST_URANUS" | "AU_URANUS" => {
+                // Uranus mean distance from Sun (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("DIST_URANUS() takes no arguments"));
+                }
+                Ok(DataValue::Float(2.8725e12))
+            }
+            "DIST_NEPTUNE" | "AU_NEPTUNE" => {
+                // Neptune mean distance from Sun (m)
+                if !args.is_empty() {
+                    return Err(anyhow!("DIST_NEPTUNE() takes no arguments"));
+                }
+                Ok(DataValue::Float(4.4951e12))
+            }
+            // Other useful astronomical constants
+            "PARSEC" | "PC" => {
+                // Parsec in meters
+                if !args.is_empty() {
+                    return Err(anyhow!("PARSEC() takes no arguments"));
+                }
+                Ok(DataValue::Float(3.0857e16))
+            }
+            "LIGHTYEAR" | "LY" => {
+                // Light year in meters
+                if !args.is_empty() {
+                    return Err(anyhow!("LIGHTYEAR() takes no arguments"));
+                }
+                Ok(DataValue::Float(9.4607e15))
+            }
             // Angle conversion functions (demonstrating easy extensibility)
             "DEGREES" => {
                 // Convert radians to degrees
