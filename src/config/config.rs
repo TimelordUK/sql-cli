@@ -215,7 +215,7 @@ impl Default for BehaviorConfig {
             cache_dir: None,
             enable_history: true,
             max_history_entries: 1000,
-            hide_empty_columns: true, // Default to true for cleaner display with large datasets
+            hide_empty_columns: false, // Default to false to avoid hiding data unexpectedly
             default_date_notation: "us".to_string(), // Default to US format (MM/DD/YYYY)
         }
     }
@@ -440,7 +440,7 @@ enable_history = true
 max_history_entries = 1000
 
 # Automatically hide empty/null columns when data is loaded (can be toggled with 'E' key)
-hide_empty_columns = true
+hide_empty_columns = false
 
 # Default date notation for parsing ambiguous dates
 # "us" = MM/DD/YYYY format (e.g., 04/09/2025 = April 9, 2025)
