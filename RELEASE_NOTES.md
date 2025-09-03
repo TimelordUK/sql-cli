@@ -1,40 +1,36 @@
-# SQL CLI v1.36.0
+# SQL CLI v1.37.0
 
-**Release Date:** September 02, 2025
+**Release Date:** September 03, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 7
-- **Files updated:** 21
+- **Commits in this release:** 6
+- **Files updated:** 20
 
 ## ✨ Highlights
 
-### 🔍 Enhanced Debugging
-- **Better Diagnostics**: Improved error messages and state dumps
+### 💾 Data Protection
+- **History Recovery**: Automatic recovery from corrupted files
+- **Atomic Writes**: Safer file operations to prevent data loss
 
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- Add astronomical constants for solar system calculations
-- Add configurable date notation support (US vs European)
-- Add SQL comment support for better documentation
-- Add comprehensive unit conversion system with CONVERT() function
+- Add solar body radius functions and chemistry documentation
+- Add boolean literal support to SQL parser
+- Implement SQL aggregate functions (SUM, AVG, COUNT, MIN, MAX)
+- Implement function registry architecture for SQL constants
 
 ### 🐛 Bug Fixes
-- Change hide_empty_columns default to false
-
-### 📚 Documentation
-- Update math implementation roadmap with priorities
+- Date parsing now respects configured date notation for datetime values
 
 <details>
 <summary>📋 View all commits</summary>
 
-- chore: Release v1.36.0 - Astronomical Constants & Solar System Calculations (TimelordUK)
-- feat: Add astronomical constants for solar system calculations (TimelordUK)
-- fix: Change hide_empty_columns default to false (TimelordUK)
-- feat: Add configurable date notation support (US vs European) (TimelordUK)
-- docs: Update math implementation roadmap with priorities (TimelordUK)
-- feat: Add SQL comment support for better documentation (TimelordUK)
-- feat: Add comprehensive unit conversion system with CONVERT() function (TimelordUK)
+- feat: Add solar body radius functions and chemistry documentation (TimelordUK)
+- feat: Add boolean literal support to SQL parser (TimelordUK)
+- feat: Implement SQL aggregate functions (SUM, AVG, COUNT, MIN, MAX) (TimelordUK)
+- feat: Implement function registry architecture for SQL constants (TimelordUK)
+- fix: Date parsing now respects configured date notation for datetime values (TimelordUK)
 
 </details>
 
