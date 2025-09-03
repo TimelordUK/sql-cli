@@ -413,6 +413,7 @@ pub enum SqlExpression {
     Column(String),
     StringLiteral(String),
     NumberLiteral(String),
+    BooleanLiteral(bool),
     DateTimeConstructor {
         year: i32,
         month: u32,
@@ -1336,6 +1337,16 @@ impl Parser {
             Token::Identifier(id) => {
                 let id_upper = id.to_uppercase();
                 let id_clone = id.clone();
+
+                // Check for boolean literals first
+                if id_upper == "TRUE" {
+                    self.advance();
+                    return Ok(SqlExpression::BooleanLiteral(true));
+                } else if id_upper == "FALSE" {
+                    self.advance();
+                    return Ok(SqlExpression::BooleanLiteral(false));
+                }
+
                 self.advance();
 
                 // Check if this is a function call (identifier followed by parenthesis)
@@ -1712,6 +1723,7 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
         SqlExpression::Column(name) => format!("Column(\"{}\")", name),
         SqlExpression::StringLiteral(value) => format!("StringLiteral(\"{}\")", value),
         SqlExpression::NumberLiteral(value) => format!("NumberLiteral({})", value),
+        SqlExpression::BooleanLiteral(value) => format!("BooleanLiteral({})", value),
         SqlExpression::DateTimeConstructor {
             year,
             month,
@@ -2302,6 +2314,7 @@ fn format_expression(expr: &SqlExpression) -> String {
         SqlExpression::Column(name) => name.clone(),
         SqlExpression::StringLiteral(s) => format!("'{}'", s),
         SqlExpression::NumberLiteral(n) => n.clone(),
+        SqlExpression::BooleanLiteral(b) => b.to_string(),
         SqlExpression::DateTimeConstructor {
             year,
             month,

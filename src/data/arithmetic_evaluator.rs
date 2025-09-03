@@ -227,6 +227,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         match expr {
             SqlExpression::Column(column_name) => self.evaluate_column(column_name, row_index),
             SqlExpression::StringLiteral(s) => Ok(DataValue::String(s.clone())),
+            SqlExpression::BooleanLiteral(b) => Ok(DataValue::Boolean(*b)),
             SqlExpression::NumberLiteral(n) => self.evaluate_number_literal(n),
             SqlExpression::BinaryOp { left, op, right } => {
                 self.evaluate_binary_op(left, op, right, row_index)

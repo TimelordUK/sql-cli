@@ -932,6 +932,30 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             (Some(DataValue::Float(a)), "<", ExprValue::Number(b)) => Ok(a < *b),
             (Some(DataValue::Float(a)), "<=", ExprValue::Number(b)) => Ok(a <= *b),
 
+            // Boolean comparisons
+            (Some(DataValue::Boolean(a)), "=", ExprValue::Boolean(b)) => Ok(a == *b),
+            (Some(DataValue::Boolean(a)), "!=", ExprValue::Boolean(b))
+            | (Some(DataValue::Boolean(a)), "<>", ExprValue::Boolean(b)) => Ok(a != *b),
+
+            // Boolean to string comparisons (for backward compatibility)
+            (Some(DataValue::Boolean(a)), "=", ExprValue::String(b)) => {
+                let bool_str = a.to_string();
+                if self.case_insensitive {
+                    Ok(bool_str.to_lowercase() == b.to_lowercase())
+                } else {
+                    Ok(bool_str == *b)
+                }
+            }
+            (Some(DataValue::Boolean(a)), "!=", ExprValue::String(b))
+            | (Some(DataValue::Boolean(a)), "<>", ExprValue::String(b)) => {
+                let bool_str = a.to_string();
+                if self.case_insensitive {
+                    Ok(bool_str.to_lowercase() != b.to_lowercase())
+                } else {
+                    Ok(bool_str != *b)
+                }
+            }
+
             // LIKE operator
             (Some(DataValue::String(ref text)), "LIKE", ExprValue::String(pattern)) => {
                 let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
@@ -1323,6 +1347,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
     fn extract_value(&self, expr: &SqlExpression) -> Result<ExprValue> {
         match expr {
             SqlExpression::StringLiteral(s) => Ok(ExprValue::String(s.clone())),
+            SqlExpression::BooleanLiteral(b) => Ok(ExprValue::Boolean(*b)),
             SqlExpression::NumberLiteral(n) => {
                 if let Ok(num) = n.parse::<f64>() {
                     Ok(ExprValue::Number(num))
@@ -1451,6 +1476,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 enum ExprValue {
     String(String),
     Number(f64),
+    Boolean(bool),
     DateTime(DateTime<Utc>),
     Null,
 }
