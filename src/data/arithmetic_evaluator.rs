@@ -26,6 +26,112 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
     }
 
+    /// Central function to parse date/datetime strings respecting date_notation preference
+    fn parse_datetime_with_notation(&self, s: &str) -> Result<DateTime<Utc>> {
+        // ISO formats (most common and unambiguous)
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+            return Ok(Utc.from_utc_datetime(&dt));
+        }
+        if let Ok(dt) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+        }
+
+        // Date notation preference for ambiguous formats
+        if self.date_notation == "european" {
+            // European formats (DD/MM/YYYY) - try first
+            // Date only formats
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d/%m/%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            // With time formats
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d-%m-%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+
+            // US formats (MM/DD/YYYY) - fallback
+            // Date only formats
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            // With time formats
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m-%d-%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+        } else {
+            // US formats (MM/DD/YYYY) - default, try first
+            // Date only formats
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            // With time formats
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m-%d-%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+
+            // European formats (DD/MM/YYYY) - fallback
+            // Date only formats
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d/%m/%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            // With time formats
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d-%m-%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+        }
+
+        // Excel/Windows format: DD-MMM-YYYY (e.g., 15-Jan-2024)
+        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%b-%Y") {
+            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+        }
+
+        // Full month names: January 15, 2024 or 15 January 2024
+        if let Ok(dt) = NaiveDate::parse_from_str(s, "%B %d, %Y") {
+            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+        }
+        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d %B %Y") {
+            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+        }
+
+        // RFC3339 (e.g., 2024-01-15T10:30:00Z)
+        if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+            return Ok(dt.with_timezone(&Utc));
+        }
+
+        // Additional formats with time variations
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y/%m/%d %H:%M:%S") {
+            return Ok(Utc.from_utc_datetime(&dt));
+        }
+
+        Err(anyhow!(
+            "Could not parse date/datetime: '{}'. Supported formats include: YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY (based on config), with optional HH:MM:SS",
+            s
+        ))
+    }
+
     /// Find a column name similar to the given name using edit distance
     fn find_similar_column(&self, name: &str) -> Option<String> {
         let columns = self.table.column_names();
@@ -717,92 +823,28 @@ impl<'a> ArithmeticEvaluator<'a> {
                     _ => return Err(anyhow!("DATEDIFF unit must be a string")),
                 };
 
-                // Helper function to parse date/datetime strings
-                let date_notation = self.date_notation.clone();
-                let parse_datetime = move |value: DataValue| -> Result<DateTime<Utc>> {
-                    let parse_string = |s: &str| -> Result<DateTime<Utc>> {
-                        // Try various date/datetime formats
-
-                        // ISO formats (most common and unambiguous)
-                        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-                            return Ok(Utc.from_utc_datetime(&dt));
-                        }
-                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-                            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                        }
-
-                        // Try date notation preference first for ambiguous formats
-                        if date_notation == "european" {
-                            // European format: DD/MM/YYYY or DD-MM-YYYY (try first)
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d/%m/%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            // US format: MM/DD/YYYY or MM-DD-YYYY (fallback)
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                        } else {
-                            // US format: MM/DD/YYYY or MM-DD-YYYY (default, try first)
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            // European format: DD/MM/YYYY or DD-MM-YYYY (fallback)
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d/%m/%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                        }
-
-                        // Excel/Windows format: DD-MMM-YYYY (e.g., 15-Jan-2024)
-                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%b-%Y") {
-                            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                        }
-
-                        // Full month names: January 15, 2024 or 15 January 2024
-                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%B %d, %Y") {
-                            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                        }
-                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d %B %Y") {
-                            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                        }
-
-                        // With time: MM/DD/YYYY HH:MM:SS
-                        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S") {
-                            return Ok(Utc.from_utc_datetime(&dt));
-                        }
-                        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S") {
-                            return Ok(Utc.from_utc_datetime(&dt));
-                        }
-
-                        // ISO 8601 / RFC3339
-                        if let Ok(dt) = s.parse::<DateTime<Utc>>() {
-                            return Ok(dt);
-                        }
-
-                        Err(anyhow!("Could not parse date: {}. Supported formats: YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, DD-MMM-YYYY", s))
-                    };
-
-                    match value {
-                        DataValue::String(s) | DataValue::DateTime(s) => parse_string(&s),
-                        DataValue::InternedString(s) => parse_string(s.as_str()),
-                        _ => Err(anyhow!("DATEDIFF requires date/datetime values")),
+                // Parse both dates using the central function
+                let date1_val = self.evaluate(&args[1], row_index)?;
+                let date1 = match date1_val {
+                    DataValue::String(ref s) | DataValue::DateTime(ref s) => {
+                        self.parse_datetime_with_notation(s)?
                     }
+                    DataValue::InternedString(ref s) => {
+                        self.parse_datetime_with_notation(s.as_str())?
+                    }
+                    _ => return Err(anyhow!("DATEDIFF requires date/datetime values")),
                 };
 
-                // Parse both dates
-                let date1 = parse_datetime(self.evaluate(&args[1], row_index)?)?;
-                let date2 = parse_datetime(self.evaluate(&args[2], row_index)?)?;
+                let date2_val = self.evaluate(&args[2], row_index)?;
+                let date2 = match date2_val {
+                    DataValue::String(ref s) | DataValue::DateTime(ref s) => {
+                        self.parse_datetime_with_notation(s)?
+                    }
+                    DataValue::InternedString(ref s) => {
+                        self.parse_datetime_with_notation(s.as_str())?
+                    }
+                    _ => return Err(anyhow!("DATEDIFF requires date/datetime values")),
+                };
 
                 // Calculate difference based on unit
                 let diff = match unit.as_str() {
@@ -879,94 +921,17 @@ impl<'a> ArithmeticEvaluator<'a> {
                     _ => return Err(anyhow!("DATEADD amount must be a number")),
                 };
 
-                // Third argument: base date
+                // Third argument: base date - parse using the central function
                 let base_date_value = self.evaluate(&args[2], row_index)?;
-
-                // Reuse the parse_datetime function from DATEDIFF
-                let date_notation = self.date_notation.clone();
-                let parse_datetime = move |value: DataValue| -> Result<DateTime<Utc>> {
-                    let parse_string = |s: &str| -> Result<DateTime<Utc>> {
-                        // Try various date/datetime formats (same as DATEDIFF)
-
-                        // ISO formats (most common and unambiguous)
-                        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-                            return Ok(Utc.from_utc_datetime(&dt));
-                        }
-                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-                            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                        }
-
-                        // Try date notation preference first for ambiguous formats
-                        if date_notation == "european" {
-                            // European format: DD/MM/YYYY or DD-MM-YYYY (try first)
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d/%m/%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            // US format: MM/DD/YYYY or MM-DD-YYYY (fallback)
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                        } else {
-                            // US format: MM/DD/YYYY or MM-DD-YYYY (default, try first)
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            // European format: DD/MM/YYYY or DD-MM-YYYY (fallback)
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d/%m/%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
-                                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                            }
-                        }
-
-                        // Excel/Windows format: DD-MMM-YYYY (e.g., 15-Jan-2024)
-                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%b-%Y") {
-                            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                        }
-
-                        // Full month names: January 15, 2024 or 15 January 2024
-                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%B %d, %Y") {
-                            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                        }
-                        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d %B %Y") {
-                            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
-                        }
-
-                        // With time: MM/DD/YYYY HH:MM:SS
-                        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S") {
-                            return Ok(Utc.from_utc_datetime(&dt));
-                        }
-                        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S") {
-                            return Ok(Utc.from_utc_datetime(&dt));
-                        }
-
-                        // ISO 8601 / RFC3339
-                        if let Ok(dt) = s.parse::<DateTime<Utc>>() {
-                            return Ok(dt);
-                        }
-
-                        Err(anyhow!("Could not parse date: {}. Supported formats: YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, DD-MMM-YYYY", s))
-                    };
-
-                    match value {
-                        DataValue::String(s) | DataValue::DateTime(s) => parse_string(&s),
-                        DataValue::InternedString(s) => parse_string(s.as_str()),
-                        _ => Err(anyhow!("DATEADD requires date/datetime values")),
+                let base_date = match base_date_value {
+                    DataValue::String(ref s) | DataValue::DateTime(ref s) => {
+                        self.parse_datetime_with_notation(s)?
                     }
+                    DataValue::InternedString(ref s) => {
+                        self.parse_datetime_with_notation(s.as_str())?
+                    }
+                    _ => return Err(anyhow!("DATEADD requires date/datetime values")),
                 };
-
-                // Parse the base date
-                let base_date = parse_datetime(base_date_value)?;
 
                 // Add the specified amount based on unit
                 let result_date = match unit.as_str() {

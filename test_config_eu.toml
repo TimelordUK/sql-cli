@@ -1,6 +1,0 @@
-[behavior]
-default_date_notation = "european"
-case_insensitive_default = true
-auto_execute_on_load = true
-start_mode = "results"
-hide_empty_columns = false

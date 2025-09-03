@@ -29,6 +29,115 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         }
     }
 
+    /// Central function to parse date/datetime strings respecting date_notation preference
+    fn parse_datetime_with_notation(&self, s: &str) -> Result<DateTime<Utc>> {
+        // Try ISO 8601 with timezone first (unambiguous)
+        if let Ok(parsed_dt) = s.parse::<DateTime<Utc>>() {
+            return Ok(parsed_dt);
+        }
+
+        // ISO formats without timezone (unambiguous)
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
+            return Ok(Utc.from_utc_datetime(&dt));
+        }
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+            return Ok(Utc.from_utc_datetime(&dt));
+        }
+        if let Ok(dt) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+        }
+
+        // Date notation preference for ambiguous formats
+        if self.date_notation == "european" {
+            // European formats (DD/MM/YYYY) - try first
+            // Date only formats
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d/%m/%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            // With time formats
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d-%m-%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+
+            // US formats (MM/DD/YYYY) - fallback
+            // Date only formats
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            // With time formats
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m-%d-%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+        } else {
+            // US formats (MM/DD/YYYY) - default, try first
+            // Date only formats
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m/%d/%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            // With time formats
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m-%d-%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+
+            // European formats (DD/MM/YYYY) - fallback
+            // Date only formats
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d/%m/%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
+                return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+            }
+            // With time formats
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+            if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d-%m-%Y %H:%M:%S") {
+                return Ok(Utc.from_utc_datetime(&dt));
+            }
+        }
+
+        // Excel/Windows format: DD-MMM-YYYY (e.g., 15-Jan-2024)
+        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%b-%Y") {
+            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+        }
+
+        // Full month names
+        if let Ok(dt) = NaiveDate::parse_from_str(s, "%B %d, %Y") {
+            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+        }
+        if let Ok(dt) = NaiveDate::parse_from_str(s, "%d %B %Y") {
+            return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
+        }
+
+        // Additional formats with time variations
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y/%m/%d %H:%M:%S") {
+            return Ok(Utc.from_utc_datetime(&dt));
+        }
+
+        Err(anyhow!(
+            "Could not parse date/datetime: '{}'. Supported formats include: YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY (based on config), with optional HH:MM:SS",
+            s
+        ))
+    }
+
     /// Find a column name similar to the given name using edit distance
     fn find_similar_column(&self, name: &str) -> Option<String> {
         let columns = self.table.column_names();
@@ -517,110 +626,286 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         // Perform comparison
         match (cell_value, op.to_uppercase().as_str(), &compare_value) {
             (Some(DataValue::String(ref a)), "=", ExprValue::String(b)) => {
-                if row_index < 3 {
-                    debug!(
-                        "RecursiveWhereEvaluator: String comparison '{}' = '{}' (case_insensitive={})",
-                        a, b, self.case_insensitive
-                    );
-                }
-                if self.case_insensitive {
-                    Ok(a.to_lowercase() == b.to_lowercase())
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from strings) '{}' = '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a == date_b
+                        );
+                    }
+                    Ok(date_a == date_b)
                 } else {
-                    Ok(a == b)
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: String comparison '{}' = '{}' (case_insensitive={})",
+                            a, b, self.case_insensitive
+                        );
+                    }
+                    if self.case_insensitive {
+                        Ok(a.to_lowercase() == b.to_lowercase())
+                    } else {
+                        Ok(a == b)
+                    }
                 }
             }
             (Some(DataValue::InternedString(ref a)), "=", ExprValue::String(b)) => {
-                if row_index < 3 {
-                    debug!(
-                        "RecursiveWhereEvaluator: InternedString comparison '{}' = '{}' (case_insensitive={})",
-                        a, b, self.case_insensitive
-                    );
-                }
-                if self.case_insensitive {
-                    Ok(a.to_lowercase() == b.to_lowercase())
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a.as_ref()),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from interned strings) '{}' = '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a == date_b
+                        );
+                    }
+                    Ok(date_a == date_b)
                 } else {
-                    Ok(a.as_ref() == b)
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: InternedString comparison '{}' = '{}' (case_insensitive={})",
+                            a, b, self.case_insensitive
+                        );
+                    }
+                    if self.case_insensitive {
+                        Ok(a.to_lowercase() == b.to_lowercase())
+                    } else {
+                        Ok(a.as_ref() == b)
+                    }
                 }
             }
             (Some(DataValue::String(ref a)), "!=", ExprValue::String(b))
             | (Some(DataValue::String(ref a)), "<>", ExprValue::String(b)) => {
-                if row_index < 3 {
-                    debug!(
-                        "RecursiveWhereEvaluator: String comparison '{}' != '{}' (case_insensitive={})",
-                        a, b, self.case_insensitive
-                    );
-                }
-                if self.case_insensitive {
-                    Ok(a.to_lowercase() != b.to_lowercase())
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from strings) '{}' != '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a != date_b
+                        );
+                    }
+                    Ok(date_a != date_b)
                 } else {
-                    Ok(a != b)
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: String comparison '{}' != '{}' (case_insensitive={})",
+                            a, b, self.case_insensitive
+                        );
+                    }
+                    if self.case_insensitive {
+                        Ok(a.to_lowercase() != b.to_lowercase())
+                    } else {
+                        Ok(a != b)
+                    }
                 }
             }
             (Some(DataValue::InternedString(ref a)), "!=", ExprValue::String(b))
             | (Some(DataValue::InternedString(ref a)), "<>", ExprValue::String(b)) => {
-                if row_index < 3 {
-                    debug!(
-                        "RecursiveWhereEvaluator: InternedString comparison '{}' != '{}' (case_insensitive={})",
-                        a, b, self.case_insensitive
-                    );
-                }
-                if self.case_insensitive {
-                    Ok(a.to_lowercase() != b.to_lowercase())
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a.as_ref()),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from interned strings) '{}' != '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a != date_b
+                        );
+                    }
+                    Ok(date_a != date_b)
                 } else {
-                    Ok(a.as_ref() != b)
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: InternedString comparison '{}' != '{}' (case_insensitive={})",
+                            a, b, self.case_insensitive
+                        );
+                    }
+                    if self.case_insensitive {
+                        Ok(a.to_lowercase() != b.to_lowercase())
+                    } else {
+                        Ok(a.as_ref() != b)
+                    }
                 }
             }
             (Some(DataValue::String(ref a)), ">", ExprValue::String(b)) => {
-                if self.case_insensitive {
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from strings) '{}' > '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a > date_b
+                        );
+                    }
+                    Ok(date_a > date_b)
+                } else if self.case_insensitive {
                     Ok(a.to_lowercase() > b.to_lowercase())
                 } else {
                     Ok(a > b)
                 }
             }
             (Some(DataValue::InternedString(ref a)), ">", ExprValue::String(b)) => {
-                if self.case_insensitive {
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a.as_ref()),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from interned strings) '{}' > '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a > date_b
+                        );
+                    }
+                    Ok(date_a > date_b)
+                } else if self.case_insensitive {
                     Ok(a.to_lowercase() > b.to_lowercase())
                 } else {
                     Ok(a.as_ref() > b)
                 }
             }
             (Some(DataValue::String(ref a)), ">=", ExprValue::String(b)) => {
-                if self.case_insensitive {
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from strings) '{}' >= '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a >= date_b
+                        );
+                    }
+                    Ok(date_a >= date_b)
+                } else if self.case_insensitive {
                     Ok(a.to_lowercase() >= b.to_lowercase())
                 } else {
                     Ok(a >= b)
                 }
             }
             (Some(DataValue::InternedString(ref a)), ">=", ExprValue::String(b)) => {
-                if self.case_insensitive {
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a.as_ref()),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from interned strings) '{}' >= '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a >= date_b
+                        );
+                    }
+                    Ok(date_a >= date_b)
+                } else if self.case_insensitive {
                     Ok(a.to_lowercase() >= b.to_lowercase())
                 } else {
                     Ok(a.as_ref() >= b)
                 }
             }
             (Some(DataValue::String(ref a)), "<", ExprValue::String(b)) => {
-                if self.case_insensitive {
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from strings) '{}' < '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a < date_b
+                        );
+                    }
+                    Ok(date_a < date_b)
+                } else if self.case_insensitive {
                     Ok(a.to_lowercase() < b.to_lowercase())
                 } else {
                     Ok(a < b)
                 }
             }
             (Some(DataValue::InternedString(ref a)), "<", ExprValue::String(b)) => {
-                if self.case_insensitive {
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a.as_ref()),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from interned strings) '{}' < '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a < date_b
+                        );
+                    }
+                    Ok(date_a < date_b)
+                } else if self.case_insensitive {
                     Ok(a.to_lowercase() < b.to_lowercase())
                 } else {
                     Ok(a.as_ref() < b)
                 }
             }
             (Some(DataValue::String(ref a)), "<=", ExprValue::String(b)) => {
-                if self.case_insensitive {
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from strings) '{}' <= '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a <= date_b
+                        );
+                    }
+                    Ok(date_a <= date_b)
+                } else if self.case_insensitive {
                     Ok(a.to_lowercase() <= b.to_lowercase())
                 } else {
                     Ok(a <= b)
                 }
             }
             (Some(DataValue::InternedString(ref a)), "<=", ExprValue::String(b)) => {
-                if self.case_insensitive {
+                // Try to parse both as dates if they look like dates
+                if let (Ok(date_a), Ok(date_b)) = (
+                    self.parse_datetime_with_notation(a.as_ref()),
+                    self.parse_datetime_with_notation(b),
+                ) {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: Date comparison (from interned strings) '{}' <= '{}' = {}",
+                            date_a.format("%Y-%m-%d %H:%M:%S"),
+                            date_b.format("%Y-%m-%d %H:%M:%S"),
+                            date_a <= date_b
+                        );
+                    }
+                    Ok(date_a <= date_b)
+                } else if self.case_insensitive {
                     Ok(a.to_lowercase() <= b.to_lowercase())
                 } else {
                     Ok(a.as_ref() <= b)
@@ -685,75 +970,30 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     );
                 }
 
-                // Try to parse the string as a datetime - first try ISO 8601 with UTC
-                if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
-                    let result = Self::compare_datetime(op_str, &parsed_dt, dt);
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime parsed as UTC: '{}' {} '{}' = {}",
-                            parsed_dt.format("%Y-%m-%d %H:%M:%S"),
-                            op_str,
-                            dt.format("%Y-%m-%d %H:%M:%S"),
-                            result
-                        );
+                // Use the central parsing function that respects date_notation
+                match self.parse_datetime_with_notation(date_str) {
+                    Ok(parsed_dt) => {
+                        let result = Self::compare_datetime(op_str, &parsed_dt, dt);
+                        if row_index < 3 {
+                            debug!(
+                                "RecursiveWhereEvaluator: DateTime parsed successfully: '{}' {} '{}' = {}",
+                                parsed_dt.format("%Y-%m-%d %H:%M:%S"),
+                                op_str,
+                                dt.format("%Y-%m-%d %H:%M:%S"),
+                                result
+                            );
+                        }
+                        Ok(result)
                     }
-                    Ok(result)
-                }
-                // Try ISO 8601 format without timezone (assume UTC)
-                else if let Ok(parsed_dt) =
-                    NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%dT%H:%M:%S")
-                {
-                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime parsed as ISO 8601: '{}' {} '{}' = {}",
-                            parsed_utc.format("%Y-%m-%d %H:%M:%S"),
-                            op_str,
-                            dt.format("%Y-%m-%d %H:%M:%S"),
-                            result
-                        );
+                    Err(_) => {
+                        if row_index < 3 {
+                            debug!(
+                                "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
+                                date_str
+                            );
+                        }
+                        Ok(false)
                     }
-                    Ok(result)
-                }
-                // Try standard datetime format
-                else if let Ok(parsed_dt) =
-                    NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%d %H:%M:%S")
-                {
-                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime parsed as standard format: '{}' {} '{}' = {}",
-                            parsed_utc.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
-                        );
-                    }
-                    Ok(result)
-                }
-                // Try date-only format
-                else if let Ok(parsed_date) = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
-                    let parsed_dt =
-                        NaiveDateTime::new(parsed_date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime parsed as date-only: '{}' {} '{}' = {}",
-                            parsed_utc.format("%Y-%m-%d %H:%M:%S"),
-                            op_str,
-                            dt.format("%Y-%m-%d %H:%M:%S"),
-                            result
-                        );
-                    }
-                    Ok(result)
-                } else {
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
-                            date_str
-                        );
-                    }
-                    Ok(false)
                 }
             }
             (Some(DataValue::InternedString(ref date_str)), op_str, ExprValue::DateTime(dt)) => {
@@ -766,77 +1006,30 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     );
                 }
 
-                // Try to parse the string as a datetime - first try ISO 8601 with UTC
-                if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
-                    let result = Self::compare_datetime(op_str, &parsed_dt, dt);
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime parsed as UTC: '{}' {} '{}' = {}",
-                            parsed_dt.format("%Y-%m-%d %H:%M:%S"),
-                            op_str,
-                            dt.format("%Y-%m-%d %H:%M:%S"),
-                            result
-                        );
+                // Use the central parsing function that respects date_notation
+                match self.parse_datetime_with_notation(date_str.as_ref()) {
+                    Ok(parsed_dt) => {
+                        let result = Self::compare_datetime(op_str, &parsed_dt, dt);
+                        if row_index < 3 {
+                            debug!(
+                                "RecursiveWhereEvaluator: DateTime parsed successfully: '{}' {} '{}' = {}",
+                                parsed_dt.format("%Y-%m-%d %H:%M:%S"),
+                                op_str,
+                                dt.format("%Y-%m-%d %H:%M:%S"),
+                                result
+                            );
+                        }
+                        Ok(result)
                     }
-                    Ok(result)
-                }
-                // Try ISO 8601 format without timezone (assume UTC)
-                else if let Ok(parsed_dt) =
-                    NaiveDateTime::parse_from_str(date_str.as_ref(), "%Y-%m-%dT%H:%M:%S")
-                {
-                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime parsed as ISO 8601: '{}' {} '{}' = {}",
-                            parsed_utc.format("%Y-%m-%d %H:%M:%S"),
-                            op_str,
-                            dt.format("%Y-%m-%d %H:%M:%S"),
-                            result
-                        );
+                    Err(_) => {
+                        if row_index < 3 {
+                            debug!(
+                                "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
+                                date_str
+                            );
+                        }
+                        Ok(false)
                     }
-                    Ok(result)
-                }
-                // Try standard datetime format
-                else if let Ok(parsed_dt) =
-                    NaiveDateTime::parse_from_str(date_str.as_ref(), "%Y-%m-%d %H:%M:%S")
-                {
-                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime parsed as standard format: '{}' {} '{}' = {}",
-                            parsed_utc.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
-                        );
-                    }
-                    Ok(result)
-                }
-                // Try date-only format
-                else if let Ok(parsed_date) =
-                    NaiveDate::parse_from_str(date_str.as_ref(), "%Y-%m-%d")
-                {
-                    let parsed_dt =
-                        NaiveDateTime::new(parsed_date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime parsed as date-only: '{}' {} '{}' = {}",
-                            parsed_utc.format("%Y-%m-%d %H:%M:%S"),
-                            op_str,
-                            dt.format("%Y-%m-%d %H:%M:%S"),
-                            result
-                        );
-                    }
-                    Ok(result)
-                } else {
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
-                            date_str
-                        );
-                    }
-                    Ok(false)
                 }
             }
 
@@ -849,41 +1042,27 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     );
                 }
 
-                // Parse the DataValue::DateTime string to DateTime<Utc>
-                if let Ok(parsed_dt) = date_str.parse::<DateTime<Utc>>() {
-                    let result = Self::compare_datetime(op_str, &parsed_dt, dt);
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime vs DateTime parsed successfully: '{}' {} '{}' = {}",
-                            parsed_dt.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
-                        );
+                // Use the central parsing function that respects date_notation
+                match self.parse_datetime_with_notation(date_str) {
+                    Ok(parsed_dt) => {
+                        let result = Self::compare_datetime(op_str, &parsed_dt, dt);
+                        if row_index < 3 {
+                            debug!(
+                                "RecursiveWhereEvaluator: DateTime vs DateTime parsed successfully: '{}' {} '{}' = {}",
+                                parsed_dt.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
+                            );
+                        }
+                        Ok(result)
                     }
-                    Ok(result)
-                }
-                // Try ISO 8601 format without timezone (assume UTC)
-                else if let Ok(parsed_dt) =
-                    NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%dT%H:%M:%S")
-                {
-                    let parsed_utc = Utc.from_utc_datetime(&parsed_dt);
-                    let result = Self::compare_datetime(op_str, &parsed_utc, dt);
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime vs DateTime ISO 8601: '{}' {} '{}' = {}",
-                            parsed_utc.format("%Y-%m-%d %H:%M:%S"),
-                            op_str,
-                            dt.format("%Y-%m-%d %H:%M:%S"),
-                            result
-                        );
+                    Err(_) => {
+                        if row_index < 3 {
+                            debug!(
+                                "RecursiveWhereEvaluator: DateTime vs DateTime parse FAILED for '{}' - no matching format",
+                                date_str
+                            );
+                        }
+                        Ok(false)
                     }
-                    Ok(result)
-                } else {
-                    if row_index < 3 {
-                        debug!(
-                            "RecursiveWhereEvaluator: DateTime vs DateTime parse FAILED for '{}' - no matching format",
-                            date_str
-                        );
-                    }
-                    Ok(false)
                 }
             }
 
