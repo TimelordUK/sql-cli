@@ -207,6 +207,18 @@ impl FunctionRegistry {
         self.register(Box::new(MassSaturnFunction));
         self.register(Box::new(MassUranusFunction));
         self.register(Box::new(MassNeptuneFunction));
+
+        // Solar body radius functions
+        self.register(Box::new(RadiusSunFunction));
+        self.register(Box::new(RadiusEarthFunction));
+        self.register(Box::new(RadiusMoonFunction));
+        self.register(Box::new(RadiusMercuryFunction));
+        self.register(Box::new(RadiusVenusFunction));
+        self.register(Box::new(RadiusMarsFunction));
+        self.register(Box::new(RadiusJupiterFunction));
+        self.register(Box::new(RadiusSaturnFunction));
+        self.register(Box::new(RadiusUranusFunction));
+        self.register(Box::new(RadiusNeptuneFunction));
     }
 
     /// Register chemical functions

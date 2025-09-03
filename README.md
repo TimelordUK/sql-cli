@@ -655,6 +655,12 @@ FROM DUAL;
 - `MASS_MOON()` - 7.342×10²²
 - `MASS_MERCURY()`, `MASS_VENUS()`, `MASS_MARS()`, `MASS_JUPITER()`, `MASS_SATURN()`, `MASS_URANUS()`, `MASS_NEPTUNE()`
 
+**Solar System Radii** (meters):
+- `RADIUS_SUN()` - 6.96×10⁸
+- `RADIUS_EARTH()` - 6.371×10⁶
+- `RADIUS_MOON()` - 1.737×10⁶
+- `RADIUS_MERCURY()`, `RADIUS_VENUS()`, `RADIUS_MARS()`, `RADIUS_JUPITER()`, `RADIUS_SATURN()`, `RADIUS_URANUS()`, `RADIUS_NEPTUNE()`
+
 **Orbital Distances** (meters from Sun):
 - `DIST_MERCURY()` through `DIST_NEPTUNE()`
 - `AU()` - Astronomical Unit (1.496×10¹¹ m)
@@ -662,6 +668,51 @@ FROM DUAL;
 **Distance Units**:
 - `PARSEC()` - 3.086×10¹⁶ m
 - `LIGHTYEAR()` - 9.461×10¹⁵ m
+
+## 🧪 Chemistry Functions
+
+SQL CLI provides essential chemistry functions for working with chemical data and molecular calculations:
+
+### **Chemical Constants & Properties**
+```sql
+-- Calculate moles from particle count
+SELECT 
+    6.022e23 / AVOGADRO() as moles_from_particles,  -- ~1 mol
+    12 * AVOGADRO() as carbon_atoms_in_dozen_moles   -- ~7.23×10²⁴
+FROM DUAL;
+
+-- Element properties lookup
+SELECT 
+    ATOMIC_MASS('Carbon') as carbon_mass,       -- 12.011
+    ATOMIC_MASS('H') as hydrogen_mass,          -- 1.008  
+    ATOMIC_NUMBER('Gold') as gold_number        -- 79
+FROM DUAL;
+
+-- Molecular mass calculations
+SELECT 
+    2 * ATOMIC_MASS('H') + ATOMIC_MASS('O') as water_mass,      -- H2O: ~18.015
+    ATOMIC_MASS('C') + 4 * ATOMIC_MASS('H') as methane_mass,    -- CH4: ~16.043
+    6 * ATOMIC_MASS('C') + 6 * ATOMIC_MASS('H2O') as glucose    -- C6H12O6: ~180.156
+FROM DUAL;
+```
+
+### **Available Chemistry Functions**
+
+**Universal Constants**:
+- `AVOGADRO()` - Avogadro's number (6.022×10²³ mol⁻¹)
+
+**Element Properties**:
+- `ATOMIC_MASS(element)` - Returns atomic mass in g/mol
+  - Accepts element symbols: 'H', 'He', 'Li', 'C', 'N', 'O', etc.
+  - Accepts element names: 'Hydrogen', 'Carbon', 'Nitrogen', etc.
+  - Case-insensitive: 'carbon', 'CARBON', 'Carbon' all work
+  
+- `ATOMIC_NUMBER(element)` - Returns atomic number
+  - Same element formats as ATOMIC_MASS
+  - Returns the number of protons in the nucleus
+
+**Supported Elements**:
+Currently supports the first 20 elements of the periodic table, from Hydrogen (H) to Calcium (Ca), with plans to expand to all elements.
 
 ## ⚠️ SQL Features Not Yet Supported
 
