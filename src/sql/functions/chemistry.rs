@@ -4,6 +4,163 @@ use std::collections::HashMap;
 use super::{ArgCount, FunctionCategory, FunctionSignature, SqlFunction};
 use crate::data::datatable::DataValue;
 
+/// Represents a parsed molecular formula
+#[derive(Debug, Clone)]
+struct MolecularFormula {
+    elements: Vec<(String, usize)>, // (element symbol, count)
+}
+
+impl MolecularFormula {
+    /// Parse a molecular formula like "H2O", "Ca(OH)2", "C6H12O6"
+    fn parse(formula: &str) -> Result<Self> {
+        let formula = formula.trim();
+
+        // Check for common compound aliases first
+        if let Some(expanded) = Self::get_compound_alias(formula) {
+            return Self::parse_formula(expanded);
+        }
+
+        Self::parse_formula(formula)
+    }
+
+    /// Get common compound aliases
+    fn get_compound_alias(name: &str) -> Option<&'static str> {
+        let name_upper = name.to_uppercase();
+        match name_upper.as_str() {
+            "WATER" => Some("H2O"),
+            "AMMONIA" => Some("NH3"),
+            "METHANE" => Some("CH4"),
+            "ETHANE" => Some("C2H6"),
+            "PROPANE" => Some("C3H8"),
+            "BUTANE" => Some("C4H10"),
+            "GLUCOSE" => Some("C6H12O6"),
+            "SUCROSE" => Some("C12H22O11"),
+            "SALT" | "TABLE SALT" => Some("NaCl"),
+            "BAKING SODA" => Some("NaHCO3"),
+            "VINEGAR" | "ACETIC ACID" => Some("CH3COOH"),
+            "ETHANOL" | "ALCOHOL" => Some("C2H5OH"),
+            "SULFURIC ACID" => Some("H2SO4"),
+            "HYDROCHLORIC ACID" => Some("HCl"),
+            "NITRIC ACID" => Some("HNO3"),
+            "CARBON DIOXIDE" | "CO2" => Some("CO2"),
+            "CARBON MONOXIDE" | "CO" => Some("CO"),
+            _ => None,
+        }
+    }
+
+    /// Parse the actual formula string
+    fn parse_formula(formula: &str) -> Result<Self> {
+        let mut elements = Vec::new();
+        let mut chars = formula.chars().peekable();
+
+        while chars.peek().is_some() {
+            // Handle parentheses groups like (OH)2
+            if chars.peek() == Some(&'(') {
+                chars.next(); // consume '('
+                let mut group = String::new();
+                let mut depth = 1;
+
+                while let Some(ch) = chars.next() {
+                    if ch == '(' {
+                        depth += 1;
+                        group.push(ch);
+                    } else if ch == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                        group.push(ch);
+                    } else {
+                        group.push(ch);
+                    }
+                }
+
+                // Get multiplier for the group
+                let multiplier = Self::parse_number(&mut chars).unwrap_or(1);
+
+                // Recursively parse the group
+                let group_formula = Self::parse_formula(&group)?;
+                for (elem, count) in group_formula.elements {
+                    elements.push((elem, count * multiplier));
+                }
+            } else {
+                // Parse element symbol
+                let element = Self::parse_element(&mut chars)?;
+                let count = Self::parse_number(&mut chars).unwrap_or(1);
+
+                // Merge with existing element if present
+                if let Some((_, existing_count)) = elements.iter_mut().find(|(e, _)| e == &element)
+                {
+                    *existing_count += count;
+                } else {
+                    elements.push((element, count));
+                }
+            }
+        }
+
+        Ok(MolecularFormula { elements })
+    }
+
+    /// Parse an element symbol (1 uppercase + optional lowercase letters)
+    fn parse_element(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<String> {
+        let mut element = String::new();
+
+        // First character must be uppercase
+        if let Some(ch) = chars.peek() {
+            if ch.is_uppercase() {
+                element.push(chars.next().unwrap());
+            } else {
+                return Err(anyhow!("Expected uppercase letter for element symbol"));
+            }
+        } else {
+            return Err(anyhow!("Unexpected end of formula"));
+        }
+
+        // Following characters are lowercase
+        while let Some(&ch) = chars.peek() {
+            if ch.is_lowercase() {
+                element.push(chars.next().unwrap());
+            } else {
+                break;
+            }
+        }
+
+        Ok(element)
+    }
+
+    /// Parse a number from the formula
+    fn parse_number(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<usize> {
+        let mut num_str = String::new();
+
+        while let Some(&ch) = chars.peek() {
+            if ch.is_ascii_digit() {
+                num_str.push(chars.next().unwrap());
+            } else {
+                break;
+            }
+        }
+
+        if num_str.is_empty() {
+            None
+        } else {
+            num_str.parse().ok()
+        }
+    }
+
+    /// Calculate the total molecular mass
+    fn calculate_mass(&self) -> Result<f64> {
+        let mut total_mass = 0.0;
+
+        for (element, count) in &self.elements {
+            let atomic_mass = AtomicMassFunction::get_atomic_mass(element)
+                .ok_or_else(|| anyhow!("Unknown element: {}", element))?;
+            total_mass += atomic_mass * (*count as f64);
+        }
+
+        Ok(total_mass)
+    }
+}
+
 /// Avogadro's number
 pub struct AvogadroFunction;
 
@@ -34,13 +191,16 @@ pub struct AtomicMassFunction;
 impl AtomicMassFunction {
     fn get_atomic_mass(element: &str) -> Option<f64> {
         let masses: HashMap<&str, f64> = [
-            // First 20 elements
+            // First 20 elements - uppercase and proper case for formula parsing
             ("H", 1.008),
             ("HYDROGEN", 1.008),
+            ("He", 4.003),
             ("HE", 4.003),
             ("HELIUM", 4.003),
+            ("Li", 6.941),
             ("LI", 6.941),
             ("LITHIUM", 6.941),
+            ("Be", 9.012),
             ("BE", 9.012),
             ("BERYLLIUM", 9.012),
             ("B", 10.81),
@@ -53,15 +213,20 @@ impl AtomicMassFunction {
             ("OXYGEN", 16.00),
             ("F", 19.00),
             ("FLUORINE", 19.00),
+            ("Ne", 20.18),
             ("NE", 20.18),
             ("NEON", 20.18),
+            ("Na", 22.99),
             ("NA", 22.99),
             ("SODIUM", 22.99),
+            ("Mg", 24.31),
             ("MG", 24.31),
             ("MAGNESIUM", 24.31),
+            ("Al", 26.98),
             ("AL", 26.98),
             ("ALUMINUM", 26.98),
             ("ALUMINIUM", 26.98),
+            ("Si", 28.09),
             ("SI", 28.09),
             ("SILICON", 28.09),
             ("P", 30.97),
@@ -69,27 +234,37 @@ impl AtomicMassFunction {
             ("S", 32.07),
             ("SULFUR", 32.07),
             ("SULPHUR", 32.07),
+            ("Cl", 35.45),
             ("CL", 35.45),
             ("CHLORINE", 35.45),
+            ("Ar", 39.95),
             ("AR", 39.95),
             ("ARGON", 39.95),
             ("K", 39.10),
             ("POTASSIUM", 39.10),
+            ("Ca", 40.08),
             ("CA", 40.08),
             ("CALCIUM", 40.08),
             // Common elements beyond first 20
             ("FE", 55.85),
+            ("Fe", 55.85),
             ("IRON", 55.85),
             ("CU", 63.55),
+            ("Cu", 63.55),
             ("COPPER", 63.55),
+            ("Zn", 65.39),
             ("ZN", 65.39),
             ("ZINC", 65.39),
+            ("Ag", 107.87),
             ("AG", 107.87),
             ("SILVER", 107.87),
+            ("Au", 196.97),
             ("AU", 196.97),
             ("GOLD", 196.97),
+            ("Hg", 200.59),
             ("HG", 200.59),
             ("MERCURY", 200.59),
+            ("Pb", 207.2),
             ("PB", 207.2),
             ("LEAD", 207.2),
             ("U", 238.03),
@@ -109,12 +284,14 @@ impl SqlFunction for AtomicMassFunction {
             name: "ATOMIC_MASS",
             category: FunctionCategory::Chemical,
             arg_count: ArgCount::Fixed(1),
-            description: "Returns the atomic mass of an element in amu",
+            description: "Returns the atomic mass of an element or molecular formula in amu",
             returns: "FLOAT",
             examples: vec![
                 "SELECT ATOMIC_MASS('H')",
                 "SELECT ATOMIC_MASS('Carbon')",
-                "SELECT ATOMIC_MASS('Au') AS gold_mass",
+                "SELECT ATOMIC_MASS('H2O') AS water_mass",
+                "SELECT ATOMIC_MASS('Ca(OH)2') AS calcium_hydroxide",
+                "SELECT ATOMIC_MASS('water') AS water_mass",
             ],
         }
     }
@@ -123,14 +300,42 @@ impl SqlFunction for AtomicMassFunction {
         self.validate_args(args)?;
 
         match &args[0] {
-            DataValue::String(element) => match Self::get_atomic_mass(element) {
-                Some(mass) => Ok(DataValue::Float(mass)),
-                None => Err(anyhow!("Unknown element: {}", element)),
-            },
-            DataValue::InternedString(element) => match Self::get_atomic_mass(element) {
-                Some(mass) => Ok(DataValue::Float(mass)),
-                None => Err(anyhow!("Unknown element: {}", element)),
-            },
+            DataValue::String(input) => {
+                // First try as a simple element
+                if let Some(mass) = Self::get_atomic_mass(input) {
+                    return Ok(DataValue::Float(mass));
+                }
+
+                // Try parsing as molecular formula
+                match MolecularFormula::parse(input) {
+                    Ok(formula) => {
+                        let mass = formula.calculate_mass()?;
+                        Ok(DataValue::Float(mass))
+                    }
+                    Err(_) => Err(anyhow!(
+                        "Unknown element or invalid molecular formula: {}",
+                        input
+                    )),
+                }
+            }
+            DataValue::InternedString(input) => {
+                // First try as a simple element
+                if let Some(mass) = Self::get_atomic_mass(input) {
+                    return Ok(DataValue::Float(mass));
+                }
+
+                // Try parsing as molecular formula
+                match MolecularFormula::parse(input) {
+                    Ok(formula) => {
+                        let mass = formula.calculate_mass()?;
+                        Ok(DataValue::Float(mass))
+                    }
+                    Err(_) => Err(anyhow!(
+                        "Unknown element or invalid molecular formula: {}",
+                        input
+                    )),
+                }
+            }
             _ => Err(anyhow!("ATOMIC_MASS() requires a string argument")),
         }
     }
