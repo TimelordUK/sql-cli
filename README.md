@@ -673,6 +673,32 @@ FROM DUAL;
 
 SQL CLI provides essential chemistry functions for working with chemical data and molecular calculations:
 
+### **Molecular Formula Support**
+```sql
+-- Direct molecular formula calculations
+SELECT 
+    ATOMIC_MASS('H2O') as water,                    -- 18.016
+    ATOMIC_MASS('CO2') as carbon_dioxide,           -- 44.01
+    ATOMIC_MASS('C6H12O6') as glucose,              -- 180.156
+    ATOMIC_MASS('Ca(OH)2') as calcium_hydroxide     -- 74.096
+FROM DUAL;
+
+-- Use common compound aliases
+SELECT 
+    ATOMIC_MASS('water') as h2o,                    -- 18.016 (alias for H2O)
+    ATOMIC_MASS('glucose') as sugar,                -- 180.156 (alias for C6H12O6)
+    ATOMIC_MASS('salt') as nacl,                    -- 58.44 (alias for NaCl)
+    ATOMIC_MASS('ammonia') as nh3                   -- 17.034 (alias for NH3)
+FROM DUAL;
+
+-- Complex organic molecules
+SELECT 
+    ATOMIC_MASS('C2H5OH') as ethanol,               -- 46.068
+    ATOMIC_MASS('CH3COOH') as acetic_acid,          -- 60.052
+    ATOMIC_MASS('C12H22O11') as sucrose             -- 342.296
+FROM DUAL;
+```
+
 ### **Chemical Constants & Properties**
 ```sql
 -- Calculate moles from particle count
@@ -681,18 +707,11 @@ SELECT
     12 * AVOGADRO() as carbon_atoms_in_dozen_moles   -- ~7.23×10²⁴
 FROM DUAL;
 
--- Element properties lookup
+-- Single element properties
 SELECT 
     ATOMIC_MASS('Carbon') as carbon_mass,       -- 12.011
     ATOMIC_MASS('H') as hydrogen_mass,          -- 1.008  
     ATOMIC_NUMBER('Gold') as gold_number        -- 79
-FROM DUAL;
-
--- Molecular mass calculations
-SELECT 
-    2 * ATOMIC_MASS('H') + ATOMIC_MASS('O') as water_mass,      -- H2O: ~18.015
-    ATOMIC_MASS('C') + 4 * ATOMIC_MASS('H') as methane_mass,    -- CH4: ~16.043
-    6 * ATOMIC_MASS('C') + 6 * ATOMIC_MASS('H2O') as glucose    -- C6H12O6: ~180.156
 FROM DUAL;
 ```
 
@@ -701,18 +720,27 @@ FROM DUAL;
 **Universal Constants**:
 - `AVOGADRO()` - Avogadro's number (6.022×10²³ mol⁻¹)
 
-**Element Properties**:
-- `ATOMIC_MASS(element)` - Returns atomic mass in g/mol
-  - Accepts element symbols: 'H', 'He', 'Li', 'C', 'N', 'O', etc.
-  - Accepts element names: 'Hydrogen', 'Carbon', 'Nitrogen', etc.
-  - Case-insensitive: 'carbon', 'CARBON', 'Carbon' all work
+**Molecular Mass Calculation**:
+- `ATOMIC_MASS(formula)` - Returns atomic or molecular mass in g/mol
+  - **Single elements**: 'H', 'Carbon', 'Au', etc.
+  - **Molecular formulas**: 'H2O', 'CO2', 'Ca(OH)2', 'C6H12O6'
+  - **Common aliases**: 'water', 'glucose', 'salt', 'ammonia'
+  - **Complex organics**: 'CH3COOH', 'C2H5OH', 'C12H22O11'
+  - Supports parentheses for compound groups: 'Mg(NO3)2'
+  - Case-insensitive for elements and aliases
   
-- `ATOMIC_NUMBER(element)` - Returns atomic number
-  - Same element formats as ATOMIC_MASS
-  - Returns the number of protons in the nucleus
+- `ATOMIC_NUMBER(element)` - Returns atomic number (proton count)
+  - Accepts element symbols and names
+  - Single elements only (not molecular formulas)
 
 **Supported Elements**:
-Currently supports the first 20 elements of the periodic table, from Hydrogen (H) to Calcium (Ca), with plans to expand to all elements.
+Currently supports the first 20 elements plus common metals (Fe, Cu, Zn, Ag, Au, Hg, Pb, U).
+
+**Compound Aliases**:
+- Water compounds: 'water' (H2O)
+- Organic compounds: 'glucose' (C6H12O6), 'sucrose' (C12H22O11), 'ethanol' (C2H5OH)
+- Common chemicals: 'salt' (NaCl), 'ammonia' (NH3), 'baking soda' (NaHCO3)
+- Acids: 'sulfuric acid' (H2SO4), 'hydrochloric acid' (HCl), 'nitric acid' (HNO3)
 
 ## ⚠️ SQL Features Not Yet Supported
 
