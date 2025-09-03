@@ -3,6 +3,7 @@
 //! This module handles all SQL-related functionality including
 //! parsing, query optimization, execution, and caching.
 
+pub mod aggregates;
 pub mod cache;
 pub mod cursor_aware_parser;
 pub mod functions;

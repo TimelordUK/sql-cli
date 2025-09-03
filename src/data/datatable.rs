@@ -96,7 +96,7 @@ impl DataColumn {
 }
 
 /// A single cell value in the table
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum DataValue {
     String(String),
     InternedString(Arc<String>), // For repeated strings (e.g., status, trader names)

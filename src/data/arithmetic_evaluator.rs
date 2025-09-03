@@ -1,4 +1,5 @@
 use crate::data::datatable::{DataTable, DataValue};
+use crate::sql::aggregates::AggregateRegistry;
 use crate::sql::functions::FunctionRegistry;
 use crate::sql::recursive_parser::SqlExpression;
 use anyhow::{anyhow, Result};
@@ -12,6 +13,8 @@ pub struct ArithmeticEvaluator<'a> {
     table: &'a DataTable,
     date_notation: String,
     function_registry: Arc<FunctionRegistry>,
+    aggregate_registry: Arc<AggregateRegistry>,
+    visible_rows: Option<Vec<usize>>, // For aggregate functions on filtered views
 }
 
 impl<'a> ArithmeticEvaluator<'a> {
@@ -20,6 +23,8 @@ impl<'a> ArithmeticEvaluator<'a> {
             table,
             date_notation: "us".to_string(),
             function_registry: Arc::new(FunctionRegistry::new()),
+            aggregate_registry: Arc::new(AggregateRegistry::new()),
+            visible_rows: None,
         }
     }
 
@@ -28,7 +33,15 @@ impl<'a> ArithmeticEvaluator<'a> {
             table,
             date_notation,
             function_registry: Arc::new(FunctionRegistry::new()),
+            aggregate_registry: Arc::new(AggregateRegistry::new()),
+            visible_rows: None,
         }
+    }
+
+    /// Set visible rows for aggregate functions (for filtered views)
+    pub fn with_visible_rows(mut self, rows: Vec<usize>) -> Self {
+        self.visible_rows = Some(rows);
+        self
     }
 
     pub fn with_date_notation_and_registry(
@@ -40,6 +53,8 @@ impl<'a> ArithmeticEvaluator<'a> {
             table,
             date_notation,
             function_registry,
+            aggregate_registry: Arc::new(AggregateRegistry::new()),
+            visible_rows: None,
         }
     }
 
@@ -492,6 +507,66 @@ impl<'a> ArithmeticEvaluator<'a> {
         args: &[SqlExpression],
         row_index: usize,
     ) -> Result<DataValue> {
+        // Check if this is an aggregate function
+        let name_upper = name.to_uppercase();
+
+        // Handle COUNT(*) special case
+        if name_upper == "COUNT" && args.len() == 1 {
+            match &args[0] {
+                SqlExpression::Column(col) if col == "*" => {
+                    // COUNT(*) - count all rows (or visible rows if filtered)
+                    let count = if let Some(ref visible) = self.visible_rows {
+                        visible.len() as i64
+                    } else {
+                        self.table.rows.len() as i64
+                    };
+                    return Ok(DataValue::Integer(count));
+                }
+                SqlExpression::StringLiteral(s) if s == "*" => {
+                    // COUNT(*) parsed as StringLiteral
+                    let count = if let Some(ref visible) = self.visible_rows {
+                        visible.len() as i64
+                    } else {
+                        self.table.rows.len() as i64
+                    };
+                    return Ok(DataValue::Integer(count));
+                }
+                _ => {
+                    // COUNT(column) - will be handled below
+                }
+            }
+        }
+
+        // Check aggregate registry
+        if let Some(agg_func) = self.aggregate_registry.get(&name_upper) {
+            // For aggregate functions, we need to evaluate over all rows (or visible rows)
+            let mut state = agg_func.init();
+
+            // Determine which rows to process
+            let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
+                visible.clone()
+            } else {
+                (0..self.table.rows.len()).collect()
+            };
+
+            // If no arguments (like COUNT(*)), process all rows
+            if args.is_empty()
+                || (args.len() == 1 && matches!(&args[0], SqlExpression::Column(c) if c == "*"))
+            {
+                for _ in &rows_to_process {
+                    agg_func.accumulate(&mut state, &DataValue::Integer(1))?;
+                }
+            } else {
+                // Evaluate the argument expression for each row
+                for &row_idx in &rows_to_process {
+                    let value = self.evaluate(&args[0], row_idx)?;
+                    agg_func.accumulate(&mut state, &value)?;
+                }
+            }
+
+            return Ok(agg_func.finalize(state));
+        }
+
         // First check if this function exists in the registry
         if let Some(func) = self.function_registry.get(name) {
             // Evaluate all arguments first
@@ -507,7 +582,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         // If not in registry, check built-in functions that need special handling
         // (functions that need access to table data or row context)
         // Convert function name to uppercase for case-insensitive matching
-        match name.to_uppercase().as_str() {
+        match name_upper.as_str() {
             "ROUND" => {
                 if args.is_empty() || args.len() > 2 {
                     return Err(anyhow!("ROUND requires 1 or 2 arguments"));

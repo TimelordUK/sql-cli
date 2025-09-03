@@ -8,6 +8,7 @@ use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable};
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
+use crate::sql::aggregates::contains_aggregate;
 use crate::sql::recursive_parser::{
     OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection,
 };
@@ -291,6 +292,19 @@ impl QueryEngine {
             view.row_count()
         );
 
+        // Check if ALL select items are aggregate functions (no GROUP BY)
+        let all_aggregates = select_items.iter().all(|item| match item {
+            SelectItem::Expression { expr, .. } => contains_aggregate(expr),
+            SelectItem::Column(_) => false,
+            SelectItem::Star => false,
+        });
+
+        if all_aggregates && view.row_count() > 0 {
+            // Special handling for aggregate-only queries (no GROUP BY)
+            // These should produce exactly one row
+            return self.apply_aggregate_select(view, select_items);
+        }
+
         // Check if we need to create computed columns
         let has_computed_expressions = select_items
             .iter()
@@ -403,6 +417,54 @@ impl QueryEngine {
         // Return a view of the computed result
         // This is a temporary view for this query only
         Ok(DataView::new(Arc::new(computed_table)))
+    }
+
+    /// Apply aggregate-only SELECT (no GROUP BY - produces single row)
+    fn apply_aggregate_select(
+        &self,
+        view: DataView,
+        select_items: &[SelectItem],
+    ) -> Result<DataView> {
+        debug!("QueryEngine::apply_aggregate_select - creating single row aggregate result");
+
+        let source_table = view.source();
+        let mut result_table = DataTable::new("aggregate_result");
+
+        // Add columns for each select item
+        for item in select_items {
+            let column_name = match item {
+                SelectItem::Expression { alias, .. } => alias.clone(),
+                _ => unreachable!("Should only have expressions in aggregate-only query"),
+            };
+            result_table.add_column(DataColumn::new(&column_name));
+        }
+
+        // Create evaluator with visible rows from the view (for filtered aggregates)
+        let visible_rows = view.visible_row_indices().to_vec();
+        let evaluator =
+            ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone())
+                .with_visible_rows(visible_rows);
+
+        // Evaluate each aggregate expression once (they handle all rows internally)
+        let mut row_values = Vec::new();
+        for item in select_items {
+            match item {
+                SelectItem::Expression { expr, .. } => {
+                    // The evaluator will handle aggregates over all rows
+                    // We pass row_index=0 but aggregates ignore it and process all rows
+                    let value = evaluator.evaluate(expr, 0)?;
+                    row_values.push(value);
+                }
+                _ => unreachable!("Should only have expressions in aggregate-only query"),
+            }
+        }
+
+        // Add the single result row
+        result_table
+            .add_row(DataRow::new(row_values))
+            .map_err(|e| anyhow::anyhow!("Failed to add aggregate result row: {}", e))?;
+
+        Ok(DataView::new(Arc::new(result_table)))
     }
 
     /// Resolve SelectItem columns to indices (for simple column projections only)
