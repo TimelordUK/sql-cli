@@ -5,6 +5,7 @@
 
 pub mod cache;
 pub mod cursor_aware_parser;
+pub mod functions;
 pub mod hybrid_parser;
 pub mod parser;
 pub mod recursive_parser;

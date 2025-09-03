@@ -1,7 +1,9 @@
 use crate::data::datatable::{DataTable, DataValue};
+use crate::sql::functions::FunctionRegistry;
 use crate::sql::recursive_parser::SqlExpression;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use std::sync::Arc;
 use tracing::debug;
 
 /// Evaluates SQL expressions to compute DataValues (for SELECT clauses)
@@ -9,6 +11,7 @@ use tracing::debug;
 pub struct ArithmeticEvaluator<'a> {
     table: &'a DataTable,
     date_notation: String,
+    function_registry: Arc<FunctionRegistry>,
 }
 
 impl<'a> ArithmeticEvaluator<'a> {
@@ -16,6 +19,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         Self {
             table,
             date_notation: "us".to_string(),
+            function_registry: Arc::new(FunctionRegistry::new()),
         }
     }
 
@@ -23,6 +27,19 @@ impl<'a> ArithmeticEvaluator<'a> {
         Self {
             table,
             date_notation,
+            function_registry: Arc::new(FunctionRegistry::new()),
+        }
+    }
+
+    pub fn with_date_notation_and_registry(
+        table: &'a DataTable,
+        date_notation: String,
+        function_registry: Arc<FunctionRegistry>,
+    ) -> Self {
+        Self {
+            table,
+            date_notation,
+            function_registry,
         }
     }
 
@@ -475,6 +492,20 @@ impl<'a> ArithmeticEvaluator<'a> {
         args: &[SqlExpression],
         row_index: usize,
     ) -> Result<DataValue> {
+        // First check if this function exists in the registry
+        if let Some(func) = self.function_registry.get(name) {
+            // Evaluate all arguments first
+            let mut evaluated_args = Vec::new();
+            for arg in args {
+                evaluated_args.push(self.evaluate(arg, row_index)?);
+            }
+
+            // Call the function from the registry
+            return func.evaluate(&evaluated_args);
+        }
+
+        // If not in registry, check built-in functions that need special handling
+        // (functions that need access to table data or row context)
         // Convert function name to uppercase for case-insensitive matching
         match name.to_uppercase().as_str() {
             "ROUND" => {
@@ -803,12 +834,6 @@ impl<'a> ArithmeticEvaluator<'a> {
                     Err(anyhow!("LOG requires 1 or 2 arguments"))
                 }
             }
-            "PI" => {
-                if !args.is_empty() {
-                    return Err(anyhow!("PI takes no arguments"));
-                }
-                Ok(DataValue::Float(std::f64::consts::PI))
-            }
             "DATEDIFF" => {
                 if args.len() != 3 {
                     return Err(anyhow!(
@@ -1066,13 +1091,6 @@ impl<'a> ArithmeticEvaluator<'a> {
 
                 Ok(DataValue::String(values.join(&delimiter)))
             }
-            "PI" => {
-                // PI constant - no arguments
-                if !args.is_empty() {
-                    return Err(anyhow!("PI() takes no arguments"));
-                }
-                Ok(DataValue::Float(std::f64::consts::PI))
-            }
             "EULER" => {
                 // Euler's number constant - no arguments
                 if !args.is_empty() {
@@ -1187,14 +1205,6 @@ impl<'a> ArithmeticEvaluator<'a> {
                 }
                 Ok(DataValue::Float(1.602176634e-19))
             }
-            // Physics Constants - Particle Masses
-            "ME" | "MASS_ELECTRON" => {
-                // Electron mass (kg)
-                if !args.is_empty() {
-                    return Err(anyhow!("ME() takes no arguments"));
-                }
-                Ok(DataValue::Float(9.1093837015e-31))
-            }
             "MP" | "MASS_PROTON" => {
                 // Proton mass (kg)
                 if !args.is_empty() {
@@ -1274,13 +1284,6 @@ impl<'a> ArithmeticEvaluator<'a> {
                     return Err(anyhow!("RADIUS_SUN() takes no arguments"));
                 }
                 Ok(DataValue::Float(6.96342e8))
-            }
-            "MASS_EARTH" | "MEARTH" => {
-                // Earth mass (kg)
-                if !args.is_empty() {
-                    return Err(anyhow!("MASS_EARTH() takes no arguments"));
-                }
-                Ok(DataValue::Float(5.97237e24))
             }
             "RADIUS_EARTH" | "REARTH" => {
                 // Earth mean radius (m)
