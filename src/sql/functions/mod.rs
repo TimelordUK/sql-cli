@@ -7,6 +7,7 @@ use crate::data::datatable::DataValue;
 
 pub mod astronomy;
 pub mod chemistry;
+pub mod comparison;
 pub mod constants;
 pub mod string_methods;
 
@@ -125,6 +126,7 @@ impl FunctionRegistry {
         registry.register_astronomical_functions();
         registry.register_chemical_functions();
         registry.register_string_methods();
+        registry.register_comparison_functions();
 
         registry
     }
@@ -269,6 +271,11 @@ impl FunctionRegistry {
     /// Register string method functions
     fn register_string_methods(&mut self) {
         string_methods::register_string_methods(self);
+    }
+
+    /// Register comparison functions
+    fn register_comparison_functions(&mut self) {
+        comparison::register_comparison_functions(self);
     }
 }
 
