@@ -1,12 +1,17 @@
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 use crate::data::datatable::DataValue;
 
 pub mod astronomy;
 pub mod chemistry;
 pub mod constants;
+pub mod string_methods;
+
+// Re-export MethodFunction trait
+pub use string_methods::MethodFunction;
 
 /// Category of SQL functions for organization and discovery
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -103,6 +108,7 @@ pub trait SqlFunction: Send + Sync {
 pub struct FunctionRegistry {
     functions: HashMap<String, Box<dyn SqlFunction>>,
     by_category: HashMap<FunctionCategory, Vec<String>>,
+    methods: HashMap<String, Arc<dyn MethodFunction>>,
 }
 
 impl FunctionRegistry {
@@ -111,12 +117,14 @@ impl FunctionRegistry {
         let mut registry = Self {
             functions: HashMap::new(),
             by_category: HashMap::new(),
+            methods: HashMap::new(),
         };
 
         // Register all built-in functions
         registry.register_constants();
         registry.register_astronomical_functions();
         registry.register_chemical_functions();
+        registry.register_string_methods();
 
         registry
     }
@@ -179,6 +187,34 @@ impl FunctionRegistry {
             .collect()
     }
 
+    /// Register a method function
+    pub fn register_method(&mut self, method: Arc<dyn MethodFunction>) {
+        let method_name = method.method_name().to_uppercase();
+        self.methods.insert(method_name, method);
+    }
+
+    /// Get a method function by name
+    pub fn get_method(&self, name: &str) -> Option<Arc<dyn MethodFunction>> {
+        // Try exact match first
+        if let Some(method) = self.methods.get(&name.to_uppercase()) {
+            return Some(Arc::clone(method));
+        }
+
+        // Try to find a method that handles this name
+        for method in self.methods.values() {
+            if method.handles_method(name) {
+                return Some(Arc::clone(method));
+            }
+        }
+
+        None
+    }
+
+    /// Check if a method exists
+    pub fn has_method(&self, name: &str) -> bool {
+        self.get_method(name).is_some()
+    }
+
     /// Register constant functions
     fn register_constants(&mut self) {
         use constants::*;
@@ -228,6 +264,11 @@ impl FunctionRegistry {
         self.register(Box::new(AvogadroFunction));
         self.register(Box::new(AtomicMassFunction));
         self.register(Box::new(AtomicNumberFunction));
+    }
+
+    /// Register string method functions
+    fn register_string_methods(&mut self) {
+        string_methods::register_string_methods(self);
     }
 }
 
