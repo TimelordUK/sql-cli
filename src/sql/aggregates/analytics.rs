@@ -366,4 +366,3 @@ impl AggregateFunction for CumMinFunction {
         }
     }
 }
-

@@ -48,6 +48,9 @@ impl SqlFunction for EFunction {
 /// Mass of electron in kg
 pub struct MeFunction;
 
+/// Alias for ME function
+pub struct MassElectronFunction;
+
 impl SqlFunction for MeFunction {
     fn signature(&self) -> FunctionSignature {
         FunctionSignature {
@@ -62,7 +65,25 @@ impl SqlFunction for MeFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(9.10938356e-31))
+        Ok(DataValue::Float(9.1093837015e-31))
+    }
+}
+
+impl SqlFunction for MassElectronFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "MASS_ELECTRON",
+            category: FunctionCategory::Constant,
+            arg_count: ArgCount::Fixed(0),
+            description: "Alias for ME() - Returns the mass of an electron in kg",
+            returns: "FLOAT",
+            examples: vec!["SELECT MASS_ELECTRON()"],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(9.1093837015e-31))
     }
 }
 

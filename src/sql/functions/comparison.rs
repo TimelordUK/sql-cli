@@ -311,7 +311,8 @@ impl SqlFunction for GreatestLabelFunction {
             name: "GREATEST_LABEL",
             category: FunctionCategory::Mathematical,
             arg_count: ArgCount::Variadic,
-            description: "Returns the label associated with the greatest value from label/value pairs",
+            description:
+                "Returns the label associated with the greatest value from label/value pairs",
             returns: "STRING",
             examples: vec![
                 "SELECT GREATEST_LABEL('earth', MASS_EARTH(), 'sun', MASS_SUN()) as bigger_body",
@@ -323,11 +324,15 @@ impl SqlFunction for GreatestLabelFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         if args.is_empty() {
-            return Err(anyhow!("GREATEST_LABEL requires at least one label/value pair"));
+            return Err(anyhow!(
+                "GREATEST_LABEL requires at least one label/value pair"
+            ));
         }
-        
+
         if args.len() % 2 != 0 {
-            return Err(anyhow!("GREATEST_LABEL requires an even number of arguments (label/value pairs)"));
+            return Err(anyhow!(
+                "GREATEST_LABEL requires an even number of arguments (label/value pairs)"
+            ));
         }
 
         let mut best_label = None;
@@ -398,11 +403,15 @@ impl SqlFunction for LeastLabelFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         if args.is_empty() {
-            return Err(anyhow!("LEAST_LABEL requires at least one label/value pair"));
+            return Err(anyhow!(
+                "LEAST_LABEL requires at least one label/value pair"
+            ));
         }
-        
+
         if args.len() % 2 != 0 {
-            return Err(anyhow!("LEAST_LABEL requires an even number of arguments (label/value pairs)"));
+            return Err(anyhow!(
+                "LEAST_LABEL requires an even number of arguments (label/value pairs)"
+            ));
         }
 
         let mut best_label = None;

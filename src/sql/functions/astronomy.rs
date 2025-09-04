@@ -25,7 +25,7 @@ impl SqlFunction for MassEarthFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(5.972e24))
+        Ok(DataValue::Float(5.97237e24))
     }
 }
 
@@ -96,7 +96,7 @@ impl SqlFunction for MassMercuryFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(3.301e23))
+        Ok(DataValue::Float(3.3011e23))
     }
 }
 
@@ -117,7 +117,7 @@ impl SqlFunction for MassVenusFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(4.867e24))
+        Ok(DataValue::Float(4.8675e24))
     }
 }
 
@@ -138,7 +138,7 @@ impl SqlFunction for MassMarsFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(6.417e23))
+        Ok(DataValue::Float(6.4171e23))
     }
 }
 
@@ -162,7 +162,7 @@ impl SqlFunction for MassJupiterFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(1.898e27))
+        Ok(DataValue::Float(1.8982e27))
     }
 }
 
@@ -183,7 +183,7 @@ impl SqlFunction for MassSaturnFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(5.683e26))
+        Ok(DataValue::Float(5.6834e26))
     }
 }
 
@@ -204,7 +204,7 @@ impl SqlFunction for MassUranusFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(8.681e25))
+        Ok(DataValue::Float(8.6810e25))
     }
 }
 
@@ -225,7 +225,7 @@ impl SqlFunction for MassNeptuneFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(1.024e26))
+        Ok(DataValue::Float(1.02413e26))
     }
 }
 
@@ -472,7 +472,7 @@ impl SqlFunction for AuFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(1.496e11))
+        Ok(DataValue::Float(1.495978707e11))
     }
 }
 
@@ -496,7 +496,7 @@ impl SqlFunction for LightYearFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(9.461e15))
+        Ok(DataValue::Float(9.4607e15))
     }
 }
 
@@ -520,7 +520,7 @@ impl SqlFunction for ParsecFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(3.086e16))
+        Ok(DataValue::Float(3.0857e16))
     }
 }
 

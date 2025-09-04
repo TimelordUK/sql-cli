@@ -181,7 +181,7 @@ impl SqlFunction for AvogadroFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         self.validate_args(args)?;
-        Ok(DataValue::Float(6.022140857e23))
+        Ok(DataValue::Float(6.02214076e23))
     }
 }
 

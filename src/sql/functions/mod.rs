@@ -224,6 +224,7 @@ impl FunctionRegistry {
         self.register(Box::new(PiFunction));
         self.register(Box::new(EFunction));
         self.register(Box::new(MeFunction)); // Mass of electron
+        self.register(Box::new(MassElectronFunction)); // Alias for ME
     }
 
     /// Register astronomical functions
