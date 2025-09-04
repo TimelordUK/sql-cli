@@ -151,6 +151,37 @@ WHERE SQRT(area) BETWEEN 10 AND 50
 **Available Math Functions:**
 `ROUND`, `ABS`, `FLOOR`, `CEILING`, `MOD`, `QUOTIENT`, `POWER`, `SQRT`, `EXP`, `LN`, `LOG`, `LOG10`
 
+#### **Comparison & NULL Functions**
+```sql
+-- Find maximum/minimum across multiple columns
+SELECT 
+    id,
+    GREATEST(salary, bonus, commission) as max_income,
+    LEAST(jan_sales, feb_sales, mar_sales) as worst_month,
+    GREATEST(0, balance) as positive_balance  -- Clamp negative to zero
+FROM employees;
+
+-- Handle NULL values elegantly
+SELECT 
+    COALESCE(phone, mobile, email, 'No contact') as primary_contact,
+    NULLIF(total, 0) as non_zero_total,  -- Returns NULL if total is 0
+    COALESCE(discount, 0) * price as discounted_price
+FROM orders;
+
+-- Mixed type comparisons (int/float coercion)
+SELECT 
+    GREATEST(10, 15.5, 8) as max_val,     -- Returns 15.5
+    LEAST('apple', 'banana', 'cherry'),   -- Returns 'apple'
+    GREATEST(date1, date2, date3) as latest_date
+FROM data;
+```
+
+**Comparison Functions:**
+- `GREATEST(val1, val2, ...)` - Returns maximum value from list
+- `LEAST(val1, val2, ...)` - Returns minimum value from list
+- `COALESCE(val1, val2, ...)` - Returns first non-NULL value
+- `NULLIF(val1, val2)` - Returns NULL if values are equal, else returns val1
+
 #### **🧮 Scientific Calculator Mode with DUAL Table**
 ```sql
 -- Use DUAL table for calculations (Oracle-compatible)
@@ -200,15 +231,24 @@ WHERE name.Contains('manager')
   AND department.Trim() != ''
 ```
 
-**LINQ-Style String Methods:**
+**String Functions & Methods:**
+
+*Method Style (in WHERE clauses):*
 - `column.Contains('text')` - Case-insensitive substring search
 - `column.StartsWith('prefix')` - Case-insensitive prefix check  
 - `column.EndsWith('suffix')` - Case-insensitive suffix check
 - `column.Length()` - Character count
 - `column.IndexOf('substring')` - Find position (0-based, -1 if not found)
 - `column.Trim()` - Remove leading/trailing spaces
-- `column.TrimStart()` - Remove leading spaces only
-- `column.TrimEnd()` - Remove trailing spaces only
+
+*Function Style (anywhere):*
+- `TOUPPER(text)`, `TOLOWER(text)` - Case conversion
+- `TRIM(text)` - Remove whitespace
+- `LENGTH(text)` - String length
+- `CONTAINS(text, pattern)` - Check substring
+- `STARTSWITH(text, prefix)`, `ENDSWITH(text, suffix)` - Pattern matching
+- `SUBSTRING(text, start, length)` - Extract substring
+- `REPLACE(text, old, new)` - Replace all occurrences
 
 ### 🎯 **Advanced Query Capabilities**
 
