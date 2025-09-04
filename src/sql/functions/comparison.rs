@@ -256,12 +256,211 @@ impl SqlFunction for NullIfFunction {
     }
 }
 
+/// IIF function - immediate if (if-then-else)
+pub struct IifFunction;
+
+impl SqlFunction for IifFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "IIF",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(3),
+            description: "Returns second argument if first is true, third if false",
+            returns: "ANY",
+            examples: vec![
+                "SELECT IIF(1 > 0, 'positive', 'negative')",
+                "SELECT IIF(MASS_SUN() > MASS_EARTH(), 'sun', 'earth') as bigger",
+                "SELECT IIF(price > 100, 'expensive', 'affordable') as price_category",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let condition = &args[0];
+        let true_value = &args[1];
+        let false_value = &args[2];
+
+        // Evaluate condition as boolean
+        let is_true = match condition {
+            DataValue::Boolean(b) => *b,
+            DataValue::Integer(i) => *i != 0,
+            DataValue::Float(f) => *f != 0.0 && !f.is_nan(),
+            DataValue::String(s) => !s.is_empty(),
+            DataValue::InternedString(s) => !s.is_empty(),
+            DataValue::Null => false,
+            _ => false,
+        };
+
+        Ok(if is_true {
+            true_value.clone()
+        } else {
+            false_value.clone()
+        })
+    }
+}
+
+/// GREATEST_LABEL function - returns the label associated with the greatest value
+/// Takes pairs of (label, value) and returns the label of the maximum value
+pub struct GreatestLabelFunction;
+
+impl SqlFunction for GreatestLabelFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "GREATEST_LABEL",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Variadic,
+            description: "Returns the label associated with the greatest value from label/value pairs",
+            returns: "STRING",
+            examples: vec![
+                "SELECT GREATEST_LABEL('earth', MASS_EARTH(), 'sun', MASS_SUN()) as bigger_body",
+                "SELECT GREATEST_LABEL('jan', 100, 'feb', 150, 'mar', 120) as best_month",
+                "SELECT GREATEST_LABEL('product_a', sales_a, 'product_b', sales_b) as top_product",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.is_empty() {
+            return Err(anyhow!("GREATEST_LABEL requires at least one label/value pair"));
+        }
+        
+        if args.len() % 2 != 0 {
+            return Err(anyhow!("GREATEST_LABEL requires an even number of arguments (label/value pairs)"));
+        }
+
+        let mut best_label = None;
+        let mut best_value = None;
+
+        // Process pairs of (label, value)
+        for i in (0..args.len()).step_by(2) {
+            let label = &args[i];
+            let value = &args[i + 1];
+
+            // Skip if value is NULL
+            if matches!(value, DataValue::Null) {
+                continue;
+            }
+
+            match &best_value {
+                None => {
+                    // First non-null value
+                    best_label = Some(label.clone());
+                    best_value = Some(value.clone());
+                }
+                Some(current_best) => {
+                    // Compare with current best
+                    match compare_values(value, current_best) {
+                        Some(Ordering::Greater) => {
+                            best_label = Some(label.clone());
+                            best_value = Some(value.clone());
+                        }
+                        Some(_) => {
+                            // Keep current best
+                        }
+                        None => {
+                            // Type mismatch - can't compare
+                            return Err(anyhow!(
+                                "GREATEST_LABEL: Cannot compare values of different types: {:?} and {:?}",
+                                current_best,
+                                value
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Return the label of the greatest value, or NULL if all values were NULL
+        Ok(best_label.unwrap_or(DataValue::Null))
+    }
+}
+
+/// LEAST_LABEL function - returns the label associated with the smallest value
+pub struct LeastLabelFunction;
+
+impl SqlFunction for LeastLabelFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "LEAST_LABEL",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Variadic,
+            description: "Returns the label associated with the smallest value from label/value pairs",
+            returns: "STRING",
+            examples: vec![
+                "SELECT LEAST_LABEL('mercury', MASS_MERCURY(), 'earth', MASS_EARTH()) as smaller_planet",
+                "SELECT LEAST_LABEL('jan', 100, 'feb', 150, 'mar', 120) as worst_month",
+                "SELECT LEAST_LABEL('cost_a', 50, 'cost_b', 30) as cheapest_option",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.is_empty() {
+            return Err(anyhow!("LEAST_LABEL requires at least one label/value pair"));
+        }
+        
+        if args.len() % 2 != 0 {
+            return Err(anyhow!("LEAST_LABEL requires an even number of arguments (label/value pairs)"));
+        }
+
+        let mut best_label = None;
+        let mut best_value = None;
+
+        // Process pairs of (label, value)
+        for i in (0..args.len()).step_by(2) {
+            let label = &args[i];
+            let value = &args[i + 1];
+
+            // Skip if value is NULL
+            if matches!(value, DataValue::Null) {
+                continue;
+            }
+
+            match &best_value {
+                None => {
+                    // First non-null value
+                    best_label = Some(label.clone());
+                    best_value = Some(value.clone());
+                }
+                Some(current_best) => {
+                    // Compare with current best
+                    match compare_values(value, current_best) {
+                        Some(Ordering::Less) => {
+                            best_label = Some(label.clone());
+                            best_value = Some(value.clone());
+                        }
+                        Some(_) => {
+                            // Keep current best
+                        }
+                        None => {
+                            // Type mismatch - can't compare
+                            return Err(anyhow!(
+                                "LEAST_LABEL: Cannot compare values of different types: {:?} and {:?}",
+                                current_best,
+                                value
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Return the label of the smallest value, or NULL if all values were NULL
+        Ok(best_label.unwrap_or(DataValue::Null))
+    }
+}
+
 /// Register all comparison functions
 pub fn register_comparison_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(GreatestFunction));
     registry.register(Box::new(LeastFunction));
     registry.register(Box::new(CoalesceFunction));
     registry.register(Box::new(NullIfFunction));
+    registry.register(Box::new(IifFunction));
+    registry.register(Box::new(GreatestLabelFunction));
+    registry.register(Box::new(LeastLabelFunction));
 }
 
 #[cfg(test)]

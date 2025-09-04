@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 
 use crate::data::datatable::DataValue;
 
+pub mod analytics;
 pub mod functions;
 
 /// State maintained during aggregation
@@ -17,6 +18,7 @@ pub enum AggregateState {
     Avg(AvgState),
     MinMax(MinMaxState),
     CollectList(Vec<DataValue>),
+    Analytics(analytics::AnalyticsState),
 }
 
 /// State for SUM aggregation
@@ -187,6 +189,7 @@ pub struct AggregateRegistry {
 
 impl AggregateRegistry {
     pub fn new() -> Self {
+        use analytics::*;
         use functions::*;
 
         let functions: Vec<Box<dyn AggregateFunction>> = vec![
@@ -196,6 +199,14 @@ impl AggregateRegistry {
             Box::new(AvgFunction),
             Box::new(MinFunction),
             Box::new(MaxFunction),
+            // Analytics functions
+            Box::new(DeltasFunction),
+            Box::new(SumsFunction),
+            Box::new(MavgFunction),
+            Box::new(PctChangeFunction),
+            Box::new(RankFunction),
+            Box::new(CumMaxFunction),
+            Box::new(CumMinFunction),
         ];
 
         Self { functions }
