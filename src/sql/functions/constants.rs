@@ -123,7 +123,7 @@ mod tests {
         let func = MeFunction;
         let result = func.evaluate(&[]).unwrap();
         match result {
-            DataValue::Float(val) => assert!((val - 9.10938356e-31).abs() < 1e-40),
+            DataValue::Float(val) => assert!((val - 9.1093837015e-31).abs() < 1e-40),
             _ => panic!("Expected Float"),
         }
     }

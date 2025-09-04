@@ -533,7 +533,7 @@ mod tests {
         let func = MassEarthFunction;
         let result = func.evaluate(&[]).unwrap();
         match result {
-            DataValue::Float(val) => assert_eq!(val, 5.972e24),
+            DataValue::Float(val) => assert_eq!(val, 5.97237e24),
             _ => panic!("Expected Float"),
         }
     }
@@ -553,7 +553,7 @@ mod tests {
         let func = AuFunction;
         let result = func.evaluate(&[]).unwrap();
         match result {
-            DataValue::Float(val) => assert_eq!(val, 1.496e11),
+            DataValue::Float(val) => assert_eq!(val, 1.495978707e11),
             _ => panic!("Expected Float"),
         }
     }
@@ -563,7 +563,7 @@ mod tests {
         let func = LightYearFunction;
         let result = func.evaluate(&[]).unwrap();
         match result {
-            DataValue::Float(val) => assert_eq!(val, 9.461e15),
+            DataValue::Float(val) => assert_eq!(val, 9.4607e15),
             _ => panic!("Expected Float"),
         }
     }

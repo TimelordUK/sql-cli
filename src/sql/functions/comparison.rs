@@ -94,6 +94,10 @@ impl SqlFunction for GreatestFunction {
                     }
                 }
                 Some(current) => {
+                    // Skip NULL values when we already have a non-null value
+                    if matches!(arg, DataValue::Null) {
+                        continue;
+                    }
                     // Compare with current greatest
                     match compare_values(arg, current) {
                         Some(Ordering::Greater) => {
@@ -157,6 +161,10 @@ impl SqlFunction for LeastFunction {
                     }
                 }
                 Some(current) => {
+                    // Skip NULL values when we already have a non-null value
+                    if matches!(arg, DataValue::Null) {
+                        continue;
+                    }
                     // Compare with current least
                     match compare_values(arg, current) {
                         Some(Ordering::Less) => {

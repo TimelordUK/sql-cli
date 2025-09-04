@@ -26,7 +26,7 @@ fn test_registry_constant_functions() {
     };
     let me_result = evaluator.evaluate(&me_expr, 0).unwrap();
     match me_result {
-        DataValue::Float(val) => assert!((val - 9.10938356e-31).abs() < 1e-40),
+        DataValue::Float(val) => assert!((val - 9.1093837015e-31).abs() < 1e-40),
         _ => panic!("Expected Float for ME()"),
     }
 
@@ -54,7 +54,7 @@ fn test_registry_astronomical_functions() {
     };
     let earth_result = evaluator.evaluate(&earth_expr, 0).unwrap();
     match earth_result {
-        DataValue::Float(val) => assert_eq!(val, 5.972e24),
+        DataValue::Float(val) => assert_eq!(val, 5.97237e24),
         _ => panic!("Expected Float for MASS_EARTH()"),
     }
 
@@ -76,7 +76,7 @@ fn test_registry_astronomical_functions() {
     };
     let au_result = evaluator.evaluate(&au_expr, 0).unwrap();
     match au_result {
-        DataValue::Float(val) => assert_eq!(val, 1.496e11),
+        DataValue::Float(val) => assert_eq!(val, 1.495978707e11),
         _ => panic!("Expected Float for AU()"),
     }
 
@@ -87,7 +87,7 @@ fn test_registry_astronomical_functions() {
     };
     let ly_result = evaluator.evaluate(&ly_expr, 0).unwrap();
     match ly_result {
-        DataValue::Float(val) => assert_eq!(val, 9.461e15),
+        DataValue::Float(val) => assert_eq!(val, 9.4607e15),
         _ => panic!("Expected Float for LIGHT_YEAR()"),
     }
 }
@@ -104,7 +104,7 @@ fn test_registry_chemistry_functions() {
     };
     let avogadro_result = evaluator.evaluate(&avogadro_expr, 0).unwrap();
     match avogadro_result {
-        DataValue::Float(val) => assert!((val - 6.022140857e23).abs() < 1e20),
+        DataValue::Float(val) => assert!((val - 6.02214076e23).abs() < 1e20),
         _ => panic!("Expected Float for AVOGADRO()"),
     }
 
