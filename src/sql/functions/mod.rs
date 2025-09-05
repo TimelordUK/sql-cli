@@ -9,6 +9,7 @@ pub mod astronomy;
 pub mod chemistry;
 pub mod comparison;
 pub mod constants;
+pub mod mathematics;
 pub mod string_methods;
 
 // Re-export MethodFunction trait
@@ -125,6 +126,7 @@ impl FunctionRegistry {
         registry.register_constants();
         registry.register_astronomical_functions();
         registry.register_chemical_functions();
+        registry.register_mathematical_functions();
         registry.register_string_methods();
         registry.register_comparison_functions();
 
@@ -277,6 +279,17 @@ impl FunctionRegistry {
     /// Register comparison functions
     fn register_comparison_functions(&mut self) {
         comparison::register_comparison_functions(self);
+    }
+
+    /// Register mathematical functions
+    fn register_mathematical_functions(&mut self) {
+        use mathematics::*;
+
+        self.register(Box::new(PrimeFunction));
+        self.register(Box::new(IsPrimeFunction));
+        self.register(Box::new(PrimeCountFunction));
+        self.register(Box::new(NextPrimeFunction));
+        self.register(Box::new(PrevPrimeFunction));
     }
 }
 
