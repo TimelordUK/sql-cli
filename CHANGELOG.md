@@ -5,6 +5,81 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.38.0] - 2025-09-05
+
+### 🔢 Prime Number Functions & Self-Documenting Registry
+
+This release adds comprehensive prime number support with pre-computed tables for lightning-fast operations, plus a self-documenting function registry that automatically generates documentation.
+
+### ✨ New Features
+
+#### **Prime Number Functions**
+- **`PRIME(n)`** - Returns the nth prime number (1-indexed)
+  - Pre-computed 100,000 primes at compile time
+  - O(1) access up to the 100,000th prime (1,299,709)
+- **`IS_PRIME(n)`** - Tests if a number is prime
+  - O(1) for numbers up to 1.3 million via HashSet lookup
+  - Miller-Rabin algorithm for larger numbers
+- **`PRIME_COUNT(n)`** - Returns count of primes ≤ n (π(n) function)
+- **`NEXT_PRIME(n)`** - Returns smallest prime ≥ n
+- **`PREV_PRIME(n)`** - Returns largest prime ≤ n
+
+#### **Self-Documenting Function Registry**
+- **`--list-functions`** - List all available SQL functions with descriptions
+- **`--function-help <name>`** - Show detailed help for a specific function
+- **`--generate-docs`** - Auto-generate markdown reference documentation
+- All function metadata (description, arguments, examples) now in one place
+
+#### **Prime Number Examples**
+```sql
+-- Get the 100th prime
+SELECT PRIME(100);  -- Returns 541
+
+-- Test primality
+SELECT IS_PRIME(17), IS_PRIME(100);  -- true, false
+
+-- Count primes up to 1000
+SELECT PRIME_COUNT(1000);  -- Returns 168
+
+-- Find twin primes (gap of 2)
+SELECT n, PRIME(n), PRIME(n+1) 
+FROM numbers WHERE PRIME(n+1) - PRIME(n) = 2;
+
+-- Navigate primes
+SELECT NEXT_PRIME(100), PREV_PRIME(100);  -- 101, 97
+```
+
+### 🚀 Performance
+- Pre-computed prime tables use only ~400KB memory
+- Instant access to first 100,000 primes
+- Efficient primality testing via compile-time generation
+
+### 🧪 Testing
+- Comprehensive Python test suite for prime functions
+- Tests include twin primes, Goldbach's conjecture, Sophie Germain primes
+- Prime analysis demonstration script
+
+### 📚 Documentation  
+- Auto-generated FUNCTION_REFERENCE.md from registry
+- Function help available directly from CLI
+- Examples embedded in function signatures
+
+## [1.37.0] - 2025-09-04
+
+### 🎨 String Functions & Mathematical Constants
+
+### ✨ New Features
+
+#### **String Functions**
+- **`MID(string, start, length)`** - Extract substring (1-indexed like SQL)
+- **`UPPER(string)`** - Convert to uppercase
+- **`LOWER(string)`** - Convert to lowercase  
+- **`TRIM(string)`** - Remove leading/trailing whitespace
+
+#### **Mathematical Constants**
+- **`PI()`** - Returns π (3.14159...)
+- **`E()`** - Returns Euler's number (2.71828...)
+
 ## [1.36.0] - 2025-09-02
 
 ### 🌌 Astronomical Constants & Solar System Calculations

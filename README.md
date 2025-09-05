@@ -149,7 +149,17 @@ WHERE SQRT(area) BETWEEN 10 AND 50
 ```
 
 **Available Math Functions:**
-`ROUND`, `ABS`, `FLOOR`, `CEILING`, `MOD`, `QUOTIENT`, `POWER`, `SQRT`, `EXP`, `LN`, `LOG`, `LOG10`
+- **Basic:** `ROUND`, `ABS`, `FLOOR`, `CEILING`, `MOD`, `QUOTIENT`, `POWER`, `SQRT`, `EXP`, `LN`, `LOG`, `LOG10`
+- **Prime Numbers:** `PRIME(n)` - nth prime, `IS_PRIME(n)` - primality test, `PRIME_COUNT(n)` - count primes ≤ n, `NEXT_PRIME(n)`, `PREV_PRIME(n)`
+- **Constants:** `PI()`, `E()` - mathematical constants
+
+```sql
+-- Prime number operations
+SELECT PRIME(100);  -- 100th prime = 541
+SELECT IS_PRIME(17), IS_PRIME(100);  -- true, false
+SELECT PRIME_COUNT(1000);  -- 168 primes under 1000
+SELECT NEXT_PRIME(100), PREV_PRIME(100);  -- 101, 97
+```
 
 #### **Comparison & NULL Functions**
 ```sql
@@ -332,7 +342,7 @@ LIMIT 100
 |---------|---------|---------|---------|-------------|
 | **LINQ Methods** | ✅ `.Contains()`, `.StartsWith()` | ❌ | ❌ | ❌ |
 | **Date Functions** | ✅ `DATEDIFF`, `DATEADD`, `NOW()` | ❌ | Limited | ❌ |
-| **Math Functions** | ✅ `ROUND`, `SQRT`, `POWER`, etc. | ❌ | Basic | ❌ |
+| **Math Functions** | ✅ `ROUND`, `SQRT`, `POWER`, Primes | ❌ | Basic | ❌ |
 | **Vim Navigation** | ✅ Full vim-style | Basic | ❌ | ❌ |
 | **Computed Columns** | ✅ `price * qty as total` | ❌ | ❌ | Limited |
 | **Smart Completion** | ✅ Context-aware SQL | ❌ | ❌ | ❌ |
