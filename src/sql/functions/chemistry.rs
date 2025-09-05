@@ -1,8 +1,234 @@
 use anyhow::{anyhow, Result};
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 
 use super::{ArgCount, FunctionCategory, FunctionSignature, SqlFunction};
 use crate::data::datatable::DataValue;
+
+/// Represents a known molecule with its formula and common names
+#[derive(Debug, Clone)]
+struct Molecule {
+    formula: &'static str,
+    names: &'static [&'static str],
+    category: &'static str,
+}
+
+lazy_static! {
+    /// Table of known molecules and their formulas
+    static ref MOLECULE_TABLE: Vec<Molecule> = vec![
+        // Water and related
+        Molecule {
+            formula: "H2O",
+            names: &["WATER"],
+            category: "Inorganic"
+        },
+        Molecule {
+            formula: "H2O2",
+            names: &["HYDROGEN PEROXIDE"],
+            category: "Inorganic"
+        },
+
+        // Common gases
+        Molecule {
+            formula: "NH3",
+            names: &["AMMONIA"],
+            category: "Inorganic"
+        },
+        Molecule {
+            formula: "CO2",
+            names: &["CARBON DIOXIDE", "CO2"],
+            category: "Inorganic"
+        },
+        Molecule {
+            formula: "CO",
+            names: &["CARBON MONOXIDE", "CO"],
+            category: "Inorganic"
+        },
+        Molecule {
+            formula: "O2",
+            names: &["OXYGEN", "DIOXYGEN"],
+            category: "Inorganic"
+        },
+        Molecule {
+            formula: "N2",
+            names: &["NITROGEN", "DINITROGEN"],
+            category: "Inorganic"
+        },
+        Molecule {
+            formula: "O3",
+            names: &["OZONE"],
+            category: "Inorganic"
+        },
+
+        // Hydrocarbons
+        Molecule {
+            formula: "CH4",
+            names: &["METHANE"],
+            category: "Hydrocarbon"
+        },
+        Molecule {
+            formula: "C2H6",
+            names: &["ETHANE"],
+            category: "Hydrocarbon"
+        },
+        Molecule {
+            formula: "C3H8",
+            names: &["PROPANE"],
+            category: "Hydrocarbon"
+        },
+        Molecule {
+            formula: "C4H10",
+            names: &["BUTANE"],
+            category: "Hydrocarbon"
+        },
+        Molecule {
+            formula: "C5H12",
+            names: &["PENTANE"],
+            category: "Hydrocarbon"
+        },
+        Molecule {
+            formula: "C6H14",
+            names: &["HEXANE"],
+            category: "Hydrocarbon"
+        },
+        Molecule {
+            formula: "C2H4",
+            names: &["ETHENE", "ETHYLENE"],
+            category: "Hydrocarbon"
+        },
+        Molecule {
+            formula: "C2H2",
+            names: &["ETHYNE", "ACETYLENE"],
+            category: "Hydrocarbon"
+        },
+        Molecule {
+            formula: "C6H6",
+            names: &["BENZENE"],
+            category: "Hydrocarbon"
+        },
+
+        // Sugars
+        Molecule {
+            formula: "C6H12O6",
+            names: &["GLUCOSE", "DEXTROSE"],
+            category: "Sugar"
+        },
+        Molecule {
+            formula: "C6H12O6",
+            names: &["FRUCTOSE"],
+            category: "Sugar"
+        },
+        Molecule {
+            formula: "C12H22O11",
+            names: &["SUCROSE", "TABLE SUGAR"],
+            category: "Sugar"
+        },
+        Molecule {
+            formula: "C12H22O11",
+            names: &["LACTOSE", "MILK SUGAR"],
+            category: "Sugar"
+        },
+
+        // Salts and minerals
+        Molecule {
+            formula: "NaCl",
+            names: &["SALT", "TABLE SALT", "SODIUM CHLORIDE"],
+            category: "Salt"
+        },
+        Molecule {
+            formula: "NaHCO3",
+            names: &["BAKING SODA", "SODIUM BICARBONATE"],
+            category: "Salt"
+        },
+        Molecule {
+            formula: "CaCO3",
+            names: &["CALCIUM CARBONATE", "LIMESTONE", "CHALK"],
+            category: "Mineral"
+        },
+        Molecule {
+            formula: "CaSO4",
+            names: &["CALCIUM SULFATE", "GYPSUM"],
+            category: "Mineral"
+        },
+
+        // Acids
+        Molecule {
+            formula: "HCl",
+            names: &["HYDROCHLORIC ACID"],
+            category: "Acid"
+        },
+        Molecule {
+            formula: "H2SO4",
+            names: &["SULFURIC ACID"],
+            category: "Acid"
+        },
+        Molecule {
+            formula: "HNO3",
+            names: &["NITRIC ACID"],
+            category: "Acid"
+        },
+        Molecule {
+            formula: "H3PO4",
+            names: &["PHOSPHORIC ACID"],
+            category: "Acid"
+        },
+        Molecule {
+            formula: "CH3COOH",
+            names: &["ACETIC ACID", "VINEGAR"],
+            category: "Acid"
+        },
+
+        // Organic compounds
+        Molecule {
+            formula: "C2H5OH",
+            names: &["ETHANOL", "ALCOHOL", "ETHYL ALCOHOL"],
+            category: "Alcohol"
+        },
+        Molecule {
+            formula: "CH3OH",
+            names: &["METHANOL", "METHYL ALCOHOL"],
+            category: "Alcohol"
+        },
+        Molecule {
+            formula: "C3H8O",
+            names: &["ISOPROPANOL", "ISOPROPYL ALCOHOL", "RUBBING ALCOHOL"],
+            category: "Alcohol"
+        },
+        Molecule {
+            formula: "CH3COCH3",
+            names: &["ACETONE"],
+            category: "Organic"
+        },
+        Molecule {
+            formula: "C8H10N4O2",
+            names: &["CAFFEINE"],
+            category: "Organic"
+        },
+        Molecule {
+            formula: "C9H8O4",
+            names: &["ASPIRIN", "ACETYLSALICYLIC ACID"],
+            category: "Organic"
+        },
+
+        // Vitamins
+        Molecule {
+            formula: "C6H8O6",
+            names: &["VITAMIN C", "ASCORBIC ACID"],
+            category: "Vitamin"
+        },
+    ];
+
+    /// HashMap for fast lookup of formulas by name
+    static ref MOLECULE_LOOKUP: HashMap<String, &'static str> = {
+        let mut map = HashMap::new();
+        for molecule in MOLECULE_TABLE.iter() {
+            for name in molecule.names {
+                map.insert(name.to_string(), molecule.formula);
+            }
+        }
+        map
+    };
+}
 
 /// Represents a parsed molecular formula
 #[derive(Debug, Clone)]
@@ -23,29 +249,10 @@ impl MolecularFormula {
         Self::parse_formula(formula)
     }
 
-    /// Get common compound aliases
+    /// Get common compound aliases from the molecule table
     fn get_compound_alias(name: &str) -> Option<&'static str> {
         let name_upper = name.to_uppercase();
-        match name_upper.as_str() {
-            "WATER" => Some("H2O"),
-            "AMMONIA" => Some("NH3"),
-            "METHANE" => Some("CH4"),
-            "ETHANE" => Some("C2H6"),
-            "PROPANE" => Some("C3H8"),
-            "BUTANE" => Some("C4H10"),
-            "GLUCOSE" => Some("C6H12O6"),
-            "SUCROSE" => Some("C12H22O11"),
-            "SALT" | "TABLE SALT" => Some("NaCl"),
-            "BAKING SODA" => Some("NaHCO3"),
-            "VINEGAR" | "ACETIC ACID" => Some("CH3COOH"),
-            "ETHANOL" | "ALCOHOL" => Some("C2H5OH"),
-            "SULFURIC ACID" => Some("H2SO4"),
-            "HYDROCHLORIC ACID" => Some("HCl"),
-            "NITRIC ACID" => Some("HNO3"),
-            "CARBON DIOXIDE" | "CO2" => Some("CO2"),
-            "CARBON MONOXIDE" | "CO" => Some("CO"),
-            _ => None,
-        }
+        MOLECULE_LOOKUP.get(&name_upper).copied()
     }
 
     /// Parse the actual formula string

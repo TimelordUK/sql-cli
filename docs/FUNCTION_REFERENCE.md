@@ -1,4 +1,4 @@
-# SQL CLI Function Reference
+q# SQL CLI Function Reference
 
 This document is auto-generated from the function registry.
 
