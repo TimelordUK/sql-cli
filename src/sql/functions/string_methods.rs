@@ -457,8 +457,8 @@ impl SqlFunction for MidFunction {
             description: "Extract substring from text (1-based indexing)",
             returns: "STRING",
             examples: vec![
-                "SELECT MID('Hello', 1, 3)",  // Returns 'Hel'
-                "SELECT MID('World', 2, 3)",  // Returns 'orl'
+                "SELECT MID('Hello', 1, 3)", // Returns 'Hel'
+                "SELECT MID('World', 2, 3)", // Returns 'orl'
                 "SELECT MID(name, 1, 5) FROM table",
             ],
         }
@@ -528,7 +528,7 @@ impl SqlFunction for UpperFunction {
             description: "Convert string to uppercase",
             returns: "STRING",
             examples: vec![
-                "SELECT UPPER('hello')",  // Returns 'HELLO'
+                "SELECT UPPER('hello')", // Returns 'HELLO'
                 "SELECT UPPER(name) FROM table",
             ],
         }
@@ -558,7 +558,7 @@ impl SqlFunction for LowerFunction {
             description: "Convert string to lowercase",
             returns: "STRING",
             examples: vec![
-                "SELECT LOWER('HELLO')",  // Returns 'hello'
+                "SELECT LOWER('HELLO')", // Returns 'hello'
                 "SELECT LOWER(name) FROM table",
             ],
         }
@@ -588,7 +588,7 @@ impl SqlFunction for TrimFunction {
             description: "Remove leading and trailing whitespace",
             returns: "STRING",
             examples: vec![
-                "SELECT TRIM('  hello  ')",  // Returns 'hello'
+                "SELECT TRIM('  hello  ')", // Returns 'hello'
                 "SELECT TRIM(description) FROM table",
             ],
         }
@@ -606,6 +606,91 @@ impl SqlFunction for TrimFunction {
     }
 }
 
+/// TEXTJOIN function - Join multiple text values with a delimiter
+pub struct TextJoinFunction;
+
+impl SqlFunction for TextJoinFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "TEXTJOIN",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Variadic,
+            description: "Join multiple text values with a delimiter",
+            returns: "STRING",
+            examples: vec![
+                "SELECT TEXTJOIN(',', 1, 'a', 'b', 'c')",  // Returns 'a,b,c'
+                "SELECT TEXTJOIN(' - ', 1, name, city) FROM table",
+                "SELECT TEXTJOIN('|', 0, col1, col2, col3) FROM table",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() < 3 {
+            return Err(anyhow!("TEXTJOIN requires at least 3 arguments: delimiter, ignore_empty, text1, [text2, ...]"));
+        }
+
+        // First argument: delimiter
+        let delimiter = match &args[0] {
+            DataValue::String(s) => s.clone(),
+            DataValue::InternedString(s) => s.to_string(),
+            DataValue::Integer(n) => n.to_string(),
+            DataValue::Float(f) => f.to_string(),
+            DataValue::Boolean(b) => b.to_string(),
+            DataValue::Null => String::new(),
+            _ => String::new(),
+        };
+
+        // Second argument: ignore_empty (treat as boolean - 0 is false, anything else is true)
+        let ignore_empty = match &args[1] {
+            DataValue::Integer(n) => *n != 0,
+            DataValue::Float(f) => *f != 0.0,
+            DataValue::Boolean(b) => *b,
+            DataValue::String(s) => !s.is_empty() && s != "0" && s.to_lowercase() != "false",
+            DataValue::InternedString(s) => {
+                !s.is_empty() && s.as_str() != "0" && s.to_lowercase() != "false"
+            }
+            DataValue::Null => false,
+            _ => true,
+        };
+
+        // Remaining arguments: values to join
+        let mut values = Vec::new();
+        for i in 2..args.len() {
+            let string_value = match &args[i] {
+                DataValue::String(s) => Some(s.clone()),
+                DataValue::InternedString(s) => Some(s.to_string()),
+                DataValue::Integer(n) => Some(n.to_string()),
+                DataValue::Float(f) => Some(f.to_string()),
+                DataValue::Boolean(b) => Some(b.to_string()),
+                DataValue::DateTime(dt) => Some(dt.clone()),
+                DataValue::Null => {
+                    if ignore_empty {
+                        None
+                    } else {
+                        Some(String::new())
+                    }
+                }
+                _ => {
+                    if ignore_empty {
+                        None
+                    } else {
+                        Some(String::new())
+                    }
+                }
+            };
+
+            if let Some(s) = string_value {
+                if !ignore_empty || !s.is_empty() {
+                    values.push(s);
+                }
+            }
+        }
+
+        Ok(DataValue::String(values.join(&delimiter)))
+    }
+}
+
 /// Register all string method functions
 pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     use std::sync::Arc;
@@ -615,6 +700,7 @@ pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(UpperFunction));
     registry.register(Box::new(LowerFunction));
     registry.register(Box::new(TrimFunction));
+    registry.register(Box::new(TextJoinFunction));
 
     // Register ToUpper
     let to_upper = Arc::new(ToUpperMethod);
