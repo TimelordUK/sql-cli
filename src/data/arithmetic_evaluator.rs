@@ -190,31 +190,8 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Calculate Levenshtein edit distance between two strings
     fn edit_distance(&self, s1: &str, s2: &str) -> usize {
-        let len1 = s1.len();
-        let len2 = s2.len();
-        let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
-
-        for i in 0..=len1 {
-            matrix[i][0] = i;
-        }
-        for j in 0..=len2 {
-            matrix[0][j] = j;
-        }
-
-        for (i, c1) in s1.chars().enumerate() {
-            for (j, c2) in s2.chars().enumerate() {
-                let cost = if c1 == c2 { 0 } else { 1 };
-                matrix[i + 1][j + 1] = std::cmp::min(
-                    matrix[i][j + 1] + 1, // deletion
-                    std::cmp::min(
-                        matrix[i + 1][j] + 1, // insertion
-                        matrix[i][j] + cost,  // substitution
-                    ),
-                );
-            }
-        }
-
-        matrix[len1][len2]
+        // Use the shared implementation from string_methods
+        crate::sql::functions::string_methods::EditDistanceFunction::calculate_edit_distance(s1, s2)
     }
 
     /// Evaluate an SQL expression to produce a DataValue
