@@ -408,7 +408,7 @@ impl FunctionRegistry {
         self.register(Box::new(PrimeCountFunction));
         self.register(Box::new(NextPrimeFunction));
         self.register(Box::new(PrevPrimeFunction));
-        
+
         // General math functions
         math::register_math_functions(self);
     }

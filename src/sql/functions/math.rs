@@ -15,9 +15,9 @@ impl SqlFunction for RoundFunction {
             description: "Round a number to specified decimal places",
             returns: "NUMBER",
             examples: vec![
-                "SELECT ROUND(3.14159, 2)",  // Returns 3.14
-                "SELECT ROUND(123.456)",     // Returns 123
-                "SELECT ROUND(1234.5, -2)",  // Returns 1200
+                "SELECT ROUND(3.14159, 2)", // Returns 3.14
+                "SELECT ROUND(123.456)",    // Returns 123
+                "SELECT ROUND(1234.5, -2)", // Returns 1200
             ],
         }
     }
@@ -71,8 +71,8 @@ impl SqlFunction for AbsFunction {
             description: "Returns the absolute value of a number",
             returns: "NUMBER",
             examples: vec![
-                "SELECT ABS(-5)",      // Returns 5
-                "SELECT ABS(3.14)",    // Returns 3.14
+                "SELECT ABS(-5)",   // Returns 5
+                "SELECT ABS(3.14)", // Returns 3.14
                 "SELECT ABS(price - cost) FROM products",
             ],
         }
@@ -102,9 +102,9 @@ impl SqlFunction for FloorFunction {
             description: "Returns the largest integer less than or equal to the value",
             returns: "INTEGER",
             examples: vec![
-                "SELECT FLOOR(3.7)",   // Returns 3
-                "SELECT FLOOR(-2.3)",  // Returns -3
-                "SELECT FLOOR(5)",     // Returns 5
+                "SELECT FLOOR(3.7)",  // Returns 3
+                "SELECT FLOOR(-2.3)", // Returns -3
+                "SELECT FLOOR(5)",    // Returns 5
             ],
         }
     }
@@ -133,9 +133,9 @@ impl SqlFunction for CeilingFunction {
             description: "Returns the smallest integer greater than or equal to the value",
             returns: "INTEGER",
             examples: vec![
-                "SELECT CEILING(3.2)",   // Returns 4
-                "SELECT CEILING(-2.7)",  // Returns -2
-                "SELECT CEILING(5)",     // Returns 5
+                "SELECT CEILING(3.2)",  // Returns 4
+                "SELECT CEILING(-2.7)", // Returns -2
+                "SELECT CEILING(5)",    // Returns 5
             ],
         }
     }
@@ -164,8 +164,8 @@ impl SqlFunction for ModFunction {
             description: "Returns the remainder of division",
             returns: "NUMBER",
             examples: vec![
-                "SELECT MOD(10, 3)",   // Returns 1
-                "SELECT MOD(15, 4)",   // Returns 3
+                "SELECT MOD(10, 3)", // Returns 1
+                "SELECT MOD(15, 4)", // Returns 3
                 "SELECT MOD(id, 100) FROM table",
             ],
         }
@@ -193,8 +193,8 @@ impl SqlFunction for ModFunction {
         }
 
         // Check if both inputs were integers
-        let both_integers = matches!(&args[0], DataValue::Integer(_)) 
-            && matches!(&args[1], DataValue::Integer(_));
+        let both_integers =
+            matches!(&args[0], DataValue::Integer(_)) && matches!(&args[1], DataValue::Integer(_));
 
         let result = dividend % divisor;
 
@@ -262,8 +262,8 @@ impl SqlFunction for SqrtFunction {
             description: "Returns the square root of a number",
             returns: "FLOAT",
             examples: vec![
-                "SELECT SQRT(16)",     // Returns 4.0
-                "SELECT SQRT(2)",      // Returns 1.414...
+                "SELECT SQRT(16)", // Returns 4.0
+                "SELECT SQRT(2)",  // Returns 1.414...
                 "SELECT SQRT(area) FROM squares",
             ],
         }
@@ -299,9 +299,9 @@ impl SqlFunction for ExpFunction {
             description: "Returns e raised to the power of the given number",
             returns: "FLOAT",
             examples: vec![
-                "SELECT EXP(1)",       // Returns e (2.718...)
-                "SELECT EXP(0)",       // Returns 1
-                "SELECT EXP(LN(10))",  // Returns 10
+                "SELECT EXP(1)",      // Returns e (2.718...)
+                "SELECT EXP(0)",      // Returns 1
+                "SELECT EXP(LN(10))", // Returns 10
             ],
         }
     }
@@ -332,9 +332,9 @@ impl SqlFunction for LnFunction {
             description: "Returns the natural logarithm (base e) of a number",
             returns: "FLOAT",
             examples: vec![
-                "SELECT LN(2.718282)",  // Returns ~1
-                "SELECT LN(10)",        // Returns 2.302...
-                "SELECT LN(1)",         // Returns 0
+                "SELECT LN(2.718282)", // Returns ~1
+                "SELECT LN(10)",       // Returns 2.302...
+                "SELECT LN(1)",        // Returns 0
             ],
         }
     }
@@ -366,12 +366,13 @@ impl SqlFunction for LogFunction {
             name: "LOG",
             category: FunctionCategory::Mathematical,
             arg_count: ArgCount::Range(1, 2),
-            description: "Returns the logarithm of a number (base 10 by default, or specified base)",
+            description:
+                "Returns the logarithm of a number (base 10 by default, or specified base)",
             returns: "FLOAT",
             examples: vec![
-                "SELECT LOG(100)",       // Returns 2 (base 10)
-                "SELECT LOG(8, 2)",      // Returns 3 (log base 2 of 8)
-                "SELECT LOG(1000, 10)",  // Returns 3
+                "SELECT LOG(100)",      // Returns 2 (base 10)
+                "SELECT LOG(8, 2)",     // Returns 3 (log base 2 of 8)
+                "SELECT LOG(1000, 10)", // Returns 3
             ],
         }
     }
@@ -420,9 +421,9 @@ impl SqlFunction for Log10Function {
             description: "Returns the base-10 logarithm of a number",
             returns: "FLOAT",
             examples: vec![
-                "SELECT LOG10(100)",   // Returns 2
-                "SELECT LOG10(1000)",  // Returns 3
-                "SELECT LOG10(0.1)",   // Returns -1
+                "SELECT LOG10(100)",  // Returns 2
+                "SELECT LOG10(1000)", // Returns 3
+                "SELECT LOG10(0.1)",  // Returns -1
             ],
         }
     }
@@ -457,9 +458,9 @@ impl SqlFunction for PowerFunction {
             description: "Returns a number raised to a power",
             returns: "NUMBER",
             examples: vec![
-                "SELECT POWER(2, 3)",    // Returns 8
-                "SELECT POWER(10, -2)",  // Returns 0.01
-                "SELECT POWER(9, 0.5)",  // Returns 3
+                "SELECT POWER(2, 3)",   // Returns 8
+                "SELECT POWER(10, -2)", // Returns 0.01
+                "SELECT POWER(9, 0.5)", // Returns 3
             ],
         }
     }
@@ -504,9 +505,9 @@ impl SqlFunction for DegreesFunction {
             description: "Convert radians to degrees",
             returns: "FLOAT",
             examples: vec![
-                "SELECT DEGREES(PI())",      // Returns 180
-                "SELECT DEGREES(PI()/2)",    // Returns 90
-                "SELECT DEGREES(1)",         // Returns 57.2958...
+                "SELECT DEGREES(PI())",   // Returns 180
+                "SELECT DEGREES(PI()/2)", // Returns 90
+                "SELECT DEGREES(1)",      // Returns 57.2958...
             ],
         }
     }
@@ -537,9 +538,9 @@ impl SqlFunction for RadiansFunction {
             description: "Convert degrees to radians",
             returns: "FLOAT",
             examples: vec![
-                "SELECT RADIANS(180)",   // Returns PI
-                "SELECT RADIANS(90)",    // Returns PI/2
-                "SELECT RADIANS(45)",    // Returns PI/4
+                "SELECT RADIANS(180)", // Returns PI
+                "SELECT RADIANS(90)",  // Returns PI/2
+                "SELECT RADIANS(45)",  // Returns PI/4
             ],
         }
     }
