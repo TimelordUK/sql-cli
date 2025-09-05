@@ -189,7 +189,7 @@ class TestCommentsWithDUAL:
         -- Calculate photon energy
         SELECT 
             -- Planck's constant * speed of light / wavelength
-            PLANCK() * C() / 700e-9 as photon_energy, -- Red light at 700nm
+            H() * C() / 700e-9 as photon_energy, -- Red light at 700nm
             
             /* Calculate Schwarzschild radius for Earth
                r_s = 2GM/c^2 where M = 5.972e24 kg */

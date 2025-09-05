@@ -11,6 +11,7 @@ pub mod comparison;
 pub mod constants;
 pub mod math;
 pub mod mathematics;
+pub mod physics;
 pub mod string_methods;
 
 // Re-export MethodFunction trait
@@ -128,6 +129,7 @@ impl FunctionRegistry {
         registry.register_astronomical_functions();
         registry.register_chemical_functions();
         registry.register_mathematical_functions();
+        registry.register_physics_functions();
         registry.register_string_methods();
         registry.register_comparison_functions();
 
@@ -377,6 +379,15 @@ impl FunctionRegistry {
         self.register(Box::new(RadiusSaturnFunction));
         self.register(Box::new(RadiusUranusFunction));
         self.register(Box::new(RadiusNeptuneFunction));
+
+        // Planetary distances from the Sun
+        self.register(Box::new(DistMercuryFunction));
+        self.register(Box::new(DistVenusFunction));
+        self.register(Box::new(DistMarsFunction));
+        self.register(Box::new(DistJupiterFunction));
+        self.register(Box::new(DistSaturnFunction));
+        self.register(Box::new(DistUranusFunction));
+        self.register(Box::new(DistNeptuneFunction));
     }
 
     /// Register chemical functions
@@ -412,6 +423,11 @@ impl FunctionRegistry {
 
         // General math functions
         math::register_math_functions(self);
+    }
+
+    /// Register physics constants
+    fn register_physics_functions(&mut self) {
+        physics::register_physics_functions(self);
     }
 }
 

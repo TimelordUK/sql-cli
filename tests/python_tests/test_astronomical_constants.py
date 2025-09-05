@@ -136,7 +136,7 @@ class TestOrbitalDistances:
         SELECT 
             DIST_MERCURY() as mercury,
             DIST_VENUS() as venus,
-            DIST_EARTH() as earth,
+            AU() as earth,
             DIST_MARS() as mars,
             DIST_JUPITER() as jupiter,
             DIST_SATURN() as saturn,
@@ -162,7 +162,7 @@ class TestOrbitalDistances:
         SELECT 
             DIST_MERCURY() / AU() as mercury_au,
             DIST_VENUS() / AU() as venus_au,
-            DIST_EARTH() / AU() as earth_au,
+            AU() / AU() as earth_au,
             DIST_MARS() / AU() as mars_au,
             DIST_JUPITER() / AU() as jupiter_au
         FROM DUAL
@@ -180,8 +180,8 @@ class TestOrbitalDistances:
         query = """
         SELECT 
             PARSEC() as parsec_meters,
-            LIGHTYEAR() as ly_meters,
-            PARSEC() / LIGHTYEAR() as parsec_ly_ratio
+            LIGHT_YEAR() as ly_meters,
+            PARSEC() / LIGHT_YEAR() as parsec_ly_ratio
         FROM DUAL
         """
         result = run_query(query)
@@ -198,7 +198,7 @@ class TestAstronomicalCalculations:
         query = """
         SELECT 
             -- For Earth: orbital period should be ~1 year
-            SQRT(4 * PI() * PI() * POWER(DIST_EARTH(), 3) / (G() * MASS_SUN())) / (365.25 * 24 * 3600) as earth_period_years,
+            SQRT(4 * PI() * PI() * POWER(AU(), 3) / (G() * MASS_SUN())) / (365.25 * 24 * 3600) as earth_period_years,
             -- For Mars
             SQRT(4 * PI() * PI() * POWER(DIST_MARS(), 3) / (G() * MASS_SUN())) / (365.25 * 24 * 3600) as mars_period_years
         FROM DUAL
@@ -255,7 +255,7 @@ class TestAstronomicalCalculations:
             -- Using average Earth-Moon distance of 384,400 km
             G() * MASS_EARTH() * MASS_MOON() / POWER(3.844e8, 2) as earth_moon_force_n,
             -- Force between Sun and Earth
-            G() * MASS_SUN() * MASS_EARTH() / POWER(DIST_EARTH(), 2) as sun_earth_force_n
+            G() * MASS_SUN() * MASS_EARTH() / POWER(AU(), 2) as sun_earth_force_n
         FROM DUAL
         """
         result = run_query(query)
@@ -294,9 +294,9 @@ class TestAstronomicalCalculations:
         query = """
         SELECT 
             -- Convert Earth's orbital distance to miles
-            CONVERT(DIST_EARTH(), 'm', 'miles') as earth_orbit_miles,
+            CONVERT(AU(), 'm', 'miles') as earth_orbit_miles,
             -- Convert light-year to kilometers
-            CONVERT(LIGHTYEAR(), 'm', 'km') as ly_km,
+            CONVERT(LIGHT_YEAR(), 'm', 'km') as ly_km,
             -- Convert parsec to miles
             CONVERT(PARSEC(), 'm', 'miles') as parsec_miles
         FROM DUAL

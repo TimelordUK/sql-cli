@@ -524,6 +524,173 @@ impl SqlFunction for ParsecFunction {
     }
 }
 
+// Planetary Distances from the Sun
+
+/// Mercury distance from Sun
+pub struct DistMercuryFunction;
+
+impl SqlFunction for DistMercuryFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DIST_MERCURY",
+            category: FunctionCategory::Astronomical,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns Mercury's mean distance from the Sun in meters (5.791 × 10^10)",
+            returns: "FLOAT",
+            examples: vec![
+                "SELECT DIST_MERCURY()",
+                "SELECT DIST_MERCURY() / AU() AS mercury_au",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(5.791e10))
+    }
+}
+
+/// Venus distance from Sun
+pub struct DistVenusFunction;
+
+impl SqlFunction for DistVenusFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DIST_VENUS",
+            category: FunctionCategory::Astronomical,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns Venus's mean distance from the Sun in meters (1.082 × 10^11)",
+            returns: "FLOAT",
+            examples: vec![
+                "SELECT DIST_VENUS()",
+                "SELECT DIST_VENUS() / AU() AS venus_au",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(1.082e11))
+    }
+}
+
+/// Mars distance from Sun
+pub struct DistMarsFunction;
+
+impl SqlFunction for DistMarsFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DIST_MARS",
+            category: FunctionCategory::Astronomical,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns Mars's mean distance from the Sun in meters (2.279 × 10^11)",
+            returns: "FLOAT",
+            examples: vec!["SELECT DIST_MARS()", "SELECT DIST_MARS() / AU() AS mars_au"],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(2.279e11))
+    }
+}
+
+/// Jupiter distance from Sun
+pub struct DistJupiterFunction;
+
+impl SqlFunction for DistJupiterFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DIST_JUPITER",
+            category: FunctionCategory::Astronomical,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns Jupiter's mean distance from the Sun in meters (7.786 × 10^11)",
+            returns: "FLOAT",
+            examples: vec![
+                "SELECT DIST_JUPITER()",
+                "SELECT DIST_JUPITER() / AU() AS jupiter_au",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(7.786e11))
+    }
+}
+
+/// Saturn distance from Sun
+pub struct DistSaturnFunction;
+
+impl SqlFunction for DistSaturnFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DIST_SATURN",
+            category: FunctionCategory::Astronomical,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns Saturn's mean distance from the Sun in meters (1.4335 × 10^12)",
+            returns: "FLOAT",
+            examples: vec![
+                "SELECT DIST_SATURN()",
+                "SELECT DIST_SATURN() / AU() AS saturn_au",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(1.4335e12))
+    }
+}
+
+/// Uranus distance from Sun
+pub struct DistUranusFunction;
+
+impl SqlFunction for DistUranusFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DIST_URANUS",
+            category: FunctionCategory::Astronomical,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns Uranus's mean distance from the Sun in meters (2.8725 × 10^12)",
+            returns: "FLOAT",
+            examples: vec![
+                "SELECT DIST_URANUS()",
+                "SELECT DIST_URANUS() / AU() AS uranus_au",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(2.8725e12))
+    }
+}
+
+/// Neptune distance from Sun
+pub struct DistNeptuneFunction;
+
+impl SqlFunction for DistNeptuneFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DIST_NEPTUNE",
+            category: FunctionCategory::Astronomical,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns Neptune's mean distance from the Sun in meters (4.4951 × 10^12)",
+            returns: "FLOAT",
+            examples: vec![
+                "SELECT DIST_NEPTUNE()",
+                "SELECT DIST_NEPTUNE() / AU() AS neptune_au",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(4.4951e12))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -157,6 +157,32 @@ impl SqlFunction for CeilingFunction {
     }
 }
 
+/// CEIL function - Alias for CEILING function
+pub struct CeilFunction;
+
+impl SqlFunction for CeilFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "CEIL",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(1),
+            description: "Alias for CEILING - Returns the smallest integer greater than or equal to the value",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT CEIL(3.2)",  // Returns 4
+                "SELECT CEIL(-2.7)", // Returns -2
+                "SELECT CEIL(5)",    // Returns 5
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        // Delegate to CEILING function
+        let ceiling_func = CeilingFunction;
+        ceiling_func.evaluate(args)
+    }
+}
+
 /// MOD function - Modulo operation
 pub struct ModFunction;
 
@@ -592,6 +618,7 @@ pub fn register_math_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(AbsFunction));
     registry.register(Box::new(FloorFunction));
     registry.register(Box::new(CeilingFunction));
+    registry.register(Box::new(CeilFunction)); // Add CEIL alias
     registry.register(Box::new(ModFunction));
     registry.register(Box::new(QuotientFunction));
     registry.register(Box::new(SqrtFunction));

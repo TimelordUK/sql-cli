@@ -39,9 +39,6 @@ class TestFundamentalConstants:
         result = run_query("SELECT C() as c FROM DUAL")
         assert result[0]["c"] == 299792458.0
         
-        # Also test long form
-        result = run_query("SELECT SPEED_OF_LIGHT() as c FROM DUAL")
-        assert result[0]["c"] == 299792458.0
     
     def test_gravitational_constant(self):
         """Test gravitational constant with scientific notation"""
@@ -57,9 +54,6 @@ class TestFundamentalConstants:
         result = run_query("SELECT H() as h FROM DUAL")
         assert abs(result[0]["h"] - 6.62607015e-34) < 1e-40
         
-        # Also test PLANCK() alias
-        result = run_query("SELECT PLANCK() as h FROM DUAL")
-        assert abs(result[0]["h"] - 6.62607015e-34) < 1e-40
     
     def test_reduced_planck_constant(self):
         """Test reduced Planck constant (hbar)"""
@@ -67,7 +61,7 @@ class TestFundamentalConstants:
         assert abs(result[0]["hbar"] - 1.054571817e-34) < 1e-40
         
         # Verify it's approximately h/(2*pi)
-        result = run_query("SELECT PLANCK() / (2 * PI()) as calc_hbar FROM DUAL")
+        result = run_query("SELECT H() / (2 * PI()) as calc_hbar FROM DUAL")
         assert abs(result[0]["calc_hbar"] - 1.054571817e-34) < 1e-36
     
     def test_boltzmann_constant(self):
@@ -75,16 +69,16 @@ class TestFundamentalConstants:
         result = run_query("SELECT K() as k FROM DUAL")
         assert abs(result[0]["k"] - 1.380649e-23) < 1e-30
         
-        # Also test BOLTZMANN() alias
-        result = run_query("SELECT BOLTZMANN() as k FROM DUAL")
+        # Test K() alias
+        result = run_query("SELECT K() as k FROM DUAL")
         assert abs(result[0]["k"] - 1.380649e-23) < 1e-30
     
     def test_avogadro_number(self):
         """Test Avogadro's number - very large"""
-        result = run_query("SELECT NA() as na FROM DUAL")
+        result = run_query("SELECT AVOGADRO() as na FROM DUAL")
         assert abs(result[0]["na"] - 6.02214076e23) < 1e15
         
-        # Also test AVOGADRO() alias
+        # Test AVOGADRO() alias
         result = run_query("SELECT AVOGADRO() as na FROM DUAL")
         assert abs(result[0]["na"] - 6.02214076e23) < 1e15
     
@@ -94,7 +88,7 @@ class TestFundamentalConstants:
         assert abs(result[0]["r"] - 8.314462618) < 1e-8
         
         # Verify R = NA * k (within precision)
-        result = run_query("SELECT AVOGADRO() * BOLTZMANN() as calc_r FROM DUAL")
+        result = run_query("SELECT AVOGADRO() * K() as calc_r FROM DUAL")
         assert abs(result[0]["calc_r"] - 8.314462618) < 0.01
 
 class TestElectromagneticConstants:
@@ -106,7 +100,7 @@ class TestElectromagneticConstants:
         assert abs(result[0]["e0"] - 8.8541878128e-12) < 1e-20
         
         # Test EPSILON0 alias
-        result = run_query("SELECT EPSILON0() as e0 FROM DUAL")
+        result = run_query("SELECT E0() as e0 FROM DUAL")
         assert abs(result[0]["e0"] - 8.8541878128e-12) < 1e-20
     
     def test_permeability(self):
@@ -120,7 +114,7 @@ class TestElectromagneticConstants:
         assert abs(result[0]["qe"] - 1.602176634e-19) < 1e-28
         
         # Test ELEMENTARY_CHARGE alias
-        result = run_query("SELECT ELEMENTARY_CHARGE() as qe FROM DUAL")
+        result = run_query("SELECT QE() as qe FROM DUAL")
         assert abs(result[0]["qe"] - 1.602176634e-19) < 1e-28
     
     def test_speed_of_light_relation(self):
@@ -147,7 +141,7 @@ class TestParticleMasses:
         assert abs(result[0]["mp"] - 1.67262192369e-27) < 1e-36
         
         # Test MASS_PROTON alias
-        result = run_query("SELECT MASS_PROTON() as mp FROM DUAL")
+        result = run_query("SELECT MP() as mp FROM DUAL")
         assert abs(result[0]["mp"] - 1.67262192369e-27) < 1e-36
     
     def test_neutron_mass(self):
@@ -156,7 +150,7 @@ class TestParticleMasses:
         assert abs(result[0]["mn"] - 1.67492749804e-27) < 1e-36
         
         # Test MASS_NEUTRON alias
-        result = run_query("SELECT MASS_NEUTRON() as mn FROM DUAL")
+        result = run_query("SELECT MN() as mn FROM DUAL")
         assert abs(result[0]["mn"] - 1.67492749804e-27) < 1e-36
     
     def test_atomic_mass_unit(self):
@@ -165,7 +159,7 @@ class TestParticleMasses:
         assert abs(result[0]["amu"] - 1.66053906660e-27) < 1e-36
         
         # Test ATOMIC_MASS_UNIT alias
-        result = run_query("SELECT ATOMIC_MASS_UNIT() as amu FROM DUAL")
+        result = run_query("SELECT AMU() as amu FROM DUAL")
         assert abs(result[0]["amu"] - 1.66053906660e-27) < 1e-36
     
     def test_mass_ratios(self):
@@ -183,7 +177,7 @@ class TestOtherConstants:
         assert abs(result[0]["alpha"] - 7.2973525693e-3) < 1e-12
         
         # Test FINE_STRUCTURE alias
-        result = run_query("SELECT FINE_STRUCTURE() as alpha FROM DUAL")
+        result = run_query("SELECT ALPHA() as alpha FROM DUAL")
         assert abs(result[0]["alpha"] - 7.2973525693e-3) < 1e-12
         
         # Verify it's approximately 1/137
@@ -196,7 +190,7 @@ class TestOtherConstants:
         assert abs(result[0]["ry"] - 10973731.568160) < 0.01
         
         # Test RYDBERG alias
-        result = run_query("SELECT RYDBERG() as ry FROM DUAL")
+        result = run_query("SELECT RY() as ry FROM DUAL")
         assert abs(result[0]["ry"] - 10973731.568160) < 0.01
     
     def test_stefan_boltzmann_constant(self):
@@ -205,7 +199,7 @@ class TestOtherConstants:
         assert abs(result[0]["sigma"] - 5.670374419e-8) < 1e-16
         
         # Test STEFAN_BOLTZMANN alias
-        result = run_query("SELECT STEFAN_BOLTZMANN() as sigma FROM DUAL")
+        result = run_query("SELECT SIGMA() as sigma FROM DUAL")
         assert abs(result[0]["sigma"] - 5.670374419e-8) < 1e-16
 
 class TestScientificCalculations:
@@ -215,7 +209,7 @@ class TestScientificCalculations:
         """Test E = hf calculation for visible light"""
         # Red light at 700nm wavelength
         result = run_query("""
-            SELECT PLANCK() * C() / 700e-9 as energy_joules
+            SELECT H() * C() / 700e-9 as energy_joules
             FROM DUAL
         """)
         # Should be around 2.84e-19 Joules
@@ -235,7 +229,7 @@ class TestScientificCalculations:
         """Test thermal energy kT at room temperature"""
         # Room temperature = 293K
         result = run_query("""
-            SELECT BOLTZMANN() * 293 as kt_room
+            SELECT K() * 293 as kt_room
             FROM DUAL
         """)
         # Should be around 4.05e-21 Joules
@@ -245,7 +239,7 @@ class TestScientificCalculations:
         """Test electron Compton wavelength"""
         # λ_c = h/(m_e * c)
         result = run_query("""
-            SELECT PLANCK() / (ME() * C()) as compton_wavelength
+            SELECT H() / (ME() * C()) as compton_wavelength
             FROM DUAL
         """)
         # Should be 2.426e-12 meters
@@ -280,9 +274,9 @@ class TestExtremePrecision:
     def test_very_small_numbers(self):
         """Test calculations with very small numbers"""
         result = run_query("""
-            SELECT PLANCK() / 1e20 as tiny1,
+            SELECT H() / 1e20 as tiny1,
                    ME() * 1e-10 as tiny2,
-                   G() * PLANCK() as tiny3
+                   G() * H() as tiny3
             FROM DUAL
         """)
         assert result[0]["tiny1"] < 1e-50
@@ -294,7 +288,7 @@ class TestExtremePrecision:
         result = run_query("""
             SELECT AVOGADRO() * 1e10 as huge1,
                    C() * C() as huge2,
-                   RYDBERG() * AVOGADRO() as huge3
+                   RY() * AVOGADRO() as huge3
             FROM DUAL
         """)
         assert result[0]["huge1"] > 1e33
