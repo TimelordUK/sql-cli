@@ -45,8 +45,13 @@ impl SqlFunction for RoundFunction {
         if decimals >= 0 {
             let multiplier = 10_f64.powi(decimals);
             let rounded = (value * multiplier).round() / multiplier;
+
+            // Return integer if input was integer and result is unchanged
             if decimals == 0 {
                 Ok(DataValue::Integer(rounded as i64))
+            } else if matches!(&args[0], DataValue::Integer(_)) && rounded == value {
+                // Input was integer and rounding didn't change it
+                Ok(DataValue::Integer(value as i64))
             } else {
                 Ok(DataValue::Float(rounded))
             }
@@ -484,12 +489,34 @@ impl SqlFunction for PowerFunction {
 
         let result = base.powf(exponent);
 
-        // Return integer if possible
-        if result.is_finite() && result.fract() == 0.0 && result.abs() < i64::MAX as f64 {
-            Ok(DataValue::Integer(result as i64))
-        } else {
-            Ok(DataValue::Float(result))
+        // Always return float for POWER function to match SQL standards
+        Ok(DataValue::Float(result))
+    }
+}
+
+/// POW function - Alias for POWER function
+pub struct PowFunction;
+
+impl SqlFunction for PowFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "POW",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(2),
+            description: "Returns a number raised to a power (alias for POWER)",
+            returns: "FLOAT",
+            examples: vec![
+                "SELECT POW(2, 3)",   // Returns 8.0
+                "SELECT POW(10, -2)", // Returns 0.01
+                "SELECT POW(9, 0.5)", // Returns 3.0
+            ],
         }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        // Delegate to POWER function
+        let power_func = PowerFunction;
+        power_func.evaluate(args)
     }
 }
 
@@ -573,6 +600,7 @@ pub fn register_math_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(LogFunction));
     registry.register(Box::new(Log10Function));
     registry.register(Box::new(PowerFunction));
+    registry.register(Box::new(PowFunction)); // Add POW alias
     registry.register(Box::new(DegreesFunction));
     registry.register(Box::new(RadiansFunction));
 }
