@@ -1,12 +1,15 @@
-# SQL CLI v1.37.0
+# SQL CLI v1.38.0
 
-**Release Date:** September 03, 2025
+**Release Date:** September 05, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 6
-- **Files updated:** 20
+- **Commits in this release:** 19
+- **Files updated:** 32
 
 ## ✨ Highlights
+
+### 🔍 Enhanced Debugging
+- **Better Diagnostics**: Improved error messages and state dumps
 
 ### 💾 Data Protection
 - **History Recovery**: Automatic recovery from corrupted files
@@ -15,22 +18,46 @@
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- Add solar body radius functions and chemistry documentation
-- Add boolean literal support to SQL parser
-- Implement SQL aggregate functions (SUM, AVG, COUNT, MIN, MAX)
-- Implement function registry architecture for SQL constants
+- Move TEXTJOIN to function registry
+- Add self-documenting function registry with CLI options
+- Add comprehensive prime number functions with pre-computed tables
+- Add comparison functions (GREATEST, LEAST, COALESCE, NULLIF)
+- Create registry-based string methods system
+- Add molecular formula parsing to ATOMIC_MASS function
 
 ### 🐛 Bug Fixes
-- Date parsing now respects configured date notation for datetime values
+- Move string functions (MID, UPPER, LOWER, TRIM) to function registry
+
+### 🔧 Refactoring
+- Migrate 19 math functions from arithmetic_evaluator to function registry
+
+### 📚 Documentation
+- Add comparison functions and string functions to README
+- Add GROUP BY architecture design document
+- Update README with molecular formula capabilities
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat: Add solar body radius functions and chemistry documentation (TimelordUK)
-- feat: Add boolean literal support to SQL parser (TimelordUK)
-- feat: Implement SQL aggregate functions (SUM, AVG, COUNT, MIN, MAX) (TimelordUK)
-- feat: Implement function registry architecture for SQL constants (TimelordUK)
-- fix: Date parsing now respects configured date notation for datetime values (TimelordUK)
+- add get chemical formula function (TimelordUK)
+- fix maths tests (TimelordUK)
+- refactor chemistry to more easily add new molecules (TimelordUK)
+- migrate functions (TimelordUK)
+- refactor: Migrate 19 math functions from arithmetic_evaluator to function registry (TimelordUK)
+- feat: Move TEXTJOIN to function registry (TimelordUK)
+- fix: Move string functions (MID, UPPER, LOWER, TRIM) to function registry (TimelordUK)
+- chore: Bump version to 1.38.0 for prime functions release (TimelordUK)
+- feat: Add self-documenting function registry with CLI options (TimelordUK)
+- feat: Add comprehensive prime number functions with pre-computed tables (TimelordUK)
+- fix tests (TimelordUK)
+- fix unit tests (TimelordUK)
+- add least_label, greatest_label (TimelordUK)
+- docs: Add comparison functions and string functions to README (TimelordUK)
+- feat: Add comparison functions (GREATEST, LEAST, COALESCE, NULLIF) (TimelordUK)
+- feat: Create registry-based string methods system (TimelordUK)
+- docs: Add GROUP BY architecture design document (TimelordUK)
+- docs: Update README with molecular formula capabilities (TimelordUK)
+- feat: Add molecular formula parsing to ATOMIC_MASS function (TimelordUK)
 
 </details>
 
