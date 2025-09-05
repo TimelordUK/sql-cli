@@ -445,9 +445,176 @@ impl MethodFunction for ReplaceMethod {
     }
 }
 
+/// MID function - Extract substring (SQL/Excel compatible, 1-based indexing)
+pub struct MidFunction;
+
+impl SqlFunction for MidFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "MID",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(3),
+            description: "Extract substring from text (1-based indexing)",
+            returns: "STRING",
+            examples: vec![
+                "SELECT MID('Hello', 1, 3)",  // Returns 'Hel'
+                "SELECT MID('World', 2, 3)",  // Returns 'orl'
+                "SELECT MID(name, 1, 5) FROM table",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        // Get the string
+        let text = match &args[0] {
+            DataValue::String(s) => s.clone(),
+            DataValue::InternedString(s) => s.to_string(),
+            DataValue::Integer(n) => n.to_string(),
+            DataValue::Float(f) => f.to_string(),
+            DataValue::Null => String::new(),
+            _ => return Err(anyhow!("MID first argument must be convertible to text")),
+        };
+
+        // Get start position (1-based)
+        let start_pos = match &args[1] {
+            DataValue::Integer(n) => *n,
+            DataValue::Float(f) => *f as i64,
+            _ => return Err(anyhow!("MID start position must be a number")),
+        };
+
+        // Get length
+        let length = match &args[2] {
+            DataValue::Integer(n) => *n,
+            DataValue::Float(f) => *f as i64,
+            _ => return Err(anyhow!("MID length must be a number")),
+        };
+
+        // Validate arguments
+        if start_pos < 1 {
+            return Err(anyhow!("MID start position must be >= 1"));
+        }
+        if length < 0 {
+            return Err(anyhow!("MID length must be >= 0"));
+        }
+
+        // Convert to 0-based index
+        let start_idx = (start_pos - 1) as usize;
+        let chars: Vec<char> = text.chars().collect();
+
+        // If start position is beyond string length, return empty string
+        if start_idx >= chars.len() {
+            return Ok(DataValue::String(String::new()));
+        }
+
+        // Extract substring
+        let end_idx = std::cmp::min(start_idx + length as usize, chars.len());
+        let result: String = chars[start_idx..end_idx].iter().collect();
+
+        Ok(DataValue::String(result))
+    }
+}
+
+/// UPPER function - Convert string to uppercase
+pub struct UpperFunction;
+
+impl SqlFunction for UpperFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "UPPER",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(1),
+            description: "Convert string to uppercase",
+            returns: "STRING",
+            examples: vec![
+                "SELECT UPPER('hello')",  // Returns 'HELLO'
+                "SELECT UPPER(name) FROM table",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        match &args[0] {
+            DataValue::String(s) => Ok(DataValue::String(s.to_uppercase())),
+            DataValue::InternedString(s) => Ok(DataValue::String(s.to_uppercase())),
+            DataValue::Null => Ok(DataValue::Null),
+            _ => Err(anyhow!("UPPER expects a string argument")),
+        }
+    }
+}
+
+/// LOWER function - Convert string to lowercase
+pub struct LowerFunction;
+
+impl SqlFunction for LowerFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "LOWER",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(1),
+            description: "Convert string to lowercase",
+            returns: "STRING",
+            examples: vec![
+                "SELECT LOWER('HELLO')",  // Returns 'hello'
+                "SELECT LOWER(name) FROM table",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        match &args[0] {
+            DataValue::String(s) => Ok(DataValue::String(s.to_lowercase())),
+            DataValue::InternedString(s) => Ok(DataValue::String(s.to_lowercase())),
+            DataValue::Null => Ok(DataValue::Null),
+            _ => Err(anyhow!("LOWER expects a string argument")),
+        }
+    }
+}
+
+/// TRIM function - Remove leading and trailing whitespace
+pub struct TrimFunction;
+
+impl SqlFunction for TrimFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "TRIM",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(1),
+            description: "Remove leading and trailing whitespace",
+            returns: "STRING",
+            examples: vec![
+                "SELECT TRIM('  hello  ')",  // Returns 'hello'
+                "SELECT TRIM(description) FROM table",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        match &args[0] {
+            DataValue::String(s) => Ok(DataValue::String(s.trim().to_string())),
+            DataValue::InternedString(s) => Ok(DataValue::String(s.trim().to_string())),
+            DataValue::Null => Ok(DataValue::Null),
+            _ => Err(anyhow!("TRIM expects a string argument")),
+        }
+    }
+}
+
 /// Register all string method functions
 pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     use std::sync::Arc;
+
+    // Register new string functions (non-method versions)
+    registry.register(Box::new(MidFunction));
+    registry.register(Box::new(UpperFunction));
+    registry.register(Box::new(LowerFunction));
+    registry.register(Box::new(TrimFunction));
 
     // Register ToUpper
     let to_upper = Arc::new(ToUpperMethod);
