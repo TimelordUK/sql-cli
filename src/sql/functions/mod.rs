@@ -219,6 +219,119 @@ impl FunctionRegistry {
         self.get_method(name).is_some()
     }
 
+    /// Generate markdown documentation for all functions
+    pub fn generate_markdown_docs(&self) -> String {
+        use std::fmt::Write;
+        let mut doc = String::new();
+
+        writeln!(&mut doc, "# SQL CLI Function Reference\n").unwrap();
+        writeln!(
+            &mut doc,
+            "This document is auto-generated from the function registry.\n"
+        )
+        .unwrap();
+
+        // Get all categories in a deterministic order
+        let mut categories: Vec<FunctionCategory> = self.by_category.keys().copied().collect();
+        categories.sort_by_key(|c| format!("{:?}", c));
+
+        for category in categories {
+            let functions = self.get_by_category(category);
+            if functions.is_empty() {
+                continue;
+            }
+
+            writeln!(&mut doc, "## {} Functions\n", category).unwrap();
+
+            // Sort functions by name for consistent output
+            let mut functions = functions;
+            functions.sort_by_key(|f| f.name);
+
+            for func in functions {
+                writeln!(&mut doc, "### {}()\n", func.name).unwrap();
+                writeln!(&mut doc, "**Description:** {}\n", func.description).unwrap();
+                writeln!(
+                    &mut doc,
+                    "**Arguments:** {}\n",
+                    func.arg_count.description()
+                )
+                .unwrap();
+                writeln!(&mut doc, "**Returns:** {}\n", func.returns).unwrap();
+
+                if !func.examples.is_empty() {
+                    writeln!(&mut doc, "**Examples:**").unwrap();
+                    writeln!(&mut doc, "```sql").unwrap();
+                    for example in &func.examples {
+                        writeln!(&mut doc, "{}", example).unwrap();
+                    }
+                    writeln!(&mut doc, "```\n").unwrap();
+                }
+            }
+        }
+
+        doc
+    }
+
+    /// Generate help text for a specific function
+    pub fn generate_function_help(&self, name: &str) -> Option<String> {
+        self.get(name).map(|func| {
+            let sig = func.signature();
+            let mut help = String::new();
+            use std::fmt::Write;
+
+            writeln!(&mut help, "Function: {}()", sig.name).unwrap();
+            writeln!(&mut help, "Category: {}", sig.category).unwrap();
+            writeln!(&mut help, "Description: {}", sig.description).unwrap();
+            writeln!(&mut help, "Arguments: {}", sig.arg_count.description()).unwrap();
+            writeln!(&mut help, "Returns: {}", sig.returns).unwrap();
+
+            if !sig.examples.is_empty() {
+                writeln!(&mut help, "\nExamples:").unwrap();
+                for example in &sig.examples {
+                    writeln!(&mut help, "  {}", example).unwrap();
+                }
+            }
+
+            help
+        })
+    }
+
+    /// List all available functions with brief descriptions
+    pub fn list_functions(&self) -> String {
+        use std::fmt::Write;
+        let mut list = String::new();
+
+        writeln!(&mut list, "Available SQL Functions:\n").unwrap();
+
+        let mut categories: Vec<FunctionCategory> = self.by_category.keys().copied().collect();
+        categories.sort_by_key(|c| format!("{:?}", c));
+
+        for category in categories {
+            let functions = self.get_by_category(category);
+            if functions.is_empty() {
+                continue;
+            }
+
+            writeln!(&mut list, "{} Functions:", category).unwrap();
+
+            let mut functions = functions;
+            functions.sort_by_key(|f| f.name);
+
+            for func in functions {
+                writeln!(
+                    &mut list,
+                    "  {:20} - {}",
+                    format!("{}()", func.name),
+                    func.description
+                )
+                .unwrap();
+            }
+            writeln!(&mut list).unwrap();
+        }
+
+        list
+    }
+
     /// Register constant functions
     fn register_constants(&mut self) {
         use constants::*;

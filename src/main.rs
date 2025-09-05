@@ -148,6 +148,20 @@ fn print_help() {
         "  {}  - Launch action system logger (console)",
         "--keys-simple".green()
     );
+    println!();
+    println!("{}", "Function Documentation:".yellow());
+    println!(
+        "  {}         - List all available SQL functions",
+        "--list-functions".green()
+    );
+    println!(
+        "  {} <name> - Show help for a specific function",
+        "--function-help".green()
+    );
+    println!(
+        "  {}    - Generate markdown documentation for all functions",
+        "--generate-docs".green()
+    );
 
     println!();
     println!("{}", "Examples:".yellow());
@@ -218,6 +232,41 @@ fn main() -> io::Result<()> {
     // Check for help flag
     if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
         print_help();
+        return Ok(());
+    }
+
+    // Check for function documentation flags
+    if args.contains(&"--list-functions".to_string()) {
+        let registry = sql_cli::sql::functions::FunctionRegistry::new();
+        println!("{}", registry.list_functions());
+        return Ok(());
+    }
+
+    if let Some(pos) = args.iter().position(|arg| arg == "--function-help") {
+        if let Some(func_name) = args.get(pos + 1) {
+            let registry = sql_cli::sql::functions::FunctionRegistry::new();
+            if let Some(help) = registry.generate_function_help(func_name) {
+                println!("{}", help);
+            } else {
+                eprintln!("Function '{}' not found", func_name);
+                eprintln!("\nUse --list-functions to see all available functions");
+            }
+        } else {
+            eprintln!("Error: --function-help requires a function name");
+            eprintln!("Usage: sql-cli --function-help <function_name>");
+        }
+        return Ok(());
+    }
+
+    if args.contains(&"--generate-docs".to_string()) {
+        let registry = sql_cli::sql::functions::FunctionRegistry::new();
+        let docs = registry.generate_markdown_docs();
+        let doc_path = "docs/FUNCTION_REFERENCE.md";
+        std::fs::write(doc_path, docs)?;
+        println!(
+            "Generated function reference documentation at: {}",
+            doc_path
+        );
         return Ok(());
     }
 
