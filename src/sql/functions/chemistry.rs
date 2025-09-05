@@ -655,6 +655,46 @@ impl SqlFunction for AtomicNumberFunction {
     }
 }
 
+/// Returns the molecular formula for a given compound name
+pub struct MoleculeFormulaFunction;
+
+impl SqlFunction for MoleculeFormulaFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "MOLECULE_FORMULA",
+            category: FunctionCategory::Chemical,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the molecular formula for a compound name",
+            returns: "STRING",
+            examples: vec![
+                "SELECT MOLECULE_FORMULA('water')",
+                "SELECT MOLECULE_FORMULA('glucose')",
+                "SELECT MOLECULE_FORMULA('caffeine')",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let input = match &args[0] {
+            DataValue::String(s) => s.clone(),
+            DataValue::InternedString(s) => s.to_string(),
+            _ => return Err(anyhow!("MOLECULE_FORMULA expects a string")),
+        };
+
+        let upper_input = input.to_uppercase();
+
+        // Check if it's a known molecule name
+        if let Some(formula) = MOLECULE_LOOKUP.get(&upper_input) {
+            return Ok(DataValue::String(formula.to_string()));
+        }
+
+        // If not found, return an error
+        Err(anyhow!("Unknown molecule: {}", input))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

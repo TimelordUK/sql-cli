@@ -386,6 +386,7 @@ impl FunctionRegistry {
         self.register(Box::new(AvogadroFunction));
         self.register(Box::new(AtomicMassFunction));
         self.register(Box::new(AtomicNumberFunction));
+        self.register(Box::new(MoleculeFormulaFunction));
     }
 
     /// Register string method functions
