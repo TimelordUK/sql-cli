@@ -618,7 +618,7 @@ impl SqlFunction for TextJoinFunction {
             description: "Join multiple text values with a delimiter",
             returns: "STRING",
             examples: vec![
-                "SELECT TEXTJOIN(',', 1, 'a', 'b', 'c')",  // Returns 'a,b,c'
+                "SELECT TEXTJOIN(',', 1, 'a', 'b', 'c')", // Returns 'a,b,c'
                 "SELECT TEXTJOIN(' - ', 1, name, city) FROM table",
                 "SELECT TEXTJOIN('|', 0, col1, col2, col3) FROM table",
             ],

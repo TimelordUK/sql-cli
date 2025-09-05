@@ -9,6 +9,7 @@ pub mod astronomy;
 pub mod chemistry;
 pub mod comparison;
 pub mod constants;
+pub mod math;
 pub mod mathematics;
 pub mod string_methods;
 
@@ -340,6 +341,9 @@ impl FunctionRegistry {
         self.register(Box::new(EFunction));
         self.register(Box::new(MeFunction)); // Mass of electron
         self.register(Box::new(MassElectronFunction)); // Alias for ME
+        self.register(Box::new(TauFunction));
+        self.register(Box::new(PhiFunction));
+        self.register(Box::new(HbarFunction));
     }
 
     /// Register astronomical functions
@@ -398,11 +402,15 @@ impl FunctionRegistry {
     fn register_mathematical_functions(&mut self) {
         use mathematics::*;
 
+        // Prime number functions
         self.register(Box::new(PrimeFunction));
         self.register(Box::new(IsPrimeFunction));
         self.register(Box::new(PrimeCountFunction));
         self.register(Box::new(NextPrimeFunction));
         self.register(Box::new(PrevPrimeFunction));
+        
+        // General math functions
+        math::register_math_functions(self);
     }
 }
 

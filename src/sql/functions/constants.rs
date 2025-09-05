@@ -87,6 +87,69 @@ impl SqlFunction for MassElectronFunction {
     }
 }
 
+/// TAU constant (2π)
+pub struct TauFunction;
+
+impl SqlFunction for TauFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "TAU",
+            category: FunctionCategory::Constant,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns tau (τ = 2π = 6.28318...)",
+            returns: "FLOAT",
+            examples: vec!["SELECT TAU()", "SELECT radius * TAU() as circumference"],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(2.0 * std::f64::consts::PI))
+    }
+}
+
+/// PHI constant (Golden ratio)
+pub struct PhiFunction;
+
+impl SqlFunction for PhiFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "PHI",
+            category: FunctionCategory::Constant,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns the golden ratio φ (1.61803...)",
+            returns: "FLOAT",
+            examples: vec!["SELECT PHI()", "SELECT width * PHI() as golden_height"],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(1.618033988749895)) // (1 + sqrt(5)) / 2
+    }
+}
+
+/// HBAR constant (Reduced Planck constant)
+pub struct HbarFunction;
+
+impl SqlFunction for HbarFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "HBAR",
+            category: FunctionCategory::Constant,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns the reduced Planck constant ħ in J⋅s (1.055 × 10⁻³⁴)",
+            returns: "FLOAT",
+            examples: vec!["SELECT HBAR()", "SELECT HBAR() / (2 * PI()) as h_bar"],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(1.054571817e-34))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
