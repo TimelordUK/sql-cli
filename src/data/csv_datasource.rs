@@ -24,6 +24,8 @@ pub struct CsvDataSource {
 
 impl CsvDataSource {
     pub fn load_from_file<P: AsRef<Path>>(path: P, table_name: &str) -> Result<Self> {
+        use std::io::{BufRead, BufReader as IOBufReader};
+
         let file = File::open(&path)?;
         let mut reader = csv::Reader::from_reader(file);
 
@@ -34,17 +36,38 @@ impl CsvDataSource {
             .map(std::string::ToString::to_string)
             .collect();
 
+        // Re-open file to read raw lines for null detection
+        let file2 = File::open(&path)?;
+        let mut line_reader = IOBufReader::new(file2);
+        let mut raw_line = String::new();
+        // Skip header line
+        line_reader.read_line(&mut raw_line)?;
+
         // Read all records into JSON values
         let mut data = Vec::new();
         for result in reader.records() {
             let record = result?;
+
+            // Read the corresponding raw line
+            raw_line.clear();
+            line_reader.read_line(&mut raw_line)?;
+
             let mut row = serde_json::Map::new();
 
             for (i, field) in record.iter().enumerate() {
                 if let Some(header) = headers.get(i) {
-                    // Try to parse as number, otherwise store as string
+                    // Parse the raw line to check if this field was truly empty (,,)
+                    // vs quoted empty ("") - this is a simple heuristic
                     let value = if field.is_empty() {
-                        Value::Null
+                        // Check if this was preceded/followed by consecutive commas in raw line
+                        // This is a simplified check - for a robust solution we'd need
+                        // a full CSV parser that preserves quote information
+                        if Self::is_null_field(&raw_line, i) {
+                            Value::Null
+                        } else {
+                            // Quoted empty string
+                            Value::String(String::new())
+                        }
                     } else if let Ok(n) = field.parse::<f64>() {
                         json!(n)
                     } else {
@@ -65,6 +88,66 @@ impl CsvDataSource {
             table_name: table_name.to_string(),
             column_lookup,
         })
+    }
+
+    /// Helper to detect if a field in the raw CSV line is a null (unquoted empty)
+    /// This is a heuristic - consecutive commas indicate null
+    fn is_null_field(raw_line: &str, field_index: usize) -> bool {
+        // Count commas to find the field position
+        let mut comma_count = 0;
+        let mut in_quotes = false;
+        let mut field_start = 0;
+        let mut prev_char = ' ';
+
+        for (i, ch) in raw_line.chars().enumerate() {
+            if ch == '"' && prev_char != '\\' {
+                in_quotes = !in_quotes;
+            }
+
+            if ch == ',' && !in_quotes {
+                if comma_count == field_index {
+                    let field_end = i;
+                    let field_content = &raw_line[field_start..field_end].trim();
+                    // If empty, check if it was quoted (quoted empty = empty string, unquoted empty = NULL)
+                    if field_content.is_empty() {
+                        return true; // Unquoted empty field -> NULL
+                    }
+                    // If it starts and ends with quotes but is empty inside, it's an empty string, not NULL
+                    if field_content.starts_with('"')
+                        && field_content.ends_with('"')
+                        && field_content.len() == 2
+                    {
+                        return false; // Quoted empty field -> empty string
+                    }
+                    return false; // Non-empty field -> not NULL
+                }
+                comma_count += 1;
+                field_start = i + 1;
+            }
+            prev_char = ch;
+        }
+
+        // Check last field
+        if comma_count == field_index {
+            let field_content = raw_line[field_start..]
+                .trim()
+                .trim_end_matches('\n')
+                .trim_end_matches('\r');
+            // If empty, check if it was quoted
+            if field_content.is_empty() {
+                return true; // Unquoted empty field -> NULL
+            }
+            // If it starts and ends with quotes but is empty inside, it's an empty string, not NULL
+            if field_content.starts_with('"')
+                && field_content.ends_with('"')
+                && field_content.len() == 2
+            {
+                return false; // Quoted empty field -> empty string
+            }
+            return false; // Non-empty field -> not NULL
+        }
+
+        false // Field not found -> not NULL (shouldn't happen)
     }
 
     pub fn load_from_json_file<P: AsRef<Path>>(path: P, table_name: &str) -> Result<Self> {

@@ -4,8 +4,66 @@ use csv::ReaderBuilder;
 use serde_json::Value as JsonValue;
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
+
+/// Helper to detect if a field in the raw CSV line is a null (unquoted empty)
+fn is_null_field(raw_line: &str, field_index: usize) -> bool {
+    let mut comma_count = 0;
+    let mut in_quotes = false;
+    let mut field_start = 0;
+    let mut prev_char = ' ';
+
+    for (i, ch) in raw_line.chars().enumerate() {
+        if ch == '"' && prev_char != '\\' {
+            in_quotes = !in_quotes;
+        }
+
+        if ch == ',' && !in_quotes {
+            if comma_count == field_index {
+                let field_end = i;
+                let field_content = &raw_line[field_start..field_end].trim();
+                // If empty, check if it was quoted (quoted empty = empty string, unquoted empty = NULL)
+                if field_content.is_empty() {
+                    return true; // Unquoted empty field -> NULL
+                }
+                // If it starts and ends with quotes but is empty inside, it's an empty string, not NULL
+                if field_content.starts_with('"')
+                    && field_content.ends_with('"')
+                    && field_content.len() == 2
+                {
+                    return false; // Quoted empty field -> empty string
+                }
+                return false; // Non-empty field -> not NULL
+            }
+            comma_count += 1;
+            field_start = i + 1;
+        }
+        prev_char = ch;
+    }
+
+    // Check last field
+    if comma_count == field_index {
+        let field_content = raw_line[field_start..]
+            .trim()
+            .trim_end_matches('\n')
+            .trim_end_matches('\r');
+        // If empty, check if it was quoted
+        if field_content.is_empty() {
+            return true; // Unquoted empty field -> NULL
+        }
+        // If it starts and ends with quotes but is empty inside, it's an empty string, not NULL
+        if field_content.starts_with('"')
+            && field_content.ends_with('"')
+            && field_content.len() == 2
+        {
+            return false; // Quoted empty field -> empty string
+        }
+        return false; // Non-empty field -> not NULL
+    }
+
+    false // Field not found -> not NULL (shouldn't happen)
+}
 
 /// Load a CSV file into a `DataTable`
 pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Result<DataTable> {
@@ -32,14 +90,34 @@ pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resul
         table.add_column(DataColumn::new(header));
     }
 
+    // Open a second file handle for raw line reading
+    let file2 = File::open(&path).with_context(|| {
+        format!(
+            "Failed to open CSV file for raw reading: {:?}",
+            path.as_ref()
+        )
+    })?;
+    let mut line_reader = BufReader::new(file2);
+    let mut raw_line = String::new();
+    // Skip header line
+    line_reader.read_line(&mut raw_line)?;
+
     // Read all rows first to collect data
     let mut string_rows = Vec::new();
+    let mut raw_lines = Vec::new();
+
     for result in reader.records() {
         let record = result?;
         let row: Vec<String> = record
             .iter()
             .map(std::string::ToString::to_string)
             .collect();
+
+        // Read the corresponding raw line
+        raw_line.clear();
+        line_reader.read_line(&mut raw_line)?;
+        raw_lines.push(raw_line.clone());
+
         string_rows.push(row);
     }
 
@@ -62,10 +140,21 @@ pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resul
     }
 
     // Convert string data to typed DataValues and add rows
-    for string_row in string_rows {
+    for (row_idx, string_row) in string_rows.iter().enumerate() {
         let mut values = Vec::new();
+        let raw_line = &raw_lines[row_idx];
+
         for (col_idx, value) in string_row.iter().enumerate() {
-            let data_value = DataValue::from_string(value, &column_types[col_idx]);
+            let data_value = if value.is_empty() {
+                // Distinguish between NULL (,,) and empty string ("")
+                if is_null_field(raw_line, col_idx) {
+                    DataValue::Null
+                } else {
+                    DataValue::String(String::new())
+                }
+            } else {
+                DataValue::from_string(value, &column_types[col_idx])
+            };
             values.push(data_value);
         }
         table

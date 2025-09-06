@@ -3,6 +3,7 @@ use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use anyhow::Result;
 use csv;
 use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use tracing::{debug, info};
 
@@ -30,16 +31,32 @@ impl DirectCsvLoader {
 
         crate::utils::memory_tracker::track_memory("direct_csv_headers");
 
+        // Re-open file to read raw lines for null detection
+        let file2 = File::open(path)?;
+        let mut line_reader = BufReader::new(file2);
+        let mut raw_line = String::new();
+        // Skip header line
+        line_reader.read_line(&mut raw_line)?;
+
         // Read rows directly into DataTable
         let mut row_count = 0;
         for result in reader.records() {
             let record = result?;
+
+            // Read the corresponding raw line
+            raw_line.clear();
+            line_reader.read_line(&mut raw_line)?;
+
             let mut values = Vec::with_capacity(headers.len());
 
-            for field in &record {
-                // Simple type inference - can be improved later
+            for (i, field) in record.iter().enumerate() {
+                // Distinguish between null (,,) and empty string ("")
                 let value = if field.is_empty() {
-                    DataValue::Null
+                    if Self::is_null_field(&raw_line, i) {
+                        DataValue::Null
+                    } else {
+                        DataValue::String(String::new())
+                    }
                 } else if let Ok(b) = field.parse::<bool>() {
                     DataValue::Boolean(b)
                 } else if let Ok(i) = field.parse::<i64>() {
@@ -81,6 +98,64 @@ impl DirectCsvLoader {
         );
 
         Ok(table)
+    }
+
+    /// Helper to detect if a field in the raw CSV line is a null (unquoted empty)
+    fn is_null_field(raw_line: &str, field_index: usize) -> bool {
+        let mut comma_count = 0;
+        let mut in_quotes = false;
+        let mut field_start = 0;
+        let mut prev_char = ' ';
+
+        for (i, ch) in raw_line.chars().enumerate() {
+            if ch == '"' && prev_char != '\\' {
+                in_quotes = !in_quotes;
+            }
+
+            if ch == ',' && !in_quotes {
+                if comma_count == field_index {
+                    let field_end = i;
+                    let field_content = &raw_line[field_start..field_end].trim();
+                    // If empty, check if it was quoted (quoted empty = empty string, unquoted empty = NULL)
+                    if field_content.is_empty() {
+                        return true; // Unquoted empty field -> NULL
+                    }
+                    // If it starts and ends with quotes but is empty inside, it's an empty string, not NULL
+                    if field_content.starts_with('"')
+                        && field_content.ends_with('"')
+                        && field_content.len() == 2
+                    {
+                        return false; // Quoted empty field -> empty string
+                    }
+                    return false; // Non-empty field -> not NULL
+                }
+                comma_count += 1;
+                field_start = i + 1;
+            }
+            prev_char = ch;
+        }
+
+        // Check last field
+        if comma_count == field_index {
+            let field_content = raw_line[field_start..]
+                .trim()
+                .trim_end_matches('\n')
+                .trim_end_matches('\r');
+            // If empty, check if it was quoted
+            if field_content.is_empty() {
+                return true; // Unquoted empty field -> NULL
+            }
+            // If it starts and ends with quotes but is empty inside, it's an empty string, not NULL
+            if field_content.starts_with('"')
+                && field_content.ends_with('"')
+                && field_content.len() == 2
+            {
+                return false; // Quoted empty field -> empty string
+            }
+            return false; // Non-empty field -> not NULL
+        }
+
+        false // Field not found -> not NULL (shouldn't happen)
     }
 
     /// Execute a SQL query directly on a `DataTable` (no JSON)
