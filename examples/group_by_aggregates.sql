@@ -1,7 +1,14 @@
 -- GROUP BY and aggregate functions
 -- sql-cli supports sophisticated grouping and aggregation with HAVING clause
+-- 
+-- NOTE: These examples require actual data files with the referenced columns.
+-- To run these queries, use: sql-cli your_data.csv -q "QUERY"
+-- 
+-- Example data files needed:
+-- - sales_data: Should have columns: category, amount, status
+-- - orders: Should have columns: order_date, amount, region, customer_id, status
 
--- Basic aggregation functions
+-- Basic aggregation functions (requires sales_data.csv)
 SELECT 
     COUNT(*) as total_rows,
     COUNT(DISTINCT category) as unique_categories,
