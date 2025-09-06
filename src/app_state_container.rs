@@ -152,15 +152,15 @@ impl KeyPressEntry {
             KeyCode::Delete => result.push_str("Del"),
             KeyCode::Insert => result.push_str("Ins"),
             KeyCode::F(n) => result.push_str(&format!("F{}", n)),
-            KeyCode::Left => result.push_str("←"),
-            KeyCode::Right => result.push_str("→"),
-            KeyCode::Up => result.push_str("↑"),
-            KeyCode::Down => result.push_str("↓"),
+            KeyCode::Left => result.push('←'),
+            KeyCode::Right => result.push('→'),
+            KeyCode::Up => result.push('↑'),
+            KeyCode::Down => result.push('↓'),
             KeyCode::Home => result.push_str("Home"),
             KeyCode::End => result.push_str("End"),
             KeyCode::PageUp => result.push_str("PgUp"),
             KeyCode::PageDown => result.push_str("PgDn"),
-            _ => result.push_str("?"),
+            _ => result.push('?'),
         }
 
         result
@@ -389,6 +389,12 @@ pub struct InputState {
     pub last_executed_query: String,
 }
 
+impl Default for InputState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InputState {
     pub fn new() -> Self {
         Self {
@@ -456,6 +462,12 @@ pub struct SearchState {
     pub last_search_time: Option<std::time::Instant>,
 }
 
+impl Default for SearchState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchState {
     pub fn new() -> Self {
         Self {
@@ -516,6 +528,12 @@ pub struct FilterHistoryEntry {
     pub match_count: usize,
     pub timestamp: chrono::DateTime<chrono::Local>,
     pub duration_ms: Option<u64>,
+}
+
+impl Default for FilterState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FilterState {
@@ -833,6 +851,12 @@ pub struct CacheListState {
     pub cache_names: Vec<String>,
 }
 
+impl Default for CacheListState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CacheListState {
     pub fn new() -> Self {
         Self {
@@ -847,6 +871,12 @@ impl CacheListState {
 pub struct ColumnStatsState {
     pub column_index: usize,
     pub is_visible: bool,
+}
+
+impl Default for ColumnStatsState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ColumnStatsState {
@@ -881,6 +911,12 @@ pub struct NavigationState {
     pub cursor_lock: bool, // Lock cursor at visual position (data scrolls)
     pub cursor_lock_position: Option<usize>, // Visual position to lock cursor at
     pub selection_history: VecDeque<(usize, usize)>, // Track navigation history
+}
+
+impl Default for NavigationState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NavigationState {
@@ -1277,6 +1313,12 @@ impl NavigationState {
     }
 }
 
+impl Default for JumpToRowState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JumpToRowState {
     pub fn new() -> Self {
         Self {
@@ -1354,7 +1396,7 @@ impl SortState {
         self.history.push_back(SortHistoryEntry {
             column_index,
             column_name: column_name.clone(),
-            order: order.clone(),
+            order,
             sorted_at: Instant::now(),
             row_count,
         });
@@ -1377,7 +1419,8 @@ impl SortState {
 
     /// Get the next sort order for a column
     pub fn get_next_order(&self, column_index: usize) -> SortOrder {
-        let next_order = if let Some(current_col) = self.column {
+        // Debug: GET_NEXT_ORDER calculation
+        if let Some(current_col) = self.column {
             if current_col == column_index {
                 // Same column - cycle through orders
                 match self.order {
@@ -1392,10 +1435,7 @@ impl SortState {
         } else {
             // No column sorted - start with ascending
             SortOrder::Ascending
-        };
-
-        // Debug: GET_NEXT_ORDER calculation
-        next_order
+        }
     }
 
     /// Advance the sort state for the given column
@@ -1410,7 +1450,7 @@ impl SortState {
             self.history.push_back(SortHistoryEntry {
                 column_index: col,
                 column_name: name.clone(),
-                order: self.order.clone(),
+                order: self.order,
                 sorted_at: std::time::Instant::now(),
                 row_count: 0, // We don't track row count here, could be added later
             });
@@ -1495,6 +1535,12 @@ pub struct SelectionHistoryEntry {
     pub column: usize,
     pub cells: Vec<(usize, usize)>,
     pub timestamp: chrono::DateTime<chrono::Local>,
+}
+
+impl Default for SelectionState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SelectionState {
@@ -1777,6 +1823,12 @@ pub struct HistorySearchState {
     pub original_input: String,
 }
 
+impl Default for HistorySearchState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HistorySearchState {
     pub fn new() -> Self {
         Self {
@@ -1814,6 +1866,12 @@ pub struct HelpState {
 
     /// Last time help was opened
     pub last_opened: Option<Instant>,
+}
+
+impl Default for HelpState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HelpState {
@@ -1917,7 +1975,7 @@ impl UndoRedoState {
 }
 
 /// State for UI scrolling and viewport
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ScrollState {
     /// Help widget scroll offset
     pub help_scroll: u16,
@@ -1927,17 +1985,6 @@ pub struct ScrollState {
     pub viewport_scroll_offset: (usize, usize),
     /// Last calculated visible rows (viewport height)
     pub last_visible_rows: usize,
-}
-
-impl Default for ScrollState {
-    fn default() -> Self {
-        Self {
-            help_scroll: 0,
-            input_scroll_offset: 0,
-            viewport_scroll_offset: (0, 0),
-            last_visible_rows: 0,
-        }
-    }
 }
 
 /// State for managing key chord sequences
@@ -2033,6 +2080,12 @@ pub struct WidgetStates {
     pub help: HelpWidget,
     pub stats: StatsWidget,
     // pub debug: DebugWidget, // TODO: Add when DebugInfoProvider is implemented
+}
+
+impl Default for WidgetStates {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WidgetStates {
@@ -3076,7 +3129,7 @@ impl AppStateContainer {
         let new_order = sort_state.get_next_order(column_index);
 
         let old_column = sort_state.column;
-        let old_order = sort_state.order.clone();
+        let old_order = sort_state.order;
 
         if new_order == SortOrder::None {
             // Clear sort - return to original order
@@ -3093,12 +3146,7 @@ impl AppStateContainer {
             }
         } else {
             // Apply sort
-            sort_state.set_sort(
-                column_index,
-                column_name.clone(),
-                new_order.clone(),
-                row_count,
-            );
+            sort_state.set_sort(column_index, column_name.clone(), new_order, row_count);
 
             if let Some(ref debug_service) = *self.debug_service.borrow() {
                 debug_service.info(
@@ -3813,13 +3861,13 @@ impl AppStateContainer {
         let new_row = if delta_row >= 0 {
             current_row.saturating_add(delta_row as usize)
         } else {
-            current_row.saturating_sub(delta_row.abs() as usize)
+            current_row.saturating_sub(delta_row.unsigned_abs() as usize)
         };
 
         let new_col = if delta_col >= 0 {
             current_col.saturating_add(delta_col as usize)
         } else {
-            current_col.saturating_sub(delta_col.abs() as usize)
+            current_col.saturating_sub(delta_col.unsigned_abs() as usize)
         };
 
         self.navigate_to(new_row, new_col);
@@ -4871,7 +4919,8 @@ impl AppStateContainer {
                         if let Some(ref debug_service) = *self.debug_service.borrow() {
                             debug_service.info(
                                 "KeyNormalize",
-                                format!("Windows: Shift+Left -> '<' character for column movement"),
+                                "Windows: Shift+Left -> '<' character for column movement"
+                                    .to_string(),
                             );
                         }
                         // Convert to '<' character without SHIFT for consistency
@@ -4881,9 +4930,8 @@ impl AppStateContainer {
                         if let Some(ref debug_service) = *self.debug_service.borrow() {
                             debug_service.info(
                                 "KeyNormalize",
-                                format!(
-                                    "Windows: Shift+Right -> '>' character for column movement"
-                                ),
+                                "Windows: Shift+Right -> '>' character for column movement"
+                                    .to_string(),
                             );
                         }
                         // Convert to '>' character without SHIFT for consistency
@@ -4894,7 +4942,8 @@ impl AppStateContainer {
                         if let Some(ref debug_service) = *self.debug_service.borrow() {
                             debug_service.info(
                                 "KeyNormalize",
-                                format!("Windows: Shift+'<' -> '<' character for column movement"),
+                                "Windows: Shift+'<' -> '<' character for column movement"
+                                    .to_string(),
                             );
                         }
                         // Remove SHIFT modifier to normalize for column movement
@@ -4904,7 +4953,8 @@ impl AppStateContainer {
                         if let Some(ref debug_service) = *self.debug_service.borrow() {
                             debug_service.info(
                                 "KeyNormalize",
-                                format!("Windows: Shift+'>' -> '>' character for column movement"),
+                                "Windows: Shift+'>' -> '>' character for column movement"
+                                    .to_string(),
                             );
                         }
                         // Remove SHIFT modifier to normalize for column movement
@@ -4932,12 +4982,12 @@ impl AppStateContainer {
         dump.push_str("MODE INFORMATION:\n");
         dump.push_str(&format!("  Current Mode: {:?}\n", self.current_mode()));
         dump.push_str(&format!("  Mode Stack: {:?}\n", self.mode_stack));
-        dump.push_str("\n");
+        dump.push('\n');
 
         // UI Flags
         dump.push_str("UI FLAGS:\n");
         dump.push_str(&format!("  Debug Enabled: {}\n", self.debug_enabled));
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Help State
         let help = self.help.borrow();
@@ -4949,7 +4999,7 @@ impl AppStateContainer {
         if let Some(ref last_opened) = help.last_opened {
             dump.push_str(&format!("  Last Opened: {:?} ago\n", last_opened.elapsed()));
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Input state
         dump.push_str("INPUT STATE:\n");
@@ -4964,7 +5014,7 @@ impl AppStateContainer {
                 input.last_executed_query.clone()
             }
         ));
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Search state
         dump.push_str("SEARCH STATE:\n");
@@ -5008,7 +5058,7 @@ impl AppStateContainer {
                 dump.push_str(&format!(" at {}\n", entry.timestamp.format("%H:%M:%S")));
             }
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Filter state
         dump.push_str("FILTER STATE:\n");
@@ -5047,7 +5097,7 @@ impl AppStateContainer {
                 ));
             }
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Column search state
         let column_search = self.column_search.borrow();
@@ -5072,7 +5122,7 @@ impl AppStateContainer {
                     ));
                 }
             }
-            dump.push_str("\n");
+            dump.push('\n');
         }
 
         // History search state (Ctrl+R)
@@ -5105,7 +5155,7 @@ impl AppStateContainer {
                     ));
                 }
             }
-            dump.push_str("\n");
+            dump.push('\n');
         }
 
         // Navigation state with enhanced viewport information
@@ -5195,7 +5245,7 @@ impl AppStateContainer {
                 dump.push_str(&format!("    {}. ({}, {})\n", i + 1, row, col));
             }
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Column search state
         dump.push_str("COLUMN SEARCH STATE:\n");
@@ -5253,7 +5303,7 @@ impl AppStateContainer {
                 ));
             }
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Sort state
         dump.push_str("SORT STATE:\n");
@@ -5294,7 +5344,7 @@ impl AppStateContainer {
                 ));
             }
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Selection state
         dump.push_str("SELECTION STATE:\n");
@@ -5353,7 +5403,7 @@ impl AppStateContainer {
                 ));
             }
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Clipboard state
         dump.push_str("CLIPBOARD STATE:\n");
@@ -5394,7 +5444,7 @@ impl AppStateContainer {
                 ));
             }
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Chord state
         dump.push_str("CHORD STATE:\n");
@@ -5436,7 +5486,7 @@ impl AppStateContainer {
                 }
             }
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Undo/Redo state
         dump.push_str("UNDO/REDO STATE:\n");
@@ -5465,7 +5515,7 @@ impl AppStateContainer {
                 ));
             }
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Scroll state
         dump.push_str("SCROLL STATE:\n");
@@ -5480,19 +5530,19 @@ impl AppStateContainer {
             "  Last visible rows: {}\n",
             scroll.last_visible_rows
         ));
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Widget states using DebugInfoProvider trait
         dump.push_str(&self.widgets.search_modes.debug_info());
-        dump.push_str("\n");
+        dump.push('\n');
         if let Some(ref history) = self.widgets.history {
             dump.push_str(&history.debug_info());
-            dump.push_str("\n");
+            dump.push('\n');
         }
         dump.push_str(&self.widgets.help.debug_info());
-        dump.push_str("\n");
+        dump.push('\n');
         dump.push_str(&self.widgets.stats.debug_info());
-        dump.push_str("\n");
+        dump.push('\n');
         // TODO: Add debug widget info when available
         // dump.push_str(&self.widgets.debug.debug_info());
         // dump.push_str("\n");
@@ -5518,7 +5568,7 @@ impl AppStateContainer {
         } else {
             dump.push_str("  Buffer: None\n");
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Cache state
         dump.push_str("CACHE STATE:\n");
@@ -5530,7 +5580,7 @@ impl AppStateContainer {
             "  Max Cache Size: {}\n",
             self.results_cache.max_size
         ));
-        dump.push_str("\n");
+        dump.push('\n');
 
         // History state
         dump.push_str("HISTORY STATE:\n");
@@ -5538,11 +5588,11 @@ impl AppStateContainer {
             "  Total Commands: {}\n",
             self.command_history.borrow().get_all().len()
         ));
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Key press history
         dump.push_str(&self.key_press_history.borrow().format_history());
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Platform-specific key information
         dump.push_str("PLATFORM INFO:\n");
@@ -5553,7 +5603,7 @@ impl AppStateContainer {
         } else {
             dump.push_str("INACTIVE\n");
         }
-        dump.push_str("\n");
+        dump.push('\n');
 
         dump.push_str("=== END DEBUG DUMP ===\n");
 

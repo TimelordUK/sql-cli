@@ -1,7 +1,6 @@
 use sql_cli::app_state_container::AppStateContainer;
 use sql_cli::buffer::{Buffer, BufferAPI};
 use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
-use sql_cli::data::query_engine::QueryEngine;
 use sql_cli::services::{QueryExecutionService, QueryOrchestrator};
 use sql_cli::ui::search::vim_search_adapter::VimSearchAdapter;
 use std::cell::RefCell;

@@ -36,6 +36,12 @@ pub struct StateManager {
     max_stack_size: usize,
 }
 
+impl Default for StateManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StateManager {
     pub fn new() -> Self {
         Self {
@@ -181,7 +187,7 @@ impl StateManager {
             }
         }
 
-        info.push_str(&format!("\nCurrent Mode Context:\n"));
+        info.push_str("\nCurrent Mode Context:\n");
         info.push_str(&format!(
             "  Input Length: {}\n",
             self.current_context.input_text.len()

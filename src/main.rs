@@ -320,7 +320,7 @@ fn main() -> io::Result<()> {
                 eprintln!("📝 Debug logs will be written to:");
                 eprintln!("   {}", dual_logger.log_path().display());
                 eprintln!("   Tail with: tail -f {}", dual_logger.log_path().display());
-                eprintln!("");
+                eprintln!();
             }
         }
     }
@@ -330,10 +330,7 @@ fn main() -> io::Result<()> {
         // Read query from file if specified
         let query = if let Some(file) = query_file_arg {
             std::fs::read_to_string(&file).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to read query file {}: {}", file, e),
-                )
+                io::Error::other(format!("Failed to read query file {}: {}", file, e))
             })?
         } else {
             query_arg.unwrap()
@@ -357,8 +354,7 @@ fn main() -> io::Result<()> {
         let data_file = args
             .iter()
             .filter(|arg| !arg.starts_with("-"))
-            .filter(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
-            .next()
+            .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
             .cloned();
 
         if let Some(data_file) = data_file {
@@ -366,7 +362,7 @@ fn main() -> io::Result<()> {
                 data_file,
                 query,
                 output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
+                    .map_err(io::Error::other)?,
                 output_file: output_file_arg,
                 case_insensitive: args.contains(&"--case-insensitive".to_string()),
                 auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
@@ -375,14 +371,14 @@ fn main() -> io::Result<()> {
             };
 
             return sql_cli::non_interactive::execute_non_interactive(config)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+                .map_err(io::Error::other);
         } else if uses_dual_or_no_from {
             // Use empty string for data_file when using DUAL
             let config = sql_cli::non_interactive::NonInteractiveConfig {
                 data_file: String::new(),
                 query,
                 output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
+                    .map_err(io::Error::other)?,
                 output_file: output_file_arg,
                 case_insensitive: args.contains(&"--case-insensitive".to_string()),
                 auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
@@ -391,7 +387,7 @@ fn main() -> io::Result<()> {
             };
 
             return sql_cli::non_interactive::execute_non_interactive(config)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+                .map_err(io::Error::other);
         } else {
             eprintln!("Error: Data file (CSV or JSON) required for non-interactive query mode");
             eprintln!("Usage: sql-cli <data.csv> -q \"SELECT * FROM table\"");
@@ -547,7 +543,7 @@ fn main() -> io::Result<()> {
             if let Err(e) = result {
                 eprintln!("Enhanced TUI Error: {}", e);
                 eprintln!("Falling back to classic CLI mode...");
-                eprintln!("");
+                eprintln!();
                 // Don't exit, fall through to classic mode
             } else {
                 return Ok(());
@@ -629,7 +625,7 @@ fn main() -> io::Result<()> {
                     }
 
                     if let Some(ref results) = last_results {
-                        match export_to_csv(results, &vec!["*".to_string()], parts[1]) {
+                        match export_to_csv(results, &["*".to_string()], parts[1]) {
                             Ok(_) => {}
                             Err(e) => eprintln!("{}", format!("Export error: {}", e).red()),
                         }

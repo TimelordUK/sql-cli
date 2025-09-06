@@ -14,7 +14,7 @@ fn test_filter_no_crash() {
     ]);
 
     let mut temp_file = NamedTempFile::new().unwrap();
-    write!(temp_file, "{}", test_data.to_string()).unwrap();
+    write!(temp_file, "{}", test_data).unwrap();
 
     let mut client = CsvApiClient::new();
     client.load_json(temp_file.path(), "test").unwrap();

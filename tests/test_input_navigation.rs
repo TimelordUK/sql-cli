@@ -1,7 +1,6 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sql_cli::buffer::{Buffer, BufferAPI, EditMode};
-use sql_cli::input_manager::create_single_line;
 
 /// Helper to create a key event
 fn key(code: KeyCode) -> KeyEvent {

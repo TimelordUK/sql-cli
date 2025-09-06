@@ -178,7 +178,7 @@ fn test_csv_api_client_with_json_data() -> anyhow::Result<()> {
     }
     // The query might return each row separately instead of aggregating
     if agg_response.data.len() == 1 {
-        if let Some(row) = agg_response.data.get(0) {
+        if let Some(row) = agg_response.data.first() {
             assert_eq!(row["count"], 3);
             assert_eq!(row["total"], 2250); // 1000 + 500 + 750
         }
@@ -364,7 +364,7 @@ fn test_simulated_user_workflow() -> anyhow::Result<()> {
     // In the TUI, this would move the table selection
     let mut current_row = 0;
     current_row = std::cmp::min(current_row + 1, row_count - 1);
-    assert!(current_row <= row_count - 1);
+    assert!(current_row < row_count);
 
     // Simulate user pressing 'g' to go to first row
     current_row = 0;

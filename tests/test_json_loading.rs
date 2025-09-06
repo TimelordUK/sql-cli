@@ -44,7 +44,7 @@ fn test_json_file_loading() {
 
     // Write to temporary JSON file
     let mut temp_file = NamedTempFile::new().unwrap();
-    write!(temp_file, "{}", test_data.to_string()).unwrap();
+    write!(temp_file, "{}", test_data).unwrap();
 
     // Load JSON file
     let datasource = CsvDataSource::load_from_json_file(temp_file.path(), "trades").unwrap();
@@ -92,7 +92,7 @@ fn test_json_queries_with_where_clause() {
 
     // Write to temporary JSON file
     let mut temp_file = NamedTempFile::new().unwrap();
-    write!(temp_file, "{}", test_data.to_string()).unwrap();
+    write!(temp_file, "{}", test_data).unwrap();
 
     // Test with CsvApiClient
     let mut client = CsvApiClient::new();
@@ -134,7 +134,7 @@ fn test_json_and_csv_produce_same_cache() {
 
     // Write JSON file
     let mut json_file = NamedTempFile::new().unwrap();
-    write!(json_file, "{}", json_data.to_string()).unwrap();
+    write!(json_file, "{}", json_data).unwrap();
 
     // Write CSV file with same data
     let mut csv_file = NamedTempFile::new().unwrap();
@@ -177,7 +177,7 @@ fn test_json_validation() {
     // Test empty array
     let empty_data = json!([]);
     let mut temp_file = NamedTempFile::new().unwrap();
-    write!(temp_file, "{}", empty_data.to_string()).unwrap();
+    write!(temp_file, "{}", empty_data).unwrap();
 
     let result = CsvDataSource::load_from_json_file(temp_file.path(), "test");
     assert!(result.is_err());
@@ -186,7 +186,7 @@ fn test_json_validation() {
     // Test non-object array
     let invalid_data = json!([1, 2, 3]);
     let mut temp_file = NamedTempFile::new().unwrap();
-    write!(temp_file, "{}", invalid_data.to_string()).unwrap();
+    write!(temp_file, "{}", invalid_data).unwrap();
 
     let result = CsvDataSource::load_from_json_file(temp_file.path(), "test");
     assert!(result.is_err());
@@ -198,7 +198,7 @@ fn test_json_validation() {
         "not an object"
     ]);
     let mut temp_file = NamedTempFile::new().unwrap();
-    write!(temp_file, "{}", mixed_data.to_string()).unwrap();
+    write!(temp_file, "{}", mixed_data).unwrap();
 
     let result = CsvDataSource::load_from_json_file(temp_file.path(), "test");
     assert!(result.is_err());
@@ -232,7 +232,7 @@ fn test_case_insensitive_queries() {
     ]);
 
     let mut temp_file = NamedTempFile::new().unwrap();
-    write!(temp_file, "{}", test_data.to_string()).unwrap();
+    write!(temp_file, "{}", test_data).unwrap();
 
     let mut client = CsvApiClient::new();
     client.load_json(temp_file.path(), "trades").unwrap();

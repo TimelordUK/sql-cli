@@ -6,6 +6,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub struct NavigationHandler;
 
+impl Default for NavigationHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NavigationHandler {
     pub fn new() -> Self {
         NavigationHandler

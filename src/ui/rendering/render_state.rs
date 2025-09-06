@@ -43,6 +43,12 @@ pub struct RenderState {
     high_frequency_mode: bool,
 }
 
+impl Default for RenderState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RenderState {
     /// Create a new render state manager
     pub fn new() -> Self {

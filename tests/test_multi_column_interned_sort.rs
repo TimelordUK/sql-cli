@@ -1,4 +1,3 @@
-use sql_cli::data::data_view::DataView;
 use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use sql_cli::data::query_engine::QueryEngine;
 use std::sync::Arc;

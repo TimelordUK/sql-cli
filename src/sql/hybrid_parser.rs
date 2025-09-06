@@ -24,6 +24,12 @@ pub struct HybridResult {
     pub query_complexity: String,
 }
 
+impl Default for HybridParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HybridParser {
     pub fn new() -> Self {
         Self {

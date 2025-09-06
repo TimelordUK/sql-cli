@@ -1,6 +1,6 @@
 use sql_cli::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use sql_cli::datatable::{DataColumn, DataRow, DataTable, DataValue};
-use sql_cli::recursive_parser::{Parser, WhereClause};
+use sql_cli::recursive_parser::Parser;
 
 fn create_test_table() -> DataTable {
     let mut table = DataTable::new("test");
@@ -62,11 +62,11 @@ fn test_trim_method() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), true); // "  derivatives  " -> "derivatives"
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), false); // "  equity trading" -> "equity trading"
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // "FX  " -> "FX"
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // "bonds" -> "bonds"
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // "   " -> ""
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap()); // "  derivatives  " -> "derivatives"
+    assert!(!evaluator.evaluate(&where_clause, 1).unwrap()); // "  equity trading" -> "equity trading"
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // "FX  " -> "FX"
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "bonds" -> "bonds"
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // "   " -> ""
 }
 
 #[test]
@@ -79,11 +79,11 @@ fn test_trimstart_method() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), false); // "  derivatives  " -> "derivatives  "
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // "  equity trading" -> "equity trading"
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // "FX  " -> "FX  "
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // "bonds" -> "bonds"
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // "   " -> ""
+    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // "  derivatives  " -> "derivatives  "
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // "  equity trading" -> "equity trading"
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // "FX  " -> "FX  "
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "bonds" -> "bonds"
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // "   " -> ""
 }
 
 #[test]
@@ -96,11 +96,11 @@ fn test_trimend_method() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), false); // "  derivatives  " -> "  derivatives"
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), false); // "  equity trading" -> "  equity trading"
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), true); // "FX  " -> "FX"
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // "bonds" -> "bonds"
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // "   " -> "   " (TrimEnd leaves leading spaces)
+    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // "  derivatives  " -> "  derivatives"
+    assert!(!evaluator.evaluate(&where_clause, 1).unwrap()); // "  equity trading" -> "  equity trading"
+    assert!(evaluator.evaluate(&where_clause, 2).unwrap()); // "FX  " -> "FX"
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "bonds" -> "bonds"
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // "   " -> "   " (TrimEnd leaves leading spaces)
 }
 
 #[test]
@@ -113,11 +113,11 @@ fn test_trim_empty_string() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), false); // "  derivatives  " -> "derivatives"
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), false); // "  equity trading" -> "equity trading"
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // "FX  " -> "FX"
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // "bonds" -> "bonds"
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), true); // "   " -> ""
+    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // "  derivatives  " -> "derivatives"
+    assert!(!evaluator.evaluate(&where_clause, 1).unwrap()); // "  equity trading" -> "equity trading"
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // "FX  " -> "FX"
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "bonds" -> "bonds"
+    assert!(evaluator.evaluate(&where_clause, 4).unwrap()); // "   " -> ""
 }
 
 #[test]
@@ -147,5 +147,5 @@ fn test_trim_preserves_internal_spaces() {
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
     // "  equity trading" should become "equity trading" (with space preserved between words)
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true);
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap());
 }

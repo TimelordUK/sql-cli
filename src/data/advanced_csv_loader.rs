@@ -15,6 +15,12 @@ pub struct StringInterner {
     usage_count: HashMap<Arc<String>, usize>,
 }
 
+impl Default for StringInterner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StringInterner {
     pub fn new() -> Self {
         Self {
@@ -149,7 +155,7 @@ impl AdvancedCsvLoader {
 
             // Consider categorical if low cardinality or common patterns
             let is_categorical = unique_ratio < self.cardinality_threshold
-                || Self::is_likely_categorical(&header, cardinality, avg_length);
+                || Self::is_likely_categorical(header, cardinality, avg_length);
 
             analyses.push(ColumnAnalysis {
                 index: idx,
@@ -327,7 +333,7 @@ impl AdvancedCsvLoader {
                 debug!(
                     "Column {} ('{}'): {} unique strings, {} references, saved {} KB",
                     col_idx,
-                    headers.get(*col_idx).unwrap_or(&"?"),
+                    headers.get(*col_idx).unwrap_or("?"),
                     stats.unique_strings,
                     stats.total_references,
                     stats.memory_saved_bytes / 1024

@@ -111,7 +111,7 @@ impl DebugInfo {
 
         // Add buffer manager debug info
         debug_info.push_str("\n========== BUFFER MANAGER STATE ==========\n");
-        debug_info.push_str(&format!("Buffer Manager: INITIALIZED\n"));
+        debug_info.push_str("Buffer Manager: INITIALIZED\n");
         debug_info.push_str(&format!("Number of Buffers: {}\n", buffer_count));
         debug_info.push_str(&format!("Current Buffer Index: {}\n", buffer_index));
         debug_info.push_str(&format!("Has Multiple Buffers: {}\n", buffer_count > 1));
@@ -166,7 +166,7 @@ impl DebugInfo {
 
         // Results info
         if let Some(datatable) = buffer.get_datatable() {
-            context.push_str(&format!("\nRESULTS INFO:\n"));
+            context.push_str("\nRESULTS INFO:\n");
             context.push_str(&format!("- Total rows: {}\n", datatable.row_count()));
             context.push_str(&format!("- Columns: {}\n", datatable.column_count()));
             context.push_str(&format!(
@@ -176,7 +176,7 @@ impl DebugInfo {
 
             // Filter info
             if buffer.is_filter_active() {
-                context.push_str(&format!("\nFILTER:\n"));
+                context.push_str("\nFILTER:\n");
                 context.push_str(&format!("- Pattern: {}\n", buffer.get_filter_pattern()));
                 if let Some(dataview) = buffer.get_dataview() {
                     context.push_str(&format!("- Filtered rows: {}\n", dataview.row_count()));
@@ -184,7 +184,7 @@ impl DebugInfo {
             }
 
             if buffer.is_fuzzy_filter_active() {
-                context.push_str(&format!("\nFUZZY FILTER:\n"));
+                context.push_str("\nFUZZY FILTER:\n");
                 context.push_str(&format!(
                     "- Pattern: {}\n",
                     buffer.get_fuzzy_filter_pattern()

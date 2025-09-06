@@ -8,7 +8,7 @@ use tracing::{debug, info};
 
 use crate::data::data_provider::DataProvider;
 use crate::data::datatable::{DataRow, DataTable, DataValue};
-use crate::data::datavalue_compare::compare_optional_datavalues;
+use crate::data::datavalue_compare::compare_datavalues;
 
 /// Sort order for columns
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,15 +71,30 @@ impl Default for SortState {
 }
 
 /// Key for grouping rows by column values
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GroupKey(pub Vec<DataValue>);
 
-// Manual implementation of Eq and Ord for BTreeMap compatibility
+// Manual implementation of Eq for BTreeMap compatibility
 impl Eq for GroupKey {}
+
+// Manual implementation of PartialOrd and Ord for BTreeMap compatibility
+impl PartialOrd for GroupKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl Ord for GroupKey {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+        // Compare each DataValue in the vectors using centralized comparison
+        for (a, b) in self.0.iter().zip(&other.0) {
+            let ordering = compare_datavalues(a, b);
+            if ordering != std::cmp::Ordering::Equal {
+                return ordering;
+            }
+        }
+        // If all elements are equal, compare lengths
+        self.0.len().cmp(&other.0.len())
     }
 }
 
@@ -632,11 +647,8 @@ impl DataView {
     where
         F: Fn(&DataTable, usize) -> bool,
     {
-        self.visible_rows = self
-            .visible_rows
-            .into_iter()
-            .filter(|&row_idx| predicate(&self.source, row_idx))
-            .collect();
+        self.visible_rows
+            .retain(|&row_idx| predicate(&self.source, row_idx));
         // Also update base_rows so that clearing sort preserves the filter
         self.base_rows = self.visible_rows.clone();
         self
@@ -845,7 +857,7 @@ impl DataView {
                         // Check if there's a fuzzy match with score > 0
                         matcher
                             .fuzzy_match(&row_text, pattern)
-                            .map_or(false, |score| score > 0)
+                            .is_some_and(|score| score > 0)
                     } else {
                         // Just a single quote - no pattern to match
                         false
@@ -913,7 +925,7 @@ impl DataView {
             let key = GroupKey(key_values);
 
             // Add this row to the appropriate group
-            group_rows.entry(key).or_insert_with(Vec::new).push(row_idx);
+            group_rows.entry(key).or_default().push(row_idx);
         }
 
         // Create a DataView for each group

@@ -31,7 +31,7 @@ fn test_column_auto_sizing() {
     ]);
 
     let mut temp_file = NamedTempFile::new().unwrap();
-    write!(temp_file, "{}", test_data.to_string()).unwrap();
+    write!(temp_file, "{}", test_data).unwrap();
 
     let mut client = CsvApiClient::new();
     client.load_json(temp_file.path(), "test").unwrap();

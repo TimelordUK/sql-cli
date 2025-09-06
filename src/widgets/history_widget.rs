@@ -275,7 +275,7 @@ impl HistoryWidget {
         if let Some(selected_match) = self.state.matches.get(self.state.selected_index) {
             let entry = &selected_match.entry;
 
-            let metadata = vec![
+            let metadata = [
                 format!("Executed: {}", entry.timestamp.format("%Y-%m-%d %H:%M:%S")),
                 format!("Run count: {}", entry.execution_count),
                 format!(
@@ -351,7 +351,7 @@ impl DebugInfoProvider for HistoryWidget {
         info.push_str(&format!("Selected Index: {}\n", self.state.selected_index));
 
         if !self.state.matches.is_empty() && self.state.selected_index < self.state.matches.len() {
-            info.push_str(&format!("\nCurrent Selection:\n"));
+            info.push_str("\nCurrent Selection:\n");
             let current = &self.state.matches[self.state.selected_index];
             info.push_str(&format!(
                 "  Command: '{}'\n",
@@ -364,7 +364,7 @@ impl DebugInfoProvider for HistoryWidget {
             info.push_str(&format!("  Score: {:?}\n", current.score));
         }
 
-        info.push_str(&format!("\nHistory Stats:\n"));
+        info.push_str("\nHistory Stats:\n");
         info.push_str(&format!(
             "  Total Entries: {}\n",
             self.command_history.get_all().len()

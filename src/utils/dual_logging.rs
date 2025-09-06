@@ -39,6 +39,12 @@ pub struct DualLogger {
     log_path: PathBuf,
 }
 
+impl Default for DualLogger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DualLogger {
     pub fn new() -> Self {
         let log_dir = get_log_dir();
@@ -152,7 +158,7 @@ impl DualLogger {
 
 /// Initialize the global dual logger
 pub fn init_dual_logger() -> &'static DualLogger {
-    DUAL_LOGGER.get_or_init(|| DualLogger::new())
+    DUAL_LOGGER.get_or_init(DualLogger::new)
 }
 
 /// Get the global dual logger

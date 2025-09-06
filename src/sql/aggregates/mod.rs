@@ -29,6 +29,12 @@ pub struct SumState {
     pub has_values: bool,
 }
 
+impl Default for SumState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SumState {
     pub fn new() -> Self {
         Self {
@@ -88,6 +94,12 @@ impl SumState {
 pub struct AvgState {
     pub sum: SumState,
     pub count: i64,
+}
+
+impl Default for AvgState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AvgState {
@@ -254,9 +266,7 @@ pub fn contains_aggregate(expr: &crate::recursive_parser::SqlExpression) -> bool
         } => {
             when_branches.iter().any(|branch| {
                 contains_aggregate(&branch.condition) || contains_aggregate(&branch.result)
-            }) || else_branch
-                .as_ref()
-                .map_or(false, |e| contains_aggregate(e))
+            }) || else_branch.as_ref().is_some_and(|e| contains_aggregate(e))
         }
         _ => false,
     }

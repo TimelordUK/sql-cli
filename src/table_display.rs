@@ -68,7 +68,7 @@ pub fn export_to_csv(
     let headers: Vec<String> = if fields.contains(&"*".to_string()) {
         if let Some(first) = data.first() {
             if let Some(obj) = first.as_object() {
-                obj.keys().map(|k| k.clone()).collect()
+                obj.keys().cloned().collect()
             } else {
                 return Err("Invalid data format".into());
             }

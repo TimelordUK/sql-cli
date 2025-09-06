@@ -17,6 +17,12 @@ pub struct CursorManager {
     vertical_scroll: usize,
 }
 
+impl Default for CursorManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CursorManager {
     pub fn new() -> Self {
         Self {

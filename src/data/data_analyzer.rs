@@ -43,6 +43,12 @@ pub enum ColumnType {
     Unknown,
 }
 
+impl Default for DataAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DataAnalyzer {
     pub fn new() -> Self {
         Self {

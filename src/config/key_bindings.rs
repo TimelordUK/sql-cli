@@ -138,6 +138,12 @@ pub struct KeyBindingManager {
     search_bindings: HashMap<KeyBinding, String>,
 }
 
+impl Default for KeyBindingManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KeyBindingManager {
     pub fn new() -> Self {
         let mut manager = Self {

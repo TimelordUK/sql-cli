@@ -49,7 +49,7 @@ impl QueryOrchestrator {
         let original_source = state_container.get_original_source();
 
         // Debug: log what we're passing to the query service
-        if let Some(ref orig) = original_source {
+        if let Some(orig) = original_source {
             debug!(
                 "QueryOrchestrator: Have original source with {} columns",
                 orig.column_count()
@@ -58,7 +58,7 @@ impl QueryOrchestrator {
             debug!("QueryOrchestrator: WARNING - No original source available!");
         }
 
-        if let Some(ref view) = current_dataview {
+        if let Some(view) = current_dataview {
             debug!(
                 "QueryOrchestrator: Current view has {} columns, source has {} columns",
                 view.column_count(),

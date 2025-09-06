@@ -9,7 +9,6 @@ pub static DEBUG_FILE: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
 pub fn init_debug_log() {
     let file = OpenOptions::new()
         .create(true)
-        .write(true)
         .append(true)
         .open("tui_debug.log")
         .ok();

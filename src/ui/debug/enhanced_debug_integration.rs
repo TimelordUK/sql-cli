@@ -35,7 +35,7 @@ impl EnhancedTuiApp {
                 debug_report.push_str(&format!("  {}\n", timing));
             }
             // Calculate average
-            if self.navigation_timings.len() > 0 {
+            if !self.navigation_timings.is_empty() {
                 let total_ms: f64 = self
                     .navigation_timings
                     .iter()
@@ -57,7 +57,7 @@ impl EnhancedTuiApp {
                 debug_report.push_str(&format!("  {}\n", timing));
             }
             // Calculate average render time
-            if self.render_timings.len() > 0 {
+            if !self.render_timings.is_empty() {
                 let total_ms: f64 = self
                     .render_timings
                     .iter()

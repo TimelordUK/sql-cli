@@ -23,6 +23,12 @@ pub struct CompletionManager {
     column_names: std::collections::HashMap<String, Vec<String>>,
 }
 
+impl Default for CompletionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CompletionManager {
     pub fn new() -> Self {
         Self {

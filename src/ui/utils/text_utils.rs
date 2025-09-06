@@ -15,23 +15,21 @@ pub fn extract_partial_word_at_cursor(query: &str, cursor_pos: usize) -> Option<
 
     // First, check if we're inside quotes by looking for an opening quote before cursor
     for i in (0..cursor_pos).rev() {
-        if i < chars.len() {
-            if chars[i] == '"' {
-                // Found a potential opening quote
-                // Check if there's a closing quote after cursor or not
-                let mut found_closing = false;
-                for j in cursor_pos..chars.len() {
-                    if chars[j] == '"' {
-                        found_closing = true;
-                        break;
-                    }
-                }
-                // If no closing quote found, or cursor is before the closing quote, we're in a quoted identifier
-                if !found_closing || cursor_pos <= chars.len() {
-                    in_quote = true;
-                    start = i;
+        if i < chars.len() && chars[i] == '"' {
+            // Found a potential opening quote
+            // Check if there's a closing quote after cursor or not
+            let mut found_closing = false;
+            for j in cursor_pos..chars.len() {
+                if chars[j] == '"' {
+                    found_closing = true;
                     break;
                 }
+            }
+            // If no closing quote found, or cursor is before the closing quote, we're in a quoted identifier
+            if !found_closing || cursor_pos <= chars.len() {
+                in_quote = true;
+                start = i;
+                break;
             }
         }
     }

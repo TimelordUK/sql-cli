@@ -151,6 +151,12 @@ pub struct CompositeQueryExecutor {
     executors: Vec<Box<dyn QueryExecutor>>,
 }
 
+impl Default for CompositeQueryExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CompositeQueryExecutor {
     pub fn new() -> Self {
         Self {

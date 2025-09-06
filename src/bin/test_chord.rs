@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use sql_cli::ui::key_handling::{ChordResult, KeyChordHandler};
+use sql_cli::ui::key_handling::KeyChordHandler;
 
 fn main() {
     println!("Testing chord handler...");

@@ -10,6 +10,12 @@ pub struct BufferHandler {
     max_history: usize,
 }
 
+impl Default for BufferHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BufferHandler {
     pub fn new() -> Self {
         Self {

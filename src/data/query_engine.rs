@@ -5,7 +5,7 @@ use tracing::{debug, info};
 
 use crate::config::config::BehaviorConfig;
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
-use crate::data::data_view::{DataView, GroupKey};
+use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use crate::sql::aggregates::contains_aggregate;
@@ -18,6 +18,12 @@ pub struct QueryEngine {
     case_insensitive: bool,
     date_notation: String,
     behavior_config: Option<BehaviorConfig>,
+}
+
+impl Default for QueryEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QueryEngine {
@@ -177,7 +183,7 @@ impl QueryEngine {
                     debug!("QueryEngine: Evaluating WHERE clause for row {}", row_idx);
                 }
                 let evaluator = RecursiveWhereEvaluator::with_config(
-                    &*table,
+                    &table,
                     self.case_insensitive,
                     self.date_notation.clone(),
                 );
@@ -247,7 +253,7 @@ impl QueryEngine {
                 // If it's just a single star, no projection needed
             } else if !statement.columns.is_empty() && statement.columns[0] != "*" {
                 // Fallback to legacy column projection for backward compatibility
-                let column_indices = self.resolve_column_indices(&*table, &statement.columns)?;
+                let column_indices = self.resolve_column_indices(&table, &statement.columns)?;
                 view = view.with_columns(column_indices);
             }
         }
@@ -660,12 +666,11 @@ impl QueryEngine {
             if let Some(having_expr) = having {
                 // Create a temporary table with one row containing the aggregate values
                 let mut temp_table = DataTable::new("having_eval");
-                for (col_name, _) in &aggregate_values {
+                for col_name in aggregate_values.keys() {
                     temp_table.add_column(DataColumn::new(col_name));
                 }
 
-                let temp_row_values: Vec<DataValue> =
-                    aggregate_values.iter().map(|(_, v)| v.clone()).collect();
+                let temp_row_values: Vec<DataValue> = aggregate_values.values().cloned().collect();
                 temp_table
                     .add_row(DataRow::new(temp_row_values))
                     .map_err(|e| anyhow!("Failed to create temp table for HAVING: {}", e))?;

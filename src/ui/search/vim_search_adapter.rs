@@ -16,6 +16,12 @@ pub struct VimSearchAdapter {
     is_active: bool,
 }
 
+impl Default for VimSearchAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VimSearchAdapter {
     pub fn new() -> Self {
         Self {
@@ -329,13 +335,12 @@ impl StateSubscriber for VimSearchAdapter {
 
             StateEvent::ModeChanged { from: _, to } => {
                 // If we exit to Results mode and search is empty, clear
-                if *to == AppMode::Results && buffer.search_state.pattern.is_empty() {
-                    if self.is_active {
-                        info!(
-                            "VimSearchAdapter: Mode changed to Results with empty search, clearing"
-                        );
-                        self.clear();
-                    }
+                if *to == AppMode::Results
+                    && buffer.search_state.pattern.is_empty()
+                    && self.is_active
+                {
+                    info!("VimSearchAdapter: Mode changed to Results with empty search, clearing");
+                    self.clear();
                 }
 
                 // If we enter Search mode, activate

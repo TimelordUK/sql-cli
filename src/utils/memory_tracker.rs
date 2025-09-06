@@ -79,7 +79,7 @@ pub fn get_process_memory_kb() -> Option<usize> {
 
 // Use thread-local storage instead of global static
 thread_local! {
-    static MEMORY_LOG: std::cell::RefCell<Vec<(String, usize)>> = std::cell::RefCell::new(Vec::new());
+    static MEMORY_LOG: std::cell::RefCell<Vec<(String, usize)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Track memory at a specific point

@@ -56,6 +56,12 @@ pub struct SearchManager {
     regex: Option<regex::Regex>,
 }
 
+impl Default for SearchManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchManager {
     /// Create a new SearchManager with default config
     pub fn new() -> Self {

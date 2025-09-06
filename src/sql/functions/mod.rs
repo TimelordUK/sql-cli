@@ -148,10 +148,7 @@ impl FunctionRegistry {
         self.functions.insert(name.clone(), func);
 
         // Add to category index
-        self.by_category
-            .entry(category)
-            .or_insert_with(Vec::new)
-            .push(name);
+        self.by_category.entry(category).or_default().push(name);
     }
 
     /// Get a function by name (case-insensitive)

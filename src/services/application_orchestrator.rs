@@ -85,6 +85,12 @@ pub struct ApplicationOrchestratorBuilder {
     auto_hide_empty: bool,
 }
 
+impl Default for ApplicationOrchestratorBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ApplicationOrchestratorBuilder {
     pub fn new() -> Self {
         Self {

@@ -1,5 +1,5 @@
-use serde_json::{json, Value};
-use sql_cli::sql::where_ast::{evaluate_where_expr, evaluate_where_expr_with_options, WhereExpr};
+use serde_json::json;
+use sql_cli::sql::where_ast::{evaluate_where_expr, evaluate_where_expr_with_options};
 use sql_cli::sql::where_parser::WhereParser;
 
 #[test]
@@ -16,7 +16,7 @@ fn test_case_insensitive_contains() {
         false,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr(&expr, &data).unwrap(), false);
+    assert!(!evaluate_where_expr(&expr, &data).unwrap());
 
     // Case-insensitive
     let expr = WhereParser::parse_with_options(
@@ -25,10 +25,7 @@ fn test_case_insensitive_contains() {
         true,
     )
     .unwrap();
-    assert_eq!(
-        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
-        true
-    );
+    assert!(evaluate_where_expr_with_options(&expr, &data, true).unwrap());
 }
 
 #[test]
@@ -44,7 +41,7 @@ fn test_case_insensitive_starts_with() {
         false,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr(&expr, &data).unwrap(), false);
+    assert!(!evaluate_where_expr(&expr, &data).unwrap());
 
     // Case-insensitive
     let expr = WhereParser::parse_with_options(
@@ -53,10 +50,7 @@ fn test_case_insensitive_starts_with() {
         true,
     )
     .unwrap();
-    assert_eq!(
-        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
-        true
-    );
+    assert!(evaluate_where_expr_with_options(&expr, &data, true).unwrap());
 }
 
 #[test]
@@ -72,7 +66,7 @@ fn test_case_insensitive_ends_with() {
         false,
     )
     .unwrap();
-    assert_eq!(evaluate_where_expr(&expr, &data).unwrap(), false);
+    assert!(!evaluate_where_expr(&expr, &data).unwrap());
 
     // Case-insensitive
     let expr = WhereParser::parse_with_options(
@@ -81,10 +75,7 @@ fn test_case_insensitive_ends_with() {
         true,
     )
     .unwrap();
-    assert_eq!(
-        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
-        true
-    );
+    assert!(evaluate_where_expr_with_options(&expr, &data, true).unwrap());
 }
 
 #[test]
@@ -102,10 +93,7 @@ fn test_case_insensitive_equality() {
         false,
     )
     .unwrap();
-    assert_eq!(
-        evaluate_where_expr_with_options(&expr, &data, false).unwrap(),
-        false
-    );
+    assert!(!evaluate_where_expr_with_options(&expr, &data, false).unwrap());
 
     // Case-insensitive equality (should succeed with 'pending')
     let expr = WhereParser::parse_with_options(
@@ -114,10 +102,7 @@ fn test_case_insensitive_equality() {
         true,
     )
     .unwrap();
-    assert_eq!(
-        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
-        true
-    );
+    assert!(evaluate_where_expr_with_options(&expr, &data, true).unwrap());
 
     // Case-insensitive equality with exact case (should also succeed)
     let expr = WhereParser::parse_with_options(
@@ -126,10 +111,7 @@ fn test_case_insensitive_equality() {
         true,
     )
     .unwrap();
-    assert_eq!(
-        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
-        true
-    );
+    assert!(evaluate_where_expr_with_options(&expr, &data, true).unwrap());
 }
 
 #[test]
@@ -142,19 +124,13 @@ fn test_case_insensitive_not_equal() {
     let expr =
         WhereParser::parse_with_options("status != 'active'", vec!["status".to_string()], false)
             .unwrap();
-    assert_eq!(
-        evaluate_where_expr_with_options(&expr, &data, false).unwrap(),
-        true
-    );
+    assert!(evaluate_where_expr_with_options(&expr, &data, false).unwrap());
 
     // Case-insensitive not equal (should be false since 'Active' equals 'active' ignoring case)
     let expr =
         WhereParser::parse_with_options("status != 'active'", vec!["status".to_string()], true)
             .unwrap();
-    assert_eq!(
-        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
-        false
-    );
+    assert!(!evaluate_where_expr_with_options(&expr, &data, true).unwrap());
 }
 
 #[test]
@@ -176,8 +152,5 @@ fn test_case_insensitive_complex_query() {
         true,
     )
     .unwrap();
-    assert_eq!(
-        evaluate_where_expr_with_options(&expr, &data, true).unwrap(),
-        true
-    );
+    assert!(evaluate_where_expr_with_options(&expr, &data, true).unwrap());
 }

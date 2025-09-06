@@ -22,6 +22,12 @@ pub struct KeyPressIndicator {
     pub enabled: bool,
 }
 
+impl Default for KeyPressIndicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KeyPressIndicator {
     pub fn new() -> Self {
         Self {

@@ -309,7 +309,7 @@ impl TuiApp {
         let headers: Vec<String> = if select_fields.contains(&"*".to_string()) {
             if let Some(first) = data.first() {
                 if let Some(obj) = first.as_object() {
-                    obj.keys().map(|k| k.clone()).collect()
+                    obj.keys().cloned().collect()
                 } else {
                     vec![]
                 }

@@ -7,7 +7,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame, Terminal,
 };
@@ -102,7 +102,7 @@ impl ActionDebugger {
                 }
                 ChordResult::Cancelled => {
                     self.chord_status = None;
-                    let msg = format!("Chord cancelled");
+                    let msg = "Chord cancelled".to_string();
                     self.action_history.push_front(msg);
                     if self.action_history.len() > MAX_HISTORY {
                         self.action_history.pop_back();

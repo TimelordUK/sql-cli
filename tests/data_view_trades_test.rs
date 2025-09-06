@@ -244,7 +244,7 @@ fn test_export_filtered_trades() {
     // Export to JSON
     let json = view.to_json();
     if let Some(array) = json.as_array() {
-        assert!(array.len() > 0, "Should have some USD trades");
+        assert!(!array.is_empty(), "Should have some USD trades");
         assert!(array.len() < 100, "Should be filtered");
 
         // Check first item
@@ -264,7 +264,7 @@ fn test_column_search_on_trades() {
     view.search_columns("counter");
 
     let matches = view.get_matching_columns();
-    assert!(matches.len() > 0, "Should find counter columns");
+    assert!(!matches.is_empty(), "Should find counter columns");
 
     // Should find counterparty, counterpartyCountry, counterpartyType
     let match_names: Vec<String> = matches.iter().map(|(_, name)| name.clone()).collect();

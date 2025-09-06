@@ -53,23 +53,14 @@ pub struct SortState {
     pub order: SortOrder,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct FilterState {
     pub pattern: String,
     pub regex: Option<Regex>,
     pub active: bool,
 }
 
-impl Default for FilterState {
-    fn default() -> Self {
-        Self {
-            pattern: String::new(),
-            regex: None,
-            active: false,
-        }
-    }
-}
-
+#[derive(Default)]
 pub struct FuzzyFilterState {
     pub pattern: String,
     pub active: bool,
@@ -99,34 +90,12 @@ impl Clone for FuzzyFilterState {
     }
 }
 
-impl Default for FuzzyFilterState {
-    fn default() -> Self {
-        Self {
-            pattern: String::new(),
-            active: false,
-            matcher: SkimMatcherV2::default(),
-            filtered_indices: Vec::new(),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SearchState {
     pub pattern: String,
     pub current_match: Option<(usize, usize)>,
     pub matches: Vec<(usize, usize)>,
     pub match_index: usize,
-}
-
-impl Default for SearchState {
-    fn default() -> Self {
-        Self {
-            pattern: String::new(),
-            current_match: None,
-            matches: Vec::new(),
-            match_index: 0,
-        }
-    }
 }
 
 // ColumnSearchState: MIGRATED to AppStateContainer
@@ -1138,7 +1107,7 @@ impl BufferAPI for Buffer {
         output.push_str("\n--- Column Search ---\n");
         output.push_str(&format!(
             "Column Search Pattern: '{}'\n",
-            "<migrated>".to_string() // Column search migrated to AppStateContainer
+            "<migrated>" // Column search migrated to AppStateContainer
         ));
         output.push_str(&format!(
             "Matching Columns: {:?}\n",
@@ -1697,6 +1666,12 @@ pub struct BufferManager {
     buffers: Vec<Buffer>,
     current_buffer_index: usize,
     next_buffer_id: usize,
+}
+
+impl Default for BufferManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BufferManager {

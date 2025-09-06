@@ -83,13 +83,9 @@ pub fn debug_dump_table(table: &DataTable) -> String {
     let mut output = String::new();
 
     // Header
-    output.push_str(&format!(
-        "╔═══════════════════════════════════════════════════════╗\n"
-    ));
+    output.push_str(&"╔═══════════════════════════════════════════════════════╗\n".to_string());
     output.push_str(&format!("║ DataTable: {:^41} ║\n", table.name));
-    output.push_str(&format!(
-        "╠═══════════════════════════════════════════════════════╣\n"
-    ));
+    output.push_str(&"╠═══════════════════════════════════════════════════════╣\n".to_string());
 
     // Summary stats
     output.push_str(&format!(
@@ -101,12 +97,8 @@ pub fn debug_dump_table(table: &DataTable) -> String {
 
     // Metadata if any
     if !table.metadata.is_empty() {
-        output.push_str(&format!(
-            "╠═══════════════════════════════════════════════════════╣\n"
-        ));
-        output.push_str(&format!(
-            "║ Metadata:                                             ║\n"
-        ));
+        output.push_str(&"╠═══════════════════════════════════════════════════════╣\n".to_string());
+        output.push_str(&"║ Metadata:                                             ║\n".to_string());
         for (key, value) in &table.metadata {
             let truncated_value = if value.len() > 35 {
                 format!("{}...", &value[..32])
@@ -122,21 +114,11 @@ pub fn debug_dump_table(table: &DataTable) -> String {
     }
 
     // Column details
-    output.push_str(&format!(
-        "╠═══════════════════════════════════════════════════════╣\n"
-    ));
-    output.push_str(&format!(
-        "║ Columns:                                              ║\n"
-    ));
-    output.push_str(&format!(
-        "╟───────────────────┬──────────┬─────────┬──────┬──────╢\n"
-    ));
-    output.push_str(&format!(
-        "║ Name              │ Type     │ Nullable│ Nulls│Unique║\n"
-    ));
-    output.push_str(&format!(
-        "╟───────────────────┼──────────┼─────────┼──────┼──────╢\n"
-    ));
+    output.push_str(&"╠═══════════════════════════════════════════════════════╣\n".to_string());
+    output.push_str(&"║ Columns:                                              ║\n".to_string());
+    output.push_str(&"╟───────────────────┬──────────┬─────────┬──────┬──────╢\n".to_string());
+    output.push_str(&"║ Name              │ Type     │ Nullable│ Nulls│Unique║\n".to_string());
+    output.push_str(&"╟───────────────────┼──────────┼─────────┼──────┼──────╢\n".to_string());
 
     for column in &table.columns {
         let type_str = format!("{:?}", column.data_type);
@@ -155,9 +137,7 @@ pub fn debug_dump_table(table: &DataTable) -> String {
         ));
     }
 
-    output.push_str(&format!(
-        "╟───────────────────┴──────────┴─────────┴──────┴──────╢\n"
-    ));
+    output.push_str(&"╟───────────────────┴──────────┴─────────┴──────┴──────╢\n".to_string());
 
     // Sample data (first 5 rows)
     let sample_rows = 5.min(table.row_count());
@@ -166,9 +146,7 @@ pub fn debug_dump_table(table: &DataTable) -> String {
             "║ Sample Data (first {} rows):                          ║\n",
             sample_rows
         ));
-        output.push_str(&format!(
-            "╟───────────────────────────────────────────────────────╢\n"
-        ));
+        output.push_str(&"╟───────────────────────────────────────────────────────╢\n".to_string());
 
         // Column headers for sample data
         let mut header_line = String::from("║ ");
@@ -187,9 +165,7 @@ pub fn debug_dump_table(table: &DataTable) -> String {
         header_line.push_str("║\n");
         output.push_str(&header_line);
 
-        output.push_str(&format!(
-            "╟───────────────────────────────────────────────────────╢\n"
-        ));
+        output.push_str(&"╟───────────────────────────────────────────────────────╢\n".to_string());
 
         // Sample rows
         for row_idx in 0..sample_rows {
@@ -210,9 +186,7 @@ pub fn debug_dump_table(table: &DataTable) -> String {
         }
     }
 
-    output.push_str(&format!(
-        "╚═══════════════════════════════════════════════════════╝\n"
-    ));
+    output.push_str(&"╚═══════════════════════════════════════════════════════╝\n".to_string());
 
     output
 }

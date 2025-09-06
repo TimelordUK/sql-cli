@@ -35,7 +35,7 @@ impl ChordSequence {
     pub fn to_string(&self) -> String {
         self.keys
             .iter()
-            .map(|k| format_key(k))
+            .map(format_key)
             .collect::<Vec<_>>()
             .join("")
     }
@@ -72,6 +72,12 @@ pub struct KeyChordHandler {
     chord_mode_active: bool,
     /// Description of current chord mode (e.g., "Yank mode")
     chord_mode_description: Option<String>,
+}
+
+impl Default for KeyChordHandler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KeyChordHandler {
@@ -198,7 +204,7 @@ impl KeyChordHandler {
         );
 
         // Add key to current chord
-        self.current_chord.push(key.clone());
+        self.current_chord.push(key);
 
         // Start timer if this is the first key
         if self.current_chord.len() == 1 {
@@ -272,7 +278,7 @@ impl KeyChordHandler {
                 ChordResult::SingleKey(key)
             } else {
                 // Multiple keys but no match - return the first as single, reset
-                ChordResult::SingleKey(self.current_chord[0].clone())
+                ChordResult::SingleKey(self.current_chord[0])
             };
             self.reset_chord();
             result
@@ -347,7 +353,7 @@ impl KeyChordHandler {
                 "Current chord: {}\n",
                 self.current_chord
                     .iter()
-                    .map(|k| format_key(k))
+                    .map(format_key)
                     .collect::<Vec<_>>()
                     .join(" → ")
             ));
@@ -427,15 +433,15 @@ fn format_key(key: &KeyEvent) -> String {
         KeyCode::Delete => result.push_str("Del"),
         KeyCode::Insert => result.push_str("Ins"),
         KeyCode::F(n) => result.push_str(&format!("F{}", n)),
-        KeyCode::Left => result.push_str("←"),
-        KeyCode::Right => result.push_str("→"),
-        KeyCode::Up => result.push_str("↑"),
-        KeyCode::Down => result.push_str("↓"),
+        KeyCode::Left => result.push('←'),
+        KeyCode::Right => result.push('→'),
+        KeyCode::Up => result.push('↑'),
+        KeyCode::Down => result.push('↓'),
         KeyCode::Home => result.push_str("Home"),
         KeyCode::End => result.push_str("End"),
         KeyCode::PageUp => result.push_str("PgUp"),
         KeyCode::PageDown => result.push_str("PgDn"),
-        _ => result.push_str("?"),
+        _ => result.push('?'),
     }
 
     result

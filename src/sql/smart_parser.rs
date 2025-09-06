@@ -25,6 +25,12 @@ pub enum SqlToken {
     Incomplete(String), // partial token at cursor
 }
 
+impl Default for SmartSqlParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SmartSqlParser {
     pub fn new() -> Self {
         Self {
@@ -96,7 +102,7 @@ impl SmartSqlParser {
                 '\'' => {
                     // Handle quoted strings
                     let mut string_content = String::new();
-                    while let Some((_, next_ch)) = chars.next() {
+                    for (_, next_ch) in chars.by_ref() {
                         if next_ch == '\'' {
                             break;
                         }
@@ -215,10 +221,11 @@ impl SmartSqlParser {
                     ParseState::AfterFrom => state = ParseState::AfterTable,
                     _ => {}
                 },
-                SqlToken::Comma => match state {
-                    ParseState::InColumnList => state = ParseState::InColumnList,
-                    _ => {}
-                },
+                SqlToken::Comma => {
+                    if state == ParseState::InColumnList {
+                        state = ParseState::InColumnList
+                    }
+                }
                 _ => {}
             }
             i += 1;

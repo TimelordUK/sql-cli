@@ -1,6 +1,5 @@
 use serde_json::Value;
 use sql_cli::data::csv_datasource::CsvApiClient;
-use std::collections::HashMap;
 
 // Import the test infrastructure
 use crate::real_query_capture::{CapturedQuery, QueryReplayHarness};
@@ -123,7 +122,7 @@ fn test_yanked_query_direct() -> anyhow::Result<()> {
                     _ => 0.0,
                 };
                 assert!(
-                    commission >= 20.0 && commission <= 50.0,
+                    (20.0..=50.0).contains(&commission),
                     "Row {} commission {} should be between 20 and 50",
                     i,
                     commission

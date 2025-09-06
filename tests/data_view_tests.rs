@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use sql_cli::data::data_view::DataView;
-    use sql_cli::datatable::{DataTable, DataValue};
+    use sql_cli::datatable::DataTable;
     use sql_cli::datatable_loaders::load_json_to_datatable;
     use std::path::PathBuf;
     use std::sync::Arc;

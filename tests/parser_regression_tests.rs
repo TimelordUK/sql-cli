@@ -110,7 +110,7 @@ fn test_complex_query_with_not_and_method_call() -> anyhow::Result<()> {
 
         // Commission should be between 20 and 50
         assert!(
-            commission >= 20.0 && commission <= 50.0,
+            (20.0..=50.0).contains(&commission),
             "Commission {} should be between 20 and 50",
             commission
         );
@@ -242,7 +242,7 @@ fn test_real_trades_data_with_not_method_call() -> anyhow::Result<()> {
 
         // Commission should be between 50 and 100
         assert!(
-            commission >= 50.0 && commission <= 100.0,
+            (50.0..=100.0).contains(&commission),
             "Commission {} should be between 50 and 100",
             commission
         );
@@ -257,7 +257,7 @@ fn test_real_trades_data_with_not_method_call() -> anyhow::Result<()> {
         let status = row["status"].as_str().unwrap();
         let commission = row["commission"].as_f64().unwrap();
         let contains_pend = status.to_lowercase().contains("pend");
-        let commission_in_range = commission >= 50.0 && commission <= 100.0;
+        let commission_in_range = (50.0..=100.0).contains(&commission);
         let included = !contains_pend && commission_in_range;
 
         println!(
@@ -315,7 +315,7 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
             status
         );
         assert!(
-            commission >= 30.0 && commission <= 80.0,
+            (30.0..=80.0).contains(&commission),
             "Commission {} should be between 30 and 80",
             commission
         );
@@ -477,7 +477,7 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
     );
 
     // Verify we got some results (even if aggregation details vary)
-    if perf_response.data.len() > 0 {
+    if !perf_response.data.is_empty() {
         println!(
             "   ✅ Performance test returned {} grouped results",
             perf_response.data.len()
@@ -561,7 +561,7 @@ fn test_exact_user_query_from_debug_session() -> anyhow::Result<()> {
             confirmation_status
         );
         assert!(
-            commission >= 20.0 && commission <= 50.0,
+            (20.0..=50.0).contains(&commission),
             "commission {} should be between 20 and 50",
             commission
         );
@@ -577,7 +577,7 @@ fn test_exact_user_query_from_debug_session() -> anyhow::Result<()> {
     // The important thing is that the query executed without parser errors
     // and that all results match the WHERE clause conditions
     assert!(
-        response.data.len() > 0,
+        !response.data.is_empty(),
         "Expected at least some rows matching the criteria, got 0"
     );
 

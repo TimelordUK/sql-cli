@@ -68,7 +68,7 @@ pub struct Lexer {
 impl Lexer {
     pub fn new(input: &str) -> Self {
         let chars: Vec<char> = input.chars().collect();
-        let current = chars.get(0).copied();
+        let current = chars.first().copied();
         Self {
             input: chars,
             position: 0,
@@ -296,7 +296,7 @@ impl Lexer {
                 self.skip_whitespace_and_comments();
                 self.next_token()
             }
-            Some('-') if self.peek(1).map_or(false, |c| c.is_numeric()) => {
+            Some('-') if self.peek(1).is_some_and(|c| c.is_numeric()) => {
                 // Handle negative numbers
                 self.advance(); // skip '-'
                 let num = self.read_number();
@@ -527,16 +527,9 @@ pub struct SelectStatement {
     pub offset: Option<usize>,
 }
 
+#[derive(Default)]
 pub struct ParserConfig {
     pub case_insensitive: bool,
-}
-
-impl Default for ParserConfig {
-    fn default() -> Self {
-        Self {
-            case_insensitive: false,
-        }
-    }
 }
 
 pub struct Parser {
@@ -1422,18 +1415,18 @@ impl Parser {
                         let values = self.parse_expression_list()?;
                         self.consume(Token::RightParen)?;
 
-                        return Ok(SqlExpression::NotInList {
+                        Ok(SqlExpression::NotInList {
                             expr: Box::new(inner_expr),
                             values,
-                        });
+                        })
                     } else {
                         // Regular NOT expression
-                        return Ok(SqlExpression::Not {
+                        Ok(SqlExpression::Not {
                             expr: Box::new(inner_expr),
-                        });
+                        })
                     }
                 } else {
-                    return Err("Expected expression after NOT".to_string());
+                    Err("Expected expression after NOT".to_string())
                 }
             }
             Token::Star => {
@@ -1774,7 +1767,7 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
         } => {
             let args_str = args
                 .iter()
-                .map(|a| format_expression_ast(a))
+                .map(format_expression_ast)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("MethodCall({}.{}({}))", object, method, args_str)
@@ -1782,7 +1775,7 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
         SqlExpression::ChainedMethodCall { base, method, args } => {
             let args_str = args
                 .iter()
-                .map(|a| format_expression_ast(a))
+                .map(format_expression_ast)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
@@ -1795,7 +1788,7 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
         SqlExpression::FunctionCall { name, args } => {
             let args_str = args
                 .iter()
-                .map(|a| format_expression_ast(a))
+                .map(format_expression_ast)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("FunctionCall({}({}))", name, args_str)
@@ -1811,7 +1804,7 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
         SqlExpression::InList { expr, values } => {
             let list_str = values
                 .iter()
-                .map(|e| format_expression_ast(e))
+                .map(format_expression_ast)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("InList({} IN [{}])", format_expression_ast(expr), list_str)
@@ -1819,7 +1812,7 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
         SqlExpression::NotInList { expr, values } => {
             let list_str = values
                 .iter()
-                .map(|e| format_expression_ast(e))
+                .map(format_expression_ast)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
@@ -1988,8 +1981,7 @@ fn format_sql_with_preserved_parens(
                         line.push_str(col.trim());
                     }
                     // Add comma if not last chunk
-                    let is_last_chunk = chunk.as_ptr() as usize
-                        + chunk.len() * std::mem::size_of::<String>()
+                    let is_last_chunk = chunk.as_ptr() as usize + std::mem::size_of_val(chunk)
                         >= columns.last().map(|c| c as *const _ as usize).unwrap_or(0);
                     if !is_last_chunk && columns.len() > cols_per_line {
                         line.push(',');
@@ -2374,7 +2366,7 @@ fn format_expression(expr: &SqlExpression) -> String {
         } => {
             let args_str = args
                 .iter()
-                .map(|arg| format_expression(arg))
+                .map(format_expression)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{}.{}({})", object, method, args_str)
@@ -2403,7 +2395,7 @@ fn format_expression(expr: &SqlExpression) -> String {
         SqlExpression::InList { expr, values } => {
             let values_str = values
                 .iter()
-                .map(|v| format_expression(v))
+                .map(format_expression)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{} IN ({})", format_expression(expr), values_str)
@@ -2411,7 +2403,7 @@ fn format_expression(expr: &SqlExpression) -> String {
         SqlExpression::NotInList { expr, values } => {
             let values_str = values
                 .iter()
-                .map(|v| format_expression(v))
+                .map(format_expression)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{} NOT IN ({})", format_expression(expr), values_str)
@@ -2430,7 +2422,7 @@ fn format_expression(expr: &SqlExpression) -> String {
         SqlExpression::ChainedMethodCall { base, method, args } => {
             let args_str = args
                 .iter()
-                .map(|arg| format_expression(arg))
+                .map(format_expression)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{}.{}({})", format_expression(base), method, args_str)
@@ -2438,7 +2430,7 @@ fn format_expression(expr: &SqlExpression) -> String {
         SqlExpression::FunctionCall { name, args } => {
             let args_str = args
                 .iter()
-                .map(|arg| format_expression(arg))
+                .map(format_expression)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{}({})", name, args_str)
@@ -2589,12 +2581,7 @@ fn analyze_statement(
                         }
                     }
 
-                    if let Some(start) = found_start {
-                        // Extract the full quoted identifier including quotes
-                        Some(safe_slice_from(before_dot, start))
-                    } else {
-                        None
-                    }
+                    found_start.map(|start| safe_slice_from(before_dot, start))
                 } else {
                     // Regular identifier - get the last word, handling parentheses
                     // Strip all leading parentheses
@@ -2701,7 +2688,7 @@ fn analyze_statement(
         return (CursorContext::FromClause, extract_partial_at_end(query));
     }
 
-    if stmt.columns.len() > 0 && stmt.from_table.is_none() {
+    if !stmt.columns.is_empty() && stmt.from_table.is_none() {
         return (CursorContext::SelectClause, extract_partial_at_end(query));
     }
 
@@ -3379,7 +3366,7 @@ mod tests {
         let where_clause = stmt.where_clause.unwrap();
 
         // Should parse successfully with nested structure
-        assert!(where_clause.conditions.len() > 0);
+        assert!(!where_clause.conditions.is_empty());
     }
 
     #[test]
@@ -3454,7 +3441,7 @@ mod tests {
         let where_clause = stmt.where_clause.unwrap();
 
         // Should handle nested price ranges with OR
-        assert!(where_clause.conditions.len() > 0);
+        assert!(!where_clause.conditions.is_empty());
     }
 
     #[test]
@@ -3493,7 +3480,7 @@ mod tests {
         let where_clause = stmt.where_clause.unwrap();
 
         // Should correctly parse the AND chain inside parentheses
-        assert!(where_clause.conditions.len() > 0);
+        assert!(!where_clause.conditions.is_empty());
     }
 
     // Format preservation tests - ensure F3 multi-line mode preserves parentheses

@@ -615,7 +615,7 @@ impl DebugContext for EnhancedTuiApp {
     fn debug_generate_state_container_info(&self) -> String {
         let mut result = String::from("\n");
         result.push_str(&self.state_container.debug_dump());
-        result.push_str("\n");
+        result.push('\n');
         result
     }
 
@@ -674,7 +674,7 @@ impl EnhancedTuiApp {
         debug!(target: "column_search_sync", "sync_navigation_with_viewport: ENTRY");
         let viewport_borrow = self.viewport_manager.borrow();
 
-        if let Some(ref viewport) = viewport_borrow.as_ref() {
+        if let Some(viewport) = viewport_borrow.as_ref() {
             let mut nav = self.state_container.navigation_mut();
 
             // Log current state before sync
@@ -717,7 +717,7 @@ impl EnhancedTuiApp {
     fn save_viewport_to_current_buffer(&mut self) {
         let viewport_borrow = self.viewport_manager.borrow();
 
-        if let Some(ref viewport) = viewport_borrow.as_ref() {
+        if let Some(viewport) = viewport_borrow.as_ref() {
             if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
                 // Save crosshair position
                 buffer.set_selected_row(Some(viewport.get_selected_row()));
@@ -1753,44 +1753,41 @@ impl EnhancedTuiApp {
 
         if let Some(action) = self.search_modes_widget.check_debounce() {
             let mut needs_redraw = false;
-            match action {
-                SearchModesAction::ExecuteDebounced(mode, pattern) => {
-                    info!(target: "search", "=== DEBOUNCED SEARCH EXECUTING ===");
-                    info!(target: "search", "Mode: {:?}, Pattern: '{}', AppMode: {:?}",
-                          mode, pattern, self.shadow_state.borrow().get_mode());
+            if let SearchModesAction::ExecuteDebounced(mode, pattern) = action {
+                info!(target: "search", "=== DEBOUNCED SEARCH EXECUTING ===");
+                info!(target: "search", "Mode: {:?}, Pattern: '{}', AppMode: {:?}",
+                      mode, pattern, self.shadow_state.borrow().get_mode());
 
-                    // Log current position before search
-                    {
-                        let nav = self.state_container.navigation();
-                        info!(target: "search", "BEFORE: nav.selected_row={}, nav.selected_column={}",
-                              nav.selected_row, nav.selected_column);
-                        info!(target: "search", "BEFORE: buffer.selected_row={:?}, buffer.current_column={}",
-                              self.state_container.get_buffer_selected_row(), self.state_container.get_current_column());
-                    }
-
-                    self.execute_search_action(mode, pattern);
-
-                    // Log position after search
-                    {
-                        let nav = self.state_container.navigation();
-                        info!(target: "search", "AFTER: nav.selected_row={}, nav.selected_column={}",
-                              nav.selected_row, nav.selected_column);
-                        info!(target: "search", "AFTER: buffer.selected_row={:?}, buffer.current_column={}",
-                              self.state_container.get_buffer_selected_row(), self.state_container.get_current_column());
-
-                        // Check ViewportManager state
-                        let viewport_manager = self.viewport_manager.borrow();
-                        if let Some(ref vm) = *viewport_manager {
-                            info!(target: "search", "AFTER: ViewportManager crosshair=({}, {})",
-                                  vm.get_crosshair_row(), vm.get_crosshair_col());
-                        }
-                    }
-
-                    info!(target: "search", "=== FORCING REDRAW ===");
-                    // CRITICAL: Force immediate redraw after search navigation
-                    needs_redraw = true;
+                // Log current position before search
+                {
+                    let nav = self.state_container.navigation();
+                    info!(target: "search", "BEFORE: nav.selected_row={}, nav.selected_column={}",
+                          nav.selected_row, nav.selected_column);
+                    info!(target: "search", "BEFORE: buffer.selected_row={:?}, buffer.current_column={}",
+                          self.state_container.get_buffer_selected_row(), self.state_container.get_current_column());
                 }
-                _ => {}
+
+                self.execute_search_action(mode, pattern);
+
+                // Log position after search
+                {
+                    let nav = self.state_container.navigation();
+                    info!(target: "search", "AFTER: nav.selected_row={}, nav.selected_column={}",
+                          nav.selected_row, nav.selected_column);
+                    info!(target: "search", "AFTER: buffer.selected_row={:?}, buffer.current_column={}",
+                          self.state_container.get_buffer_selected_row(), self.state_container.get_current_column());
+
+                    // Check ViewportManager state
+                    let viewport_manager = self.viewport_manager.borrow();
+                    if let Some(ref vm) = *viewport_manager {
+                        info!(target: "search", "AFTER: ViewportManager crosshair=({}, {})",
+                              vm.get_crosshair_row(), vm.get_crosshair_col());
+                    }
+                }
+
+                info!(target: "search", "=== FORCING REDRAW ===");
+                // CRITICAL: Force immediate redraw after search navigation
+                needs_redraw = true;
             }
 
             // Redraw immediately if search moved the cursor OR if TableWidgetManager needs render
@@ -2055,7 +2052,7 @@ impl EnhancedTuiApp {
 
             // Now handle the input with proper state
             let result = self.command_editor.handle_input(
-                normalized_key.clone(),
+                normalized_key,
                 &mut self.state_container,
                 &self.shadow_state,
             )?;
@@ -2097,12 +2094,12 @@ impl EnhancedTuiApp {
         // === END PHASE 1 ===
 
         // Try the new action system first
-        if let Some(result) = self.try_action_system(normalized_key.clone())? {
+        if let Some(result) = self.try_action_system(normalized_key)? {
             return Ok(result);
         }
 
         // Try editor widget for high-level actions
-        if let Some(result) = self.try_editor_widget(normalized_key.clone())? {
+        if let Some(result) = self.try_editor_widget(normalized_key)? {
             return Ok(result);
         }
 
@@ -2180,10 +2177,7 @@ impl EnhancedTuiApp {
         normalized_key: crossterm::event::KeyEvent,
     ) -> Result<Option<bool>> {
         let action_context = self.build_action_context();
-        if let Some(action) = self
-            .key_mapper
-            .map_key(normalized_key.clone(), &action_context)
-        {
+        if let Some(action) = self.key_mapper.map_key(normalized_key, &action_context) {
             info!(
                 "✓ Action system (Command): key {:?} -> action {:?}",
                 normalized_key.code, action
@@ -2215,9 +2209,9 @@ impl EnhancedTuiApp {
         let key_dispatcher = self.key_dispatcher.clone();
         let editor_result = if let Some(buffer) = self.state_container.buffers_mut().current_mut() {
             self.editor_widget
-                .handle_key(normalized_key.clone(), &key_dispatcher, buffer)?
+                .handle_key(normalized_key, &key_dispatcher, buffer)?
         } else {
-            EditorAction::PassToMainApp(normalized_key.clone())
+            EditorAction::PassToMainApp(normalized_key)
         };
 
         match editor_result {
@@ -3043,10 +3037,7 @@ impl EnhancedTuiApp {
             "Action context for key {:?}: mode={:?}",
             normalized_key.code, action_context.mode
         );
-        if let Some(action) = self
-            .key_mapper
-            .map_key(normalized_key.clone(), &action_context)
-        {
+        if let Some(action) = self.key_mapper.map_key(normalized_key, &action_context) {
             info!(
                 "✓ Action system: key {:?} -> action {:?}",
                 normalized_key.code, action
@@ -3550,7 +3541,7 @@ impl EnhancedTuiApp {
                             // This ensures all state systems are consistent (like vim search)
                             debug!(target: "column_search_sync", "ColumnSearch Apply: About to call sync_navigation_with_viewport() for column: {}", col_name);
                             debug!(target: "column_search_sync", "ColumnSearch Apply: Pre-sync - viewport current_column: {}", 
-                                if let Some(vm) = self.viewport_manager.try_borrow().ok() {
+                                if let Ok(vm) = self.viewport_manager.try_borrow() {
                                     vm.as_ref().map(|v| v.get_crosshair_col()).unwrap_or(0)
                                 } else { 0 });
                             self.sync_navigation_with_viewport();
@@ -3768,7 +3759,8 @@ impl EnhancedTuiApp {
 
     fn handle_help_input(&mut self, key: crossterm::event::KeyEvent) -> Result<bool> {
         // Handle help input directly to avoid borrow conflicts
-        let result = match key.code {
+
+        match key.code {
             crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => {
                 self.help_widget.on_exit();
                 self.state_container.set_help_visible(false);
@@ -3791,9 +3783,7 @@ impl EnhancedTuiApp {
                 self.help_widget.handle_key(key);
                 Ok(false)
             }
-        };
-
-        result
+        }
     }
 
     // ========== HELP NAVIGATION ==========
@@ -5106,7 +5096,7 @@ impl EnhancedTuiApp {
             // Always sync navigation state with updated viewport (like vim search)
             debug!(target: "column_search_sync", "next_column_match: About to call sync_navigation_with_viewport() - visual_idx: {}, datatable_idx: {}", visual_idx, datatable_idx);
             debug!(target: "column_search_sync", "next_column_match: Pre-sync - viewport current_column: {}", 
-                if let Some(vm) = self.viewport_manager.try_borrow().ok() {
+                if let Ok(vm) = self.viewport_manager.try_borrow() {
                     vm.as_ref().map(|v| v.get_crosshair_col()).unwrap_or(0)
                 } else { 0 });
             self.sync_navigation_with_viewport();
@@ -5200,7 +5190,7 @@ impl EnhancedTuiApp {
             // Always sync navigation state with updated viewport (like vim search)
             debug!(target: "column_search_sync", "previous_column_match: About to call sync_navigation_with_viewport() - visual_idx: {}, datatable_idx: {}", visual_idx, datatable_idx);
             debug!(target: "column_search_sync", "previous_column_match: Pre-sync - viewport current_column: {}", 
-                if let Some(vm) = self.viewport_manager.try_borrow().ok() {
+                if let Ok(vm) = self.viewport_manager.try_borrow() {
                     vm.as_ref().map(|v| v.get_crosshair_col()).unwrap_or(0)
                 } else { 0 });
             self.sync_navigation_with_viewport();
@@ -5262,7 +5252,7 @@ impl EnhancedTuiApp {
             let column_names = dataview.column_names();
             let col_name = column_names
                 .get(visual_col_idx)
-                .map(|s| s.clone())
+                .cloned()
                 .unwrap_or_else(|| format!("Column {}", visual_col_idx));
 
             debug!(
@@ -5428,11 +5418,9 @@ impl EnhancedTuiApp {
         // Delegate to ViewportManager for optimal column width calculations
         let widths_from_viewport = {
             let mut viewport_opt = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport_manager) = *viewport_opt {
-                Some(viewport_manager.calculate_optimal_column_widths())
-            } else {
-                None
-            }
+            (*viewport_opt)
+                .as_mut()
+                .map(|viewport_manager| viewport_manager.calculate_optimal_column_widths())
         };
 
         if let Some(widths) = widths_from_viewport {
@@ -6068,7 +6056,7 @@ impl EnhancedTuiApp {
 
             // Add actual terminal cursor position if we can calculate it
             if let Some(ref mut viewport_manager) = *self.viewport_manager.borrow_mut() {
-                let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH) as u16;
+                let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH);
                 // Use ViewportManager's crosshair column position
                 let visual_col = viewport_manager.get_crosshair_col();
                 if let Some(x_pos) =
@@ -6184,10 +6172,10 @@ impl EnhancedTuiApp {
         use crate::ui::rendering::table_render_context::TableRenderContextBuilder;
 
         let row_count = provider.get_row_count();
-        let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH) as u16;
+        let available_width = area.width.saturating_sub(TABLE_BORDER_WIDTH);
         // The area passed here is already the table area
         // The Table widget itself handles borders and header
-        let available_height = area.height as u16;
+        let available_height = area.height;
 
         // Get headers from ViewportManager (single source of truth)
         let headers = {
@@ -6839,7 +6827,7 @@ impl EnhancedTuiApp {
 
             // Show display column order
             let display_columns = dataview.get_display_columns();
-            debug_info.push_str(&format!("\n--- COLUMN ORDERING ---\n"));
+            debug_info.push_str("\n--- COLUMN ORDERING ---\n");
             debug_info.push_str(&format!(
                 "Display column order (first 10): {:?}\n",
                 &display_columns[..display_columns.len().min(10)]
@@ -7488,11 +7476,9 @@ impl ActionHandlerContext for EnhancedTuiApp {
     fn navigate_to_viewport_top(&mut self) {
         let result = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                Some(viewport_manager.navigate_to_viewport_top())
-            } else {
-                None
-            }
+            (*viewport_manager_borrow)
+                .as_mut()
+                .map(|viewport_manager| viewport_manager.navigate_to_viewport_top())
         };
 
         if let Some(result) = result {
@@ -7514,11 +7500,9 @@ impl ActionHandlerContext for EnhancedTuiApp {
     fn navigate_to_viewport_middle(&mut self) {
         let result = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                Some(viewport_manager.navigate_to_viewport_middle())
-            } else {
-                None
-            }
+            (*viewport_manager_borrow)
+                .as_mut()
+                .map(|viewport_manager| viewport_manager.navigate_to_viewport_middle())
         };
 
         if let Some(result) = result {
@@ -7540,11 +7524,9 @@ impl ActionHandlerContext for EnhancedTuiApp {
     fn navigate_to_viewport_bottom(&mut self) {
         let result = {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
-            if let Some(ref mut viewport_manager) = *viewport_manager_borrow {
-                Some(viewport_manager.navigate_to_viewport_bottom())
-            } else {
-                None
-            }
+            (*viewport_manager_borrow)
+                .as_mut()
+                .map(|viewport_manager| viewport_manager.navigate_to_viewport_bottom())
         };
 
         if let Some(result) = result {

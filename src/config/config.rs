@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct Config {
     pub display: DisplayConfig,
     pub keybindings: KeybindingConfig,
@@ -133,17 +134,6 @@ pub struct CellSelectionStyle {
 
     /// Whether to show cell corners in "corners" mode
     pub corner_chars: String, // e.g., "┌┐└┘" or "╭╮╰╯" for rounded
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            display: DisplayConfig::default(),
-            keybindings: KeybindingConfig::default(),
-            behavior: BehaviorConfig::default(),
-            theme: ThemeConfig::default(),
-        }
-    }
 }
 
 impl Default for DisplayConfig {

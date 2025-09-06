@@ -188,7 +188,7 @@ pub trait DebugContext {
                 .iter()
                 .filter_map(|s| self.debug_extract_timing(s))
                 .sum();
-            if timings.len() > 0 {
+            if !timings.is_empty() {
                 let avg_ms = total_ms / timings.len() as f64;
                 result.push_str(&format!("Average navigation time: {:.3}ms\n", avg_ms));
             }
@@ -211,7 +211,7 @@ pub trait DebugContext {
                 .iter()
                 .filter_map(|s| self.debug_extract_timing(s))
                 .sum();
-            if timings.len() > 0 {
+            if !timings.is_empty() {
                 let avg_ms = total_ms / timings.len() as f64;
                 result.push_str(&format!("Average render time: {:.3}ms\n", avg_ms));
             }
@@ -362,7 +362,7 @@ pub trait DebugContext {
                 let total_rows = dataview.row_count();
                 let total_cols = dataview.column_count();
                 let visible_rows = buffer.get_last_visible_rows();
-                debug_info.push_str(&format!("\nVisible Area:\n"));
+                debug_info.push_str("\nVisible Area:\n");
                 debug_info.push_str(&format!(
                     "  Total Data: {} rows × {} columns\n",
                     total_rows, total_cols
@@ -409,7 +409,7 @@ pub trait DebugContext {
 
                 // Add the detailed column mapping info
                 debug_info.push_str(&dataview.get_column_debug_info());
-                debug_info.push_str("\n");
+                debug_info.push('\n');
 
                 // Show visible columns in order with both indices
                 let visible_columns = dataview.column_names();

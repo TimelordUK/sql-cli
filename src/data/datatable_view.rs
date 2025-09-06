@@ -50,6 +50,12 @@ pub struct SimpleInput {
     pub cursor_position: usize,
 }
 
+impl Default for SimpleInput {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SimpleInput {
     pub fn new() -> Self {
         Self {
@@ -582,7 +588,7 @@ impl DataTableView {
                             .table
                             .get_value(row_idx, col_idx)
                             .map(|v| v.to_string())
-                            .unwrap_or_else(|| "".to_string());
+                            .unwrap_or_default();
 
                         let mut style = Style::default();
 

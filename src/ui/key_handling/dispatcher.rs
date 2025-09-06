@@ -57,6 +57,12 @@ pub struct KeyDispatcher {
     debug_map: HashMap<KeyBinding, String>,
 }
 
+impl Default for KeyDispatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KeyDispatcher {
     pub fn new() -> Self {
         let mut dispatcher = Self {

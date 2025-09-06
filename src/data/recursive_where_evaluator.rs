@@ -339,10 +339,10 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         let value = self.table.get_value(row_index, col_index);
         let trimmed_value = match value {
             Some(DataValue::String(s)) => Some(DataValue::String(
-                Self::apply_trim(&s, trim_type).to_string(),
+                Self::apply_trim(s, trim_type).to_string(),
             )),
             Some(DataValue::InternedString(s)) => Some(DataValue::String(
-                Self::apply_trim(&s, trim_type).to_string(),
+                Self::apply_trim(s, trim_type).to_string(),
             )),
             Some(DataValue::Integer(n)) => {
                 let str_val = n.to_string();

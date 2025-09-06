@@ -10,8 +10,9 @@ pub struct ChartConfig {
     pub query: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum ChartType {
+    #[default]
     Line,
     Scatter,
     Bar,
@@ -88,11 +89,5 @@ impl ChartViewport {
         self.y_max = center_y + new_y_span / 2.0;
 
         self.zoom_level *= factor;
-    }
-}
-
-impl Default for ChartType {
-    fn default() -> Self {
-        ChartType::Line
     }
 }

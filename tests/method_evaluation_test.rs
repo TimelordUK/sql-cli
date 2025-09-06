@@ -82,11 +82,11 @@ fn test_contains_method() {
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.Contains('get')");
 
     // Should match "Widget" (true - contains 'get'), "Gadget" (true - contains 'get'), "Gizmo" (false), "Device" (false), "Tool" (false)
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), true); // Widget - contains 'get' at the end
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // Gadget - contains 'get' in the middle
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // Gizmo - does not contain 'get'
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // Device - does not contain 'get'
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // Tool - does not contain 'get'
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap()); // Widget - contains 'get' at the end
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // Gadget - contains 'get' in the middle
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // Gizmo - does not contain 'get'
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // Device - does not contain 'get'
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // Tool - does not contain 'get'
 }
 
 #[test]
@@ -97,11 +97,11 @@ fn test_startswith_method() {
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.StartsWith('G')");
 
     // Should match "Widget" (false), "Gadget" (true), "Gizmo" (true), "Device" (false), "Tool" (false)
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), false); // Widget
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // Gadget
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), true); // Gizmo
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // Device
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // Tool
+    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // Widget
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // Gadget
+    assert!(evaluator.evaluate(&where_clause, 2).unwrap()); // Gizmo
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // Device
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // Tool
 }
 
 #[test]
@@ -112,11 +112,11 @@ fn test_endswith_method() {
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.EndsWith('et')");
 
     // Should match "Widget" (true), "Gadget" (true), "Gizmo" (false), "Device" (false), "Tool" (false)
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), true); // Widget
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // Gadget
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // Gizmo
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // Device
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // Tool
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap()); // Widget
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // Gadget
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // Gizmo
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // Device
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // Tool
 }
 
 #[test]
@@ -127,11 +127,11 @@ fn test_length_method() {
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.Length() > 5");
 
     // Should match "Widget" (6, true), "Gadget" (6, true), "Gizmo" (5, false), "Device" (6, true), "Tool" (4, false)
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), true); // Widget (6 chars)
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // Gadget (6 chars)
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // Gizmo (5 chars)
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), true); // Device (6 chars)
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // Tool (4 chars)
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap()); // Widget (6 chars)
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // Gadget (6 chars)
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // Gizmo (5 chars)
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap()); // Device (6 chars)
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // Tool (4 chars)
 }
 
 #[test]
@@ -149,11 +149,11 @@ fn test_indexof_method_found() {
     // "Professional device for work" - "device" at position 13
     // "Essential tool for projects" - no "device" (-1)
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), false); // Widget: -1 > 0 = false
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // Gadget: 21 > 0 = true
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // Gizmo: -1 > 0 = false
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), true); // Device: 13 > 0 = true
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // Tool: -1 > 0 = false
+    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // Widget: -1 > 0 = false
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // Gadget: 21 > 0 = true
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // Gizmo: -1 > 0 = false
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap()); // Device: 13 > 0 = true
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // Tool: -1 > 0 = false
 }
 
 #[test]
@@ -165,11 +165,11 @@ fn test_indexof_method_not_found() {
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.IndexOf('xyz') = -1");
 
     // None of the names contain "xyz", so all should return -1
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), true); // Widget: -1 = -1
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // Gadget: -1 = -1
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), true); // Gizmo: -1 = -1
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), true); // Device: -1 = -1
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), true); // Tool: -1 = -1
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap()); // Widget: -1 = -1
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // Gadget: -1 = -1
+    assert!(evaluator.evaluate(&where_clause, 2).unwrap()); // Gizmo: -1 = -1
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap()); // Device: -1 = -1
+    assert!(evaluator.evaluate(&where_clause, 4).unwrap()); // Tool: -1 = -1
 }
 
 #[test]
@@ -180,11 +180,11 @@ fn test_indexof_at_beginning() {
     // Test IndexOf when substring is at the beginning (returns 0)
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.IndexOf('Wid') = 0");
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), true); // Widget starts with "Wid"
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), false); // Gadget doesn't
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // Gizmo doesn't
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // Device doesn't
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // Tool doesn't
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap()); // Widget starts with "Wid"
+    assert!(!evaluator.evaluate(&where_clause, 1).unwrap()); // Gadget doesn't
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // Gizmo doesn't
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // Device doesn't
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // Tool doesn't
 }
 
 #[test]
@@ -196,11 +196,11 @@ fn test_numeric_column_with_string_methods() {
     let where_clause = extract_where_clause("SELECT * FROM test WHERE price.Contains('9.99')");
 
     // Prices: 19.99, 29.99, 9.99, 99.99, 49.99
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), true); // 19.99 contains "9.99"
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // 29.99 contains "9.99"
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), true); // 9.99 contains "9.99"
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), true); // 99.99 contains "9.99"
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), true); // 49.99 contains "9.99"
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap()); // 19.99 contains "9.99"
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // 29.99 contains "9.99"
+    assert!(evaluator.evaluate(&where_clause, 2).unwrap()); // 9.99 contains "9.99"
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap()); // 99.99 contains "9.99"
+    assert!(evaluator.evaluate(&where_clause, 4).unwrap()); // 49.99 contains "9.99"
 }
 
 #[test]
@@ -216,11 +216,11 @@ fn test_complex_expressions_with_methods() {
     // name.Length() > 4: Widget(6), Gadget(6), Gizmo(5), Device(6), Tool(4)
     // category.Contains('tron'): Tools(false), Electronics(true), Toys(false), Electronics(true), Tools(false)
     // Combined: false, true, false, true, false
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), false); // Widget & Tools
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // Gadget & Electronics
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // Gizmo & Toys
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), true); // Device & Electronics
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // Tool & Tools
+    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // Widget & Tools
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // Gadget & Electronics
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // Gizmo & Toys
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap()); // Device & Electronics
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // Tool & Tools
 }
 
 #[test]
@@ -238,11 +238,11 @@ fn test_indexof_with_greater_than() {
     // "Professional device for work" - no "ful" (-1)
     // "Essential tool for projects" - no "ful" (-1)
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), true); // 4 > 2 = true
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), false); // -1 > 2 = false
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // -1 > 2 = false
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // -1 > 2 = false
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // -1 > 2 = false
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap()); // 4 > 2 = true
+    assert!(!evaluator.evaluate(&where_clause, 1).unwrap()); // -1 > 2 = false
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // -1 > 2 = false
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // -1 > 2 = false
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // -1 > 2 = false
 }
 
 #[test]
@@ -256,7 +256,7 @@ fn test_case_sensitivity() {
     let where_clause3 = extract_where_clause("SELECT * FROM test WHERE name.Contains('WiDgEt')");
 
     // All should match the same row (Widget)
-    assert_eq!(evaluator.evaluate(&where_clause1, 0).unwrap(), true);
-    assert_eq!(evaluator.evaluate(&where_clause2, 0).unwrap(), true);
-    assert_eq!(evaluator.evaluate(&where_clause3, 0).unwrap(), true);
+    assert!(evaluator.evaluate(&where_clause1, 0).unwrap());
+    assert!(evaluator.evaluate(&where_clause2, 0).unwrap());
+    assert!(evaluator.evaluate(&where_clause3, 0).unwrap());
 }

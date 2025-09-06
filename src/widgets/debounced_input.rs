@@ -68,6 +68,12 @@ pub struct DebouncedInput {
     active: bool,
 }
 
+impl Default for DebouncedInput {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DebouncedInput {
     /// Create a new debounced input with default config
     pub fn new() -> Self {
@@ -217,6 +223,12 @@ impl DebouncedInput {
 /// Builder pattern for DebouncedInput configuration
 pub struct DebouncedInputBuilder {
     config: DebouncedInputConfig,
+}
+
+impl Default for DebouncedInputBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DebouncedInputBuilder {

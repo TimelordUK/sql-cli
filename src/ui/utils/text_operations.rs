@@ -111,12 +111,7 @@ pub fn delete_word_backward(text: &str, cursor_position: usize) -> TextOperation
 
     // Skip any trailing whitespace
     let mut pos = cursor_position;
-    while pos > 0
-        && text
-            .chars()
-            .nth(pos - 1)
-            .map_or(false, |c| c.is_whitespace())
-    {
+    while pos > 0 && text.chars().nth(pos - 1).is_some_and(|c| c.is_whitespace()) {
         pos -= 1;
     }
 
@@ -129,7 +124,7 @@ pub fn delete_word_backward(text: &str, cursor_position: usize) -> TextOperation
             && !text
                 .chars()
                 .nth(start - 1)
-                .map_or(false, |c| c.is_whitespace())
+                .is_some_and(|c| c.is_whitespace())
         {
             start -= 1;
         }
@@ -164,7 +159,7 @@ pub fn delete_word_forward(text: &str, cursor_position: usize) -> TextOperationR
 
     // Skip any leading whitespace
     let mut pos = cursor_position;
-    while pos < text_len && text.chars().nth(pos).map_or(false, |c| c.is_whitespace()) {
+    while pos < text_len && text.chars().nth(pos).is_some_and(|c| c.is_whitespace()) {
         pos += 1;
     }
 
@@ -173,7 +168,7 @@ pub fn delete_word_forward(text: &str, cursor_position: usize) -> TextOperationR
         text_len
     } else {
         let mut end = pos;
-        while end < text_len && !text.chars().nth(end).map_or(false, |c| c.is_whitespace()) {
+        while end < text_len && !text.chars().nth(end).is_some_and(|c| c.is_whitespace()) {
             end += 1;
         }
         end
@@ -206,12 +201,7 @@ pub fn move_word_backward(text: &str, cursor_position: usize) -> CursorMovementR
 
     // Skip any trailing whitespace
     let mut pos = cursor_position;
-    while pos > 0
-        && text
-            .chars()
-            .nth(pos - 1)
-            .map_or(false, |c| c.is_whitespace())
-    {
+    while pos > 0 && text.chars().nth(pos - 1).is_some_and(|c| c.is_whitespace()) {
         pos -= 1;
     }
 
@@ -224,7 +214,7 @@ pub fn move_word_backward(text: &str, cursor_position: usize) -> CursorMovementR
             && !text
                 .chars()
                 .nth(start - 1)
-                .map_or(false, |c| c.is_whitespace())
+                .is_some_and(|c| c.is_whitespace())
         {
             start -= 1;
         }
@@ -255,12 +245,12 @@ pub fn move_word_forward(text: &str, cursor_position: usize) -> CursorMovementRe
 
     // Skip current word
     let mut pos = cursor_position;
-    while pos < text_len && !text.chars().nth(pos).map_or(false, |c| c.is_whitespace()) {
+    while pos < text_len && !text.chars().nth(pos).is_some_and(|c| c.is_whitespace()) {
         pos += 1;
     }
 
     // Skip whitespace
-    while pos < text_len && text.chars().nth(pos).map_or(false, |c| c.is_whitespace()) {
+    while pos < text_len && text.chars().nth(pos).is_some_and(|c| c.is_whitespace()) {
         pos += 1;
     }
 

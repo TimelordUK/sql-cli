@@ -80,9 +80,8 @@ fn test_buffer_state_preserved_on_switch() {
             (20, 3),
             "Buffer 1 scroll offset should be preserved"
         );
-        assert_eq!(
+        assert!(
             nav_proxy.viewport_lock(),
-            true,
             "Buffer 1 viewport lock should be preserved"
         );
     }
@@ -127,9 +126,8 @@ fn test_buffer_state_preserved_on_switch() {
             (50, 10),
             "Buffer 2 scroll offset should be preserved"
         );
-        assert_eq!(
-            nav_proxy.viewport_lock(),
-            false,
+        assert!(
+            !nav_proxy.viewport_lock(),
             "Buffer 2 viewport lock should be preserved"
         );
     }
@@ -165,7 +163,7 @@ fn test_proxy_with_no_buffer() {
     assert_eq!(nav_proxy.selected_row(), 0);
     assert_eq!(nav_proxy.selected_column(), 0);
     assert_eq!(nav_proxy.scroll_offset(), (0, 0));
-    assert_eq!(nav_proxy.viewport_lock(), false);
+    assert!(!nav_proxy.viewport_lock());
 
     let sel_proxy = state.selection_proxy();
     assert_eq!(sel_proxy.mode(), SelectionMode::Row);
@@ -188,7 +186,7 @@ fn test_direct_buffer_viewstate_access() {
     assert_eq!(buffer.view_state.crosshair_row, 15);
     assert_eq!(buffer.view_state.crosshair_col, 7);
     assert_eq!(buffer.view_state.selection_mode, SelectionMode::Column);
-    assert_eq!(buffer.view_state.viewport_lock, true);
+    assert!(buffer.view_state.viewport_lock);
 
     // Use the proper API method to set selected row (which syncs both ViewState and table_state)
     buffer.set_selected_row(Some(15));
@@ -196,5 +194,5 @@ fn test_direct_buffer_viewstate_access() {
     // Now verify through BufferAPI methods
     assert_eq!(buffer.get_selected_row(), Some(15));
     assert_eq!(buffer.get_current_column(), 7);
-    assert_eq!(buffer.is_viewport_lock(), true);
+    assert!(buffer.is_viewport_lock());
 }

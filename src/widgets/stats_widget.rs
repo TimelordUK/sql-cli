@@ -179,7 +179,7 @@ impl Default for StatsWidget {
 impl DebugInfoProvider for StatsWidget {
     fn debug_info(&self) -> String {
         let mut info = String::from("=== STATS WIDGET ===\n");
-        info.push_str(&format!("State: Active\n"));
+        info.push_str("State: Active\n");
         info.push_str(&format!("Handle Keys: {}\n", self.handle_keys));
         info
     }

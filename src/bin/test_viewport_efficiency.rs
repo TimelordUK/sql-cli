@@ -34,7 +34,7 @@ fn main() {
     for row_id in 1..=5 {
         let mut values = vec![DataValue::Integer(row_id as i64)];
         for col in 1..60 {
-            if col >= 51 && col <= 56 {
+            if (51..=56).contains(&col) {
                 values.push(DataValue::String(format!("LongValue{}", col)));
             } else {
                 values.push(DataValue::String(format!("A{}", col)));

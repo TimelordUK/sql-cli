@@ -41,6 +41,12 @@ pub struct LogRingBuffer {
     entries: Arc<Mutex<VecDeque<LogEntry>>>,
 }
 
+impl Default for LogRingBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LogRingBuffer {
     pub fn new() -> Self {
         Self {
@@ -306,7 +312,7 @@ pub fn init_tracing_with_dual_logging() {
 /// Initialize tracing with our custom ring buffer writer (legacy)
 pub fn init_tracing() -> LogRingBuffer {
     init_tracing_with_dual_logging();
-    get_log_buffer().unwrap_or_else(|| LogRingBuffer::new())
+    get_log_buffer().unwrap_or_default()
 }
 
 /// Convenience macros for common operations

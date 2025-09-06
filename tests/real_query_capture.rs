@@ -23,6 +23,12 @@ pub struct QueryReplayHarness {
     queries: Vec<CapturedQuery>,
 }
 
+impl Default for QueryReplayHarness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QueryReplayHarness {
     pub fn new() -> Self {
         Self {
@@ -130,6 +136,27 @@ impl QueryReplayHarness {
         println!("✓ Query '{}' passed", query.description);
         Ok(())
     }
+}
+
+/// Helper function to capture query from TUI debug output and create test
+/// Usage: Call this with F5 debug dump content and it will suggest a test
+pub fn suggest_test_from_debug_dump(_debug_content: &str, data_file: &str) -> String {
+    // Parse debug content to extract query and results info
+    // This would analyze the debug dump format and suggest a CapturedQuery struct
+
+    format!(
+        "// Suggested test from TUI debug dump:\n\
+         harness.add_query(CapturedQuery {{\n\
+         \x20   description: \"Query captured from TUI debug session\".to_string(),\n\
+         \x20   data_file: \"{}\".to_string(),\n\
+         \x20   query: \"SELECT * FROM data\".to_string(), // TODO: Extract from debug\n\
+         \x20   expected_row_count: 0, // TODO: Count from debug output\n\
+         \x20   expected_columns: vec![], // TODO: Extract from debug output\n\
+         \x20   expected_first_row: None, // TODO: Extract first row if needed\n\
+         \x20   case_insensitive: false,\n\
+         }});",
+        data_file
+    )
 }
 
 #[cfg(test)]
@@ -338,25 +365,4 @@ mod tests {
 
         Ok(())
     }
-}
-
-/// Helper function to capture query from TUI debug output and create test
-/// Usage: Call this with F5 debug dump content and it will suggest a test
-pub fn suggest_test_from_debug_dump(_debug_content: &str, data_file: &str) -> String {
-    // Parse debug content to extract query and results info
-    // This would analyze the debug dump format and suggest a CapturedQuery struct
-
-    format!(
-        "// Suggested test from TUI debug dump:\n\
-         harness.add_query(CapturedQuery {{\n\
-         \x20   description: \"Query captured from TUI debug session\".to_string(),\n\
-         \x20   data_file: \"{}\".to_string(),\n\
-         \x20   query: \"SELECT * FROM data\".to_string(), // TODO: Extract from debug\n\
-         \x20   expected_row_count: 0, // TODO: Count from debug output\n\
-         \x20   expected_columns: vec![], // TODO: Extract from debug output\n\
-         \x20   expected_first_row: None, // TODO: Extract first row if needed\n\
-         \x20   case_insensitive: false,\n\
-         }});",
-        data_file
-    )
 }

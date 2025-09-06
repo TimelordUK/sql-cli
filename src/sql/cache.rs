@@ -144,7 +144,7 @@ impl QueryCache {
         let data_dir = self.cache_dir.join("data");
         for entry in fs::read_dir(data_dir)? {
             let entry = entry?;
-            if entry.path().extension().map_or(false, |ext| ext == "json") {
+            if entry.path().extension().is_some_and(|ext| ext == "json") {
                 fs::remove_file(entry.path())?;
             }
         }
@@ -220,15 +220,10 @@ impl CacheStats {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum QueryMode {
-    Live,   // Always query server
+    #[default]
+    Live, // Always query server
     Cached, // Only use cached data
     Hybrid, // Check cache first, then server
-}
-
-impl Default for QueryMode {
-    fn default() -> Self {
-        QueryMode::Live
-    }
 }

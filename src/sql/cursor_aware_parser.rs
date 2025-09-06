@@ -13,6 +13,12 @@ pub struct ParseResult {
     pub partial_word: Option<String>,
 }
 
+impl Default for CursorAwareParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CursorAwareParser {
     pub fn new() -> Self {
         Self {
@@ -147,7 +153,7 @@ impl CursorAwareParser {
             CursorContext::AfterComparisonOp(col_name, op) => {
                 // We're after a comparison operator - suggest based on column type
                 let property_type = self
-                    .get_property_type(&col_name)
+                    .get_property_type(col_name)
                     .unwrap_or("string".to_string());
                 let suggestions = match property_type.as_str() {
                     "datetime" => {
@@ -252,9 +258,9 @@ impl CursorAwareParser {
                 // Only filter non-method suggestions
                 final_suggestions.retain(|suggestion| {
                     // Check if we're dealing with a partial quoted identifier
-                    if partial.starts_with('"') {
+                    if let Some(partial_without_quote) = partial.strip_prefix('"') {
                         // User is typing a quoted identifier like "customer
-                        let partial_without_quote = &partial[1..]; // Remove the opening quote
+                        // Remove the opening quote
 
                         // Check if suggestion is a quoted identifier that matches
                         if suggestion.starts_with('"')

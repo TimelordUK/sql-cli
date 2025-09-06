@@ -15,6 +15,12 @@ impl Clone for SqlHighlighter {
     }
 }
 
+impl Default for SqlHighlighter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SqlHighlighter {
     pub fn new() -> Self {
         Self {}
@@ -242,9 +248,7 @@ impl SqlHighlighter {
                     ));
                     paren_depth += 1;
                 } else if ch == ')' {
-                    if paren_depth > 0 {
-                        paren_depth -= 1;
-                    }
+                    paren_depth = paren_depth.saturating_sub(1);
                     let color = paren_colors[paren_depth % paren_colors.len()];
                     spans.push(Span::styled(
                         ch.to_string(),

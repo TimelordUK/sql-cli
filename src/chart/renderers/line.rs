@@ -90,7 +90,7 @@ impl LineRenderer {
             .map(|i| {
                 let timestamp_secs = self.viewport.x_min + (i as f64) * step;
                 let dt = DateTime::<Utc>::from_timestamp(timestamp_secs as i64, 0)
-                    .unwrap_or_else(|| Utc::now());
+                    .unwrap_or_else(Utc::now);
                 format!("{}", dt.format("%H:%M:%S"))
             })
             .collect()

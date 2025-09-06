@@ -32,6 +32,12 @@ pub struct VimSearchManager {
     last_search_pattern: Option<String>,
 }
 
+impl Default for VimSearchManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VimSearchManager {
     pub fn new() -> Self {
         Self {

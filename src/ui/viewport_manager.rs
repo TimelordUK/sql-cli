@@ -18,7 +18,7 @@ use tracing::debug;
 use crate::data::data_view::DataView;
 use crate::data::datatable::DataRow;
 use crate::ui::viewport::column_width_calculator::{
-    COLUMN_PADDING, DEFAULT_COL_WIDTH, MAX_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS, MIN_COL_WIDTH,
+    COLUMN_PADDING, MAX_COL_WIDTH, MAX_COL_WIDTH_DATA_FOCUS, MIN_COL_WIDTH,
 };
 use crate::ui::viewport::{ColumnPackingMode, ColumnWidthCalculator};
 
@@ -1138,7 +1138,7 @@ impl ViewportManager {
                     available_for_scrollable
                 );
                 // Move offset forward until last column fits
-                best_offset = best_offset + 1;
+                best_offset += 1;
                 can_see_last = false;
                 break;
             }
@@ -1160,7 +1160,7 @@ impl ViewportManager {
                 test_width += width + separator_width;
 
                 if test_width > available_for_scrollable {
-                    best_offset = best_offset + 1;
+                    best_offset += 1;
                     break;
                 }
                 if idx == scrollable_columns.len() - 1 {
@@ -1200,7 +1200,7 @@ impl ViewportManager {
             "Packing mode: {} (Alt+S to cycle)\n",
             self.width_calculator.get_packing_mode().display_name()
         ));
-        output.push_str("\n");
+        output.push('\n');
 
         // Show detailed column width calculations
         output.push_str("=== COLUMN WIDTH CALCULATIONS ===\n");
@@ -1276,7 +1276,7 @@ impl ViewportManager {
             }
         }
 
-        output.push_str("\n");
+        output.push('\n');
 
         // Show column widths summary
         output.push_str("Column width summary (all columns):\n");
@@ -1292,7 +1292,7 @@ impl ViewportManager {
             }
             output.push_str(&format!("  [{}] {}w\n", idx, width));
         }
-        output.push_str("\n");
+        output.push('\n');
 
         // Test optimal offset calculation step by step
         output.push_str("=== OPTIMAL OFFSET CALCULATION ===\n");
@@ -1325,7 +1325,7 @@ impl ViewportManager {
             "Available for scrollable: {}w\n",
             available_for_scrollable
         ));
-        output.push_str("\n");
+        output.push('\n');
 
         // Simulate the calculation
         let mut accumulated_width = last_col_width + separator_width;
@@ -1672,7 +1672,7 @@ impl ViewportManager {
                 let row_data = self.dataview.get_row_visual_values(display_row_idx);
                 if let Some(ref full_row) = row_data {
                     // Debug first few and last few rows to track what we're actually getting
-                    if display_row_idx < 5 || display_row_idx >= 19900 {
+                    if !(5..19900).contains(&display_row_idx) {
                         debug!(target: "viewport_manager",
                                "DATAVIEW FETCH: display_row_idx {} -> data: {:?} (first 3 cols)",
                                display_row_idx,
@@ -1699,12 +1699,8 @@ impl ViewportManager {
         let widths: Vec<u16> = visible_column_indices
             .iter()
             .map(|&dt_idx| {
-                Some(self.width_calculator.get_column_width(
-                    &self.dataview,
-                    &self.viewport_rows,
-                    dt_idx,
-                ))
-                .unwrap_or(DEFAULT_COL_WIDTH)
+                self.width_calculator
+                    .get_column_width(&self.dataview, &self.viewport_rows, dt_idx)
             })
             .collect();
 
@@ -1839,10 +1835,8 @@ impl ViewportManager {
                 .get_all_column_widths(&self.dataview, &self.viewport_rows);
             for (idx, &width) in all_widths.iter().enumerate() {
                 // Skip already visible columns
-                if !visible_indices.contains(&idx) {
-                    if width + separator_width <= wasted_space {
-                        columns_that_could_fit.push((idx, width));
-                    }
+                if !visible_indices.contains(&idx) && width + separator_width <= wasted_space {
+                    columns_that_could_fit.push((idx, width));
                 }
             }
         }
@@ -1862,12 +1856,8 @@ impl ViewportManager {
             column_widths: visible_indices
                 .iter()
                 .map(|&idx| {
-                    Some(self.width_calculator.get_column_width(
-                        &self.dataview,
-                        &self.viewport_rows,
-                        idx,
-                    ))
-                    .unwrap_or(DEFAULT_COL_WIDTH)
+                    self.width_calculator
+                        .get_column_width(&self.dataview, &self.viewport_rows, idx)
                 })
                 .collect(),
             next_column_width,
@@ -2819,11 +2809,7 @@ impl ViewportManager {
         // Calculate scroll offset to show the last row at the bottom of the viewport
         // We want the last row visible at the bottom, so start the viewport such that
         // the last row appears at the last position
-        let new_scroll_offset = if total_rows > visible_rows {
-            total_rows - visible_rows
-        } else {
-            0
-        };
+        let new_scroll_offset = total_rows.saturating_sub(visible_rows);
 
         debug!(target: "viewport_manager", 
                "navigate_to_last_row: total_rows={}, last_row={}, visible_rows={}, new_scroll_offset={}", 
@@ -4442,7 +4428,7 @@ mod tests {
         // Create a test dataview with 12 columns
         let mut table = DataTable::new("test");
         for i in 0..12 {
-            table.add_column(DataColumn::new(&format!("col{}", i)));
+            table.add_column(DataColumn::new(format!("col{}", i)));
         }
 
         // Add some test data

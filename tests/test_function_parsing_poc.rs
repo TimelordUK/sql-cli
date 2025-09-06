@@ -1,7 +1,7 @@
 /// Proof of concept test for parsing SQL functions
 /// This demonstrates that our parser architecture can easily support
 /// function calls like ROUND(quantity * price, 2)
-use sql_cli::sql::recursive_parser::{Parser, SelectItem, SqlExpression};
+use sql_cli::sql::recursive_parser::{Parser, SelectItem};
 
 #[test]
 #[ignore] // Not yet implemented - this is a design test

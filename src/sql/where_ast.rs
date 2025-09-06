@@ -642,7 +642,7 @@ mod tests {
 
         // Test that null values return true
         let expr = WhereExpr::IsNullOrEmpty("name".to_string());
-        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), true);
+        assert!(evaluate_where_expr(&expr, &row).unwrap());
     }
 
     #[test]
@@ -654,7 +654,7 @@ mod tests {
 
         // Test that empty strings return true
         let expr = WhereExpr::IsNullOrEmpty("name".to_string());
-        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), true);
+        assert!(evaluate_where_expr(&expr, &row).unwrap());
     }
 
     #[test]
@@ -666,7 +666,7 @@ mod tests {
 
         // Test that non-empty strings return false
         let expr = WhereExpr::IsNullOrEmpty("name".to_string());
-        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), false);
+        assert!(!evaluate_where_expr(&expr, &row).unwrap());
     }
 
     #[test]
@@ -677,7 +677,7 @@ mod tests {
 
         // Test that missing fields are considered null/empty
         let expr = WhereExpr::IsNullOrEmpty("name".to_string());
-        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), true);
+        assert!(evaluate_where_expr(&expr, &row).unwrap());
     }
 
     #[test]
@@ -690,10 +690,10 @@ mod tests {
         // Test that whitespace-only strings are NOT considered empty
         // (following standard IsNullOrEmpty behavior)
         let expr = WhereExpr::IsNullOrEmpty("name".to_string());
-        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), false);
+        assert!(!evaluate_where_expr(&expr, &row).unwrap());
 
         let expr2 = WhereExpr::IsNullOrEmpty("description".to_string());
-        assert_eq!(evaluate_where_expr(&expr2, &row).unwrap(), false);
+        assert!(!evaluate_where_expr(&expr2, &row).unwrap());
     }
 
     #[test]
@@ -705,10 +705,10 @@ mod tests {
 
         // Test that numeric fields return false (not strings)
         let expr = WhereExpr::IsNullOrEmpty("count".to_string());
-        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), false);
+        assert!(!evaluate_where_expr(&expr, &row).unwrap());
 
         let expr2 = WhereExpr::IsNullOrEmpty("price".to_string());
-        assert_eq!(evaluate_where_expr(&expr2, &row).unwrap(), false);
+        assert!(!evaluate_where_expr(&expr2, &row).unwrap());
     }
 
     #[test]
@@ -727,7 +727,7 @@ mod tests {
                 WhereValue::Number(20.0),
             )),
         );
-        assert_eq!(evaluate_where_expr(&expr, &row).unwrap(), true);
+        assert!(evaluate_where_expr(&expr, &row).unwrap());
 
         // Test: name.IsNullOrEmpty() OR city = "Boston"
         let expr2 = WhereExpr::Or(
@@ -737,10 +737,10 @@ mod tests {
                 WhereValue::String("Boston".to_string()),
             )),
         );
-        assert_eq!(evaluate_where_expr(&expr2, &row).unwrap(), true); // true because name is empty
+        assert!(evaluate_where_expr(&expr2, &row).unwrap()); // true because name is empty
 
         // Test: NOT name.IsNullOrEmpty()
         let expr3 = WhereExpr::Not(Box::new(WhereExpr::IsNullOrEmpty("name".to_string())));
-        assert_eq!(evaluate_where_expr(&expr3, &row).unwrap(), false);
+        assert!(!evaluate_where_expr(&expr3, &row).unwrap());
     }
 }

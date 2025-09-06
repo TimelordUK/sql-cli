@@ -311,7 +311,7 @@ impl TextEditor {
             word_end += ch.len_utf8();
             if ch.is_alphanumeric() || ch == '_' {
                 // Found start of word, now skip the rest of it
-                while let Some(ch) = chars.next() {
+                for ch in chars.by_ref() {
                     if !ch.is_alphanumeric() && ch != '_' {
                         break;
                     }

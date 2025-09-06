@@ -58,6 +58,12 @@ pub struct UnitConverter {
     units: HashMap<String, Unit>,
 }
 
+impl Default for UnitConverter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UnitConverter {
     pub fn new() -> Self {
         let mut units = HashMap::new();

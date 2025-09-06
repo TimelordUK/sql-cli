@@ -31,6 +31,12 @@ pub struct CrosshairWidget {
     style: Style,
 }
 
+impl Default for CrosshairWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CrosshairWidget {
     /// Create a new crosshair widget
     pub fn new() -> Self {

@@ -309,7 +309,7 @@ impl CommandHistory {
         let mut tables = Vec::new();
         if let Some(from_idx) = query_upper.find(" FROM ") {
             let after_from = &query[from_idx + 6..];
-            if let Some(end_idx) = after_from.find(|c: char| c == ' ' || c == '(' || c == ';') {
+            if let Some(end_idx) = after_from.find([' ', '(', ';']) {
                 let table_name = after_from[..end_idx].trim().to_string();
                 if !table_name.is_empty() {
                     tables.push(table_name);
@@ -328,7 +328,6 @@ impl CommandHistory {
                         // Parse column names (simplified)
                         for col in select_clause.split(',') {
                             let col_name = col
-                                .trim()
                                 .split_whitespace()
                                 .next()
                                 .unwrap_or("")
@@ -389,14 +388,11 @@ impl CommandHistory {
         let mut order_by_columns = Vec::new();
         if let Some(order_idx) = query_upper.find(" ORDER BY ") {
             let after_order = &query[order_idx + 10..];
-            let end_idx = after_order
-                .find(|c: char| c == ';' || c == ')')
-                .unwrap_or(after_order.len());
+            let end_idx = after_order.find([';', ')']).unwrap_or(after_order.len());
             let order_clause = &after_order[..end_idx];
 
             for col in order_clause.split(',') {
                 let col_name = col
-                    .trim()
                     .split_whitespace()
                     .next()
                     .unwrap_or("")
@@ -541,7 +537,7 @@ impl CommandHistory {
                             // Move the corrupted file for investigation
                             let corrupted_path = self.history_file.with_extension("json.corrupted");
                             let _ = fs::rename(
-                                &self.history_file.with_extension("json"),
+                                self.history_file.with_extension("json"),
                                 &corrupted_path,
                             );
                             eprintln!("[History] Corrupted file moved to {:?}", corrupted_path);

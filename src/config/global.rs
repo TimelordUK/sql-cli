@@ -26,7 +26,7 @@ pub fn get_behavior_config() -> BehaviorConfig {
         .get()
         .and_then(|c| c.read().ok())
         .map(|c| c.behavior.clone())
-        .unwrap_or_else(|| BehaviorConfig::default())
+        .unwrap_or_default()
 }
 
 /// Update the global config

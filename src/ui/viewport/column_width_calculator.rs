@@ -268,7 +268,7 @@ impl ColumnWidthCalculator {
             // Store debug info
             let column_name = headers
                 .get(col_idx)
-                .map(|s| s.clone())
+                .cloned()
                 .unwrap_or_else(|| format!("col_{}", col_idx));
             self.column_width_debug.push((
                 column_name,

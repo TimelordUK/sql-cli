@@ -12,7 +12,7 @@ fn create_test_data(rows: usize) -> DataTable {
     table.add_column(DataColumn::new("status"));
 
     // Add rows with varying book values
-    let book_values = vec![
+    let book_values = [
         "Commodities Trading",
         "Equity Trading",
         "FX Trading",

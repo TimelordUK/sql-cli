@@ -89,7 +89,7 @@ impl<'a> DataProvider for CsvClientAdapter<'a> {
         // Fallback to schema if no data
         self.client
             .get_schema()
-            .and_then(|schema| schema.values().next().map(|headers| headers.clone()))
+            .and_then(|schema| schema.values().next().cloned())
             .unwrap_or_default()
     }
 

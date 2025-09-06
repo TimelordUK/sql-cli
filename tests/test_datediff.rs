@@ -104,7 +104,7 @@ fn test_datediff_with_datetime() {
         _ => panic!("Expected integer result"),
     };
     assert!(
-        hours >= 108 && hours <= 112,
+        (108..=112).contains(&hours),
         "Hours difference should be around 110, got {}",
         hours
     );

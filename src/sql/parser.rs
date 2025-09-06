@@ -37,6 +37,12 @@ pub struct SqlParser {
     pub current_state: ParseState,
 }
 
+impl Default for SqlParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SqlParser {
     pub fn new() -> Self {
         Self {
@@ -88,11 +94,12 @@ impl SqlParser {
                     if word.eq_ignore_ascii_case("where") {
                         self.tokens.push(SqlToken::Where);
                         self.current_state = ParseState::InWhere;
-                    } else if word.eq_ignore_ascii_case("order") {
-                        if i + 1 < words.len() && words[i + 1].eq_ignore_ascii_case("by") {
-                            self.tokens.push(SqlToken::OrderBy);
-                            self.current_state = ParseState::InOrderBy;
-                        }
+                    } else if word.eq_ignore_ascii_case("order")
+                        && i + 1 < words.len()
+                        && words[i + 1].eq_ignore_ascii_case("by")
+                    {
+                        self.tokens.push(SqlToken::OrderBy);
+                        self.current_state = ParseState::InOrderBy;
                     }
                 }
                 ParseState::InWhere => {
@@ -354,6 +361,12 @@ pub struct Schema {
 pub struct TableInfo {
     pub name: String,
     pub columns: Vec<String>,
+}
+
+impl Default for Schema {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Schema {

@@ -114,7 +114,6 @@ impl TuiRenderer {
                 .style(Style::default().fg(Color::Gray))
                 .block(Block::default().borders(Borders::ALL).title("Results"));
             f.render_widget(empty_msg, area);
-            return;
         }
 
         // Table rendering logic here...

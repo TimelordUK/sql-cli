@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::json;
 use sql_cli::data::csv_datasource::CsvApiClient;
 

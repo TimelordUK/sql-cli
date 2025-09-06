@@ -26,10 +26,10 @@ fn format_key(key: &KeyEvent) -> String {
     match key.code {
         KeyCode::Char(c) => result.push(c),
         KeyCode::F(n) => result.push_str(&format!("F{}", n)),
-        KeyCode::Up => result.push_str("↑"),
-        KeyCode::Down => result.push_str("↓"),
-        KeyCode::Left => result.push_str("←"),
-        KeyCode::Right => result.push_str("→"),
+        KeyCode::Up => result.push('↑'),
+        KeyCode::Down => result.push('↓'),
+        KeyCode::Left => result.push('←'),
+        KeyCode::Right => result.push('→'),
         KeyCode::PageUp => result.push_str("PgUp"),
         KeyCode::PageDown => result.push_str("PgDn"),
         KeyCode::Home => result.push_str("Home"),
@@ -39,7 +39,7 @@ fn format_key(key: &KeyEvent) -> String {
         KeyCode::Backspace => result.push_str("Bksp"),
         KeyCode::Delete => result.push_str("Del"),
         KeyCode::Esc => result.push_str("Esc"),
-        _ => result.push_str("?"),
+        _ => result.push('?'),
     }
 
     result

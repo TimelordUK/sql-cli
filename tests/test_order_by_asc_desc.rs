@@ -1,4 +1,4 @@
-use sql_cli::sql::recursive_parser::{OrderByColumn, Parser, SortDirection};
+use sql_cli::sql::recursive_parser::{Parser, SortDirection};
 
 #[test]
 fn test_order_by_single_column_asc() {
@@ -102,7 +102,7 @@ fn test_order_by_with_where_clause() {
 #[test]
 fn test_order_by_numeric_columns() {
     // Test with numeric column names like in crime statistics CSV
-    let mut parser = Parser::new("SELECT * FROM crime_stats ORDER BY 202204 DESC, 202205 ASC");
+    let parser = Parser::new("SELECT * FROM crime_stats ORDER BY 202204 DESC, 202205 ASC");
     let columns = vec![
         "Borough".to_string(),
         "202204".to_string(),

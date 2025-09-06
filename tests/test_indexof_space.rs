@@ -61,11 +61,11 @@ fn test_indexof_space_at_zero() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), false); // "derivatives" has no space
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), false); // "equity trading" has space at position 6
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), true); // " leading" has space at position 0
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // "trailing " has space at position 8
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // "FX" has no space
+    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // "derivatives" has no space
+    assert!(!evaluator.evaluate(&where_clause, 1).unwrap()); // "equity trading" has space at position 6
+    assert!(evaluator.evaluate(&where_clause, 2).unwrap()); // " leading" has space at position 0
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "trailing " has space at position 8
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // "FX" has no space
 }
 
 #[test]
@@ -78,11 +78,11 @@ fn test_indexof_space_not_found() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), true); // "derivatives" has no space
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), false); // "equity trading" has space
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // " leading" has space
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // "trailing " has space
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), true); // "FX" has no space
+    assert!(evaluator.evaluate(&where_clause, 0).unwrap()); // "derivatives" has no space
+    assert!(!evaluator.evaluate(&where_clause, 1).unwrap()); // "equity trading" has space
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // " leading" has space
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "trailing " has space
+    assert!(evaluator.evaluate(&where_clause, 4).unwrap()); // "FX" has no space
 }
 
 #[test]
@@ -95,11 +95,11 @@ fn test_indexof_space_greater_than_zero() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), false); // "derivatives" has no space (-1 > 0 = false)
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // "equity trading" has space at position 6 (6 > 0 = true)
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // " leading" has space at position 0 (0 > 0 = false)
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), true); // "trailing " has space at position 8 (8 > 0 = true)
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // "FX" has no space (-1 > 0 = false)
+    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // "derivatives" has no space (-1 > 0 = false)
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // "equity trading" has space at position 6 (6 > 0 = true)
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // " leading" has space at position 0 (0 > 0 = false)
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap()); // "trailing " has space at position 8 (8 > 0 = true)
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // "FX" has no space (-1 > 0 = false)
 }
 
 #[test]
@@ -112,11 +112,11 @@ fn test_indexof_greater_or_equal_zero() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), false); // "derivatives" has no space (-1 >= 0 = false)
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // "equity trading" has space at position 6 (6 >= 0 = true)
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), true); // " leading" has space at position 0 (0 >= 0 = true)
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), true); // "trailing " has space at position 8 (8 >= 0 = true)
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // "FX" has no space (-1 >= 0 = false)
+    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // "derivatives" has no space (-1 >= 0 = false)
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // "equity trading" has space at position 6 (6 >= 0 = true)
+    assert!(evaluator.evaluate(&where_clause, 2).unwrap()); // " leading" has space at position 0 (0 >= 0 = true)
+    assert!(evaluator.evaluate(&where_clause, 3).unwrap()); // "trailing " has space at position 8 (8 >= 0 = true)
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // "FX" has no space (-1 >= 0 = false)
 }
 
 #[test]
@@ -130,9 +130,9 @@ fn test_indexof_specific_positions() {
     let statement = parser.parse().expect("Failed to parse");
     let where_clause = statement.where_clause.expect("Expected WHERE clause");
 
-    assert_eq!(evaluator.evaluate(&where_clause, 0).unwrap(), false); // "derivatives"
-    assert_eq!(evaluator.evaluate(&where_clause, 1).unwrap(), true); // "equity trading" - space at 6
-    assert_eq!(evaluator.evaluate(&where_clause, 2).unwrap(), false); // " leading" - space at 0
-    assert_eq!(evaluator.evaluate(&where_clause, 3).unwrap(), false); // "trailing " - space at 8
-    assert_eq!(evaluator.evaluate(&where_clause, 4).unwrap(), false); // "FX"
+    assert!(!evaluator.evaluate(&where_clause, 0).unwrap()); // "derivatives"
+    assert!(evaluator.evaluate(&where_clause, 1).unwrap()); // "equity trading" - space at 6
+    assert!(!evaluator.evaluate(&where_clause, 2).unwrap()); // " leading" - space at 0
+    assert!(!evaluator.evaluate(&where_clause, 3).unwrap()); // "trailing " - space at 8
+    assert!(!evaluator.evaluate(&where_clause, 4).unwrap()); // "FX"
 }

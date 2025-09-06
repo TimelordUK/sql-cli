@@ -81,6 +81,12 @@ pub struct HelpWidget {
     // ServiceContainer removed - debug service no longer tracked here
 }
 
+impl Default for HelpWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HelpWidget {
     pub fn new() -> Self {
         Self {
@@ -365,7 +371,7 @@ impl HelpWidget {
 
     /// Render section tabs
     fn render_section_tabs(&self, f: &mut Frame, area: Rect) {
-        let sections = vec![
+        let sections = [
             ("1:General", HelpSection::General),
             ("2:Commands", HelpSection::Commands),
             ("3:Navigation", HelpSection::Navigation),
@@ -530,7 +536,9 @@ Buffer Management:
     }
 
     fn get_debug_help(&self) -> String {
-        let mut help = String::from(
+        // Debug status display removed - ServiceContainer no longer used
+
+        String::from(
             r#"DEBUG FEATURES
 
 Debug Keys:
@@ -554,11 +562,7 @@ Debug Information Available:
   - Error logs
   
 "#,
-        );
-
-        // Debug status display removed - ServiceContainer no longer used
-
-        help
+        )
     }
 
     /// Render status bar

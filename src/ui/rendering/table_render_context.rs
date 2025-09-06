@@ -156,6 +156,12 @@ pub struct TableRenderContextBuilder {
     context: TableRenderContext,
 }
 
+impl Default for TableRenderContextBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TableRenderContextBuilder {
     pub fn new() -> Self {
         Self {

@@ -57,11 +57,11 @@ impl ServiceContainer {
 
         // Add state container dump
         dump.push_str(&self.state_container.debug_dump());
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Add debug service log
         dump.push_str(&self.debug_service.generate_dump());
-        dump.push_str("\n");
+        dump.push('\n');
 
         // Add debug summary
         dump.push_str(&self.debug_service.generate_summary());

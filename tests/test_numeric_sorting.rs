@@ -173,7 +173,7 @@ Item8,999999,999999999,999999.99"
         }
 
         // Get first row to check actual value types
-        if let Some(row) = datatable.rows.get(0) {
+        if let Some(row) = datatable.rows.first() {
             println!("First row value types:");
             for (i, val) in row.values.iter().enumerate() {
                 let type_name = match val {

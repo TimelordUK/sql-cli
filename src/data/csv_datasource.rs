@@ -346,7 +346,7 @@ impl CsvDataSource {
                 for header in &self.headers {
                     let value = obj
                         .get(header)
-                        .map(|v| json_value_to_data_value(v))
+                        .map(json_value_to_data_value)
                         .unwrap_or(DataValue::Null);
                     values.push(value);
                 }
@@ -413,6 +413,12 @@ fn json_value_to_data_value(json: &Value) -> DataValue {
 pub struct CsvApiClient {
     datasource: Option<CsvDataSource>,
     case_insensitive: bool,
+}
+
+impl Default for CsvApiClient {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CsvApiClient {

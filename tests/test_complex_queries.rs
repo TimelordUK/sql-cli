@@ -209,7 +209,7 @@ fn test_mixed_order_by_directions() {
 #[test]
 fn test_complex_query_with_many_columns() {
     // Test that we can handle many columns in SELECT
-    let columns = vec![
+    let columns = [
         "accruedInterest",
         "allocationStatus",
         "book",

@@ -452,7 +452,7 @@ impl DataTable {
                         for column in &table.columns {
                             let value = row_obj
                                 .get(&column.name)
-                                .map(|v| json_value_to_data_value(v))
+                                .map(json_value_to_data_value)
                                 .unwrap_or(DataValue::Null);
                             values.push(value);
                         }
@@ -581,25 +581,25 @@ impl DataTable {
 
         if sample_count > 0 {
             // Column headers
-            output.push_str("┌");
+            output.push('┌');
             for (i, col) in self.columns.iter().enumerate() {
                 if i > 0 {
-                    output.push_str("┬");
+                    output.push('┬');
                 }
                 output.push_str(&"─".repeat(20));
             }
             output.push_str("┐\n");
 
-            output.push_str("│");
+            output.push('│');
             for col in &self.columns {
                 output.push_str(&format!(" {:^18} │", Self::truncate_string(&col.name, 18)));
             }
-            output.push_str("\n");
+            output.push('\n');
 
-            output.push_str("├");
+            output.push('├');
             for (i, _) in self.columns.iter().enumerate() {
                 if i > 0 {
-                    output.push_str("┼");
+                    output.push('┼');
                 }
                 output.push_str(&"─".repeat(20));
             }
@@ -608,20 +608,20 @@ impl DataTable {
             // Data rows
             for row_idx in 0..sample_count {
                 if let Some(row) = self.rows.get(row_idx) {
-                    output.push_str("│");
+                    output.push('│');
                     for value in &row.values {
                         let value_str = value.to_string();
                         output
                             .push_str(&format!(" {:18} │", Self::truncate_string(&value_str, 18)));
                     }
-                    output.push_str("\n");
+                    output.push('\n');
                 }
             }
 
-            output.push_str("└");
+            output.push('└');
             for (i, _) in self.columns.iter().enumerate() {
                 if i > 0 {
-                    output.push_str("┴");
+                    output.push('┴');
                 }
                 output.push_str(&"─".repeat(20));
             }

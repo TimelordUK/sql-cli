@@ -61,7 +61,7 @@ mod tests {
 
         // Create DataView and group by trader
         let view = DataView::new(Arc::new(table));
-        let groups = view.group_by(&vec!["trader".to_string()]).unwrap();
+        let groups = view.group_by(&["trader".to_string()]).unwrap();
 
         // Should have 2 groups (Alice and Bob)
         assert_eq!(groups.len(), 2);
@@ -121,7 +121,7 @@ mod tests {
         // Create DataView and group by trader AND book
         let view = DataView::new(Arc::new(table));
         let groups = view
-            .group_by(&vec!["trader".to_string(), "book".to_string()])
+            .group_by(&["trader".to_string(), "book".to_string()])
             .unwrap();
 
         // Should have 3 unique combinations

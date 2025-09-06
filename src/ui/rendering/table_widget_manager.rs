@@ -32,6 +32,12 @@ pub struct TableWidgetManager {
     scroll_offset: (usize, usize),
 }
 
+impl Default for TableWidgetManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TableWidgetManager {
     /// Create a new table widget manager
     pub fn new() -> Self {

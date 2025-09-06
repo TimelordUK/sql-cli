@@ -40,6 +40,12 @@ pub struct StateDispatcher {
     max_history: usize,
 }
 
+impl Default for StateDispatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StateDispatcher {
     pub fn new() -> Self {
         Self {
@@ -143,6 +149,12 @@ impl StateDispatcher {
 /// Example subscriber for VimSearchManager
 pub struct VimSearchSubscriber {
     active: bool,
+}
+
+impl Default for VimSearchSubscriber {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VimSearchSubscriber {

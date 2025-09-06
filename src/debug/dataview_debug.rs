@@ -32,7 +32,7 @@ impl DebugTrace for DataViewDebugProvider {
 
         // Column mapping information
         builder.add_line("");
-        builder.add_line(&self.dataview.get_column_debug_info());
+        builder.add_line(self.dataview.get_column_debug_info());
 
         // Show visible columns in order
         let visible_columns = self.dataview.column_names();

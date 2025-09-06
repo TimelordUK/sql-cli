@@ -134,6 +134,12 @@ pub struct SearchModesWidget {
     last_applied_pattern: Option<String>,
 }
 
+impl Default for SearchModesWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchModesWidget {
     pub fn new() -> Self {
         Self {
@@ -327,7 +333,7 @@ impl DebugInfoProvider for SearchModesWidget {
         let mut info = String::from("=== SEARCH MODES WIDGET ===\n");
 
         // Add debouncer state
-        info.push_str(&format!("Debouncer: "));
+        info.push_str("Debouncer: ");
         if self.debouncer.is_pending() {
             if let Some(remaining) = self.debouncer.time_remaining() {
                 info.push_str(&format!(
@@ -340,15 +346,15 @@ impl DebugInfoProvider for SearchModesWidget {
         } else {
             info.push_str("IDLE\n");
         }
-        info.push_str("\n");
+        info.push('\n');
 
         if let Some(state) = &self.state {
-            info.push_str(&format!("State: ACTIVE\n"));
+            info.push_str("State: ACTIVE\n");
             info.push_str(&format!("Mode: {:?}\n", state.mode));
             info.push_str(&format!("Current Pattern: '{}'\n", state.get_pattern()));
             info.push_str(&format!("Pattern Length: {}\n", state.input.value().len()));
             info.push_str(&format!("Cursor Position: {}\n", state.input.cursor()));
-            info.push_str("\n");
+            info.push('\n');
 
             info.push_str("Saved SQL State:\n");
             info.push_str(&format!(
@@ -400,12 +406,12 @@ impl DebugInfoProvider for SearchModesWidget {
 
             if state.mode == SearchMode::FuzzyFilter {
                 info.push_str("\nFuzzy Filter State:\n");
-                info.push_str(&format!("  Matcher: SkimMatcherV2 (ready)\n"));
+                info.push_str("  Matcher: SkimMatcherV2 (ready)\n");
             }
 
             if state.regex.is_some() {
                 info.push_str("\nRegex State:\n");
-                info.push_str(&format!("  Compiled: Yes\n"));
+                info.push_str("  Compiled: Yes\n");
             }
         } else {
             info.push_str("State: INACTIVE\n");

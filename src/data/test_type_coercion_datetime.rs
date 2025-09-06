@@ -50,7 +50,7 @@ mod tests {
         let analyzer = DataAnalyzer::new();
 
         // Test various ID formats that should NOT be detected as dates
-        let id_values = vec![
+        let id_values = [
             "BQ-81198596",
             "ID-12345678",
             "AB-99999999",
@@ -59,7 +59,7 @@ mod tests {
         ];
 
         let column_type =
-            analyzer.detect_column_type(&id_values.iter().map(|s| *s).collect::<Vec<_>>());
+            analyzer.detect_column_type(&id_values.iter().copied().collect::<Vec<_>>());
 
         // The problem: These are being detected as Date when they should be String
         println!("Column type detected for ID values: {:?}", column_type);
@@ -79,7 +79,7 @@ mod tests {
         let analyzer = DataAnalyzer::new();
 
         // Real dates should still be detected correctly
-        let date_values = vec![
+        let date_values = [
             "2024-01-15",
             "2024-02-20",
             "2024-03-25",
@@ -88,7 +88,7 @@ mod tests {
         ];
 
         let column_type =
-            analyzer.detect_column_type(&date_values.iter().map(|s| *s).collect::<Vec<_>>());
+            analyzer.detect_column_type(&date_values.iter().copied().collect::<Vec<_>>());
         assert_eq!(
             column_type,
             ColumnType::Date,
