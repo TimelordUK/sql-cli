@@ -48,6 +48,51 @@ impl SqlFunction for GravitationalConstantFunction {
     }
 }
 
+/// Coulomb's constant (k_e = 1/(4πε₀))
+pub struct CoulombConstantFunction;
+
+impl SqlFunction for CoulombConstantFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "COULOMB",
+            category: FunctionCategory::Constant,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns Coulomb's constant k_e = 8.9875517873681764 × 10^9 N⋅m²⋅C⁻²",
+            returns: "FLOAT",
+            examples: vec![
+                "SELECT COULOMB()",
+                "SELECT COULOMB() * q1 * q2 / (r * r) as electric_force",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(8.9875517873681764e9))
+    }
+}
+
+/// Bohr radius
+pub struct BohrRadiusFunction;
+
+impl SqlFunction for BohrRadiusFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "BOHR",
+            category: FunctionCategory::Constant,
+            arg_count: ArgCount::Fixed(0),
+            description: "Returns the Bohr radius a₀ = 5.29177210903 × 10^-11 m",
+            returns: "FLOAT",
+            examples: vec!["SELECT BOHR()", "SELECT BOHR() * n * n as orbital_radius"],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+        Ok(DataValue::Float(5.29177210903e-11))
+    }
+}
+
 /// Planck constant
 pub struct PlanckFunction;
 
@@ -385,6 +430,8 @@ pub fn register_physics_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(GasConstantFunction));
 
     // Electromagnetic constants
+    registry.register(Box::new(CoulombConstantFunction));
+    registry.register(Box::new(BohrRadiusFunction));
     registry.register(Box::new(PermittivityFunction));
     registry.register(Box::new(PermeabilityFunction));
     registry.register(Box::new(ElementaryChargeFunction));
