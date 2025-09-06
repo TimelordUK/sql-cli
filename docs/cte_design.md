@@ -1,15 +1,44 @@
-# CTE (Common Table Expression) Design for SQL-CLI
+# CTE (Common Table Expression) & Subquery Design for SQL-CLI
 
 ## Overview
-Add support for WITH clauses to enable filtering on window function results and create temporary named result sets.
+Add support for WITH clauses and FROM subqueries to enable filtering on computed expressions (like window functions) and create temporary named result sets.
 
-## Key Insight
-A CTE is essentially a named DataView that gets evaluated first, then used as the source for the main query.
+## Key Insights
+1. A CTE is essentially a named DataView that gets evaluated first, then used as the source for the main query.
+2. **Subqueries in FROM and CTEs are fundamentally the same concept** - both create temporary named result sets (derived tables).
+3. We can implement both features with unified logic, treating them as "derived tables".
+
+## Unified Derived Tables Approach
+
+### These are equivalent:
+```sql
+-- Subquery in FROM:
+SELECT * FROM (
+    SELECT n, IS_PRIME(n) as is_prime FROM numbers
+) AS t WHERE is_prime = true;
+
+-- CTE:
+WITH t AS (
+    SELECT n, IS_PRIME(n) as is_prime FROM numbers
+)
+SELECT * FROM t WHERE is_prime = true;
+```
+
+Both create a temporary named result set "t" that can be referenced in the main query.
 
 ## Proposed Implementation
 
 ### 1. Parser Changes (recursive_parser.rs)
 ```rust
+// Unified representation for both CTEs and subqueries
+enum TableSource {
+    File(String),                    // Regular table from CSV/JSON
+    DerivedTable {                   // Both CTE and subquery
+        name: String,                // "t" in both examples
+        query: Box<SqlExpression>,   // The SELECT that defines it
+    }
+}
+
 // Add to SqlExpression enum
 SqlExpression::WithClause {
     ctes: Vec<CTE>,
@@ -22,30 +51,85 @@ struct CTE {
 }
 ```
 
-### 2. Query Engine Flow
+### 2. Unified Query Context
 ```rust
-// In query_engine.rs
-fn execute_query(expr: SqlExpression) -> Result<DataView> {
+struct QueryContext {
+    // Map of available "tables" - could be CTEs or subqueries
+    derived_tables: HashMap<String, Arc<DataView>>,
+    physical_tables: HashMap<String, Arc<DataTable>>,
+}
+
+impl QueryContext {
+    fn resolve_table(&self, name: &str) -> Result<Arc<DataView>> {
+        // First check derived tables (CTEs/subqueries)
+        if let Some(view) = self.derived_tables.get(name) {
+            return Ok(Arc::clone(view));
+        }
+        
+        // Then check physical tables
+        if let Some(table) = self.physical_tables.get(name) {
+            return Ok(Arc::new(DataView::new(Arc::clone(table))));
+        }
+        
+        Err(anyhow!("Table '{}' not found", name))
+    }
+}
+```
+
+### 3. Unified Execution
+```rust
+fn execute_query_with_context(
+    expr: SqlExpression,
+    context: &mut QueryContext,
+) -> Result<DataView> {
     match expr {
+        // Handle subquery in FROM
+        SqlExpression::Select { from: TableSource::DerivedTable { name, query }, .. } => {
+            // Execute the subquery first
+            let result = execute_query_with_context(*query, context)?;
+            // Store it in context
+            context.derived_tables.insert(name, Arc::new(result));
+            // Continue with main query...
+        }
+        
+        // Handle CTEs
         SqlExpression::WithClause { ctes, query } => {
-            // Step 1: Evaluate each CTE into a DataView
-            let mut cte_views: HashMap<String, Arc<DataView>> = HashMap::new();
-            
+            // Execute each CTE and add to context
             for cte in ctes {
-                let view = execute_query(cte.query)?;
-                cte_views.insert(cte.name, Arc::new(view));
+                let result = execute_query_with_context(cte.query, context)?;
+                context.derived_tables.insert(cte.name, Arc::new(result));
             }
-            
-            // Step 2: Execute main query with CTE context
-            // Modify table resolution to check cte_views first
-            execute_with_ctes(query, cte_views)
+            // Execute main query with CTEs available
+            execute_query_with_context(*query, context)
         }
         // ... existing cases
     }
 }
 ```
 
-### 3. Example Usage
+## Use Cases
+
+### 1. Filtering on Computed Expressions (Main Goal)
+```sql
+-- Problem: Can't use alias in WHERE
+SELECT n, IS_PRIME(n) as is_prime 
+FROM numbers 
+WHERE is_prime = true;  -- ERROR: Column 'is_prime' not found
+
+-- Solution with CTE:
+WITH prime_check AS (
+    SELECT n, IS_PRIME(n) as is_prime FROM numbers
+)
+SELECT * FROM prime_check WHERE is_prime = true;
+
+-- Solution with subquery:
+SELECT * FROM (
+    SELECT n, IS_PRIME(n) as is_prime FROM numbers
+) AS prime_check 
+WHERE is_prime = true;
+```
+
+### 2. Window Function Filtering
 ```sql
 -- Get top performer from each region
 WITH ranked AS (
@@ -57,17 +141,25 @@ WITH ranked AS (
     FROM test
 )
 SELECT * FROM ranked WHERE rank = 1;
+```
 
--- Multiple CTEs
+### 3. Complex Multi-Level Queries
+```sql
+-- Multiple levels of derived tables
 WITH 
-    top_sales AS (
-        SELECT * FROM test WHERE sales_amount > 20000
+    primes AS (
+        SELECT n FROM numbers WHERE IS_PRIME(n) = true
     ),
-    ranked AS (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY sales_amount DESC) as rank
-        FROM top_sales
+    prime_pairs AS (
+        SELECT p1.n as first, p2.n as second 
+        FROM primes p1, primes p2 
+        WHERE p2.n = p1.n + 2  -- Twin primes
     )
-SELECT * FROM ranked WHERE rank <= 3;
+SELECT * FROM (
+    SELECT first, second, first * second as product 
+    FROM prime_pairs
+) AS products 
+WHERE product < 1000;
 ```
 
 ## Implementation Complexity: MEDIUM
@@ -141,11 +233,13 @@ fn parse_with_clause(&mut self) -> Result<SqlExpression> {
 - Test multiple CTEs
 - Test nested references
 
-## Benefits:
-1. **Enables window function filtering**: `WHERE rank = 1` becomes possible
-2. **Cleaner complex queries**: Break down logic into named steps
-3. **Reusable subqueries**: Reference same CTE multiple times
-4. **No performance penalty**: CTEs evaluated once, cached as DataView
+## Key Advantages of Unified Approach
+
+1. **Single implementation** - Both CTEs and subqueries share execution logic
+2. **Parser simplification** - Can transform subqueries to CTEs internally
+3. **Enables alias filtering** - Solve the "can't use alias in WHERE" problem
+4. **Clean architecture** - One concept: "derived tables"
+5. **No performance penalty** - Results cached as DataView, evaluated once
 
 ## Example Implementation Test:
 ```python
@@ -173,7 +267,13 @@ def test_window_function_filtering():
         assert row['rank'] == '1'
 ```
 
-## Conclusion:
-Adding CTE support is very feasible given our architecture. The key insight is that CTEs are just named DataViews that get evaluated before the main query. Since we don't need JOIN support, this becomes a relatively straightforward extension of our existing query engine.
+## Conclusion
 
-Estimated total implementation time: **6-8 hours**
+The unified approach treating CTEs and FROM subqueries as "derived tables" is elegant and powerful:
+- **Subqueries in FROM** are just inline CTEs
+- **CTEs** are just named subqueries defined at the top
+- Both create temporary DataViews that can be referenced by name
+
+This solves the immediate problem of not being able to filter on aliased expressions (like `IS_PRIME(n) as is_prime`) while providing a foundation for more complex query composition.
+
+Estimated total implementation time: **8-10 hours** for full CTE + subquery support
