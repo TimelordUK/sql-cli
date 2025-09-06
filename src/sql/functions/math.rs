@@ -612,6 +612,87 @@ impl SqlFunction for RadiansFunction {
     }
 }
 
+/// FACTORIAL function - Calculate factorial of a number
+pub struct FactorialFunction;
+
+impl FactorialFunction {
+    /// Precomputed factorials for 0! through 20!
+    /// Beyond 20!, the values exceed u64 max
+    const FACTORIAL_TABLE: [u64; 21] = [
+        1,                         // 0!
+        1,                         // 1!
+        2,                         // 2!
+        6,                         // 3!
+        24,                        // 4!
+        120,                       // 5!
+        720,                       // 6!
+        5_040,                     // 7!
+        40_320,                    // 8!
+        362_880,                   // 9!
+        3_628_800,                 // 10!
+        39_916_800,                // 11!
+        479_001_600,               // 12!
+        6_227_020_800,             // 13!
+        87_178_291_200,            // 14!
+        1_307_674_368_000,         // 15!
+        20_922_789_888_000,        // 16!
+        355_687_428_096_000,       // 17!
+        6_402_373_705_728_000,     // 18!
+        121_645_100_408_832_000,   // 19!
+        2_432_902_008_176_640_000, // 20!
+    ];
+
+    fn factorial(n: u64) -> Result<u64> {
+        if n <= 20 {
+            Ok(Self::FACTORIAL_TABLE[n as usize])
+        } else {
+            Err(anyhow!("FACTORIAL: argument {} too large (max is 20)", n))
+        }
+    }
+}
+
+impl SqlFunction for FactorialFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "FACTORIAL",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the factorial of a non-negative integer (n!)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT FACTORIAL(5)",  // Returns 120
+                "SELECT FACTORIAL(10)", // Returns 3628800
+                "SELECT FACTORIAL(0)",  // Returns 1
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let n = match &args[0] {
+            DataValue::Integer(i) if *i >= 0 && *i <= 20 => *i as u64,
+            DataValue::Integer(i) if *i < 0 => {
+                return Err(anyhow!("FACTORIAL requires a non-negative integer"))
+            }
+            DataValue::Integer(i) => {
+                return Err(anyhow!("FACTORIAL: argument {} too large (max is 20)", i))
+            }
+            DataValue::Float(f) if f.is_finite() && *f >= 0.0 && f.floor() == *f => {
+                let n = *f as i64;
+                if n > 20 {
+                    return Err(anyhow!("FACTORIAL: argument {} too large (max is 20)", n));
+                }
+                n as u64
+            }
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("FACTORIAL requires a non-negative integer")),
+        };
+
+        Ok(DataValue::Integer(Self::factorial(n)? as i64))
+    }
+}
+
 /// Register all math functions
 pub fn register_math_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(RoundFunction));
@@ -630,4 +711,5 @@ pub fn register_math_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(PowFunction)); // Add POW alias
     registry.register(Box::new(DegreesFunction));
     registry.register(Box::new(RadiansFunction));
+    registry.register(Box::new(FactorialFunction));
 }
