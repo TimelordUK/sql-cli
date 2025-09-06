@@ -6,7 +6,7 @@ use sql_cli::recursive_parser::SqlExpression;
 fn test_registry_constant_functions() {
     // Create a simple test table
     let table = DataTable::new("test");
-    let evaluator = ArithmeticEvaluator::new(&table);
+    let mut evaluator = ArithmeticEvaluator::new(&table);
 
     // Test PI function
     let pi_expr = SqlExpression::FunctionCall {
@@ -45,7 +45,7 @@ fn test_registry_constant_functions() {
 #[test]
 fn test_registry_astronomical_functions() {
     let table = DataTable::new("test");
-    let evaluator = ArithmeticEvaluator::new(&table);
+    let mut evaluator = ArithmeticEvaluator::new(&table);
 
     // Test MASS_EARTH function
     let earth_expr = SqlExpression::FunctionCall {
@@ -95,7 +95,7 @@ fn test_registry_astronomical_functions() {
 #[test]
 fn test_registry_chemistry_functions() {
     let table = DataTable::new("test");
-    let evaluator = ArithmeticEvaluator::new(&table);
+    let mut evaluator = ArithmeticEvaluator::new(&table);
 
     // Test AVOGADRO function
     let avogadro_expr = SqlExpression::FunctionCall {
@@ -134,7 +134,7 @@ fn test_registry_chemistry_functions() {
 #[test]
 fn test_registry_function_errors() {
     let table = DataTable::new("test");
-    let evaluator = ArithmeticEvaluator::new(&table);
+    let mut evaluator = ArithmeticEvaluator::new(&table);
 
     // Test function with wrong number of arguments
     let pi_with_args = SqlExpression::FunctionCall {

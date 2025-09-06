@@ -396,7 +396,7 @@ impl QueryEngine {
         }
 
         // Calculate values for each row
-        let evaluator =
+        let mut evaluator =
             ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone());
 
         for &row_idx in visible_rows {
@@ -465,7 +465,7 @@ impl QueryEngine {
 
         // Create evaluator with visible rows from the view (for filtered aggregates)
         let visible_rows = view.visible_row_indices().to_vec();
-        let evaluator =
+        let mut evaluator =
             ArithmeticEvaluator::with_date_notation(source_table, self.date_notation.clone())
                 .with_visible_rows(visible_rows);
 
@@ -648,7 +648,7 @@ impl QueryEngine {
             for (expr, col_name) in &aggregate_columns {
                 // Set the visible rows for this group so aggregates work correctly
                 let group_rows = group_view.get_visible_rows();
-                let evaluator = ArithmeticEvaluator::new(group_view.source())
+                let mut evaluator = ArithmeticEvaluator::new(group_view.source())
                     .with_visible_rows(group_rows.clone());
 
                 // For aggregates, we need to evaluate across all rows in the group
@@ -681,7 +681,7 @@ impl QueryEngine {
                     .map_err(|e| anyhow!("Failed to create temp table for HAVING: {}", e))?;
 
                 // Evaluate HAVING expression on the aggregate values
-                let evaluator = ArithmeticEvaluator::new(&temp_table);
+                let mut evaluator = ArithmeticEvaluator::new(&temp_table);
                 let having_result = evaluator
                     .evaluate(having_expr, 0)
                     .unwrap_or(DataValue::Boolean(false));

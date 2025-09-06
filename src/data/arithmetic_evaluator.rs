@@ -1,8 +1,11 @@
+use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::sql::aggregates::AggregateRegistry;
 use crate::sql::functions::FunctionRegistry;
-use crate::sql::recursive_parser::SqlExpression;
+use crate::sql::recursive_parser::{SqlExpression, WindowSpec};
+use crate::sql::window_context::WindowContext;
 use anyhow::{anyhow, Result};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::debug;
 
@@ -14,6 +17,7 @@ pub struct ArithmeticEvaluator<'a> {
     function_registry: Arc<FunctionRegistry>,
     aggregate_registry: Arc<AggregateRegistry>,
     visible_rows: Option<Vec<usize>>, // For aggregate functions on filtered views
+    window_contexts: HashMap<String, Arc<WindowContext>>, // Cache window contexts by spec
 }
 
 impl<'a> ArithmeticEvaluator<'a> {
@@ -25,6 +29,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             function_registry: Arc::new(FunctionRegistry::new()),
             aggregate_registry: Arc::new(AggregateRegistry::new()),
             visible_rows: None,
+            window_contexts: HashMap::new(),
         }
     }
 
@@ -36,6 +41,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             function_registry: Arc::new(FunctionRegistry::new()),
             aggregate_registry: Arc::new(AggregateRegistry::new()),
             visible_rows: None,
+            window_contexts: HashMap::new(),
         }
     }
 
@@ -58,6 +64,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             function_registry,
             aggregate_registry: Arc::new(AggregateRegistry::new()),
             visible_rows: None,
+            window_contexts: HashMap::new(),
         }
     }
 
@@ -92,7 +99,7 @@ impl<'a> ArithmeticEvaluator<'a> {
     }
 
     /// Evaluate an SQL expression to produce a `DataValue`
-    pub fn evaluate(&self, expr: &SqlExpression, row_index: usize) -> Result<DataValue> {
+    pub fn evaluate(&mut self, expr: &SqlExpression, row_index: usize) -> Result<DataValue> {
         debug!(
             "ArithmeticEvaluator: evaluating {:?} for row {}",
             expr, row_index
@@ -109,6 +116,11 @@ impl<'a> ArithmeticEvaluator<'a> {
             SqlExpression::FunctionCall { name, args } => {
                 self.evaluate_function(name, args, row_index)
             }
+            SqlExpression::WindowFunction {
+                name,
+                args,
+                window_spec,
+            } => self.evaluate_window_function(name, args, window_spec, row_index),
             SqlExpression::MethodCall {
                 object,
                 method,
@@ -177,7 +189,7 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Evaluate a binary operation (arithmetic)
     fn evaluate_binary_op(
-        &self,
+        &mut self,
         left: &SqlExpression,
         op: &str,
         right: &SqlExpression,
@@ -211,6 +223,11 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Add two `DataValues` with type coercion
     fn add_values(&self, left: &DataValue, right: &DataValue) -> Result<DataValue> {
+        // NULL handling - any operation with NULL returns NULL
+        if matches!(left, DataValue::Null) || matches!(right, DataValue::Null) {
+            return Ok(DataValue::Null);
+        }
+
         match (left, right) {
             (DataValue::Integer(a), DataValue::Integer(b)) => Ok(DataValue::Integer(a + b)),
             (DataValue::Integer(a), DataValue::Float(b)) => Ok(DataValue::Float(*a as f64 + b)),
@@ -222,6 +239,11 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Subtract two `DataValues` with type coercion
     fn subtract_values(&self, left: &DataValue, right: &DataValue) -> Result<DataValue> {
+        // NULL handling - any operation with NULL returns NULL
+        if matches!(left, DataValue::Null) || matches!(right, DataValue::Null) {
+            return Ok(DataValue::Null);
+        }
+
         match (left, right) {
             (DataValue::Integer(a), DataValue::Integer(b)) => Ok(DataValue::Integer(a - b)),
             (DataValue::Integer(a), DataValue::Float(b)) => Ok(DataValue::Float(*a as f64 - b)),
@@ -233,6 +255,11 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Multiply two `DataValues` with type coercion
     fn multiply_values(&self, left: &DataValue, right: &DataValue) -> Result<DataValue> {
+        // NULL handling - any operation with NULL returns NULL
+        if matches!(left, DataValue::Null) || matches!(right, DataValue::Null) {
+            return Ok(DataValue::Null);
+        }
+
         match (left, right) {
             (DataValue::Integer(a), DataValue::Integer(b)) => Ok(DataValue::Integer(a * b)),
             (DataValue::Integer(a), DataValue::Float(b)) => Ok(DataValue::Float(*a as f64 * b)),
@@ -244,6 +271,11 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Divide two `DataValues` with type coercion
     fn divide_values(&self, left: &DataValue, right: &DataValue) -> Result<DataValue> {
+        // NULL handling - any operation with NULL returns NULL
+        if matches!(left, DataValue::Null) || matches!(right, DataValue::Null) {
+            return Ok(DataValue::Null);
+        }
+
         // Check for division by zero first
         let is_zero = match right {
             DataValue::Integer(0) => true,
@@ -377,7 +409,7 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Evaluate a function call
     fn evaluate_function(
-        &self,
+        &mut self,
         name: &str,
         args: &[SqlExpression],
         row_index: usize,
@@ -413,29 +445,42 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
 
         // Check aggregate registry
-        if let Some(agg_func) = self.aggregate_registry.get(&name_upper) {
-            // For aggregate functions, we need to evaluate over all rows (or visible rows)
-            let mut state = agg_func.init();
-
-            // Determine which rows to process
+        if self.aggregate_registry.get(&name_upper).is_some() {
+            // Determine which rows to process first
             let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
                 visible.clone()
             } else {
                 (0..self.table.rows.len()).collect()
             };
 
-            // If no arguments (like COUNT(*)), process all rows
-            if args.is_empty()
-                || (args.len() == 1 && matches!(&args[0], SqlExpression::Column(c) if c == "*"))
+            // Evaluate arguments first if needed (to avoid borrow issues)
+            let values = if !args.is_empty()
+                && !(args.len() == 1 && matches!(&args[0], SqlExpression::Column(c) if c == "*"))
             {
-                for _ in &rows_to_process {
-                    agg_func.accumulate(&mut state, &DataValue::Integer(1))?;
-                }
-            } else {
                 // Evaluate the argument expression for each row
+                let mut vals = Vec::new();
                 for &row_idx in &rows_to_process {
                     let value = self.evaluate(&args[0], row_idx)?;
-                    agg_func.accumulate(&mut state, &value)?;
+                    vals.push(value);
+                }
+                Some(vals)
+            } else {
+                None
+            };
+
+            // Now get the aggregate function and process
+            let agg_func = self.aggregate_registry.get(&name_upper).unwrap();
+            let mut state = agg_func.init();
+
+            if let Some(values) = values {
+                // Use evaluated values
+                for value in &values {
+                    agg_func.accumulate(&mut state, value)?;
+                }
+            } else {
+                // COUNT(*) case
+                for _ in &rows_to_process {
+                    agg_func.accumulate(&mut state, &DataValue::Integer(1))?;
                 }
             }
 
@@ -443,14 +488,15 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
 
         // First check if this function exists in the registry
-        if let Some(func) = self.function_registry.get(name) {
-            // Evaluate all arguments first
+        if self.function_registry.get(name).is_some() {
+            // Evaluate all arguments first to avoid borrow issues
             let mut evaluated_args = Vec::new();
             for arg in args {
                 evaluated_args.push(self.evaluate(arg, row_index)?);
             }
 
-            // Call the function from the registry
+            // Get the function and call it
+            let func = self.function_registry.get(name).unwrap();
             return func.evaluate(&evaluated_args);
         }
 
@@ -504,9 +550,145 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
     }
 
+    /// Get or create a WindowContext for the given specification
+    fn get_or_create_window_context(&mut self, spec: &WindowSpec) -> Result<Arc<WindowContext>> {
+        // Create a key for caching based on the spec
+        let key = format!("{:?}", spec);
+
+        if let Some(context) = self.window_contexts.get(&key) {
+            return Ok(Arc::clone(context));
+        }
+
+        // Create a DataView from the table (with visible rows if filtered)
+        let data_view = if let Some(ref visible_rows) = self.visible_rows {
+            // Create a filtered view
+            let mut view = DataView::new(Arc::new(self.table.clone()));
+            // Apply filtering based on visible rows
+            // Note: This is a simplified approach - in production we'd need proper filtering
+            view
+        } else {
+            DataView::new(Arc::new(self.table.clone()))
+        };
+
+        // Create the WindowContext
+        let context = WindowContext::new(
+            Arc::new(data_view),
+            spec.partition_by.clone(),
+            spec.order_by.clone(),
+        )?;
+
+        let context = Arc::new(context);
+        self.window_contexts.insert(key, Arc::clone(&context));
+        Ok(context)
+    }
+
+    /// Evaluate a window function
+    fn evaluate_window_function(
+        &mut self,
+        name: &str,
+        args: &[SqlExpression],
+        spec: &WindowSpec,
+        row_index: usize,
+    ) -> Result<DataValue> {
+        let context = self.get_or_create_window_context(spec)?;
+        let name_upper = name.to_uppercase();
+
+        match name_upper.as_str() {
+            "LAG" => {
+                // LAG(column, offset, default)
+                if args.is_empty() {
+                    return Err(anyhow!("LAG requires at least 1 argument"));
+                }
+
+                // Get column name
+                let column = match &args[0] {
+                    SqlExpression::Column(col) => col.clone(),
+                    _ => return Err(anyhow!("LAG first argument must be a column")),
+                };
+
+                // Get offset (default 1)
+                let offset = if args.len() > 1 {
+                    match self.evaluate(&args[1], row_index)? {
+                        DataValue::Integer(i) => i as i32,
+                        _ => return Err(anyhow!("LAG offset must be an integer")),
+                    }
+                } else {
+                    1
+                };
+
+                // Get value at offset
+                Ok(context
+                    .get_offset_value(row_index, -offset, &column)
+                    .unwrap_or(DataValue::Null))
+            }
+            "LEAD" => {
+                // LEAD(column, offset, default)
+                if args.is_empty() {
+                    return Err(anyhow!("LEAD requires at least 1 argument"));
+                }
+
+                // Get column name
+                let column = match &args[0] {
+                    SqlExpression::Column(col) => col.clone(),
+                    _ => return Err(anyhow!("LEAD first argument must be a column")),
+                };
+
+                // Get offset (default 1)
+                let offset = if args.len() > 1 {
+                    match self.evaluate(&args[1], row_index)? {
+                        DataValue::Integer(i) => i as i32,
+                        _ => return Err(anyhow!("LEAD offset must be an integer")),
+                    }
+                } else {
+                    1
+                };
+
+                // Get value at offset
+                Ok(context
+                    .get_offset_value(row_index, offset, &column)
+                    .unwrap_or(DataValue::Null))
+            }
+            "ROW_NUMBER" => {
+                // ROW_NUMBER() - no arguments
+                Ok(DataValue::Integer(context.get_row_number(row_index) as i64))
+            }
+            "FIRST_VALUE" => {
+                // FIRST_VALUE(column)
+                if args.is_empty() {
+                    return Err(anyhow!("FIRST_VALUE requires 1 argument"));
+                }
+
+                let column = match &args[0] {
+                    SqlExpression::Column(col) => col.clone(),
+                    _ => return Err(anyhow!("FIRST_VALUE argument must be a column")),
+                };
+
+                Ok(context
+                    .get_first_value(row_index, &column)
+                    .unwrap_or(DataValue::Null))
+            }
+            "LAST_VALUE" => {
+                // LAST_VALUE(column)
+                if args.is_empty() {
+                    return Err(anyhow!("LAST_VALUE requires 1 argument"));
+                }
+
+                let column = match &args[0] {
+                    SqlExpression::Column(col) => col.clone(),
+                    _ => return Err(anyhow!("LAST_VALUE argument must be a column")),
+                };
+
+                Ok(context
+                    .get_last_value(row_index, &column)
+                    .unwrap_or(DataValue::Null))
+            }
+            _ => Err(anyhow!("Unknown window function: {}", name)),
+        }
+    }
+
     /// Evaluate a method call on a column (e.g., `column.Trim()`)
     fn evaluate_method_call(
-        &self,
+        &mut self,
         object: &str,
         method: &str,
         args: &[SqlExpression],
@@ -535,7 +717,7 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Evaluate a method on a value
     fn evaluate_method_on_value(
-        &self,
+        &mut self,
         value: &DataValue,
         method: &str,
         args: &[SqlExpression],
@@ -558,7 +740,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         };
 
         // Check if we have this function in the registry
-        if let Some(func) = self.function_registry.get(function_name) {
+        if self.function_registry.get(function_name).is_some() {
             debug!(
                 "Proxying method '{}' through function registry as '{}'",
                 method, function_name
@@ -572,7 +754,8 @@ impl<'a> ArithmeticEvaluator<'a> {
                 func_args.push(self.evaluate(arg, row_index)?);
             }
 
-            // Call the function through the registry
+            // Get the function and call it
+            let func = self.function_registry.get(function_name).unwrap();
             return func.evaluate(&func_args);
         }
 
@@ -743,7 +926,7 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Evaluate a CASE expression
     fn evaluate_case_expression(
-        &self,
+        &mut self,
         when_branches: &[crate::sql::recursive_parser::WhenBranch],
         else_branch: &Option<Box<SqlExpression>>,
         row_index: usize,
@@ -775,7 +958,11 @@ impl<'a> ArithmeticEvaluator<'a> {
     }
 
     /// Helper method to evaluate an expression as a boolean (for CASE WHEN conditions)
-    fn evaluate_condition_as_bool(&self, expr: &SqlExpression, row_index: usize) -> Result<bool> {
+    fn evaluate_condition_as_bool(
+        &mut self,
+        expr: &SqlExpression,
+        row_index: usize,
+    ) -> Result<bool> {
         let value = self.evaluate(expr, row_index)?;
 
         match value {
@@ -815,7 +1002,7 @@ mod tests {
     #[test]
     fn test_evaluate_column() {
         let table = create_test_table();
-        let evaluator = ArithmeticEvaluator::new(&table);
+        let mut evaluator = ArithmeticEvaluator::new(&table);
 
         let expr = SqlExpression::Column("a".to_string());
         let result = evaluator.evaluate(&expr, 0).unwrap();
@@ -825,7 +1012,7 @@ mod tests {
     #[test]
     fn test_evaluate_number_literal() {
         let table = create_test_table();
-        let evaluator = ArithmeticEvaluator::new(&table);
+        let mut evaluator = ArithmeticEvaluator::new(&table);
 
         let expr = SqlExpression::NumberLiteral("42".to_string());
         let result = evaluator.evaluate(&expr, 0).unwrap();
@@ -839,7 +1026,7 @@ mod tests {
     #[test]
     fn test_add_values() {
         let table = create_test_table();
-        let evaluator = ArithmeticEvaluator::new(&table);
+        let mut evaluator = ArithmeticEvaluator::new(&table);
 
         // Integer + Integer
         let result = evaluator
@@ -857,7 +1044,7 @@ mod tests {
     #[test]
     fn test_multiply_values() {
         let table = create_test_table();
-        let evaluator = ArithmeticEvaluator::new(&table);
+        let mut evaluator = ArithmeticEvaluator::new(&table);
 
         // Integer * Float
         let result = evaluator
@@ -869,7 +1056,7 @@ mod tests {
     #[test]
     fn test_divide_values() {
         let table = create_test_table();
-        let evaluator = ArithmeticEvaluator::new(&table);
+        let mut evaluator = ArithmeticEvaluator::new(&table);
 
         // Exact division
         let result = evaluator
@@ -887,7 +1074,7 @@ mod tests {
     #[test]
     fn test_division_by_zero() {
         let table = create_test_table();
-        let evaluator = ArithmeticEvaluator::new(&table);
+        let mut evaluator = ArithmeticEvaluator::new(&table);
 
         let result = evaluator.divide_values(&DataValue::Integer(10), &DataValue::Integer(0));
         assert!(result.is_err());
@@ -897,7 +1084,7 @@ mod tests {
     #[test]
     fn test_binary_op_expression() {
         let table = create_test_table();
-        let evaluator = ArithmeticEvaluator::new(&table);
+        let mut evaluator = ArithmeticEvaluator::new(&table);
 
         // a * b where a=10, b=2.5
         let expr = SqlExpression::BinaryOp {

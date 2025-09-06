@@ -28,6 +28,13 @@ if [ -f "data/sales_sample.csv" ]; then
     GROUP_BY_DATA="data/sales_sample.csv"
 fi
 
+# Test window functions with sales data
+if [ -f "data/sales_data.csv" ]; then
+    examples+=("window_functions.sql")
+    examples+=("window_functions_filtering.sql")
+    WINDOW_DATA="data/sales_data.csv"
+fi
+
 failed=0
 passed=0
 
@@ -45,6 +52,17 @@ for example in "${examples[@]}"; do
                 ((failed++))
                 echo "  Error details:"
                 $SQL_CLI "$GROUP_BY_DATA" -f "$EXAMPLES_DIR/$example" -o csv 2>&1 | grep -E "Error|Failed" | head -3
+            fi
+        # Special handling for window function examples
+        elif [[ "$example" = "window_functions.sql" || "$example" = "window_functions_filtering.sql" ]] && [ -n "$WINDOW_DATA" ]; then
+            if $SQL_CLI "$WINDOW_DATA" -f "$EXAMPLES_DIR/$example" -o csv > /dev/null 2>&1; then
+                echo -e "${GREEN}✓ PASSED${NC}"
+                ((passed++))
+            else
+                echo -e "${RED}✗ FAILED${NC}"
+                ((failed++))
+                echo "  Error details:"
+                $SQL_CLI "$WINDOW_DATA" -f "$EXAMPLES_DIR/$example" -o csv 2>&1 | grep -E "Error|Failed" | head -3
             fi
         else
             # Run the example normally

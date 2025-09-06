@@ -37,6 +37,19 @@ else
 fi
 echo ""
 
+# Run SQL example tests
+echo "3. Running SQL example tests..."
+echo "-----------------------------------------"
+if ./scripts/test_all_examples.sh > /tmp/example_test_output.txt 2>&1; then
+    tail -3 /tmp/example_test_output.txt
+    echo "✅ SQL example tests passed"
+else
+    cat /tmp/example_test_output.txt
+    echo "❌ SQL example tests failed"
+    all_passed=false
+fi
+echo ""
+
 # Summary
 echo "========================================="
 echo "Test Summary"

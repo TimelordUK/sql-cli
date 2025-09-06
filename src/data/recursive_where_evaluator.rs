@@ -564,7 +564,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 right: _expr_right,
             } if matches!(arith_op.as_str(), "+" | "-" | "*" | "/") => {
                 // Handle arithmetic expressions using ArithmeticEvaluator
-                let evaluator =
+                let mut evaluator =
                     ArithmeticEvaluator::with_date_notation(self.table, self.date_notation.clone());
                 let computed_value = evaluator.evaluate(left, row_index)?;
                 if row_index < 3 {
@@ -577,7 +577,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             }
             SqlExpression::FunctionCall { name, .. } => {
                 // Handle function calls using ArithmeticEvaluator
-                let evaluator =
+                let mut evaluator =
                     ArithmeticEvaluator::with_date_notation(self.table, self.date_notation.clone());
                 let computed_value = evaluator.evaluate(left, row_index)?;
                 if row_index < 3 {
@@ -1433,7 +1433,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             // For other expressions (columns, literals), use ArithmeticEvaluator and convert
             _ => {
                 // Use ArithmeticEvaluator to get the value, then convert to boolean
-                let evaluator =
+                let mut evaluator =
                     crate::data::arithmetic_evaluator::ArithmeticEvaluator::with_date_notation(
                         self.table,
                         self.date_notation.clone(),
