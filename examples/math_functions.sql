@@ -10,6 +10,7 @@ SELECT
     10 % 3 as modulo,
     POWER(2, 8) as two_to_eighth,
     SQRT(144) as square_root;
+GO
 
 -- Rounding and precision functions
 SELECT 
@@ -20,7 +21,7 @@ SELECT
     ABS(-42) as absolute_value,
     SIGN(-10) as sign_negative,
     SIGN(10) as sign_positive;
-
+GO
 -- Trigonometric functions
 SELECT 
     SIN(PI() / 2) as sine_90_deg,
@@ -39,6 +40,7 @@ SELECT
     LOG(100) as log_base_10,
     LOG(2, 8) as log_base_2_of_8,
     LOG10(1000) as common_log;
+GO
 
 -- Statistical functions
 SELECT 
@@ -46,6 +48,7 @@ SELECT
     LEAST(1, 5, 3, 9, 2) as minimum,
     RANDOM() as random_number,
     RANDOM() * 100 as random_0_to_100;
+GO
 
 -- Advanced mathematical operations
 SELECT 
@@ -54,6 +57,7 @@ SELECT
     LCM(12, 18) as least_common_multiple,
     IS_PRIME(17) as check_prime,
     NTH_PRIME(10) as tenth_prime;
+GO
 
 -- Bitwise operations
 SELECT 
@@ -63,6 +67,7 @@ SELECT
     ~5 as bitwise_not,
     5 << 2 as left_shift,
     20 >> 2 as right_shift;
+GO
 
 -- Financial calculations
 SELECT 
@@ -71,6 +76,7 @@ SELECT
     
     -- Monthly payment: M = P[r(1+r)^n]/[(1+r)^n-1]
     100000 * (0.04/12 * POWER(1 + 0.04/12, 360)) / (POWER(1 + 0.04/12, 360) - 1) as mortgage_payment;
+GO
 
 -- Practical example: Sales analysis with mathematical functions
 SELECT 
@@ -88,3 +94,4 @@ FROM sales
 GROUP BY product_id
 HAVING COUNT(*) > 10
 ORDER BY avg_sale_value DESC;
+GO

@@ -512,7 +512,7 @@ SELECT
     COUNT(*) as trade_count,
     SUM(quantity) as total_volume,
     AVG(price) as avg_price,
-    GET_MOLECULAR_MASS('C8H10N4O2') as caffeine_mass,      -- Chemistry
+    ATOMIC_MASS('C8H10N4O2') as caffeine_mass,            -- Chemistry
     IS_PRIME(COUNT(*)) as is_prime_count,                  -- Prime check
     DATEDIFF('day', MIN(trade_date), NOW()) as days_trading, -- Date math
     MD5(trader_name) as trader_hash,                       -- Hashing

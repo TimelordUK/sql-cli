@@ -1,38 +1,35 @@
 -- Chemical formula parsing and molecular calculations
 -- sql-cli can parse chemical formulas and return molecular information
 
--- Get molecular mass from chemical formulas
+-- Get atomic/molecular mass from chemical formulas
 SELECT 
-    GET_MOLECULAR_MASS('H2O') as water_mass,
-    GET_MOLECULAR_MASS('CO2') as carbon_dioxide_mass,
-    GET_MOLECULAR_MASS('C6H12O6') as glucose_mass,
-    GET_MOLECULAR_MASS('C8H10N4O2') as caffeine_mass,
-    GET_MOLECULAR_MASS('NaCl') as salt_mass;
+    ATOMIC_MASS('H2O') as water_mass,
+    ATOMIC_MASS('CO2') as carbon_dioxide_mass,
+    ATOMIC_MASS('C6H12O6') as glucose_mass,
+    ATOMIC_MASS('C8H10N4O2') as caffeine_mass,
+    ATOMIC_MASS('NaCl') as salt_mass;
 GO
 
 -- Get chemical formula from common names
 SELECT 
-    GET_CHEMICAL_FORMULA('water') as water_formula,
-    GET_CHEMICAL_FORMULA('glucose') as glucose_formula,
-    GET_CHEMICAL_FORMULA('ethanol') as ethanol_formula,
-    GET_CHEMICAL_FORMULA('caffeine') as caffeine_formula,
-    GET_CHEMICAL_FORMULA('aspirin') as aspirin_formula;
+    MOLECULE_FORMULA('water') as water_formula,
+    MOLECULE_FORMULA('glucose') as glucose_formula,
+    MOLECULE_FORMULA('ethanol') as ethanol_formula,
+    MOLECULE_FORMULA('caffeine') as caffeine_formula,
+    MOLECULE_FORMULA('aspirin') as aspirin_formula;
 GO
+
 -- Combined usage - get formula then calculate mass
 SELECT 
-    GET_CHEMICAL_FORMULA('methane') as formula,
-    GET_MOLECULAR_MASS(GET_CHEMICAL_FORMULA('methane')) as molecular_mass;
+    MOLECULE_FORMULA('methane') as formula,
+    ATOMIC_MASS(MOLECULE_FORMULA('methane')) as molecular_mass;
+GO
 
--- Practical example: Analyzing chemical compounds in a dataset
+-- Practical example with physics constants
 SELECT 
-    compound_name,
-    GET_CHEMICAL_FORMULA(compound_name) as formula,
-    GET_MOLECULAR_MASS(GET_CHEMICAL_FORMULA(compound_name)) as molecular_weight,
-    CASE 
-        WHEN GET_MOLECULAR_MASS(GET_CHEMICAL_FORMULA(compound_name)) < 100 THEN 'Light'
-        WHEN GET_MOLECULAR_MASS(GET_CHEMICAL_FORMULA(compound_name)) < 500 THEN 'Medium'
-        ELSE 'Heavy'
-    END as weight_category
-FROM compounds_table
-WHERE compound_name IN ('water', 'ethanol', 'glucose', 'benzene', 'acetone');
+    'Water' as compound,
+    MOLECULE_FORMULA('water') as formula,
+    ATOMIC_MASS('H2O') as molecular_mass_amu,
+    AVOGADRO() as avogadro_constant,
+    ATOMIC_MASS('H2O') / AVOGADRO() * 1e23 as grams_per_mole;
 GO

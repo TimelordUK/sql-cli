@@ -32,8 +32,8 @@ sql-cli data/test_simple_math.csv -f examples/math_functions.sql
 - Practical physics calculations using these constants
 
 ### 🧪 Chemical Formulas (`chemical_formulas.sql`)
-- Parse chemical formulas with `GET_MOLECULAR_MASS()`
-- Get formulas from common names with `GET_CHEMICAL_FORMULA()`
+- Parse chemical formulas with `ATOMIC_MASS()`
+- Get formulas from common names with `MOLECULE_FORMULA()`
 - Calculate molecular weights
 - Analyze compound properties
 
@@ -79,7 +79,7 @@ SELECT
     COUNT(*) as trade_count,
     SUM(quantity) as total_volume,
     AVG(price) as avg_price,
-    GET_MOLECULAR_MASS('C8H10N4O2') as caffeine_mass,  -- Chemical
+    ATOMIC_MASS('C8H10N4O2') as caffeine_mass,  -- Chemical
     IS_PRIME(COUNT(*)) as is_prime_count,              -- Prime check
     DATEDIFF('day', MIN(trade_date), NOW()) as days_trading,  -- Date math
     MD5(trader_name) as trader_hash                    -- Hashing
@@ -117,7 +117,7 @@ sql-cli is not just a SQL query tool - it's a powerful data analysis platform wi
    ```sql
    SELECT 
        UPPER(name) as name,
-       GET_MOLECULAR_MASS(compound) as mass,
+       ATOMIC_MASS(compound) as mass,
        IS_PRIME(EXTRACT(DAY FROM date)) as prime_day
    FROM experiments;
    ```
