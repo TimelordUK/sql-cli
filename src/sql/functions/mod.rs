@@ -15,6 +15,7 @@ pub mod hash;
 pub mod math;
 pub mod mathematics;
 pub mod physics;
+pub mod solar_system;
 pub mod string_methods;
 
 // Re-export MethodFunction trait
@@ -382,6 +383,13 @@ impl FunctionRegistry {
             RadiusUranusFunction, RadiusVenusFunction,
         };
 
+        use solar_system::{
+            DensitySolarBodyFunction, DistanceSolarBodyFunction, EscapeVelocitySolarBodyFunction,
+            GravitySolarBodyFunction, MassSolarBodyFunction, MoonsSolarBodyFunction,
+            OrbitalPeriodSolarBodyFunction, RadiusSolarBodyFunction,
+            RotationPeriodSolarBodyFunction,
+        };
+
         self.register(Box::new(MassEarthFunction));
         self.register(Box::new(MassSunFunction));
         self.register(Box::new(MassMoonFunction));
@@ -418,6 +426,17 @@ impl FunctionRegistry {
         self.register(Box::new(DistSaturnFunction));
         self.register(Box::new(DistUranusFunction));
         self.register(Box::new(DistNeptuneFunction));
+
+        // Solar system lookup functions
+        self.register(Box::new(MassSolarBodyFunction));
+        self.register(Box::new(RadiusSolarBodyFunction));
+        self.register(Box::new(DistanceSolarBodyFunction));
+        self.register(Box::new(OrbitalPeriodSolarBodyFunction));
+        self.register(Box::new(GravitySolarBodyFunction));
+        self.register(Box::new(DensitySolarBodyFunction));
+        self.register(Box::new(EscapeVelocitySolarBodyFunction));
+        self.register(Box::new(RotationPeriodSolarBodyFunction));
+        self.register(Box::new(MoonsSolarBodyFunction));
     }
 
     /// Register chemical functions
