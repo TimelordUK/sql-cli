@@ -14,6 +14,7 @@ pub mod geometry;
 pub mod hash;
 pub mod math;
 pub mod mathematics;
+pub mod particle_charges;
 pub mod physics;
 pub mod solar_system;
 pub mod string_methods;
@@ -511,6 +512,22 @@ impl FunctionRegistry {
     /// Register physics constants
     fn register_physics_functions(&mut self) {
         physics::register_physics_functions(self);
+
+        // Register particle charge functions
+        use particle_charges::{
+            ChargeDownQuarkFunction, ChargeElectronFunction, ChargeMuonFunction,
+            ChargeNeutronFunction, ChargePositronFunction, ChargeProtonFunction, ChargeTauFunction,
+            ChargeUpQuarkFunction,
+        };
+
+        self.register(Box::new(ChargeElectronFunction));
+        self.register(Box::new(ChargeProtonFunction));
+        self.register(Box::new(ChargeNeutronFunction));
+        self.register(Box::new(ChargeUpQuarkFunction));
+        self.register(Box::new(ChargeDownQuarkFunction));
+        self.register(Box::new(ChargePositronFunction));
+        self.register(Box::new(ChargeMuonFunction));
+        self.register(Box::new(ChargeTauFunction));
     }
 
     /// Register date/time functions
