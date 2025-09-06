@@ -260,6 +260,94 @@ WHERE name.Contains('manager')
 - `SUBSTRING(text, start, length)` - Extract substring
 - `REPLACE(text, old, new)` - Replace all occurrences
 
+### 📊 **GROUP BY and Aggregation Support** (NEW!)
+
+SQL CLI now supports GROUP BY queries with powerful aggregate functions, enabling complex data analysis and summarization:
+
+#### **Aggregate Functions**
+```sql
+-- Basic aggregation with COUNT, SUM, AVG, MIN, MAX
+SELECT 
+    trader,
+    COUNT(*) as trade_count,
+    SUM(quantity) as total_volume,
+    AVG(price) as avg_price,
+    MIN(price) as min_price,
+    MAX(price) as max_price
+FROM trades
+GROUP BY trader
+ORDER BY total_volume DESC;
+
+-- Multi-column grouping
+SELECT 
+    trader, 
+    book,
+    COUNT(*) as trades,
+    SUM(quantity * price) as total_value
+FROM trades
+GROUP BY trader, book
+ORDER BY trader, total_value DESC;
+
+-- Filtering before grouping with WHERE
+SELECT 
+    region,
+    product,
+    SUM(revenue) as total_revenue
+FROM sales
+WHERE date > DATEADD('month', -3, TODAY())
+GROUP BY region, product
+ORDER BY total_revenue DESC;
+```
+
+**Supported Aggregate Functions:**
+- `COUNT(*)` - Count all rows in group
+- `COUNT(column)` - Count non-null values
+- `SUM(expression)` - Sum of values (supports complex expressions)
+- `AVG(expression)` - Average calculation
+- `MIN(column)` - Minimum value in group
+- `MAX(column)` - Maximum value in group
+
+#### **Real-World GROUP BY Examples**
+```sql
+-- Trading desk performance analysis
+SELECT 
+    trader.Trim() as trader_name,
+    COUNT(*) as total_trades,
+    SUM(quantity) as total_shares,
+    ROUND(AVG(price), 2) as avg_price,
+    SUM(quantity * price) as total_value,
+    MIN(trade_date) as first_trade,
+    MAX(trade_date) as last_trade
+FROM trades
+WHERE trade_date >= DATEADD('day', -30, TODAY())
+GROUP BY trader.Trim()
+ORDER BY total_value DESC;
+
+-- Product sales by category
+SELECT 
+    category,
+    COUNT(DISTINCT product_id) as unique_products,
+    SUM(units_sold) as total_units,
+    ROUND(AVG(sale_price), 2) as avg_price,
+    SUM(units_sold * sale_price) as revenue
+FROM sales_data  
+WHERE status = 'completed'
+GROUP BY category
+ORDER BY revenue DESC
+LIMIT 10;
+
+-- Daily aggregations with date functions
+SELECT 
+    DATE(transaction_time) as day,
+    COUNT(*) as transaction_count,
+    SUM(amount) as daily_total,
+    AVG(amount) as avg_transaction
+FROM transactions
+WHERE transaction_time > DATEADD('week', -4, NOW())
+GROUP BY DATE(transaction_time)
+ORDER BY day DESC;
+```
+
 ### 🎯 **Advanced Query Capabilities**
 
 #### **Complex WHERE Clauses**
@@ -343,6 +431,7 @@ LIMIT 100
 | **LINQ Methods** | ✅ `.Contains()`, `.StartsWith()` | ❌ | ❌ | ❌ |
 | **Date Functions** | ✅ `DATEDIFF`, `DATEADD`, `NOW()` | ❌ | Limited | ❌ |
 | **Math Functions** | ✅ `ROUND`, `SQRT`, `POWER`, Primes | ❌ | Basic | ❌ |
+| **GROUP BY & Aggregates** | ✅ Full support with COUNT, SUM, AVG | ❌ | Basic | Limited |
 | **Vim Navigation** | ✅ Full vim-style | Basic | ❌ | ❌ |
 | **Computed Columns** | ✅ `price * qty as total` | ❌ | ❌ | Limited |
 | **Smart Completion** | ✅ Context-aware SQL | ❌ | ❌ | ❌ |
@@ -357,7 +446,7 @@ LIMIT 100
 ## 🔗 **Real-World Examples**
 
 ```sql
--- Financial Analysis
+-- Financial Analysis with GROUP BY
 SELECT 
     trader.Trim() as trader_name,
     ROUND(SUM(price * quantity), 2) as total_volume,
@@ -796,17 +885,9 @@ Currently supports the first 20 elements plus common metals (Fe, Cu, Zn, Ag, Au,
 
 While SQL CLI provides extensive SQL functionality, some standard SQL features are not yet implemented:
 
-### **Aggregate Functions**
-- `COUNT(*)`, `COUNT(column)` - Row counting
-- `SUM(column)` - Sum of values
-- `AVG(column)` - Average calculation
-- `MIN(column)`, `MAX(column)` - Min/max values
+### **Not Yet Supported**
 - `STDDEV()`, `VARIANCE()` - Statistical functions
-
-### **Grouping & Aggregation**
-- `GROUP BY` clause - Grouping rows
-- `HAVING` clause - Filtering groups
-- Aggregate expressions in SELECT
+- `HAVING` clause - Filtering groups after GROUP BY
 
 ### **Joins & Subqueries**
 - `JOIN`, `LEFT JOIN`, `RIGHT JOIN` - Table joins
