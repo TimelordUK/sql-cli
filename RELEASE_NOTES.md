@@ -1,10 +1,10 @@
-# SQL CLI v1.38.0
+# SQL CLI v1.39.0
 
-**Release Date:** September 05, 2025
+**Release Date:** September 06, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 19
-- **Files updated:** 32
+- **Commits in this release:** 20
+- **Files updated:** 266
 
 ## ✨ Highlights
 
@@ -18,46 +18,54 @@
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- Move TEXTJOIN to function registry
-- Add self-documenting function registry with CLI options
-- Add comprehensive prime number functions with pre-computed tables
-- Add comparison functions (GREATEST, LEAST, COALESCE, NULLIF)
-- Create registry-based string methods system
-- Add molecular formula parsing to ATOMIC_MASS function
+- v1.39.0 - Add hash functions and geometry formulas
+- Add window functions support (LAG, LEAD, ROW_NUMBER, FIRST_VALUE, LAST_VALUE)
+- add window functions parsing and WindowContext infrastructure
+- implement STDDEV and VARIANCE aggregate functions
+- add comprehensive SQL-CLI feature showcase and test script
+- implement FACTORIAL function and clean up examples
+- add PRIME_PI and NTH_PRIME functions, improve script parser
+- implement HAVING clause for GROUP BY filtering
+- implement GROUP BY with aggregate function support
 
 ### 🐛 Bug Fixes
-- Move string functions (MID, UPPER, LOWER, TRIM) to function registry
+- clean up string_functions.sql to only show implemented functions
+- correct function names in physics_constants.sql
+- correct function names in chemical examples
+- apply clippy pedantic fixes and code formatting
+- resolve clippy warnings and improve code quality
 
 ### 🔧 Refactoring
-- Migrate 19 math functions from arithmetic_evaluator to function registry
+- proxy string methods through function registry
+- move date functions from arithmetic_evaluator to function registry
+- move constants from arithmetic_evaluator to function registry
 
 ### 📚 Documentation
-- Add comparison functions and string functions to README
-- Add GROUP BY architecture design document
-- Update README with molecular formula capabilities
+- update README with GROUP BY feature documentation
 
 <details>
 <summary>📋 View all commits</summary>
 
-- add get chemical formula function (TimelordUK)
-- fix maths tests (TimelordUK)
-- refactor chemistry to more easily add new molecules (TimelordUK)
-- migrate functions (TimelordUK)
-- refactor: Migrate 19 math functions from arithmetic_evaluator to function registry (TimelordUK)
-- feat: Move TEXTJOIN to function registry (TimelordUK)
-- fix: Move string functions (MID, UPPER, LOWER, TRIM) to function registry (TimelordUK)
-- chore: Bump version to 1.38.0 for prime functions release (TimelordUK)
-- feat: Add self-documenting function registry with CLI options (TimelordUK)
-- feat: Add comprehensive prime number functions with pre-computed tables (TimelordUK)
-- fix tests (TimelordUK)
-- fix unit tests (TimelordUK)
-- add least_label, greatest_label (TimelordUK)
-- docs: Add comparison functions and string functions to README (TimelordUK)
-- feat: Add comparison functions (GREATEST, LEAST, COALESCE, NULLIF) (TimelordUK)
-- feat: Create registry-based string methods system (TimelordUK)
-- docs: Add GROUP BY architecture design document (TimelordUK)
-- docs: Update README with molecular formula capabilities (TimelordUK)
-- feat: Add molecular formula parsing to ATOMIC_MASS function (TimelordUK)
+- feat: v1.39.0 - Add hash functions and geometry formulas (TimelordUK)
+- feat: Add window functions support (LAG, LEAD, ROW_NUMBER, FIRST_VALUE, LAST_VALUE) (TimelordUK)
+- feat: add window functions parsing and WindowContext infrastructure (TimelordUK)
+- refactor: proxy string methods through function registry (TimelordUK)
+- feat: implement STDDEV and VARIANCE aggregate functions (TimelordUK)
+- feat: add comprehensive SQL-CLI feature showcase and test script (TimelordUK)
+- fix: clean up string_functions.sql to only show implemented functions (TimelordUK)
+- fix: correct function names in physics_constants.sql (TimelordUK)
+- feat: implement FACTORIAL function and clean up examples (TimelordUK)
+- fix: correct function names in chemical examples (TimelordUK)
+- feat: add PRIME_PI and NTH_PRIME functions, improve script parser (TimelordUK)
+- fix: apply clippy pedantic fixes and code formatting (TimelordUK)
+- fix: resolve clippy warnings and improve code quality (TimelordUK)
+- feat: implement HAVING clause for GROUP BY filtering (TimelordUK)
+- docs: update README with GROUP BY feature documentation (TimelordUK)
+- feat: implement GROUP BY with aggregate function support (TimelordUK)
+- refactor: move date functions from arithmetic_evaluator to function registry (TimelordUK)
+- refactor: move constants from arithmetic_evaluator to function registry (TimelordUK)
+- edit distance function (TimelordUK)
+- fix python tests (TimelordUK)
 
 </details>
 
