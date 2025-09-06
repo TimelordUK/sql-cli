@@ -1,6 +1,6 @@
 [package]
 name = "sql-cli"
-version = "1.38.0"
+version = "1.39.0"
 edition = "2021"
 authors = ["TimelordUK <sjames8888@gmail.com>"]
 description = "SQL query tool for CSV/JSON with both interactive TUI and non-interactive CLI modes - perfect for exploration and automation"
@@ -68,6 +68,8 @@ fuzzy-matcher = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 syntect = "5.0"
 arboard = "3.2"
+md5 = "0.7"
+sha1 = "0.10"
 sha2 = "0.10"
 toml = "0.8"
 tracing = "0.1"

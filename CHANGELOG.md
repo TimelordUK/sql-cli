@@ -5,6 +5,64 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.39.0] - 2025-09-06
+
+### 🪟 Window Functions, Hash Functions & Geometry Formulas
+
+This release adds powerful SQL window functions for analytics, cryptographic hash functions for data integrity, and mathematical geometry formulas for calculations.
+
+### ✨ New Features
+
+#### **Window Functions**
+- **`LAG(column, offset)`** - Access previous row values within partition
+- **`LEAD(column, offset)`** - Access next row values within partition
+- **`ROW_NUMBER()`** - Assign sequential numbers within partition
+- **`FIRST_VALUE(column)`** - Get first value in partition
+- **`LAST_VALUE(column)`** - Get last value in partition
+- Full support for `OVER (PARTITION BY ... ORDER BY ...)` clause
+- Enables ranking, running totals, and trend analysis
+
+#### **Hash Functions**
+- **`MD5(value)`** - Calculate MD5 hash (32 chars)
+- **`SHA1(value)`** - Calculate SHA1 hash (40 chars)
+- **`SHA256(value)`** - Calculate SHA256 hash (64 chars)
+- **`SHA512(value)`** - Calculate SHA512 hash (128 chars)
+- Auto-converts numbers to strings for hashing
+- Returns NULL for NULL inputs
+
+#### **Geometry Functions**
+- **`PYTHAGORAS(a, b)`** - Calculate hypotenuse using Pythagorean theorem
+- **`CIRCLE_AREA(radius)`** - Calculate area of circle (πr²)
+- **`CIRCLE_CIRCUMFERENCE(radius)`** - Calculate circumference (2πr)
+- **`SPHERE_VOLUME(radius)`** - Calculate sphere volume (4/3πr³)
+- **`SPHERE_SURFACE_AREA(radius)`** - Calculate sphere surface area (4πr²)
+- **`TRIANGLE_AREA(a, b, c)`** - Calculate triangle area using Heron's formula
+- **`DISTANCE_2D(x1, y1, x2, y2)`** - Calculate 2D Euclidean distance
+
+### 🔧 Improvements
+- **NULL Arithmetic Handling** - Any arithmetic operation with NULL now correctly returns NULL
+- **WindowContext** - Efficient partitioned data management for window functions
+- **Test Coverage** - Comprehensive Python test suite for all new functions
+- **Examples** - Added window function SQL examples and sales_data.csv sample
+
+### 📚 Examples
+```sql
+-- Window functions for analytics
+SELECT salesperson, month, sales_amount,
+       LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month) as prev_month,
+       ROW_NUMBER() OVER (PARTITION BY region ORDER BY sales_amount DESC) as rank
+FROM sales_data;
+
+-- Hash functions for data integrity
+SELECT email, MD5(email) as email_hash, SHA256(password) as password_hash
+FROM users;
+
+-- Geometry calculations
+SELECT PYTHAGORAS(3, 4) as hypotenuse,  -- Returns 5
+       CIRCLE_AREA(10) as area,         -- Returns 314.159...
+       TRIANGLE_AREA(3, 4, 5) as triangle_area;  -- Returns 6
+```
+
 ## [1.38.0] - 2025-09-05
 
 ### 🔢 Prime Number Functions & Self-Documenting Registry

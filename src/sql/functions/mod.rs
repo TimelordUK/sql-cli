@@ -10,6 +10,8 @@ pub mod chemistry;
 pub mod comparison;
 pub mod constants;
 pub mod date_time;
+pub mod geometry;
+pub mod hash;
 pub mod math;
 pub mod mathematics;
 pub mod physics;
@@ -133,9 +135,11 @@ impl FunctionRegistry {
         registry.register_astronomical_functions();
         registry.register_chemical_functions();
         registry.register_mathematical_functions();
+        registry.register_geometry_functions();
         registry.register_physics_functions();
         registry.register_date_time_functions();
         registry.register_string_methods();
+        registry.register_hash_functions();
         registry.register_comparison_functions();
 
         registry
@@ -431,6 +435,33 @@ impl FunctionRegistry {
     /// Register string method functions
     fn register_string_methods(&mut self) {
         string_methods::register_string_methods(self);
+    }
+
+    /// Register geometry functions
+    fn register_geometry_functions(&mut self) {
+        use geometry::{
+            CircleAreaFunction, CircleCircumferenceFunction, Distance2DFunction,
+            PythagorasFunction, SphereSurfaceAreaFunction, SphereVolumeFunction,
+            TriangleAreaFunction,
+        };
+
+        self.register(Box::new(PythagorasFunction));
+        self.register(Box::new(CircleAreaFunction));
+        self.register(Box::new(CircleCircumferenceFunction));
+        self.register(Box::new(SphereVolumeFunction));
+        self.register(Box::new(SphereSurfaceAreaFunction));
+        self.register(Box::new(TriangleAreaFunction));
+        self.register(Box::new(Distance2DFunction));
+    }
+
+    /// Register hash functions
+    fn register_hash_functions(&mut self) {
+        use hash::{Md5Function, Sha1Function, Sha256Function, Sha512Function};
+
+        self.register(Box::new(Md5Function));
+        self.register(Box::new(Sha1Function));
+        self.register(Box::new(Sha256Function));
+        self.register(Box::new(Sha512Function));
     }
 
     /// Register comparison functions
