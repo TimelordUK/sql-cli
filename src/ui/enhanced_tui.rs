@@ -1447,6 +1447,9 @@ impl EnhancedTuiApp {
             Config::default()
         });
 
+        // Initialize global config for function registry
+        crate::config::global::init_config(config.clone());
+
         // Store API URL as data source if provided
         let data_source = if !api_url.is_empty() {
             Some(api_url.to_string())

@@ -9,6 +9,7 @@ pub mod astronomy;
 pub mod chemistry;
 pub mod comparison;
 pub mod constants;
+pub mod date_time;
 pub mod math;
 pub mod mathematics;
 pub mod physics;
@@ -130,6 +131,7 @@ impl FunctionRegistry {
         registry.register_chemical_functions();
         registry.register_mathematical_functions();
         registry.register_physics_functions();
+        registry.register_date_time_functions();
         registry.register_string_methods();
         registry.register_comparison_functions();
 
@@ -428,6 +430,11 @@ impl FunctionRegistry {
     /// Register physics constants
     fn register_physics_functions(&mut self) {
         physics::register_physics_functions(self);
+    }
+
+    /// Register date/time functions
+    fn register_date_time_functions(&mut self) {
+        date_time::register_date_time_functions(self);
     }
 }
 

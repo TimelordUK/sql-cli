@@ -4,5 +4,6 @@
 //! including settings, key bindings, and schema configuration.
 
 pub mod config;
+pub mod global;
 pub mod key_bindings;
 pub mod schema_config;

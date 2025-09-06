@@ -112,6 +112,9 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         Config::default()
     });
 
+    // Initialize global config for function registry
+    crate::config::global::init_config(app_config.clone());
+
     // Use QueryExecutionService with full BehaviorConfig
     let mut behavior_config = app_config.behavior.clone();
     debug!(
