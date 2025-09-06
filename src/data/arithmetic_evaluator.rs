@@ -541,6 +541,42 @@ impl<'a> ArithmeticEvaluator<'a> {
         args: &[SqlExpression],
         row_index: usize,
     ) -> Result<DataValue> {
+        // First, try to proxy the method through the function registry
+        // Many string methods have corresponding functions (TRIM, LENGTH, CONTAINS, etc.)
+
+        // Map method names to function names (case-insensitive matching)
+        let function_name = match method.to_lowercase().as_str() {
+            "trim" => "TRIM",
+            "trimstart" | "trimbegin" => "TRIMSTART",
+            "trimend" => "TRIMEND",
+            "length" | "len" => "LENGTH",
+            "contains" => "CONTAINS",
+            "startswith" => "STARTSWITH",
+            "endswith" => "ENDSWITH",
+            "indexof" => "INDEXOF",
+            _ => method, // Try the method name as-is
+        };
+
+        // Check if we have this function in the registry
+        if let Some(func) = self.function_registry.get(function_name) {
+            debug!(
+                "Proxying method '{}' through function registry as '{}'",
+                method, function_name
+            );
+
+            // Prepare arguments: receiver is the first argument, followed by method args
+            let mut func_args = vec![value.clone()];
+
+            // Evaluate method arguments and add them
+            for arg in args {
+                func_args.push(self.evaluate(arg, row_index)?);
+            }
+
+            // Call the function through the registry
+            return func.evaluate(&func_args);
+        }
+
+        // If not in registry, fall back to the old implementation for compatibility
         match method.to_lowercase().as_str() {
             "trim" | "trimstart" | "trimend" => {
                 if !args.is_empty() {
