@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use super::{AggregateFunction, AggregateState, AvgState, MinMaxState, SumState};
+use super::{AggregateFunction, AggregateState, AvgState, MinMaxState, SumState, VarianceState};
 use crate::data::datatable::DataValue;
 
 /// COUNT(*) - counts all rows including nulls
@@ -183,6 +183,70 @@ impl AggregateFunction for MaxFunction {
     }
 }
 
+/// VARIANCE(column) - computes population variance
+pub struct VarianceFunction;
+
+impl AggregateFunction for VarianceFunction {
+    fn name(&self) -> &'static str {
+        "VARIANCE"
+    }
+
+    fn init(&self) -> AggregateState {
+        AggregateState::Variance(VarianceState::new())
+    }
+
+    fn accumulate(&self, state: &mut AggregateState, value: &DataValue) -> Result<()> {
+        if let AggregateState::Variance(ref mut var_state) = state {
+            var_state.add(value)?;
+        }
+        Ok(())
+    }
+
+    fn finalize(&self, state: AggregateState) -> DataValue {
+        if let AggregateState::Variance(var_state) = state {
+            var_state.finalize_variance()
+        } else {
+            DataValue::Null
+        }
+    }
+
+    fn requires_numeric(&self) -> bool {
+        true
+    }
+}
+
+/// STDDEV(column) - computes population standard deviation
+pub struct StdDevFunction;
+
+impl AggregateFunction for StdDevFunction {
+    fn name(&self) -> &'static str {
+        "STDDEV"
+    }
+
+    fn init(&self) -> AggregateState {
+        AggregateState::Variance(VarianceState::new())
+    }
+
+    fn accumulate(&self, state: &mut AggregateState, value: &DataValue) -> Result<()> {
+        if let AggregateState::Variance(ref mut var_state) = state {
+            var_state.add(value)?;
+        }
+        Ok(())
+    }
+
+    fn finalize(&self, state: AggregateState) -> DataValue {
+        if let AggregateState::Variance(var_state) = state {
+            var_state.finalize_stddev()
+        } else {
+            DataValue::Null
+        }
+    }
+
+    fn requires_numeric(&self) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,5 +386,70 @@ mod tests {
 
         let result = func.finalize(state);
         assert_eq!(result, DataValue::String("zebra".to_string()));
+    }
+
+    #[test]
+    fn test_variance() {
+        let func = VarianceFunction;
+        let mut state = func.init();
+
+        // Test data: [2, 4, 6, 8, 10]
+        // Mean = 6, Variance = 8
+        func.accumulate(&mut state, &DataValue::Integer(2)).unwrap();
+        func.accumulate(&mut state, &DataValue::Integer(4)).unwrap();
+        func.accumulate(&mut state, &DataValue::Integer(6)).unwrap();
+        func.accumulate(&mut state, &DataValue::Integer(8)).unwrap();
+        func.accumulate(&mut state, &DataValue::Integer(10))
+            .unwrap();
+
+        let result = func.finalize(state);
+        match result {
+            DataValue::Float(f) => assert!((f - 8.0).abs() < 0.001),
+            _ => panic!("Expected Float result"),
+        }
+    }
+
+    #[test]
+    fn test_stddev() {
+        let func = StdDevFunction;
+        let mut state = func.init();
+
+        // Test data: [2, 4, 6, 8, 10]
+        // Mean = 6, Variance = 8, StdDev = sqrt(8) ≈ 2.828
+        func.accumulate(&mut state, &DataValue::Integer(2)).unwrap();
+        func.accumulate(&mut state, &DataValue::Integer(4)).unwrap();
+        func.accumulate(&mut state, &DataValue::Integer(6)).unwrap();
+        func.accumulate(&mut state, &DataValue::Integer(8)).unwrap();
+        func.accumulate(&mut state, &DataValue::Integer(10))
+            .unwrap();
+
+        let result = func.finalize(state);
+        match result {
+            DataValue::Float(f) => assert!((f - 2.8284271247461903).abs() < 0.001),
+            _ => panic!("Expected Float result"),
+        }
+    }
+
+    #[test]
+    fn test_variance_with_nulls() {
+        let func = VarianceFunction;
+        let mut state = func.init();
+
+        func.accumulate(&mut state, &DataValue::Integer(5)).unwrap();
+        func.accumulate(&mut state, &DataValue::Null).unwrap(); // Should be ignored
+        func.accumulate(&mut state, &DataValue::Integer(10))
+            .unwrap();
+        func.accumulate(&mut state, &DataValue::Integer(15))
+            .unwrap();
+
+        let result = func.finalize(state);
+        match result {
+            DataValue::Float(f) => {
+                // Mean = 10, values = [5, 10, 15]
+                // Variance = ((5-10)² + (10-10)² + (15-10)²) / 3 = (25 + 0 + 25) / 3 ≈ 16.67
+                assert!((f - 16.666666666666668).abs() < 0.001);
+            }
+            _ => panic!("Expected Float result"),
+        }
     }
 }

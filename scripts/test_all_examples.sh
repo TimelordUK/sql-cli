@@ -13,7 +13,6 @@ echo "Testing all SQL example files..."
 echo "================================"
 
 # Array of example files to test
-# Note: group_by_aggregates.sql requires actual data files, so it's excluded
 examples=(
     "math_functions.sql"
     "string_functions.sql"
@@ -23,6 +22,12 @@ examples=(
     "showcase_all_features.sql"
 )
 
+# Test group_by_aggregates.sql with sample data if available
+if [ -f "data/sales_sample.csv" ]; then
+    examples+=("group_by_aggregates.sql")
+    GROUP_BY_DATA="data/sales_sample.csv"
+fi
+
 failed=0
 passed=0
 
@@ -30,16 +35,29 @@ for example in "${examples[@]}"; do
     if [ -f "$EXAMPLES_DIR/$example" ]; then
         echo -n "Testing $example... "
         
-        # Run the example and capture exit code
-        if $SQL_CLI -f "$EXAMPLES_DIR/$example" -o csv > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ PASSED${NC}"
-            ((passed++))
+        # Special handling for group_by_aggregates.sql
+        if [ "$example" = "group_by_aggregates.sql" ] && [ -n "$GROUP_BY_DATA" ]; then
+            if $SQL_CLI "$GROUP_BY_DATA" -f "$EXAMPLES_DIR/$example" -o csv > /dev/null 2>&1; then
+                echo -e "${GREEN}✓ PASSED${NC}"
+                ((passed++))
+            else
+                echo -e "${RED}✗ FAILED${NC}"
+                ((failed++))
+                echo "  Error details:"
+                $SQL_CLI "$GROUP_BY_DATA" -f "$EXAMPLES_DIR/$example" -o csv 2>&1 | grep -E "Error|Failed" | head -3
+            fi
         else
-            echo -e "${RED}✗ FAILED${NC}"
-            ((failed++))
-            # Show the error
-            echo "  Error details:"
-            $SQL_CLI -f "$EXAMPLES_DIR/$example" -o csv 2>&1 | grep -E "Error|Failed" | head -3
+            # Run the example normally
+            if $SQL_CLI -f "$EXAMPLES_DIR/$example" -o csv > /dev/null 2>&1; then
+                echo -e "${GREEN}✓ PASSED${NC}"
+                ((passed++))
+            else
+                echo -e "${RED}✗ FAILED${NC}"
+                ((failed++))
+                # Show the error
+                echo "  Error details:"
+                $SQL_CLI -f "$EXAMPLES_DIR/$example" -o csv 2>&1 | grep -E "Error|Failed" | head -3
+            fi
         fi
     else
         echo -e "${RED}✗ File not found: $EXAMPLES_DIR/$example${NC}"

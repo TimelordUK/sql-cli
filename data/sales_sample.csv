@@ -1,0 +1,16 @@
+category,amount,status,region,product,quantity,discount
+Electronics,1500,completed,North,Laptop,2,100
+Electronics,2500,completed,South,Desktop,3,150
+Clothing,350,completed,North,Shirt,10,20
+Clothing,450,pending,East,Pants,8,30
+Electronics,800,completed,West,Tablet,1,50
+Furniture,1200,completed,North,Chair,4,80
+Furniture,3500,completed,South,Desk,2,200
+Clothing,250,cancelled,West,Dress,5,15
+Electronics,1800,completed,East,Monitor,3,100
+Furniture,600,pending,North,Lamp,6,40
+Clothing,180,completed,South,Socks,20,10
+Electronics,950,completed,West,Keyboard,5,60
+Furniture,2200,completed,East,Sofa,1,150
+Clothing,520,completed,North,Jacket,3,35
+Electronics,3200,completed,South,Server,1,200

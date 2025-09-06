@@ -17,6 +17,7 @@ pub enum AggregateState {
     Sum(SumState),
     Avg(AvgState),
     MinMax(MinMaxState),
+    Variance(VarianceState),
     CollectList(Vec<DataValue>),
     Analytics(analytics::AnalyticsState),
 }
@@ -180,6 +181,83 @@ impl MinMaxState {
     }
 }
 
+/// State for VARIANCE/STDDEV aggregation
+#[derive(Debug, Clone)]
+pub struct VarianceState {
+    pub sum: f64,
+    pub sum_of_squares: f64,
+    pub count: i64,
+}
+
+impl Default for VarianceState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl VarianceState {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            sum: 0.0,
+            sum_of_squares: 0.0,
+            count: 0,
+        }
+    }
+
+    pub fn add(&mut self, value: &DataValue) -> Result<()> {
+        match value {
+            DataValue::Null => Ok(()), // Skip nulls
+            DataValue::Integer(n) => {
+                let f = *n as f64;
+                self.sum += f;
+                self.sum_of_squares += f * f;
+                self.count += 1;
+                Ok(())
+            }
+            DataValue::Float(f) => {
+                self.sum += f;
+                self.sum_of_squares += f * f;
+                self.count += 1;
+                Ok(())
+            }
+            _ => Err(anyhow!("Cannot compute variance of non-numeric value")),
+        }
+    }
+
+    #[must_use]
+    pub fn variance(&self) -> f64 {
+        if self.count <= 1 {
+            return 0.0;
+        }
+        let mean = self.sum / self.count as f64;
+        (self.sum_of_squares / self.count as f64) - (mean * mean)
+    }
+
+    #[must_use]
+    pub fn stddev(&self) -> f64 {
+        self.variance().sqrt()
+    }
+
+    #[must_use]
+    pub fn finalize_variance(self) -> DataValue {
+        if self.count == 0 {
+            DataValue::Null
+        } else {
+            DataValue::Float(self.variance())
+        }
+    }
+
+    #[must_use]
+    pub fn finalize_stddev(self) -> DataValue {
+        if self.count == 0 {
+            DataValue::Null
+        } else {
+            DataValue::Float(self.stddev())
+        }
+    }
+}
+
 /// Trait for all aggregate functions
 pub trait AggregateFunction: Send + Sync {
     /// Name of the function (e.g., "SUM", "AVG")
@@ -213,7 +291,8 @@ impl AggregateRegistry {
             RankFunction, SumsFunction,
         };
         use functions::{
-            AvgFunction, CountFunction, CountStarFunction, MaxFunction, MinFunction, SumFunction,
+            AvgFunction, CountFunction, CountStarFunction, MaxFunction, MinFunction,
+            StdDevFunction, SumFunction, VarianceFunction,
         };
 
         let functions: Vec<Box<dyn AggregateFunction>> = vec![
@@ -223,6 +302,8 @@ impl AggregateRegistry {
             Box::new(AvgFunction),
             Box::new(MinFunction),
             Box::new(MaxFunction),
+            Box::new(StdDevFunction),
+            Box::new(VarianceFunction),
             // Analytics functions
             Box::new(DeltasFunction),
             Box::new(SumsFunction),
