@@ -1,4 +1,4 @@
-/// Integration of new debug registry system with existing toggle_debug_mode
+/// Integration of new debug registry system with existing `toggle_debug_mode`
 /// This file provides a gradual migration path from the old debug system to the new trait-based system
 use crate::ui::enhanced_tui::EnhancedTuiApp;
 
@@ -32,7 +32,7 @@ impl EnhancedTuiApp {
                 self.navigation_timings.len()
             ));
             for timing in &self.navigation_timings {
-                debug_report.push_str(&format!("  {}\n", timing));
+                debug_report.push_str(&format!("  {timing}\n"));
             }
             // Calculate average
             if !self.navigation_timings.is_empty() {
@@ -42,7 +42,7 @@ impl EnhancedTuiApp {
                     .filter_map(|s| self.debug_extract_timing(s))
                     .sum();
                 let avg_ms = total_ms / self.navigation_timings.len() as f64;
-                debug_report.push_str(&format!("Average navigation time: {:.3}ms\n", avg_ms));
+                debug_report.push_str(&format!("Average navigation time: {avg_ms:.3}ms\n"));
             }
         }
 
@@ -54,7 +54,7 @@ impl EnhancedTuiApp {
                 self.render_timings.len()
             ));
             for timing in &self.render_timings {
-                debug_report.push_str(&format!("  {}\n", timing));
+                debug_report.push_str(&format!("  {timing}\n"));
             }
             // Calculate average render time
             if !self.render_timings.is_empty() {
@@ -64,7 +64,7 @@ impl EnhancedTuiApp {
                     .filter_map(|s| self.debug_extract_timing(s))
                     .sum();
                 let avg_ms = total_ms / self.render_timings.len() as f64;
-                debug_report.push_str(&format!("Average render time: {:.3}ms\n", avg_ms));
+                debug_report.push_str(&format!("Average render time: {avg_ms:.3}ms\n"));
             }
         }
 
@@ -78,7 +78,7 @@ impl EnhancedTuiApp {
     }
 
     /// Toggle debug mode with optional use of new registry system
-    /// Set use_registry to true to use the new system, false for legacy
+    /// Set `use_registry` to true to use the new system, false for legacy
     pub fn toggle_debug_mode_with_registry(&mut self, use_registry: bool) {
         if use_registry {
             // Use new registry-based system

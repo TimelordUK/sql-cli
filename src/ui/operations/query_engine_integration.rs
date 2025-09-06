@@ -6,12 +6,12 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-/// Integration layer between QueryEngine and enhanced_tui
-/// Handles conversion between DataView and QueryResponse formats
+/// Integration layer between `QueryEngine` and `enhanced_tui`
+/// Handles conversion between `DataView` and `QueryResponse` formats
 pub struct QueryEngineIntegration;
 
 impl QueryEngineIntegration {
-    /// Execute a query using QueryEngine and convert to QueryResponse format
+    /// Execute a query using `QueryEngine` and convert to `QueryResponse` format
     pub fn execute_query(table: &DataTable, query: &str) -> Result<QueryResponse> {
         // Need an Arc for QueryEngine
         let table_arc = Arc::new(table.clone());
@@ -42,7 +42,7 @@ impl QueryEngineIntegration {
         Self::dataview_to_query_response(view)
     }
 
-    /// Convert a DataView to QueryResponse format for TUI compatibility
+    /// Convert a `DataView` to `QueryResponse` format for TUI compatibility
     fn dataview_to_query_response(view: DataView) -> Result<QueryResponse> {
         let mut rows = Vec::new();
         let column_names = view.column_names();
@@ -80,13 +80,13 @@ impl QueryEngineIntegration {
         })
     }
 
-    /// Execute query and return DataView directly (for future optimized path)
+    /// Execute query and return `DataView` directly (for future optimized path)
     pub fn execute_to_view(table: Arc<DataTable>, query: &str) -> Result<DataView> {
         let engine = QueryEngine::new();
         engine.execute(table, query)
     }
 
-    /// Convert DataValue to JSON Value
+    /// Convert `DataValue` to JSON Value
     fn datavalue_to_json(value: &DataValue) -> Value {
         match value {
             DataValue::String(s) => json!(s),

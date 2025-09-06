@@ -2,6 +2,7 @@
 // These are pure functions with no dependencies on self
 
 /// Sanitize table name by removing special characters and limiting length
+#[must_use]
 pub fn sanitize_table_name(name: &str) -> String {
     // Replace spaces and other problematic characters with underscores
     // to create SQL-friendly table names

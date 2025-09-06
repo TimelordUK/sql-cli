@@ -25,7 +25,7 @@ pub struct TableRenderContext {
     /// Column headers in visual order
     pub column_headers: Vec<String>,
 
-    /// Column widths in visual order (matching column_headers)
+    /// Column widths in visual order (matching `column_headers`)
     pub column_widths: Vec<u16>,
 
     /// Indices of pinned columns (in visual space)
@@ -74,32 +74,38 @@ pub struct TableRenderContext {
 
 impl TableRenderContext {
     /// Check if a given row is the currently selected row
+    #[must_use]
     pub fn is_selected_row(&self, viewport_row_index: usize) -> bool {
         let absolute_row = self.row_viewport.start + viewport_row_index;
         absolute_row == self.selected_row
     }
 
     /// Check if a given column is the currently selected column
+    #[must_use]
     pub fn is_selected_column(&self, visual_column_index: usize) -> bool {
         visual_column_index == self.selected_column
     }
 
     /// Check if a column is pinned
+    #[must_use]
     pub fn is_pinned_column(&self, visual_column_index: usize) -> bool {
         visual_column_index < self.pinned_count
     }
 
     /// Get the crosshair position (selected cell)
+    #[must_use]
     pub fn get_crosshair(&self) -> (usize, usize) {
         (self.selected_row, self.selected_column)
     }
 
     /// Check if we're at a specific cell
+    #[must_use]
     pub fn is_crosshair_cell(&self, viewport_row_index: usize, visual_column_index: usize) -> bool {
         self.is_selected_row(viewport_row_index) && self.is_selected_column(visual_column_index)
     }
 
     /// Get sort indicator for a column
+    #[must_use]
     pub fn get_sort_indicator(&self, visual_column_index: usize) -> &str {
         if let Some(ref sort) = self.sort_state {
             if sort.column == Some(visual_column_index) {
@@ -117,6 +123,7 @@ impl TableRenderContext {
     }
 
     /// Check if a cell value matches the fuzzy filter
+    #[must_use]
     pub fn cell_matches_filter(&self, cell_value: &str) -> bool {
         if let Some(ref pattern) = self.fuzzy_filter_pattern {
             if pattern.starts_with('\'') && pattern.len() > 1 {
@@ -140,8 +147,7 @@ impl TableRenderContext {
                 };
                 matcher
                     .fuzzy_match(cell_value, pattern)
-                    .map(|score| score > 0)
-                    .unwrap_or(false)
+                    .is_some_and(|score| score > 0)
             } else {
                 false
             }
@@ -151,7 +157,7 @@ impl TableRenderContext {
     }
 }
 
-/// Builder for TableRenderContext to make construction easier
+/// Builder for `TableRenderContext` to make construction easier
 pub struct TableRenderContextBuilder {
     context: TableRenderContext,
 }
@@ -163,6 +169,7 @@ impl Default for TableRenderContextBuilder {
 }
 
 impl TableRenderContextBuilder {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             context: TableRenderContext {
@@ -188,29 +195,34 @@ impl TableRenderContextBuilder {
         }
     }
 
+    #[must_use]
     pub fn row_count(mut self, count: usize) -> Self {
         self.context.row_count = count;
         self
     }
 
+    #[must_use]
     pub fn visible_rows(mut self, indices: Vec<usize>, data: Vec<Vec<String>>) -> Self {
         self.context.visible_row_indices = indices;
         self.context.data_rows = data;
         self
     }
 
+    #[must_use]
     pub fn columns(mut self, headers: Vec<String>, widths: Vec<u16>) -> Self {
         self.context.column_headers = headers;
         self.context.column_widths = widths;
         self
     }
 
+    #[must_use]
     pub fn pinned_columns(mut self, indices: Vec<usize>) -> Self {
         self.context.pinned_count = indices.len();
         self.context.pinned_column_indices = indices;
         self
     }
 
+    #[must_use]
     pub fn selection(mut self, row: usize, column: usize, mode: SelectionMode) -> Self {
         self.context.selected_row = row;
         self.context.selected_column = column;
@@ -218,34 +230,40 @@ impl TableRenderContextBuilder {
         self
     }
 
+    #[must_use]
     pub fn row_viewport(mut self, range: Range<usize>) -> Self {
         self.context.row_viewport = range;
         self
     }
 
+    #[must_use]
     pub fn sort_state(mut self, state: Option<SortState>) -> Self {
         self.context.sort_state = state;
         self
     }
 
+    #[must_use]
     pub fn display_options(mut self, show_row_numbers: bool, app_mode: AppMode) -> Self {
         self.context.show_row_numbers = show_row_numbers;
         self.context.app_mode = app_mode;
         self
     }
 
+    #[must_use]
     pub fn filter(mut self, pattern: Option<String>, case_insensitive: bool) -> Self {
         self.context.fuzzy_filter_pattern = pattern;
         self.context.case_insensitive = case_insensitive;
         self
     }
 
+    #[must_use]
     pub fn dimensions(mut self, width: u16, height: u16) -> Self {
         self.context.available_width = width;
         self.context.available_height = height;
         self
     }
 
+    #[must_use]
     pub fn build(self) -> TableRenderContext {
         self.context
     }

@@ -1,11 +1,12 @@
 use crate::recursive_parser::{Lexer, Token};
 
 /// Manages text navigation and token-based movement
-/// Extracted from the monolithic enhanced_tui.rs
+/// Extracted from the monolithic `enhanced_tui.rs`
 pub struct TextNavigator;
 
 impl TextNavigator {
-    /// Get the cursor's position in terms of tokens (current_token, total_tokens)
+    /// Get the cursor's position in terms of tokens (`current_token`, `total_tokens`)
+    #[must_use]
     pub fn get_cursor_token_position(query: &str, cursor_pos: usize) -> (usize, usize) {
         if query.is_empty() {
             return (0, 0);
@@ -46,6 +47,7 @@ impl TextNavigator {
     }
 
     /// Get the token at the cursor position
+    #[must_use]
     pub fn get_token_at_cursor(query: &str, cursor_pos: usize) -> Option<String> {
         if query.is_empty() {
             return None;
@@ -68,6 +70,7 @@ impl TextNavigator {
     }
 
     /// Calculate the target position for jumping to the previous token
+    #[must_use]
     pub fn calculate_prev_token_position(query: &str, cursor_pos: usize) -> Option<usize> {
         if cursor_pos == 0 {
             return None;
@@ -111,6 +114,7 @@ impl TextNavigator {
     }
 
     /// Calculate the target position for jumping to the next token
+    #[must_use]
     pub fn calculate_next_token_position(query: &str, cursor_pos: usize) -> Option<usize> {
         let query_len = query.len();
         if cursor_pos >= query_len {
@@ -218,7 +222,8 @@ pub struct TextEditor;
 
 impl TextEditor {
     /// Kill text from beginning of line to cursor position
-    /// Returns (killed_text, remaining_text)
+    /// Returns (`killed_text`, `remaining_text`)
+    #[must_use]
     pub fn kill_line_backward(text: &str, cursor_pos: usize) -> Option<(String, String)> {
         if cursor_pos == 0 {
             return None;
@@ -231,7 +236,8 @@ impl TextEditor {
     }
 
     /// Kill text from cursor position to end of line
-    /// Returns (killed_text, remaining_text)
+    /// Returns (`killed_text`, `remaining_text`)
+    #[must_use]
     pub fn kill_line_forward(text: &str, cursor_pos: usize) -> Option<(String, String)> {
         if cursor_pos >= text.len() {
             return None;
@@ -244,7 +250,8 @@ impl TextEditor {
     }
 
     /// Delete word backward from cursor position
-    /// Returns (deleted_text, remaining_text, new_cursor_pos)
+    /// Returns (`deleted_text`, `remaining_text`, `new_cursor_pos`)
+    #[must_use]
     pub fn delete_word_backward(text: &str, cursor_pos: usize) -> Option<(String, String, usize)> {
         if cursor_pos == 0 {
             return None;
@@ -293,7 +300,8 @@ impl TextEditor {
     }
 
     /// Delete word forward from cursor position
-    /// Returns (deleted_text, remaining_text)
+    /// Returns (`deleted_text`, `remaining_text`)
+    #[must_use]
     pub fn delete_word_forward(text: &str, cursor_pos: usize) -> Option<(String, String)> {
         if cursor_pos >= text.len() {
             return None;

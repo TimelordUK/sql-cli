@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use super::{ArgCount, FunctionCategory, FunctionSignature, SqlFunction};
 use crate::data::datatable::DataValue;
 
-/// Helper to compare two DataValues
+/// Helper to compare two `DataValues`
 /// Returns None if values are incomparable (different types that can't be coerced)
 fn compare_values(a: &DataValue, b: &DataValue) -> Option<Ordering> {
     match (a, b) {
@@ -309,7 +309,7 @@ impl SqlFunction for IifFunction {
     }
 }
 
-/// GREATEST_LABEL function - returns the label associated with the greatest value
+/// `GREATEST_LABEL` function - returns the label associated with the greatest value
 /// Takes pairs of (label, value) and returns the label of the maximum value
 pub struct GreatestLabelFunction;
 
@@ -390,7 +390,7 @@ impl SqlFunction for GreatestLabelFunction {
     }
 }
 
-/// LEAST_LABEL function - returns the label associated with the smallest value
+/// `LEAST_LABEL` function - returns the label associated with the smallest value
 pub struct LeastLabelFunction;
 
 impl SqlFunction for LeastLabelFunction {

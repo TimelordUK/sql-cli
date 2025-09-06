@@ -45,6 +45,7 @@ pub struct ChartViewport {
 }
 
 impl ChartViewport {
+    #[must_use]
     pub fn new(x_range: (f64, f64), y_range: (f64, f64)) -> Self {
         Self {
             x_min: x_range.0,

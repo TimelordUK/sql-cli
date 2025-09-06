@@ -56,7 +56,7 @@ impl Default for DebouncedInputConfig {
 
 /// A reusable debounced input widget
 pub struct DebouncedInput {
-    /// The underlying tui_input
+    /// The underlying `tui_input`
     input: Input,
     /// Debouncer for the input
     debouncer: Debouncer,
@@ -76,11 +76,13 @@ impl Default for DebouncedInput {
 
 impl DebouncedInput {
     /// Create a new debounced input with default config
+    #[must_use]
     pub fn new() -> Self {
         Self::with_config(DebouncedInputConfig::default())
     }
 
     /// Create a new debounced input with custom config
+    #[must_use]
     pub fn with_config(config: DebouncedInputConfig) -> Self {
         Self {
             input: Input::default(),
@@ -106,11 +108,13 @@ impl DebouncedInput {
     }
 
     /// Check if the widget is active
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.active
     }
 
     /// Get the current input value
+    #[must_use]
     pub fn value(&self) -> &str {
         self.input.value()
     }
@@ -121,6 +125,7 @@ impl DebouncedInput {
     }
 
     /// Get the cursor position
+    #[must_use]
     pub fn cursor(&self) -> usize {
         self.input.cursor()
     }
@@ -157,11 +162,11 @@ impl DebouncedInput {
                 let current_pattern = self.input.value().to_string();
 
                 // Check if pattern actually changed
-                if self.last_executed_pattern.as_ref() != Some(&current_pattern) {
+                if self.last_executed_pattern.as_ref() == Some(&current_pattern) {
+                    DebouncedInputAction::Continue
+                } else {
                     self.debouncer.trigger();
                     DebouncedInputAction::InputChanged(current_pattern)
-                } else {
-                    DebouncedInputAction::Continue
                 }
             }
         }
@@ -173,11 +178,11 @@ impl DebouncedInput {
         if self.debouncer.should_execute() {
             let pattern = self.input.value().to_string();
             // Only execute if pattern changed since last execution
-            if self.last_executed_pattern.as_ref() != Some(&pattern) {
+            if self.last_executed_pattern.as_ref() == Some(&pattern) {
+                None
+            } else {
                 self.last_executed_pattern = Some(pattern.clone());
                 Some(pattern)
-            } else {
-                None
             }
         } else {
             None
@@ -220,7 +225,7 @@ impl DebouncedInput {
     }
 }
 
-/// Builder pattern for DebouncedInput configuration
+/// Builder pattern for `DebouncedInput` configuration
 pub struct DebouncedInputBuilder {
     config: DebouncedInputConfig,
 }
@@ -232,12 +237,14 @@ impl Default for DebouncedInputBuilder {
 }
 
 impl DebouncedInputBuilder {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             config: DebouncedInputConfig::default(),
         }
     }
 
+    #[must_use]
     pub fn debounce_ms(mut self, ms: u64) -> Self {
         self.config.debounce_ms = ms;
         self
@@ -248,16 +255,19 @@ impl DebouncedInputBuilder {
         self
     }
 
+    #[must_use]
     pub fn style(mut self, style: Style) -> Self {
         self.config.style = style;
         self
     }
 
+    #[must_use]
     pub fn show_indicator(mut self, show: bool) -> Self {
         self.config.show_debounce_indicator = show;
         self
     }
 
+    #[must_use]
     pub fn build(self) -> DebouncedInput {
         DebouncedInput::with_config(self.config)
     }

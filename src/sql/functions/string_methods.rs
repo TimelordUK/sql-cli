@@ -21,7 +21,7 @@ pub trait MethodFunction: SqlFunction {
     }
 }
 
-/// ToUpper method function
+/// `ToUpper` method function
 pub struct ToUpperMethod;
 
 impl SqlFunction for ToUpperMethod {
@@ -62,7 +62,7 @@ impl MethodFunction for ToUpperMethod {
     }
 }
 
-/// ToLower method function
+/// `ToLower` method function
 pub struct ToLowerMethod;
 
 impl SqlFunction for ToLowerMethod {
@@ -232,7 +232,7 @@ impl MethodFunction for ContainsMethod {
     }
 }
 
-/// StartsWith method function
+/// `StartsWith` method function
 pub struct StartsWithMethod;
 
 impl SqlFunction for StartsWithMethod {
@@ -281,7 +281,7 @@ impl MethodFunction for StartsWithMethod {
     }
 }
 
-/// EndsWith method function
+/// `EndsWith` method function
 pub struct EndsWithMethod;
 
 impl SqlFunction for EndsWithMethod {
@@ -696,6 +696,7 @@ pub struct EditDistanceFunction;
 
 impl EditDistanceFunction {
     /// Calculate the Levenshtein distance between two strings
+    #[must_use]
     pub fn calculate_edit_distance(s1: &str, s2: &str) -> usize {
         let len1 = s1.len();
         let len2 = s2.len();
@@ -710,7 +711,7 @@ impl EditDistanceFunction {
 
         for (i, c1) in s1.chars().enumerate() {
             for (j, c2) in s2.chars().enumerate() {
-                let cost = if c1 == c2 { 0 } else { 1 };
+                let cost = usize::from(c1 != c2);
                 matrix[i + 1][j + 1] = std::cmp::min(
                     matrix[i][j + 1] + 1, // deletion
                     std::cmp::min(

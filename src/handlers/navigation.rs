@@ -13,12 +13,14 @@ impl Default for NavigationHandler {
 }
 
 impl NavigationHandler {
+    #[must_use]
     pub fn new() -> Self {
         NavigationHandler
     }
 
     /// Process navigation keys and convert to actions
     /// Returns Some(Action) if key was handled, None otherwise
+    #[must_use]
     pub fn handle_key(&self, key: KeyEvent, mode: &crate::buffer::AppMode) -> Option<Action> {
         use crate::buffer::AppMode;
 
@@ -116,6 +118,7 @@ impl NavigationHandler {
     }
 
     /// Check if a key is a navigation key that this handler manages
+    #[must_use]
     pub fn is_navigation_key(&self, key: &KeyEvent, mode: &crate::buffer::AppMode) -> bool {
         self.handle_key(*key, mode).is_some()
     }

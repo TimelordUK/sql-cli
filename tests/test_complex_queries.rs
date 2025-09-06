@@ -69,7 +69,7 @@ fn test_complex_trade_query_tokenization() {
     assert_eq!(tokens.len(), expected_tokens.len(), "Token count mismatch");
 
     for (i, (actual, expected)) in tokens.iter().zip(expected_tokens.iter()).enumerate() {
-        assert_eq!(actual, expected, "Token mismatch at position {}", i);
+        assert_eq!(actual, expected, "Token mismatch at position {i}");
     }
 }
 
@@ -287,7 +287,7 @@ fn test_string_literals_with_special_chars() {
     for query in test_cases {
         let mut parser = Parser::new(query);
         let result = parser.parse();
-        assert!(result.is_ok(), "Query '{}' should parse", query);
+        assert!(result.is_ok(), "Query '{query}' should parse");
     }
 }
 
@@ -378,8 +378,7 @@ fn test_tokenization_of_limit_keywords() {
         let limit_found = tokens.iter().any(|t| matches!(t, Token::Limit));
         assert!(
             limit_found,
-            "Query '{}' should tokenize LIMIT as Token::Limit",
-            query
+            "Query '{query}' should tokenize LIMIT as Token::Limit"
         );
 
         // If OFFSET is in query, it should be tokenized correctly too
@@ -387,8 +386,7 @@ fn test_tokenization_of_limit_keywords() {
             let offset_found = tokens.iter().any(|t| matches!(t, Token::Offset));
             assert!(
                 offset_found,
-                "Query '{}' should tokenize OFFSET as Token::Offset",
-                query
+                "Query '{query}' should tokenize OFFSET as Token::Offset"
             );
         }
     }

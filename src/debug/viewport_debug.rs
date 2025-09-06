@@ -2,19 +2,20 @@ use crate::debug::debug_trace::{DebugSection, DebugSectionBuilder, DebugTrace, P
 use crate::ui::viewport_manager::ViewportManager;
 use std::sync::Arc;
 
-/// Debug trace implementation for ViewportManager
+/// Debug trace implementation for `ViewportManager`
 pub struct ViewportDebugProvider {
     viewport_manager: Arc<ViewportManager>,
 }
 
 impl ViewportDebugProvider {
+    #[must_use]
     pub fn new(viewport_manager: Arc<ViewportManager>) -> Self {
         Self { viewport_manager }
     }
 }
 
 impl DebugTrace for ViewportDebugProvider {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "ViewportManager"
     }
 
@@ -29,7 +30,7 @@ impl DebugTrace for ViewportDebugProvider {
         let crosshair_col = self.viewport_manager.get_crosshair_col();
         builder.add_field(
             "Crosshair Position",
-            format!("row={}, col={}", crosshair_row, crosshair_col),
+            format!("row={crosshair_row}, col={crosshair_col}"),
         );
 
         // Get viewport range

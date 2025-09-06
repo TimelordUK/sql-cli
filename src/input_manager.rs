@@ -1,7 +1,7 @@
 use crossterm::event::{Event, KeyEvent};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
-/// Unified interface for managing input widgets (Input and TextArea)
+/// Unified interface for managing input widgets (Input and `TextArea`)
 /// This trait abstracts the differences between single-line and multi-line input
 /// allowing the Buffer system to work with either transparently
 pub trait InputManager: Send + Sync {
@@ -59,7 +59,7 @@ pub trait InputManager: Send + Sync {
     fn reset_history_position(&mut self);
 }
 
-/// Single-line input manager wrapping tui_input::Input
+/// Single-line input manager wrapping `tui_input::Input`
 pub struct SingleLineInput {
     input: Input,
     history: Vec<String>,
@@ -68,6 +68,7 @@ pub struct SingleLineInput {
 }
 
 impl SingleLineInput {
+    #[must_use]
     pub fn new(text: String) -> Self {
         let input = Input::new(text.clone()).with_cursor(text.len());
         Self {
@@ -78,6 +79,7 @@ impl SingleLineInput {
         }
     }
 
+    #[must_use]
     pub fn from_input(input: Input) -> Self {
         Self {
             input,
@@ -87,6 +89,7 @@ impl SingleLineInput {
         }
     }
 
+    #[must_use]
     pub fn as_input(&self) -> &Input {
         &self.input
     }
@@ -232,11 +235,13 @@ impl InputManager for SingleLineInput {
     }
 }
 
-/// Factory methods for creating InputManager instances
+/// Factory methods for creating `InputManager` instances
+#[must_use]
 pub fn create_single_line(text: String) -> Box<dyn InputManager> {
     Box::new(SingleLineInput::new(text))
 }
 
+#[must_use]
 pub fn create_from_input(input: Input) -> Box<dyn InputManager> {
     Box::new(SingleLineInput::from_input(input))
 }

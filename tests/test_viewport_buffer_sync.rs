@@ -1,4 +1,4 @@
-/// Test that ViewportManager is correctly synced with the current buffer
+/// Test that `ViewportManager` is correctly synced with the current buffer
 /// when loading multiple files
 use sql_cli::buffer::{Buffer, BufferAPI, BufferManager};
 use sql_cli::data::data_view::DataView;

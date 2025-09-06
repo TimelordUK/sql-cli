@@ -4,11 +4,11 @@ use serde_json::Value;
 use std::collections::HashMap;
 use tracing::{debug, info, trace};
 
-/// Convert JSON values (from CSV or JSON sources) to DataTable
+/// Convert JSON values (from CSV or JSON sources) to `DataTable`
 pub struct DataTableConverter;
 
 impl DataTableConverter {
-    /// Convert a vector of JSON values to a DataTable
+    /// Convert a vector of JSON values to a `DataTable`
     pub fn from_json_values(values: &[Value], table_name: impl Into<String>) -> Result<DataTable> {
         let table_name = table_name.into();
         info!(target: "datatable", "Converting {} JSON values to DataTable '{}'", 
@@ -139,7 +139,7 @@ impl DataTableConverter {
         column_types
     }
 
-    /// Infer DataType from a JSON value
+    /// Infer `DataType` from a JSON value
     fn infer_json_type(value: &Value) -> DataType {
         match value {
             Value::Null => DataType::Null,
@@ -156,7 +156,7 @@ impl DataTableConverter {
         }
     }
 
-    /// Convert a JSON row to DataRow
+    /// Convert a JSON row to `DataRow`
     fn convert_json_row(
         json_row: &Value,
         column_names: &[String],
@@ -168,8 +168,7 @@ impl DataTableConverter {
             for (col_name, col_type) in column_names.iter().zip(column_types.iter()) {
                 let value = obj
                     .get(col_name)
-                    .map(|v| Self::json_to_datavalue(v, col_type))
-                    .unwrap_or(DataValue::Null);
+                    .map_or(DataValue::Null, |v| Self::json_to_datavalue(v, col_type));
                 values.push(value);
             }
         } else {
@@ -179,17 +178,14 @@ impl DataTableConverter {
         Ok(DataRow::new(values))
     }
 
-    /// Convert JSON value to DataValue
+    /// Convert JSON value to `DataValue`
     fn json_to_datavalue(json_val: &Value, expected_type: &DataType) -> DataValue {
         match json_val {
             Value::Null => DataValue::Null,
             Value::Bool(b) => DataValue::Boolean(*b),
             Value::Number(n) => match expected_type {
-                DataType::Integer => n
-                    .as_i64()
-                    .map(DataValue::Integer)
-                    .unwrap_or(DataValue::Null),
-                DataType::Float => n.as_f64().map(DataValue::Float).unwrap_or(DataValue::Null),
+                DataType::Integer => n.as_i64().map_or(DataValue::Null, DataValue::Integer),
+                DataType::Float => n.as_f64().map_or(DataValue::Null, DataValue::Float),
                 _ => DataValue::String(n.to_string()),
             },
             Value::String(s) => DataValue::from_string(s, expected_type),
@@ -247,7 +243,7 @@ impl DataTableConverter {
         }
     }
 
-    /// Debug print a DataTable (for testing)
+    /// Debug print a `DataTable` (for testing)
     pub fn debug_print(table: &DataTable) {
         println!("DataTable: {}", table.name);
         println!("Columns: {}", table.column_count());
@@ -264,9 +260,9 @@ impl DataTableConverter {
         // Print first 5 rows
         println!("\nFirst 5 rows:");
         for (idx, row) in table.rows.iter().take(5).enumerate() {
-            print!("  Row {}: ", idx);
+            print!("  Row {idx}: ");
             for value in &row.values {
-                print!("{}, ", value);
+                print!("{value}, ");
             }
             println!();
         }

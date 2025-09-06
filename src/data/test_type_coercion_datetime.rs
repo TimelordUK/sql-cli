@@ -20,8 +20,7 @@ mod tests {
             assert_eq!(
                 inferred_type,
                 DataType::String,
-                "ID '{}' should be inferred as String, not DateTime",
-                id
+                "ID '{id}' should be inferred as String, not DateTime"
             );
         }
     }
@@ -36,8 +35,7 @@ mod tests {
             assert_eq!(
                 inferred_type,
                 DataType::DateTime,
-                "Date '{}' should be inferred as DateTime",
-                date
+                "Date '{date}' should be inferred as DateTime"
             );
         }
     }
@@ -58,11 +56,10 @@ mod tests {
             "ZZ-87654321",
         ];
 
-        let column_type =
-            analyzer.detect_column_type(&id_values.iter().copied().collect::<Vec<_>>());
+        let column_type = analyzer.detect_column_type(&id_values.to_vec());
 
         // The problem: These are being detected as Date when they should be String
-        println!("Column type detected for ID values: {:?}", column_type);
+        println!("Column type detected for ID values: {column_type:?}");
 
         // This test will currently FAIL because the regex pattern
         // ^\d{2}-\d{2}-\d{4} matches strings like "81-19-8596"
@@ -87,8 +84,7 @@ mod tests {
             "2024-05-10",
         ];
 
-        let column_type =
-            analyzer.detect_column_type(&date_values.iter().copied().collect::<Vec<_>>());
+        let column_type = analyzer.detect_column_type(&date_values.to_vec());
         assert_eq!(
             column_type,
             ColumnType::Date,

@@ -69,7 +69,7 @@ fn test_commission_queries(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Create temp file with .json extension
     let temp_dir = std::env::temp_dir();
-    let temp_file = temp_dir.join(format!("{}.json", table_name));
+    let temp_file = temp_dir.join(format!("{table_name}.json"));
 
     // Write JSON data to file
     fs::write(&temp_file, data.to_string())?;
@@ -80,39 +80,36 @@ fn test_commission_queries(
 
     // Test queries
     let test_queries = vec![
-        ("All records", format!("SELECT * FROM {}", table_name)),
+        ("All records", format!("SELECT * FROM {table_name}")),
         (
             "commission > 1000",
-            format!("SELECT * FROM {} WHERE commission > 1000", table_name),
+            format!("SELECT * FROM {table_name} WHERE commission > 1000"),
         ),
         (
             "commission > 1000.0",
-            format!("SELECT * FROM {} WHERE commission > 1000.0", table_name),
+            format!("SELECT * FROM {table_name} WHERE commission > 1000.0"),
         ),
         (
             "commission < 1000",
-            format!("SELECT * FROM {} WHERE commission < 1000", table_name),
+            format!("SELECT * FROM {table_name} WHERE commission < 1000"),
         ),
         (
             "commission BETWEEN 1000 AND 2000",
-            format!(
-                "SELECT * FROM {} WHERE commission BETWEEN 1000 AND 2000",
-                table_name
-            ),
+            format!("SELECT * FROM {table_name} WHERE commission BETWEEN 1000 AND 2000"),
         ),
         (
             "commission = 1500",
-            format!("SELECT * FROM {} WHERE commission = 1500", table_name),
+            format!("SELECT * FROM {table_name} WHERE commission = 1500"),
         ),
         (
             "commission = '1500.0' (string literal)",
-            format!("SELECT * FROM {} WHERE commission = '1500.0'", table_name),
+            format!("SELECT * FROM {table_name} WHERE commission = '1500.0'"),
         ),
     ];
 
     for (description, query) in test_queries {
-        println!("\n  Query: {}", description);
-        println!("  SQL: {}", query);
+        println!("\n  Query: {description}");
+        println!("  SQL: {query}");
 
         match client.query_csv(&query) {
             Ok(result) => {
@@ -126,25 +123,25 @@ fn test_commission_queries(
                             if i > 0 {
                                 print!(", ");
                             }
-                            print!("{}", commission);
+                            print!("{commission}");
                         }
                     }
                     println!();
                 }
             }
             Err(e) => {
-                println!("  Error: {}", e);
+                println!("  Error: {e}");
             }
         }
     }
 
     // Additional type inspection
     println!("\n  Type inspection:");
-    let result = client.query_csv(&format!("SELECT * FROM {} LIMIT 1", table_name))?;
+    let result = client.query_csv(&format!("SELECT * FROM {table_name} LIMIT 1"))?;
     if let Some(first_row) = result.data.first() {
         if let Some(commission) = first_row.get("commission") {
             println!("  Commission value type: {}", value_type_name(commission));
-            println!("  Commission raw value: {:?}", commission);
+            println!("  Commission raw value: {commission:?}");
         }
     }
 

@@ -1,8 +1,9 @@
 use crate::data::datatable::DataValue;
 use std::cmp::Ordering;
 
-/// Utility function to compare two DataValues, handling all types including InternedString
-/// This centralizes comparison logic to avoid duplicating InternedString handling everywhere
+/// Utility function to compare two `DataValues`, handling all types including `InternedString`
+/// This centralizes comparison logic to avoid duplicating `InternedString` handling everywhere
+#[must_use]
 pub fn compare_datavalues(a: &DataValue, b: &DataValue) -> Ordering {
     match (a, b) {
         // Integer comparisons
@@ -76,7 +77,8 @@ pub fn compare_datavalues(a: &DataValue, b: &DataValue) -> Ordering {
     }
 }
 
-/// Compare DataValues with optional values (handling None)
+/// Compare `DataValues` with optional values (handling None)
+#[must_use]
 pub fn compare_optional_datavalues(a: Option<&DataValue>, b: Option<&DataValue>) -> Ordering {
     match (a, b) {
         (None, None) => Ordering::Equal,

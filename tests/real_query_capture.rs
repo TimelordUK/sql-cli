@@ -30,6 +30,7 @@ impl Default for QueryReplayHarness {
 }
 
 impl QueryReplayHarness {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             queries: Vec::new(),
@@ -140,6 +141,7 @@ impl QueryReplayHarness {
 
 /// Helper function to capture query from TUI debug output and create test
 /// Usage: Call this with F5 debug dump content and it will suggest a test
+#[must_use]
 pub fn suggest_test_from_debug_dump(_debug_content: &str, data_file: &str) -> String {
     // Parse debug content to extract query and results info
     // This would analyze the debug dump format and suggest a CapturedQuery struct
@@ -148,14 +150,13 @@ pub fn suggest_test_from_debug_dump(_debug_content: &str, data_file: &str) -> St
         "// Suggested test from TUI debug dump:\n\
          harness.add_query(CapturedQuery {{\n\
          \x20   description: \"Query captured from TUI debug session\".to_string(),\n\
-         \x20   data_file: \"{}\".to_string(),\n\
+         \x20   data_file: \"{data_file}\".to_string(),\n\
          \x20   query: \"SELECT * FROM data\".to_string(), // TODO: Extract from debug\n\
          \x20   expected_row_count: 0, // TODO: Count from debug output\n\
          \x20   expected_columns: vec![], // TODO: Extract from debug output\n\
          \x20   expected_first_row: None, // TODO: Extract first row if needed\n\
          \x20   case_insensitive: false,\n\
-         }});",
-        data_file
+         }});"
     )
 }
 
@@ -321,7 +322,7 @@ mod tests {
     fn test_from_yanked_tui_session() -> anyhow::Result<()> {
         // This simulates what we'd get from yanking a complex query from the TUI debug view
         // Strip comments from the yanked query since our parser doesn't handle SQL comments yet
-        let yanked_query_session = r#"
+        let yanked_query_session = r"
         SELECT 
             trader,
             COUNT(*) as trade_count,
@@ -335,7 +336,7 @@ mod tests {
         GROUP BY trader 
         HAVING COUNT(*) >= 1
         ORDER BY total_value DESC
-        "#
+        "
         .trim();
 
         let mut harness = QueryReplayHarness::new();

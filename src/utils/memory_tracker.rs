@@ -1,4 +1,5 @@
 /// Get current process memory usage in MB
+#[must_use]
 pub fn get_memory_mb() -> usize {
     // Use /proc/self/status on Linux
     #[cfg(target_os = "linux")]
@@ -21,6 +22,7 @@ pub fn get_memory_mb() -> usize {
 }
 
 /// Get current process memory usage in KB (cross-platform)
+#[must_use]
 pub fn get_process_memory_kb() -> Option<usize> {
     #[cfg(target_os = "linux")]
     {
@@ -83,6 +85,7 @@ thread_local! {
 }
 
 /// Track memory at a specific point
+#[must_use]
 pub fn track_memory(label: &str) -> usize {
     let mb = get_memory_mb();
 
@@ -93,7 +96,7 @@ pub fn track_memory(label: &str) -> usize {
         let delta = if let Some((_, last_mb)) = log.last() {
             let diff = (mb as i32) - (*last_mb as i32);
             if diff != 0 {
-                format!(" ({:+} MB)", diff)
+                format!(" ({diff:+} MB)")
             } else {
                 String::new()
             }
@@ -115,11 +118,13 @@ pub fn track_memory(label: &str) -> usize {
 }
 
 /// Get memory history for display
+#[must_use]
 pub fn get_memory_history() -> Vec<(String, usize)> {
     MEMORY_LOG.with(|log| log.borrow().clone())
 }
 
 /// Format memory history as a string
+#[must_use]
 pub fn format_memory_history() -> String {
     MEMORY_LOG.with(|log| {
         let log = log.borrow();
@@ -130,7 +135,7 @@ pub fn format_memory_history() -> String {
                 let prev_mb = log[i - 1].1;
                 let diff = (*mb as i32) - (prev_mb as i32);
                 if diff != 0 {
-                    format!(" ({:+} MB)", diff)
+                    format!(" ({diff:+} MB)")
                 } else {
                     String::new()
                 }
@@ -138,7 +143,7 @@ pub fn format_memory_history() -> String {
                 String::new()
             };
 
-            output.push_str(&format!("  {}: {} MB{}\n", label, mb, delta));
+            output.push_str(&format!("  {label}: {mb} MB{delta}\n"));
         }
 
         output

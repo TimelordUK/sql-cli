@@ -9,8 +9,7 @@ fn test_count_distinct_parsing() {
 
     assert!(
         result.is_ok(),
-        "COUNT(DISTINCT column) should parse successfully, got: {:?}",
-        result
+        "COUNT(DISTINCT column) should parse successfully, got: {result:?}"
     );
 
     let stmt = result.unwrap();
@@ -20,21 +19,20 @@ fn test_count_distinct_parsing() {
 
 #[test]
 fn test_multiple_distinct_aggregates() {
-    let query = r#"
+    let query = r"
         SELECT 
             COUNT(DISTINCT counterparty) as unique_counterparties,
             SUM(DISTINCT amount) as total_unique_amounts,
             AVG(DISTINCT price) as avg_unique_price
         FROM trades
-    "#;
+    ";
 
     let mut parser = Parser::new(query);
     let result = parser.parse();
 
     assert!(
         result.is_ok(),
-        "Multiple DISTINCT aggregates should parse successfully, got: {:?}",
-        result
+        "Multiple DISTINCT aggregates should parse successfully, got: {result:?}"
     );
 
     let stmt = result.unwrap();
@@ -46,7 +44,7 @@ fn test_multiple_distinct_aggregates() {
 
 #[test]
 fn test_original_failing_query() {
-    let query = r#"
+    let query = r"
         SELECT 
             COUNT(*) as total_trades,
             AVG(commission) as avg_commission,
@@ -56,15 +54,14 @@ fn test_original_failing_query() {
         FROM trades 
         WHERE NOT confirmationStatus.Contains('reject') 
         AND NOT confirmationStatus.Contains('cancel')
-    "#;
+    ";
 
     let mut parser = Parser::new(query);
     let result = parser.parse();
 
     assert!(
         result.is_ok(),
-        "Original failing query should now parse successfully, got: {:?}",
-        result
+        "Original failing query should now parse successfully, got: {result:?}"
     );
 
     let stmt = result.unwrap();

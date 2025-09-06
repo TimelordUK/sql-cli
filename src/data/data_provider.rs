@@ -1,12 +1,12 @@
 //! Data provider traits for abstracting data access
 //!
 //! This module defines the core traits that allow the TUI to work with
-//! data without knowing the underlying implementation (Buffer, CSVClient, DataTable, etc.)
+//! data without knowing the underlying implementation (Buffer, `CSVClient`, `DataTable`, etc.)
 
 use std::fmt::Debug;
 use std::hash::Hash;
 
-/// Filter specification for DataView
+/// Filter specification for `DataView`
 #[derive(Debug, Clone)]
 pub enum FilterSpec {
     /// SQL WHERE clause filter
@@ -68,7 +68,7 @@ pub trait DataProvider: Send + Sync + Debug {
     fn get_column_count(&self) -> usize;
 
     /// Get multiple rows for efficient rendering
-    /// This is an optimization to avoid multiple get_row calls
+    /// This is an optimization to avoid multiple `get_row` calls
     fn get_visible_rows(&self, start: usize, count: usize) -> Vec<Vec<String>> {
         let mut rows = Vec::new();
         let end = (start + count).min(self.get_row_count());
@@ -140,7 +140,7 @@ pub trait DataProvider: Send + Sync + Debug {
 
 /// Extended trait for data views that support filtering and sorting
 ///
-/// This trait extends DataProvider with mutable operations that change
+/// This trait extends `DataProvider` with mutable operations that change
 /// what data is visible without modifying the underlying data.
 pub trait DataViewProvider: DataProvider {
     /// Apply a filter to the view

@@ -69,7 +69,7 @@ pub trait ExportBehavior {
     fn get_export_filename(&self, extension: &str) -> String {
         use chrono::Local;
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        format!("export_{}.{}", timestamp, extension)
+        format!("export_{timestamp}.{extension}")
     }
 
     /// Handle export result with status message

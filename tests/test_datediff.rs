@@ -3,7 +3,7 @@ use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use sql_cli::data::query_engine::QueryEngine;
 use std::sync::Arc;
 
-/// Helper to get a value from a DataView
+/// Helper to get a value from a `DataView`
 fn get_value(view: &DataView, row_idx: usize, col_idx: usize) -> DataValue {
     view.get_row(row_idx).unwrap().get(col_idx).unwrap().clone()
 }
@@ -57,7 +57,7 @@ fn test_datediff_days() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT id, DATEDIFF('day', order_date, ship_date) as days_diff FROM test"#;
+    let query = r"SELECT id, DATEDIFF('day', order_date, ship_date) as days_diff FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 2);
@@ -74,7 +74,7 @@ fn test_datediff_years() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT id, DATEDIFF('year', birth_date, order_date) as age_years FROM test"#;
+    let query = r"SELECT id, DATEDIFF('year', birth_date, order_date) as age_years FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 2);
@@ -92,7 +92,8 @@ fn test_datediff_with_datetime() {
     let engine = QueryEngine::new();
 
     // Test hours difference with datetime values
-    let query = r#"SELECT id, DATEDIFF('hour', last_login, order_date) as hours_diff FROM test WHERE id = 1"#;
+    let query =
+        r"SELECT id, DATEDIFF('hour', last_login, order_date) as hours_diff FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 2);
@@ -105,8 +106,7 @@ fn test_datediff_with_datetime() {
     };
     assert!(
         (108..=112).contains(&hours),
-        "Hours difference should be around 110, got {}",
-        hours
+        "Hours difference should be around 110, got {hours}"
     );
 }
 
@@ -115,7 +115,7 @@ fn test_now_function() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT NOW() as current_time FROM test LIMIT 1"#;
+    let query = r"SELECT NOW() as current_time FROM test LIMIT 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 1);
@@ -124,8 +124,8 @@ fn test_now_function() {
     // Check that NOW() returns a datetime string
     match get_value(&result, 0, 0) {
         DataValue::DateTime(dt) | DataValue::String(dt) => {
-            assert!(dt.contains("-"));
-            assert!(dt.contains(":"));
+            assert!(dt.contains('-'));
+            assert!(dt.contains(':'));
         }
         _ => panic!("NOW() should return a datetime string"),
     }
@@ -136,7 +136,7 @@ fn test_today_function() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT TODAY() as current_date FROM test LIMIT 1"#;
+    let query = r"SELECT TODAY() as current_date FROM test LIMIT 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 1);
@@ -145,8 +145,8 @@ fn test_today_function() {
     // Check that TODAY() returns a date string
     match get_value(&result, 0, 0) {
         DataValue::String(dt) => {
-            assert!(dt.contains("-"));
-            assert!(!dt.contains(":")); // Should not have time component
+            assert!(dt.contains('-'));
+            assert!(!dt.contains(':')); // Should not have time component
             assert_eq!(dt.len(), 10); // YYYY-MM-DD format
         }
         _ => panic!("TODAY() should return a date string"),
@@ -160,7 +160,7 @@ fn test_datediff_with_now() {
 
     // Test calculating days from a date to NOW()
     let query =
-        r#"SELECT id, DATEDIFF('day', order_date, NOW()) as days_since FROM test WHERE id = 1"#;
+        r"SELECT id, DATEDIFF('day', order_date, NOW()) as days_since FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 2);
@@ -183,7 +183,7 @@ fn test_datediff_in_where_clause() {
     let engine = QueryEngine::new();
 
     // Find orders shipped more than 3 days after order date
-    let query = r#"SELECT id, order_date, ship_date FROM test WHERE DATEDIFF('day', order_date, ship_date) > 3"#;
+    let query = r"SELECT id, order_date, ship_date FROM test WHERE DATEDIFF('day', order_date, ship_date) > 3";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 3);
@@ -198,7 +198,7 @@ fn test_datediff_negative_values() {
     let engine = QueryEngine::new();
 
     // Find early shipments (negative date differences)
-    let query = r#"SELECT id, DATEDIFF('day', order_date, ship_date) as diff FROM test WHERE DATEDIFF('day', order_date, ship_date) < 0"#;
+    let query = r"SELECT id, DATEDIFF('day', order_date, ship_date) as diff FROM test WHERE DATEDIFF('day', order_date, ship_date) < 0";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 2);

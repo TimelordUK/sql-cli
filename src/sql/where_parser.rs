@@ -154,10 +154,8 @@ impl WhereParser {
 
                     self.expect_token(Token::RightParen)?;
 
-                    let date_str = format!(
-                        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-                        year, month, day, hour, minute, second
-                    );
+                    let date_str =
+                        format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}");
                     Ok(WhereValue::String(date_str))
                 }
             }

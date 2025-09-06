@@ -1,15 +1,15 @@
-//! Adapter to make CsvApiClient implement DataProvider trait
+//! Adapter to make `CsvApiClient` implement `DataProvider` trait
 //!
-//! This adapter allows the existing CsvApiClient to work with the new DataProvider
-//! trait system without modifying the CsvApiClient code itself.
+//! This adapter allows the existing `CsvApiClient` to work with the new `DataProvider`
+//! trait system without modifying the `CsvApiClient` code itself.
 
 use crate::api_client::QueryResponse;
 use crate::data::csv_datasource::CsvApiClient;
 use crate::data::data_provider::DataProvider;
 use std::fmt::Debug;
 
-/// Adapter that makes CsvApiClient implement DataProvider
-/// Note: This adapter requires querying the data first since CsvApiClient
+/// Adapter that makes `CsvApiClient` implement `DataProvider`
+/// Note: This adapter requires querying the data first since `CsvApiClient`
 /// doesn't store results internally - it generates them on query
 pub struct CsvClientAdapter<'a> {
     client: &'a CsvApiClient,
@@ -17,8 +17,9 @@ pub struct CsvClientAdapter<'a> {
 }
 
 impl<'a> CsvClientAdapter<'a> {
-    /// Create a new CsvClientAdapter wrapping a CsvApiClient
-    /// You should call execute_query() to populate data before using DataProvider methods
+    /// Create a new `CsvClientAdapter` wrapping a `CsvApiClient`
+    /// You should call `execute_query()` to populate data before using `DataProvider` methods
+    #[must_use]
     pub fn new(client: &'a CsvApiClient) -> Self {
         Self {
             client,
@@ -26,7 +27,7 @@ impl<'a> CsvClientAdapter<'a> {
         }
     }
 
-    /// Execute a query and cache the results for DataProvider access
+    /// Execute a query and cache the results for `DataProvider` access
     pub fn execute_query(&mut self, sql: &str) -> anyhow::Result<()> {
         let response = self.client.query_csv(sql)?;
         self.cached_response = Some(response);
@@ -34,7 +35,7 @@ impl<'a> CsvClientAdapter<'a> {
     }
 }
 
-impl<'a> Debug for CsvClientAdapter<'a> {
+impl Debug for CsvClientAdapter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CsvClientAdapter")
             .field("row_count", &self.get_row_count())
@@ -44,7 +45,7 @@ impl<'a> Debug for CsvClientAdapter<'a> {
     }
 }
 
-impl<'a> DataProvider for CsvClientAdapter<'a> {
+impl DataProvider for CsvClientAdapter<'_> {
     fn get_row(&self, index: usize) -> Option<Vec<String>> {
         self.cached_response.as_ref().and_then(|response| {
             response.data.get(index).map(|json_value| {
@@ -81,7 +82,7 @@ impl<'a> DataProvider for CsvClientAdapter<'a> {
             // Extract column names from first data row if available
             if let Some(first_row) = response.data.first() {
                 if let Some(obj) = first_row.as_object() {
-                    return obj.keys().map(|k| k.to_string()).collect();
+                    return obj.keys().map(std::string::ToString::to_string).collect();
                 }
             }
         }
@@ -94,10 +95,7 @@ impl<'a> DataProvider for CsvClientAdapter<'a> {
     }
 
     fn get_row_count(&self) -> usize {
-        self.cached_response
-            .as_ref()
-            .map(|r| r.data.len())
-            .unwrap_or(0)
+        self.cached_response.as_ref().map_or(0, |r| r.data.len())
     }
 
     fn get_column_count(&self) -> usize {

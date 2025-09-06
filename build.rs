@@ -15,7 +15,7 @@ fn is_prime(n: u32) -> bool {
         return false;
     }
 
-    let sqrt_n = (n as f64).sqrt() as u32;
+    let sqrt_n = f64::from(n).sqrt() as u32;
     for i in (3..=sqrt_n).step_by(2) {
         if n % i == 0 {
             return false;
@@ -64,7 +64,7 @@ fn main() {
         if i % 10 == 0 {
             write!(f, "\n    ").unwrap();
         }
-        write!(f, "{:6}, ", p).unwrap();
+        write!(f, "{p:6}, ").unwrap();
     }
     writeln!(f, "\n];").unwrap();
     writeln!(f).unwrap();
@@ -76,7 +76,7 @@ fn main() {
         if i % 10 == 0 {
             write!(f, "\n    ").unwrap();
         }
-        write!(f, "{:6}, ", p).unwrap();
+        write!(f, "{p:6}, ").unwrap();
     }
     writeln!(f, "\n];").unwrap();
     writeln!(f).unwrap();
@@ -94,7 +94,7 @@ fn main() {
         if i % 10 == 0 {
             write!(f, "\n    ").unwrap();
         }
-        write!(f, "{}, ", p).unwrap();
+        write!(f, "{p}, ").unwrap();
     }
     writeln!(f, "\n];").unwrap();
 

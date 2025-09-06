@@ -88,6 +88,7 @@ impl Default for HelpWidget {
 }
 
 impl HelpWidget {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             state: HelpState::default(),
@@ -330,7 +331,7 @@ impl HelpWidget {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(format!("Commands & Editing{}", scroll_indicator)),
+                    .title(format!("Commands & Editing{scroll_indicator}")),
             )
             .style(Style::default());
 
@@ -413,7 +414,7 @@ impl HelpWidget {
                 // Convert Vec<Line> to String
                 HelpText::left_column()
                     .iter()
-                    .map(|line| line.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>()
                     .join("\n")
             }
@@ -421,7 +422,7 @@ impl HelpWidget {
                 // Convert Vec<Line> to String
                 HelpText::right_column()
                     .iter()
-                    .map(|line| line.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>()
                     .join("\n")
             }
@@ -445,7 +446,7 @@ impl HelpWidget {
     }
 
     fn get_navigation_help(&self) -> String {
-        r#"NAVIGATION HELP
+        r"NAVIGATION HELP
 
 Within Results:
   ↑/↓         - Move between rows
@@ -471,12 +472,12 @@ Viewport Control:
   Ctrl+L      - Lock/unlock viewport
   z           - Center current row
   zt          - Current row to top
-  zb          - Current row to bottom"#
+  zb          - Current row to bottom"
             .to_string()
     }
 
     fn get_search_help(&self) -> String {
-        r#"SEARCH & FILTER HELP
+        r"SEARCH & FILTER HELP
 
 Search Modes:
   /           - Search forward in results
@@ -501,12 +502,12 @@ Search Within Help:
   /           - Search in help text
   n           - Next match
   N           - Previous match
-  Esc         - Exit search mode"#
+  Esc         - Exit search mode"
             .to_string()
     }
 
     fn get_advanced_help(&self) -> String {
-        r#"ADVANCED FEATURES
+        r"ADVANCED FEATURES
 
 Query Management:
   Ctrl+S      - Save query to file
@@ -531,7 +532,7 @@ Buffer Management:
   Ctrl+Tab    - Next buffer
   Ctrl+Shift+Tab - Previous buffer
   :ls         - List all buffers
-  :b [n]      - Switch to buffer n"#
+  :b [n]      - Switch to buffer n"
             .to_string()
     }
 
@@ -539,7 +540,7 @@ Buffer Management:
         // Debug status display removed - ServiceContainer no longer used
 
         String::from(
-            r#"DEBUG FEATURES
+            r"DEBUG FEATURES
 
 Debug Keys:
   F5          - Toggle debug overlay (in help)
@@ -561,7 +562,7 @@ Debug Information Available:
   - Performance metrics
   - Error logs
   
-"#,
+",
         )
     }
 
@@ -594,6 +595,7 @@ Debug Information Available:
     }
 
     /// Get current state for external use
+    #[must_use]
     pub fn get_state(&self) -> &HelpState {
         &self.state
     }
@@ -615,7 +617,7 @@ Debug Information Available:
 }
 
 impl DebugProvider for HelpWidget {
-    fn component_name(&self) -> &str {
+    fn component_name(&self) -> &'static str {
         "HelpWidget"
     }
 

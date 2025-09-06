@@ -1,5 +1,5 @@
 /// Manages all cursor and navigation operations
-/// This extracts cursor logic from the monolithic enhanced_tui.rs
+/// This extracts cursor logic from the monolithic `enhanced_tui.rs`
 pub struct CursorManager {
     /// Current cursor position in the input (byte offset)
     input_cursor_position: usize,
@@ -24,6 +24,7 @@ impl Default for CursorManager {
 }
 
 impl CursorManager {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             input_cursor_position: 0,
@@ -114,6 +115,7 @@ impl CursorManager {
     }
 
     /// Get current cursor position
+    #[must_use]
     pub fn position(&self) -> usize {
         self.input_cursor_position
     }
@@ -177,6 +179,7 @@ impl CursorManager {
     }
 
     /// Get current table cursor position
+    #[must_use]
     pub fn table_position(&self) -> (usize, usize) {
         self.table_cursor
     }
@@ -217,6 +220,7 @@ impl CursorManager {
     }
 
     /// Get current scroll offsets
+    #[must_use]
     pub fn scroll_offsets(&self) -> (u16, usize) {
         (self.horizontal_scroll, self.vertical_scroll)
     }
@@ -235,6 +239,7 @@ impl CursorManager {
     // ========== Token/Word Utilities ==========
 
     /// Find word boundaries at current position
+    #[must_use]
     pub fn get_word_at_cursor(&self, text: &str) -> Option<(usize, usize, String)> {
         if text.is_empty() || self.input_cursor_position > text.len() {
             return None;
@@ -264,13 +269,14 @@ impl CursorManager {
     }
 
     /// Get partial word before cursor (for completion)
+    #[must_use]
     pub fn get_partial_word_before_cursor(&self, text: &str) -> Option<String> {
         if self.input_cursor_position == 0 {
             return None;
         }
 
         let before_cursor = &text[..self.input_cursor_position];
-        let last_space = before_cursor.rfind(' ').map(|i| i + 1).unwrap_or(0);
+        let last_space = before_cursor.rfind(' ').map_or(0, |i| i + 1);
 
         if last_space < self.input_cursor_position {
             Some(before_cursor[last_space..].to_string())
@@ -280,7 +286,7 @@ impl CursorManager {
     }
 }
 
-/// Extension trait to integrate CursorManager with Buffer
+/// Extension trait to integrate `CursorManager` with Buffer
 pub trait CursorBuffer {
     fn cursor_manager(&self) -> &CursorManager;
     fn cursor_manager_mut(&mut self) -> &mut CursorManager;

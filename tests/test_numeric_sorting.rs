@@ -55,7 +55,7 @@ Item8,999999,999999999,999999.99"
 
         println!("Sorted small_num values (ascending):");
         for (i, val) in sorted_values.iter().enumerate() {
-            println!("  {}: {:?}", i, val);
+            println!("  {i}: {val:?}");
         }
 
         // Check if values are properly sorted numerically
@@ -73,7 +73,7 @@ Item8,999999,999999999,999999.99"
             })
             .collect();
 
-        println!("Numeric values: {:?}", numeric_values);
+        println!("Numeric values: {numeric_values:?}");
 
         // Verify they are in ascending order
         for i in 1..numeric_values.len() {
@@ -122,7 +122,7 @@ Item8,999999,999999999,999999.99"
 
         println!("Sorted float_val values (ascending):");
         for (i, val) in sorted_values.iter().enumerate() {
-            println!("  {}: {:?}", i, val);
+            println!("  {i}: {val:?}");
         }
 
         // Extract numeric values for verification
@@ -136,7 +136,7 @@ Item8,999999,999999999,999999.99"
             })
             .collect();
 
-        println!("Float numeric values: {:?}", numeric_values);
+        println!("Float numeric values: {numeric_values:?}");
 
         // Verify they are in ascending order
         for i in 1..numeric_values.len() {
@@ -183,7 +183,7 @@ Item8,999999,999999999,999999.99"
                     DataValue::InternedString(_) => "InternedString",
                     _ => "Other",
                 };
-                println!("  Value {}: {:?} ({})", i, val, type_name);
+                println!("  Value {i}: {val:?} ({type_name})");
             }
         }
 
@@ -193,16 +193,14 @@ Item8,999999,999999999,999999.99"
             if let Some(val) = row.values.get(1) {
                 assert!(
                     !matches!(val, DataValue::String(_) | DataValue::InternedString(_)),
-                    "small_num column should be numeric, not string: {:?}",
-                    val
+                    "small_num column should be numeric, not string: {val:?}"
                 );
             }
             // Check float_val column (index 3)
             if let Some(val) = row.values.get(3) {
                 assert!(
                     !matches!(val, DataValue::String(_) | DataValue::InternedString(_)),
-                    "float_val column should be numeric, not string: {:?}",
-                    val
+                    "float_val column should be numeric, not string: {val:?}"
                 );
             }
         }

@@ -14,11 +14,12 @@ pub struct DataLoaderService {
 }
 
 impl DataLoaderService {
+    #[must_use]
     pub fn new(case_insensitive: bool) -> Self {
         Self { case_insensitive }
     }
 
-    /// Load a file and return a DataView
+    /// Load a file and return a `DataView`
     /// The TUI doesn't need to know about file types or loading strategies
     pub fn load_file(&self, file_path: &str) -> Result<DataLoadResult> {
         let path = Path::new(file_path);
@@ -104,7 +105,7 @@ impl DataLoaderService {
         )
     }
 
-    /// Load data using CsvApiClient (for additional files)
+    /// Load data using `CsvApiClient` (for additional files)
     pub fn load_with_client(&self, file_path: &str) -> Result<DataLoadResult> {
         let mut csv_client = CsvApiClient::new();
         csv_client.set_case_insensitive(self.case_insensitive);
@@ -146,7 +147,7 @@ impl DataLoaderService {
         )
     }
 
-    /// Create a DataLoadResult from a DataTable
+    /// Create a `DataLoadResult` from a `DataTable`
     fn create_result(
         &self,
         datatable: DataTable,
@@ -181,7 +182,7 @@ impl DataLoaderService {
 
 /// Result of loading data
 pub struct DataLoadResult {
-    /// The loaded DataView ready for display
+    /// The loaded `DataView` ready for display
     pub dataview: DataView,
 
     /// Path to the source file
@@ -205,6 +206,7 @@ pub struct DataLoadResult {
 
 impl DataLoadResult {
     /// Generate a status message for the load operation
+    #[must_use]
     pub fn status_message(&self) -> String {
         format!(
             "Loaded {} ({} rows, {} columns) in {} ms",

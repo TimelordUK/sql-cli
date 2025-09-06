@@ -9,7 +9,7 @@ use crate::data::datatable::DataValue;
 pub struct CountStarFunction;
 
 impl AggregateFunction for CountStarFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "COUNT_STAR"
     }
 
@@ -37,7 +37,7 @@ impl AggregateFunction for CountStarFunction {
 pub struct CountFunction;
 
 impl AggregateFunction for CountFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "COUNT"
     }
 
@@ -67,7 +67,7 @@ impl AggregateFunction for CountFunction {
 pub struct SumFunction;
 
 impl AggregateFunction for SumFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "SUM"
     }
 
@@ -99,7 +99,7 @@ impl AggregateFunction for SumFunction {
 pub struct AvgFunction;
 
 impl AggregateFunction for AvgFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "AVG"
     }
 
@@ -131,7 +131,7 @@ impl AggregateFunction for AvgFunction {
 pub struct MinFunction;
 
 impl AggregateFunction for MinFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MIN"
     }
 
@@ -159,7 +159,7 @@ impl AggregateFunction for MinFunction {
 pub struct MaxFunction;
 
 impl AggregateFunction for MaxFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MAX"
     }
 

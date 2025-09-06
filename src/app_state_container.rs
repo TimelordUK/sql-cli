@@ -29,6 +29,7 @@ pub enum Platform {
 }
 
 impl Platform {
+    #[must_use]
     pub fn detect() -> Self {
         if cfg!(target_os = "windows") {
             Platform::Windows
@@ -64,6 +65,7 @@ pub struct KeyPressEntry {
 }
 
 impl KeyPressEntry {
+    #[must_use]
     pub fn new(key: KeyEvent, mode: AppMode, action: Option<String>) -> Self {
         let display_string = Self::format_key(&key);
         let now = Local::now();
@@ -108,6 +110,7 @@ impl KeyPressEntry {
     }
 
     /// Get display string with repeat count in vim-style notation
+    #[must_use]
     pub fn display_with_count(&self) -> String {
         if self.repeat_count > 1 {
             // Use vim-style notation: 5j instead of j x5
@@ -151,7 +154,7 @@ impl KeyPressEntry {
             KeyCode::Tab => result.push_str("Tab"),
             KeyCode::Delete => result.push_str("Del"),
             KeyCode::Insert => result.push_str("Ins"),
-            KeyCode::F(n) => result.push_str(&format!("F{}", n)),
+            KeyCode::F(n) => result.push_str(&format!("F{n}")),
             KeyCode::Left => result.push('←'),
             KeyCode::Right => result.push('→'),
             KeyCode::Up => result.push('↑'),
@@ -167,6 +170,7 @@ impl KeyPressEntry {
     }
 
     /// Get a detailed debug string for this key press
+    #[must_use]
     pub fn debug_string(&self) -> String {
         let modifiers = if self.raw_event.modifiers.is_empty() {
             String::new()
@@ -177,7 +181,7 @@ impl KeyPressEntry {
         let action = self
             .interpreted_action
             .as_ref()
-            .map(|a| format!(" → {}", a))
+            .map(|a| format!(" → {a}"))
             .unwrap_or_default();
 
         let repeat_info = if self.repeat_count > 1 {
@@ -222,6 +226,7 @@ pub struct KeyPressHistory {
 }
 
 impl KeyPressHistory {
+    #[must_use]
     pub fn new(max_size: usize) -> Self {
         Self {
             entries: VecDeque::with_capacity(max_size),
@@ -269,9 +274,8 @@ impl KeyPressHistory {
                     last_entry.interpreted_action = entry.interpreted_action;
                 }
                 return;
-            } else {
-                tracing::debug!("Key NOT coalesced - adding new entry");
             }
+            tracing::debug!("Key NOT coalesced - adding new entry");
         }
 
         // Not a repeat, need to add new entry
@@ -317,6 +321,7 @@ impl KeyPressHistory {
     }
 
     /// Get all entries
+    #[must_use]
     pub fn entries(&self) -> &VecDeque<KeyPressEntry> {
         &self.entries
     }
@@ -327,6 +332,7 @@ impl KeyPressHistory {
     }
 
     /// Get formatted history for display
+    #[must_use]
     pub fn format_history(&self) -> String {
         let mut output = String::new();
         output.push_str("========== KEY PRESS HISTORY ==========\n");
@@ -339,8 +345,7 @@ impl KeyPressHistory {
         // Count total key presses including repeats
         let total_presses: usize = self.entries.iter().map(|e| e.repeat_count).sum();
         output.push_str(&format!(
-            "Total key presses (with repeats): {}\n",
-            total_presses
+            "Total key presses (with repeats): {total_presses}\n"
         ));
 
         for entry in &self.entries {
@@ -362,6 +367,7 @@ impl KeyPressHistory {
     }
 
     /// Get detailed debug history with platform info and actions
+    #[must_use]
     pub fn format_debug_history(&self) -> String {
         let mut output = String::new();
         output.push_str("========== DETAILED KEY HISTORY ==========\n");
@@ -396,6 +402,7 @@ impl Default for InputState {
 }
 
 impl InputState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             text: String::new(),
@@ -469,6 +476,7 @@ impl Default for SearchState {
 }
 
 impl SearchState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             pattern: String::new(),
@@ -537,6 +545,7 @@ impl Default for FilterState {
 }
 
 impl FilterState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             pattern: String::new(),
@@ -584,12 +593,12 @@ impl FilterState {
     pub fn set_pattern(&mut self, pattern: String) {
         info!(target: "filter", "FilterState::set_pattern('{}') - was '{}'", pattern, self.pattern);
         self.pattern = pattern;
-        if !self.pattern.is_empty() {
+        if self.pattern.is_empty() {
+            self.is_active = false;
+        } else {
             self.is_active = true;
             self.total_filters += 1;
             self.last_filter_time = Some(Instant::now());
-        } else {
-            self.is_active = false;
         }
     }
 
@@ -602,12 +611,13 @@ impl FilterState {
 
     /// Set filtered data from filter operation
     pub fn set_filtered_data(&mut self, data: Option<Vec<Vec<String>>>) {
-        let count = data.as_ref().map(|d| d.len()).unwrap_or(0);
+        let count = data.as_ref().map_or(0, std::vec::Vec::len);
         info!(target: "filter", "FilterState::set_filtered_data - {} rows", count);
         self.filtered_data = data;
     }
 
     /// Get filter statistics
+    #[must_use]
     pub fn get_stats(&self) -> String {
         format!(
             "Total filters: {}, History items: {}, Current matches: {}",
@@ -624,10 +634,10 @@ pub struct ColumnSearchState {
     /// Current search pattern
     pub pattern: String,
 
-    /// Matching columns (index, column_name)
+    /// Matching columns (index, `column_name`)
     pub matching_columns: Vec<(usize, String)>,
 
-    /// Current match index (index into matching_columns)
+    /// Current match index (index into `matching_columns`)
     pub current_match: usize,
 
     /// Whether column search is active
@@ -681,6 +691,7 @@ impl Default for CompletionState {
 }
 
 impl CompletionState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             suggestions: Vec::new(),
@@ -720,6 +731,7 @@ impl CompletionState {
     }
 
     /// Get current suggestion
+    #[must_use]
     pub fn current_suggestion(&self) -> Option<&String> {
         if self.is_active && !self.suggestions.is_empty() {
             self.suggestions.get(self.current_index)
@@ -729,6 +741,7 @@ impl CompletionState {
     }
 
     /// Check if we're in the same completion context
+    #[must_use]
     pub fn is_same_context(&self, query: &str, cursor_pos: usize) -> bool {
         query == self.last_query && cursor_pos == self.last_cursor_pos
     }
@@ -747,6 +760,7 @@ impl Default for ColumnSearchState {
 }
 
 impl ColumnSearchState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             pattern: String::new(),
@@ -825,6 +839,7 @@ impl ColumnSearchState {
     }
 
     /// Get current match
+    #[must_use]
     pub fn current_match(&self) -> Option<(usize, String)> {
         if self.matching_columns.is_empty() {
             None
@@ -834,6 +849,7 @@ impl ColumnSearchState {
     }
 
     /// Get search statistics
+    #[must_use]
     pub fn get_stats(&self) -> String {
         format!(
             "Total searches: {}, History items: {}, Current matches: {}",
@@ -858,6 +874,7 @@ impl Default for CacheListState {
 }
 
 impl CacheListState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             selected_index: 0,
@@ -880,6 +897,7 @@ impl Default for ColumnStatsState {
 }
 
 impl ColumnStatsState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             column_index: 0,
@@ -920,6 +938,7 @@ impl Default for NavigationState {
 }
 
 impl NavigationState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             selected_row: 0,
@@ -1235,6 +1254,7 @@ impl NavigationState {
         }
     }
 
+    #[must_use]
     pub fn is_position_visible(&self, row: usize, col: usize) -> bool {
         let (scroll_row, scroll_col) = self.scroll_offset;
         row >= scroll_row
@@ -1274,16 +1294,19 @@ impl NavigationState {
     }
 
     /// Check if cursor is at top of viewport
+    #[must_use]
     pub fn is_at_viewport_top(&self) -> bool {
         self.selected_row == self.scroll_offset.0
     }
 
     /// Check if cursor is at bottom of viewport
+    #[must_use]
     pub fn is_at_viewport_bottom(&self) -> bool {
         self.selected_row == self.scroll_offset.0 + self.viewport_rows - 1
     }
 
     /// Get position description for status
+    #[must_use]
     pub fn get_position_status(&self) -> String {
         if self.viewport_lock {
             if self.is_at_viewport_top() {
@@ -1291,10 +1314,10 @@ impl NavigationState {
             } else if self.is_at_viewport_bottom() {
                 " (at viewport bottom)".to_string()
             } else {
-                "".to_string()
+                String::new()
             }
         } else {
-            "".to_string()
+            String::new()
         }
     }
 
@@ -1320,6 +1343,7 @@ impl Default for JumpToRowState {
 }
 
 impl JumpToRowState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             input: String::new(),
@@ -1368,6 +1392,7 @@ impl Default for SortState {
 }
 
 impl SortState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             column: None,
@@ -1418,6 +1443,7 @@ impl SortState {
     }
 
     /// Get the next sort order for a column
+    #[must_use]
     pub fn get_next_order(&self, column_index: usize) -> SortOrder {
         // Debug: GET_NEXT_ORDER calculation
         if let Some(current_col) = self.column {
@@ -1472,6 +1498,7 @@ impl SortState {
     }
 
     /// Get sort statistics
+    #[must_use]
     pub fn get_stats(&self) -> String {
         let current = if let (Some(col), Some(name)) = (self.column, &self.column_name) {
             format!(
@@ -1544,6 +1571,7 @@ impl Default for SelectionState {
 }
 
 impl SelectionState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             mode: SelectionMode::Row,
@@ -1633,6 +1661,7 @@ impl SelectionState {
     }
 
     /// Get selection statistics
+    #[must_use]
     pub fn get_stats(&self) -> String {
         let mode_str = match self.mode {
             SelectionMode::Row => "Row",
@@ -1642,7 +1671,7 @@ impl SelectionState {
 
         let selection_str = match (self.selected_row, self.selected_cells.len()) {
             (Some(row), 0) => format!("Row {}, Col {}", row, self.selected_column),
-            (_, n) if n > 0 => format!("{} cells selected", n),
+            (_, n) if n > 0 => format!("{n} cells selected"),
             _ => format!("Col {}", self.selected_column),
         };
 
@@ -1663,42 +1692,44 @@ pub struct NavigationProxy<'a> {
 }
 
 impl<'a> NavigationProxy<'a> {
+    #[must_use]
     pub fn new(buffer: Option<&'a crate::buffer::Buffer>) -> Self {
         Self { buffer }
     }
 
+    #[must_use]
     pub fn selected_row(&self) -> usize {
-        self.buffer.map(|b| b.view_state.crosshair_row).unwrap_or(0)
+        self.buffer.map_or(0, |b| b.view_state.crosshair_row)
     }
 
+    #[must_use]
     pub fn selected_column(&self) -> usize {
-        self.buffer.map(|b| b.view_state.crosshair_col).unwrap_or(0)
+        self.buffer.map_or(0, |b| b.view_state.crosshair_col)
     }
 
+    #[must_use]
     pub fn scroll_offset(&self) -> (usize, usize) {
-        self.buffer
-            .map(|b| b.view_state.scroll_offset)
-            .unwrap_or((0, 0))
+        self.buffer.map_or((0, 0), |b| b.view_state.scroll_offset)
     }
 
+    #[must_use]
     pub fn viewport_lock(&self) -> bool {
-        self.buffer
-            .map(|b| b.view_state.viewport_lock)
-            .unwrap_or(false)
+        self.buffer.is_some_and(|b| b.view_state.viewport_lock)
     }
 
+    #[must_use]
     pub fn cursor_lock(&self) -> bool {
-        self.buffer
-            .map(|b| b.view_state.cursor_lock)
-            .unwrap_or(false)
+        self.buffer.is_some_and(|b| b.view_state.cursor_lock)
     }
 
+    #[must_use]
     pub fn total_rows(&self) -> usize {
-        self.buffer.map(|b| b.view_state.total_rows).unwrap_or(0)
+        self.buffer.map_or(0, |b| b.view_state.total_rows)
     }
 
+    #[must_use]
     pub fn total_columns(&self) -> usize {
-        self.buffer.map(|b| b.view_state.total_columns).unwrap_or(0)
+        self.buffer.map_or(0, |b| b.view_state.total_columns)
     }
 }
 
@@ -1708,6 +1739,7 @@ pub struct NavigationProxyMut<'a> {
 }
 
 impl<'a> NavigationProxyMut<'a> {
+    #[must_use]
     pub fn new(buffer: Option<&'a mut crate::buffer::Buffer>) -> Self {
         Self { buffer }
     }
@@ -1756,22 +1788,26 @@ pub struct SelectionProxy<'a> {
 }
 
 impl<'a> SelectionProxy<'a> {
+    #[must_use]
     pub fn new(buffer: Option<&'a crate::buffer::Buffer>) -> Self {
         Self { buffer }
     }
 
+    #[must_use]
     pub fn mode(&self) -> crate::buffer::SelectionMode {
-        self.buffer
-            .map(|b| b.view_state.selection_mode.clone())
-            .unwrap_or(crate::buffer::SelectionMode::Row)
+        self.buffer.map_or(crate::buffer::SelectionMode::Row, |b| {
+            b.view_state.selection_mode.clone()
+        })
     }
 
+    #[must_use]
     pub fn selected_cells(&self) -> Vec<(usize, usize)> {
         self.buffer
             .map(|b| b.view_state.selected_cells.clone())
             .unwrap_or_default()
     }
 
+    #[must_use]
     pub fn selection_anchor(&self) -> Option<(usize, usize)> {
         self.buffer.and_then(|b| b.view_state.selection_anchor)
     }
@@ -1783,6 +1819,7 @@ pub struct SelectionProxyMut<'a> {
 }
 
 impl<'a> SelectionProxyMut<'a> {
+    #[must_use]
     pub fn new(buffer: Option<&'a mut crate::buffer::Buffer>) -> Self {
         Self { buffer }
     }
@@ -1830,6 +1867,7 @@ impl Default for HistorySearchState {
 }
 
 impl HistorySearchState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             query: String::new(),
@@ -1875,6 +1913,7 @@ impl Default for HelpState {
 }
 
 impl HelpState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             is_visible: false,
@@ -1926,9 +1965,9 @@ impl HelpState {
 /// State for undo/redo operations
 #[derive(Debug, Clone)]
 pub struct UndoRedoState {
-    /// Undo stack storing (text, cursor_position)
+    /// Undo stack storing (text, `cursor_position`)
     pub undo_stack: Vec<(String, usize)>,
-    /// Redo stack storing (text, cursor_position)
+    /// Redo stack storing (text, `cursor_position`)
     pub redo_stack: Vec<(String, usize)>,
     /// Maximum number of undo entries to keep
     pub max_undo_entries: usize,
@@ -2044,17 +2083,20 @@ impl ChordState {
     }
 
     /// Get the current chord as a string
+    #[must_use]
     pub fn get_chord_string(&self) -> String {
         self.current_chord.join("")
     }
 
     /// Check if current chord matches a registered chord
+    #[must_use]
     pub fn check_match(&self) -> Option<String> {
         let chord = self.get_chord_string();
         self.registered_chords.get(&chord).cloned()
     }
 
     /// Check if current chord is a partial match
+    #[must_use]
     pub fn is_partial_match(&self) -> bool {
         let current = self.get_chord_string();
         self.registered_chords
@@ -2089,6 +2131,7 @@ impl Default for WidgetStates {
 }
 
 impl WidgetStates {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             search_modes: SearchModesWidget::new(),
@@ -2197,7 +2240,7 @@ impl Default for ResultsState {
 /// Clipboard/Yank state management
 #[derive(Debug, Clone)]
 pub struct ClipboardState {
-    /// Last yanked item (description, full_value, preview)
+    /// Last yanked item (description, `full_value`, preview)
     pub last_yanked: Option<YankedItem>,
 
     /// History of yanked items
@@ -2272,6 +2315,7 @@ impl Default for ClipboardState {
 }
 
 impl ClipboardState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -2304,19 +2348,20 @@ impl ClipboardState {
     }
 
     /// Get clipboard statistics
+    #[must_use]
     pub fn get_stats(&self) -> String {
         format!(
             "Total yanks: {}, History items: {}, Last yank: {}",
             self.total_yanks,
             self.yank_history.len(),
             self.last_yank_time
-                .map(|t| format!("{:?} ago", t.elapsed()))
-                .unwrap_or_else(|| "never".to_string())
+                .map_or_else(|| "never".to_string(), |t| format!("{:?} ago", t.elapsed()))
         )
     }
 }
 
 impl ResultsState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -2357,6 +2402,7 @@ impl ResultsState {
     }
 
     /// Get current results
+    #[must_use]
     pub fn get_results(&self) -> Option<&QueryResponse> {
         self.current_results.as_ref()
     }
@@ -2408,6 +2454,7 @@ impl ResultsState {
     }
 
     /// Get cache statistics
+    #[must_use]
     pub fn get_cache_stats(&self) -> CacheStats {
         CacheStats {
             entry_count: self.results_cache.len(),
@@ -2418,6 +2465,7 @@ impl ResultsState {
     }
 
     /// Get performance statistics
+    #[must_use]
     pub fn get_performance_stats(&self) -> PerformanceStats {
         let total_queries = self.query_performance_history.len();
         let cached_queries = self
@@ -2526,6 +2574,7 @@ pub struct ResultsCache {
 }
 
 impl ResultsCache {
+    #[must_use]
     pub fn new(max_size: usize) -> Self {
         Self {
             cache: HashMap::new(),
@@ -2533,6 +2582,7 @@ impl ResultsCache {
         }
     }
 
+    #[must_use]
     pub fn get(&self, key: &str) -> Option<&Vec<Vec<String>>> {
         self.cache.get(key)
     }
@@ -2611,6 +2661,7 @@ pub struct AppStateContainer {
 
 impl AppStateContainer {
     /// Format numbers in a compact way (1000 -> 1k, 1500000 -> 1.5M, etc.)
+    #[must_use]
     pub fn format_number_compact(n: usize) -> String {
         if n < 1000 {
             n.to_string()
@@ -2619,7 +2670,7 @@ impl AppStateContainer {
             if k.fract() == 0.0 {
                 format!("{}k", k as usize)
             } else if k < 10.0 {
-                format!("{:.1}k", k)
+                format!("{k:.1}k")
             } else {
                 format!("{}k", k as usize)
             }
@@ -2628,7 +2679,7 @@ impl AppStateContainer {
             if m.fract() == 0.0 {
                 format!("{}M", m as usize)
             } else if m < 10.0 {
-                format!("{:.1}M", m)
+                format!("{m:.1}M")
             } else {
                 format!("{}M", m as usize)
             }
@@ -2637,7 +2688,7 @@ impl AppStateContainer {
             if b.fract() == 0.0 {
                 format!("{}B", b as usize)
             } else {
-                format!("{:.1}B", b)
+                format!("{b:.1}B")
             }
         }
     }
@@ -2746,8 +2797,7 @@ impl AppStateContainer {
             debug_service.info(
                 "Search",
                 format!(
-                    "Starting search: '{}' (was: '{}', active: {})",
-                    pattern, old_pattern, old_active
+                    "Starting search: '{pattern}' (was: '{old_pattern}', active: {old_active})"
                 ),
             );
         }
@@ -2767,10 +2817,7 @@ impl AppStateContainer {
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
                 "Search",
-                format!(
-                    "Search found {} matches for pattern '{}'",
-                    match_count, pattern
-                ),
+                format!("Search found {match_count} matches for pattern '{pattern}'"),
             );
         }
 
@@ -2861,16 +2908,13 @@ impl AppStateContainer {
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
                 "Search",
-                format!(
-                    "Cleared search (had pattern: '{}', {} matches)",
-                    had_pattern, had_matches
-                ),
+                format!("Cleared search (had pattern: '{had_pattern}', {had_matches} matches)"),
             );
         }
     }
 
     /// Perform search on provided data
-    /// Returns the search matches as a vector of (row, col, row_end, col_end) tuples
+    /// Returns the search matches as a vector of (row, col, `row_end`, `col_end`) tuples
     pub fn perform_search(&self, data: &[Vec<String>]) -> Vec<(usize, usize, usize, usize)> {
         use regex::Regex;
 
@@ -2911,10 +2955,7 @@ impl AppStateContainer {
             }
             Err(e) => {
                 if let Some(ref debug_service) = *self.debug_service.borrow() {
-                    debug_service.info(
-                        "Search",
-                        format!("Invalid regex pattern '{}': {}", pattern, e),
-                    );
+                    debug_service.info("Search", format!("Invalid regex pattern '{pattern}': {e}"));
                 }
                 // Fall back to simple string contains search
                 let pattern_lower = pattern.to_lowercase();
@@ -2992,8 +3033,7 @@ impl AppStateContainer {
             debug_service.info(
                 "ColumnSearch",
                 format!(
-                    "Starting column search: '{}' (was: '{}', active: {})",
-                    pattern, old_pattern, old_active
+                    "Starting column search: '{pattern}' (was: '{old_pattern}', active: {old_active})"
                 ),
             );
         }
@@ -3096,8 +3136,7 @@ impl AppStateContainer {
             debug_service.info(
                 "ColumnSearch",
                 format!(
-                    "Cleared column search (had pattern: '{}', {} matches)",
-                    had_pattern, had_matches
+                    "Cleared column search (had pattern: '{had_pattern}', {had_matches} matches)"
                 ),
             );
         }
@@ -3110,7 +3149,7 @@ impl AppStateContainer {
             if let Some(ref debug_service) = *self.debug_service.borrow() {
                 debug_service.info(
                     "ColumnSearch",
-                    format!("Accepted column: '{}' at index {}", name, idx),
+                    format!("Accepted column: '{name}' at index {idx}"),
                 );
             }
             Some((idx, name))
@@ -3139,8 +3178,7 @@ impl AppStateContainer {
                 debug_service.info(
                     "Sort",
                     format!(
-                        "Cleared sort on column {} ({}), returning to original order",
-                        column_index, column_name
+                        "Cleared sort on column {column_index} ({column_name}), returning to original order"
                     ),
                 );
             }
@@ -3247,7 +3285,7 @@ impl AppStateContainer {
             if let Some(ref debug_service) = *self.debug_service.borrow() {
                 debug_service.info(
                     "Selection",
-                    format!("Mode changed: {:?} → {:?}", old_mode, mode),
+                    format!("Mode changed: {old_mode:?} → {mode:?}"),
                 );
             }
         }
@@ -3261,10 +3299,7 @@ impl AppStateContainer {
 
         if old_row != row {
             if let Some(ref debug_service) = *self.debug_service.borrow() {
-                debug_service.info(
-                    "Selection",
-                    format!("Row selection: {:?} → {:?}", old_row, row),
-                );
+                debug_service.info("Selection", format!("Row selection: {old_row:?} → {row:?}"));
             }
         }
     }
@@ -3279,7 +3314,7 @@ impl AppStateContainer {
             if let Some(ref debug_service) = *self.debug_service.borrow() {
                 debug_service.info(
                     "Selection",
-                    format!("Column selection: {} → {}", old_column, column),
+                    format!("Column selection: {old_column} → {column}"),
                 );
             }
         }
@@ -3290,7 +3325,7 @@ impl AppStateContainer {
         self.selection.borrow_mut().select_cell(row, column);
 
         if let Some(ref debug_service) = *self.debug_service.borrow() {
-            debug_service.info("Selection", format!("Cell selected: [{}, {}]", row, column));
+            debug_service.info("Selection", format!("Cell selected: [{row}, {column}]"));
         }
     }
 
@@ -3308,7 +3343,7 @@ impl AppStateContainer {
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
                 "Selection",
-                format!("Mode toggled: {:?} → {:?}", old_mode, new_mode),
+                format!("Mode toggled: {old_mode:?} → {new_mode:?}"),
             );
         }
     }
@@ -3341,7 +3376,7 @@ impl AppStateContainer {
         self.selection.borrow().selected_column
     }
 
-    /// Get the current selected position from NavigationState
+    /// Get the current selected position from `NavigationState`
     /// This is the primary source of truth for cursor position
     pub fn get_current_position(&self) -> (usize, usize) {
         let nav = self.navigation.borrow();
@@ -3413,7 +3448,7 @@ impl AppStateContainer {
                 if let Some(ref debug_service) = *self.debug_service.borrow() {
                     debug_service.info(
                         "Navigation",
-                        format!("Table row selected: {} → {}", old_row, row),
+                        format!("Table row selected: {old_row} → {row}"),
                     );
                 }
             }
@@ -3442,7 +3477,7 @@ impl AppStateContainer {
             if let Some(ref debug_service) = *self.debug_service.borrow() {
                 debug_service.info(
                     "Navigation",
-                    format!("Column selected: {} → {}", old_col, column),
+                    format!("Column selected: {old_col} → {column}"),
                 );
             }
         }
@@ -3469,7 +3504,7 @@ impl AppStateContainer {
             if let Some(ref debug_service) = *self.debug_service.borrow() {
                 debug_service.info(
                     "Completion",
-                    format!("Cleared {} suggestions", had_suggestions),
+                    format!("Cleared {had_suggestions} suggestions"),
                 );
             }
         }
@@ -3482,10 +3517,7 @@ impl AppStateContainer {
 
         if count > 0 {
             if let Some(ref debug_service) = *self.debug_service.borrow() {
-                debug_service.info(
-                    "Completion",
-                    format!("Set {} completion suggestions", count),
-                );
+                debug_service.info("Completion", format!("Set {count} completion suggestions"));
             }
         }
     }
@@ -3625,8 +3657,8 @@ impl AppStateContainer {
                         .fuzzy_indices(&entry.command, &query)
                         .map(|(score, indices)| crate::history::HistoryMatch {
                             entry,
-                            indices,
                             score,
+                            indices,
                         })
                 })
                 .collect();
@@ -3783,7 +3815,7 @@ impl AppStateContainer {
             if let Some(ref debug_service) = *self.debug_service.borrow() {
                 debug_service.info(
                     "HistorySearch",
-                    format!("Accepted history command: {:?}", command),
+                    format!("Accepted history command: {command:?}"),
                 );
             }
 
@@ -3801,7 +3833,7 @@ impl AppStateContainer {
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
                 "HistorySearch",
-                format!("Cancelled history search, restoring: '{}'", original),
+                format!("Cancelled history search, restoring: '{original}'"),
             );
         }
 
@@ -3844,8 +3876,7 @@ impl AppStateContainer {
                 "Navigation",
                 DebugLevel::Info,
                 format!(
-                    "Navigate: ({}, {}) -> ({}, {}), scroll: {:?}",
-                    old_row, old_col, new_row, new_col, scroll_offset
+                    "Navigate: ({old_row}, {old_col}) -> ({new_row}, {new_col}), scroll: {scroll_offset:?}"
                 ),
                 Some("navigate_to".to_string()),
             );
@@ -3882,7 +3913,7 @@ impl AppStateContainer {
             debug_service.log(
                 "Navigation",
                 DebugLevel::Info,
-                format!("Jump to row: {}", row),
+                format!("Jump to row: {row}"),
                 Some("navigate_to_row".to_string()),
             );
         }
@@ -3899,7 +3930,7 @@ impl AppStateContainer {
             debug_service.log(
                 "Navigation",
                 DebugLevel::Info,
-                format!("Jump to column: {}", col),
+                format!("Jump to column: {col}"),
                 Some("navigate_to_column".to_string()),
             );
         }
@@ -3944,8 +3975,7 @@ impl AppStateContainer {
                 "Navigation",
                 DebugLevel::Info,
                 format!(
-                    "Viewport size updated: {:?} -> ({}, {}), scroll adjusted: {:?}",
-                    old_viewport, rows, columns, scroll_offset
+                    "Viewport size updated: {old_viewport:?} -> ({rows}, {columns}), scroll adjusted: {scroll_offset:?}"
                 ),
                 Some("set_viewport_size".to_string()),
             );
@@ -4165,7 +4195,7 @@ impl AppStateContainer {
             debug_service.log(
                 "ResultsCache",
                 DebugLevel::Info,
-                format!("[RESULTS] Cache cleared: removed {} entries", before_count),
+                format!("[RESULTS] Cache cleared: removed {before_count} entries"),
                 Some("clear_cache".to_string()),
             );
         }
@@ -4227,7 +4257,7 @@ impl AppStateContainer {
         value: String,
         preview: String,
     ) -> Result<()> {
-        let description = format!("cell at [{}, {}]", row, column);
+        let description = format!("cell at [{row}, {column}]");
         let size_bytes = value.len();
 
         trace!(
@@ -4291,7 +4321,7 @@ impl AppStateContainer {
 
     /// Yank a row to clipboard
     pub fn yank_row(&self, row: usize, value: String, preview: String) -> Result<()> {
-        let description = format!("row {}", row);
+        let description = format!("row {row}");
         let size_bytes = value.len();
 
         // Copy to system clipboard
@@ -4342,7 +4372,7 @@ impl AppStateContainer {
         value: String,
         preview: String,
     ) -> Result<()> {
-        let description = format!("column '{}'", column_name);
+        let description = format!("column '{column_name}'");
         let size_bytes = value.len();
         let row_count = value.lines().count();
 
@@ -4377,10 +4407,7 @@ impl AppStateContainer {
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
                 "Clipboard",
-                format!(
-                    "Yanked {}: {} rows ({} bytes)",
-                    description, row_count, size_bytes
-                ),
+                format!("Yanked {description}: {row_count} rows ({size_bytes} bytes)"),
             );
         }
 
@@ -4420,7 +4447,7 @@ impl AppStateContainer {
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
                 "Clipboard",
-                format!("Yanked all data: {} rows ({} bytes)", row_count, size_bytes),
+                format!("Yanked all data: {row_count} rows ({size_bytes} bytes)"),
             );
         }
 
@@ -4449,7 +4476,7 @@ impl AppStateContainer {
         let item = YankedItem {
             description: "Test Case".to_string(),
             full_value: value.clone(),
-            preview: format!("{} lines of test case", line_count),
+            preview: format!("{line_count} lines of test case"),
             yank_type: YankType::TestCase,
             yanked_at: Local::now(),
             size_bytes,
@@ -4460,10 +4487,7 @@ impl AppStateContainer {
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
                 "Clipboard",
-                format!(
-                    "Yanked test case: {} lines ({} bytes)",
-                    line_count, size_bytes
-                ),
+                format!("Yanked test case: {line_count} lines ({size_bytes} bytes)"),
             );
         }
 
@@ -4503,10 +4527,7 @@ impl AppStateContainer {
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
                 "Clipboard",
-                format!(
-                    "Yanked debug context: {} lines ({} bytes)",
-                    line_count, size_bytes
-                ),
+                format!("Yanked debug context: {line_count} lines ({size_bytes} bytes)"),
             );
         }
 
@@ -4638,7 +4659,7 @@ impl AppStateContainer {
         if let Some(ref debug_service) = *self.debug_service.borrow() {
             debug_service.info(
                 "AppStateContainer",
-                format!("MODE TRANSITION: {:?} -> {:?}", current, mode),
+                format!("MODE TRANSITION: {current:?} -> {mode:?}"),
             );
         }
 
@@ -4667,7 +4688,7 @@ impl AppStateContainer {
             if let Some(ref debug_service) = *self.debug_service.borrow() {
                 debug_service.info(
                     "AppStateContainer",
-                    format!("MODE EXIT: {:?} -> {:?}", exited, new_mode),
+                    format!("MODE EXIT: {exited:?} -> {new_mode:?}"),
                 );
                 debug_service.info(
                     "AppStateContainer",
@@ -4692,7 +4713,7 @@ impl AppStateContainer {
         }
     }
 
-    /// Set the debug service for logging (can be called through Arc due to RefCell)
+    /// Set the debug service for logging (can be called through Arc due to `RefCell`)
     pub fn set_debug_service(&self, debug_service: crate::debug_service::DebugService) {
         *self.debug_service.borrow_mut() = Some(debug_service);
         if let Some(ref service) = *self.debug_service.borrow() {
@@ -4885,17 +4906,9 @@ impl AppStateContainer {
             Platform::Windows => {
                 match key.code {
                     // Special characters that come with SHIFT modifier on Windows
-                    KeyCode::Char('$')
-                    | KeyCode::Char('^')
-                    | KeyCode::Char(':')
-                    | KeyCode::Char('!')
-                    | KeyCode::Char('@')
-                    | KeyCode::Char('#')
-                    | KeyCode::Char('%')
-                    | KeyCode::Char('&')
-                    | KeyCode::Char('*')
-                    | KeyCode::Char('(')
-                    | KeyCode::Char(')') => {
+                    KeyCode::Char(
+                        '$' | '^' | ':' | '!' | '@' | '#' | '%' | '&' | '*' | '(' | ')',
+                    ) => {
                         // Remove SHIFT modifier for these characters on Windows
                         let mut normalized_modifiers = key.modifiers;
                         normalized_modifiers.remove(KeyModifiers::SHIFT);
@@ -5053,7 +5066,7 @@ impl AppStateContainer {
                     entry.match_count
                 ));
                 if let Some(duration) = entry.duration_ms {
-                    dump.push_str(&format!(" ({}ms)", duration));
+                    dump.push_str(&format!(" ({duration}ms)"));
                 }
                 dump.push_str(&format!(" at {}\n", entry.timestamp.format("%H:%M:%S")));
             }
@@ -5185,10 +5198,10 @@ impl AppStateContainer {
         let at_left = navigation.selected_column == 0;
         let at_right = navigation.selected_column == navigation.total_columns.saturating_sub(1);
 
-        dump.push_str(&format!("  At Top Edge: {}\n", at_top));
-        dump.push_str(&format!("  At Bottom Edge: {}\n", at_bottom));
-        dump.push_str(&format!("  At Left Edge: {}\n", at_left));
-        dump.push_str(&format!("  At Right Edge: {}\n", at_right));
+        dump.push_str(&format!("  At Top Edge: {at_top}\n"));
+        dump.push_str(&format!("  At Bottom Edge: {at_bottom}\n"));
+        dump.push_str(&format!("  At Left Edge: {at_left}\n"));
+        dump.push_str(&format!("  At Right Edge: {at_right}\n"));
 
         // Scrolling state
         let viewport_bottom = navigation.scroll_offset.0 + navigation.viewport_rows;
@@ -5221,8 +5234,8 @@ impl AppStateContainer {
             "  Should Scroll Up: {} (cursor at {}, viewport top at {})\n",
             should_scroll_up, navigation.selected_row, navigation.scroll_offset.0
         ));
-        dump.push_str(&format!("  Should Scroll Right: {}\n", should_scroll_right));
-        dump.push_str(&format!("  Should Scroll Left: {}\n", should_scroll_left));
+        dump.push_str(&format!("  Should Scroll Right: {should_scroll_right}\n"));
+        dump.push_str(&format!("  Should Scroll Left: {should_scroll_left}\n"));
 
         dump.push_str(&format!(
             "\n  Viewport Lock: {} at row {:?}\n",
@@ -5351,7 +5364,7 @@ impl AppStateContainer {
         let selection = self.selection.borrow();
         dump.push_str(&format!("  Mode: {:?}\n", selection.mode));
         if let Some(row) = selection.selected_row {
-            dump.push_str(&format!("  Selected Row: {}\n", row));
+            dump.push_str(&format!("  Selected Row: {row}\n"));
         } else {
             dump.push_str("  Selected Row: None\n");
         }
@@ -5366,11 +5379,11 @@ impl AppStateContainer {
             ));
             if selection.selected_cells.len() <= 5 {
                 for (row, col) in &selection.selected_cells {
-                    dump.push_str(&format!("    - ({}, {})\n", row, col));
+                    dump.push_str(&format!("    - ({row}, {col})\n"));
                 }
             } else {
                 for (row, col) in selection.selected_cells.iter().take(3) {
-                    dump.push_str(&format!("    - ({}, {})\n", row, col));
+                    dump.push_str(&format!("    - ({row}, {col})\n"));
                 }
                 dump.push_str(&format!(
                     "    ... and {} more\n",
@@ -5379,7 +5392,7 @@ impl AppStateContainer {
             }
         }
         if let Some((row, col)) = selection.selection_anchor {
-            dump.push_str(&format!("  Selection Anchor: ({}, {})\n", row, col));
+            dump.push_str(&format!("  Selection Anchor: ({row}, {col})\n"));
         }
         dump.push_str(&format!(
             "  Total Selections: {}\n",
@@ -5449,7 +5462,9 @@ impl AppStateContainer {
         // Chord state
         dump.push_str("CHORD STATE:\n");
         let chord = self.chord.borrow();
-        if !chord.current_chord.is_empty() {
+        if chord.current_chord.is_empty() {
+            dump.push_str("  No active chord\n");
+        } else {
             dump.push_str(&format!("  Active chord: '{}'\n", chord.get_chord_string()));
             if let Some(ref start) = chord.chord_start {
                 if let Ok(elapsed) = start.elapsed() {
@@ -5457,17 +5472,15 @@ impl AppStateContainer {
                 }
             }
             if let Some(ref desc) = chord.description {
-                dump.push_str(&format!("  Description: {}\n", desc));
+                dump.push_str(&format!("  Description: {desc}\n"));
             }
-        } else {
-            dump.push_str("  No active chord\n");
         }
 
         dump.push_str("\nREGISTERED CHORDS:\n");
         let mut chords: Vec<_> = chord.registered_chords.iter().collect();
         chords.sort_by_key(|(k, _)| k.as_str());
         for (chord_seq, action) in chords {
-            dump.push_str(&format!("  {} → {}\n", chord_seq, action));
+            dump.push_str(&format!("  {chord_seq} → {action}\n"));
         }
 
         if !chord.history.is_empty() {
@@ -5612,7 +5625,7 @@ impl AppStateContainer {
 
     /// Pretty print the state for debugging
     pub fn pretty_print(&self) -> String {
-        format!("{:#?}", self)
+        format!("{self:#?}")
     }
 
     // ==================== STATE DELEGATION METHODS ====================
@@ -5636,8 +5649,7 @@ impl AppStateContainer {
     /// Get current column from current buffer
     pub fn delegated_current_column(&self) -> usize {
         self.current_buffer()
-            .map(|b| b.get_current_column())
-            .unwrap_or(0)
+            .map_or(0, super::buffer::BufferAPI::get_current_column)
     }
 
     /// Set current column in current buffer
@@ -5650,8 +5662,7 @@ impl AppStateContainer {
     /// Get scroll offset from current buffer
     pub fn delegated_scroll_offset(&self) -> (usize, usize) {
         self.current_buffer()
-            .map(|b| b.get_scroll_offset())
-            .unwrap_or((0, 0))
+            .map_or((0, 0), super::buffer::BufferAPI::get_scroll_offset)
     }
 
     /// Set scroll offset in current buffer
@@ -5666,7 +5677,7 @@ impl AppStateContainer {
     /// Get search pattern from current buffer
     pub fn delegated_search_pattern(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_search_pattern())
+            .map(super::buffer::BufferAPI::get_search_pattern)
             .unwrap_or_default()
     }
 
@@ -5680,7 +5691,7 @@ impl AppStateContainer {
     /// Get search matches from current buffer
     pub fn delegated_search_matches(&self) -> Vec<(usize, usize)> {
         self.current_buffer()
-            .map(|b| b.get_search_matches())
+            .map(super::buffer::BufferAPI::get_search_matches)
             .unwrap_or_default()
     }
 
@@ -5696,7 +5707,7 @@ impl AppStateContainer {
     /// Get filter pattern from current buffer
     pub fn delegated_filter_pattern(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_filter_pattern())
+            .map(super::buffer::BufferAPI::get_filter_pattern)
             .unwrap_or_default()
     }
 
@@ -5710,8 +5721,7 @@ impl AppStateContainer {
     /// Check if filter is active in current buffer
     pub fn delegated_filter_active(&self) -> bool {
         self.current_buffer()
-            .map(|b| b.is_filter_active())
-            .unwrap_or(false)
+            .is_some_and(super::buffer::BufferAPI::is_filter_active)
     }
 
     /// Set filter active state in current buffer
@@ -5738,8 +5748,7 @@ impl AppStateContainer {
     /// Get sort order from current buffer
     pub fn delegated_sort_order(&self) -> SortOrder {
         self.current_buffer()
-            .map(|b| b.get_sort_order())
-            .unwrap_or(SortOrder::None)
+            .map_or(SortOrder::None, super::buffer::BufferAPI::get_sort_order)
     }
 
     /// Set sort order in current buffer
@@ -5764,8 +5773,7 @@ impl AppStateContainer {
     /// Get the current mode (proxy to Buffer)
     pub fn get_mode(&self) -> AppMode {
         self.current_buffer()
-            .map(|b| b.get_mode())
-            .unwrap_or(AppMode::Command)
+            .map_or(AppMode::Command, super::buffer::BufferAPI::get_mode)
     }
 
     /// Set status message (proxy to Buffer)
@@ -5778,7 +5786,7 @@ impl AppStateContainer {
     /// Get status message (proxy to Buffer)
     pub fn get_status_message(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_status_message())
+            .map(super::buffer::BufferAPI::get_status_message)
             .unwrap_or_default()
     }
 
@@ -5811,21 +5819,20 @@ impl AppStateContainer {
     /// Get input text (proxy to Buffer)
     pub fn get_input_text(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_input_text())
+            .map(super::buffer::BufferAPI::get_input_text)
             .unwrap_or_default()
     }
 
     /// Get input cursor position (proxy to Buffer)
     pub fn get_input_cursor_position(&self) -> usize {
         self.current_buffer()
-            .map(|b| b.get_input_cursor_position())
-            .unwrap_or(0)
+            .map_or(0, super::buffer::BufferAPI::get_input_cursor_position)
     }
 
     /// Get last query (proxy to Buffer)
     pub fn get_last_query(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_last_query())
+            .map(super::buffer::BufferAPI::get_last_query)
             .unwrap_or_default()
     }
 
@@ -5835,8 +5842,7 @@ impl AppStateContainer {
     /// Check if buffer is modified (proxy to Buffer)
     pub fn is_buffer_modified(&self) -> bool {
         self.current_buffer()
-            .map(|b| b.is_modified())
-            .unwrap_or(false)
+            .is_some_and(super::buffer::BufferAPI::is_modified)
     }
 
     /// Set buffer modified state (proxy to Buffer)
@@ -5856,7 +5862,7 @@ impl AppStateContainer {
         self.current_buffer_mut()?.dataview.as_mut()
     }
 
-    /// Get original source DataTable (proxy to Buffer)
+    /// Get original source `DataTable` (proxy to Buffer)
     pub fn get_original_source(&self) -> Option<&crate::data::datatable::DataTable> {
         self.current_buffer()?.get_original_source()
     }
@@ -5864,34 +5870,31 @@ impl AppStateContainer {
     /// Check if buffer has dataview (proxy to Buffer)
     pub fn has_dataview(&self) -> bool {
         self.current_buffer()
-            .map(|b| b.has_dataview())
-            .unwrap_or(false)
+            .is_some_and(super::buffer::BufferAPI::has_dataview)
     }
 
     /// Check if case insensitive mode (proxy to Buffer)
     pub fn is_case_insensitive(&self) -> bool {
         self.current_buffer()
-            .map(|b| b.is_case_insensitive())
-            .unwrap_or(false)
+            .is_some_and(super::buffer::BufferAPI::is_case_insensitive)
     }
 
     /// Get edit mode (proxy to Buffer)
     pub fn get_edit_mode(&self) -> Option<crate::buffer::EditMode> {
-        self.current_buffer().map(|b| b.get_edit_mode())
+        self.current_buffer()
+            .map(super::buffer::BufferAPI::get_edit_mode)
     }
 
     /// Check if show row numbers (proxy to Buffer)
     pub fn is_show_row_numbers(&self) -> bool {
         self.current_buffer()
-            .map(|b| b.is_show_row_numbers())
-            .unwrap_or(false)
+            .is_some_and(super::buffer::BufferAPI::is_show_row_numbers)
     }
 
     /// Check if compact mode (proxy to Buffer)
     pub fn is_compact_mode(&self) -> bool {
         self.current_buffer()
-            .map(|b| b.is_compact_mode())
-            .unwrap_or(false)
+            .is_some_and(super::buffer::BufferAPI::is_compact_mode)
     }
 
     /// Set input cursor position (proxy to Buffer)
@@ -5936,8 +5939,7 @@ impl AppStateContainer {
     /// Is fuzzy filter active (proxy to Buffer)
     pub fn is_fuzzy_filter_active(&self) -> bool {
         self.current_buffer()
-            .map(|b| b.is_fuzzy_filter_active())
-            .unwrap_or(false)
+            .is_some_and(super::buffer::BufferAPI::is_fuzzy_filter_active)
     }
 
     /// Set fuzzy filter indices (proxy to Buffer)
@@ -5950,8 +5952,7 @@ impl AppStateContainer {
     /// Is kill ring empty (proxy to Buffer)
     pub fn is_kill_ring_empty(&self) -> bool {
         self.current_buffer()
-            .map(|b| b.is_kill_ring_empty())
-            .unwrap_or(true)
+            .is_none_or(super::buffer::BufferAPI::is_kill_ring_empty)
     }
 
     /// Set selected row (proxy to Buffer)
@@ -5961,7 +5962,7 @@ impl AppStateContainer {
         }
     }
 
-    /// Set input text (proxy to Buffer) - properly syncs both buffer and command_input
+    /// Set input text (proxy to Buffer) - properly syncs both buffer and `command_input`
     pub fn set_buffer_input_text(&mut self, text: String) {
         // Update the actual buffer
         if let Some(buffer) = self.current_buffer_mut() {
@@ -5977,7 +5978,7 @@ impl AppStateContainer {
     /// Get input text (proxy to Buffer)
     pub fn get_buffer_input_text(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_input_text())
+            .map(super::buffer::BufferAPI::get_input_text)
             .unwrap_or_default()
     }
 
@@ -6038,14 +6039,14 @@ impl AppStateContainer {
     /// Get search pattern from buffer (proxy to Buffer)
     pub fn get_search_pattern(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_search_pattern())
+            .map(super::buffer::BufferAPI::get_search_pattern)
             .unwrap_or_default()
     }
 
     /// Get fuzzy filter pattern (proxy to Buffer)
     pub fn get_fuzzy_filter_pattern(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_fuzzy_filter_pattern())
+            .map(super::buffer::BufferAPI::get_fuzzy_filter_pattern)
             .unwrap_or_default()
     }
 
@@ -6102,15 +6103,13 @@ impl AppStateContainer {
     /// Perform undo (proxy to Buffer)
     pub fn perform_undo(&mut self) -> bool {
         self.current_buffer_mut()
-            .map(|b| b.perform_undo())
-            .unwrap_or(false)
+            .is_some_and(super::buffer::BufferAPI::perform_undo)
     }
 
     /// Perform redo (proxy to Buffer)
     pub fn perform_redo(&mut self) -> bool {
         self.current_buffer_mut()
-            .map(|b| b.perform_redo())
-            .unwrap_or(false)
+            .is_some_and(super::buffer::BufferAPI::perform_redo)
     }
 
     /// Insert character at cursor position
@@ -6130,8 +6129,7 @@ impl AppStateContainer {
     /// Handle input key (proxy to Buffer)
     pub fn handle_input_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
         self.current_buffer_mut()
-            .map(|b| b.handle_input_key(key))
-            .unwrap_or(false)
+            .is_some_and(|b| b.handle_input_key(key))
     }
 
     /// Set search matches and update state
@@ -6244,7 +6242,7 @@ impl AppStateContainer {
     /// Get filter pattern (proxy to Buffer)
     pub fn get_filter_pattern(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_filter_pattern())
+            .map(super::buffer::BufferAPI::get_filter_pattern)
             .unwrap_or_default()
     }
 
@@ -6272,22 +6270,23 @@ impl AppStateContainer {
     /// Get kill ring (proxy to Buffer)
     pub fn get_kill_ring(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_kill_ring())
+            .map(super::buffer::BufferAPI::get_kill_ring)
             .unwrap_or_default()
     }
 
     /// Get status message (proxy to Buffer)
     pub fn get_buffer_status_message(&self) -> String {
         self.current_buffer()
-            .map(|b| b.get_status_message())
+            .map(super::buffer::BufferAPI::get_status_message)
             .unwrap_or_default()
     }
 
     /// Get buffer name (proxy to Buffer)
     pub fn get_buffer_name(&self) -> String {
-        self.current_buffer()
-            .map(|b| b.get_name())
-            .unwrap_or_else(|| "No Buffer".to_string())
+        self.current_buffer().map_or_else(
+            || "No Buffer".to_string(),
+            super::buffer::BufferAPI::get_name,
+        )
     }
 
     /// Get last results row (proxy to Buffer)
@@ -6298,8 +6297,7 @@ impl AppStateContainer {
     /// Get last scroll offset (proxy to Buffer)
     pub fn get_last_scroll_offset(&self) -> (usize, usize) {
         self.current_buffer()
-            .map(|b| b.get_last_scroll_offset())
-            .unwrap_or((0, 0))
+            .map_or((0, 0), super::buffer::BufferAPI::get_last_scroll_offset)
     }
 
     /// Set last query (proxy to Buffer)

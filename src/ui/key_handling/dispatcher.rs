@@ -9,6 +9,7 @@ pub struct KeyBinding {
 }
 
 impl KeyBinding {
+    #[must_use]
     pub fn new(code: KeyCode) -> Self {
         Self {
             code,
@@ -16,6 +17,7 @@ impl KeyBinding {
         }
     }
 
+    #[must_use]
     pub fn with_ctrl(code: KeyCode) -> Self {
         Self {
             code,
@@ -23,6 +25,7 @@ impl KeyBinding {
         }
     }
 
+    #[must_use]
     pub fn with_alt(code: KeyCode) -> Self {
         Self {
             code,
@@ -30,6 +33,7 @@ impl KeyBinding {
         }
     }
 
+    #[must_use]
     pub fn with_shift(code: KeyCode) -> Self {
         Self {
             code,
@@ -37,6 +41,7 @@ impl KeyBinding {
         }
     }
 
+    #[must_use]
     pub fn from_event(event: &KeyEvent) -> Self {
         Self {
             code: event.code,
@@ -64,6 +69,7 @@ impl Default for KeyDispatcher {
 }
 
 impl KeyDispatcher {
+    #[must_use]
     pub fn new() -> Self {
         let mut dispatcher = Self {
             command_map: HashMap::new(),
@@ -189,7 +195,7 @@ impl KeyDispatcher {
             let digit_char = char::from_digit(i, 10).unwrap();
             self.command_map.insert(
                 KeyBinding::with_alt(KeyCode::Char(digit_char)),
-                format!("switch_to_buffer_{}", i),
+                format!("switch_to_buffer_{i}"),
             );
         }
 
@@ -518,39 +524,55 @@ impl KeyDispatcher {
     }
 
     /// Get action for a key in command mode
+    #[must_use]
     pub fn get_command_action(&self, key: &KeyEvent) -> Option<&str> {
         let binding = KeyBinding::from_event(key);
-        self.command_map.get(&binding).map(|s| s.as_str())
+        self.command_map
+            .get(&binding)
+            .map(std::string::String::as_str)
     }
 
     /// Get action for a key in results mode
+    #[must_use]
     pub fn get_results_action(&self, key: &KeyEvent) -> Option<&str> {
         let binding = KeyBinding::from_event(key);
-        self.results_map.get(&binding).map(|s| s.as_str())
+        self.results_map
+            .get(&binding)
+            .map(std::string::String::as_str)
     }
 
     /// Get action for a key in search mode
+    #[must_use]
     pub fn get_search_action(&self, key: &KeyEvent) -> Option<&str> {
         let binding = KeyBinding::from_event(key);
-        self.search_map.get(&binding).map(|s| s.as_str())
+        self.search_map
+            .get(&binding)
+            .map(std::string::String::as_str)
     }
 
     /// Get action for a key in filter mode
+    #[must_use]
     pub fn get_filter_action(&self, key: &KeyEvent) -> Option<&str> {
         let binding = KeyBinding::from_event(key);
-        self.filter_map.get(&binding).map(|s| s.as_str())
+        self.filter_map
+            .get(&binding)
+            .map(std::string::String::as_str)
     }
 
     /// Get action for a key in help mode
+    #[must_use]
     pub fn get_help_action(&self, key: &KeyEvent) -> Option<&str> {
         let binding = KeyBinding::from_event(key);
-        self.help_map.get(&binding).map(|s| s.as_str())
+        self.help_map.get(&binding).map(std::string::String::as_str)
     }
 
     /// Get action for a key in debug mode
+    #[must_use]
     pub fn get_debug_action(&self, key: &KeyEvent) -> Option<&str> {
         let binding = KeyBinding::from_event(key);
-        self.debug_map.get(&binding).map(|s| s.as_str())
+        self.debug_map
+            .get(&binding)
+            .map(std::string::String::as_str)
     }
 
     /// Load custom bindings from config (future feature)

@@ -23,6 +23,7 @@ pub enum SearchMode {
 }
 
 impl SearchMode {
+    #[must_use]
     pub fn to_app_mode(&self) -> AppMode {
         match self {
             SearchMode::Search => AppMode::Search,
@@ -32,6 +33,7 @@ impl SearchMode {
         }
     }
 
+    #[must_use]
     pub fn from_app_mode(mode: &AppMode) -> Option<Self> {
         match mode {
             AppMode::Search => Some(SearchMode::Search),
@@ -42,6 +44,7 @@ impl SearchMode {
         }
     }
 
+    #[must_use]
     pub fn title(&self) -> &str {
         match self {
             SearchMode::Search => "Search Pattern",
@@ -51,6 +54,7 @@ impl SearchMode {
         }
     }
 
+    #[must_use]
     pub fn style(&self) -> Style {
         match self {
             SearchMode::Search => Style::default().fg(Color::Yellow),
@@ -89,6 +93,7 @@ impl Clone for SearchModesState {
 }
 
 impl SearchModesState {
+    #[must_use]
     pub fn new(mode: SearchMode) -> Self {
         Self {
             mode,
@@ -141,6 +146,7 @@ impl Default for SearchModesWidget {
 }
 
 impl SearchModesWidget {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             state: None,
@@ -181,13 +187,13 @@ impl SearchModesWidget {
     pub fn get_pattern(&self) -> String {
         self.state
             .as_ref()
-            .map(|s| s.get_pattern())
+            .map(SearchModesState::get_pattern)
             .unwrap_or_default()
     }
 
     /// Get cursor position for rendering
     pub fn get_cursor_position(&self) -> usize {
-        self.state.as_ref().map(|s| s.input.cursor()).unwrap_or(0)
+        self.state.as_ref().map_or(0, |s| s.input.cursor())
     }
 
     /// Handle key input
@@ -229,11 +235,11 @@ impl SearchModesWidget {
                 let new_pattern = state.get_pattern();
 
                 // If the pattern changed, trigger debouncing
-                if old_pattern != new_pattern {
+                if old_pattern == new_pattern {
+                    SearchModesAction::Continue
+                } else {
                     self.debouncer.trigger();
                     SearchModesAction::InputChanged(state.mode.clone(), new_pattern)
-                } else {
-                    SearchModesAction::Continue
                 }
             }
         }
@@ -285,11 +291,11 @@ impl SearchModesWidget {
                 if ms > 0 {
                     // Add visual indicator with countdown
                     if ms > 300 {
-                        title.push_str(&format!(" [⏱ {}ms]", ms));
+                        title.push_str(&format!(" [⏱ {ms}ms]"));
                     } else if ms > 100 {
-                        title.push_str(&format!(" [⚡ {}ms]", ms));
+                        title.push_str(&format!(" [⚡ {ms}ms]"));
                     } else {
-                        title.push_str(&format!(" [🔥 {}ms]", ms));
+                        title.push_str(&format!(" [🔥 {ms}ms]"));
                     }
                 } else {
                     title.push_str(" [⏳ applying...]");

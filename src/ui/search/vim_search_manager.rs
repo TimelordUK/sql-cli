@@ -39,6 +39,7 @@ impl Default for VimSearchManager {
 }
 
 impl VimSearchManager {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             state: VimSearchState::Inactive,
@@ -92,124 +93,119 @@ impl VimSearchManager {
 
     /// Confirm search (when Enter is pressed) - enter navigation mode
     pub fn confirm_search(&mut self, dataview: &DataView, viewport: &mut ViewportManager) -> bool {
-        match &self.state {
-            VimSearchState::Typing { pattern } => {
-                if pattern.is_empty() {
-                    info!(target: "vim_search", "Empty pattern, canceling search");
-                    self.cancel_search();
-                    return false;
-                }
-
-                let pattern = pattern.clone();
-                let matches = self.find_matches(&pattern, dataview);
-
-                if matches.is_empty() {
-                    warn!(target: "vim_search", "No matches found for pattern: '{}'", pattern);
-                    self.cancel_search();
-                    return false;
-                }
-
-                info!(target: "vim_search", 
-                    "Confirming search with {} matches for pattern: '{}'", 
-                    matches.len(), pattern);
-
-                // Navigate to first match
-                if let Some(first_match) = matches.first() {
-                    self.navigate_to_match(first_match, viewport);
-                }
-
-                // Enter navigation mode
-                self.state = VimSearchState::Navigating {
-                    pattern: pattern.clone(),
-                    matches,
-                    current_index: 0,
-                };
-                self.last_search_pattern = Some(pattern);
-                true
+        if let VimSearchState::Typing { pattern } = &self.state {
+            if pattern.is_empty() {
+                info!(target: "vim_search", "Empty pattern, canceling search");
+                self.cancel_search();
+                return false;
             }
-            _ => {
-                warn!(target: "vim_search", "confirm_search called in wrong state: {:?}", self.state);
-                false
+
+            let pattern = pattern.clone();
+            let matches = self.find_matches(&pattern, dataview);
+
+            if matches.is_empty() {
+                warn!(target: "vim_search", "No matches found for pattern: '{}'", pattern);
+                self.cancel_search();
+                return false;
             }
+
+            info!(target: "vim_search", 
+                "Confirming search with {} matches for pattern: '{}'", 
+                matches.len(), pattern);
+
+            // Navigate to first match
+            if let Some(first_match) = matches.first() {
+                self.navigate_to_match(first_match, viewport);
+            }
+
+            // Enter navigation mode
+            self.state = VimSearchState::Navigating {
+                pattern: pattern.clone(),
+                matches,
+                current_index: 0,
+            };
+            self.last_search_pattern = Some(pattern);
+            true
+        } else {
+            warn!(target: "vim_search", "confirm_search called in wrong state: {:?}", self.state);
+            false
         }
     }
 
     /// Navigate to next match (n key)
     pub fn next_match(&mut self, viewport: &mut ViewportManager) -> Option<SearchMatch> {
         // First, update the index and get the match
-        let match_to_navigate = match &mut self.state {
-            VimSearchState::Navigating {
-                matches,
-                current_index,
-                pattern,
-            } => {
-                if matches.is_empty() {
-                    return None;
-                }
-
-                // Log current state before moving
-                info!(target: "vim_search", 
-                    "=== 'n' KEY PRESSED - BEFORE NAVIGATION ===");
-                info!(target: "vim_search", 
-                    "Current match index: {}/{}, Pattern: '{}'", 
-                    *current_index + 1, matches.len(), pattern);
-                info!(target: "vim_search", 
-                    "Current viewport - rows: {:?}, cols: {:?}", 
-                    viewport.get_viewport_rows(), viewport.viewport_cols());
-                info!(target: "vim_search", 
-                    "Current crosshair position: row={}, col={}", 
-                    viewport.get_crosshair_row(), viewport.get_crosshair_col());
-
-                // Wrap around to beginning
-                *current_index = (*current_index + 1) % matches.len();
-                let match_item = matches[*current_index].clone();
-
-                info!(target: "vim_search", 
-                    "=== NEXT MATCH DETAILS ===");
-                info!(target: "vim_search", 
-                    "Match {}/{}: row={}, visual_col={}, stored_value='{}'", 
-                    *current_index + 1, matches.len(),
-                    match_item.row, match_item.col, match_item.value);
-
-                // Double-check: Does this value actually contain our pattern?
-                if !match_item
-                    .value
-                    .to_lowercase()
-                    .contains(&pattern.to_lowercase())
-                {
-                    error!(target: "vim_search",
-                        "CRITICAL ERROR: Match value '{}' does NOT contain search pattern '{}'!",
-                        match_item.value, pattern);
-                    error!(target: "vim_search",
-                        "This indicates the search index is corrupted or stale!");
-                }
-
-                // Log what we expect to find at this position
-                info!(target: "vim_search", 
-                    "Expected: Cell at row {} col {} should contain substring '{}'", 
-                    match_item.row, match_item.col, pattern);
-
-                // Verify the stored match actually contains the pattern
-                let stored_contains = match_item
-                    .value
-                    .to_lowercase()
-                    .contains(&pattern.to_lowercase());
-                if !stored_contains {
-                    warn!(target: "vim_search",
-                        "CRITICAL: Stored match '{}' does NOT contain pattern '{}'!",
-                        match_item.value, pattern);
-                } else {
-                    info!(target: "vim_search",
-                        "✓ Stored match '{}' contains pattern '{}'",
-                        match_item.value, pattern);
-                }
-
-                Some(match_item)
+        let match_to_navigate = if let VimSearchState::Navigating {
+            matches,
+            current_index,
+            pattern,
+        } = &mut self.state
+        {
+            if matches.is_empty() {
+                return None;
             }
-            _ => {
-                debug!(target: "vim_search", "next_match called but not in navigation mode");
-                None
+
+            // Log current state before moving
+            info!(target: "vim_search", 
+                "=== 'n' KEY PRESSED - BEFORE NAVIGATION ===");
+            info!(target: "vim_search", 
+                "Current match index: {}/{}, Pattern: '{}'", 
+                *current_index + 1, matches.len(), pattern);
+            info!(target: "vim_search", 
+                "Current viewport - rows: {:?}, cols: {:?}", 
+                viewport.get_viewport_rows(), viewport.viewport_cols());
+            info!(target: "vim_search", 
+                "Current crosshair position: row={}, col={}", 
+                viewport.get_crosshair_row(), viewport.get_crosshair_col());
+
+            // Wrap around to beginning
+            *current_index = (*current_index + 1) % matches.len();
+            let match_item = matches[*current_index].clone();
+
+            info!(target: "vim_search", 
+                "=== NEXT MATCH DETAILS ===");
+            info!(target: "vim_search", 
+                "Match {}/{}: row={}, visual_col={}, stored_value='{}'", 
+                *current_index + 1, matches.len(),
+                match_item.row, match_item.col, match_item.value);
+
+            // Double-check: Does this value actually contain our pattern?
+            if !match_item
+                .value
+                .to_lowercase()
+                .contains(&pattern.to_lowercase())
+            {
+                error!(target: "vim_search",
+                    "CRITICAL ERROR: Match value '{}' does NOT contain search pattern '{}'!",
+                    match_item.value, pattern);
+                error!(target: "vim_search",
+                    "This indicates the search index is corrupted or stale!");
             }
+
+            // Log what we expect to find at this position
+            info!(target: "vim_search", 
+                "Expected: Cell at row {} col {} should contain substring '{}'", 
+                match_item.row, match_item.col, pattern);
+
+            // Verify the stored match actually contains the pattern
+            let stored_contains = match_item
+                .value
+                .to_lowercase()
+                .contains(&pattern.to_lowercase());
+            if stored_contains {
+                info!(target: "vim_search",
+                    "✓ Stored match '{}' contains pattern '{}'",
+                    match_item.value, pattern);
+            } else {
+                warn!(target: "vim_search",
+                    "CRITICAL: Stored match '{}' does NOT contain pattern '{}'!",
+                    match_item.value, pattern);
+            }
+
+            Some(match_item)
+        } else {
+            debug!(target: "vim_search", "next_match called but not in navigation mode");
+            None
         };
 
         // Then navigate to it if we have a match
@@ -238,35 +234,33 @@ impl VimSearchManager {
     /// Navigate to previous match (N key)
     pub fn previous_match(&mut self, viewport: &mut ViewportManager) -> Option<SearchMatch> {
         // First, update the index and get the match
-        let match_to_navigate = match &mut self.state {
-            VimSearchState::Navigating {
-                matches,
-                current_index,
-                pattern,
-            } => {
-                if matches.is_empty() {
-                    return None;
-                }
-
-                // Wrap around to end
-                *current_index = if *current_index == 0 {
-                    matches.len() - 1
-                } else {
-                    *current_index - 1
-                };
-
-                let match_item = matches[*current_index].clone();
-
-                info!(target: "vim_search", 
-                    "Navigating to previous match {}/{} at ({}, {})", 
-                    *current_index + 1, matches.len(), match_item.row, match_item.col);
-
-                Some(match_item)
+        let match_to_navigate = if let VimSearchState::Navigating {
+            matches,
+            current_index,
+            pattern,
+        } = &mut self.state
+        {
+            if matches.is_empty() {
+                return None;
             }
-            _ => {
-                debug!(target: "vim_search", "previous_match called but not in navigation mode");
-                None
-            }
+
+            // Wrap around to end
+            *current_index = if *current_index == 0 {
+                matches.len() - 1
+            } else {
+                *current_index - 1
+            };
+
+            let match_item = matches[*current_index].clone();
+
+            info!(target: "vim_search", 
+                "Navigating to previous match {}/{} at ({}, {})", 
+                *current_index + 1, matches.len(), match_item.row, match_item.col);
+
+            Some(match_item)
+        } else {
+            debug!(target: "vim_search", "previous_match called but not in navigation mode");
+            None
         };
 
         // Then navigate to it if we have a match
@@ -308,7 +302,9 @@ impl VimSearchManager {
             let pattern = pattern.clone();
             let matches = self.find_matches(&pattern, dataview);
 
-            if !matches.is_empty() {
+            if matches.is_empty() {
+                false
+            } else {
                 info!(target: "vim_search", 
                     "Resuming search with pattern '{}', found {} matches", 
                     pattern, matches.len());
@@ -324,8 +320,6 @@ impl VimSearchManager {
                     current_index: 0,
                 };
                 true
-            } else {
-                false
             }
         } else {
             false
@@ -333,21 +327,25 @@ impl VimSearchManager {
     }
 
     /// Check if currently in search mode
+    #[must_use]
     pub fn is_active(&self) -> bool {
         !matches!(self.state, VimSearchState::Inactive)
     }
 
     /// Check if in typing mode
+    #[must_use]
     pub fn is_typing(&self) -> bool {
         matches!(self.state, VimSearchState::Typing { .. })
     }
 
     /// Check if in navigation mode
+    #[must_use]
     pub fn is_navigating(&self) -> bool {
         matches!(self.state, VimSearchState::Navigating { .. })
     }
 
     /// Get current pattern
+    #[must_use]
     pub fn get_pattern(&self) -> Option<String> {
         match &self.state {
             VimSearchState::Typing { pattern } => Some(pattern.clone()),
@@ -357,6 +355,7 @@ impl VimSearchManager {
     }
 
     /// Get current match info for status display
+    #[must_use]
     pub fn get_match_info(&self) -> Option<(usize, usize)> {
         match &self.state {
             VimSearchState::Navigating {
@@ -370,42 +369,40 @@ impl VimSearchManager {
 
     /// Reset to first match (for 'g' key)
     pub fn reset_to_first_match(&mut self, viewport: &mut ViewportManager) -> Option<SearchMatch> {
-        match &mut self.state {
-            VimSearchState::Navigating {
-                matches,
-                current_index,
-                ..
-            } => {
-                if matches.is_empty() {
-                    return None;
-                }
-
-                // Reset to first match
-                *current_index = 0;
-                let first_match = matches[0].clone();
-
-                info!(target: "vim_search", 
-                    "Resetting to first match at ({}, {})", 
-                    first_match.row, first_match.col);
-
-                // Navigate to the first match
-                self.navigate_to_match(&first_match, viewport);
-                Some(first_match)
+        if let VimSearchState::Navigating {
+            matches,
+            current_index,
+            ..
+        } = &mut self.state
+        {
+            if matches.is_empty() {
+                return None;
             }
-            _ => {
-                debug!(target: "vim_search", "reset_to_first_match called but not in navigation mode");
-                None
-            }
+
+            // Reset to first match
+            *current_index = 0;
+            let first_match = matches[0].clone();
+
+            info!(target: "vim_search", 
+                "Resetting to first match at ({}, {})", 
+                first_match.row, first_match.col);
+
+            // Navigate to the first match
+            self.navigate_to_match(&first_match, viewport);
+            Some(first_match)
+        } else {
+            debug!(target: "vim_search", "reset_to_first_match called but not in navigation mode");
+            None
         }
     }
 
     /// Find all matches in the dataview
     fn find_matches(&self, pattern: &str, dataview: &DataView) -> Vec<SearchMatch> {
         let mut matches = Vec::new();
-        let pattern_lower = if !self.case_sensitive {
-            pattern.to_lowercase()
-        } else {
+        let pattern_lower = if self.case_sensitive {
             pattern.to_string()
+        } else {
+            pattern.to_lowercase()
         };
 
         info!(target: "vim_search", 
@@ -428,10 +425,10 @@ impl VimSearchManager {
                 // The row.values are in display order
                 for (enum_idx, value) in row.values.iter().enumerate() {
                     let value_str = value.to_string();
-                    let search_value = if !self.case_sensitive {
-                        value_str.to_lowercase()
-                    } else {
+                    let search_value = if self.case_sensitive {
                         value_str.clone()
+                    } else {
+                        value_str.to_lowercase()
                     };
 
                     if search_value.contains(&pattern_lower) {
@@ -649,7 +646,7 @@ impl VimSearchManager {
         debug!(target: "vim_search", "Case sensitivity set to: {}", case_sensitive);
     }
 
-    /// Set search state from external search (e.g., SearchModesWidget)
+    /// Set search state from external search (e.g., `SearchModesWidget`)
     /// This allows 'n' and 'N' to work after a regular search
     pub fn set_search_state_from_external(
         &mut self,
@@ -681,7 +678,9 @@ impl VimSearchManager {
             })
             .collect();
 
-        if !search_matches.is_empty() {
+        if search_matches.is_empty() {
+            warn!(target: "vim_search", "No valid matches to set in vim search state");
+        } else {
             let match_count = search_matches.len();
 
             // Set the state to navigating
@@ -695,8 +694,6 @@ impl VimSearchManager {
             info!(target: "vim_search", 
                 "Vim search state updated: {} matches ready for navigation", 
                 match_count);
-        } else {
-            warn!(target: "vim_search", "No valid matches to set in vim search state");
         }
     }
 }

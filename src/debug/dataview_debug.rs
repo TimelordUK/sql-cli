@@ -2,19 +2,20 @@ use crate::data::data_view::{DataView, SortOrder};
 use crate::debug::debug_trace::{DebugSection, DebugSectionBuilder, DebugTrace, Priority};
 use std::sync::Arc;
 
-/// Debug trace implementation for DataView
+/// Debug trace implementation for `DataView`
 pub struct DataViewDebugProvider {
     dataview: Arc<DataView>,
 }
 
 impl DataViewDebugProvider {
+    #[must_use]
     pub fn new(dataview: Arc<DataView>) -> Self {
         Self { dataview }
     }
 }
 
 impl DebugTrace for DataViewDebugProvider {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "DataView"
     }
 
@@ -43,26 +44,25 @@ impl DebugTrace for DataViewDebugProvider {
         ));
         for (visible_idx, col_name, datatable_idx) in &column_mappings {
             builder.add_line(format!(
-                "  V[{:3}] → DT[{:3}] : {}",
-                visible_idx, datatable_idx, col_name
+                "  V[{visible_idx:3}] → DT[{datatable_idx:3}] : {col_name}"
             ));
         }
 
         // Show internal state
         builder.add_line("\n--- Internal State ---");
         let visible_indices = self.dataview.get_visible_column_indices();
-        builder.add_line(format!("visible_columns array: {:?}", visible_indices));
+        builder.add_line(format!("visible_columns array: {visible_indices:?}"));
 
         // Pinned columns
         let pinned_names = self.dataview.get_pinned_column_names();
-        if !pinned_names.is_empty() {
+        if pinned_names.is_empty() {
+            builder.add_line("Pinned Columns: None");
+        } else {
             builder.add_line(format!("\nPinned Columns ({}):", pinned_names.len()));
             for (idx, name) in pinned_names.iter().enumerate() {
                 let source_idx = self.dataview.source().get_column_index(name).unwrap_or(999);
-                builder.add_line(format!("  [{}] {} (source_idx: {})", idx, name, source_idx));
+                builder.add_line(format!("  [{idx}] {name} (source_idx: {source_idx})"));
             }
-        } else {
-            builder.add_line("Pinned Columns: None");
         }
 
         // Sort state
@@ -75,11 +75,9 @@ impl DebugTrace for DataViewDebugProvider {
                 if let Some(col_idx) = sort_state.column {
                     let col_name = visible_columns
                         .get(col_idx)
-                        .map(|s| s.as_str())
-                        .unwrap_or("unknown");
+                        .map_or("unknown", std::string::String::as_str);
                     builder.add_line(format!(
-                        "Sort State: Column {} ('{}') Ascending ↑",
-                        col_idx, col_name
+                        "Sort State: Column {col_idx} ('{col_name}') Ascending ↑"
                     ));
                 } else {
                     builder.add_line("Sort State: Ascending (no column)");
@@ -89,11 +87,9 @@ impl DebugTrace for DataViewDebugProvider {
                 if let Some(col_idx) = sort_state.column {
                     let col_name = visible_columns
                         .get(col_idx)
-                        .map(|s| s.as_str())
-                        .unwrap_or("unknown");
+                        .map_or("unknown", std::string::String::as_str);
                     builder.add_line(format!(
-                        "Sort State: Column {} ('{}') Descending ↓",
-                        col_idx, col_name
+                        "Sort State: Column {col_idx} ('{col_name}') Descending ↓"
                     ));
                 } else {
                     builder.add_line("Sort State: Descending (no column)");
@@ -103,14 +99,14 @@ impl DebugTrace for DataViewDebugProvider {
 
         // Filter state
         if let Some(filter) = self.dataview.get_filter_pattern() {
-            builder.add_line(format!("\nText Filter Active: '{}'", filter));
+            builder.add_line(format!("\nText Filter Active: '{filter}'"));
         }
         if let Some(fuzzy) = self.dataview.get_fuzzy_filter_pattern() {
-            builder.add_line(format!("Fuzzy Filter Active: '{}'", fuzzy));
+            builder.add_line(format!("Fuzzy Filter Active: '{fuzzy}'"));
         }
         if self.dataview.has_column_search() {
             if let Some(pattern) = self.dataview.column_search_pattern() {
-                builder.add_line(format!("Column Search Active: '{}'", pattern));
+                builder.add_line(format!("Column Search Active: '{pattern}'"));
                 let matches = self.dataview.get_matching_columns();
                 builder.add_line(format!("  {} matches found", matches.len()));
             }
@@ -118,7 +114,9 @@ impl DebugTrace for DataViewDebugProvider {
 
         // Column order changes
         let original_columns = self.dataview.source().column_names();
-        if visible_columns != original_columns {
+        if visible_columns == original_columns {
+            builder.add_line("\nColumn Order Changed: NO");
+        } else {
             builder.add_line("\nColumn Order Changed: YES");
 
             // Show hidden columns
@@ -130,11 +128,9 @@ impl DebugTrace for DataViewDebugProvider {
             if !hidden.is_empty() {
                 builder.add_line(format!("Hidden Columns ({}):", hidden.len()));
                 for col in hidden {
-                    builder.add_line(format!("  - {}", col));
+                    builder.add_line(format!("  - {col}"));
                 }
             }
-        } else {
-            builder.add_line("\nColumn Order Changed: NO");
         }
 
         builder.build()
@@ -146,9 +142,9 @@ impl DebugTrace for DataViewDebugProvider {
         let pinned = self.dataview.get_pinned_columns().len();
         let filtered = self.dataview.has_filter();
 
-        let mut summary = format!("{}x{} view", rows, cols);
+        let mut summary = format!("{rows}x{cols} view");
         if pinned > 0 {
-            summary.push_str(&format!(", {} pinned", pinned));
+            summary.push_str(&format!(", {pinned} pinned"));
         }
         if filtered {
             summary.push_str(", filtered");

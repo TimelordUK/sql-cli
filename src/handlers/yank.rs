@@ -88,7 +88,7 @@ impl YankHandler {
         state_container.write_to_clipboard(&query)?;
 
         let char_count = query.len();
-        let status_msg = format!("Yanked SQL ({} chars)", char_count);
+        let status_msg = format!("Yanked SQL ({char_count} chars)");
         debug!("Yanking query: {}", &status_msg);
 
         Ok(status_msg)

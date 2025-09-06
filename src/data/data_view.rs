@@ -8,7 +8,7 @@ use tracing::{debug, info};
 
 use crate::data::data_provider::DataProvider;
 use crate::data::datatable::{DataRow, DataTable, DataValue};
-use crate::data::datavalue_compare::compare_datavalues;
+use crate::data::datavalue_compare::{compare_datavalues, compare_optional_datavalues};
 
 /// Sort order for columns
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,7 +98,7 @@ impl Ord for GroupKey {
     }
 }
 
-/// A view over a DataTable that can filter, sort, and project columns
+/// A view over a `DataTable` that can filter, sort, and project columns
 /// without modifying the underlying data
 #[derive(Clone)]
 pub struct DataView {
@@ -126,7 +126,7 @@ pub struct DataView {
     /// Active text filter pattern (if any)
     filter_pattern: Option<String>,
 
-    /// Active fuzzy filter pattern (if any) - mutually exclusive with filter_pattern
+    /// Active fuzzy filter pattern (if any) - mutually exclusive with `filter_pattern`
     fuzzy_filter_pattern: Option<String>,
 
     /// Column search state
@@ -150,6 +150,7 @@ pub struct DataView {
 
 impl DataView {
     /// Create a new view showing all data from the table
+    #[must_use]
     pub fn new(source: Arc<DataTable>) -> Self {
         let row_count = source.row_count();
         let col_count = source.column_count();
@@ -177,6 +178,7 @@ impl DataView {
     }
 
     /// Create a view with specific columns
+    #[must_use]
     pub fn with_columns(mut self, columns: Vec<usize>) -> Self {
         self.visible_columns = columns.clone();
         self.base_columns = columns; // Store as the base projection
@@ -229,8 +231,7 @@ impl DataView {
         for &col_idx in &self.visible_columns {
             let column_name = column_names
                 .get(col_idx)
-                .map(|s| s.as_str())
-                .unwrap_or("unknown");
+                .map_or("unknown", std::string::String::as_str);
             let mut is_empty = true;
             let mut sample_values = Vec::new();
 
@@ -242,7 +243,7 @@ impl DataView {
                 if let Some(value) = self.source.get_value(row_idx, col_idx) {
                     // Collect first few values for debugging
                     if sample_values.len() < 3 {
-                        sample_values.push(format!("{:?}", value));
+                        sample_values.push(format!("{value:?}"));
                     }
 
                     match value {
@@ -323,6 +324,7 @@ impl DataView {
     }
 
     /// Check if any columns are visible
+    #[must_use]
     pub fn has_visible_columns(&self) -> bool {
         !self.visible_columns.is_empty()
     }
@@ -438,6 +440,7 @@ impl DataView {
     }
 
     /// Get the names of hidden columns (columns in source but not visible)
+    #[must_use]
     pub fn get_hidden_column_names(&self) -> Vec<String> {
         let all_columns = self.source.column_names();
         let visible_columns = self.column_names();
@@ -449,6 +452,7 @@ impl DataView {
     }
 
     /// Check if there are any hidden columns
+    #[must_use]
     pub fn has_hidden_columns(&self) -> bool {
         self.visible_columns.len() < self.source.column_count()
     }
@@ -489,7 +493,7 @@ impl DataView {
         Ok(())
     }
 
-    /// Rebuild visible_columns to reflect current pinned column layout
+    /// Rebuild `visible_columns` to reflect current pinned column layout
     /// Pinned columns come first, followed by unpinned columns in original order
     fn rebuild_visible_columns(&mut self) {
         let mut new_visible_columns = Vec::new();
@@ -579,6 +583,7 @@ impl DataView {
     }
 
     /// Check if a column at display index is pinned
+    #[must_use]
     pub fn is_column_pinned(&self, display_index: usize) -> bool {
         if let Some(&source_column_index) = self.visible_columns.get(display_index) {
             self.pinned_columns.contains(&source_column_index)
@@ -588,11 +593,13 @@ impl DataView {
     }
 
     /// Get pinned column indices
+    #[must_use]
     pub fn get_pinned_columns(&self) -> &[usize] {
         &self.pinned_columns
     }
 
     /// Get the names of pinned columns
+    #[must_use]
     pub fn get_pinned_column_names(&self) -> Vec<String> {
         let all_columns = self.source.column_names();
         self.pinned_columns
@@ -602,6 +609,7 @@ impl DataView {
     }
 
     /// Get display order of columns (pinned first, then visible)
+    #[must_use]
     pub fn get_display_columns(&self) -> Vec<usize> {
         // visible_columns already contains pinned columns first, then unpinned
         // (this is maintained by rebuild_visible_columns)
@@ -609,6 +617,7 @@ impl DataView {
     }
 
     /// Get display column names in order (pinned first, then visible)
+    #[must_use]
     pub fn get_display_column_names(&self) -> Vec<String> {
         let all_columns = self.source.column_names();
         self.get_display_columns()
@@ -629,6 +638,7 @@ impl DataView {
     }
 
     /// Create a view with specific rows
+    #[must_use]
     pub fn with_rows(mut self, rows: Vec<usize>) -> Self {
         self.visible_rows = rows.clone();
         self.base_rows = rows; // Update base_rows so clear_filter restores to this
@@ -636,6 +646,7 @@ impl DataView {
     }
 
     /// Apply limit and offset
+    #[must_use]
     pub fn with_limit(mut self, limit: usize, offset: usize) -> Self {
         self.limit = Some(limit);
         self.offset = offset;
@@ -679,10 +690,10 @@ impl DataView {
         self.filter_pattern = Some(pattern.to_string());
 
         // Filter from base_rows (not visible_rows) to allow re-filtering
-        let pattern_lower = if !case_sensitive {
-            pattern.to_lowercase()
-        } else {
+        let pattern_lower = if case_sensitive {
             pattern.to_string()
+        } else {
+            pattern.to_lowercase()
         };
 
         info!(
@@ -709,7 +720,7 @@ impl DataView {
                             .values
                             .iter()
                             .take(5)
-                            .map(|v| v.to_string())
+                            .map(std::string::ToString::to_string)
                             .collect::<Vec<_>>()
                             .join(", ");
                         info!(
@@ -720,10 +731,10 @@ impl DataView {
 
                     for value in &row.values {
                         let text = value.to_string();
-                        let text_to_match = if !case_sensitive {
-                            text.to_lowercase()
-                        } else {
+                        let text_to_match = if case_sensitive {
                             text.clone()
+                        } else {
+                            text.to_lowercase()
                         };
                         if text_to_match.contains(&pattern_lower) {
                             matched_count += 1;
@@ -779,16 +790,19 @@ impl DataView {
     }
 
     /// Check if any filter is active (text or fuzzy)
+    #[must_use]
     pub fn has_filter(&self) -> bool {
         self.filter_pattern.is_some() || self.fuzzy_filter_pattern.is_some()
     }
 
     /// Get the current text filter pattern
+    #[must_use]
     pub fn get_filter_pattern(&self) -> Option<&str> {
         self.filter_pattern.as_deref()
     }
 
     /// Get the current fuzzy filter pattern
+    #[must_use]
     pub fn get_fuzzy_filter_pattern(&self) -> Option<&str> {
         self.fuzzy_filter_pattern.as_deref()
     }
@@ -832,7 +846,7 @@ impl DataView {
                     let row_text = row
                         .values
                         .iter()
-                        .map(|v| v.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(" ");
 
@@ -882,18 +896,20 @@ impl DataView {
     }
 
     /// Get indices of rows that match the fuzzy filter (for compatibility)
+    #[must_use]
     pub fn get_fuzzy_filter_indices(&self) -> Vec<usize> {
         // Return indices relative to the base data, not the view indices
         self.visible_rows.clone()
     }
 
     /// Get the visible row indices
+    #[must_use]
     pub fn get_visible_rows(&self) -> Vec<usize> {
         self.visible_rows.clone()
     }
 
-    /// Group rows by specified columns, returning a map of group keys to DataViews
-    /// Each DataView contains only the rows that match the group key
+    /// Group rows by specified columns, returning a map of group keys to `DataViews`
+    /// Each `DataView` contains only the rows that match the group key
     pub fn group_by(&self, group_columns: &[String]) -> Result<BTreeMap<GroupKey, DataView>> {
         let mut groups = BTreeMap::new();
 
@@ -945,14 +961,14 @@ impl DataView {
     }
 
     /// Sort rows by a column (consuming version - returns new Self)
-    /// The column_index parameter is the index in the VISIBLE columns
+    /// The `column_index` parameter is the index in the VISIBLE columns
     pub fn sort_by(mut self, column_index: usize, ascending: bool) -> Result<Self> {
         self.apply_sort(column_index, ascending)?;
         Ok(self)
     }
 
     /// Sort rows by a column (mutable version - modifies in place)
-    /// The column_index parameter is the index in the VISIBLE columns
+    /// The `column_index` parameter is the index in the VISIBLE columns
     pub fn apply_sort(&mut self, column_index: usize, ascending: bool) -> Result<()> {
         // Map visible column index to source column index
         let source_column_index = if column_index < self.visible_columns.len() {
@@ -1009,7 +1025,7 @@ impl DataView {
     }
 
     /// Apply multi-column sorting
-    /// Each tuple contains (source_column_index, ascending)
+    /// Each tuple contains (`source_column_index`, ascending)
     pub fn apply_multi_sort(&mut self, sort_columns: &[(usize, bool)]) -> Result<()> {
         if sort_columns.is_empty() {
             return Ok(());
@@ -1063,7 +1079,7 @@ impl DataView {
     }
 
     /// Toggle sort on a column - cycles through Ascending -> Descending -> None
-    /// The column_index parameter is the index in the VISIBLE columns
+    /// The `column_index` parameter is the index in the VISIBLE columns
     pub fn toggle_sort(&mut self, column_index: usize) -> Result<()> {
         // Map visible column index to source column index
         let source_column_index = if column_index < self.visible_columns.len() {
@@ -1113,12 +1129,14 @@ impl DataView {
     }
 
     /// Get the current sort state
+    #[must_use]
     pub fn get_sort_state(&self) -> &SortState {
         &self.sort_state
     }
 
     /// Get the visible column indices (for debugging)
-    /// Returns the internal visible_columns array which maps visual positions to source column indices
+    /// Returns the internal `visible_columns` array which maps visual positions to source column indices
+    #[must_use]
     pub fn get_visible_column_indices(&self) -> Vec<usize> {
         self.visible_columns.clone()
     }
@@ -1173,11 +1191,13 @@ impl DataView {
     }
 
     /// Check if row numbers are currently shown
+    #[must_use]
     pub fn has_row_numbers(&self) -> bool {
         self.virtual_columns.iter().any(|col| col.name == "#")
     }
 
     /// Get all column names including virtual columns in display order
+    #[must_use]
     pub fn get_all_column_names(&self) -> Vec<String> {
         let mut result = Vec::new();
         let all_source_names = self.source.column_names();
@@ -1189,7 +1209,7 @@ impl DataView {
                 all_source_names
                     .get(i)
                     .cloned()
-                    .unwrap_or_else(|| format!("col_{}", i))
+                    .unwrap_or_else(|| format!("col_{i}"))
             })
             .collect();
 
@@ -1227,6 +1247,7 @@ impl DataView {
     }
 
     /// Get the number of visible rows
+    #[must_use]
     pub fn row_count(&self) -> usize {
         let count = self.visible_rows.len();
 
@@ -1240,17 +1261,20 @@ impl DataView {
     }
 
     /// Get the number of visible columns (including pinned and virtual)
+    #[must_use]
     pub fn column_count(&self) -> usize {
         // visible_columns already includes pinned columns (maintained by rebuild_visible_columns)
         self.visible_columns.len() + self.virtual_columns.len()
     }
 
     /// Get column names for visible columns (including virtual columns in correct positions)
+    #[must_use]
     pub fn column_names(&self) -> Vec<String> {
         self.get_all_column_names()
     }
 
     /// Get a row by index (respecting limit/offset) including virtual columns
+    #[must_use]
     pub fn get_row(&self, index: usize) -> Option<DataRow> {
         let actual_index = index + self.offset;
 
@@ -1269,7 +1293,7 @@ impl DataView {
 
         // Get real column values
         let mut real_values = Vec::new();
-        for &col_idx in self.get_display_columns().iter() {
+        for &col_idx in &self.get_display_columns() {
             let value = self
                 .source
                 .get_value(row_idx, col_idx)
@@ -1313,37 +1337,44 @@ impl DataView {
     }
 
     /// Get all visible rows (respecting limit/offset)
+    #[must_use]
     pub fn get_rows(&self) -> Vec<DataRow> {
         let count = self.row_count();
         (0..count).filter_map(|i| self.get_row(i)).collect()
     }
 
-    /// Get the source DataTable
+    /// Get the source `DataTable`
+    #[must_use]
     pub fn source(&self) -> &DataTable {
         &self.source
     }
 
-    /// Get the source DataTable as Arc (for memory-efficient sharing)
+    /// Get the source `DataTable` as Arc (for memory-efficient sharing)
+    #[must_use]
     pub fn source_arc(&self) -> Arc<DataTable> {
         Arc::clone(&self.source)
     }
 
     /// Check if a column index is visible (either pinned or regular visible)
+    #[must_use]
     pub fn is_column_visible(&self, index: usize) -> bool {
         self.pinned_columns.contains(&index) || self.visible_columns.contains(&index)
     }
 
     /// Get visible column indices (not including pinned)
+    #[must_use]
     pub fn visible_column_indices(&self) -> &[usize] {
         &self.visible_columns
     }
 
     /// Get all display column indices (pinned + visible)
+    #[must_use]
     pub fn display_column_indices(&self) -> Vec<usize> {
         self.get_display_columns()
     }
 
     /// Get visible row indices (before limit/offset)
+    #[must_use]
     pub fn visible_row_indices(&self) -> &[usize] {
         &self.visible_rows
     }
@@ -1434,21 +1465,25 @@ impl DataView {
     }
 
     /// Get current column search pattern
+    #[must_use]
     pub fn column_search_pattern(&self) -> Option<&str> {
         self.column_search_pattern.as_deref()
     }
 
     /// Get matching columns from search
+    #[must_use]
     pub fn get_matching_columns(&self) -> &[(usize, String)] {
         &self.matching_columns
     }
 
     /// Get current column match index
+    #[must_use]
     pub fn current_column_match_index(&self) -> usize {
         self.current_column_match
     }
 
     /// Get current column match (visible column index)
+    #[must_use]
     pub fn get_current_column_match(&self) -> Option<usize> {
         if self.matching_columns.is_empty() {
             None
@@ -1458,6 +1493,7 @@ impl DataView {
     }
 
     /// Check if column search is active
+    #[must_use]
     pub fn has_column_search(&self) -> bool {
         self.column_search_pattern.is_some()
     }
@@ -1502,6 +1538,7 @@ impl DataView {
 
     /// Export the visible data as JSON
     /// Returns an array of objects where each object represents a row
+    #[must_use]
     pub fn to_json(&self) -> Value {
         // Use only real columns for export, not virtual columns
         let column_names = self.get_real_column_names();
@@ -1587,7 +1624,10 @@ impl DataView {
                 // Extract only the real column values (skip virtual columns)
                 let real_values = self.extract_real_values_from_row(&full_row);
 
-                let row_strings: Vec<String> = real_values.iter().map(|v| v.to_string()).collect();
+                let row_strings: Vec<String> = real_values
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect();
                 tsv_output.push_str(&row_strings.join("\t"));
                 tsv_output.push('\n');
             }
@@ -1632,30 +1672,43 @@ impl DataView {
     }
 
     /// Get a single cell value (respecting filters)
+    #[must_use]
     pub fn get_cell_value(&self, row_index: usize, column_index: usize) -> Option<String> {
         // get_row already respects filters and returns values in visual column order
         if let Some(row) = self.get_row(row_index) {
             // column_index is the visual column index (what the user sees)
             // row.values is already in visual column order (only display columns)
-            row.values.get(column_index).map(|v| v.to_string())
+            row.values
+                .get(column_index)
+                .map(std::string::ToString::to_string)
         } else {
             None
         }
     }
 
     /// Get a row as string values (respecting filters)
+    #[must_use]
     pub fn get_row_values(&self, row_index: usize) -> Option<Vec<String>> {
-        self.get_row(row_index)
-            .map(|row| row.values.iter().map(|v| v.to_string()).collect())
+        self.get_row(row_index).map(|row| {
+            row.values
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect()
+        })
     }
 
     /// Get row values in visual column order (only visible columns)
-    /// This returns data in the same order as get_display_column_names()
+    /// This returns data in the same order as `get_display_column_names()`
+    #[must_use]
     pub fn get_row_visual_values(&self, row_index: usize) -> Option<Vec<String>> {
         if let Some(row) = self.get_row(row_index) {
             // The row already has values in display order (hidden columns excluded)
             // Just convert to strings
-            let values: Vec<String> = row.values.iter().map(|v| v.to_string()).collect();
+            let values: Vec<String> = row
+                .values
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             Some(values)
         } else {
             None
@@ -1664,6 +1717,7 @@ impl DataView {
 
     /// Get column index mapping for debugging
     /// Returns a mapping of visible column index -> (column name, datatable index)
+    #[must_use]
     pub fn get_column_index_mapping(&self) -> Vec<(usize, String, usize)> {
         let mut mappings = Vec::new();
 
@@ -1677,6 +1731,7 @@ impl DataView {
     }
 
     /// Get debug information about column visibility and ordering
+    #[must_use]
     pub fn get_column_debug_info(&self) -> String {
         let mut info = String::new();
         info.push_str("Column Mapping (Visible → DataTable):\n");
@@ -1686,8 +1741,7 @@ impl DataView {
         let hidden_count = total_columns - visible_count;
 
         info.push_str(&format!(
-            "Total: {} columns, Visible: {}, Hidden: {}\n\n",
-            total_columns, visible_count, hidden_count
+            "Total: {total_columns} columns, Visible: {visible_count}, Hidden: {hidden_count}\n\n"
         ));
 
         // Show visible columns with their mappings
@@ -1735,8 +1789,12 @@ impl DataView {
 // This allows DataView to be used where DataProvider is expected
 impl DataProvider for DataView {
     fn get_row(&self, index: usize) -> Option<Vec<String>> {
-        self.get_row(index)
-            .map(|row| row.values.iter().map(|v| v.to_string()).collect())
+        self.get_row(index).map(|row| {
+            row.values
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect()
+        })
     }
 
     fn get_column_names(&self) -> Vec<String> {

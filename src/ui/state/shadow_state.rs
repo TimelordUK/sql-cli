@@ -83,7 +83,10 @@ impl ShadowStateManager {
         let new_state = self.mode_to_state(mode.clone());
 
         // Only log if state actually changed
-        if new_state != self.state {
+        if new_state == self.state {
+            debug!(target: "shadow_state", 
+                "Redundant mode change to {:?} ignored", mode);
+        } else {
             self.transition_count += 1;
 
             info!(target: "shadow_state",
@@ -113,9 +116,6 @@ impl ShadowStateManager {
 
             // Log what side effects should happen
             self.log_expected_side_effects();
-        } else {
-            debug!(target: "shadow_state", 
-                "Redundant mode change to {:?} ignored", mode);
         }
     }
 
@@ -128,7 +128,10 @@ impl ShadowStateManager {
         let new_state = self.mode_to_state(mode.clone());
 
         // Only proceed if state actually changed
-        if new_state != self.state {
+        if new_state == self.state {
+            debug!(target: "shadow_state", 
+                "Redundant mode change to {:?} ignored", mode);
+        } else {
             self.transition_count += 1;
 
             info!(target: "shadow_state",
@@ -161,9 +164,6 @@ impl ShadowStateManager {
 
             // Log what side effects should happen
             self.log_expected_side_effects();
-        } else {
-            debug!(target: "shadow_state", 
-                "Redundant mode change to {:?} ignored", mode);
         }
     }
 
@@ -256,11 +256,13 @@ impl ShadowStateManager {
     }
 
     /// Check if we're in search mode
+    #[must_use]
     pub fn is_search_active(&self) -> bool {
         matches!(self.state, AppState::Search { .. })
     }
 
     /// Get current search type if active
+    #[must_use]
     pub fn get_search_type(&self) -> Option<SearchType> {
         if let AppState::Search { ref search_type } = self.state {
             Some(search_type.clone())
@@ -270,11 +272,13 @@ impl ShadowStateManager {
     }
 
     /// Get display string for status line
+    #[must_use]
     pub fn status_display(&self) -> String {
         format!("[Shadow: {}]", self.state_display(&self.state))
     }
 
     /// Get debug info about recent transitions
+    #[must_use]
     pub fn debug_info(&self) -> String {
         let mut info = format!(
             "Shadow State Debug (transitions: {})\n",
@@ -298,7 +302,7 @@ impl ShadowStateManager {
         if !self.discrepancies.is_empty() {
             info.push_str("\n⚠️  Discrepancies detected:\n");
             for disc in self.discrepancies.iter().rev().take(3) {
-                info.push_str(&format!("  - {}\n", disc));
+                info.push_str(&format!("  - {disc}\n"));
             }
         }
 
@@ -307,7 +311,7 @@ impl ShadowStateManager {
 
     /// Report a discrepancy between shadow and actual state
     pub fn report_discrepancy(&mut self, expected: &str, actual: &str) {
-        let msg = format!("Expected: {}, Actual: {}", expected, actual);
+        let msg = format!("Expected: {expected}, Actual: {actual}");
         warn!(target: "shadow_state", "Discrepancy: {}", msg);
         self.discrepancies.push(msg);
     }
@@ -317,11 +321,13 @@ impl ShadowStateManager {
     // replace all buffer().get_mode() calls
 
     /// Get the current state
+    #[must_use]
     pub fn get_state(&self) -> &AppState {
         &self.state
     }
 
-    /// Get the current mode (converts state to AppMode for compatibility)
+    /// Get the current mode (converts state to `AppMode` for compatibility)
+    #[must_use]
     pub fn get_mode(&self) -> AppMode {
         match &self.state {
             AppState::Command => AppMode::Command,
@@ -341,46 +347,55 @@ impl ShadowStateManager {
     }
 
     /// Check if currently in Results mode
+    #[must_use]
     pub fn is_in_results_mode(&self) -> bool {
         matches!(self.state, AppState::Results)
     }
 
     /// Check if currently in Command mode
+    #[must_use]
     pub fn is_in_command_mode(&self) -> bool {
         matches!(self.state, AppState::Command)
     }
 
     /// Check if currently in any Search mode
+    #[must_use]
     pub fn is_in_search_mode(&self) -> bool {
         matches!(self.state, AppState::Search { .. })
     }
 
     /// Check if currently in Help mode
+    #[must_use]
     pub fn is_in_help_mode(&self) -> bool {
         matches!(self.state, AppState::Help)
     }
 
     /// Check if currently in Debug mode
+    #[must_use]
     pub fn is_in_debug_mode(&self) -> bool {
         matches!(self.state, AppState::Debug)
     }
 
     /// Check if currently in History mode
+    #[must_use]
     pub fn is_in_history_mode(&self) -> bool {
         matches!(self.state, AppState::History)
     }
 
-    /// Check if currently in JumpToRow mode
+    /// Check if currently in `JumpToRow` mode
+    #[must_use]
     pub fn is_in_jump_mode(&self) -> bool {
         matches!(self.state, AppState::JumpToRow)
     }
 
-    /// Check if currently in ColumnStats mode
+    /// Check if currently in `ColumnStats` mode
+    #[must_use]
     pub fn is_in_column_stats_mode(&self) -> bool {
         matches!(self.state, AppState::ColumnStats)
     }
 
     /// Check if in column search specifically
+    #[must_use]
     pub fn is_in_column_search(&self) -> bool {
         matches!(
             self.state,
@@ -391,6 +406,7 @@ impl ShadowStateManager {
     }
 
     /// Check if in data search specifically
+    #[must_use]
     pub fn is_in_data_search(&self) -> bool {
         matches!(
             self.state,
@@ -401,6 +417,7 @@ impl ShadowStateManager {
     }
 
     /// Check if in fuzzy filter mode specifically
+    #[must_use]
     pub fn is_in_fuzzy_filter(&self) -> bool {
         matches!(
             self.state,
@@ -411,6 +428,7 @@ impl ShadowStateManager {
     }
 
     /// Check if in vim search mode specifically
+    #[must_use]
     pub fn is_in_vim_search(&self) -> bool {
         matches!(
             self.state,
@@ -421,26 +439,31 @@ impl ShadowStateManager {
     }
 
     /// Get the previous state if any
+    #[must_use]
     pub fn get_previous_state(&self) -> Option<&AppState> {
         self.previous_state.as_ref()
     }
 
     /// Check if we can navigate (in Results mode)
+    #[must_use]
     pub fn can_navigate(&self) -> bool {
         self.is_in_results_mode()
     }
 
     /// Check if we can edit (in Command mode or search modes)
+    #[must_use]
     pub fn can_edit(&self) -> bool {
         self.is_in_command_mode() || self.is_in_search_mode()
     }
 
     /// Get transition count (useful for debugging)
+    #[must_use]
     pub fn get_transition_count(&self) -> usize {
         self.transition_count
     }
 
     /// Get the last transition if any
+    #[must_use]
     pub fn get_last_transition(&self) -> Option<&StateTransition> {
         self.history.back()
     }
@@ -479,7 +502,7 @@ impl ShadowStateManager {
         match state {
             AppState::Command => "COMMAND".to_string(),
             AppState::Results => "RESULTS".to_string(),
-            AppState::Search { search_type } => format!("SEARCH({:?})", search_type),
+            AppState::Search { search_type } => format!("SEARCH({search_type:?})"),
             AppState::Help => "HELP".to_string(),
             AppState::Debug => "DEBUG".to_string(),
             AppState::History => "HISTORY".to_string(),

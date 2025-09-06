@@ -23,6 +23,7 @@ pub struct KeyMapper {
 }
 
 impl KeyMapper {
+    #[must_use]
     pub fn new() -> Self {
         let mut mapper = Self {
             global_mappings: HashMap::new(),
@@ -38,7 +39,7 @@ impl KeyMapper {
 
     /// Initialize mappings that work regardless of mode
     fn init_global_mappings(&mut self) {
-        use KeyCode::*;
+        use KeyCode::{Char, F};
         use KeyModifiers as Mod;
 
         // Function keys that work in any mode
@@ -78,7 +79,7 @@ impl KeyMapper {
     /// Initialize Results mode mappings
     fn init_results_mappings(&mut self) {
         use crate::buffer::AppMode;
-        use KeyCode::*;
+        use KeyCode::{Char, Down, End, Esc, Home, Left, PageDown, PageUp, Right, Up, F};
         use KeyModifiers as Mod;
 
         let mut mappings = HashMap::new();
@@ -273,7 +274,7 @@ impl KeyMapper {
     /// Initialize Command mode mappings
     fn init_command_mappings(&mut self) {
         use crate::buffer::AppMode;
-        use KeyCode::*;
+        use KeyCode::{Backspace, Char, Delete, Down, End, Enter, Home, Left, Right, Up, F};
         use KeyModifiers as Mod;
 
         let mut mappings = HashMap::new();
@@ -340,17 +341,14 @@ impl KeyMapper {
                     if !self.vim_command_buffer.is_empty() {
                         // We have a pending command, check for valid combinations
                         let command = format!("{}{}", self.vim_command_buffer, c);
-                        let action = match command.as_str() {
-                            "gg" => {
-                                // Go to top (vim-style)
-                                self.vim_command_buffer.clear();
-                                Some(Action::Navigate(NavigateAction::Home))
-                            }
-                            _ => {
-                                // Invalid command, clear buffer
-                                self.vim_command_buffer.clear();
-                                None
-                            }
+                        let action = if command.as_str() == "gg" {
+                            // Go to top (vim-style)
+                            self.vim_command_buffer.clear();
+                            Some(Action::Navigate(NavigateAction::Home))
+                        } else {
+                            // Invalid command, clear buffer
+                            self.vim_command_buffer.clear();
+                            None
                         };
 
                         if action.is_some() {
@@ -463,11 +461,13 @@ impl KeyMapper {
     }
 
     /// Check if we're collecting a count
+    #[must_use]
     pub fn is_collecting_count(&self) -> bool {
         !self.count_buffer.is_empty()
     }
 
     /// Get the current count buffer for display
+    #[must_use]
     pub fn get_count_buffer(&self) -> &str {
         &self.count_buffer
     }

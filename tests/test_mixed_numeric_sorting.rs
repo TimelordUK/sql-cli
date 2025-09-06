@@ -48,7 +48,7 @@ Item8,0.001"
                     let num = match val {
                         DataValue::Integer(i) => *i as f64,
                         DataValue::Float(f) => *f,
-                        _ => panic!("Unexpected non-numeric value: {:?}", val),
+                        _ => panic!("Unexpected non-numeric value: {val:?}"),
                     };
                     numeric_values.push(num);
                 }
@@ -57,7 +57,7 @@ Item8,0.001"
 
         println!("Sorted values (should be in numeric order):");
         for (i, (val, num)) in sorted_values.iter().zip(numeric_values.iter()).enumerate() {
-            println!("  {}: {:?} ({})", i, val, num);
+            println!("  {i}: {val:?} ({num})");
         }
 
         // Verify correct numeric ordering
@@ -127,7 +127,7 @@ Item3,200"
                     DataValue::Float(_) => "Float",
                     _ => "Other",
                 };
-                println!("  Row {}: {:?} ({})", i, val, type_str);
+                println!("  Row {i}: {val:?} ({type_str})");
             }
         }
     }

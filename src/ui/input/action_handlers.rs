@@ -1,7 +1,7 @@
 //! Action handlers using visitor pattern
 //!
 //! This module implements a visitor pattern for handling different groups of actions,
-//! allowing us to break down the massive try_handle_action function into manageable chunks.
+//! allowing us to break down the massive `try_handle_action` function into manageable chunks.
 
 use crate::buffer::AppMode;
 use crate::ui::input::actions::{Action, ActionContext, ActionResult, NavigateAction, YankTarget};
@@ -132,7 +132,7 @@ pub trait ActionHandlerContext {
     fn toggle_viewport_lock(&mut self);
 }
 
-/// Handler for navigation actions (Up, Down, Left, Right, PageUp, etc.)
+/// Handler for navigation actions (Up, Down, Left, Right, `PageUp`, etc.)
 pub struct NavigationActionHandler;
 
 impl ActionHandler for NavigationActionHandler {
@@ -555,10 +555,10 @@ impl ActionHandler for SearchNavigationActionHandler {
             Action::PreviousSearchMatch => {
                 // When Shift+N is pressed and there's no active search,
                 // toggle row numbers instead of navigating search
-                if !context.has_search {
-                    tui.toggle_row_numbers();
-                } else {
+                if context.has_search {
                     tui.previous_search_match();
+                } else {
+                    tui.toggle_row_numbers();
                 }
                 Some(Ok(ActionResult::Handled))
             }
@@ -811,6 +811,7 @@ pub struct ActionDispatcher {
 }
 
 impl ActionDispatcher {
+    #[must_use]
     pub fn new() -> Self {
         let handlers: Vec<Box<dyn ActionHandler>> = vec![
             Box::new(NavigationActionHandler),
@@ -913,10 +914,10 @@ mod tests {
             self.last_action = "goto_last_column".to_string();
         }
         fn goto_row(&mut self, row: usize) {
-            self.last_action = format!("goto_row_{}", row);
+            self.last_action = format!("goto_row_{row}");
         }
         fn goto_column(&mut self, col: usize) {
-            self.last_action = format!("goto_column_{}", col);
+            self.last_action = format!("goto_column_{col}");
         }
 
         fn set_mode(&mut self, mode: AppMode) {

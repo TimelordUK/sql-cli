@@ -8,7 +8,7 @@ use tracing::{debug, info};
 
 /// Result of executing a query
 pub struct QueryExecutionResult {
-    /// The resulting DataView to display
+    /// The resulting `DataView` to display
     pub dataview: DataView,
 
     /// Execution statistics
@@ -29,7 +29,7 @@ pub struct QueryStats {
     pub query_engine_time: Duration,
 }
 
-/// Service responsible for executing queries and managing the resulting DataView
+/// Service responsible for executing queries and managing the resulting `DataView`
 pub struct QueryExecutionService {
     case_insensitive: bool,
     auto_hide_empty: bool,
@@ -38,6 +38,7 @@ pub struct QueryExecutionService {
 }
 
 impl QueryExecutionService {
+    #[must_use]
     pub fn new(case_insensitive: bool, auto_hide_empty: bool) -> Self {
         Self {
             case_insensitive,
@@ -47,6 +48,7 @@ impl QueryExecutionService {
         }
     }
 
+    #[must_use]
     pub fn with_behavior_config(behavior_config: BehaviorConfig) -> Self {
         let case_insensitive = behavior_config.case_insensitive_default;
         let auto_hide_empty = behavior_config.hide_empty_columns;
@@ -59,6 +61,7 @@ impl QueryExecutionService {
         }
     }
 
+    #[must_use]
     pub fn with_date_notation(
         case_insensitive: bool,
         auto_hide_empty: bool,
@@ -73,7 +76,7 @@ impl QueryExecutionService {
     }
 
     /// Execute a query and return the result
-    /// This encapsulates all the query execution logic that was previously in EnhancedTui
+    /// This encapsulates all the query execution logic that was previously in `EnhancedTui`
     pub fn execute(
         &self,
         query: &str,
@@ -90,8 +93,7 @@ impl QueryExecutionService {
         let uses_dual = statement
             .from_table
             .as_ref()
-            .map(|t| t.to_uppercase() == "DUAL")
-            .unwrap_or(false);
+            .is_some_and(|t| t.to_uppercase() == "DUAL");
 
         let no_from_clause = statement.from_table.is_none();
 
@@ -187,11 +189,12 @@ impl QueryExecutionService {
 
 impl QueryExecutionResult {
     /// Generate a user-friendly status message
+    #[must_use]
     pub fn status_message(&self) -> String {
-        let hidden_msg = if !self.hidden_columns.is_empty() {
-            format!(" ({} auto-hidden)", self.hidden_columns.len())
-        } else {
+        let hidden_msg = if self.hidden_columns.is_empty() {
             String::new()
+        } else {
+            format!(" ({} auto-hidden)", self.hidden_columns.len())
         };
 
         format!(
@@ -204,11 +207,13 @@ impl QueryExecutionResult {
     }
 
     /// Get column names for history tracking
+    #[must_use]
     pub fn column_names(&self) -> Vec<String> {
         self.dataview.column_names()
     }
 
     /// Get table name for history tracking
+    #[must_use]
     pub fn table_name(&self) -> String {
         self.dataview.source().name.clone()
     }

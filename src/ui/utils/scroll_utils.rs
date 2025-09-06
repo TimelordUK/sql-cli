@@ -1,5 +1,6 @@
-/// Scroll and cursor position utilities extracted from enhanced_tui
+/// Scroll and cursor position utilities extracted from `enhanced_tui`
 /// Calculate horizontal scroll offset for input field
+#[must_use]
 pub fn calculate_horizontal_scroll(cursor_pos: usize, terminal_width: u16) -> u16 {
     let inner_width = terminal_width.saturating_sub(3) as usize; // Account for borders + padding
 
@@ -12,6 +13,7 @@ pub fn calculate_horizontal_scroll(cursor_pos: usize, terminal_width: u16) -> u1
 }
 
 /// Update scroll offset based on cursor position
+#[must_use]
 pub fn update_scroll_offset(cursor_pos: usize, current_offset: u16, visible_width: usize) -> u16 {
     // If cursor is before the scroll window, scroll left
     if cursor_pos < current_offset as usize {
@@ -28,6 +30,7 @@ pub fn update_scroll_offset(cursor_pos: usize, current_offset: u16, visible_widt
 }
 
 /// Calculate visible range for viewport
+#[must_use]
 pub fn calculate_visible_range(
     total_items: usize,
     viewport_start: usize,
@@ -39,6 +42,7 @@ pub fn calculate_visible_range(
 }
 
 /// Calculate page jump offset
+#[must_use]
 pub fn calculate_page_jump(
     current_pos: usize,
     page_size: usize,
@@ -54,6 +58,7 @@ pub fn calculate_page_jump(
 
 /// Calculate centered viewport position
 /// Centers the given position in the viewport if possible
+#[must_use]
 pub fn calculate_centered_viewport(
     target_pos: usize,
     viewport_size: usize,

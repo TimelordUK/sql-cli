@@ -95,6 +95,7 @@ pub fn handle_history_input(ctx: &mut HistoryInputContext, key: KeyEvent) -> His
 
 /// Update history matches with schema context
 /// This is a separate function that the TUI can call when needed
+#[must_use]
 pub fn should_update_history_matches(result: &HistoryInputResult) -> bool {
     match result {
         HistoryInputResult::Continue => true,
@@ -103,6 +104,7 @@ pub fn should_update_history_matches(result: &HistoryInputResult) -> bool {
 }
 
 /// Check if the key event would cause a history search update
+#[must_use]
 pub fn key_updates_search(key: KeyEvent) -> bool {
     matches!(key.code, KeyCode::Backspace | KeyCode::Char(_))
 }

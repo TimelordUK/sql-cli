@@ -16,6 +16,7 @@ struct MemorySnapshot {
 }
 
 impl MemoryTracker {
+    #[must_use]
     pub fn new(max_history: usize) -> Self {
         Self {
             history: Arc::new(RwLock::new(Vec::new())),
@@ -41,10 +42,12 @@ impl MemoryTracker {
         }
     }
 
+    #[must_use]
     pub fn get_current_memory_mb(&self) -> Option<f64> {
         crate::utils::memory_tracker::get_process_memory_kb().map(|kb| kb as f64 / 1024.0)
     }
 
+    #[must_use]
     pub fn get_history(&self) -> Vec<(usize, f64)> {
         if let Ok(history) = self.history.read() {
             history
@@ -70,13 +73,14 @@ pub struct MemoryDebugProvider {
 }
 
 impl MemoryDebugProvider {
+    #[must_use]
     pub fn new(tracker: MemoryTracker) -> Self {
         Self { tracker }
     }
 }
 
 impl DebugTrace for MemoryDebugProvider {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Memory"
     }
 
@@ -87,14 +91,16 @@ impl DebugTrace for MemoryDebugProvider {
 
         // Current memory usage
         if let Some(memory_mb) = self.tracker.get_current_memory_mb() {
-            builder.add_field("Current Memory", format!("{:.2} MB", memory_mb));
+            builder.add_field("Current Memory", format!("{memory_mb:.2} MB"));
         } else {
             builder.add_field("Current Memory", "Unable to read");
         }
 
         // Memory history
         let history = self.tracker.get_history();
-        if !history.is_empty() {
+        if history.is_empty() {
+            builder.add_line("No memory history available");
+        } else {
             builder.add_line("");
             builder.add_line("Memory History (last readings):");
 
@@ -104,21 +110,21 @@ impl DebugTrace for MemoryDebugProvider {
             let max = values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
             let avg = values.iter().sum::<f64>() / values.len() as f64;
 
-            builder.add_field("  Min", format!("{:.2} MB", min));
-            builder.add_field("  Max", format!("{:.2} MB", max));
-            builder.add_field("  Avg", format!("{:.2} MB", avg));
+            builder.add_field("  Min", format!("{min:.2} MB"));
+            builder.add_field("  Max", format!("{max:.2} MB"));
+            builder.add_field("  Avg", format!("{avg:.2} MB"));
 
             // Show last few readings
             builder.add_line("");
             builder.add_line("  Recent readings:");
             for (_, mb) in history.iter().rev().take(5) {
-                builder.add_line(format!("    {:.2} MB", mb));
+                builder.add_line(format!("    {mb:.2} MB"));
             }
 
             // Memory growth
             if history.len() >= 2 {
-                let first = history.first().map(|(_, mb)| *mb).unwrap_or(0.0);
-                let last = history.last().map(|(_, mb)| *mb).unwrap_or(0.0);
+                let first = history.first().map_or(0.0, |(_, mb)| *mb);
+                let last = history.last().map_or(0.0, |(_, mb)| *mb);
                 let growth = last - first;
                 let growth_pct = if first > 0.0 {
                     (growth / first) * 100.0
@@ -127,13 +133,8 @@ impl DebugTrace for MemoryDebugProvider {
                 };
 
                 builder.add_line("");
-                builder.add_field(
-                    "  Growth",
-                    format!("{:+.2} MB ({:+.1}%)", growth, growth_pct),
-                );
+                builder.add_field("  Growth", format!("{growth:+.2} MB ({growth_pct:+.1}%)"));
             }
-        } else {
-            builder.add_line("No memory history available");
         }
 
         // System memory info (if available)
@@ -162,10 +163,10 @@ impl DebugTrace for MemoryDebugProvider {
                 if total_mb > 0.0 {
                     builder.add_line("");
                     builder.add_line("System Memory:");
-                    builder.add_field("  Total", format!("{:.2} MB", total_mb));
-                    builder.add_field("  Available", format!("{:.2} MB", available_mb));
+                    builder.add_field("  Total", format!("{total_mb:.2} MB"));
+                    builder.add_field("  Available", format!("{available_mb:.2} MB"));
                     let used_pct = ((total_mb - available_mb) / total_mb) * 100.0;
-                    builder.add_field("  Used", format!("{:.1}%", used_pct));
+                    builder.add_field("  Used", format!("{used_pct:.1}%"));
                 }
             }
         }
@@ -176,6 +177,6 @@ impl DebugTrace for MemoryDebugProvider {
     fn debug_summary(&self) -> Option<String> {
         self.tracker
             .get_current_memory_mb()
-            .map(|mb| format!("{:.2} MB", mb))
+            .map(|mb| format!("{mb:.2} MB"))
     }
 }

@@ -28,7 +28,11 @@ impl CsvDataSource {
         let mut reader = csv::Reader::from_reader(file);
 
         // Get headers
-        let headers: Vec<String> = reader.headers()?.iter().map(|h| h.to_string()).collect();
+        let headers: Vec<String> = reader
+            .headers()?
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
 
         // Read all records into JSON values
         let mut data = Vec::new();
@@ -139,7 +143,11 @@ impl CsvDataSource {
 
         // Handle specific column selection
         if !stmt.columns.contains(&"*".to_string()) {
-            let columns: Vec<&str> = stmt.columns.iter().map(|s| s.as_str()).collect();
+            let columns: Vec<&str> = stmt
+                .columns
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
             results = self.select_columns(results, &columns)?;
         }
 
@@ -275,14 +283,14 @@ impl CsvDataSource {
                             Value::String(s) => s.clone(),
                             Value::Number(n) => n.to_string(),
                             Value::Bool(b) => b.to_string(),
-                            Value::Null => "".to_string(),
+                            Value::Null => String::new(),
                             _ => a.to_string(),
                         };
                         let b_str = match b {
                             Value::String(s) => s.clone(),
                             Value::Number(n) => n.to_string(),
                             Value::Bool(b) => b.to_string(),
-                            Value::Null => "".to_string(),
+                            Value::Null => String::new(),
                             _ => b.to_string(),
                         };
                         a_str.cmp(&b_str)
@@ -310,19 +318,22 @@ impl CsvDataSource {
         Ok(data)
     }
 
+    #[must_use]
     pub fn get_headers(&self) -> &[String] {
         &self.headers
     }
 
+    #[must_use]
     pub fn get_table_name(&self) -> &str {
         &self.table_name
     }
 
+    #[must_use]
     pub fn get_row_count(&self) -> usize {
         self.data.len()
     }
 
-    /// V49: Convert CsvDataSource directly to DataTable
+    /// V49: Convert `CsvDataSource` directly to `DataTable`
     /// This avoids the JSON intermediate format
     pub fn to_datatable(&self) -> DataTable {
         debug!(
@@ -346,8 +357,7 @@ impl CsvDataSource {
                 for header in &self.headers {
                     let value = obj
                         .get(header)
-                        .map(json_value_to_data_value)
-                        .unwrap_or(DataValue::Null);
+                        .map_or(DataValue::Null, json_value_to_data_value);
                     values.push(value);
                 }
 
@@ -378,7 +388,7 @@ impl CsvDataSource {
     }
 }
 
-/// V49: Helper function to convert JSON value to DataValue
+/// V49: Helper function to convert JSON value to `DataValue`
 fn json_value_to_data_value(json: &Value) -> DataValue {
     match json {
         Value::Null => DataValue::Null,
@@ -422,6 +432,7 @@ impl Default for CsvApiClient {
 }
 
 impl CsvApiClient {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             datasource: None,
@@ -465,6 +476,7 @@ impl CsvApiClient {
         }
     }
 
+    #[must_use]
     pub fn get_schema(&self) -> Option<HashMap<String, Vec<String>>> {
         self.datasource.as_ref().map(|ds| {
             let mut schema = HashMap::new();
@@ -477,7 +489,7 @@ impl CsvApiClient {
         // Extract headers from the first row
         let headers: Vec<String> = if let Some(first_row) = data.first() {
             if let Some(obj) = first_row.as_object() {
-                obj.keys().map(|k| k.to_string()).collect()
+                obj.keys().map(std::string::ToString::to_string).collect()
             } else {
                 return Err(anyhow::anyhow!("Invalid JSON data format"));
             }
@@ -497,8 +509,9 @@ impl CsvApiClient {
         Ok(())
     }
 
-    /// V49: Get DataTable directly from the datasource
+    /// V49: Get `DataTable` directly from the datasource
     /// This avoids JSON intermediate conversion
+    #[must_use]
     pub fn get_datatable(&self) -> Option<DataTable> {
         self.datasource.as_ref().map(|ds| {
             debug!("V49: CsvApiClient returning DataTable directly");
@@ -507,6 +520,7 @@ impl CsvApiClient {
     }
 
     /// V49: Check if we have a datasource loaded
+    #[must_use]
     pub fn has_data(&self) -> bool {
         self.datasource.is_some()
     }

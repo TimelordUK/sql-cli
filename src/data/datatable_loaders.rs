@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-/// Load a CSV file into a DataTable
+/// Load a CSV file into a `DataTable`
 pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Result<DataTable> {
     let file = File::open(&path)
         .with_context(|| format!("Failed to open CSV file: {:?}", path.as_ref()))?;
@@ -28,7 +28,7 @@ pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resul
     );
 
     // Create columns from headers (types will be inferred later)
-    for header in headers.iter() {
+    for header in &headers {
         table.add_column(DataColumn::new(header));
     }
 
@@ -36,7 +36,10 @@ pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resul
     let mut string_rows = Vec::new();
     for result in reader.records() {
         let record = result?;
-        let row: Vec<String> = record.iter().map(|s| s.to_string()).collect();
+        let row: Vec<String> = record
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         string_rows.push(row);
     }
 
@@ -76,7 +79,7 @@ pub fn load_csv_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resul
     Ok(table)
 }
 
-/// Load a JSON file into a DataTable
+/// Load a JSON file into a `DataTable`
 pub fn load_json_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Result<DataTable> {
     // Read file as string first to preserve key order
     let mut file = File::open(&path)
@@ -128,8 +131,8 @@ pub fn load_json_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resu
                     Some(JsonValue::Bool(b)) => b.to_string(),
                     Some(JsonValue::Number(n)) => n.to_string(),
                     Some(JsonValue::String(s)) => s.clone(),
-                    Some(JsonValue::Array(arr)) => format!("{:?}", arr), // Arrays as debug string for now
-                    Some(JsonValue::Object(obj)) => format!("{:?}", obj), // Objects as debug string for now
+                    Some(JsonValue::Array(arr)) => format!("{arr:?}"), // Arrays as debug string for now
+                    Some(JsonValue::Object(obj)) => format!("{obj:?}"), // Objects as debug string for now
                 };
                 row.push(value_str);
             }
@@ -173,7 +176,7 @@ pub fn load_json_to_datatable<P: AsRef<Path>>(path: P, table_name: &str) -> Resu
     Ok(table)
 }
 
-/// Load JSON data directly (already parsed) into a DataTable
+/// Load JSON data directly (already parsed) into a `DataTable`
 pub fn load_json_data_to_datatable(data: Vec<JsonValue>, table_name: &str) -> Result<DataTable> {
     if data.is_empty() {
         return Ok(DataTable::new(table_name));
@@ -213,8 +216,8 @@ pub fn load_json_data_to_datatable(data: Vec<JsonValue>, table_name: &str) -> Re
                     Some(JsonValue::Bool(b)) => b.to_string(),
                     Some(JsonValue::Number(n)) => n.to_string(),
                     Some(JsonValue::String(s)) => s.clone(),
-                    Some(JsonValue::Array(arr)) => format!("{:?}", arr),
-                    Some(JsonValue::Object(obj)) => format!("{:?}", obj),
+                    Some(JsonValue::Array(arr)) => format!("{arr:?}"),
+                    Some(JsonValue::Object(obj)) => format!("{obj:?}"),
                 };
                 row.push(value_str);
             }

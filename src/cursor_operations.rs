@@ -7,6 +7,7 @@ pub struct CursorOperations;
 
 impl CursorOperations {
     /// Move cursor to the previous word boundary
+    #[must_use]
     pub fn find_word_boundary_backward(text: &str, cursor_pos: usize) -> usize {
         if cursor_pos == 0 {
             return 0;
@@ -40,6 +41,7 @@ impl CursorOperations {
     }
 
     /// Move cursor to the next word boundary
+    #[must_use]
     pub fn find_word_boundary_forward(text: &str, cursor_pos: usize) -> usize {
         // Use lexer to tokenize
         let mut lexer = Lexer::new(text);
@@ -57,6 +59,7 @@ impl CursorOperations {
     }
 
     /// Delete from cursor to previous word boundary
+    #[must_use]
     pub fn delete_word_backward(text: &str, cursor_pos: usize) -> (String, usize) {
         if cursor_pos == 0 {
             return (text.to_string(), cursor_pos);
@@ -73,6 +76,7 @@ impl CursorOperations {
     }
 
     /// Delete from cursor to next word boundary
+    #[must_use]
     pub fn delete_word_forward(text: &str, cursor_pos: usize) -> (String, usize) {
         if cursor_pos >= text.len() {
             return (text.to_string(), cursor_pos);
@@ -89,6 +93,7 @@ impl CursorOperations {
     }
 
     /// Kill line from cursor to end
+    #[must_use]
     pub fn kill_line(text: &str, cursor_pos: usize) -> (String, String) {
         let killed = text[cursor_pos..].to_string();
         let new_text = text[..cursor_pos].to_string();
@@ -96,6 +101,7 @@ impl CursorOperations {
     }
 
     /// Kill line from start to cursor
+    #[must_use]
     pub fn kill_line_backward(text: &str, cursor_pos: usize) -> (String, String, usize) {
         let killed = text[..cursor_pos].to_string();
         let new_text = text[cursor_pos..].to_string();
@@ -103,6 +109,7 @@ impl CursorOperations {
     }
 
     /// Jump to previous SQL token
+    #[must_use]
     pub fn jump_to_prev_token(text: &str, cursor_pos: usize) -> usize {
         let mut lexer = Lexer::new(text);
         let tokens = lexer.tokenize_all_with_positions();
@@ -120,6 +127,7 @@ impl CursorOperations {
     }
 
     /// Jump to next SQL token
+    #[must_use]
     pub fn jump_to_next_token(text: &str, cursor_pos: usize) -> usize {
         let mut lexer = Lexer::new(text);
         let tokens = lexer.tokenize_all_with_positions();
@@ -135,6 +143,7 @@ impl CursorOperations {
     }
 
     /// Find position of matching bracket/parenthesis
+    #[must_use]
     pub fn find_matching_bracket(text: &str, cursor_pos: usize) -> Option<usize> {
         let chars: Vec<char> = text.chars().collect();
         if cursor_pos >= chars.len() {

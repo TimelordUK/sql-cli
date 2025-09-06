@@ -17,6 +17,7 @@ pub struct TabBarWidget {
 }
 
 impl TabBarWidget {
+    #[must_use]
     pub fn new(current_index: usize, buffer_names: Vec<String>) -> Self {
         Self {
             current_index,
@@ -26,6 +27,7 @@ impl TabBarWidget {
     }
 
     /// Set whether to show Alt+N shortcuts
+    #[must_use]
     pub fn with_shortcuts(mut self, show: bool) -> Self {
         self.show_shortcuts = show;
         self
@@ -86,6 +88,7 @@ impl TabBarWidget {
     }
 
     /// Calculate the height needed for the tab bar
+    #[must_use]
     pub fn height(&self) -> u16 {
         // Always reserve space for tab bar to maintain consistent layout
         2 // Tab bar with border

@@ -10,7 +10,7 @@ use std::io::Write;
 pub struct DataExporter;
 
 impl DataExporter {
-    /// Export data to CSV format using DataProvider trait
+    /// Export data to CSV format using `DataProvider` trait
     pub fn export_provider_to_csv(provider: &dyn DataProvider) -> Result<String> {
         let row_count = provider.get_row_count();
         if row_count == 0 {
@@ -19,14 +19,14 @@ impl DataExporter {
 
         // Generate filename with timestamp
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let filename = format!("query_results_{}.csv", timestamp);
+        let filename = format!("query_results_{timestamp}.csv");
 
         let mut file = File::create(&filename)?;
 
         // Write headers
         let headers = provider.get_column_names();
         let header_line = headers.join(",");
-        writeln!(file, "{}", header_line)?;
+        writeln!(file, "{header_line}")?;
 
         // Write data rows
         for i in 0..row_count {
@@ -36,17 +36,16 @@ impl DataExporter {
                     .map(|field| Self::escape_csv_field(field))
                     .collect();
                 let row_line = escaped_row.join(",");
-                writeln!(file, "{}", row_line)?;
+                writeln!(file, "{row_line}")?;
             }
         }
 
         Ok(format!(
-            "✓ Exported {} rows to CSV file: {}",
-            row_count, filename
+            "✓ Exported {row_count} rows to CSV file: {filename}"
         ))
     }
 
-    /// Export data to JSON format using DataProvider trait
+    /// Export data to JSON format using `DataProvider` trait
     pub fn export_provider_to_json(provider: &dyn DataProvider) -> Result<String> {
         let row_count = provider.get_row_count();
         if row_count == 0 {
@@ -55,7 +54,7 @@ impl DataExporter {
 
         // Generate filename with timestamp
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let filename = format!("query_results_{}.json", timestamp);
+        let filename = format!("query_results_{timestamp}.json");
 
         // Build JSON array
         let headers = provider.get_column_names();
@@ -77,12 +76,11 @@ impl DataExporter {
         serde_json::to_writer_pretty(file, &json_array)?;
 
         Ok(format!(
-            "✓ Exported {} rows to JSON file: {}",
-            row_count, filename
+            "✓ Exported {row_count} rows to JSON file: {filename}"
         ))
     }
 
-    /// V50: Export buffer results to CSV format using DataTable
+    /// V50: Export buffer results to CSV format using `DataTable`
     pub fn export_to_csv(buffer: &dyn BufferAPI) -> Result<String> {
         let datatable = buffer
             .get_datatable()
@@ -94,27 +92,26 @@ impl DataExporter {
 
         // Generate filename with timestamp
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let filename = format!("query_results_{}.csv", timestamp);
+        let filename = format!("query_results_{timestamp}.csv");
 
         let mut file = File::create(&filename)?;
 
         // Write headers
         let headers = datatable.column_names();
         let header_line = headers.join(",");
-        writeln!(file, "{}", header_line)?;
+        writeln!(file, "{header_line}")?;
 
         // Write data rows
         let mut row_count = 0;
         for row_data in datatable.to_string_table() {
             let row: Vec<String> = row_data.iter().map(|s| Self::escape_csv_field(s)).collect();
             let row_line = row.join(",");
-            writeln!(file, "{}", row_line)?;
+            writeln!(file, "{row_line}")?;
             row_count += 1;
         }
 
         Ok(format!(
-            "✓ Exported {} rows to CSV file: {}",
-            row_count, filename
+            "✓ Exported {row_count} rows to CSV file: {filename}"
         ))
     }
 
@@ -140,7 +137,7 @@ impl DataExporter {
 
         // Generate filename with timestamp
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let filename = format!("query_results_{}.json", timestamp);
+        let filename = format!("query_results_{timestamp}.json");
 
         let file = File::create(&filename)?;
         serde_json::to_writer_pretty(file, &data_to_export)?;
@@ -186,14 +183,14 @@ impl DataExporter {
 
         // Generate filename with timestamp
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let filename = format!("selected_rows_{}.csv", timestamp);
+        let filename = format!("selected_rows_{timestamp}.csv");
 
         let mut file = File::create(&filename)?;
 
         // Write headers
-        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        let headers: Vec<&str> = obj.keys().map(std::string::String::as_str).collect();
         let header_line = headers.join(",");
-        writeln!(file, "{}", header_line)?;
+        writeln!(file, "{header_line}")?;
 
         // Write selected rows
         let mut row_count = 0;
@@ -213,16 +210,13 @@ impl DataExporter {
                         .collect();
 
                     let row_line = row.join(",");
-                    writeln!(file, "{}", row_line)?;
+                    writeln!(file, "{row_line}")?;
                     row_count += 1;
                 }
             }
         }
 
-        Ok(format!(
-            "Exported {} selected rows to {}",
-            row_count, filename
-        ))
+        Ok(format!("Exported {row_count} selected rows to {filename}"))
     }
 
     /// Helper to escape CSV fields that contain special characters
@@ -294,6 +288,7 @@ impl DataExporter {
     }
 
     /// Export a single value to clipboard-friendly format
+    #[must_use]
     pub fn format_for_clipboard(value: &Value, _header: &str) -> String {
         match value {
             Value::String(s) => s.clone(),
@@ -305,6 +300,7 @@ impl DataExporter {
     }
 
     /// Export row as tab-separated values for clipboard
+    #[must_use]
     pub fn format_row_for_clipboard(row: &serde_json::Map<String, Value>) -> String {
         let values: Vec<String> = row
             .values()
@@ -314,10 +310,11 @@ impl DataExporter {
     }
 
     /// Convert JSON query results to a 2D vector of strings for display
+    #[must_use]
     pub fn convert_json_to_strings(data: &[Value]) -> Vec<Vec<String>> {
         if let Some(first_row) = data.first() {
             if let Some(obj) = first_row.as_object() {
-                let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+                let headers: Vec<&str> = obj.keys().map(std::string::String::as_str).collect();
 
                 data.iter()
                     .map(|item| {
@@ -328,9 +325,9 @@ impl DataExporter {
                                     Some(Value::String(s)) => s.clone(),
                                     Some(Value::Number(n)) => n.to_string(),
                                     Some(Value::Bool(b)) => b.to_string(),
-                                    Some(Value::Null) => "".to_string(),
+                                    Some(Value::Null) => String::new(),
                                     Some(other) => other.to_string(),
-                                    None => "".to_string(),
+                                    None => String::new(),
                                 })
                                 .collect()
                         } else {
@@ -347,10 +344,11 @@ impl DataExporter {
     }
 
     /// Generate CSV text from JSON data for clipboard operations
+    #[must_use]
     pub fn generate_csv_text(data: &[Value]) -> Option<String> {
         let first_row = data.first()?;
         let obj = first_row.as_object()?;
-        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        let headers: Vec<&str> = obj.keys().map(std::string::String::as_str).collect();
 
         // Create CSV format
         let mut csv_text = headers.join(",") + "\n";
@@ -377,10 +375,11 @@ impl DataExporter {
     }
 
     /// Generate TSV (Tab-Separated Values) text from JSON data for better Windows clipboard compatibility
+    #[must_use]
     pub fn generate_tsv_text(data: &[Value]) -> Option<String> {
         let first_row = data.first()?;
         let obj = first_row.as_object()?;
-        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        let headers: Vec<&str> = obj.keys().map(std::string::String::as_str).collect();
 
         // Create TSV format with headers
         let mut tsv_text = headers.join("\t") + "\r\n";
@@ -412,7 +411,8 @@ impl DataExporter {
         Some(tsv_text)
     }
 
-    /// V50: Helper to convert DataTable to JSON Values for export compatibility
+    /// V50: Helper to convert `DataTable` to JSON Values for export compatibility
+    #[must_use]
     pub fn datatable_to_json_values(datatable: &crate::data::datatable::DataTable) -> Vec<Value> {
         use serde_json::json;
 

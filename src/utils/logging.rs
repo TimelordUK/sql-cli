@@ -17,6 +17,7 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
+    #[must_use]
     pub fn new(level: Level, target: &str, message: String) -> Self {
         Self {
             timestamp: Local::now().format("%H:%M:%S.%3f").to_string(),
@@ -27,6 +28,7 @@ impl LogEntry {
     }
 
     /// Format for display in debug view
+    #[must_use]
     pub fn format_for_display(&self) -> String {
         format!(
             "[{}] {} [{}] {}",
@@ -48,6 +50,7 @@ impl Default for LogRingBuffer {
 }
 
 impl LogRingBuffer {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             entries: Arc::new(Mutex::new(VecDeque::with_capacity(MAX_LOG_ENTRIES))),
@@ -62,6 +65,7 @@ impl LogRingBuffer {
         entries.push_back(entry);
     }
 
+    #[must_use]
     pub fn get_recent(&self, count: usize) -> Vec<LogEntry> {
         let entries = self.entries.lock().unwrap();
         entries.iter().rev().take(count).rev().cloned().collect()
@@ -72,6 +76,7 @@ impl LogRingBuffer {
         entries.clear();
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         let entries = self.entries.lock().unwrap();
         entries.len()
@@ -84,6 +89,7 @@ pub struct RingBufferWriter {
 }
 
 impl RingBufferWriter {
+    #[must_use]
     pub fn new(buffer: LogRingBuffer) -> Self {
         Self { buffer }
     }
@@ -118,10 +124,10 @@ impl std::io::Write for RingBufferWriter {
                 let (target, msg) = if let Some(colon_pos) = rest.find(':') {
                     let potential_target = &rest[..colon_pos];
                     // Check if this looks like a target (no spaces)
-                    if !potential_target.contains(' ') {
-                        (potential_target, rest[colon_pos + 1..].trim())
-                    } else {
+                    if potential_target.contains(' ') {
                         ("general", rest)
+                    } else {
+                        (potential_target, rest[colon_pos + 1..].trim())
                     }
                 } else {
                     ("general", rest)
@@ -162,6 +168,7 @@ pub struct DualWriter {
 }
 
 impl DualWriter {
+    #[must_use]
     pub fn new(
         buffer: LogRingBuffer,
         dual_logger: &'static crate::dual_logging::DualLogger,
@@ -207,10 +214,10 @@ impl std::io::Write for DualWriter {
                 let (target, msg) = if let Some(colon_pos) = rest.find(':') {
                     let potential_target = &rest[..colon_pos];
                     // Check if this looks like a target (no spaces)
-                    if !potential_target.contains(' ') {
-                        (potential_target, rest[colon_pos + 1..].trim())
-                    } else {
+                    if potential_target.contains(' ') {
                         ("general", rest)
+                    } else {
+                        (potential_target, rest[colon_pos + 1..].trim())
                     }
                 } else {
                     ("general", rest)
@@ -310,6 +317,7 @@ pub fn init_tracing_with_dual_logging() {
 }
 
 /// Initialize tracing with our custom ring buffer writer (legacy)
+#[must_use]
 pub fn init_tracing() -> LogRingBuffer {
     init_tracing_with_dual_logging();
     get_log_buffer().unwrap_or_default()

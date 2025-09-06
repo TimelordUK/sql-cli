@@ -5,7 +5,7 @@ use crate::ui::input::actions::{Action, YankTarget};
 // Arc import removed - no longer needed
 
 /// Trait that provides yank operation behavior for TUI components
-/// This extracts yank operations from EnhancedTui to reduce coupling
+/// This extracts yank operations from `EnhancedTui` to reduce coupling
 pub trait YankBehavior {
     // Required methods - these provide access to TUI internals
     fn buffer(&self) -> &dyn BufferAPI;

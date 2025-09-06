@@ -5,7 +5,7 @@ use std::cell::RefCell;
 // Arc import removed - no longer needed
 
 /// Trait that provides navigation behavior for TUI components
-/// This extracts navigation methods from EnhancedTui to reduce coupling
+/// This extracts navigation methods from `EnhancedTui` to reduce coupling
 pub trait NavigationBehavior {
     // Required methods - these provide access to TUI internals
     fn viewport_manager(&self) -> &RefCell<Option<ViewportManager>>;
@@ -33,7 +33,7 @@ pub trait NavigationBehavior {
     }
 
     /// Centralized method to sync row state across all components
-    /// This ensures Buffer, AppStateContainer, and any other row tracking stays in sync
+    /// This ensures Buffer, `AppStateContainer`, and any other row tracking stays in sync
     fn sync_row_state(&mut self, row: usize) {
         // 1. Update Buffer's selected row
         self.buffer_mut().set_selected_row(Some(row));
@@ -51,7 +51,9 @@ pub trait NavigationBehavior {
     fn next_row(&mut self) {
         let nav_result = {
             let mut viewport_borrow = self.viewport_manager().borrow_mut();
-            viewport_borrow.as_mut().map(|vm| vm.navigate_row_down())
+            viewport_borrow
+                .as_mut()
+                .map(crate::ui::viewport_manager::ViewportManager::navigate_row_down)
         };
 
         if let Some(nav_result) = nav_result {
@@ -62,7 +64,9 @@ pub trait NavigationBehavior {
     fn previous_row(&mut self) {
         let nav_result = {
             let mut viewport_borrow = self.viewport_manager().borrow_mut();
-            viewport_borrow.as_mut().map(|vm| vm.navigate_row_up())
+            viewport_borrow
+                .as_mut()
+                .map(crate::ui::viewport_manager::ViewportManager::navigate_row_up)
         };
 
         if let Some(nav_result) = nav_result {
@@ -105,7 +109,9 @@ pub trait NavigationBehavior {
     fn page_down(&mut self) {
         let nav_result = {
             let mut viewport_borrow = self.viewport_manager().borrow_mut();
-            viewport_borrow.as_mut().map(|vm| vm.page_down())
+            viewport_borrow
+                .as_mut()
+                .map(crate::ui::viewport_manager::ViewportManager::page_down)
         };
 
         if let Some(nav_result) = nav_result {
@@ -116,7 +122,9 @@ pub trait NavigationBehavior {
     fn page_up(&mut self) {
         let nav_result = {
             let mut viewport_borrow = self.viewport_manager().borrow_mut();
-            viewport_borrow.as_mut().map(|vm| vm.page_up())
+            viewport_borrow
+                .as_mut()
+                .map(crate::ui::viewport_manager::ViewportManager::page_up)
         };
 
         if let Some(nav_result) = nav_result {
@@ -127,7 +135,9 @@ pub trait NavigationBehavior {
     fn half_page_down(&mut self) {
         let nav_result = {
             let mut viewport_borrow = self.viewport_manager().borrow_mut();
-            viewport_borrow.as_mut().map(|vm| vm.half_page_down())
+            viewport_borrow
+                .as_mut()
+                .map(crate::ui::viewport_manager::ViewportManager::half_page_down)
         };
 
         if let Some(nav_result) = nav_result {
@@ -138,7 +148,9 @@ pub trait NavigationBehavior {
     fn half_page_up(&mut self) {
         let nav_result = {
             let mut viewport_borrow = self.viewport_manager().borrow_mut();
-            viewport_borrow.as_mut().map(|vm| vm.half_page_up())
+            viewport_borrow
+                .as_mut()
+                .map(crate::ui::viewport_manager::ViewportManager::half_page_up)
         };
 
         if let Some(nav_result) = nav_result {
@@ -158,12 +170,11 @@ pub trait NavigationBehavior {
             if let Some(nav_result) = nav_result {
                 self.apply_row_navigation_result(nav_result);
                 self.state_container_mut()
-                    .set_status_message(format!("Jumped to row {} (centered)", line_number));
+                    .set_status_message(format!("Jumped to row {line_number} (centered)"));
             }
         } else {
             self.state_container_mut().set_status_message(format!(
-                "Row {} out of range (max: {})",
-                line_number, total_rows
+                "Row {line_number} out of range (max: {total_rows})"
             ));
         }
     }
@@ -174,7 +185,7 @@ pub trait NavigationBehavior {
             let mut viewport_borrow = self.viewport_manager().borrow_mut();
             viewport_borrow
                 .as_mut()
-                .map(|vm| vm.navigate_to_viewport_top())
+                .map(crate::ui::viewport_manager::ViewportManager::navigate_to_viewport_top)
         };
 
         if let Some(nav_result) = nav_result {
@@ -188,7 +199,7 @@ pub trait NavigationBehavior {
             let mut viewport_borrow = self.viewport_manager().borrow_mut();
             viewport_borrow
                 .as_mut()
-                .map(|vm| vm.navigate_to_viewport_middle())
+                .map(crate::ui::viewport_manager::ViewportManager::navigate_to_viewport_middle)
         };
 
         if let Some(nav_result) = nav_result {
@@ -202,7 +213,7 @@ pub trait NavigationBehavior {
             let mut viewport_borrow = self.viewport_manager().borrow_mut();
             viewport_borrow
                 .as_mut()
-                .map(|vm| vm.navigate_to_viewport_bottom())
+                .map(crate::ui::viewport_manager::ViewportManager::navigate_to_viewport_bottom)
         };
 
         if let Some(nav_result) = nav_result {

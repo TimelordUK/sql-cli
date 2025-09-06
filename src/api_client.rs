@@ -52,6 +52,7 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
+    #[must_use]
     pub fn new(base_url: &str) -> Self {
         Self {
             base_url: base_url.to_string(),
@@ -96,7 +97,7 @@ impl ApiClient {
 
         if !response.status().is_success() {
             let error_text = response.text()?;
-            return Err(format!("API Error: {}", error_text).into());
+            return Err(format!("API Error: {error_text}").into());
         }
 
         let result: QueryResponse = response.json()?;

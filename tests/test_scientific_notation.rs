@@ -86,36 +86,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (description, query) in test_queries {
         println!("\n{}", "-".repeat(60));
-        println!("Query: {}", description);
-        println!("SQL: {}", query);
+        println!("Query: {description}");
+        println!("SQL: {query}");
 
         match client.query_csv(query) {
             Ok(result) => {
                 println!("Result count: {} rows", result.data.len());
 
                 // Show values from results
-                for row in result.data.iter() {
+                for row in &result.data {
                     if let Some(obj) = row.as_object() {
-                        let id = obj.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                        let id = obj
+                            .get("id")
+                            .and_then(serde_json::Value::as_i64)
+                            .unwrap_or(0);
                         let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                        let value = obj
-                            .get("value")
-                            .map(|v| format!("{}", v))
-                            .unwrap_or_default();
+                        let value = obj.get("value").map(|v| format!("{v}")).unwrap_or_default();
                         let amount = obj
                             .get("amount")
-                            .map(|v| format!("{}", v))
+                            .map(|v| format!("{v}"))
                             .unwrap_or_default();
 
-                        println!(
-                            "  Row {}: {} - value={}, amount={}",
-                            id, name, value, amount
-                        );
+                        println!("  Row {id}: {name} - value={value}, amount={amount}");
                     }
                 }
             }
             Err(e) => {
-                println!("Error: {}", e);
+                println!("Error: {e}");
             }
         }
     }

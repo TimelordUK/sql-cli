@@ -25,7 +25,7 @@ fn test_parse_star_comma_expression() {
             }
         }
         Err(e) => {
-            panic!("Parser failed: {}", e);
+            panic!("Parser failed: {e}");
         }
     }
 }
@@ -54,7 +54,7 @@ fn test_parse_expression_comma_star() {
             assert!(matches!(stmt.select_items[1], SelectItem::Star));
         }
         Err(e) => {
-            panic!("Parser failed: {}", e);
+            panic!("Parser failed: {e}");
         }
     }
 }

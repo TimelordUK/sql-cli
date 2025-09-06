@@ -17,6 +17,7 @@ impl Default for BufferHandler {
 }
 
 impl BufferHandler {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             buffer_history: vec![0], // Start with buffer 0
@@ -155,6 +156,7 @@ impl BufferHandler {
     }
 
     /// List all buffers with their status
+    #[must_use]
     pub fn list_buffers(&self, manager: &BufferManager) -> Vec<String> {
         let current_index = manager.current_index();
         let mut buffer_list = Vec::new();
@@ -165,14 +167,12 @@ impl BufferHandler {
             // Get buffer info
             let has_results = buffer.has_datatable();
             let query = buffer.get_query();
-            let query_preview = if !query.is_empty() {
-                if query.len() > 30 {
-                    format!("{}...", &query[..27])
-                } else {
-                    query.clone()
-                }
-            } else {
+            let query_preview = if query.is_empty() {
                 "Empty".to_string()
+            } else if query.len() > 30 {
+                format!("{}...", &query[..27])
+            } else {
+                query.clone()
             };
 
             let status = if has_results { "●" } else { "○" };
@@ -223,6 +223,7 @@ impl BufferHandler {
     }
 
     /// Get buffer history
+    #[must_use]
     pub fn get_history(&self) -> &[usize] {
         &self.buffer_history
     }

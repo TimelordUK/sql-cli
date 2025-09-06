@@ -66,6 +66,7 @@ pub struct HistoryEntry {
 }
 
 impl TuiRenderer {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             config: Config::load().unwrap_or_default(),

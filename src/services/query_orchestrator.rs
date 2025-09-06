@@ -14,12 +14,14 @@ pub struct QueryOrchestrator {
 }
 
 impl QueryOrchestrator {
+    #[must_use]
     pub fn new(case_insensitive: bool, auto_hide_empty: bool) -> Self {
         Self {
             query_execution_service: QueryExecutionService::new(case_insensitive, auto_hide_empty),
         }
     }
 
+    #[must_use]
     pub fn with_behavior_config(behavior_config: BehaviorConfig) -> Self {
         Self {
             query_execution_service: QueryExecutionService::with_behavior_config(behavior_config),
@@ -42,7 +44,7 @@ impl QueryOrchestrator {
         self.record_query_execution(query, state_container);
 
         // 3. Set executing status
-        state_container.set_status_message(format!("Executing query: '{}'...", query));
+        state_container.set_status_message(format!("Executing query: '{query}'..."));
 
         // 4. Execute the query
         let current_dataview = state_container.get_buffer_dataview();

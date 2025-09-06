@@ -116,7 +116,7 @@ fn test_filter_trades_by_counterparty() {
             let row_text = row
                 .values
                 .iter()
-                .map(|v| v.to_string())
+                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(" ");
             assert!(row_text.contains("MORGAN"));

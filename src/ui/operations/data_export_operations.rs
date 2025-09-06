@@ -34,6 +34,7 @@ impl ExportResult {
 }
 
 /// Export data to CSV format
+#[must_use]
 pub fn export_to_csv(ctx: &DataExportContext) -> ExportResult {
     let result = if let Some(ref provider) = ctx.data_provider {
         DataExporter::export_provider_to_csv(provider.as_ref())
@@ -48,6 +49,7 @@ pub fn export_to_csv(ctx: &DataExportContext) -> ExportResult {
 }
 
 /// Export data to JSON format
+#[must_use]
 pub fn export_to_json(ctx: &DataExportContext) -> ExportResult {
     let result = if let Some(ref provider) = ctx.data_provider {
         DataExporter::export_provider_to_json(provider.as_ref())

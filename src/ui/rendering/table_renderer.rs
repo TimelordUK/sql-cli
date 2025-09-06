@@ -112,8 +112,7 @@ fn build_header_row(ctx: &TableRenderContext) -> Row<'static> {
 
         header_cells.push(
             Cell::from(format!(
-                "{}{}{}{}",
-                pin_indicator, header, sort_indicator, column_indicator
+                "{pin_indicator}{header}{sort_indicator}{column_indicator}"
             ))
             .style(style),
         );

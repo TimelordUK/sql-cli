@@ -1,4 +1,4 @@
-/// ViewportManager - A window into the DataView
+/// `ViewportManager` - A window into the `DataView`
 ///
 /// This manages the visible portion of data for rendering, handling:
 /// - Column width calculations based on visible data
@@ -7,9 +7,9 @@
 /// - Rendering optimizations
 ///
 /// Architecture:
-/// DataTable (immutable storage)
-///     → DataView (filtered/sorted/projected data)
-///         → ViewportManager (visible window)
+/// `DataTable` (immutable storage)
+///     → `DataView` (filtered/sorted/projected data)
+///         → `ViewportManager` (visible window)
 ///             → Renderer (pixels on screen)
 use std::ops::Range;
 use std::sync::Arc;
@@ -66,7 +66,7 @@ pub struct ColumnOperationResult {
     pub success: bool,
     /// Human-readable description for status message
     pub description: String,
-    /// Updated DataView after the operation (if changed)
+    /// Updated `DataView` after the operation (if changed)
     pub updated_dataview: Option<DataView>,
     /// New column position (for move/navigation operations)
     pub new_column_position: Option<usize>,
@@ -115,7 +115,7 @@ const TABLE_CHROME_ROWS: usize = 3;
 /// Number of columns used by table borders (left + right + padding)
 const TABLE_BORDER_WIDTH: u16 = 4;
 
-/// Manages the visible viewport into a DataView
+/// Manages the visible viewport into a `DataView`
 pub struct ViewportManager {
     /// The underlying data view
     dataview: Arc<DataView>,
@@ -158,11 +158,13 @@ pub struct ViewportManager {
 
 impl ViewportManager {
     /// Get the current viewport column range
+    #[must_use]
     pub fn get_viewport_range(&self) -> std::ops::Range<usize> {
         self.viewport_cols.clone()
     }
 
     /// Get the current viewport row range
+    #[must_use]
     pub fn get_viewport_rows(&self) -> std::ops::Range<usize> {
         self.viewport_rows.clone()
     }
@@ -244,31 +246,37 @@ impl ViewportManager {
     }
 
     /// Get crosshair column position in visual coordinates
+    #[must_use]
     pub fn get_crosshair_col(&self) -> usize {
         self.crosshair_col
     }
 
     /// Get crosshair row position in visual coordinates  
+    #[must_use]
     pub fn get_crosshair_row(&self) -> usize {
         self.crosshair_row
     }
 
-    /// Get selected row (alias for crosshair_row for compatibility)
+    /// Get selected row (alias for `crosshair_row` for compatibility)
+    #[must_use]
     pub fn get_selected_row(&self) -> usize {
         self.crosshair_row
     }
 
-    /// Get selected column (alias for crosshair_col for compatibility)
+    /// Get selected column (alias for `crosshair_col` for compatibility)
+    #[must_use]
     pub fn get_selected_column(&self) -> usize {
         self.crosshair_col
     }
 
     /// Get crosshair position as (row, column) tuple in visual coordinates
+    #[must_use]
     pub fn get_crosshair_position(&self) -> (usize, usize) {
         (self.crosshair_row, self.crosshair_col)
     }
 
-    /// Get scroll offset as (row_offset, col_offset)
+    /// Get scroll offset as (`row_offset`, `col_offset`)
+    #[must_use]
     pub fn get_scroll_offset(&self) -> (usize, usize) {
         (self.viewport_rows.start, self.viewport_cols.start)
     }
@@ -299,7 +307,8 @@ impl ViewportManager {
     }
 
     /// Get crosshair position relative to current viewport for rendering
-    /// Returns (row_offset, col_offset) within the viewport, or None if outside
+    /// Returns (`row_offset`, `col_offset`) within the viewport, or None if outside
+    #[must_use]
     pub fn get_crosshair_viewport_position(&self) -> Option<(usize, usize)> {
         // Check if crosshair is within the current viewport
         // For rows, standard check
@@ -354,15 +363,14 @@ impl ViewportManager {
                     description: "Moved within locked viewport".to_string(),
                     viewport_changed: false,
                 };
-            } else {
-                // Already at top of locked viewport
-                return RowNavigationResult {
-                    row_position: self.crosshair_row,
-                    row_scroll_offset: self.viewport_rows.start,
-                    description: "Moved within locked viewport".to_string(),
-                    viewport_changed: false,
-                };
             }
+            // Already at top of locked viewport
+            return RowNavigationResult {
+                row_position: self.crosshair_row,
+                row_scroll_offset: self.viewport_rows.start,
+                description: "Moved within locked viewport".to_string(),
+                viewport_changed: false,
+            };
         }
 
         // Handle cursor lock mode
@@ -453,15 +461,14 @@ impl ViewportManager {
                     description: "Moved within locked viewport".to_string(),
                     viewport_changed: false,
                 };
-            } else {
-                // Already at bottom of locked viewport or end of data
-                return RowNavigationResult {
-                    row_position: self.crosshair_row,
-                    row_scroll_offset: self.viewport_rows.start,
-                    description: "Moved within locked viewport".to_string(),
-                    viewport_changed: false,
-                };
             }
+            // Already at bottom of locked viewport or end of data
+            return RowNavigationResult {
+                row_position: self.crosshair_row,
+                row_scroll_offset: self.viewport_rows.start,
+                description: "Moved within locked viewport".to_string(),
+                viewport_changed: false,
+            };
         }
 
         // Handle cursor lock mode
@@ -537,7 +544,8 @@ impl ViewportManager {
         }
     }
 
-    /// Create a new ViewportManager for a DataView
+    /// Create a new `ViewportManager` for a `DataView`
+    #[must_use]
     pub fn new(dataview: Arc<DataView>) -> Self {
         // Get the actual visible column count (after hiding)
         let display_columns = dataview.get_display_columns();
@@ -580,7 +588,7 @@ impl ViewportManager {
         }
     }
 
-    /// Update the underlying DataView
+    /// Update the underlying `DataView`
     pub fn set_dataview(&mut self, dataview: Arc<DataView>) {
         self.dataview = dataview;
         self.invalidate_cache();
@@ -595,6 +603,7 @@ impl ViewportManager {
     }
 
     /// Get the current column packing mode
+    #[must_use]
     pub fn get_packing_mode(&self) -> ColumnPackingMode {
         self.width_calculator.get_packing_mode()
     }
@@ -749,6 +758,7 @@ impl ViewportManager {
     }
 
     /// Get visible rows in the current viewport
+    #[must_use]
     pub fn get_visible_rows(&self) -> Vec<DataRow> {
         let mut rows = Vec::with_capacity(self.viewport_rows.len());
 
@@ -762,6 +772,7 @@ impl ViewportManager {
     }
 
     /// Get a specific visible row by viewport-relative index
+    #[must_use]
     pub fn get_visible_row(&self, viewport_row: usize) -> Option<DataRow> {
         let absolute_row = self.viewport_rows.start + viewport_row;
         if absolute_row < self.viewport_rows.end {
@@ -772,6 +783,7 @@ impl ViewportManager {
     }
 
     /// Get visible column headers (only non-hidden columns that are in current viewport)
+    #[must_use]
     pub fn get_visible_columns(&self) -> Vec<String> {
         // Get display column names (excludes hidden columns)
         let display_column_names = self.dataview.get_display_column_names();
@@ -788,41 +800,49 @@ impl ViewportManager {
     }
 
     /// Get the current viewport row range
+    #[must_use]
     pub fn viewport_rows(&self) -> Range<usize> {
         self.viewport_rows.clone()
     }
 
     /// Get the current viewport column range
+    #[must_use]
     pub fn viewport_cols(&self) -> Range<usize> {
         self.viewport_cols.clone()
     }
 
     /// Check if a row is visible in the viewport
+    #[must_use]
     pub fn is_row_visible(&self, row_idx: usize) -> bool {
         self.viewport_rows.contains(&row_idx)
     }
 
     /// Check if a column is visible in the viewport
+    #[must_use]
     pub fn is_column_visible(&self, col_idx: usize) -> bool {
         self.viewport_cols.contains(&col_idx)
     }
 
     /// Get total row count from underlying view
+    #[must_use]
     pub fn total_rows(&self) -> usize {
         self.dataview.row_count()
     }
 
     /// Get total column count from underlying view
+    #[must_use]
     pub fn total_columns(&self) -> usize {
         self.dataview.column_count()
     }
 
     /// Get terminal width in characters
+    #[must_use]
     pub fn get_terminal_width(&self) -> u16 {
         self.terminal_width
     }
 
     /// Get terminal height in rows
+    #[must_use]
     pub fn get_terminal_height(&self) -> usize {
         self.terminal_height as usize
     }
@@ -835,7 +855,7 @@ impl ViewportManager {
 
     /// Calculate optimal column layout for available width
     /// Returns a RANGE of visual column indices (0..n) that should be displayed
-    /// This works entirely in visual coordinate space - no DataTable indices!
+    /// This works entirely in visual coordinate space - no `DataTable` indices!
     pub fn calculate_visible_column_indices(&mut self, available_width: u16) -> Vec<usize> {
         // Width calculation is now handled by ColumnWidthCalculator
 
@@ -1004,13 +1024,15 @@ impl ViewportManager {
         }
     }
 
-    /// Get a reference to the underlying DataView
+    /// Get a reference to the underlying `DataView`
+    #[must_use]
     pub fn dataview(&self) -> &DataView {
         &self.dataview
     }
 
-    /// Get a cloned copy of the underlying DataView (for syncing with Buffer)
+    /// Get a cloned copy of the underlying `DataView` (for syncing with Buffer)
     /// This is a temporary solution until we refactor Buffer to use Arc<DataView>
+    #[must_use]
     pub fn clone_dataview(&self) -> DataView {
         (*self.dataview).clone()
     }
@@ -1181,7 +1203,7 @@ impl ViewportManager {
         best_offset
     }
 
-    /// Debug dump of ViewportManager state for F5 diagnostics
+    /// Debug dump of `ViewportManager` state for F5 diagnostics
     pub fn debug_dump(&mut self, available_width: u16) -> String {
         // Width calculation is now handled by ColumnWidthCalculator
 
@@ -1192,9 +1214,9 @@ impl ViewportManager {
         let pinned = self.dataview.get_pinned_columns();
         let pinned_count = pinned.len();
 
-        output.push_str(&format!("Total columns: {}\n", total_cols));
-        output.push_str(&format!("Pinned columns: {:?}\n", pinned));
-        output.push_str(&format!("Available width: {}w\n", available_width));
+        output.push_str(&format!("Total columns: {total_cols}\n"));
+        output.push_str(&format!("Pinned columns: {pinned:?}\n"));
+        output.push_str(&format!("Available width: {available_width}w\n"));
         output.push_str(&format!("Current viewport: {:?}\n", self.viewport_cols));
         output.push_str(&format!(
             "Packing mode: {} (Alt+S to cycle)\n",
@@ -1225,7 +1247,7 @@ impl ViewportManager {
                     let reason = match self.width_calculator.get_packing_mode() {
                         ColumnPackingMode::DataFocus => {
                             if max_data_width <= 3 {
-                                format!("Ultra aggressive (data:{}≤3 chars)", max_data_width)
+                                format!("Ultra aggressive (data:{max_data_width}≤3 chars)")
                             } else if max_data_width <= 10 && header_width > max_data_width * 2 {
                                 format!(
                                     "Aggressive truncate (data:{}≤10, header:{}>{} )",
@@ -1258,8 +1280,7 @@ impl ViewportManager {
                     };
 
                     output.push_str(&format!(
-                        "  [{}] \"{}\":\n    Header: {}w, Data: {}w → Final: {}w ({}, {} samples)\n",
-                        col_idx, col_name, header_width, max_data_width, final_width, reason, sample_count
+                        "  [{col_idx}] \"{col_name}\":\n    Header: {header_width}w, Data: {max_data_width}w → Final: {final_width}w ({reason}, {sample_count} samples)\n"
                     ));
 
                     visible_count += 1;
@@ -1268,7 +1289,7 @@ impl ViewportManager {
                     if visible_count >= 10 {
                         let remaining = self.viewport_cols.end - self.viewport_cols.start - 10;
                         if remaining > 0 {
-                            output.push_str(&format!("  ... and {} more columns\n", remaining));
+                            output.push_str(&format!("  ... and {remaining} more columns\n"));
                         }
                         break;
                     }
@@ -1290,7 +1311,7 @@ impl ViewportManager {
                 }
                 continue;
             }
-            output.push_str(&format!("  [{}] {}w\n", idx, width));
+            output.push_str(&format!("  [{idx}] {width}w\n"));
         }
         output.push('\n');
 
@@ -1317,13 +1338,11 @@ impl ViewportManager {
         let available_for_scrollable = available_width.saturating_sub(pinned_width);
 
         output.push_str(&format!(
-            "Last column: {} (width: {}w)\n",
-            last_col_idx, last_col_width
+            "Last column: {last_col_idx} (width: {last_col_width}w)\n"
         ));
-        output.push_str(&format!("Pinned width: {}w\n", pinned_width));
+        output.push_str(&format!("Pinned width: {pinned_width}w\n"));
         output.push_str(&format!(
-            "Available for scrollable: {}w\n",
-            available_for_scrollable
+            "Available for scrollable: {available_for_scrollable}w\n"
         ));
         output.push('\n');
 
@@ -1333,8 +1352,7 @@ impl ViewportManager {
 
         output.push_str("Backtracking from last column:\n");
         output.push_str(&format!(
-            "  Start: column {} = {}w (accumulated: {}w)\n",
-            last_col_idx, last_col_width, accumulated_width
+            "  Start: column {last_col_idx} = {last_col_width}w (accumulated: {accumulated_width}w)\n"
         ));
 
         for col_idx in (pinned_count..last_col_idx).rev() {
@@ -1349,8 +1367,7 @@ impl ViewportManager {
                 accumulated_width += width_with_sep;
                 best_offset = col_idx;
                 output.push_str(&format!(
-                    "  Column {} fits: {}w (accumulated: {}w, offset: {})\n",
-                    col_idx, width, accumulated_width, best_offset
+                    "  Column {col_idx} fits: {width}w (accumulated: {accumulated_width}w, offset: {best_offset})\n"
                 ));
             } else {
                 output.push_str(&format!(
@@ -1365,10 +1382,7 @@ impl ViewportManager {
             }
         }
 
-        output.push_str(&format!(
-            "\nCalculated offset: {} (absolute)\n",
-            best_offset
-        ));
+        output.push_str(&format!("\nCalculated offset: {best_offset} (absolute)\n"));
 
         // Now verify this offset actually works
         output.push_str("\n=== VERIFICATION ===\n");
@@ -1384,14 +1398,12 @@ impl ViewportManager {
             verify_width += width + separator_width;
 
             output.push_str(&format!(
-                "  Column {}: {}w (running total: {}w)\n",
-                test_idx, width, verify_width
+                "  Column {test_idx}: {width}w (running total: {verify_width}w)\n"
             ));
 
             if verify_width > available_for_scrollable {
                 output.push_str(&format!(
-                    "    ❌ EXCEEDS LIMIT! {}w > {}w\n",
-                    verify_width, available_for_scrollable
+                    "    ❌ EXCEEDS LIMIT! {verify_width}w > {available_for_scrollable}w\n"
                 ));
                 if test_idx == last_col_idx {
                     can_show_last = false;
@@ -1406,14 +1418,13 @@ impl ViewportManager {
         }
 
         output.push_str(&format!(
-            "\nVerification result: last column visible = {}\n",
-            can_show_last
+            "\nVerification result: last column visible = {can_show_last}\n"
         ));
 
         // Show what the current viewport actually shows
         output.push_str("\n=== CURRENT VIEWPORT RESULT ===\n");
         let visible_indices = self.calculate_visible_column_indices(available_width);
-        output.push_str(&format!("Visible columns: {:?}\n", visible_indices));
+        output.push_str(&format!("Visible columns: {visible_indices:?}\n"));
         output.push_str(&format!(
             "Last visible column: {}\n",
             visible_indices.last().copied().unwrap_or(0)
@@ -1428,14 +1439,15 @@ impl ViewportManager {
         output
     }
 
-    /// Get column names in DataView's preferred order (pinned first, then display order)
+    /// Get column names in `DataView`'s preferred order (pinned first, then display order)
     /// This should be the single source of truth for column ordering from TUI perspective
+    #[must_use]
     pub fn get_column_names_ordered(&self) -> Vec<String> {
         self.dataview.column_names()
     }
 
     /// Get structured information about visible columns for rendering
-    /// Returns (visible_indices, pinned_indices, scrollable_indices)
+    /// Returns (`visible_indices`, `pinned_indices`, `scrollable_indices`)
     pub fn get_visible_columns_info(
         &mut self,
         available_width: u16,
@@ -1485,7 +1497,7 @@ impl ViewportManager {
     }
 
     /// Calculate the actual X positions in terminal coordinates for visible columns
-    /// Returns (column_indices, x_positions) where x_positions[i] is the starting x position for column_indices[i]
+    /// Returns (`column_indices`, `x_positions`) where `x_positions`[i] is the starting x position for `column_indices`[i]
     pub fn calculate_column_x_positions(&mut self, available_width: u16) -> (Vec<usize>, Vec<u16>) {
         let visible_indices = self.calculate_visible_column_indices(available_width);
         let mut x_positions = Vec::new();
@@ -1514,7 +1526,7 @@ impl ViewportManager {
             .and_then(|pos| positions.get(pos).copied())
     }
 
-    /// Get visible column indices that fit in available width, preserving DataView's order
+    /// Get visible column indices that fit in available width, preserving `DataView`'s order
     pub fn calculate_visible_column_indices_ordered(&mut self, available_width: u16) -> Vec<usize> {
         // Width calculation is now handled by ColumnWidthCalculator
 
@@ -1568,7 +1580,7 @@ impl ViewportManager {
         visible_indices
     }
 
-    /// Convert a DataTable column index to its display position within the current visible columns
+    /// Convert a `DataTable` column index to its display position within the current visible columns
     /// Returns None if the column is not currently visible
     pub fn get_display_position_for_datatable_column(
         &mut self,
@@ -1592,7 +1604,7 @@ impl ViewportManager {
 
     /// Get the exact crosshair column position for rendering
     /// This is the single source of truth for which column should be highlighted
-    /// For now, current_column is still a DataTable index (due to Buffer storing DataTable indices)
+    /// For now, `current_column` is still a `DataTable` index (due to Buffer storing `DataTable` indices)
     /// This converts it to the correct display position
     pub fn get_crosshair_column(
         &mut self,
@@ -1711,13 +1723,13 @@ impl ViewportManager {
             debug!(target: "viewport_manager",
                    "Alignment check (FIRST ROW): {:?}",
                    headers.iter().zip(first_row).take(5)
-                       .map(|(h, v)| format!("{}: {}", h, v)).collect::<Vec<_>>());
+                       .map(|(h, v)| format!("{h}: {v}")).collect::<Vec<_>>());
         }
         if let Some(last_row) = visual_rows.last() {
             debug!(target: "viewport_manager",
                    "Alignment check (LAST ROW): {:?}",
                    headers.iter().zip(last_row).take(5)
-                       .map(|(h, v)| format!("{}: {}", h, v)).collect::<Vec<_>>());
+                       .map(|(h, v)| format!("{h}: {v}")).collect::<Vec<_>>());
         }
 
         (headers, visual_rows, widths)
@@ -1738,7 +1750,7 @@ impl ViewportManager {
                 headers.push(all_column_names[visual_idx].clone());
             } else {
                 // Fallback for invalid indices
-                headers.push(format!("Column_{}", visual_idx));
+                headers.push(format!("Column_{visual_idx}"));
             }
         }
 
@@ -1812,7 +1824,9 @@ impl ViewportManager {
         let wasted_space = available_width.saturating_sub(used_width);
 
         // Find the next column that didn't fit
-        let next_column_width = if !visible_indices.is_empty() {
+        let next_column_width = if visible_indices.is_empty() {
+            None
+        } else {
             let last_visible = *visible_indices.last().unwrap();
             if last_visible + 1 < self.dataview.column_count() {
                 Some(self.width_calculator.get_column_width(
@@ -1823,8 +1837,6 @@ impl ViewportManager {
             } else {
                 None
             }
-        } else {
-            None
         };
 
         // Find ALL columns that COULD fit in the wasted space
@@ -1842,7 +1854,7 @@ impl ViewportManager {
         }
 
         let efficiency_percent = if available_width > 0 {
-            ((used_width as f32 / available_width as f32) * 100.0) as u8
+            ((f32::from(used_width) / f32::from(available_width)) * 100.0) as u8
         } else {
             0
         };
@@ -1908,8 +1920,7 @@ impl ViewportManager {
         // Create description
         let description = if pinned_count > 0 {
             format!(
-                "First scrollable column selected (after {} pinned: {:?})",
-                pinned_count, pinned_names
+                "First scrollable column selected (after {pinned_count} pinned: {pinned_names:?})"
             )
         } else {
             "First column selected".to_string()
@@ -2035,7 +2046,7 @@ impl ViewportManager {
 
     /// Navigate one column to the left with intelligent wrapping and scrolling
     /// This method handles everything: column movement, viewport tracking, and scrolling
-    /// IMPORTANT: current_display_position is a logical display position (0,1,2,3...), NOT a DataTable index
+    /// IMPORTANT: `current_display_position` is a logical display position (0,1,2,3...), NOT a `DataTable` index
     pub fn navigate_column_left(&mut self, current_display_position: usize) -> NavigationResult {
         // Check viewport lock first - prevent scrolling entirely
         if self.viewport_lock {
@@ -2052,15 +2063,14 @@ impl ViewportManager {
                     description: "Moved within locked viewport".to_string(),
                     viewport_changed: false,
                 };
-            } else {
-                // Already at left edge of locked viewport
-                return NavigationResult {
-                    column_position: self.crosshair_col,
-                    scroll_offset: self.viewport_cols.start,
-                    description: "At left edge of locked viewport".to_string(),
-                    viewport_changed: false,
-                };
             }
+            // Already at left edge of locked viewport
+            return NavigationResult {
+                column_position: self.crosshair_col,
+                scroll_offset: self.viewport_cols.start,
+                description: "At left edge of locked viewport".to_string(),
+                viewport_changed: false,
+            };
         }
 
         // Get the DataView's display order (pinned columns first, then others)
@@ -2126,8 +2136,7 @@ impl ViewportManager {
         let column_name = display_columns
             .get(new_display_index)
             .and_then(|&dt_idx| column_names.get(dt_idx))
-            .map(|s| s.as_str())
-            .unwrap_or("unknown");
+            .map_or("unknown", std::string::String::as_str);
         let description = format!(
             "Navigate left to column '{}' ({})",
             column_name,
@@ -2148,7 +2157,7 @@ impl ViewportManager {
     }
 
     /// Navigate one column to the right with intelligent wrapping and scrolling
-    /// IMPORTANT: current_display_position is a logical display position (0,1,2,3...), NOT a DataTable index
+    /// IMPORTANT: `current_display_position` is a logical display position (0,1,2,3...), NOT a `DataTable` index
     pub fn navigate_column_right(&mut self, current_display_position: usize) -> NavigationResult {
         debug!(target: "viewport_manager",
                "=== CRITICAL DEBUG: navigate_column_right CALLED ===");
@@ -2173,15 +2182,14 @@ impl ViewportManager {
                     description: "Moved within locked viewport".to_string(),
                     viewport_changed: false,
                 };
-            } else {
-                // Already at right edge of locked viewport
-                return NavigationResult {
-                    column_position: self.crosshair_col,
-                    scroll_offset: self.viewport_cols.start,
-                    description: "At right edge of locked viewport".to_string(),
-                    viewport_changed: false,
-                };
             }
+            // Already at right edge of locked viewport
+            return NavigationResult {
+                column_position: self.crosshair_col,
+                scroll_offset: self.viewport_cols.start,
+                description: "At right edge of locked viewport".to_string(),
+                viewport_changed: false,
+            };
         }
 
         let display_columns = self.dataview.get_display_columns();
@@ -2202,8 +2210,7 @@ impl ViewportManager {
             let current_dt_idx = display_columns[current_display_position];
             let current_name = column_names
                 .get(current_dt_idx)
-                .map(|s| s.as_str())
-                .unwrap_or("unknown");
+                .map_or("unknown", std::string::String::as_str);
             debug!(target: "viewport_manager",
                    "Current position {} -> column '{}' (dt_idx={})", 
                    current_display_position, current_name, current_dt_idx);
@@ -2213,8 +2220,7 @@ impl ViewportManager {
             let next_dt_idx = display_columns[current_display_position + 1];
             let next_name = column_names
                 .get(next_dt_idx)
-                .map(|s| s.as_str())
-                .unwrap_or("unknown");
+                .map_or("unknown", std::string::String::as_str);
             debug!(target: "viewport_manager",
                    "Next position {} -> column '{}' (dt_idx={})", 
                    current_display_position + 1, next_name, next_dt_idx);
@@ -2301,8 +2307,7 @@ impl ViewportManager {
         let column_name = display_columns
             .get(new_display_index)
             .and_then(|&dt_idx| column_names.get(dt_idx))
-            .map(|s| s.as_str())
-            .unwrap_or("unknown");
+            .map_or("unknown", std::string::String::as_str);
         let description = format!(
             "Navigate right to column '{}' ({})",
             column_name,
@@ -2886,7 +2891,7 @@ impl ViewportManager {
         // Update crosshair to be at the first row
         self.crosshair_row = first_row;
 
-        let description = format!("Jumped to first row (1/{})", total_rows);
+        let description = format!("Jumped to first row (1/{total_rows})");
 
         debug!(target: "viewport_manager", 
                "navigate_to_first_row result: row=0, crosshair_row={}, scroll_offset={}→0, viewport_changed={}", 
@@ -3023,11 +3028,13 @@ impl ViewportManager {
     }
 
     /// Check if cursor is locked
+    #[must_use]
     pub fn is_cursor_locked(&self) -> bool {
         self.cursor_lock
     }
 
     /// Check if viewport is locked
+    #[must_use]
     pub fn is_viewport_locked(&self) -> bool {
         self.viewport_lock
     }
@@ -3105,8 +3112,7 @@ impl ViewportManager {
             let column_names = self.dataview.column_names();
             let column_name = column_names
                 .get(new_position)
-                .map(|s| s.as_str())
-                .unwrap_or("?");
+                .map_or("?", std::string::String::as_str);
 
             debug!(target: "viewport_manager",
                 "After move: new_position={}, wrapped_to_end={}, column_name={}",
@@ -3158,7 +3164,7 @@ impl ViewportManager {
 
             ColumnReorderResult {
                 new_column_position: new_position,
-                description: format!("Moved column '{}' left", column_name),
+                description: format!("Moved column '{column_name}' left"),
                 success: true,
             }
         } else {
@@ -3222,8 +3228,7 @@ impl ViewportManager {
             let column_names = self.dataview.column_names();
             let column_name = column_names
                 .get(new_position)
-                .map(|s| s.as_str())
-                .unwrap_or("?");
+                .map_or("?", std::string::String::as_str);
 
             // Adjust viewport to keep the moved column visible
             if wrapped_to_beginning {
@@ -3267,7 +3272,7 @@ impl ViewportManager {
 
             ColumnReorderResult {
                 new_column_position: new_position,
-                description: format!("Moved column '{}' right", column_name),
+                description: format!("Moved column '{column_name}' right"),
                 success: true,
             }
         } else {
@@ -3832,16 +3837,14 @@ impl ViewportManager {
         let success = self.hide_column(visual_col_idx);
 
         if success {
-            let mut result =
-                ColumnOperationResult::success(format!("Column '{}' hidden", col_name));
+            let mut result = ColumnOperationResult::success(format!("Column '{col_name}' hidden"));
             result.updated_dataview = Some(self.clone_dataview());
             result.new_column_position = Some(self.get_crosshair_col());
             result.new_viewport = Some(self.viewport_cols.clone());
             result
         } else {
             ColumnOperationResult::failure(format!(
-                "Cannot hide column '{}' (may be pinned)",
-                col_name
+                "Cannot hide column '{col_name}' (may be pinned)"
             ))
         }
     }
@@ -3857,7 +3860,7 @@ impl ViewportManager {
 
         self.unhide_all_columns();
 
-        let mut result = ColumnOperationResult::success(format!("Unhidden {} column(s)", count));
+        let mut result = ColumnOperationResult::success(format!("Unhidden {count} column(s)"));
         result.updated_dataview = Some(self.clone_dataview());
         result.affected_count = Some(count);
         result.new_viewport = Some(self.viewport_cols.clone());
@@ -4093,6 +4096,7 @@ pub struct ViewportEfficiency {
 
 impl ViewportEfficiency {
     /// Format as a compact status line message
+    #[must_use]
     pub fn to_status_string(&self) -> String {
         format!(
             "Viewport: {}w used of {}w ({}% efficient, {} cols, {}w wasted)",
@@ -4105,19 +4109,19 @@ impl ViewportEfficiency {
     }
 
     /// Format as detailed debug info
+    #[must_use]
     pub fn to_debug_string(&self) -> String {
-        let avg_width = if !self.column_widths.is_empty() {
-            self.column_widths.iter().sum::<u16>() / self.column_widths.len() as u16
-        } else {
+        let avg_width = if self.column_widths.is_empty() {
             0
+        } else {
+            self.column_widths.iter().sum::<u16>() / self.column_widths.len() as u16
         };
 
         // Show what efficiency we could get by fitting more columns
         let mut efficiency_analysis = String::new();
         if let Some(next_width) = self.next_column_width {
             efficiency_analysis.push_str(&format!(
-                "\n\n  Next column needs: {}w (+1 separator)",
-                next_width
+                "\n\n  Next column needs: {next_width}w (+1 separator)"
             ));
             if next_width < self.wasted_space {
                 efficiency_analysis.push_str(" ✓ FITS!");
@@ -4134,7 +4138,7 @@ impl ViewportEfficiency {
             for (idx, width) in
                 &self.columns_that_could_fit[..self.columns_that_could_fit.len().min(5)]
             {
-                efficiency_analysis.push_str(&format!("\n    - Column {}: {}w", idx, width));
+                efficiency_analysis.push_str(&format!("\n    - Column {idx}: {width}w"));
             }
             if self.columns_that_could_fit.len() > 5 {
                 efficiency_analysis.push_str(&format!(
@@ -4150,11 +4154,10 @@ impl ViewportEfficiency {
             let hypothetical_used =
                 self.used_width + (extra * (avg_width + 1)).min(self.wasted_space);
             let hypothetical_eff =
-                ((hypothetical_used as f32 / self.available_width as f32) * 100.0) as u8;
+                ((f32::from(hypothetical_used) / f32::from(self.available_width)) * 100.0) as u8;
             let hypothetical_wasted = self.available_width.saturating_sub(hypothetical_used);
             efficiency_analysis.push_str(&format!(
-                "\n    +{} cols ({}w each): {}% efficiency, {}w wasted",
-                extra, avg_width, hypothetical_eff, hypothetical_wasted
+                "\n    +{extra} cols ({avg_width}w each): {hypothetical_eff}% efficiency, {hypothetical_wasted}w wasted"
             ));
         }
 
@@ -4187,7 +4190,7 @@ mod tests {
             table
                 .add_row(DataRow::new(vec![
                     DataValue::Integer(i),
-                    DataValue::String(format!("Item {}", i)),
+                    DataValue::String(format!("Item {i}")),
                     DataValue::Float(i as f64 * 10.5),
                 ]))
                 .unwrap();
@@ -4428,14 +4431,14 @@ mod tests {
         // Create a test dataview with 12 columns
         let mut table = DataTable::new("test");
         for i in 0..12 {
-            table.add_column(DataColumn::new(format!("col{}", i)));
+            table.add_column(DataColumn::new(format!("col{i}")));
         }
 
         // Add some test data
         for row in 0..10 {
             let mut values = Vec::new();
             for col in 0..12 {
-                values.push(DataValue::String(format!("r{}c{}", row, col)));
+                values.push(DataValue::String(format!("r{row}c{col}")));
             }
             table.add_row(DataRow::new(values)).unwrap();
         }

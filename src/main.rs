@@ -205,7 +205,7 @@ fn print_help() {
 
 #[allow(dead_code)]
 fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("{}", format!("Executing: {}", query).cyan());
+    println!("{}", format!("Executing: {query}").cyan());
 
     match client.query_trades(query) {
         Ok(response) => {
@@ -213,7 +213,7 @@ fn execute_query(client: &ApiClient, query: &str) -> Result<(), Box<dyn std::err
             Ok(())
         }
         Err(e) => {
-            eprintln!("{}", format!("Error: {}", e).red());
+            eprintln!("{}", format!("Error: {e}").red());
             Err(e)
         }
     }
@@ -246,9 +246,9 @@ fn main() -> io::Result<()> {
         if let Some(func_name) = args.get(pos + 1) {
             let registry = sql_cli::sql::functions::FunctionRegistry::new();
             if let Some(help) = registry.generate_function_help(func_name) {
-                println!("{}", help);
+                println!("{help}");
             } else {
-                eprintln!("Function '{}' not found", func_name);
+                eprintln!("Function '{func_name}' not found");
                 eprintln!("\nUse --list-functions to see all available functions");
             }
         } else {
@@ -263,10 +263,7 @@ fn main() -> io::Result<()> {
         let docs = registry.generate_markdown_docs();
         let doc_path = "docs/FUNCTION_REFERENCE.md";
         std::fs::write(doc_path, docs)?;
-        println!(
-            "Generated function reference documentation at: {}",
-            doc_path
-        );
+        println!("Generated function reference documentation at: {doc_path}");
         return Ok(());
     }
 
@@ -275,26 +272,25 @@ fn main() -> io::Result<()> {
         .iter()
         .position(|arg| arg == "-q" || arg == "--query")
         .and_then(|pos| args.get(pos + 1))
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     let query_file_arg = args
         .iter()
         .position(|arg| arg == "-f" || arg == "--query-file")
         .and_then(|pos| args.get(pos + 1))
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     let output_format_arg = args
         .iter()
         .position(|arg| arg == "-o" || arg == "--output")
         .and_then(|pos| args.get(pos + 1))
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "csv".to_string());
+        .map_or_else(|| "csv".to_string(), std::string::ToString::to_string);
 
     let output_file_arg = args
         .iter()
         .position(|arg| arg == "-O" || arg == "--output-file")
         .and_then(|pos| args.get(pos + 1))
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     let query_plan_arg = args
         .iter()
@@ -329,9 +325,8 @@ fn main() -> io::Result<()> {
     if is_non_interactive {
         // Read query from file if specified
         let query = if let Some(file) = query_file_arg {
-            std::fs::read_to_string(&file).map_err(|e| {
-                io::Error::other(format!("Failed to read query file {}: {}", file, e))
-            })?
+            std::fs::read_to_string(&file)
+                .map_err(|e| io::Error::other(format!("Failed to read query file {file}: {e}")))?
         } else {
             query_arg.unwrap()
         };
@@ -343,8 +338,7 @@ fn main() -> io::Result<()> {
                 statement
                     .from_table
                     .as_ref()
-                    .map(|t| t.to_uppercase() == "DUAL")
-                    .unwrap_or(true) // No FROM clause means we can use DUAL
+                    .is_none_or(|t| t.to_uppercase() == "DUAL") // No FROM clause means we can use DUAL
             } else {
                 false
             }
@@ -353,7 +347,7 @@ fn main() -> io::Result<()> {
         // Find the data file (optional if using DUAL)
         let data_file = args
             .iter()
-            .filter(|arg| !arg.starts_with("-"))
+            .filter(|arg| !arg.starts_with('-'))
             .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
             .cloned();
 
@@ -388,12 +382,11 @@ fn main() -> io::Result<()> {
 
             return sql_cli::non_interactive::execute_non_interactive(config)
                 .map_err(io::Error::other);
-        } else {
-            eprintln!("Error: Data file (CSV or JSON) required for non-interactive query mode");
-            eprintln!("Usage: sql-cli <data.csv> -q \"SELECT * FROM table\"");
-            eprintln!("       sql-cli -q \"SELECT expression FROM DUAL\"");
-            std::process::exit(1);
         }
+        eprintln!("Error: Data file (CSV or JSON) required for non-interactive query mode");
+        eprintln!("Usage: sql-cli <data.csv> -q \"SELECT * FROM table\"");
+        eprintln!("       sql-cli -q \"SELECT expression FROM DUAL\"");
+        std::process::exit(1);
     }
 
     // Check for config initialization
@@ -407,7 +400,7 @@ fn main() -> io::Result<()> {
                 return Ok(());
             }
             Err(e) => {
-                eprintln!("Error initializing config: {}", e);
+                eprintln!("Error initializing config: {e}");
                 std::process::exit(1);
             }
         }
@@ -442,15 +435,12 @@ fn main() -> io::Result<()> {
         match status {
             Ok(exit_status) if exit_status.success() => return Ok(()),
             Ok(_) => {
-                eprintln!("{} exited with error", binary_name);
+                eprintln!("{binary_name} exited with error");
                 std::process::exit(1);
             }
             Err(e) => {
-                eprintln!("Failed to launch {}: {}", binary_name, e);
-                eprintln!(
-                    "Make sure it's built with: cargo build --bin {}",
-                    binary_name
-                );
+                eprintln!("Failed to launch {binary_name}: {e}");
+                eprintln!("Make sure it's built with: cargo build --bin {binary_name}");
                 std::process::exit(1);
             }
         }
@@ -464,20 +454,20 @@ fn main() -> io::Result<()> {
                     sql_cli::config::config::Config::create_default_with_comments();
                 if let Some(parent) = path.parent() {
                     if let Err(e) = std::fs::create_dir_all(parent) {
-                        eprintln!("Error creating config directory: {}", e);
+                        eprintln!("Error creating config directory: {e}");
                         std::process::exit(1);
                     }
                 }
                 if let Err(e) = std::fs::write(&path, config_content) {
-                    eprintln!("Error writing config file: {}", e);
+                    eprintln!("Error writing config file: {e}");
                     std::process::exit(1);
                 }
-                println!("Configuration file created at: {:?}", path);
+                println!("Configuration file created at: {path:?}");
                 println!("Edit this file to customize your SQL CLI experience.");
                 return Ok(());
             }
             Err(e) => {
-                eprintln!("Error determining config path: {}", e);
+                eprintln!("Error determining config path: {e}");
                 std::process::exit(1);
             }
         }
@@ -492,7 +482,7 @@ fn main() -> io::Result<()> {
         .iter()
         .position(|arg| arg == "--csv")
         .and_then(|pos| args.get(pos + 1))
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     // If no --csv flag, check if last argument is a file
     // Collect all data files (CSV/JSON) from arguments
@@ -510,7 +500,7 @@ fn main() -> io::Result<()> {
         if use_classic_tui {
             println!("Starting simple TUI mode... (use --enhanced for csvlens-style features)");
             if let Err(e) = sql_cli::ui::tui_app::run_tui_app() {
-                eprintln!("TUI Error: {}", e);
+                eprintln!("TUI Error: {e}");
                 std::process::exit(1);
             }
         } else {
@@ -520,10 +510,7 @@ fn main() -> io::Result<()> {
                 } else {
                     "CSV"
                 };
-                println!(
-                    "Starting enhanced TUI in {} mode with file: {}",
-                    file_type, file_path
-                );
+                println!("Starting enhanced TUI in {file_type} mode with file: {file_path}");
             } else {
                 println!(
                     "Starting enhanced TUI mode... (use --simple for basic TUI, --classic for CLI)"
@@ -534,14 +521,15 @@ fn main() -> io::Result<()> {
 
             // Use the enhanced TUI by default
             let result = if data_files.len() > 1 {
-                let file_refs: Vec<&str> = data_files.iter().map(|s| s.as_str()).collect();
+                let file_refs: Vec<&str> =
+                    data_files.iter().map(std::string::String::as_str).collect();
                 sql_cli::ui::enhanced_tui::run_enhanced_tui_multi(&api_url, file_refs)
             } else {
                 sql_cli::ui::enhanced_tui::run_enhanced_tui(&api_url, data_file.as_deref())
             };
 
             if let Err(e) = result {
-                eprintln!("Enhanced TUI Error: {}", e);
+                eprintln!("Enhanced TUI Error: {e}");
                 eprintln!("Falling back to classic CLI mode...");
                 eprintln!();
                 // Don't exit, fall through to classic mode
@@ -594,7 +582,7 @@ fn main() -> io::Result<()> {
         std::env::var("TRADE_API_URL").unwrap_or_else(|_| "http://localhost:5000".to_string());
     let api_client = ApiClient::new(&api_url);
 
-    println!("{}", format!("Connected to API: {}", api_url).cyan());
+    println!("{}", format!("Connected to API: {api_url}").cyan());
 
     let mut last_results: Option<Vec<serde_json::Value>> = None;
 
@@ -626,8 +614,8 @@ fn main() -> io::Result<()> {
 
                     if let Some(ref results) = last_results {
                         match export_to_csv(results, &["*".to_string()], parts[1]) {
-                            Ok(_) => {}
-                            Err(e) => eprintln!("{}", format!("Export error: {}", e).red()),
+                            Ok(()) => {}
+                            Err(e) => eprintln!("{}", format!("Export error: {e}").red()),
                         }
                     } else {
                         eprintln!("{}", "No results to export. Run a query first.".red());
@@ -640,7 +628,7 @@ fn main() -> io::Result<()> {
                         display_results(&response.data, &response.query.select);
                         last_results = Some(response.data);
                     }
-                    Err(e) => eprintln!("{}", format!("Error: {}", e).red()),
+                    Err(e) => eprintln!("{}", format!("Error: {e}").red()),
                 }
             }
             Signal::CtrlD | Signal::CtrlC => {

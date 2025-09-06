@@ -70,7 +70,7 @@ use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 use tui_input::{backend::crossterm::EventHandler, Input};
 
-/// CommandEditor handles all command mode input and state management
+/// `CommandEditor` handles all command mode input and state management
 /// This is the first step in extracting command mode from the main TUI
 struct CommandEditor {
     // References to shared state (will be passed in from TUI)
@@ -546,11 +546,10 @@ impl DebugContext for EnhancedTuiApp {
                     buffer.get_input_text(),
                     buffer.get_selected_row(),
                     self.state_container.get_current_column(),
+                    buffer.get_dataview().map_or(0, |v| v.source().row_count()),
                     buffer
                         .get_dataview()
-                        .map(|v| v.source().row_count())
-                        .unwrap_or(0),
-                    buffer.get_dataview().map(|v| v.row_count()).unwrap_or(0),
+                        .map_or(0, super::super::data::data_view::DataView::row_count),
                 )
             }
         } else {
@@ -572,7 +571,7 @@ impl DebugContext for EnhancedTuiApp {
             .buffers()
             .all_buffers()
             .iter()
-            .map(|b| b.get_name())
+            .map(super::super::buffer::BufferAPI::get_name)
             .collect();
         let buffer_count = self.state_container.buffers().all_buffers().len();
         let buffer_index = self.state_container.buffers().current_index();
@@ -668,8 +667,8 @@ impl EnhancedTuiApp {
 
     // ========== STATE SYNCHRONIZATION ==========
 
-    /// Synchronize NavigationState with ViewportManager
-    /// This is the reverse - update NavigationState from ViewportManager
+    /// Synchronize `NavigationState` with `ViewportManager`
+    /// This is the reverse - update `NavigationState` from `ViewportManager`
     pub(crate) fn sync_navigation_with_viewport(&self) {
         debug!(target: "column_search_sync", "sync_navigation_with_viewport: ENTRY");
         let viewport_borrow = self.viewport_manager.borrow();
@@ -699,7 +698,7 @@ impl EnhancedTuiApp {
     }
 
     /// Synchronize mode across all state containers
-    /// This ensures AppStateContainer, Buffer, and ShadowState are all in sync
+    /// This ensures `AppStateContainer`, Buffer, and `ShadowState` are all in sync
     fn sync_mode(&mut self, mode: AppMode, trigger: &str) {
         debug!(target: "column_search_sync", "sync_mode: ENTRY - mode: {:?}, trigger: '{}'", mode, trigger);
         // Delegate to StateCoordinator for centralized sync logic
@@ -713,7 +712,7 @@ impl EnhancedTuiApp {
         debug!(target: "column_search_sync", "sync_mode: EXIT - StateCoordinator::sync_mode_with_refs completed");
     }
 
-    /// Save current ViewportManager state to the current buffer
+    /// Save current `ViewportManager` state to the current buffer
     fn save_viewport_to_current_buffer(&mut self) {
         let viewport_borrow = self.viewport_manager.borrow();
 
@@ -729,7 +728,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    /// Restore ViewportManager state from the current buffer
+    /// Restore `ViewportManager` state from the current buffer
     fn restore_viewport_from_current_buffer(&mut self) {
         if let Some(buffer) = self.state_container.buffers().current() {
             // Check if this buffer has a DataView
@@ -864,7 +863,12 @@ impl EnhancedTuiApp {
             }
         }
 
-        use Action::*;
+        use Action::{
+            Backspace, CycleColumnPacking, Delete, ExecuteQuery, ExitCurrentMode, HideEmptyColumns,
+            InsertChar, MoveCursorEnd, MoveCursorHome, MoveCursorLeft, MoveCursorRight,
+            NextSearchMatch, PreviousSearchMatch, Redo, ShowColumnStatistics, Sort,
+            StartHistorySearch, SwitchMode, SwitchModeWithCursor, Undo,
+        };
 
         // Fallback to existing switch statement for actions not yet in visitor pattern
         match action {
@@ -913,10 +917,7 @@ impl EnhancedTuiApp {
 
                 tracing::info!("Hidden {} empty columns", count);
                 let message = if count > 0 {
-                    format!(
-                        "Hidden {} empty columns (press Ctrl+Shift+H to unhide)",
-                        count
-                    )
+                    format!("Hidden {count} empty columns (press Ctrl+Shift+H to unhide)")
                 } else {
                     "No empty columns found".to_string()
                 };
@@ -1263,7 +1264,7 @@ impl EnhancedTuiApp {
 
     // ========== DATA PROVIDER ACCESS ==========
 
-    /// Get a DataProvider view of the current buffer
+    /// Get a `DataProvider` view of the current buffer
     /// This allows using the new trait-based data access pattern
     fn get_data_provider(&self) -> Option<Box<dyn DataProvider + '_>> {
         // For now, we'll use BufferAdapter for Buffer data
@@ -1440,6 +1441,7 @@ impl EnhancedTuiApp {
         // ========== UTILITY FUNCTIONS ==========
     }
 
+    #[must_use]
     pub fn new(api_url: &str) -> Self {
         // Load configuration
         let config = Config::load().unwrap_or_else(|_e| {
@@ -1451,10 +1453,10 @@ impl EnhancedTuiApp {
         crate::config::global::init_config(config.clone());
 
         // Store API URL as data source if provided
-        let data_source = if !api_url.is_empty() {
-            Some(api_url.to_string())
-        } else {
+        let data_source = if api_url.is_empty() {
             None
+        } else {
+            Some(api_url.to_string())
         };
 
         // Log initialization
@@ -1462,7 +1464,7 @@ impl EnhancedTuiApp {
             logger.log(
                 "INFO",
                 "EnhancedTuiApp",
-                &format!("Initializing TUI with API URL: {}", api_url),
+                &format!("Initializing TUI with API URL: {api_url}"),
             );
         }
 
@@ -1479,7 +1481,7 @@ impl EnhancedTuiApp {
         let state_container = match AppStateContainer::new(buffer_manager) {
             Ok(container) => container,
             Err(e) => {
-                panic!("Failed to initialize AppStateContainer: {}", e);
+                panic!("Failed to initialize AppStateContainer: {e}");
             }
         };
 
@@ -1568,8 +1570,8 @@ impl EnhancedTuiApp {
         info!("State coordination setup complete");
     }
 
-    /// Create a TUI with a DataView - no file loading knowledge needed
-    /// This is the clean separation: TUI only knows about DataViews
+    /// Create a TUI with a `DataView` - no file loading knowledge needed
+    /// This is the clean separation: TUI only knows about `DataViews`
     pub fn new_with_dataview(dataview: DataView, source_name: &str) -> Result<Self> {
         // Create the base app
         let mut app = Self::new("");
@@ -1640,7 +1642,7 @@ impl EnhancedTuiApp {
         Ok(app)
     }
 
-    /// Add a DataView to the existing TUI (creates a new buffer)
+    /// Add a `DataView` to the existing TUI (creates a new buffer)
     pub fn add_dataview(&mut self, dataview: DataView, source_name: &str) -> Result<()> {
         // Delegate all the complex state coordination to StateCoordinator
         use crate::ui::state::state_coordinator::StateCoordinator;
@@ -1659,7 +1661,7 @@ impl EnhancedTuiApp {
         Ok(())
     }
 
-    /// Update the viewport with a new DataView
+    /// Update the viewport with a new `DataView`
     pub fn update_viewport_with_dataview(&mut self, dataview: DataView) {
         self.viewport_manager = RefCell::new(Some(ViewportManager::new(Arc::new(dataview))));
     }
@@ -1729,7 +1731,7 @@ impl EnhancedTuiApp {
         let _ = terminal.show_cursor();
 
         match res {
-            Ok(_) => Ok(()),
+            Ok(()) => Ok(()),
             Err(e) => Err(anyhow::anyhow!("TUI error: {}", e)),
         }
     }
@@ -1953,15 +1955,12 @@ impl EnhancedTuiApp {
     fn try_handle_events<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<bool> {
         // Use poll with timeout to allow checking for debounced actions
         if event::poll(std::time::Duration::from_millis(50))? {
-            match event::read()? {
-                Event::Key(key) => {
-                    if self.try_handle_key_event(terminal, key)? {
-                        return Ok(true);
-                    }
+            if let Event::Key(key) = event::read()? {
+                if self.try_handle_key_event(terminal, key)? {
+                    return Ok(true);
                 }
-                _ => {
-                    // Ignore other events (mouse, resize, etc.) to reduce CPU
-                }
+            } else {
+                // Ignore other events (mouse, resize, etc.) to reduce CPU
             }
         } else {
             // No event available, but still redraw if we have pending debounced actions or table needs render
@@ -2159,12 +2158,12 @@ impl EnhancedTuiApp {
         let action = self
             .key_dispatcher
             .get_command_action(&normalized)
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
 
         // Log the key press
         if normalized != key {
             self.state_container
-                .log_key_press(key, Some(format!("normalized to {:?}", normalized)));
+                .log_key_press(key, Some(format!("normalized to {normalized:?}")));
         }
         self.state_container.log_key_press(normalized, action);
 
@@ -2286,7 +2285,7 @@ impl EnhancedTuiApp {
             let match_count = self.state_container.history_search().matches.len();
 
             self.state_container
-                .set_status_message(format!("History search: {} matches", match_count));
+                .set_status_message(format!("History search: {match_count} matches"));
         }
     }
 
@@ -2334,7 +2333,7 @@ impl EnhancedTuiApp {
                 self.state_container.set_show_row_numbers(!current);
                 self.state_container.set_status_message(format!(
                     "Row numbers: {}",
-                    if !current { "ON" } else { "OFF" }
+                    if current { "OFF" } else { "ON" }
                 ));
                 Ok(Some(false))
             }
@@ -2342,10 +2341,10 @@ impl EnhancedTuiApp {
                 // Toggle compact mode
                 let current_mode = self.state_container.is_compact_mode();
                 self.state_container.set_compact_mode(!current_mode);
-                let message = if !current_mode {
-                    "Compact mode enabled"
-                } else {
+                let message = if current_mode {
                     "Compact mode disabled"
+                } else {
+                    "Compact mode enabled"
                 };
                 self.state_container.set_status_message(message.to_string());
                 Ok(Some(false))
@@ -2356,7 +2355,7 @@ impl EnhancedTuiApp {
                 self.state_container.set_case_insensitive(!current);
                 self.state_container.set_status_message(format!(
                     "Case-insensitive string comparisons: {}",
-                    if !current { "ON" } else { "OFF" }
+                    if current { "OFF" } else { "ON" }
                 ));
                 Ok(Some(false))
             }
@@ -2364,13 +2363,13 @@ impl EnhancedTuiApp {
                 // F9 as alternative for kill line (for terminals that intercept Ctrl+K)
                 use crate::ui::traits::input_ops::InputBehavior;
                 InputBehavior::kill_line(self);
-                let message = if !self.state_container.is_kill_ring_empty() {
+                let message = if self.state_container.is_kill_ring_empty() {
+                    "Killed to end of line".to_string()
+                } else {
                     format!(
                         "Killed to end of line ('{}' saved to kill ring)",
                         self.state_container.get_kill_ring()
                     )
-                } else {
-                    "Killed to end of line".to_string()
                 };
                 self.state_container.set_status_message(message);
                 Ok(Some(false))
@@ -2379,13 +2378,13 @@ impl EnhancedTuiApp {
                 // F10 as alternative for kill line backward
                 use crate::ui::traits::input_ops::InputBehavior;
                 InputBehavior::kill_line_backward(self);
-                let message = if !self.state_container.is_kill_ring_empty() {
+                let message = if self.state_container.is_kill_ring_empty() {
+                    "Killed to beginning of line".to_string()
+                } else {
                     format!(
                         "Killed to beginning of line ('{}' saved to kill ring)",
                         self.state_container.get_kill_ring()
                     )
-                } else {
-                    "Killed to beginning of line".to_string()
                 };
                 self.state_container.set_status_message(message);
                 Ok(Some(false))
@@ -2525,8 +2524,7 @@ impl EnhancedTuiApp {
                     .borrow_mut()
                     .observe_mode_change(AppMode::History, "history_search_started");
                 self.state_container.set_status_message(format!(
-                    "History search started (Ctrl+R) - {} matches",
-                    match_count
+                    "History search started (Ctrl+R) - {match_count} matches"
                 ));
                 return Ok(Some(false));
             }
@@ -2771,7 +2769,10 @@ impl EnhancedTuiApp {
                 let query = self.get_input_text().trim().to_string();
                 debug!(target: "action", "Executing query: {}", query);
 
-                if !query.is_empty() {
+                if query.is_empty() {
+                    self.state_container
+                        .set_status_message("Empty query - please enter a SQL command".to_string());
+                } else {
                     // Check for special commands
                     if query == ":help" {
                         self.state_container.set_help_visible(true);
@@ -2787,12 +2788,9 @@ impl EnhancedTuiApp {
                             .set_status_message("Already in TUI mode".to_string());
                     } else {
                         self.state_container
-                            .set_status_message(format!("Processing query: '{}'", query));
+                            .set_status_message(format!("Processing query: '{query}'"));
                         self.execute_query_v2(&query)?;
                     }
-                } else {
-                    self.state_container
-                        .set_status_message("Empty query - please enter a SQL command".to_string());
                 }
                 Ok(Some(false))
             }
@@ -2999,9 +2997,8 @@ impl EnhancedTuiApp {
                 self.state_container
                     .set_status_message("Search cleared".to_string());
                 return Ok(false);
-            } else {
-                info!("Escape pressed but no active search to clear");
             }
+            info!("Escape pressed but no active search to clear");
         }
 
         let selection_mode = self.state_container.get_selection_mode();
@@ -3017,12 +3014,12 @@ impl EnhancedTuiApp {
         // Get the action that will be performed (if any) - for logging purposes
         let action_context = self.build_action_context();
         let mapped_action = self.key_mapper.map_key(normalized, &action_context);
-        let action = mapped_action.as_ref().map(|a| format!("{:?}", a));
+        let action = mapped_action.as_ref().map(|a| format!("{a:?}"));
 
         // Log the key press
         if normalized != key {
             self.state_container
-                .log_key_press(key, Some(format!("normalized to {:?}", normalized)));
+                .log_key_press(key, Some(format!("normalized to {normalized:?}")));
         }
         self.state_container
             .log_key_press(normalized, action.clone());
@@ -3060,7 +3057,7 @@ impl EnhancedTuiApp {
                     ActionResult::Error(err) => {
                         warn!("Action error: {}", err);
                         self.state_container
-                            .set_status_message(format!("Error: {}", err));
+                            .set_status_message(format!("Error: {err}"));
                         return Ok(false);
                     }
                     ActionResult::NotHandled => {
@@ -3131,7 +3128,7 @@ impl EnhancedTuiApp {
             SearchMode::Search => {
                 debug!(target: "search", "Executing search with pattern: '{}', app_mode={:?}", pattern, self.shadow_state.borrow().get_mode());
                 debug!(target: "search", "Search: current results count={}",
-                       self.state_container.get_buffer_dataview().map(|v| v.source().row_count()).unwrap_or(0));
+                       self.state_container.get_buffer_dataview().map_or(0, |v| v.source().row_count()));
 
                 // Set search pattern in AppStateContainer
                 self.state_container.start_search(pattern.clone());
@@ -3308,7 +3305,7 @@ impl EnhancedTuiApp {
                 self.apply_filter(&pattern);
 
                 debug!(target: "search", "After apply_filter, filtered_count={}",
-                    self.state_container.get_buffer_dataview().map(|v| v.row_count()).unwrap_or(0));
+                    self.state_container.get_buffer_dataview().map_or(0, super::super::data::data_view::DataView::row_count));
             }
             SearchMode::FuzzyFilter => {
                 use crate::ui::state::state_coordinator::StateCoordinator;
@@ -3518,11 +3515,11 @@ impl EnhancedTuiApp {
 
                         let column_info = {
                             let column_search = self.state_container.column_search();
-                            if !column_search.matching_columns.is_empty() {
+                            if column_search.matching_columns.is_empty() {
+                                None
+                            } else {
                                 let current_match = column_search.current_match;
                                 Some(column_search.matching_columns[current_match].clone())
-                            } else {
-                                None
                             }
                         };
 
@@ -3542,7 +3539,7 @@ impl EnhancedTuiApp {
                             debug!(target: "column_search_sync", "ColumnSearch Apply: About to call sync_navigation_with_viewport() for column: {}", col_name);
                             debug!(target: "column_search_sync", "ColumnSearch Apply: Pre-sync - viewport current_column: {}", 
                                 if let Ok(vm) = self.viewport_manager.try_borrow() {
-                                    vm.as_ref().map(|v| v.get_crosshair_col()).unwrap_or(0)
+                                    vm.as_ref().map_or(0, super::viewport_manager::ViewportManager::get_crosshair_col)
                                 } else { 0 });
                             self.sync_navigation_with_viewport();
                             debug!(target: "column_search_sync", "ColumnSearch Apply: Post-sync - navigation current_column: {}", 
@@ -3550,7 +3547,7 @@ impl EnhancedTuiApp {
                             debug!(target: "column_search_sync", "ColumnSearch Apply: sync_navigation_with_viewport() completed for column: {}", col_name);
 
                             self.state_container
-                                .set_status_message(format!("Jumped to column: {}", col_name));
+                                .set_status_message(format!("Jumped to column: {col_name}"));
                         }
 
                         // IMPORTANT: Don't modify input_text when exiting column search!
@@ -3580,12 +3577,12 @@ impl EnhancedTuiApp {
                     if mode == SearchMode::ColumnSearch {
                         // For column search, restore the last executed query or pre-populated query
                         let last_query = self.state_container.get_last_query();
-                        if !last_query.is_empty() {
-                            debug!(target: "search", "Column search: No saved state, restoring last_query: '{}'", last_query);
-                            self.set_input_text(last_query);
-                        } else {
+                        if last_query.is_empty() {
                             debug!(target: "search", "Column search: No saved state or last_query, clearing input");
                             self.set_input_text(String::new());
+                        } else {
+                            debug!(target: "search", "Column search: No saved state, restoring last_query: '{}'", last_query);
+                            self.set_input_text(last_query);
                         }
                     } else {
                         debug!(target: "search", "No saved state from widget, keeping current SQL");
@@ -3643,7 +3640,7 @@ impl EnhancedTuiApp {
                     SearchMode::Search => {
                         let matches = self.state_container.search().matches.len();
                         if matches > 0 {
-                            format!("Found {} matches. Use n/N to navigate.", matches)
+                            format!("Found {matches} matches. Use n/N to navigate.")
                         } else {
                             "No matches found.".to_string()
                         }
@@ -3879,7 +3876,7 @@ impl EnhancedTuiApp {
         Ok(false)
     }
 
-    /// Update history matches in the AppStateContainer with schema context
+    /// Update history matches in the `AppStateContainer` with schema context
     fn update_history_matches_in_container(&mut self) {
         // Get current schema columns and data source for better matching
         let (current_columns, current_source_str) =
@@ -3991,7 +3988,7 @@ impl EnhancedTuiApp {
                 Ok(())
             }
             Err(e) => {
-                let error_msg = format!("Query error: {}", e);
+                let error_msg = format!("Query error: {e}");
                 self.state_container.set_status_message(error_msg.clone());
 
                 // Add to history as failed
@@ -4060,13 +4057,12 @@ impl EnhancedTuiApp {
         }
 
         // Get the current suggestion from AppStateContainer
-        match self.state_container.get_current_completion() {
-            Some(sugg) => Some(sugg),
-            None => {
-                self.state_container
-                    .set_status_message("No completion selected".to_string());
-                None
-            }
+        if let Some(sugg) = self.state_container.get_current_completion() {
+            Some(sugg)
+        } else {
+            self.state_container
+                .set_status_message("No completion selected".to_string());
+            None
         }
     }
 
@@ -4112,7 +4108,7 @@ impl EnhancedTuiApp {
                 completion.suggestions.len()
             )
         } else {
-            format!("Completed: {}", suggestion)
+            format!("Completed: {suggestion}")
         };
         drop(completion);
         self.state_container.set_status_message(suggestion_info);
@@ -4123,7 +4119,7 @@ impl EnhancedTuiApp {
         // Just insert the suggestion at cursor position
         let before_cursor = &query[..cursor_pos];
         let after_cursor = &query[cursor_pos..];
-        let new_query = format!("{}{}{}", before_cursor, suggestion, after_cursor);
+        let new_query = format!("{before_cursor}{suggestion}{after_cursor}");
 
         // Special case: if we completed a string method like Contains(''), position cursor inside quotes
         let cursor_pos_new = if suggestion.ends_with("('')") {
@@ -4148,7 +4144,7 @@ impl EnhancedTuiApp {
             .update_completion_context(new_query, cursor_pos_new);
 
         self.state_container
-            .set_status_message(format!("Inserted: {}", suggestion));
+            .set_status_message(format!("Inserted: {suggestion}"));
     }
 
     // Note: expand_asterisk and get_table_columns removed - moved to Buffer and use hybrid_parser directly
@@ -4166,9 +4162,9 @@ impl EnhancedTuiApp {
         }
     }
 
-    /// Get column count using DataProvider trait (new pattern)
+    /// Get column count using `DataProvider` trait (new pattern)
     /// This demonstrates using the trait-based approach for column information
-    /// Get column names using DataProvider trait
+    /// Get column names using `DataProvider` trait
     /// Part of the migration to trait-based data access
     fn get_column_names_via_provider(&self) -> Vec<String> {
         if let Some(provider) = self.get_data_provider() {
@@ -4206,13 +4202,13 @@ impl EnhancedTuiApp {
                     // Column is already pinned, unpin it
                     dataview.unpin_column_by_name(&col_name);
                     self.state_container
-                        .set_status_message(format!("Column '{}' unpinned", col_name));
+                        .set_status_message(format!("Column '{col_name}' unpinned"));
                 } else {
                     // Try to pin the column by name
                     match dataview.pin_column_by_name(&col_name) {
-                        Ok(_) => {
+                        Ok(()) => {
                             self.state_container
-                                .set_status_message(format!("Column '{}' pinned [P]", col_name));
+                                .set_status_message(format!("Column '{col_name}' pinned [P]"));
                         }
                         Err(e) => {
                             self.state_container.set_status_message(e.to_string());
@@ -4290,7 +4286,10 @@ impl EnhancedTuiApp {
         };
 
         // Convert to references for the analyzer
-        let data_refs: Vec<&str> = data_to_analyze.iter().map(|s| s.as_str()).collect();
+        let data_refs: Vec<&str> = data_to_analyze
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
 
         // Use DataAnalyzer to calculate statistics
         let analyzer_stats = self
@@ -4386,7 +4385,12 @@ impl EnhancedTuiApp {
             // Convert DataView rows to Vec<Vec<String>> for SearchManager
             let data: Vec<Vec<String>> = (0..dataview.row_count())
                 .filter_map(|i| dataview.get_row(i))
-                .map(|row| row.values.iter().map(|v| v.to_string()).collect())
+                .map(|row| {
+                    row.values
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect()
+                })
                 .collect();
 
             // Get search pattern from buffer
@@ -4396,7 +4400,7 @@ impl EnhancedTuiApp {
             info!(target: "search", "Pattern: '{}', case_insensitive: {}",
                   pattern, self.state_container.is_case_insensitive());
             info!(target: "search", "Data dimensions: {} rows x {} columns",
-                  data.len(), data.first().map(|r| r.len()).unwrap_or(0));
+                  data.len(), data.first().map_or(0, std::vec::Vec::len));
 
             // Log column names to understand ordering
             let column_names = dataview.column_names();
@@ -4406,7 +4410,7 @@ impl EnhancedTuiApp {
             // Log the first few rows of data we're searching
             for (i, row) in data.iter().take(10).enumerate() {
                 info!(target: "search", "  Data row {}: [{}]", i,
-                      row.iter().take(5).map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(", "));
+                      row.iter().take(5).map(|s| format!("'{s}'")).collect::<Vec<_>>().join(", "));
             }
 
             // Get visible columns if needed (for now search all columns)
@@ -4506,7 +4510,7 @@ impl EnhancedTuiApp {
                 self.state_container
                     .set_current_match(Some((first_row, first_col)));
                 self.state_container
-                    .set_status_message(format!("Found {} matches", match_count));
+                    .set_status_message(format!("Found {match_count} matches"));
 
                 info!(target: "search", "Search found {} matches for pattern '{}'", match_count, pattern);
             } else {
@@ -4603,7 +4607,7 @@ impl EnhancedTuiApp {
                     info!(target: "search",
                         "Row {} has {} values, first 5: {:?}",
                         search_match.row, row_data.values.len(),
-                        row_data.values.iter().take(5).map(|v| v.to_string()).collect::<Vec<_>>());
+                        row_data.values.iter().take(5).map(std::string::ToString::to_string).collect::<Vec<_>>());
 
                     if search_match.col < row_data.values.len() {
                         let actual_value = &row_data.values[search_match.col];
@@ -4621,13 +4625,13 @@ impl EnhancedTuiApp {
                             .to_string()
                             .to_lowercase()
                             .contains(&pattern.to_lowercase());
-                        if !contains_pattern {
+                        if contains_pattern {
+                            info!(target: "search", 
+                                "✓ Confirmed: Cell contains pattern '{}'", pattern);
+                        } else {
                             warn!(target: "search", 
                                 "WARNING: Cell at ({}, {}) = '{}' does NOT contain pattern '{}'!", 
                                 search_match.row, search_match.col, actual_value, pattern);
-                        } else {
-                            info!(target: "search", 
-                                "✓ Confirmed: Cell contains pattern '{}'", pattern);
                         }
                     } else {
                         warn!(target: "search", 
@@ -4961,7 +4965,11 @@ impl EnhancedTuiApp {
             Vec::new()
         };
 
-        if !matching_columns.is_empty() {
+        if matching_columns.is_empty() {
+            let status_msg = format!("No columns matching '{pattern}'");
+            debug!(target: "search", "Setting status: {}", status_msg);
+            self.state_container.set_status_message(status_msg);
+        } else {
             // Move to first match - the index from DataView is already a VISUAL index
             let first_match_visual_idx = matching_columns[0].0;
             let first_match_name = &matching_columns[0].1;
@@ -5020,10 +5028,6 @@ impl EnhancedTuiApp {
             self.state_container.set_status_message(status_msg);
 
             // Column search matches are now managed by AppStateContainer
-        } else {
-            let status_msg = format!("No columns matching '{}'", pattern);
-            debug!(target: "search", "Setting status: {}", status_msg);
-            self.state_container.set_status_message(status_msg);
         }
 
         // Matching columns are now stored in AppStateContainer
@@ -5097,7 +5101,7 @@ impl EnhancedTuiApp {
             debug!(target: "column_search_sync", "next_column_match: About to call sync_navigation_with_viewport() - visual_idx: {}, datatable_idx: {}", visual_idx, datatable_idx);
             debug!(target: "column_search_sync", "next_column_match: Pre-sync - viewport current_column: {}", 
                 if let Ok(vm) = self.viewport_manager.try_borrow() {
-                    vm.as_ref().map(|v| v.get_crosshair_col()).unwrap_or(0)
+                    vm.as_ref().map_or(0, super::viewport_manager::ViewportManager::get_crosshair_col)
                 } else { 0 });
             self.sync_navigation_with_viewport();
             debug!(target: "column_search_sync", "next_column_match: Post-sync - navigation current_column: {}", 
@@ -5117,8 +5121,7 @@ impl EnhancedTuiApp {
             }
 
             self.state_container.set_status_message(format!(
-                "Column {}/{}: {} - Tab/Shift-Tab to navigate",
-                current_match, total_matches, col_name
+                "Column {current_match}/{total_matches}: {col_name} - Tab/Shift-Tab to navigate"
             ));
         }
     }
@@ -5191,7 +5194,7 @@ impl EnhancedTuiApp {
             debug!(target: "column_search_sync", "previous_column_match: About to call sync_navigation_with_viewport() - visual_idx: {}, datatable_idx: {}", visual_idx, datatable_idx);
             debug!(target: "column_search_sync", "previous_column_match: Pre-sync - viewport current_column: {}", 
                 if let Ok(vm) = self.viewport_manager.try_borrow() {
-                    vm.as_ref().map(|v| v.get_crosshair_col()).unwrap_or(0)
+                    vm.as_ref().map_or(0, super::viewport_manager::ViewportManager::get_crosshair_col)
                 } else { 0 });
             self.sync_navigation_with_viewport();
             debug!(target: "column_search_sync", "previous_column_match: Post-sync - navigation current_column: {}", 
@@ -5211,8 +5214,7 @@ impl EnhancedTuiApp {
             }
 
             self.state_container.set_status_message(format!(
-                "Column {}/{}: {} - Tab/Shift-Tab to navigate",
-                current_match, total_matches, col_name
+                "Column {current_match}/{total_matches}: {col_name} - Tab/Shift-Tab to navigate"
             ));
         }
     }
@@ -5253,7 +5255,7 @@ impl EnhancedTuiApp {
             let col_name = column_names
                 .get(visual_col_idx)
                 .cloned()
-                .unwrap_or_else(|| format!("Column {}", visual_col_idx));
+                .unwrap_or_else(|| format!("Column {visual_col_idx}"));
 
             debug!(
                 "toggle_sort_current_column: visual_idx={}, column_name={}",
@@ -5262,19 +5264,19 @@ impl EnhancedTuiApp {
 
             if let Err(e) = dataview.toggle_sort(visual_col_idx) {
                 self.state_container
-                    .set_status_message(format!("Sort error: {}", e));
+                    .set_status_message(format!("Sort error: {e}"));
             } else {
                 // Get the new sort state for status message
                 let sort_state = dataview.get_sort_state();
                 let message = match sort_state.order {
                     crate::data::data_view::SortOrder::Ascending => {
-                        format!("Sorted '{}' ascending ↑", col_name)
+                        format!("Sorted '{col_name}' ascending ↑")
                     }
                     crate::data::data_view::SortOrder::Descending => {
-                        format!("Sorted '{}' descending ↓", col_name)
+                        format!("Sorted '{col_name}' descending ↓")
                     }
                     crate::data::data_view::SortOrder::None => {
-                        format!("Cleared sort on '{}'", col_name)
+                        format!("Cleared sort on '{col_name}'")
                     }
                 };
                 self.state_container.set_status_message(message);
@@ -5320,7 +5322,7 @@ impl EnhancedTuiApp {
         }
     }
 
-    /// Helper to sync dataview to both ViewportManager and TableWidgetManager
+    /// Helper to sync dataview to both `ViewportManager` and `TableWidgetManager`
     fn sync_dataview_to_managers(&self) {
         if let Some(dataview) = self.state_container.get_buffer_dataview() {
             let arc_dataview = Arc::new(dataview.clone());
@@ -5372,7 +5374,7 @@ impl EnhancedTuiApp {
         self.update_parser_for_current_buffer();
     }
 
-    /// Update ViewportManager when DataView changes
+    /// Update `ViewportManager` when `DataView` changes
     fn update_viewport_manager(&mut self, dataview: Option<DataView>) {
         if let Some(dv) = dataview {
             // Get current column position to preserve it
@@ -5420,7 +5422,7 @@ impl EnhancedTuiApp {
             let mut viewport_opt = self.viewport_manager.borrow_mut();
             (*viewport_opt)
                 .as_mut()
-                .map(|viewport_manager| viewport_manager.calculate_optimal_column_widths())
+                .map(super::viewport_manager::ViewportManager::calculate_optimal_column_widths)
         };
 
         if let Some(widths) = widths_from_viewport {
@@ -5440,7 +5442,7 @@ impl EnhancedTuiApp {
 
     /// Set error status message with consistent formatting
     fn set_error_status(&mut self, context: &str, error: impl std::fmt::Display) {
-        let msg = format!("{}: {}", context, error);
+        let msg = format!("{context}: {error}");
         debug!("Error status: {}", msg);
         self.set_status_message(msg);
     }
@@ -5540,7 +5542,7 @@ impl EnhancedTuiApp {
             }
             Err(e) => {
                 self.state_container
-                    .set_status_message(format!("Failed to paste: {}", e));
+                    .set_status_message(format!("Failed to paste: {e}"));
             }
         }
     }
@@ -5636,7 +5638,7 @@ impl EnhancedTuiApp {
                 .buffers()
                 .all_buffers()
                 .iter()
-                .map(|b| b.get_name())
+                .map(super::super::buffer::BufferAPI::get_name)
                 .collect();
             let current_index = self.state_container.buffers().current_index();
 
@@ -5658,7 +5660,7 @@ impl EnhancedTuiApp {
         let char_count = input_text_for_count.len();
         let cursor_pos = self.get_input_cursor();
         let char_count_display = if char_count > 0 {
-            format!(" [{}/{} chars]", cursor_pos, char_count)
+            format!(" [{cursor_pos}/{char_count} chars]")
         } else {
             String::new()
         };
@@ -5671,23 +5673,22 @@ impl EnhancedTuiApp {
         };
 
         let input_title = match self.shadow_state.borrow().get_mode() {
-            AppMode::Command => format!("SQL Query{}{}", char_count_display, scroll_indicator),
+            AppMode::Command => format!("SQL Query{char_count_display}{scroll_indicator}"),
             AppMode::Results => format!(
-                "SQL Query (Results Mode - Press ↑ to edit){}{}",
-                char_count_display, scroll_indicator
+                "SQL Query (Results Mode - Press ↑ to edit){char_count_display}{scroll_indicator}"
             ),
-            AppMode::Search => format!("Search Pattern{}{}", char_count_display, scroll_indicator),
-            AppMode::Filter => format!("Filter Pattern{}{}", char_count_display, scroll_indicator),
+            AppMode::Search => format!("Search Pattern{char_count_display}{scroll_indicator}"),
+            AppMode::Filter => format!("Filter Pattern{char_count_display}{scroll_indicator}"),
             AppMode::FuzzyFilter => {
-                format!("Fuzzy Filter{}{}", char_count_display, scroll_indicator)
+                format!("Fuzzy Filter{char_count_display}{scroll_indicator}")
             }
             AppMode::ColumnSearch => {
-                format!("Column Search{}{}", char_count_display, scroll_indicator)
+                format!("Column Search{char_count_display}{scroll_indicator}")
             }
             AppMode::Help => "Help".to_string(),
             AppMode::History => {
                 let query = self.state_container.history_search().query.clone();
-                format!("History Search: '{}' (Esc to cancel)", query)
+                format!("History Search: '{query}' (Esc to cancel)")
             }
             AppMode::Debug => "Parser Debug (F5)".to_string(),
             AppMode::PrettyQuery => "Pretty Query View (F6)".to_string(),
@@ -5912,7 +5913,7 @@ impl EnhancedTuiApp {
 
         // Mode indicator with color
         spans.push(Span::styled(
-            format!("[{}]", mode_indicator),
+            format!("[{mode_indicator}]"),
             Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
         ));
 
@@ -5973,7 +5974,7 @@ impl EnhancedTuiApp {
                     let (token_pos, total_tokens) = self.get_cursor_token_position();
                     spans.push(Span::raw(" | "));
                     spans.push(Span::styled(
-                        format!("Token {}/{}", token_pos, total_tokens),
+                        format!("Token {token_pos}/{total_tokens}"),
                         Style::default().fg(Color::DarkGray),
                     ));
 
@@ -5981,7 +5982,7 @@ impl EnhancedTuiApp {
                     if let Some(token) = self.get_token_at_cursor() {
                         spans.push(Span::raw(" "));
                         spans.push(Span::styled(
-                            format!("[{}]", token),
+                            format!("[{token}]"),
                             Style::default().fg(Color::Cyan),
                         ));
                     }
@@ -6028,7 +6029,7 @@ impl EnhancedTuiApp {
                 SelectionMode::Column => "COL",
             };
             spans.push(Span::styled(
-                format!("[{}]", mode_text),
+                format!("[{mode_text}]"),
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
@@ -6036,7 +6037,7 @@ impl EnhancedTuiApp {
 
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                format!("Row {}/{}", selected, total_rows),
+                format!("Row {selected}/{total_rows}"),
                 Style::default().fg(Color::White),
             ));
 
@@ -6050,7 +6051,7 @@ impl EnhancedTuiApp {
                 };
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                format!("({},{})", visual_col_display, selected),
+                format!("({visual_col_display},{selected})"),
                 Style::default().fg(Color::DarkGray),
             ));
 
@@ -6069,7 +6070,7 @@ impl EnhancedTuiApp {
                         + 3;
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
-                        format!("[{}x{}]", terminal_x, terminal_y),
+                        format!("[{terminal_x}x{terminal_y}]"),
                         Style::default().fg(Color::DarkGray),
                     ));
                 }
@@ -6104,9 +6105,9 @@ impl EnhancedTuiApp {
                         if let Some(ref viewport_manager) = *self.viewport_manager.borrow() {
                             let viewport_rows = viewport_manager.get_viewport_rows();
                             let viewport_height = viewport_rows.end - viewport_rows.start;
-                            format!("[V:{},{} @ {}r]", visual_row, visual_col, viewport_height)
+                            format!("[V:{visual_row},{visual_col} @ {viewport_height}r]")
                         } else {
-                            format!("[V:{},{}]", visual_row, visual_col)
+                            format!("[V:{visual_row},{visual_col}]")
                         };
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
@@ -6162,7 +6163,7 @@ impl EnhancedTuiApp {
         f.render_widget(status, area);
     }
 
-    /// Build a TableRenderContext with all data needed for rendering
+    /// Build a `TableRenderContext` with all data needed for rendering
     /// This collects all the scattered data into a single struct
     fn build_table_context(
         &self,
@@ -6273,10 +6274,10 @@ impl EnhancedTuiApp {
         // Get filter info
         let fuzzy_filter_pattern = if self.state_container.is_fuzzy_filter_active() {
             let pattern = self.state_container.get_fuzzy_filter_pattern();
-            if !pattern.is_empty() {
-                Some(pattern)
-            } else {
+            if pattern.is_empty() {
                 None
+            } else {
+                Some(pattern)
             }
         } else {
             None
@@ -6315,7 +6316,7 @@ impl EnhancedTuiApp {
     }
 
     /// New trait-based table rendering method
-    /// This uses DataProvider trait instead of directly accessing QueryResponse
+    /// This uses `DataProvider` trait instead of directly accessing `QueryResponse`
     fn render_table_with_provider(&self, f: &mut Frame, area: Rect, provider: &dyn DataProvider) {
         // Build the context with all data needed for rendering
         let context = self.build_table_context(area, provider);
@@ -6378,7 +6379,7 @@ impl EnhancedTuiApp {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(format!("Help - Commands{}", scroll_indicator)),
+                    .title(format!("Help - Commands{scroll_indicator}")),
             )
             .style(Style::default());
 
@@ -6511,8 +6512,7 @@ impl EnhancedTuiApp {
 
         let history_paragraph = Paragraph::new(history_items)
             .block(Block::default().borders(Borders::ALL).title(format!(
-                "History ({} matches) - j/k to navigate, Enter to select",
-                match_count
+                "History ({match_count} matches) - j/k to navigate, Enter to select"
             )))
             .wrap(ratatui::widgets::Wrap { trim: false });
 
@@ -6557,8 +6557,7 @@ impl EnhancedTuiApp {
 
             let duration_text = entry
                 .duration_ms
-                .map(|d| format!("{}ms", d))
-                .unwrap_or_else(|| "?ms".to_string());
+                .map_or_else(|| "?ms".to_string(), |d| format!("{d}ms"));
 
             let success_text = if entry.success {
                 "✓ Success"
@@ -6654,7 +6653,7 @@ impl EnhancedTuiApp {
         if !query.is_empty() && !query.starts_with(':') {
             if let Err(e) = self.execute_query_v2(&query) {
                 self.state_container
-                    .set_status_message(format!("Error executing query: {}", e));
+                    .set_status_message(format!("Error executing query: {e}"));
             }
             // Don't clear input - preserve query for editing
         }
@@ -6764,7 +6763,7 @@ impl EnhancedTuiApp {
         let scroll_offset = self.state_container.get_scroll_offset();
         let nav_state = self.state_container.navigation();
 
-        debug_info.push_str(&format!("Buffer Column Position: {}\n", current_column));
+        debug_info.push_str(&format!("Buffer Column Position: {current_column}\n"));
         debug_info.push_str(&format!(
             "Buffer Scroll Offset: row={}, col={}\n",
             scroll_offset.0, scroll_offset.1
@@ -6805,17 +6804,16 @@ impl EnhancedTuiApp {
         if let Some(dataview) = self.state_container.get_buffer_dataview() {
             let pinned_count = dataview.get_pinned_columns().len();
             let pinned_names = dataview.get_pinned_column_names();
-            debug_info.push_str(&format!("Pinned Column Count: {}\n", pinned_count));
+            debug_info.push_str(&format!("Pinned Column Count: {pinned_count}\n"));
             if !pinned_names.is_empty() {
-                debug_info.push_str(&format!("Pinned Column Names: {:?}\n", pinned_names));
+                debug_info.push_str(&format!("Pinned Column Names: {pinned_names:?}\n"));
             }
-            debug_info.push_str(&format!("First Scrollable Column: {}\n", pinned_count));
+            debug_info.push_str(&format!("First Scrollable Column: {pinned_count}\n"));
 
             // Show if current column is in pinned or scrollable area
             if current_column < pinned_count {
                 debug_info.push_str(&format!(
-                    "Current Position: PINNED area (column {})\n",
-                    current_column
+                    "Current Position: PINNED area (column {current_column})\n"
                 ));
             } else {
                 debug_info.push_str(&format!(
@@ -6864,8 +6862,7 @@ impl EnhancedTuiApp {
                 }
             } else {
                 debug_info.push_str(&format!(
-                    "WARNING: Current column {} not found in display order!\n",
-                    current_column
+                    "WARNING: Current column {current_column} not found in display order!\n"
                 ));
             }
         }
@@ -6894,10 +6891,8 @@ impl EnhancedTuiApp {
                     } else {
                         ""
                     };
-                    debug_info.push_str(&format!(
-                        "  [{}] {} (index {}){}\n",
-                        idx, col_name, col_idx, marker
-                    ));
+                    debug_info
+                        .push_str(&format!("  [{idx}] {col_name} (index {col_idx}){marker}\n"));
                 }
             }
             debug_info.push_str(&format!(
@@ -7024,7 +7019,7 @@ impl EnhancedTuiApp {
                     Color::Magenta,
                 ),
             };
-            spans.push(Span::raw(format!("{} ", icon)));
+            spans.push(Span::raw(format!("{icon} ")));
             spans.push(Span::styled(label, Style::default().fg(color)));
         }
     }
@@ -7035,7 +7030,7 @@ impl EnhancedTuiApp {
             spans.push(Span::raw(" | "));
             let icon = self.config.display.icons.case_insensitive.clone();
             spans.push(Span::styled(
-                format!("{} CASE", icon),
+                format!("{icon} CASE"),
                 Style::default().fg(Color::Cyan),
             ));
         }
@@ -7312,10 +7307,10 @@ impl ActionHandlerContext for EnhancedTuiApp {
     fn toggle_row_numbers(&mut self) {
         let current = self.state_container.is_show_row_numbers();
         self.state_container.set_show_row_numbers(!current);
-        let message = if !current {
-            "Row numbers: ON (showing line numbers)".to_string()
-        } else {
+        let message = if current {
             "Row numbers: OFF".to_string()
+        } else {
+            "Row numbers: ON (showing line numbers)".to_string()
         };
         self.state_container.set_status_message(message);
         // Recalculate column widths with new mode
@@ -7325,10 +7320,10 @@ impl ActionHandlerContext for EnhancedTuiApp {
     fn toggle_compact_mode(&mut self) {
         let current_mode = self.state_container.is_compact_mode();
         self.state_container.set_compact_mode(!current_mode);
-        let message = if !current_mode {
-            "Compact mode enabled"
-        } else {
+        let message = if current_mode {
             "Compact mode disabled"
+        } else {
+            "Compact mode enabled"
         };
         self.state_container.set_status_message(message.to_string());
     }
@@ -7338,7 +7333,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
         self.state_container.set_case_insensitive(!current);
         self.state_container.set_status_message(format!(
             "Case-insensitive string comparisons: {}",
-            if !current { "ON" } else { "OFF" }
+            if current { "OFF" } else { "ON" }
         ));
     }
 
@@ -7478,7 +7473,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             (*viewport_manager_borrow)
                 .as_mut()
-                .map(|viewport_manager| viewport_manager.navigate_to_viewport_top())
+                .map(super::viewport_manager::ViewportManager::navigate_to_viewport_top)
         };
 
         if let Some(result) = result {
@@ -7502,7 +7497,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             (*viewport_manager_borrow)
                 .as_mut()
-                .map(|viewport_manager| viewport_manager.navigate_to_viewport_middle())
+                .map(super::viewport_manager::ViewportManager::navigate_to_viewport_middle)
         };
 
         if let Some(result) = result {
@@ -7526,7 +7521,7 @@ impl ActionHandlerContext for EnhancedTuiApp {
             let mut viewport_manager_borrow = self.viewport_manager.borrow_mut();
             (*viewport_manager_borrow)
                 .as_mut()
-                .map(|viewport_manager| viewport_manager.navigate_to_viewport_bottom())
+                .map(super::viewport_manager::ViewportManager::navigate_to_viewport_bottom)
         };
 
         if let Some(result) = result {
@@ -7674,14 +7669,14 @@ impl ActionHandlerContext for EnhancedTuiApp {
     fn kill_line(&mut self) {
         use crate::ui::traits::input_ops::InputBehavior;
         InputBehavior::kill_line(self);
-        let message = if !self.state_container.is_kill_ring_empty() {
+        let message = if self.state_container.is_kill_ring_empty() {
+            "Kill line - nothing to kill".to_string()
+        } else {
             let kill_ring = self.state_container.get_kill_ring();
             format!(
                 "Killed to end of line - {} chars in kill ring",
                 kill_ring.len()
             )
-        } else {
-            "Kill line - nothing to kill".to_string()
         };
         self.state_container.set_status_message(message);
     }
@@ -7689,14 +7684,14 @@ impl ActionHandlerContext for EnhancedTuiApp {
     fn kill_line_backward(&mut self) {
         use crate::ui::traits::input_ops::InputBehavior;
         InputBehavior::kill_line_backward(self);
-        let message = if !self.state_container.is_kill_ring_empty() {
+        let message = if self.state_container.is_kill_ring_empty() {
+            "Kill line backward - nothing to kill".to_string()
+        } else {
             let kill_ring = self.state_container.get_kill_ring();
             format!(
                 "Killed to beginning of line - {} chars in kill ring",
                 kill_ring.len()
             )
-        } else {
-            "Kill line backward - nothing to kill".to_string()
         };
         self.state_container.set_status_message(message);
     }
@@ -7845,7 +7840,7 @@ impl InputBehavior for EnhancedTuiApp {
     }
 
     fn set_input_text_with_cursor(&mut self, text: String, cursor: usize) {
-        self.set_input_text_with_cursor(text, cursor)
+        self.set_input_text_with_cursor(text, cursor);
     }
 
     fn state_container(&self) -> &AppStateContainer {
@@ -7886,11 +7881,11 @@ impl YankBehavior for EnhancedTuiApp {
     }
 
     fn set_status_message(&mut self, message: String) {
-        self.state_container.set_status_message(message)
+        self.state_container.set_status_message(message);
     }
 
     fn set_error_status(&mut self, prefix: &str, error: anyhow::Error) {
-        self.set_error_status(prefix, error)
+        self.set_error_status(prefix, error);
     }
 }
 
@@ -7924,7 +7919,7 @@ impl BufferManagementBehavior for EnhancedTuiApp {
     }
 
     fn set_input_text_with_cursor(&mut self, text: String, cursor: usize) {
-        self.set_input_text_with_cursor(text, cursor)
+        self.set_input_text_with_cursor(text, cursor);
     }
 
     fn next_buffer(&mut self) -> String {
@@ -7999,7 +7994,9 @@ impl BufferManagementBehavior for EnhancedTuiApp {
 }
 
 pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()> {
-    let app = if !data_files.is_empty() {
+    let app = if data_files.is_empty() {
+        EnhancedTuiApp::new(api_url)
+    } else {
         // Use ApplicationOrchestrator for clean data source separation
         use crate::services::ApplicationOrchestrator;
 
@@ -8017,7 +8014,7 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
         for file_path in data_files.iter().skip(1) {
             if let Err(e) = orchestrator.load_additional_file(&mut app, file_path) {
                 app.state_container
-                    .set_status_message(format!("Error loading {}: {}", file_path, e));
+                    .set_status_message(format!("Error loading {file_path}: {e}"));
                 continue;
             }
         }
@@ -8037,8 +8034,6 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
         }
 
         app
-    } else {
-        EnhancedTuiApp::new(api_url)
     };
 
     app.run()

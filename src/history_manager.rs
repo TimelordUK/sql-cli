@@ -8,6 +8,7 @@ pub struct HistoryManager {
 }
 
 impl HistoryManager {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             search_query: String::new(),
@@ -59,6 +60,7 @@ impl HistoryManager {
     }
 
     /// Get currently selected match
+    #[must_use]
     pub fn get_selected(&self) -> Option<&HistoryMatch> {
         if self.selected_index < self.matches.len() {
             self.matches.get(self.selected_index)
@@ -81,6 +83,7 @@ impl HistoryManager {
     }
 
     /// Get visible range of matches for rendering
+    #[must_use]
     pub fn get_visible_range(&self, height: usize) -> (usize, usize) {
         if self.matches.is_empty() {
             return (0, 0);

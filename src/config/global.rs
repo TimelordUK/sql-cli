@@ -13,11 +13,10 @@ pub fn init_config(config: Config) {
 /// Get the date notation preference from the global config.
 /// Returns "us" if config is not initialized or on error.
 pub fn get_date_notation() -> String {
-    CONFIG
-        .get()
-        .and_then(|c| c.read().ok())
-        .map(|c| c.behavior.default_date_notation.clone())
-        .unwrap_or_else(|| "us".to_string())
+    CONFIG.get().and_then(|c| c.read().ok()).map_or_else(
+        || "us".to_string(),
+        |c| c.behavior.default_date_notation.clone(),
+    )
 }
 
 /// Get a copy of the behavior config

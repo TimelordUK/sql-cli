@@ -47,6 +47,7 @@ impl Default for StateDispatcher {
 }
 
 impl StateDispatcher {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             buffer: Weak::new(),
@@ -78,12 +79,11 @@ impl StateDispatcher {
         }
 
         // Get buffer reference
-        let buffer_rc = match self.buffer.upgrade() {
-            Some(b) => b,
-            None => {
-                warn!("StateDispatcher: Buffer reference lost!");
-                return;
-            }
+        let buffer_rc = if let Some(b) = self.buffer.upgrade() {
+            b
+        } else {
+            warn!("StateDispatcher: Buffer reference lost!");
+            return;
         };
 
         // Process event to get state changes
@@ -141,12 +141,13 @@ impl StateDispatcher {
     }
 
     /// Get event history for debugging
+    #[must_use]
     pub fn get_event_history(&self) -> &[StateEvent] {
         &self.event_history
     }
 }
 
-/// Example subscriber for VimSearchManager
+/// Example subscriber for `VimSearchManager`
 pub struct VimSearchSubscriber {
     active: bool,
 }
@@ -158,6 +159,7 @@ impl Default for VimSearchSubscriber {
 }
 
 impl VimSearchSubscriber {
+    #[must_use]
     pub fn new() -> Self {
         Self { active: false }
     }
@@ -192,7 +194,7 @@ impl StateSubscriber for VimSearchSubscriber {
         }
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "VimSearchSubscriber"
     }
 }

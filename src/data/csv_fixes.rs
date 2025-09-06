@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 /// Check if a column name needs quoting (contains spaces or special characters)
+#[must_use]
 pub fn needs_quoting(column_name: &str) -> bool {
     column_name.contains(' ')
         || column_name.contains('-')
@@ -16,6 +17,7 @@ pub fn needs_quoting(column_name: &str) -> bool {
 }
 
 /// Quote a column name if necessary
+#[must_use]
 pub fn quote_if_needed(column_name: &str) -> String {
     if needs_quoting(column_name) {
         format!("\"{}\"", column_name.replace('"', "\"\""))
@@ -26,6 +28,7 @@ pub fn quote_if_needed(column_name: &str) -> String {
 
 /// Build a case-insensitive lookup map for column names
 /// Maps lowercase column names to their original case versions
+#[must_use]
 pub fn build_column_lookup(headers: &[String]) -> HashMap<String, String> {
     let mut lookup = HashMap::new();
     for header in headers {
@@ -35,6 +38,7 @@ pub fn build_column_lookup(headers: &[String]) -> HashMap<String, String> {
 }
 
 /// Find a column by name (case-insensitive)
+#[must_use]
 pub fn find_column_case_insensitive<'a>(
     obj: &'a serde_json::Map<String, serde_json::Value>,
     column_name: &str,
@@ -61,6 +65,7 @@ pub fn find_column_case_insensitive<'a>(
 }
 
 /// Parse a column name that might be quoted
+#[must_use]
 pub fn parse_column_name(column: &str) -> &str {
     column.trim().trim_matches('"').trim_matches('\'')
 }

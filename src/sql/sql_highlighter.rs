@@ -22,10 +22,12 @@ impl Default for SqlHighlighter {
 }
 
 impl SqlHighlighter {
+    #[must_use]
     pub fn new() -> Self {
         Self {}
     }
 
+    #[must_use]
     pub fn highlight_sql_line(&self, text: &str) -> Line<'static> {
         // Create syntect objects on-demand
         let syntax_set = SyntaxSet::load_defaults_newlines();
@@ -57,6 +59,7 @@ impl SqlHighlighter {
         Line::from(spans)
     }
 
+    #[must_use]
     pub fn highlight_sql_multiline(&self, text: &str) -> Vec<Line<'static>> {
         let syntax_set = SyntaxSet::load_defaults_newlines();
         let theme_set = ThemeSet::load_defaults();
@@ -104,6 +107,7 @@ impl SqlHighlighter {
     }
 
     /// Simple keyword-based highlighting as fallback
+    #[must_use]
     pub fn simple_sql_highlight(&self, text: &str) -> Line<'static> {
         let keywords = [
             "SELECT", "FROM", "WHERE", "AND", "OR", "IN", "ORDER", "BY", "ASC", "DESC", "INSERT",

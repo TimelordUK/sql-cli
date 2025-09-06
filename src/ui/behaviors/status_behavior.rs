@@ -17,7 +17,7 @@ pub trait StatusBehavior {
 
     /// Set an error message with context
     fn set_error(&mut self, context: &str, error: impl std::fmt::Display) {
-        let msg = format!("{}: {}", context, error);
+        let msg = format!("{context}: {error}");
         tracing::error!("Error status: {}", msg);
         self.buffer_mut().set_status_message(msg);
     }
@@ -43,24 +43,23 @@ pub trait StatusBehavior {
     /// Format and set a query execution status
     fn set_query_status(&mut self, rows: usize, columns: usize, elapsed_ms: u64) {
         self.set_status(format!(
-            "Query executed: {} rows, {} columns ({} ms)",
-            rows, columns, elapsed_ms
+            "Query executed: {rows} rows, {columns} columns ({elapsed_ms} ms)"
         ));
     }
 
     /// Set a search status with match count
     fn set_search_status(&mut self, pattern: &str, current: usize, total: usize) {
         if total == 0 {
-            self.set_status(format!("/{} - no matches", pattern));
+            self.set_status(format!("/{pattern} - no matches"));
         } else {
-            self.set_status(format!("Match {}/{} for '{}'", current, total, pattern));
+            self.set_status(format!("Match {current}/{total} for '{pattern}'"));
         }
     }
 
     /// Set a filter status
     fn set_filter_status(&mut self, active: bool, matches: usize) {
         if active {
-            self.set_status(format!("Filter active: {} matches", matches));
+            self.set_status(format!("Filter active: {matches} matches"));
         } else {
             self.set_status("Filter cleared");
         }
@@ -68,7 +67,7 @@ pub trait StatusBehavior {
 
     /// Set a column operation status
     fn set_column_status(&mut self, operation: &str, column_name: &str) {
-        self.set_status(format!("{}: {}", operation, column_name));
+        self.set_status(format!("{operation}: {column_name}"));
     }
 
     /// Set a navigation status
@@ -78,27 +77,27 @@ pub trait StatusBehavior {
 
     /// Set a mode change status
     fn set_mode_status(&mut self, new_mode: &str) {
-        self.set_status(format!("{} mode", new_mode));
+        self.set_status(format!("{new_mode} mode"));
     }
 
     /// Set a yank operation status
     fn set_yank_status(&mut self, target: &str, size: usize) {
-        self.set_status(format!("Yanked {} ({} items)", target, size));
+        self.set_status(format!("Yanked {target} ({size} items)"));
     }
 
     /// Set a chord mode status
     fn set_chord_status(&mut self, chord: &str, completions: &[String]) {
         if completions.is_empty() {
-            self.set_status(format!("Chord: {} (no completions)", chord));
+            self.set_status(format!("Chord: {chord} (no completions)"));
         } else {
             let completion_str = completions.join(", ");
-            self.set_status(format!("Chord: {} - available: {}", chord, completion_str));
+            self.set_status(format!("Chord: {chord} - available: {completion_str}"));
         }
     }
 
     /// Set a history search status
     fn set_history_status(&mut self, matches: usize) {
-        self.set_status(format!("History search: {} matches", matches));
+        self.set_status(format!("History search: {matches} matches"));
     }
 
     /// Handle status from a result type

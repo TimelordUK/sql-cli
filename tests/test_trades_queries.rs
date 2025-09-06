@@ -4,7 +4,7 @@ use sql_cli::data::query_engine::QueryEngine;
 use std::fs;
 use std::sync::Arc;
 
-/// Load trades.json into a DataTable
+/// Load trades.json into a `DataTable`
 fn load_trades_table() -> Arc<DataTable> {
     let json_str = fs::read_to_string("data/trades.json").expect("Failed to read trades.json");
 
@@ -463,8 +463,7 @@ fn test_linq_contains_method() {
         if let DataValue::String(trader) = &row.values[trader_index] {
             assert!(
                 trader.contains("John"),
-                "Trader {} should contain 'John'",
-                trader
+                "Trader {trader} should contain 'John'"
             );
         }
     }
@@ -489,8 +488,7 @@ fn test_linq_startswith_method() {
         if let DataValue::String(book) = &row.values[book_index] {
             assert!(
                 book.starts_with("EQUITY"),
-                "Book {} should start with 'EQUITY'",
-                book
+                "Book {book} should start with 'EQUITY'"
             );
         }
     }
@@ -515,8 +513,7 @@ fn test_linq_endswith_method() {
         if let DataValue::String(inst) = &row.values[inst_index] {
             assert!(
                 inst.ends_with("Option"),
-                "Instrument {} should end with 'Option'",
-                inst
+                "Instrument {inst} should end with 'Option'"
             );
         }
     }
@@ -567,8 +564,7 @@ fn test_linq_method_complex() {
         if let DataValue::String(cp) = &row.values[cp_index] {
             assert!(
                 cp.starts_with("GOLD") || cp.contains("MORGAN"),
-                "Counterparty {} should start with GOLD or contain MORGAN",
-                cp
+                "Counterparty {cp} should start with GOLD or contain MORGAN"
             );
         }
     }

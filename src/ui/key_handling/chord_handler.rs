@@ -12,11 +12,13 @@ pub struct ChordSequence {
 }
 
 impl ChordSequence {
+    #[must_use]
     pub fn new(keys: Vec<KeyEvent>) -> Self {
         Self { keys }
     }
 
     /// Create a chord from string notation like "yy" or "gg"
+    #[must_use]
     pub fn from_notation(notation: &str) -> Option<Self> {
         let chars: Vec<char> = notation.chars().collect();
         if chars.is_empty() {
@@ -33,11 +35,7 @@ impl ChordSequence {
 
     /// Convert to human-readable string
     pub fn to_string(&self) -> String {
-        self.keys
-            .iter()
-            .map(format_key)
-            .collect::<Vec<_>>()
-            .join("")
+        self.keys.iter().map(format_key).collect::<String>()
     }
 }
 
@@ -81,6 +79,7 @@ impl Default for KeyChordHandler {
 }
 
 impl KeyChordHandler {
+    #[must_use]
     pub fn new() -> Self {
         let mut handler = Self {
             chord_map: HashMap::new(),
@@ -309,15 +308,16 @@ impl KeyChordHandler {
         let modifiers = format_modifiers(key.modifiers);
 
         let entry = if modifiers.is_empty() {
-            format!("[{}] {}", timestamp, key_str)
+            format!("[{timestamp}] {key_str}")
         } else {
-            format!("[{}] {} ({})", timestamp, key_str, modifiers)
+            format!("[{timestamp}] {key_str} ({modifiers})")
         };
 
         self.key_history.push(entry);
     }
 
     /// Get the key press history
+    #[must_use]
     pub fn get_history(&self) -> &[String] {
         &self.key_history
     }
@@ -328,11 +328,13 @@ impl KeyChordHandler {
     }
 
     /// Get current chord mode status
+    #[must_use]
     pub fn is_chord_mode_active(&self) -> bool {
         self.chord_mode_active
     }
 
     /// Get chord mode description
+    #[must_use]
     pub fn get_chord_mode_description(&self) -> Option<&str> {
         self.chord_mode_description.as_deref()
     }
@@ -348,7 +350,9 @@ impl KeyChordHandler {
 
         // Current chord state
         output.push_str("========== CHORD STATE ==========\n");
-        if !self.current_chord.is_empty() {
+        if self.current_chord.is_empty() {
+            output.push_str("No active chord\n");
+        } else {
             output.push_str(&format!(
                 "Current chord: {}\n",
                 self.current_chord
@@ -358,15 +362,13 @@ impl KeyChordHandler {
                     .join(" → ")
             ));
             if let Some(desc) = &self.chord_mode_description {
-                output.push_str(&format!("Mode: {}\n", desc));
+                output.push_str(&format!("Mode: {desc}\n"));
             }
             if let Some(start) = self.chord_start {
                 let elapsed = start.elapsed().as_millis();
                 let remaining = self.chord_timeout.as_millis().saturating_sub(elapsed);
-                output.push_str(&format!("Timeout in: {}ms\n", remaining));
+                output.push_str(&format!("Timeout in: {remaining}ms\n"));
             }
-        } else {
-            output.push_str("No active chord\n");
         }
 
         // Registered chords
@@ -432,7 +434,7 @@ fn format_key(key: &KeyEvent) -> String {
         KeyCode::Tab => result.push_str("Tab"),
         KeyCode::Delete => result.push_str("Del"),
         KeyCode::Insert => result.push_str("Ins"),
-        KeyCode::F(n) => result.push_str(&format!("F{}", n)),
+        KeyCode::F(n) => result.push_str(&format!("F{n}")),
         KeyCode::Left => result.push('←'),
         KeyCode::Right => result.push('→'),
         KeyCode::Up => result.push('↑'),

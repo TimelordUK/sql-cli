@@ -19,6 +19,7 @@ pub struct VirtualTable<'a> {
 }
 
 impl<'a> VirtualTable<'a> {
+    #[must_use]
     pub fn new(headers: Vec<&'a str>, data: &'a [Value], widths: Vec<Constraint>) -> Self {
         Self {
             headers,
@@ -32,16 +33,19 @@ impl<'a> VirtualTable<'a> {
         }
     }
 
+    #[must_use]
     pub fn block(mut self, block: Block<'a>) -> Self {
         self.block = Some(block);
         self
     }
 
+    #[must_use]
     pub fn header_style(mut self, style: Style) -> Self {
         self.header_style = style;
         self
     }
 
+    #[must_use]
     pub fn highlight_style(mut self, style: Style) -> Self {
         self.highlight_style = style;
         self
@@ -59,6 +63,7 @@ pub struct VirtualTableState {
 }
 
 impl VirtualTableState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -122,7 +127,7 @@ impl VirtualTableState {
     }
 }
 
-impl<'a> StatefulWidget for VirtualTable<'a> {
+impl StatefulWidget for VirtualTable<'_> {
     type State = VirtualTableState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {

@@ -148,7 +148,7 @@ pub trait DebugContext {
             .get_state_container_mut()
             .write_to_clipboard(&debug_info)
         {
-            Ok(_) => {
+            Ok(()) => {
                 let status_msg = format!(
                     "DEBUG INFO copied to clipboard ({} chars)!",
                     debug_info.len()
@@ -156,7 +156,7 @@ pub trait DebugContext {
                 self.buffer_mut().set_status_message(status_msg);
             }
             Err(e) => {
-                let status_msg = format!("Clipboard error: {}", e);
+                let status_msg = format!("Clipboard error: {e}");
                 self.buffer_mut().set_status_message(status_msg);
             }
         }
@@ -178,10 +178,12 @@ pub trait DebugContext {
     fn format_navigation_timing(&self) -> String {
         let mut result = String::from("\n========== NAVIGATION TIMING ==========\n");
         let timings = self.get_navigation_timings();
-        if !timings.is_empty() {
+        if timings.is_empty() {
+            result.push_str("No navigation timing data yet (press j/k to navigate)\n");
+        } else {
             result.push_str(&format!("Last {} navigation timings:\n", timings.len()));
             for timing in timings {
-                result.push_str(&format!("  {}\n", timing));
+                result.push_str(&format!("  {timing}\n"));
             }
             // Calculate average
             let total_ms: f64 = timings
@@ -190,10 +192,8 @@ pub trait DebugContext {
                 .sum();
             if !timings.is_empty() {
                 let avg_ms = total_ms / timings.len() as f64;
-                result.push_str(&format!("Average navigation time: {:.3}ms\n", avg_ms));
+                result.push_str(&format!("Average navigation time: {avg_ms:.3}ms\n"));
             }
-        } else {
-            result.push_str("No navigation timing data yet (press j/k to navigate)\n");
         }
         result
     }
@@ -201,10 +201,12 @@ pub trait DebugContext {
     fn format_render_timing(&self) -> String {
         let mut result = String::from("\n========== RENDER TIMING ==========\n");
         let timings = self.get_render_timings();
-        if !timings.is_empty() {
+        if timings.is_empty() {
+            result.push_str("No render timing data yet\n");
+        } else {
             result.push_str(&format!("Last {} render timings:\n", timings.len()));
             for timing in timings {
-                result.push_str(&format!("  {}\n", timing));
+                result.push_str(&format!("  {timing}\n"));
             }
             // Calculate average
             let total_ms: f64 = timings
@@ -213,10 +215,8 @@ pub trait DebugContext {
                 .sum();
             if !timings.is_empty() {
                 let avg_ms = total_ms / timings.len() as f64;
-                result.push_str(&format!("Average render time: {:.3}ms\n", avg_ms));
+                result.push_str(&format!("Average render time: {avg_ms:.3}ms\n"));
             }
-        } else {
-            result.push_str("No render timing data yet\n");
         }
         result
     }
@@ -224,7 +224,7 @@ pub trait DebugContext {
     fn debug_extract_timing(&self, s: &str) -> Option<f64> {
         // Extract timing value from a string like "Navigation: 1.234ms"
         if let Some(ms_pos) = s.find("ms") {
-            let start = s[..ms_pos].rfind(' ').map(|p| p + 1).unwrap_or(0);
+            let start = s[..ms_pos].rfind(' ').map_or(0, |p| p + 1);
             s[start..ms_pos].parse().ok()
         } else {
             None
@@ -242,7 +242,7 @@ pub trait DebugContext {
 
         // Get current memory
         let current_mb = crate::utils::memory_tracker::get_memory_mb();
-        output.push_str(&format!("Current Memory: {} MB\n", current_mb));
+        output.push_str(&format!("Current Memory: {current_mb} MB\n"));
 
         // Perform memory audit - we always have a buffer
         let buffer = self.buffer();
@@ -291,12 +291,11 @@ pub trait DebugContext {
     ) -> String {
         format!(
             "\n========== BUFFER STATE ==========\n\
-            Current Mode: {:?}\n\
-            Last Executed Query: '{}'\n\
-            Input Text: '{}'\n\
-            Input Cursor: {}\n\
-            Visual Cursor: {}\n",
-            mode, last_query, input_text, cursor_pos, visual_cursor
+            Current Mode: {mode:?}\n\
+            Last Executed Query: '{last_query}'\n\
+            Input Text: '{input_text}'\n\
+            Input Cursor: {cursor_pos}\n\
+            Visual Cursor: {visual_cursor}\n"
         )
     }
 
@@ -309,11 +308,10 @@ pub trait DebugContext {
     ) -> String {
         format!(
             "\n========== RESULTS STATE ==========\n\
-            Total Results: {}\n\
-            Filtered Results: {}\n\
-            Selected Row: {:?}\n\
-            Current Column: {}\n",
-            results_count, filtered_count, selected_row, current_column
+            Total Results: {results_count}\n\
+            Filtered Results: {filtered_count}\n\
+            Selected Row: {selected_row:?}\n\
+            Current Column: {current_column}\n"
         )
     }
 
@@ -324,8 +322,7 @@ pub trait DebugContext {
             debug_info.push_str("\n========== VIEWPORT STATE ==========\n");
             let (scroll_row, scroll_col) = buffer.get_scroll_offset();
             debug_info.push_str(&format!(
-                "Scroll Offset: row={}, col={}\n",
-                scroll_row, scroll_col
+                "Scroll Offset: row={scroll_row}, col={scroll_col}\n"
             ));
             debug_info.push_str(&format!(
                 "Current Column: {}\n",
@@ -334,7 +331,7 @@ pub trait DebugContext {
             debug_info.push_str(&format!("Selected Row: {:?}\n", buffer.get_selected_row()));
             debug_info.push_str(&format!("Viewport Lock: {}\n", buffer.is_viewport_lock()));
             if let Some(lock_row) = buffer.get_viewport_lock_row() {
-                debug_info.push_str(&format!("Viewport Lock Row: {}\n", lock_row));
+                debug_info.push_str(&format!("Viewport Lock Row: {lock_row}\n"));
             }
 
             // Add ViewportManager crosshair position
@@ -342,8 +339,7 @@ pub trait DebugContext {
                 let visual_row = viewport_manager.get_crosshair_row();
                 let visual_col = viewport_manager.get_crosshair_col();
                 debug_info.push_str(&format!(
-                    "ViewportManager Crosshair (visual): row={}, col={}\n",
-                    visual_row, visual_col
+                    "ViewportManager Crosshair (visual): row={visual_row}, col={visual_col}\n"
                 ));
 
                 // Also show viewport-relative position
@@ -351,8 +347,7 @@ pub trait DebugContext {
                     viewport_manager.get_crosshair_viewport_position()
                 {
                     debug_info.push_str(&format!(
-                        "Crosshair in viewport (relative): row={}, col={}\n",
-                        viewport_row, viewport_col
+                        "Crosshair in viewport (relative): row={viewport_row}, col={viewport_col}\n"
                     ));
                 }
             }
@@ -364,10 +359,9 @@ pub trait DebugContext {
                 let visible_rows = buffer.get_last_visible_rows();
                 debug_info.push_str("\nVisible Area:\n");
                 debug_info.push_str(&format!(
-                    "  Total Data: {} rows × {} columns\n",
-                    total_rows, total_cols
+                    "  Total Data: {total_rows} rows × {total_cols} columns\n"
                 ));
-                debug_info.push_str(&format!("  Visible Rows in Terminal: {}\n", visible_rows));
+                debug_info.push_str(&format!("  Visible Rows in Terminal: {visible_rows}\n"));
 
                 // Calculate what section is being viewed
                 if total_rows > 0 && visible_rows > 0 {
@@ -420,8 +414,7 @@ pub trait DebugContext {
                 ));
                 for (visible_idx, col_name, datatable_idx) in &column_mappings {
                     debug_info.push_str(&format!(
-                        "  V[{:3}] → DT[{:3}] : {}\n",
-                        visible_idx, datatable_idx, col_name
+                        "  V[{visible_idx:3}] → DT[{datatable_idx:3}] : {col_name}\n"
                     ));
                 }
 
@@ -433,22 +426,20 @@ pub trait DebugContext {
 
                 // Get the visible_columns indices from DataView
                 let visible_indices = dataview.get_visible_column_indices();
-                debug_info.push_str(&format!("visible_columns array: {:?}\n", visible_indices));
+                debug_info.push_str(&format!("visible_columns array: {visible_indices:?}\n"));
 
                 // Show pinned columns
                 let pinned_names = dataview.get_pinned_column_names();
-                if !pinned_names.is_empty() {
+                if pinned_names.is_empty() {
+                    debug_info.push_str("Pinned Columns: None\n");
+                } else {
                     debug_info.push_str(&format!("Pinned Columns ({}):\n", pinned_names.len()));
                     for (idx, name) in pinned_names.iter().enumerate() {
                         // Find source index for this pinned column
                         let source_idx = dataview.source().get_column_index(name).unwrap_or(999);
-                        debug_info.push_str(&format!(
-                            "  [{}] {} (source_idx: {})\n",
-                            idx, name, source_idx
-                        ));
+                        debug_info
+                            .push_str(&format!("  [{idx}] {name} (source_idx: {source_idx})\n"));
                     }
-                } else {
-                    debug_info.push_str("Pinned Columns: None\n");
                 }
 
                 // Show sort state
@@ -461,11 +452,9 @@ pub trait DebugContext {
                         if let Some(col_idx) = sort_state.column {
                             let col_name = visible_columns
                                 .get(col_idx)
-                                .map(|s| s.as_str())
-                                .unwrap_or("unknown");
+                                .map_or("unknown", std::string::String::as_str);
                             debug_info.push_str(&format!(
-                                "Sort State: Ascending on column '{}' (idx: {})\n",
-                                col_name, col_idx
+                                "Sort State: Ascending on column '{col_name}' (idx: {col_idx})\n"
                             ));
                         }
                     }
@@ -473,11 +462,9 @@ pub trait DebugContext {
                         if let Some(col_idx) = sort_state.column {
                             let col_name = visible_columns
                                 .get(col_idx)
-                                .map(|s| s.as_str())
-                                .unwrap_or("unknown");
+                                .map_or("unknown", std::string::String::as_str);
                             debug_info.push_str(&format!(
-                                "Sort State: Descending on column '{}' (idx: {})\n",
-                                col_name, col_idx
+                                "Sort State: Descending on column '{col_name}' (idx: {col_idx})\n"
                             ));
                         }
                     }

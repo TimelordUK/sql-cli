@@ -1,6 +1,7 @@
-/// Text processing utilities extracted from enhanced_tui
+/// Text processing utilities extracted from `enhanced_tui`
 /// Extract a partial word at the cursor position in a query string
 /// Used for completion and search functionality
+#[must_use]
 pub fn extract_partial_word_at_cursor(query: &str, cursor_pos: usize) -> Option<String> {
     if cursor_pos == 0 || cursor_pos > query.len() {
         return None;
@@ -67,6 +68,7 @@ pub fn extract_partial_word_at_cursor(query: &str, cursor_pos: usize) -> Option<
 }
 
 /// Get the token at cursor position in SQL text
+#[must_use]
 pub fn get_token_at_cursor(sql_text: &str, cursor_pos: usize) -> Option<String> {
     if sql_text.is_empty() || cursor_pos > sql_text.len() {
         return None;
@@ -109,6 +111,7 @@ pub fn get_token_at_cursor(sql_text: &str, cursor_pos: usize) -> Option<String> 
 }
 
 /// Calculate the cursor position within a token for syntax highlighting
+#[must_use]
 pub fn get_cursor_token_position(sql_text: &str, cursor_pos: usize) -> (usize, usize) {
     if let Some(token) = get_token_at_cursor(sql_text, cursor_pos) {
         // Find where this token starts in the text

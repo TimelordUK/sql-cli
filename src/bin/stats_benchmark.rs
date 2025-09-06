@@ -16,23 +16,23 @@ fn main() {
         println!("Test case: {} - {} total values", name, data.len());
 
         // Convert to &str for the optimized version
-        let str_refs: Vec<&str> = data.iter().map(|s| s.as_str()).collect();
+        let str_refs: Vec<&str> = data.iter().map(std::string::String::as_str).collect();
 
         // Benchmark original approach (with cloning)
         let start = Instant::now();
         let stats1 = calculate_stats_with_cloning(&data);
         let duration1 = start.elapsed();
-        println!("  With cloning: {:?}", duration1);
+        println!("  With cloning: {duration1:?}");
 
         // Benchmark optimized approach (without cloning)
         let start = Instant::now();
         let stats2 = calculate_stats_without_cloning(&str_refs);
         let duration2 = start.elapsed();
-        println!("  Without cloning: {:?}", duration2);
+        println!("  Without cloning: {duration2:?}");
 
         // Calculate speedup
         let speedup = duration1.as_secs_f64() / duration2.as_secs_f64();
-        println!("  Speedup: {:.2}x faster", speedup);
+        println!("  Speedup: {speedup:.2}x faster");
 
         // Verify results are the same
         assert_eq!(stats1.unique_count, stats2.unique_count);
@@ -48,7 +48,7 @@ fn generate_test_data(total: usize, unique: usize) -> Vec<String> {
 
     // Generate unique strings
     let unique_strings: Vec<String> = (0..unique)
-        .map(|i| format!("value_{:05}_with_some_longer_text_to_simulate_real_data", i))
+        .map(|i| format!("value_{i:05}_with_some_longer_text_to_simulate_real_data"))
         .collect();
 
     // Fill the rest by repeating

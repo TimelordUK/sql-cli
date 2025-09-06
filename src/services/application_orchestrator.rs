@@ -11,6 +11,7 @@ pub struct ApplicationOrchestrator {
 }
 
 impl ApplicationOrchestrator {
+    #[must_use]
     pub fn new(case_insensitive: bool, auto_hide_empty: bool) -> Self {
         Self {
             data_loader: DataLoaderService::new(case_insensitive),
@@ -70,8 +71,8 @@ impl ApplicationOrchestrator {
     }
 
     /// Execute a query in the TUI
-    /// Note: This is a simplified version - the TUI itself should use execute_query_v2
-    /// which properly handles the closures for apply_to_tui
+    /// Note: This is a simplified version - the TUI itself should use `execute_query_v2`
+    /// which properly handles the closures for `apply_to_tui`
     pub fn execute_query(&mut self, app: &mut EnhancedTuiApp, query: &str) -> Result<()> {
         // For now, just delegate to the TUI's own execute_query_v2 method
         // This avoids the borrowing issues with closures
@@ -92,6 +93,7 @@ impl Default for ApplicationOrchestratorBuilder {
 }
 
 impl ApplicationOrchestratorBuilder {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             case_insensitive: false,
@@ -99,16 +101,19 @@ impl ApplicationOrchestratorBuilder {
         }
     }
 
+    #[must_use]
     pub fn with_case_insensitive(mut self, value: bool) -> Self {
         self.case_insensitive = value;
         self
     }
 
+    #[must_use]
     pub fn with_auto_hide_empty(mut self, value: bool) -> Self {
         self.auto_hide_empty = value;
         self
     }
 
+    #[must_use]
     pub fn build(self) -> ApplicationOrchestrator {
         ApplicationOrchestrator::new(self.case_insensitive, self.auto_hide_empty)
     }

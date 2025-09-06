@@ -3,13 +3,13 @@ use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use sql_cli::ui::viewport_manager::ViewportManager;
 use std::sync::Arc;
 
-/// Helper function to create a test DataView with specified dimensions
+/// Helper function to create a test `DataView` with specified dimensions
 fn create_test_dataview(rows: usize, cols: usize) -> DataView {
     let mut table = DataTable::new("test_table".to_string());
 
     // Add columns
     for i in 0..cols {
-        let col_name = format!("col_{}", i);
+        let col_name = format!("col_{i}");
         table.add_column(DataColumn::new(col_name));
     }
 
@@ -17,7 +17,7 @@ fn create_test_dataview(rows: usize, cols: usize) -> DataView {
     for row in 0..rows {
         let mut row_data = vec![];
         for col in 0..cols {
-            row_data.push(DataValue::String(format!("r{}c{}", row, col)));
+            row_data.push(DataValue::String(format!("r{row}c{col}")));
         }
         table.add_row(DataRow::new(row_data)).unwrap();
     }
@@ -25,7 +25,7 @@ fn create_test_dataview(rows: usize, cols: usize) -> DataView {
     DataView::new(Arc::new(table))
 }
 
-/// Helper function to create a test DataView with varied column widths
+/// Helper function to create a test `DataView` with varied column widths
 fn create_test_dataview_with_varied_widths() -> DataView {
     let mut table = DataTable::new("test_table".to_string());
 
@@ -58,8 +58,8 @@ fn create_test_dataview_with_varied_widths() -> DataView {
         table
             .add_row(DataRow::new(vec![
                 DataValue::String(i.to_string()),
-                DataValue::String(format!("Content {}", i)),
-                DataValue::String(format!("Med {}", i)),
+                DataValue::String(format!("Content {i}")),
+                DataValue::String(format!("Med {i}")),
                 DataValue::String("a".to_string()),
             ]))
             .unwrap();
@@ -200,8 +200,8 @@ fn test_column_width_calculations() {
 
     // Check that all columns have reasonable widths
     for (col_idx, width) in widths.iter().enumerate() {
-        assert!(*width > 0, "Column {} should have positive width", col_idx);
-        assert!(*width <= 50, "Column {} width should be capped", col_idx);
+        assert!(*width > 0, "Column {col_idx} should have positive width");
+        assert!(*width <= 50, "Column {col_idx} width should be capped");
     }
 }
 

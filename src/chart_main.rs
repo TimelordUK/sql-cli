@@ -77,15 +77,14 @@ fn main() -> Result<()> {
         "candlestick" => ChartType::Candlestick,
         _ => {
             eprintln!(
-                "Invalid chart type '{}'. Supported types: line, scatter, bar, candlestick",
-                chart_type_str
+                "Invalid chart type '{chart_type_str}'. Supported types: line, scatter, bar, candlestick"
             );
             std::process::exit(1);
         }
     };
 
     // Load data
-    println!("Loading data from '{}'...", file_path);
+    println!("Loading data from '{file_path}'...");
     let data_view = load_data_file(file_path)?;
     println!(
         "Loaded {} rows, {} columns",
@@ -94,7 +93,7 @@ fn main() -> Result<()> {
     );
 
     // Execute the SQL query to get filtered data
-    println!("Executing query: {}", query);
+    println!("Executing query: {query}");
     let query_engine = QueryEngine::new();
     let filtered_view =
         query_engine.execute(std::sync::Arc::new(data_view.source().clone()), query)?;

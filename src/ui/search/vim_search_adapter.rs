@@ -1,4 +1,4 @@
-//! Adapter to make VimSearchManager work with StateDispatcher
+//! Adapter to make `VimSearchManager` work with `StateDispatcher`
 
 use crate::app_state_container::AppStateContainer;
 use crate::buffer::{AppMode, Buffer, BufferAPI};
@@ -10,7 +10,7 @@ use crate::ui::viewport_manager::ViewportManager;
 use crossterm::event::KeyCode;
 use tracing::{debug, info};
 
-/// Adapter that connects VimSearchManager to the state dispatcher
+/// Adapter that connects `VimSearchManager` to the state dispatcher
 pub struct VimSearchAdapter {
     manager: VimSearchManager,
     is_active: bool,
@@ -23,6 +23,7 @@ impl Default for VimSearchAdapter {
 }
 
 impl VimSearchAdapter {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             manager: VimSearchManager::new(),
@@ -31,6 +32,7 @@ impl VimSearchAdapter {
     }
 
     /// Create with a specific manager (for testing or advanced use)
+    #[must_use]
     pub fn with_manager(manager: VimSearchManager) -> Self {
         Self {
             manager,
@@ -38,7 +40,7 @@ impl VimSearchAdapter {
         }
     }
 
-    /// Check if vim search should handle a key based on AppStateContainer state
+    /// Check if vim search should handle a key based on `AppStateContainer` state
     pub fn should_handle_key(&self, state: &AppStateContainer) -> bool {
         // Use AppStateContainer's vim search check
         let should_handle = state.vim_search_should_handle_key();
@@ -79,6 +81,7 @@ impl VimSearchAdapter {
     }
 
     /// Get the inner manager
+    #[must_use]
     pub fn manager(&self) -> &VimSearchManager {
         &self.manager
     }
@@ -88,7 +91,7 @@ impl VimSearchAdapter {
         &mut self.manager
     }
 
-    /// Handle a key press through AppStateContainer (simplified interface)
+    /// Handle a key press through `AppStateContainer` (simplified interface)
     /// Returns true if key was handled, false to let it fall through
     pub fn handle_key(&mut self, key: KeyCode, state: &mut AppStateContainer) -> bool {
         let mode = state.get_mode();
@@ -128,7 +131,7 @@ impl VimSearchAdapter {
         // The TUI will map them to NextSearchMatch/PreviousSearchMatch actions
         // which will then call vim_search_next()/vim_search_previous()
         match key {
-            KeyCode::Char('n') | KeyCode::Char('N') => {
+            KeyCode::Char('n' | 'N') => {
                 info!(
                     "VimSearchAdapter: Navigation key '{}' - letting TUI handle via action system",
                     if key == KeyCode::Char('n') { "n" } else { "N" }
@@ -145,7 +148,7 @@ impl VimSearchAdapter {
         }
     }
 
-    /// Handle a key press - delegates to VimSearchManager if appropriate (legacy)
+    /// Handle a key press - delegates to `VimSearchManager` if appropriate (legacy)
     pub fn handle_key_legacy(
         &mut self,
         key: KeyCode,
@@ -224,21 +227,25 @@ impl VimSearchAdapter {
     }
 
     /// Check if the adapter is active (has vim search running)
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.is_active || self.manager.is_active()
     }
 
     /// Check if we're currently navigating through search results
+    #[must_use]
     pub fn is_navigating(&self) -> bool {
         self.manager.is_navigating()
     }
 
     /// Get the current search pattern
+    #[must_use]
     pub fn get_pattern(&self) -> Option<String> {
         self.manager.get_pattern()
     }
 
     /// Get match information (current, total)
+    #[must_use]
     pub fn get_match_info(&self) -> Option<(usize, usize)> {
         self.manager.get_match_info()
     }
@@ -357,7 +364,7 @@ impl StateSubscriber for VimSearchAdapter {
         }
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "VimSearchAdapter"
     }
 }

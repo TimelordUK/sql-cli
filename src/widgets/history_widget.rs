@@ -85,8 +85,8 @@ impl HistoryWidget {
                         .fuzzy_indices(&entry.command, &self.state.search_query)
                         .map(|(score, indices)| HistoryMatch {
                             entry,
-                            indices,
                             score,
+                            indices,
                         })
                 })
                 .collect();

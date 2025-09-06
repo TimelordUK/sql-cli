@@ -25,19 +25,19 @@ fn main() {
         } else if i == 0 {
             "id".to_string()
         } else {
-            format!("col{}", i)
+            format!("col{i}")
         };
         table.add_column(DataColumn::new(&col_name));
     }
 
     // Add some sample data
     for row_id in 1..=5 {
-        let mut values = vec![DataValue::Integer(row_id as i64)];
+        let mut values = vec![DataValue::Integer(i64::from(row_id))];
         for col in 1..60 {
             if (51..=56).contains(&col) {
-                values.push(DataValue::String(format!("LongValue{}", col)));
+                values.push(DataValue::String(format!("LongValue{col}")));
             } else {
-                values.push(DataValue::String(format!("A{}", col)));
+                values.push(DataValue::String(format!("A{col}")));
             }
         }
         table.add_row(DataRow::new(values)).unwrap();
@@ -59,7 +59,7 @@ fn main() {
         let visible_indices = viewport_manager.calculate_visible_column_indices(width);
         let efficiency = viewport_manager.calculate_efficiency_metrics(width);
 
-        println!("Terminal width: {}w", width);
+        println!("Terminal width: {width}w");
         println!("  Visible columns: {}", visible_indices.len());
         println!("  Used width: {}w", efficiency.used_width);
         println!("  Wasted space: {}w", efficiency.wasted_space);
@@ -74,8 +74,7 @@ fn main() {
         let optimal_absolute_offset = optimal_scrollable_offset + pinned_count;
 
         println!(
-            "  Optimal offset for last column: {} (scrollable), {} (absolute)",
-            optimal_scrollable_offset, optimal_absolute_offset
+            "  Optimal offset for last column: {optimal_scrollable_offset} (scrollable), {optimal_absolute_offset} (absolute)"
         );
 
         // Set viewport to optimal offset and recalculate

@@ -16,6 +16,7 @@ pub struct StatsWidget {
 }
 
 impl StatsWidget {
+    #[must_use]
     pub fn new() -> Self {
         Self { handle_keys: true }
     }
@@ -31,7 +32,7 @@ impl StatsWidget {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 StatsAction::Quit
             }
-            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('S') => StatsAction::Close,
+            KeyCode::Char('q' | 'S') | KeyCode::Esc => StatsAction::Close,
             _ => StatsAction::Continue,
         }
     }
@@ -89,19 +90,19 @@ impl StatsWidget {
             );
 
             if let Some(min) = stats.min {
-                lines.push(Line::from(format!("  Min: {:.2}", min)));
+                lines.push(Line::from(format!("  Min: {min:.2}")));
             }
             if let Some(max) = stats.max {
-                lines.push(Line::from(format!("  Max: {:.2}", max)));
+                lines.push(Line::from(format!("  Max: {max:.2}")));
             }
             if let Some(mean) = stats.mean {
-                lines.push(Line::from(format!("  Mean: {:.2}", mean)));
+                lines.push(Line::from(format!("  Mean: {mean:.2}")));
             }
             if let Some(median) = stats.median {
-                lines.push(Line::from(format!("  Median: {:.2}", median)));
+                lines.push(Line::from(format!("  Median: {median:.2}")));
             }
             if let Some(sum) = stats.sum {
-                lines.push(Line::from(format!("  Sum: {:.2}", sum)));
+                lines.push(Line::from(format!("  Sum: {sum:.2}")));
             }
             lines.push(Line::from(""));
         }
@@ -120,7 +121,7 @@ impl StatsWidget {
             let mut freq_vec: Vec<(&String, &usize)> = freq_map.iter().collect();
             freq_vec.sort_by(|a, b| b.1.cmp(a.1));
 
-            let max_count = freq_vec.first().map(|(_, c)| **c).unwrap_or(1);
+            let max_count = freq_vec.first().map_or(1, |(_, c)| **c);
 
             for (value, count) in freq_vec.iter().take(20) {
                 let bar_width = ((**count as f64 / max_count as f64) * 30.0) as usize;
@@ -128,12 +129,9 @@ impl StatsWidget {
                 let display_value = if value.len() > 30 {
                     format!("{}...", &value[..27])
                 } else {
-                    value.to_string()
+                    (*value).to_string()
                 };
-                lines.push(Line::from(format!(
-                    "  {:30} {} ({})",
-                    display_value, bar, count
-                )));
+                lines.push(Line::from(format!("  {display_value:30} {bar} ({count})")));
             }
 
             if freq_vec.len() > 20 {

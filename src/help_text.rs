@@ -2,11 +2,12 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 
 /// Manages help text content for the TUI
-/// Extracted from the monolithic enhanced_tui.rs
+/// Extracted from the monolithic `enhanced_tui.rs`
 pub struct HelpText;
 
 impl HelpText {
     /// Get the left column content for help display
+    #[must_use]
     pub fn left_column() -> Vec<Line<'static>> {
         vec![
             Line::from("SQL CLI Help - Enhanced Features 🚀").style(
@@ -117,6 +118,7 @@ impl HelpText {
     }
 
     /// Get the right column content for help display
+    #[must_use]
     pub fn right_column() -> Vec<Line<'static>> {
         vec![
             Line::from("Use ↓/↑ or j/k to scroll help").style(Style::default().fg(Color::DarkGray)),

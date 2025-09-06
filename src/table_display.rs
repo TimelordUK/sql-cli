@@ -46,7 +46,7 @@ pub fn display_results(data: &[Value], fields: &[String]) {
                     Some(Value::Bool(b)) => b.to_string(),
                     Some(Value::Null) => "NULL".to_string(),
                     Some(v) => v.to_string(),
-                    None => "".to_string(),
+                    None => String::new(),
                 })
                 .collect();
             table.add_row(row);
@@ -90,9 +90,9 @@ pub fn export_to_csv(
                     Some(Value::String(s)) => s.clone(),
                     Some(Value::Number(n)) => n.to_string(),
                     Some(Value::Bool(b)) => b.to_string(),
-                    Some(Value::Null) => "".to_string(),
+                    Some(Value::Null) => String::new(),
                     Some(v) => v.to_string(),
-                    None => "".to_string(),
+                    None => String::new(),
                 })
                 .collect();
             wtr.write_record(&row)?;
@@ -100,6 +100,6 @@ pub fn export_to_csv(
     }
 
     wtr.flush()?;
-    println!("{}", format!("Results exported to {}", filename).green());
+    println!("{}", format!("Results exported to {filename}").green());
     Ok(())
 }

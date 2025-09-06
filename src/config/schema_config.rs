@@ -14,6 +14,7 @@ pub struct TableConfig {
 }
 
 // Load schema from a JSON file if it exists, otherwise use defaults
+#[must_use]
 pub fn load_schema_config() -> SchemaConfig {
     // Check for schema.json in current directory or config directory
     let mut paths = vec![
@@ -32,7 +33,7 @@ pub fn load_schema_config() -> SchemaConfig {
         if Path::new(&path).exists() {
             if let Ok(contents) = fs::read_to_string(&path) {
                 if let Ok(config) = serde_json::from_str::<SchemaConfig>(&contents) {
-                    eprintln!("Loaded schema from: {}", path);
+                    eprintln!("Loaded schema from: {path}");
                     return config;
                 }
             }

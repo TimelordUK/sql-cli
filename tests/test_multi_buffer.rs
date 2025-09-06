@@ -31,7 +31,7 @@ fn test_buffer_navigation() -> Result<()> {
     // Create 3 buffers
     for i in 0..3 {
         let mut buffer = Buffer::new(0);
-        buffer.set_input_text(format!("Buffer {}", i));
+        buffer.set_input_text(format!("Buffer {i}"));
         manager.add_buffer(buffer);
     }
 
@@ -69,7 +69,7 @@ fn test_buffer_close() -> Result<()> {
     // Create 3 buffers with different content
     for i in 0..3 {
         let mut buffer = Buffer::new(0);
-        buffer.set_input_text(format!("Buffer {}", i));
+        buffer.set_input_text(format!("Buffer {i}"));
         manager.add_buffer(buffer);
     }
 

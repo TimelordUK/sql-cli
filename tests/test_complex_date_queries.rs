@@ -56,13 +56,13 @@ fn test_date_comparison_with_datetime_function() -> Result<()> {
     assert_eq!(result1.count, 4, "Should find 4 trades after 2025-01-01");
 
     // Test 2: Complex query with date, string methods, and numeric range
-    let query2 = r#"
+    let query2 = r"
         SELECT * FROM trades 
         WHERE book.StartsWith('equi') 
         AND commission BETWEEN 2000 AND 5000 
         AND createdDate > DateTime(2025,01,01)
         ORDER BY commission DESC
-    "#;
+    ";
     let result2 = client.query_csv(query2)?;
     assert_eq!(
         result2.count, 3,
@@ -86,11 +86,11 @@ fn test_date_comparison_with_datetime_function() -> Result<()> {
     assert_eq!(result3.count, 3, "Should find 3 trades after 2025-01-15");
 
     // Test 4: Combine date with Length() method
-    let query4 = r#"
+    let query4 = r"
         SELECT * FROM trades 
         WHERE book.Length() > 10 
         AND createdDate > DateTime(2025,01,01)
-    "#;
+    ";
     let result4 = client.query_csv(query4)?;
     assert!(
         result4.count > 0,
@@ -98,11 +98,11 @@ fn test_date_comparison_with_datetime_function() -> Result<()> {
     );
 
     // Test 5: Date with OR conditions
-    let query5 = r#"
+    let query5 = r"
         SELECT * FROM trades 
         WHERE createdDate < DateTime(2025,01,01) 
         OR commission > 5000
-    "#;
+    ";
     let result5 = client.query_csv(query5)?;
     assert_eq!(
         result5.count, 2,
@@ -228,7 +228,7 @@ fn test_complex_linq_with_dates() -> Result<()> {
     client.load_from_json(trades, "trades")?;
 
     // Complex query similar to the one in the debug output
-    let complex_query = r#"
+    let complex_query = r"
         SELECT * FROM trades 
         WHERE book.Length() > 10 
         AND book.StartsWith('equi') 
@@ -236,7 +236,7 @@ fn test_complex_linq_with_dates() -> Result<()> {
         AND createdDate > DateTime(2025,01,01)
         ORDER BY commission DESC
         LIMIT 10
-    "#;
+    ";
 
     let result = client.query_csv(complex_query)?;
 
@@ -264,12 +264,12 @@ fn test_complex_linq_with_dates() -> Result<()> {
     }
 
     // Test with Contains method and dates
-    let query_with_contains = r#"
+    let query_with_contains = r"
         SELECT * FROM trades 
         WHERE book.Contains('equity')
         AND createdDate > DateTime(2025,01,01)
         AND status = 'confirmed'
-    "#;
+    ";
 
     let result2 = client.query_csv(query_with_contains)?;
     assert_eq!(

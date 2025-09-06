@@ -26,6 +26,7 @@ pub struct CursorMovementResult {
 // ========== Pure Text Manipulation Functions ==========
 
 /// Kill text from cursor to end of line (Ctrl+K behavior)
+#[must_use]
 pub fn kill_line(text: &str, cursor_position: usize) -> TextOperationResult {
     let text_len = text.len();
 
@@ -42,8 +43,7 @@ pub fn kill_line(text: &str, cursor_position: usize) -> TextOperationResult {
     // Find the end of the current line
     let line_end = text[cursor_position..]
         .find('\n')
-        .map(|pos| cursor_position + pos)
-        .unwrap_or(text_len);
+        .map_or(text_len, |pos| cursor_position + pos);
 
     let killed = text[cursor_position..line_end].to_string();
     let mut new_text = String::with_capacity(text_len);
@@ -62,11 +62,12 @@ pub fn kill_line(text: &str, cursor_position: usize) -> TextOperationResult {
         new_text,
         new_cursor_position: cursor_position,
         killed_text: Some(killed),
-        description: format!("Killed {} characters", killed_len),
+        description: format!("Killed {killed_len} characters"),
     }
 }
 
 /// Kill text from beginning of line to cursor (Ctrl+U behavior)
+#[must_use]
 pub fn kill_line_backward(text: &str, cursor_position: usize) -> TextOperationResult {
     if cursor_position == 0 {
         // Cursor at start, nothing to kill
@@ -79,10 +80,7 @@ pub fn kill_line_backward(text: &str, cursor_position: usize) -> TextOperationRe
     }
 
     // Find the start of the current line
-    let line_start = text[..cursor_position]
-        .rfind('\n')
-        .map(|pos| pos + 1)
-        .unwrap_or(0);
+    let line_start = text[..cursor_position].rfind('\n').map_or(0, |pos| pos + 1);
 
     let killed = text[line_start..cursor_position].to_string();
     let mut new_text = String::with_capacity(text.len());
@@ -94,11 +92,12 @@ pub fn kill_line_backward(text: &str, cursor_position: usize) -> TextOperationRe
         new_text,
         new_cursor_position: line_start,
         killed_text: Some(killed),
-        description: format!("Killed {} characters backward", killed_len),
+        description: format!("Killed {killed_len} characters backward"),
     }
 }
 
 /// Delete word backward from cursor (Ctrl+W behavior)
+#[must_use]
 pub fn delete_word_backward(text: &str, cursor_position: usize) -> TextOperationResult {
     if cursor_position == 0 {
         return TextOperationResult {
@@ -111,7 +110,7 @@ pub fn delete_word_backward(text: &str, cursor_position: usize) -> TextOperation
 
     // Skip any trailing whitespace
     let mut pos = cursor_position;
-    while pos > 0 && text.chars().nth(pos - 1).is_some_and(|c| c.is_whitespace()) {
+    while pos > 0 && text.chars().nth(pos - 1).is_some_and(char::is_whitespace) {
         pos -= 1;
     }
 
@@ -120,12 +119,7 @@ pub fn delete_word_backward(text: &str, cursor_position: usize) -> TextOperation
         0
     } else {
         let mut start = pos;
-        while start > 0
-            && !text
-                .chars()
-                .nth(start - 1)
-                .is_some_and(|c| c.is_whitespace())
-        {
+        while start > 0 && !text.chars().nth(start - 1).is_some_and(char::is_whitespace) {
             start -= 1;
         }
         start
@@ -141,11 +135,12 @@ pub fn delete_word_backward(text: &str, cursor_position: usize) -> TextOperation
         new_text,
         new_cursor_position: word_start,
         killed_text: Some(killed),
-        description: format!("Deleted word: '{}'", killed_trimmed),
+        description: format!("Deleted word: '{killed_trimmed}'"),
     }
 }
 
 /// Delete word forward from cursor (Alt+D behavior)
+#[must_use]
 pub fn delete_word_forward(text: &str, cursor_position: usize) -> TextOperationResult {
     let text_len = text.len();
     if cursor_position >= text_len {
@@ -159,7 +154,7 @@ pub fn delete_word_forward(text: &str, cursor_position: usize) -> TextOperationR
 
     // Skip any leading whitespace
     let mut pos = cursor_position;
-    while pos < text_len && text.chars().nth(pos).is_some_and(|c| c.is_whitespace()) {
+    while pos < text_len && text.chars().nth(pos).is_some_and(char::is_whitespace) {
         pos += 1;
     }
 
@@ -168,7 +163,7 @@ pub fn delete_word_forward(text: &str, cursor_position: usize) -> TextOperationR
         text_len
     } else {
         let mut end = pos;
-        while end < text_len && !text.chars().nth(end).is_some_and(|c| c.is_whitespace()) {
+        while end < text_len && !text.chars().nth(end).is_some_and(char::is_whitespace) {
             end += 1;
         }
         end
@@ -184,13 +179,14 @@ pub fn delete_word_forward(text: &str, cursor_position: usize) -> TextOperationR
         new_text,
         new_cursor_position: cursor_position,
         killed_text: Some(killed),
-        description: format!("Deleted word: '{}'", killed_trimmed),
+        description: format!("Deleted word: '{killed_trimmed}'"),
     }
 }
 
 // ========== Pure Cursor Movement Functions ==========
 
 /// Move cursor backward one word (Ctrl+Left or Alt+B)
+#[must_use]
 pub fn move_word_backward(text: &str, cursor_position: usize) -> CursorMovementResult {
     if cursor_position == 0 {
         return CursorMovementResult {
@@ -201,7 +197,7 @@ pub fn move_word_backward(text: &str, cursor_position: usize) -> CursorMovementR
 
     // Skip any trailing whitespace
     let mut pos = cursor_position;
-    while pos > 0 && text.chars().nth(pos - 1).is_some_and(|c| c.is_whitespace()) {
+    while pos > 0 && text.chars().nth(pos - 1).is_some_and(char::is_whitespace) {
         pos -= 1;
     }
 
@@ -210,12 +206,7 @@ pub fn move_word_backward(text: &str, cursor_position: usize) -> CursorMovementR
         0
     } else {
         let mut start = pos;
-        while start > 0
-            && !text
-                .chars()
-                .nth(start - 1)
-                .is_some_and(|c| c.is_whitespace())
-        {
+        while start > 0 && !text.chars().nth(start - 1).is_some_and(char::is_whitespace) {
             start -= 1;
         }
         start
@@ -234,6 +225,7 @@ pub fn move_word_backward(text: &str, cursor_position: usize) -> CursorMovementR
 }
 
 /// Move cursor forward one word (Ctrl+Right or Alt+F)
+#[must_use]
 pub fn move_word_forward(text: &str, cursor_position: usize) -> CursorMovementResult {
     let text_len = text.len();
     if cursor_position >= text_len {
@@ -245,12 +237,12 @@ pub fn move_word_forward(text: &str, cursor_position: usize) -> CursorMovementRe
 
     // Skip current word
     let mut pos = cursor_position;
-    while pos < text_len && !text.chars().nth(pos).is_some_and(|c| c.is_whitespace()) {
+    while pos < text_len && !text.chars().nth(pos).is_some_and(char::is_whitespace) {
         pos += 1;
     }
 
     // Skip whitespace
-    while pos < text_len && text.chars().nth(pos).is_some_and(|c| c.is_whitespace()) {
+    while pos < text_len && text.chars().nth(pos).is_some_and(char::is_whitespace) {
         pos += 1;
     }
 
@@ -267,6 +259,7 @@ pub fn move_word_forward(text: &str, cursor_position: usize) -> CursorMovementRe
 }
 
 /// Jump to previous SQL token (more sophisticated than word)
+#[must_use]
 pub fn jump_to_prev_token(text: &str, cursor_position: usize) -> CursorMovementResult {
     if cursor_position == 0 {
         return CursorMovementResult {
@@ -326,6 +319,7 @@ pub fn jump_to_prev_token(text: &str, cursor_position: usize) -> CursorMovementR
 }
 
 /// Jump to next SQL token
+#[must_use]
 pub fn jump_to_next_token(text: &str, cursor_position: usize) -> CursorMovementResult {
     let text_len = text.len();
     if cursor_position >= text_len {
@@ -380,6 +374,7 @@ pub fn jump_to_next_token(text: &str, cursor_position: usize) -> CursorMovementR
 // ========== Helper Functions ==========
 
 /// Clear all text (simple helper)
+#[must_use]
 pub fn clear_text() -> TextOperationResult {
     TextOperationResult {
         new_text: String::new(),
@@ -390,6 +385,7 @@ pub fn clear_text() -> TextOperationResult {
 }
 
 /// Insert character at cursor position
+#[must_use]
 pub fn insert_char(text: &str, cursor_position: usize, ch: char) -> TextOperationResult {
     let mut new_text = String::with_capacity(text.len() + 1);
     new_text.push_str(&text[..cursor_position.min(text.len())]);
@@ -402,11 +398,12 @@ pub fn insert_char(text: &str, cursor_position: usize, ch: char) -> TextOperatio
         new_text,
         new_cursor_position: cursor_position + 1,
         killed_text: None,
-        description: format!("Inserted '{}'", ch),
+        description: format!("Inserted '{ch}'"),
     }
 }
 
 /// Delete character at cursor position (Delete key)
+#[must_use]
 pub fn delete_char(text: &str, cursor_position: usize) -> TextOperationResult {
     if cursor_position >= text.len() {
         return TextOperationResult {
@@ -426,11 +423,12 @@ pub fn delete_char(text: &str, cursor_position: usize) -> TextOperationResult {
         new_text,
         new_cursor_position: cursor_position,
         killed_text: Some(deleted.to_string()),
-        description: format!("Deleted '{}'", deleted),
+        description: format!("Deleted '{deleted}'"),
     }
 }
 
 /// Delete character before cursor (Backspace)
+#[must_use]
 pub fn backspace(text: &str, cursor_position: usize) -> TextOperationResult {
     if cursor_position == 0 {
         return TextOperationResult {
@@ -450,7 +448,7 @@ pub fn backspace(text: &str, cursor_position: usize) -> TextOperationResult {
         new_text,
         new_cursor_position: cursor_position - 1,
         killed_text: Some(deleted.to_string()),
-        description: format!("Deleted '{}'", deleted),
+        description: format!("Deleted '{deleted}'"),
     }
 }
 
@@ -538,6 +536,7 @@ mod tests {
 
 /// Extract partial word at cursor for SQL completion
 /// Handles quoted identifiers and SQL-specific parsing
+#[must_use]
 pub fn extract_partial_word_at_cursor(query: &str, cursor_pos: usize) -> Option<String> {
     if cursor_pos == 0 || cursor_pos > query.len() {
         return None;
@@ -598,6 +597,7 @@ pub struct CompletionResult {
 
 /// Apply a completion suggestion to text at cursor position
 /// Handles quoted identifiers and smart cursor positioning
+#[must_use]
 pub fn apply_completion_to_text(
     query: &str,
     cursor_pos: usize,
@@ -619,7 +619,7 @@ pub fn apply_completion_to_text(
         suggestion.to_string()
     };
 
-    let new_query = format!("{}{}{}", before_partial, suggestion_to_use, after_cursor);
+    let new_query = format!("{before_partial}{suggestion_to_use}{after_cursor}");
 
     // Smart cursor positioning based on function signature
     let new_cursor_pos = if suggestion_to_use.ends_with("('')") {
@@ -637,14 +637,11 @@ pub fn apply_completion_to_text(
 
     // Better description based on completion type
     let description = if suggestion_to_use.ends_with("('')") {
-        format!(
-            "Completed '{}' with cursor positioned for parameter input",
-            suggestion
-        )
+        format!("Completed '{suggestion}' with cursor positioned for parameter input")
     } else if suggestion_to_use.ends_with("()") {
-        format!("Completed parameterless function '{}'", suggestion)
+        format!("Completed parameterless function '{suggestion}'")
     } else {
-        format!("Completed '{}'", suggestion)
+        format!("Completed '{suggestion}'")
     };
 
     CompletionResult {

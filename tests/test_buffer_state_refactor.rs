@@ -1,5 +1,5 @@
 /// Test for Phase 1 of Buffer State Refactor
-/// Verifies that ViewState is preserved when switching between buffers
+/// Verifies that `ViewState` is preserved when switching between buffers
 /// using the new proxy-based architecture
 use sql_cli::app_state_container::AppStateContainer;
 use sql_cli::buffer::{Buffer, BufferAPI, BufferManager, SelectionMode};

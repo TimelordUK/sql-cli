@@ -8,10 +8,10 @@ fn main() {
     match result {
         Ok(statement) => {
             println!("Parsed successfully!");
-            println!("Statement: {:#?}", statement);
+            println!("Statement: {statement:#?}");
         }
         Err(e) => {
-            println!("Parse error: {}", e);
+            println!("Parse error: {e}");
         }
     }
 }

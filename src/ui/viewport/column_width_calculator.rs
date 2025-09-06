@@ -24,6 +24,7 @@ pub enum ColumnPackingMode {
 
 impl ColumnPackingMode {
     /// Cycle to the next mode
+    #[must_use]
     pub fn cycle(&self) -> Self {
         match self {
             ColumnPackingMode::Balanced => ColumnPackingMode::DataFocus,
@@ -33,6 +34,7 @@ impl ColumnPackingMode {
     }
 
     /// Get display name for the mode
+    #[must_use]
     pub fn display_name(&self) -> &'static str {
         match self {
             ColumnPackingMode::Balanced => "Balanced",
@@ -46,14 +48,14 @@ impl ColumnPackingMode {
 pub type ColumnWidthDebugInfo = (String, u16, u16, u16, u32);
 
 /// Handles all column width calculations for the viewport
-/// Extracted from ViewportManager to improve maintainability and testability
+/// Extracted from `ViewportManager` to improve maintainability and testability
 pub struct ColumnWidthCalculator {
     /// Cached column widths for current viewport
     column_widths: Vec<u16>,
     /// Column packing mode for width calculation
     packing_mode: ColumnPackingMode,
     /// Debug info for column width calculations
-    /// (column_name, header_width, max_data_width_sampled, final_width, sample_count)
+    /// (`column_name`, `header_width`, `max_data_width_sampled`, `final_width`, `sample_count`)
     column_width_debug: Vec<ColumnWidthDebugInfo>,
     /// Whether cache needs recalculation
     cache_dirty: bool,
@@ -61,6 +63,7 @@ pub struct ColumnWidthCalculator {
 
 impl ColumnWidthCalculator {
     /// Create a new column width calculator
+    #[must_use]
     pub fn new() -> Self {
         Self {
             column_widths: Vec::new(),
@@ -71,6 +74,7 @@ impl ColumnWidthCalculator {
     }
 
     /// Get current packing mode
+    #[must_use]
     pub fn get_packing_mode(&self) -> ColumnPackingMode {
         self.packing_mode
     }
@@ -89,6 +93,7 @@ impl ColumnWidthCalculator {
     }
 
     /// Get debug information about column width calculations
+    #[must_use]
     pub fn get_debug_info(&self) -> &[ColumnWidthDebugInfo] {
         &self.column_width_debug
     }
@@ -142,7 +147,7 @@ impl ColumnWidthCalculator {
         }
     }
 
-    /// Get cached column width for a specific DataTable column index
+    /// Get cached column width for a specific `DataTable` column index
     pub fn get_column_width(
         &mut self,
         dataview: &DataView,
@@ -173,7 +178,7 @@ impl ColumnWidthCalculator {
     }
 
     /// Calculate optimal column widths for all columns
-    /// This is the core method extracted from ViewportManager
+    /// This is the core method extracted from `ViewportManager`
     fn recalculate_column_widths(
         &mut self,
         dataview: &DataView,
@@ -196,7 +201,7 @@ impl ColumnWidthCalculator {
         // First pass: collect all column metrics
         for col_idx in 0..col_count {
             // Track header width
-            let header_width = headers.get(col_idx).map(|h| h.len() as u16).unwrap_or(0);
+            let header_width = headers.get(col_idx).map_or(0, |h| h.len() as u16);
             header_widths.push(header_width);
 
             // Track actual data width
@@ -247,7 +252,7 @@ impl ColumnWidthCalculator {
                 ideal_width
             } else {
                 // For longer columns, use the mode-based calculation
-                let data_samples = if max_data_width > 0 { 1 } else { 0 };
+                let data_samples = u32::from(max_data_width > 0);
                 let optimal_width = self.calculate_optimal_width_for_mode(
                     header_width,
                     max_data_width,
@@ -269,7 +274,7 @@ impl ColumnWidthCalculator {
             let column_name = headers
                 .get(col_idx)
                 .cloned()
-                .unwrap_or_else(|| format!("col_{}", col_idx));
+                .unwrap_or_else(|| format!("col_{col_idx}"));
             self.column_width_debug.push((
                 column_name,
                 header_width,
@@ -336,7 +341,7 @@ impl ColumnWidthCalculator {
 
                     if header_width > max_data_width {
                         let max_allowed_header =
-                            (max_data_width as f32 * MAX_HEADER_TO_DATA_RATIO) as u16;
+                            (f32::from(max_data_width) * MAX_HEADER_TO_DATA_RATIO) as u16;
                         data_based_width.max(header_width.min(max_allowed_header))
                     } else {
                         data_based_width.max(header_width)
@@ -370,9 +375,9 @@ mod tests {
         // Add test data
         for i in 0..5 {
             let values = vec![
-                DataValue::String("A".to_string()),       // Short data
-                DataValue::String("X".to_string()),       // Short data, long header
-                DataValue::String(format!("Value{}", i)), // Normal data
+                DataValue::String("A".to_string()),     // Short data
+                DataValue::String("X".to_string()),     // Short data, long header
+                DataValue::String(format!("Value{i}")), // Normal data
             ];
             table.add_row(DataRow::new(values)).unwrap();
         }

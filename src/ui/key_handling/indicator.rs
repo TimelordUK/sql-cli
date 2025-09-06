@@ -29,6 +29,7 @@ impl Default for KeyPressIndicator {
 }
 
 impl KeyPressIndicator {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             key_history: VecDeque::with_capacity(10),
@@ -64,7 +65,7 @@ impl KeyPressIndicator {
         // Remove keys that have fully faded (after fade_start + fade_duration)
         let fade_complete = self.fade_start_ms + self.fade_duration_ms;
         self.key_history
-            .retain(|(_, time)| time.elapsed().as_millis() < fade_complete as u128);
+            .retain(|(_, time)| time.elapsed().as_millis() < u128::from(fade_complete));
     }
 
     /// Render the indicator
@@ -129,6 +130,7 @@ impl KeyPressIndicator {
     }
 
     /// Create a formatted string representation for debugging
+    #[must_use]
     pub fn to_string(&self) -> String {
         if !self.enabled || self.key_history.is_empty() {
             return String::new();
@@ -143,6 +145,7 @@ impl KeyPressIndicator {
 }
 
 /// Format a key event for display
+#[must_use]
 pub fn format_key_for_display(key: &crossterm::event::KeyEvent) -> String {
     use crossterm::event::{KeyCode, KeyModifiers};
 
@@ -181,14 +184,14 @@ pub fn format_key_for_display(key: &crossterm::event::KeyEvent) -> String {
         KeyCode::PageUp => "PgUp".to_string(),
         KeyCode::PageDown => "PgDn".to_string(),
         KeyCode::Delete => "Del".to_string(),
-        KeyCode::F(n) => format!("F{}", n),
+        KeyCode::F(n) => format!("F{n}"),
         _ => "?".to_string(),
     };
 
-    if !parts.is_empty() {
-        format!("{}-{}", parts.join("+"), key_str)
-    } else {
+    if parts.is_empty() {
         key_str
+    } else {
+        format!("{}-{}", parts.join("+"), key_str)
     }
 }
 
@@ -206,8 +209,8 @@ mod tests {
         indicator.record_key("Enter".to_string());
 
         let display = indicator.to_string();
-        assert!(display.contains("j"));
-        assert!(display.contains("k"));
+        assert!(display.contains('j'));
+        assert!(display.contains('k'));
         assert!(display.contains("Enter"));
     }
 

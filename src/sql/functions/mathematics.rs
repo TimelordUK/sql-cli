@@ -27,13 +27,13 @@ impl PrimeEngine {
 
         // Fast path: use pre-computed tables
         if n <= 1_000 {
-            return Ok(PRIMES_1K[n - 1] as u64);
+            return Ok(u64::from(PRIMES_1K[n - 1]));
         }
         if n <= 10_000 {
-            return Ok(PRIMES_10K[n - 1] as u64);
+            return Ok(u64::from(PRIMES_10K[n - 1]));
         }
         if n <= 100_000 {
-            return Ok(PRIMES_100K[n - 1] as u64);
+            return Ok(u64::from(PRIMES_100K[n - 1]));
         }
 
         // Slow path: generate on demand and cache
@@ -41,6 +41,7 @@ impl PrimeEngine {
     }
 
     /// Check if a number is prime
+    #[must_use]
     pub fn is_prime(n: u64) -> bool {
         if n < 2 {
             return false;
@@ -62,8 +63,8 @@ impl PrimeEngine {
             let sqrt_n = (n as f64).sqrt() as u64;
 
             // Use our pre-computed primes for trial division
-            for &p in PRIMES_100K.iter() {
-                let p64 = p as u64;
+            for &p in PRIMES_100K {
+                let p64 = u64::from(p);
                 if p64 > sqrt_n {
                     return true;
                 }
@@ -74,7 +75,7 @@ impl PrimeEngine {
 
             // If we've exhausted our prime list and haven't found a factor,
             // continue with wheel factorization
-            Self::is_prime_wheel(n, PRIMES_100K[PRIMES_100K.len() - 1] as u64)
+            Self::is_prime_wheel(n, u64::from(PRIMES_100K[PRIMES_100K.len() - 1]))
         } else {
             // Very large numbers: Miller-Rabin test
             Self::miller_rabin(n)
@@ -82,6 +83,7 @@ impl PrimeEngine {
     }
 
     /// Count primes up to n (prime counting function π(n))
+    #[must_use]
     pub fn prime_count(n: u64) -> usize {
         if n < 2 {
             return 0;
@@ -101,6 +103,7 @@ impl PrimeEngine {
     }
 
     /// Find the next prime >= n
+    #[must_use]
     pub fn next_prime(n: u64) -> u64 {
         if n <= 2 {
             return 2;
@@ -113,7 +116,7 @@ impl PrimeEngine {
                 Ok(_) => n, // n is prime
                 Err(idx) => {
                     if idx < PRIMES_100K.len() {
-                        PRIMES_100K[idx] as u64
+                        u64::from(PRIMES_100K[idx])
                     } else {
                         // n is larger than our biggest pre-computed prime
                         Self::find_next_prime_slow(n)
@@ -126,6 +129,7 @@ impl PrimeEngine {
     }
 
     /// Find the previous prime <= n
+    #[must_use]
     pub fn prev_prime(n: u64) -> Option<u64> {
         if n < 2 {
             return None;
@@ -141,7 +145,7 @@ impl PrimeEngine {
                 Ok(_) => Some(n), // n is prime
                 Err(idx) => {
                     if idx > 0 {
-                        Some(PRIMES_100K[idx - 1] as u64)
+                        Some(u64::from(PRIMES_100K[idx - 1]))
                     } else {
                         None // n < 2
                     }
@@ -153,6 +157,7 @@ impl PrimeEngine {
     }
 
     /// Get prime factorization of n
+    #[must_use]
     pub fn factor(mut n: u64) -> Vec<(u64, u32)> {
         if n <= 1 {
             return vec![];
@@ -161,8 +166,8 @@ impl PrimeEngine {
         let mut factors = Vec::new();
 
         // Trial division with pre-computed primes
-        for &p in PRIMES_10K.iter() {
-            let p64 = p as u64;
+        for &p in PRIMES_10K {
+            let p64 = u64::from(p);
             if p64 * p64 > n {
                 break;
             }
@@ -211,7 +216,7 @@ impl PrimeEngine {
         let mut cache = EXTENDED_PRIME_CACHE.write().unwrap();
 
         // Start from the last pre-computed prime
-        let mut candidate = PRIMES_100K[PRIMES_100K.len() - 1] as u64 + 2;
+        let mut candidate = u64::from(PRIMES_100K[PRIMES_100K.len() - 1]) + 2;
         let mut count = 100_000 + cache.len();
 
         while count < n {
@@ -302,7 +307,7 @@ impl PrimeEngine {
 
     /// Modular multiplication avoiding overflow
     fn mod_mul(a: u64, b: u64, m: u64) -> u64 {
-        ((a as u128 * b as u128) % m as u128) as u64
+        ((u128::from(a) * u128::from(b)) % u128::from(m)) as u64
     }
 
     /// Find next prime slowly (for n > largest pre-computed)
@@ -389,7 +394,7 @@ impl SqlFunction for PrimeFunction {
     }
 }
 
-/// IS_PRIME(n) - Check if a number is prime
+/// `IS_PRIME(n)` - Check if a number is prime
 pub struct IsPrimeFunction;
 
 impl SqlFunction for IsPrimeFunction {
@@ -422,7 +427,7 @@ impl SqlFunction for IsPrimeFunction {
     }
 }
 
-/// PRIME_COUNT(n) - Count primes up to n
+/// `PRIME_COUNT(n)` - Count primes up to n
 pub struct PrimeCountFunction;
 
 impl SqlFunction for PrimeCountFunction {
@@ -459,7 +464,7 @@ impl SqlFunction for PrimeCountFunction {
     }
 }
 
-/// NEXT_PRIME(n) - Find the next prime >= n
+/// `NEXT_PRIME(n)` - Find the next prime >= n
 pub struct NextPrimeFunction;
 
 impl SqlFunction for NextPrimeFunction {
@@ -496,7 +501,7 @@ impl SqlFunction for NextPrimeFunction {
     }
 }
 
-/// PREV_PRIME(n) - Find the previous prime <= n
+/// `PREV_PRIME(n)` - Find the previous prime <= n
 pub struct PrevPrimeFunction;
 
 impl SqlFunction for PrevPrimeFunction {

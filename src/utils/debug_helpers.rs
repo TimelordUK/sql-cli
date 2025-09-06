@@ -42,6 +42,6 @@ pub fn debug_breakpoint(label: &str) {
 
         // This allows you to set a breakpoint here in RustRover
         // The label will be logged so you know which point was hit
-        let _debug_marker = format!("Debug point: {}", label);
+        let _debug_marker = format!("Debug point: {label}");
     }
 }

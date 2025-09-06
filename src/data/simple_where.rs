@@ -79,7 +79,7 @@ impl SimpleWhereFilter {
             // Convert SQL LIKE pattern to regex
             let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
 
-            let regex = regex::RegexBuilder::new(&format!("^{}$", regex_pattern))
+            let regex = regex::RegexBuilder::new(&format!("^{regex_pattern}$"))
                 .case_insensitive(true)
                 .build()
                 .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
@@ -133,7 +133,7 @@ impl SimpleWhereFilter {
             if let Some(cell_value) = table.get_value(row_idx, col_index) {
                 match (cell_value, op) {
                     (DataValue::String(s), "=") => s == &value,
-                    (DataValue::String(s), "!=") | (DataValue::String(s), "<>") => s != &value,
+                    (DataValue::String(s), "!=" | "<>") => s != &value,
                     (DataValue::Integer(n), "=") => {
                         if let Ok(v) = value.parse::<i64>() {
                             *n == v

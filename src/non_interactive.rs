@@ -61,8 +61,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     let uses_dual = statement
         .from_table
         .as_ref()
-        .map(|t| t.to_uppercase() == "DUAL")
-        .unwrap_or(false);
+        .is_some_and(|t| t.to_uppercase() == "DUAL");
 
     let no_from_clause = statement.from_table.is_none();
 
@@ -95,11 +94,11 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         match parser.parse() {
             Ok(statement) => {
                 println!("\n=== QUERY PLAN (AST) ===");
-                println!("{:#?}", statement);
+                println!("{statement:#?}");
                 println!("=== END QUERY PLAN ===\n");
             }
             Err(e) => {
-                eprintln!("Failed to parse query for plan: {}", e);
+                eprintln!("Failed to parse query for plan: {e}");
             }
         }
     }
@@ -149,18 +148,15 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     };
 
     // 5. Output the results
-    let output_result = match config.output_file {
-        Some(ref path) => {
-            let mut file = fs::File::create(path)
-                .with_context(|| format!("Failed to create output file: {}", path))?;
-            output_results(&final_view, config.output_format, &mut file)?;
-            info!("Results written to: {}", path);
-            Ok(())
-        }
-        None => {
-            output_results(&final_view, config.output_format, &mut io::stdout())?;
-            Ok(())
-        }
+    let output_result = if let Some(ref path) = config.output_file {
+        let mut file = fs::File::create(path)
+            .with_context(|| format!("Failed to create output file: {path}"))?;
+        output_results(&final_view, config.output_format, &mut file)?;
+        info!("Results written to: {}", path);
+        Ok(())
+    } else {
+        output_results(&final_view, config.output_format, &mut io::stdout())?;
+        Ok(())
     };
 
     let total_time = start_time.elapsed();
@@ -178,7 +174,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     output_result
 }
 
-/// Load a data file (CSV or JSON) into a DataTable
+/// Load a data file (CSV or JSON) into a `DataTable`
 fn load_data_file(path: &str) -> Result<DataTable> {
     let path = Path::new(path);
 
@@ -190,7 +186,7 @@ fn load_data_file(path: &str) -> Result<DataTable> {
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
-        .map(|s| s.to_lowercase())
+        .map(str::to_lowercase)
         .unwrap_or_default();
 
     let table_name = path
@@ -217,7 +213,7 @@ fn limit_results(dataview: &DataView, limit: usize) -> Result<DataTable> {
     let mut limited_table = DataTable::new(&source.name);
 
     // Copy columns
-    for col in source.columns.iter() {
+    for col in &source.columns {
         limited_table.add_column(col.clone());
     }
 
@@ -252,7 +248,7 @@ fn output_csv<W: Write>(dataview: &DataView, writer: &mut W, delimiter: char) ->
     let columns = dataview.column_names();
     for (i, col) in columns.iter().enumerate() {
         if i > 0 {
-            write!(writer, "{}", delimiter)?;
+            write!(writer, "{delimiter}")?;
         }
         write!(writer, "{}", escape_csv_field(col, delimiter))?;
     }
@@ -263,7 +259,7 @@ fn output_csv<W: Write>(dataview: &DataView, writer: &mut W, delimiter: char) ->
         if let Some(row) = dataview.get_row(row_idx) {
             for (i, value) in row.values.iter().enumerate() {
                 if i > 0 {
-                    write!(writer, "{}", delimiter)?;
+                    write!(writer, "{delimiter}")?;
                 }
                 write!(
                     writer,
@@ -296,7 +292,7 @@ fn output_json<W: Write>(dataview: &DataView, writer: &mut W) -> Result<()> {
     }
 
     let json = serde_json::to_string_pretty(&rows)?;
-    writeln!(writer, "{}", json)?;
+    writeln!(writer, "{json}")?;
 
     Ok(())
 }
@@ -325,7 +321,7 @@ fn output_table<W: Write>(dataview: &DataView, writer: &mut W) -> Result<()> {
     }
 
     // Limit column widths to 50 characters
-    for width in widths.iter_mut() {
+    for width in &mut widths {
         *width = (*width).min(50);
     }
 
@@ -379,10 +375,10 @@ fn output_table<W: Write>(dataview: &DataView, writer: &mut W) -> Result<()> {
     Ok(())
 }
 
-/// Format a DataValue for display
+/// Format a `DataValue` for display
 fn format_value(value: &DataValue) -> String {
     match value {
-        DataValue::Null => "".to_string(),
+        DataValue::Null => String::new(),
         DataValue::Integer(i) => i.to_string(),
         DataValue::Float(f) => f.to_string(),
         DataValue::String(s) => s.clone(),
@@ -392,7 +388,7 @@ fn format_value(value: &DataValue) -> String {
     }
 }
 
-/// Convert DataValue to JSON
+/// Convert `DataValue` to JSON
 fn value_to_json(value: &DataValue) -> serde_json::Value {
     match value {
         DataValue::Null => serde_json::Value::Null,

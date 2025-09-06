@@ -1,4 +1,4 @@
-/// Column utilities extracted from enhanced_tui
+/// Column utilities extracted from `enhanced_tui`
 /// Contains column statistics, width calculations, and column data extraction
 use crate::buffer::ColumnStatistics;
 use crate::data::data_provider::DataProvider;
@@ -32,7 +32,10 @@ pub fn calculate_column_statistics(
     }
 
     // Convert to references for the analyzer
-    let data_refs: Vec<&str> = column_data.iter().map(|s| s.as_str()).collect();
+    let data_refs: Vec<&str> = column_data
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
 
     // Calculate statistics
     let analyzer_stats = analyzer.calculate_column_statistics(&column_name, &data_refs);

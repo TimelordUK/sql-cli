@@ -7,7 +7,7 @@ use regex::Regex;
 use std::sync::LazyLock;
 
 /// Static compiled regex patterns for date detection
-/// Using LazyLock for thread-safe initialization
+/// Using `LazyLock` for thread-safe initialization
 static DATE_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     vec![
         // YYYY-MM-DD (year must be 19xx or 20xx, month 01-12, day 01-31)
@@ -50,6 +50,7 @@ impl TypeInference {
     ///
     /// This is the main entry point for type detection.
     /// Order of checks is important for performance and accuracy.
+    #[must_use]
     pub fn infer_from_string(value: &str) -> InferredType {
         // Empty values are null
         if value.is_empty() {
@@ -102,10 +103,11 @@ impl TypeInference {
     /// - Null with anything -> the other type
     /// - Integer + Float -> Float
     /// - Any numeric + String -> String
-    /// - DateTime + String -> String
+    /// - `DateTime` + String -> String
     /// - Everything else -> String
+    #[must_use]
     pub fn merge_types(type1: InferredType, type2: InferredType) -> InferredType {
-        use InferredType::*;
+        use InferredType::{Boolean, DateTime, Float, Integer, Null, String};
 
         match (type1, type2) {
             // Same type
@@ -152,6 +154,7 @@ impl TypeInference {
     }
 
     /// Check if a value can be coerced to a specific type
+    #[must_use]
     pub fn can_coerce_to(value: &str, target_type: InferredType) -> bool {
         match target_type {
             InferredType::Boolean => {

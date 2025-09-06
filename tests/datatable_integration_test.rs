@@ -14,7 +14,7 @@ fn test_load_real_trades_json() {
     let trades_path = get_test_data_path("trades.json");
 
     println!("\n=== Loading trades.json ===");
-    println!("Path: {:?}", trades_path);
+    println!("Path: {trades_path:?}");
 
     let table = load_json_to_datatable(trades_path, "trades").expect("Failed to load trades.json");
 
@@ -78,14 +78,15 @@ fn test_load_trades_and_inspect_types() {
     }
 }
 
-/// Create a nice debug dump of a DataTable for F5 debugger display
+/// Create a nice debug dump of a `DataTable` for F5 debugger display
+#[must_use]
 pub fn debug_dump_table(table: &DataTable) -> String {
     let mut output = String::new();
 
     // Header
-    output.push_str(&"╔═══════════════════════════════════════════════════════╗\n".to_string());
+    output.push_str("╔═══════════════════════════════════════════════════════╗\n");
     output.push_str(&format!("║ DataTable: {:^41} ║\n", table.name));
-    output.push_str(&"╠═══════════════════════════════════════════════════════╣\n".to_string());
+    output.push_str("╠═══════════════════════════════════════════════════════╣\n");
 
     // Summary stats
     output.push_str(&format!(
@@ -97,8 +98,8 @@ pub fn debug_dump_table(table: &DataTable) -> String {
 
     // Metadata if any
     if !table.metadata.is_empty() {
-        output.push_str(&"╠═══════════════════════════════════════════════════════╣\n".to_string());
-        output.push_str(&"║ Metadata:                                             ║\n".to_string());
+        output.push_str("╠═══════════════════════════════════════════════════════╣\n");
+        output.push_str("║ Metadata:                                             ║\n");
         for (key, value) in &table.metadata {
             let truncated_value = if value.len() > 35 {
                 format!("{}...", &value[..32])
@@ -114,18 +115,17 @@ pub fn debug_dump_table(table: &DataTable) -> String {
     }
 
     // Column details
-    output.push_str(&"╠═══════════════════════════════════════════════════════╣\n".to_string());
-    output.push_str(&"║ Columns:                                              ║\n".to_string());
-    output.push_str(&"╟───────────────────┬──────────┬─────────┬──────┬──────╢\n".to_string());
-    output.push_str(&"║ Name              │ Type     │ Nullable│ Nulls│Unique║\n".to_string());
-    output.push_str(&"╟───────────────────┼──────────┼─────────┼──────┼──────╢\n".to_string());
+    output.push_str("╠═══════════════════════════════════════════════════════╣\n");
+    output.push_str("║ Columns:                                              ║\n");
+    output.push_str("╟───────────────────┬──────────┬─────────┬──────┬──────╢\n");
+    output.push_str("║ Name              │ Type     │ Nullable│ Nulls│Unique║\n");
+    output.push_str("╟───────────────────┼──────────┼─────────┼──────┼──────╢\n");
 
     for column in &table.columns {
         let type_str = format!("{:?}", column.data_type);
         let unique_str = column
             .unique_values
-            .map(|u| format!("{:5}", u))
-            .unwrap_or_else(|| "  ?  ".to_string());
+            .map_or_else(|| "  ?  ".to_string(), |u| format!("{u:5}"));
 
         output.push_str(&format!(
             "║ {:17} │ {:8} │ {:7} │ {:4} │{}║\n",
@@ -137,16 +137,15 @@ pub fn debug_dump_table(table: &DataTable) -> String {
         ));
     }
 
-    output.push_str(&"╟───────────────────┴──────────┴─────────┴──────┴──────╢\n".to_string());
+    output.push_str("╟───────────────────┴──────────┴─────────┴──────┴──────╢\n");
 
     // Sample data (first 5 rows)
     let sample_rows = 5.min(table.row_count());
     if sample_rows > 0 {
         output.push_str(&format!(
-            "║ Sample Data (first {} rows):                          ║\n",
-            sample_rows
+            "║ Sample Data (first {sample_rows} rows):                          ║\n"
         ));
-        output.push_str(&"╟───────────────────────────────────────────────────────╢\n".to_string());
+        output.push_str("╟───────────────────────────────────────────────────────╢\n");
 
         // Column headers for sample data
         let mut header_line = String::from("║ ");
@@ -165,7 +164,7 @@ pub fn debug_dump_table(table: &DataTable) -> String {
         header_line.push_str("║\n");
         output.push_str(&header_line);
 
-        output.push_str(&"╟───────────────────────────────────────────────────────╢\n".to_string());
+        output.push_str("╟───────────────────────────────────────────────────────╢\n");
 
         // Sample rows
         for row_idx in 0..sample_rows {
@@ -186,14 +185,14 @@ pub fn debug_dump_table(table: &DataTable) -> String {
         }
     }
 
-    output.push_str(&"╚═══════════════════════════════════════════════════════╝\n".to_string());
+    output.push_str("╚═══════════════════════════════════════════════════════╝\n");
 
     output
 }
 
 fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
-        format!("{:width$}", s, width = max_len)
+        format!("{s:max_len$}")
     } else {
         format!("{}...", &s[..max_len - 3])
     }
@@ -227,7 +226,7 @@ fn test_debug_dump_display() {
         .unwrap();
 
     let dump = debug_dump_table(&table);
-    println!("{}", dump);
+    println!("{dump}");
 
     assert!(dump.contains("test_table"));
     assert!(dump.contains("Rows:      2"));

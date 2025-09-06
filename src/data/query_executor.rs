@@ -19,13 +19,14 @@ pub trait QueryExecutor {
     fn column_count(&self) -> usize;
 }
 
-/// Direct DataTable query executor (for simple SELECT * queries)
+/// Direct `DataTable` query executor (for simple SELECT * queries)
 pub struct DataTableExecutor {
     datatable: std::sync::Arc<DataTable>,
     table_name: String,
 }
 
 impl DataTableExecutor {
+    #[must_use]
     pub fn new(datatable: std::sync::Arc<DataTable>, table_name: String) -> Self {
         Self {
             datatable,
@@ -85,6 +86,7 @@ pub struct CsvClientExecutor {
 }
 
 impl CsvClientExecutor {
+    #[must_use]
     pub fn new(csv_client: CsvApiClient, table_name: String) -> Self {
         Self {
             csv_client,
@@ -158,6 +160,7 @@ impl Default for CompositeQueryExecutor {
 }
 
 impl CompositeQueryExecutor {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             executors: Vec::new(),
@@ -186,14 +189,11 @@ impl QueryExecutor for CompositeQueryExecutor {
 
     fn row_count(&self) -> usize {
         // Return the row count from the first executor
-        self.executors.first().map(|e| e.row_count()).unwrap_or(0)
+        self.executors.first().map_or(0, |e| e.row_count())
     }
 
     fn column_count(&self) -> usize {
         // Return the column count from the first executor
-        self.executors
-            .first()
-            .map(|e| e.column_count())
-            .unwrap_or(0)
+        self.executors.first().map_or(0, |e| e.column_count())
     }
 }

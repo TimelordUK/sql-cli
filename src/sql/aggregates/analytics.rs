@@ -26,6 +26,7 @@ pub enum AnalyticsType {
 }
 
 impl AnalyticsState {
+    #[must_use]
     pub fn new(function_type: AnalyticsType, window_size: Option<usize>) -> Self {
         Self {
             function_type,
@@ -45,6 +46,7 @@ impl AnalyticsState {
         Ok(())
     }
 
+    #[must_use]
     pub fn finalize(self) -> DataValue {
         if self.values.is_empty() {
             return DataValue::Null;
@@ -112,7 +114,7 @@ fn compute_pct_change(values: &[f64]) -> Vec<String> {
             changes.push("null".to_string());
         } else {
             let pct = ((values[i] - values[i - 1]) / values[i - 1]) * 100.0;
-            changes.push(format!("{:.2}%", pct));
+            changes.push(format!("{pct:.2}%"));
         }
     }
     changes
@@ -163,7 +165,7 @@ fn format_number(n: f64) -> String {
         format!("{}", n as i64)
     } else {
         // Format with 2 decimal places, removing trailing zeros
-        let formatted = format!("{:.2}", n);
+        let formatted = format!("{n:.2}");
         if formatted.contains('.') {
             formatted
                 .trim_end_matches('0')
@@ -179,7 +181,7 @@ fn format_number(n: f64) -> String {
 
 pub struct DeltasFunction;
 impl AggregateFunction for DeltasFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "DELTAS"
     }
 
@@ -206,7 +208,7 @@ impl AggregateFunction for DeltasFunction {
 
 pub struct SumsFunction;
 impl AggregateFunction for SumsFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "SUMS"
     }
 
@@ -233,7 +235,7 @@ impl AggregateFunction for SumsFunction {
 
 pub struct MavgFunction;
 impl AggregateFunction for MavgFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "MAVG"
     }
 
@@ -261,7 +263,7 @@ impl AggregateFunction for MavgFunction {
 
 pub struct PctChangeFunction;
 impl AggregateFunction for PctChangeFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "PCT_CHANGE"
     }
 
@@ -288,7 +290,7 @@ impl AggregateFunction for PctChangeFunction {
 
 pub struct RankFunction;
 impl AggregateFunction for RankFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "RANK"
     }
 
@@ -315,7 +317,7 @@ impl AggregateFunction for RankFunction {
 
 pub struct CumMaxFunction;
 impl AggregateFunction for CumMaxFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "CUMMAX"
     }
 
@@ -342,7 +344,7 @@ impl AggregateFunction for CumMaxFunction {
 
 pub struct CumMinFunction;
 impl AggregateFunction for CumMinFunction {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "CUMMIN"
     }
 

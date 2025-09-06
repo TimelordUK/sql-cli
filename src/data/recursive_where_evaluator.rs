@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use tracing::debug;
 
-/// Evaluates WHERE clauses from recursive_parser directly against DataTable
+/// Evaluates WHERE clauses from `recursive_parser` directly against `DataTable`
 pub struct RecursiveWhereEvaluator<'a> {
     table: &'a DataTable,
     case_insensitive: bool,
@@ -13,6 +13,7 @@ pub struct RecursiveWhereEvaluator<'a> {
 }
 
 impl<'a> RecursiveWhereEvaluator<'a> {
+    #[must_use]
     pub fn new(table: &'a DataTable) -> Self {
         Self {
             table,
@@ -21,6 +22,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         }
     }
 
+    #[must_use]
     pub fn with_date_notation(table: &'a DataTable, date_notation: String) -> Self {
         Self {
             table,
@@ -29,7 +31,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         }
     }
 
-    /// Central function to parse date/datetime strings respecting date_notation preference
+    /// Central function to parse date/datetime strings respecting `date_notation` preference
     fn parse_datetime_with_notation(&self, s: &str) -> Result<DateTime<Utc>> {
         // Try ISO 8601 with timezone first (unambiguous)
         if let Ok(parsed_dt) = s.parse::<DateTime<Utc>>() {
@@ -177,7 +179,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
         for (i, c1) in s1.chars().enumerate() {
             for (j, c2) in s2.chars().enumerate() {
-                let cost = if c1 == c2 { 0 } else { 1 };
+                let cost = usize::from(c1 != c2);
                 matrix[i + 1][j + 1] = std::cmp::min(
                     matrix[i][j + 1] + 1, // deletion
                     std::cmp::min(
@@ -191,6 +193,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         matrix[len1][len2]
     }
 
+    #[must_use]
     pub fn with_case_insensitive(table: &'a DataTable, case_insensitive: bool) -> Self {
         Self {
             table,
@@ -199,6 +202,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         }
     }
 
+    #[must_use]
     pub fn with_config(
         table: &'a DataTable,
         case_insensitive: bool,
@@ -224,7 +228,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         }
     }
 
-    /// Evaluate the Length() method on a column value
+    /// Evaluate the `Length()` method on a column value
     fn evaluate_length(
         &self,
         object: &str,
@@ -248,10 +252,10 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             Some(DataValue::Float(f)) => Some(DataValue::Integer(f.to_string().len() as i64)),
             _ => Some(DataValue::Integer(0)),
         };
-        Ok((length_value, format!("{}.Length()", object)))
+        Ok((length_value, format!("{object}.Length()")))
     }
 
-    /// Evaluate the IndexOf() method on a column value
+    /// Evaluate the `IndexOf()` method on a column value
     fn evaluate_indexof(
         &self,
         object: &str,
@@ -275,26 +279,24 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 let pos = s
                     .to_lowercase()
                     .find(&search_str.to_lowercase())
-                    .map(|idx| idx as i64)
-                    .unwrap_or(-1);
+                    .map_or(-1, |idx| idx as i64);
                 Some(DataValue::Integer(pos))
             }
             Some(DataValue::InternedString(s)) => {
                 let pos = s
                     .to_lowercase()
                     .find(&search_str.to_lowercase())
-                    .map(|idx| idx as i64)
-                    .unwrap_or(-1);
+                    .map_or(-1, |idx| idx as i64);
                 Some(DataValue::Integer(pos))
             }
             Some(DataValue::Integer(n)) => {
                 let str_val = n.to_string();
-                let pos = str_val.find(search_str).map(|idx| idx as i64).unwrap_or(-1);
+                let pos = str_val.find(search_str).map_or(-1, |idx| idx as i64);
                 Some(DataValue::Integer(pos))
             }
             Some(DataValue::Float(f)) => {
                 let str_val = f.to_string();
-                let pos = str_val.find(search_str).map(|idx| idx as i64).unwrap_or(-1);
+                let pos = str_val.find(search_str).map_or(-1, |idx| idx as i64);
                 Some(DataValue::Integer(pos))
             }
             _ => Some(DataValue::Integer(-1)), // Return -1 for not found
@@ -306,10 +308,10 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 row_index, search_str, index_value
             );
         }
-        Ok((index_value, format!("{}.IndexOf('{}')", object, search_str)))
+        Ok((index_value, format!("{object}.IndexOf('{search_str}')")))
     }
 
-    /// Apply the appropriate trim operation based on trim_type
+    /// Apply the appropriate trim operation based on `trim_type`
     fn apply_trim<'b>(s: &'b str, trim_type: &str) -> &'b str {
         match trim_type {
             "trim" => s.trim(),
@@ -319,7 +321,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         }
     }
 
-    /// Evaluate trim methods (Trim, TrimStart, TrimEnd) on a column value
+    /// Evaluate trim methods (Trim, `TrimStart`, `TrimEnd`) on a column value
     fn evaluate_trim(
         &self,
         object: &str,
@@ -365,7 +367,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             "trimend" => "TrimEnd",
             _ => "Trim",
         };
-        Ok((trimmed_value, format!("{}.{}()", object, method_name)))
+        Ok((trimmed_value, format!("{object}.{method_name}()")))
     }
 
     /// Evaluate a WHERE clause for a specific row
@@ -584,7 +586,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                         name, computed_value
                     );
                 }
-                (Some(computed_value), format!("{}()", name))
+                (Some(computed_value), format!("{name}()"))
             }
             _ => {
                 // Regular column reference
@@ -683,8 +685,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     }
                 }
             }
-            (Some(DataValue::String(ref a)), "!=", ExprValue::String(b))
-            | (Some(DataValue::String(ref a)), "<>", ExprValue::String(b)) => {
+            (Some(DataValue::String(ref a)), "!=" | "<>", ExprValue::String(b)) => {
                 // Try to parse both as dates if they look like dates
                 if let (Ok(date_a), Ok(date_b)) = (
                     self.parse_datetime_with_notation(a),
@@ -713,8 +714,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     }
                 }
             }
-            (Some(DataValue::InternedString(ref a)), "!=", ExprValue::String(b))
-            | (Some(DataValue::InternedString(ref a)), "<>", ExprValue::String(b)) => {
+            (Some(DataValue::InternedString(ref a)), "!=" | "<>", ExprValue::String(b)) => {
                 // Try to parse both as dates if they look like dates
                 if let (Ok(date_a), Ok(date_b)) = (
                     self.parse_datetime_with_notation(a.as_ref()),
@@ -913,8 +913,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             }
 
             (Some(DataValue::Integer(a)), "=", ExprValue::Number(b)) => Ok(a as f64 == *b),
-            (Some(DataValue::Integer(a)), "!=", ExprValue::Number(b))
-            | (Some(DataValue::Integer(a)), "<>", ExprValue::Number(b)) => Ok(a as f64 != *b),
+            (Some(DataValue::Integer(a)), "!=" | "<>", ExprValue::Number(b)) => Ok(a as f64 != *b),
             (Some(DataValue::Integer(a)), ">", ExprValue::Number(b)) => Ok(a as f64 > *b),
             (Some(DataValue::Integer(a)), ">=", ExprValue::Number(b)) => Ok(a as f64 >= *b),
             (Some(DataValue::Integer(a)), "<", ExprValue::Number(b)) => Ok((a as f64) < *b),
@@ -923,8 +922,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             (Some(DataValue::Float(a)), "=", ExprValue::Number(b)) => {
                 Ok((a - b).abs() < f64::EPSILON)
             }
-            (Some(DataValue::Float(a)), "!=", ExprValue::Number(b))
-            | (Some(DataValue::Float(a)), "<>", ExprValue::Number(b)) => {
+            (Some(DataValue::Float(a)), "!=" | "<>", ExprValue::Number(b)) => {
                 Ok((a - b).abs() >= f64::EPSILON)
             }
             (Some(DataValue::Float(a)), ">", ExprValue::Number(b)) => Ok(a > *b),
@@ -934,8 +932,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
             // Boolean comparisons
             (Some(DataValue::Boolean(a)), "=", ExprValue::Boolean(b)) => Ok(a == *b),
-            (Some(DataValue::Boolean(a)), "!=", ExprValue::Boolean(b))
-            | (Some(DataValue::Boolean(a)), "<>", ExprValue::Boolean(b)) => Ok(a != *b),
+            (Some(DataValue::Boolean(a)), "!=" | "<>", ExprValue::Boolean(b)) => Ok(a != *b),
 
             // Boolean to string comparisons (for backward compatibility)
             (Some(DataValue::Boolean(a)), "=", ExprValue::String(b)) => {
@@ -946,8 +943,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     Ok(bool_str == *b)
                 }
             }
-            (Some(DataValue::Boolean(a)), "!=", ExprValue::String(b))
-            | (Some(DataValue::Boolean(a)), "<>", ExprValue::String(b)) => {
+            (Some(DataValue::Boolean(a)), "!=" | "<>", ExprValue::String(b)) => {
                 let bool_str = a.to_string();
                 if self.case_insensitive {
                     Ok(bool_str.to_lowercase() != b.to_lowercase())
@@ -959,7 +955,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             // LIKE operator
             (Some(DataValue::String(ref text)), "LIKE", ExprValue::String(pattern)) => {
                 let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
-                let regex = regex::RegexBuilder::new(&format!("^{}$", regex_pattern))
+                let regex = regex::RegexBuilder::new(&format!("^{regex_pattern}$"))
                     .case_insensitive(true)
                     .build()
                     .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
@@ -967,7 +963,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             }
             (Some(DataValue::InternedString(ref text)), "LIKE", ExprValue::String(pattern)) => {
                 let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
-                let regex = regex::RegexBuilder::new(&format!("^{}$", regex_pattern))
+                let regex = regex::RegexBuilder::new(&format!("^{regex_pattern}$"))
                     .case_insensitive(true)
                     .build()
                     .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
@@ -975,12 +971,9 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             }
 
             // IS NULL / IS NOT NULL
-            (None, "IS", ExprValue::Null) | (Some(DataValue::Null), "IS", ExprValue::Null) => {
-                Ok(true)
-            }
+            (None | Some(DataValue::Null), "IS", ExprValue::Null) => Ok(true),
             (Some(_), "IS", ExprValue::Null) => Ok(false),
-            (None, "IS NOT", ExprValue::Null)
-            | (Some(DataValue::Null), "IS NOT", ExprValue::Null) => Ok(false),
+            (None | Some(DataValue::Null), "IS NOT", ExprValue::Null) => Ok(false),
             (Some(_), "IS NOT", ExprValue::Null) => Ok(true),
 
             // DateTime comparisons
@@ -995,29 +988,26 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
 
                 // Use the central parsing function that respects date_notation
-                match self.parse_datetime_with_notation(date_str) {
-                    Ok(parsed_dt) => {
-                        let result = Self::compare_datetime(op_str, &parsed_dt, dt);
-                        if row_index < 3 {
-                            debug!(
-                                "RecursiveWhereEvaluator: DateTime parsed successfully: '{}' {} '{}' = {}",
-                                parsed_dt.format("%Y-%m-%d %H:%M:%S"),
-                                op_str,
-                                dt.format("%Y-%m-%d %H:%M:%S"),
-                                result
-                            );
-                        }
-                        Ok(result)
+                if let Ok(parsed_dt) = self.parse_datetime_with_notation(date_str) {
+                    let result = Self::compare_datetime(op_str, &parsed_dt, dt);
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parsed successfully: '{}' {} '{}' = {}",
+                            parsed_dt.format("%Y-%m-%d %H:%M:%S"),
+                            op_str,
+                            dt.format("%Y-%m-%d %H:%M:%S"),
+                            result
+                        );
                     }
-                    Err(_) => {
-                        if row_index < 3 {
-                            debug!(
-                                "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
-                                date_str
-                            );
-                        }
-                        Ok(false)
+                    Ok(result)
+                } else {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
+                            date_str
+                        );
                     }
+                    Ok(false)
                 }
             }
             (Some(DataValue::InternedString(ref date_str)), op_str, ExprValue::DateTime(dt)) => {
@@ -1031,29 +1021,26 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
 
                 // Use the central parsing function that respects date_notation
-                match self.parse_datetime_with_notation(date_str.as_ref()) {
-                    Ok(parsed_dt) => {
-                        let result = Self::compare_datetime(op_str, &parsed_dt, dt);
-                        if row_index < 3 {
-                            debug!(
-                                "RecursiveWhereEvaluator: DateTime parsed successfully: '{}' {} '{}' = {}",
-                                parsed_dt.format("%Y-%m-%d %H:%M:%S"),
-                                op_str,
-                                dt.format("%Y-%m-%d %H:%M:%S"),
-                                result
-                            );
-                        }
-                        Ok(result)
+                if let Ok(parsed_dt) = self.parse_datetime_with_notation(date_str.as_ref()) {
+                    let result = Self::compare_datetime(op_str, &parsed_dt, dt);
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parsed successfully: '{}' {} '{}' = {}",
+                            parsed_dt.format("%Y-%m-%d %H:%M:%S"),
+                            op_str,
+                            dt.format("%Y-%m-%d %H:%M:%S"),
+                            result
+                        );
                     }
-                    Err(_) => {
-                        if row_index < 3 {
-                            debug!(
-                                "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
-                                date_str
-                            );
-                        }
-                        Ok(false)
+                    Ok(result)
+                } else {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime parse FAILED for '{}' - no matching format",
+                            date_str
+                        );
                     }
+                    Ok(false)
                 }
             }
 
@@ -1067,26 +1054,23 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 }
 
                 // Use the central parsing function that respects date_notation
-                match self.parse_datetime_with_notation(date_str) {
-                    Ok(parsed_dt) => {
-                        let result = Self::compare_datetime(op_str, &parsed_dt, dt);
-                        if row_index < 3 {
-                            debug!(
-                                "RecursiveWhereEvaluator: DateTime vs DateTime parsed successfully: '{}' {} '{}' = {}",
-                                parsed_dt.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
-                            );
-                        }
-                        Ok(result)
+                if let Ok(parsed_dt) = self.parse_datetime_with_notation(date_str) {
+                    let result = Self::compare_datetime(op_str, &parsed_dt, dt);
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime vs DateTime parsed successfully: '{}' {} '{}' = {}",
+                            parsed_dt.format("%Y-%m-%d %H:%M:%S"), op_str, dt.format("%Y-%m-%d %H:%M:%S"), result
+                        );
                     }
-                    Err(_) => {
-                        if row_index < 3 {
-                            debug!(
-                                "RecursiveWhereEvaluator: DateTime vs DateTime parse FAILED for '{}' - no matching format",
-                                date_str
-                            );
-                        }
-                        Ok(false)
+                    Ok(result)
+                } else {
+                    if row_index < 3 {
+                        debug!(
+                            "RecursiveWhereEvaluator: DateTime vs DateTime parse FAILED for '{}' - no matching format",
+                            date_str
+                        );
                     }
+                    Ok(false)
                 }
             }
 
@@ -1422,15 +1406,12 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         }
 
         // If no WHEN condition matched, evaluate ELSE clause (or return false)
-        match else_branch {
-            Some(else_expr) => {
-                debug!("CASE: No WHEN matched, evaluating ELSE expression as bool");
-                self.evaluate_expression_as_bool(else_expr, row_index)
-            }
-            None => {
-                debug!("CASE: No WHEN matched and no ELSE, returning false");
-                Ok(false)
-            }
+        if let Some(else_expr) = else_branch {
+            debug!("CASE: No WHEN matched, evaluating ELSE expression as bool");
+            self.evaluate_expression_as_bool(else_expr, row_index)
+        } else {
+            debug!("CASE: No WHEN matched and no ELSE, returning false");
+            Ok(false)
         }
     }
 

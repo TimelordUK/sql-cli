@@ -1,4 +1,4 @@
-use crate::chart::types::*;
+use crate::chart::types::{ChartConfig, DataPoint, DataSeries};
 use crate::data::data_view::DataView;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
@@ -8,6 +8,7 @@ pub struct ChartEngine {
 }
 
 impl ChartEngine {
+    #[must_use]
     pub fn new(data_view: DataView) -> Self {
         Self { data_view }
     }

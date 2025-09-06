@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 /// Analyzes data for statistics, column widths, and other metrics
-/// Extracted from the monolithic enhanced_tui.rs
+/// Extracted from the monolithic `enhanced_tui.rs`
 pub struct DataAnalyzer {
     /// Cached column statistics
     column_stats: HashMap<String, ColumnStatistics>,
@@ -50,6 +50,7 @@ impl Default for DataAnalyzer {
 }
 
 impl DataAnalyzer {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             column_stats: HashMap::new(),
@@ -138,15 +139,15 @@ impl DataAnalyzer {
                         .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     let mid = numeric_values.len() / 2;
                     stats.median_value = if numeric_values.len() % 2 == 0 {
-                        Some((numeric_values[mid - 1] + numeric_values[mid]) / 2.0)
+                        Some(f64::midpoint(numeric_values[mid - 1], numeric_values[mid]))
                     } else {
                         Some(numeric_values[mid])
                     };
 
-                    let min = numeric_values.iter().cloned().fold(f64::INFINITY, f64::min);
+                    let min = numeric_values.iter().copied().fold(f64::INFINITY, f64::min);
                     let max = numeric_values
                         .iter()
-                        .cloned()
+                        .copied()
                         .fold(f64::NEG_INFINITY, f64::max);
                     stats.min_value = Some(min.to_string());
                     stats.max_value = Some(max.to_string());
@@ -154,8 +155,8 @@ impl DataAnalyzer {
             }
             _ => {
                 // String statistics - use the min/max we already found without cloning
-                stats.min_value = min_str.map(|s| s.to_string());
-                stats.max_value = max_str.map(|s| s.to_string());
+                stats.min_value = min_str.map(std::string::ToString::to_string);
+                stats.max_value = max_str.map(std::string::ToString::to_string);
             }
         }
 
@@ -166,7 +167,7 @@ impl DataAnalyzer {
             let mut freq_map = std::collections::HashMap::new();
             for value in values {
                 if !value.is_empty() {
-                    *freq_map.entry(value.to_string()).or_insert(0) += 1;
+                    *freq_map.entry((*value).to_string()).or_insert(0) += 1;
                 }
             }
 
@@ -197,6 +198,7 @@ impl DataAnalyzer {
     }
 
     /// Detect the type of a column based on its values
+    #[must_use]
     pub fn detect_column_type(&self, values: &[&str]) -> ColumnType {
         if values.is_empty() {
             return ColumnType::Unknown;
@@ -228,7 +230,7 @@ impl DataAnalyzer {
         if type_counts.len() > 1 {
             // But if >90% are one type, use that type
             let total: usize = type_counts.values().sum();
-            for (col_type, count) in type_counts.iter() {
+            for (col_type, count) in &type_counts {
                 if *count as f64 / total as f64 > 0.9 {
                     return col_type.clone();
                 }
@@ -277,7 +279,7 @@ impl DataAnalyzer {
         // Get headers from first row
         let headers: Vec<String> = if let Some(first_row) = data.first() {
             if let Some(obj) = first_row.as_object() {
-                obj.keys().map(|k| k.to_string()).collect()
+                obj.keys().map(std::string::ToString::to_string).collect()
             } else {
                 return Vec::new();
             }
@@ -340,11 +342,13 @@ impl DataAnalyzer {
     }
 
     /// Get cached column statistics
+    #[must_use]
     pub fn get_column_statistics(&self, column_name: &str) -> Option<&ColumnStatistics> {
         self.column_stats.get(column_name)
     }
 
     /// Get cached column widths
+    #[must_use]
     pub fn get_column_widths(&self) -> &[usize] {
         &self.column_widths
     }

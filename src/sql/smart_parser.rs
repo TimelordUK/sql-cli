@@ -32,12 +32,14 @@ impl Default for SmartSqlParser {
 }
 
 impl SmartSqlParser {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             schema: Schema::new(),
         }
     }
 
+    #[must_use]
     pub fn get_completion_suggestions(&self, query: &str, cursor_pos: usize) -> Vec<String> {
         let context = self.parse_with_cursor(query, cursor_pos);
 
@@ -172,10 +174,10 @@ impl SmartSqlParser {
 
         if start < end {
             let partial: String = chars[start..cursor_pos].iter().collect();
-            if !partial.is_empty() {
-                Some(partial)
-            } else {
+            if partial.is_empty() {
                 None
+            } else {
+                Some(partial)
             }
         } else {
             None
@@ -223,7 +225,7 @@ impl SmartSqlParser {
                 },
                 SqlToken::Comma => {
                     if state == ParseState::InColumnList {
-                        state = ParseState::InColumnList
+                        state = ParseState::InColumnList;
                     }
                 }
                 _ => {}

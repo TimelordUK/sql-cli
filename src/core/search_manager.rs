@@ -1,4 +1,4 @@
-//! SearchManager - Encapsulates all search logic for the TUI
+//! `SearchManager` - Encapsulates all search logic for the TUI
 //!
 //! This module provides a clean separation between search logic and UI rendering.
 //! It handles case sensitivity, coordinate mapping, and iteration through matches.
@@ -63,7 +63,8 @@ impl Default for SearchManager {
 }
 
 impl SearchManager {
-    /// Create a new SearchManager with default config
+    /// Create a new `SearchManager` with default config
+    #[must_use]
     pub fn new() -> Self {
         Self {
             pattern: String::new(),
@@ -75,6 +76,7 @@ impl SearchManager {
     }
 
     /// Create with custom configuration
+    #[must_use]
     pub fn with_config(config: SearchConfig) -> Self {
         Self {
             pattern: String::new(),
@@ -129,22 +131,20 @@ impl SearchManager {
 
         // Determine which columns to search
         let columns_to_search: Vec<usize> = if self.config.visible_columns_only {
-            visible_columns
-                .map(|cols| cols.to_vec())
-                .unwrap_or_else(|| {
-                    // If no visible columns specified, search all
-                    if !data.is_empty() {
-                        (0..data[0].len()).collect()
-                    } else {
-                        vec![]
-                    }
-                })
+            visible_columns.map(<[usize]>::to_vec).unwrap_or_else(|| {
+                // If no visible columns specified, search all
+                if data.is_empty() {
+                    vec![]
+                } else {
+                    (0..data[0].len()).collect()
+                }
+            })
         } else {
             // Search all columns
-            if !data.is_empty() {
-                (0..data[0].len()).collect()
-            } else {
+            if data.is_empty() {
                 vec![]
+            } else {
+                (0..data[0].len()).collect()
             }
         };
 
@@ -218,6 +218,7 @@ impl SearchManager {
     }
 
     /// Get the current match (if any)
+    #[must_use]
     pub fn current_match(&self) -> Option<&SearchMatch> {
         if self.matches.is_empty() {
             None
@@ -267,21 +268,25 @@ impl SearchManager {
     }
 
     /// Get the first match (useful for initial navigation)
+    #[must_use]
     pub fn first_match(&self) -> Option<&SearchMatch> {
         self.matches.first()
     }
 
     /// Get all matches
+    #[must_use]
     pub fn all_matches(&self) -> &[SearchMatch] {
         &self.matches
     }
 
     /// Get the total number of matches
+    #[must_use]
     pub fn match_count(&self) -> usize {
         self.matches.len()
     }
 
     /// Get current match index (1-based for display)
+    #[must_use]
     pub fn current_match_number(&self) -> usize {
         if self.matches.is_empty() {
             0
@@ -299,16 +304,19 @@ impl SearchManager {
     }
 
     /// Check if there's an active search
+    #[must_use]
     pub fn has_active_search(&self) -> bool {
         !self.pattern.is_empty()
     }
 
     /// Get the current search pattern
+    #[must_use]
     pub fn pattern(&self) -> &str {
         &self.pattern
     }
 
     /// Calculate scroll offset needed to show a match in viewport
+    #[must_use]
     pub fn calculate_scroll_offset(
         &self,
         match_pos: &SearchMatch,
@@ -332,6 +340,7 @@ impl SearchManager {
     }
 
     /// Find the next match from a given position
+    #[must_use]
     pub fn find_next_from(&self, current_row: usize, current_col: usize) -> Option<&SearchMatch> {
         // Find matches after current position
         for match_item in &self.matches {
@@ -351,6 +360,7 @@ impl SearchManager {
     }
 
     /// Find the previous match from a given position
+    #[must_use]
     pub fn find_previous_from(
         &self,
         current_row: usize,
@@ -396,6 +406,7 @@ impl<'a> Iterator for SearchIterator<'a> {
 
 impl SearchManager {
     /// Get an iterator over all matches
+    #[must_use]
     pub fn iter(&self) -> SearchIterator {
         SearchIterator {
             manager: self,

@@ -5,7 +5,7 @@ use crate::cursor_manager::CursorManager;
 use tracing::info;
 
 /// Trait that provides buffer management behavior for TUI components
-/// This extracts buffer operations from EnhancedTui to reduce coupling
+/// This extracts buffer operations from `EnhancedTui` to reduce coupling
 pub trait BufferManagementBehavior {
     // Required methods - these provide access to TUI internals
     fn buffer_manager(&mut self) -> &mut BufferManager;

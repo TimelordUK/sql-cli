@@ -31,6 +31,7 @@ impl Default for HybridParser {
 }
 
 impl HybridParser {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             parser: CursorAwareParser::new(),
@@ -41,10 +42,12 @@ impl HybridParser {
         self.parser.update_single_table(table_name, columns);
     }
 
+    #[must_use]
     pub fn get_table_columns(&self, table_name: &str) -> Vec<String> {
         self.parser.get_table_columns(table_name)
     }
 
+    #[must_use]
     pub fn get_completions(&self, query: &str, cursor_pos: usize) -> HybridResult {
         // Use the improved parser with recursive descent for context detection
         let result = self.parser.get_completions(query, cursor_pos);
@@ -82,19 +85,19 @@ impl HybridParser {
         let logical_ops = query.to_uppercase().matches(" AND ").count()
             + query.to_uppercase().matches(" OR ").count();
         if logical_ops > 0 {
-            complexity_factors.push(format!("{}x logical", logical_ops));
+            complexity_factors.push(format!("{logical_ops}x logical"));
         }
 
         // Count method calls
         let method_calls = query.matches('.').count();
         if method_calls > 0 {
-            complexity_factors.push(format!("{}x methods", method_calls));
+            complexity_factors.push(format!("{method_calls}x methods"));
         }
 
         // Count parentheses depth
         let paren_depth = self.max_paren_depth(query);
         if paren_depth > 1 {
-            complexity_factors.push(format!("{}lvl nested", paren_depth));
+            complexity_factors.push(format!("{paren_depth}lvl nested"));
         }
 
         // Count subqueries (simplified)
@@ -131,11 +134,13 @@ impl HybridParser {
         max_depth
     }
 
+    #[must_use]
     pub fn debug_tree(&self, query: &str) -> String {
         // Use the AST formatter from recursive_parser
         crate::recursive_parser::format_ast_tree(query)
     }
 
+    #[must_use]
     pub fn get_detailed_debug_info(&self, query: &str, cursor_pos: usize) -> String {
         let result = self.get_completions(query, cursor_pos);
 
@@ -153,7 +158,7 @@ impl HybridParser {
             tokens
                 .iter()
                 .enumerate()
-                .map(|(i, t)| format!("  [{}] {}", i, t))
+                .map(|(i, t)| format!("  [{i}] {t}"))
                 .collect::<Vec<_>>()
                 .join("\n")
         };

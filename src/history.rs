@@ -360,7 +360,7 @@ impl CommandHistory {
             ];
             for method in &linq_methods {
                 if after_where.contains(method) {
-                    functions_used.push(method.to_string());
+                    functions_used.push((*method).to_string());
                 }
             }
 
@@ -378,7 +378,7 @@ impl CommandHistory {
                     if linq_methods.contains(&next)
                         || ["IS", "NOT", "LIKE", "BETWEEN"].contains(&next.to_uppercase().as_str())
                     {
-                        where_columns.push(word.to_string());
+                        where_columns.push((*word).to_string());
                     }
                 }
             }
@@ -485,10 +485,7 @@ impl CommandHistory {
         // SAFETY: Create backup before clearing
         let current_count = self.entries.len();
         if current_count > 0 {
-            eprintln!(
-                "[HISTORY WARNING] Clearing {} entries - creating backup",
-                current_count
-            );
+            eprintln!("[HISTORY WARNING] Clearing {current_count} entries - creating backup");
             if let Ok(content) = serde_json::to_string_pretty(&self.entries) {
                 self.protection.backup_before_write(&content, current_count);
             }
@@ -516,7 +513,7 @@ impl CommandHistory {
         let entries: Vec<HistoryEntry> = match serde_json::from_str(&content) {
             Ok(entries) => entries,
             Err(e) => {
-                eprintln!("[History] ERROR: Failed to parse history file: {}", e);
+                eprintln!("[History] ERROR: Failed to parse history file: {e}");
                 eprintln!("[History] Attempting recovery from backup...");
 
                 // Try to recover from backup
@@ -540,12 +537,12 @@ impl CommandHistory {
                                 self.history_file.with_extension("json"),
                                 &corrupted_path,
                             );
-                            eprintln!("[History] Corrupted file moved to {:?}", corrupted_path);
+                            eprintln!("[History] Corrupted file moved to {corrupted_path:?}");
 
                             backup_entries
                         }
                         Err(backup_err) => {
-                            eprintln!("[History] Backup also corrupted: {}", backup_err);
+                            eprintln!("[History] Backup also corrupted: {backup_err}");
                             eprintln!("[History] Starting with empty history");
                             Vec::new()
                         }
@@ -556,7 +553,7 @@ impl CommandHistory {
                     // Move the corrupted file for investigation
                     let corrupted_path = self.history_file.with_extension("json.corrupted");
                     let _ = fs::copy(&self.history_file, &corrupted_path);
-                    eprintln!("[History] Corrupted file copied to {:?}", corrupted_path);
+                    eprintln!("[History] Corrupted file copied to {corrupted_path:?}");
 
                     Vec::new()
                 }
@@ -589,10 +586,7 @@ impl CommandHistory {
         // Log if we removed duplicates (only on first load, not every save)
         let removed_count = original_count - deduplicated.len();
         if removed_count > 0 {
-            eprintln!(
-                "[sql-cli] Cleaned {} duplicate commands from history",
-                removed_count
-            );
+            eprintln!("[sql-cli] Cleaned {removed_count} duplicate commands from history");
         }
 
         // Rebuild command counts

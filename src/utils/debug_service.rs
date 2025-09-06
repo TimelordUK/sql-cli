@@ -46,6 +46,7 @@ pub enum DebugLevel {
 }
 
 impl DebugService {
+    #[must_use]
     pub fn new(max_entries: usize) -> Self {
         Self {
             entries: Arc::new(Mutex::new(Vec::new())),
@@ -55,6 +56,7 @@ impl DebugService {
     }
 
     /// Clone the service (for sharing between components)
+    #[must_use]
     pub fn clone_service(&self) -> Self {
         Self {
             entries: Arc::clone(&self.entries),
@@ -71,6 +73,7 @@ impl DebugService {
     }
 
     /// Check if debug collection is enabled
+    #[must_use]
     pub fn is_enabled(&self) -> bool {
         self.enabled.lock().map(|e| *e).unwrap_or(false)
     }
@@ -127,11 +130,13 @@ impl DebugService {
     }
 
     /// Get all debug entries
+    #[must_use]
     pub fn get_entries(&self) -> Vec<DebugEntry> {
         self.entries.lock().map(|e| e.clone()).unwrap_or_default()
     }
 
     /// Get recent entries (last n)
+    #[must_use]
     pub fn get_recent_entries(&self, count: usize) -> Vec<DebugEntry> {
         if let Ok(entries) = self.entries.lock() {
             let start = entries.len().saturating_sub(count);
@@ -149,6 +154,7 @@ impl DebugService {
     }
 
     /// Generate a formatted debug dump
+    #[must_use]
     pub fn generate_dump(&self) -> String {
         let mut dump = String::new();
         dump.push_str("=== DEBUG SERVICE LOG ===\n\n");
@@ -177,7 +183,7 @@ impl DebugService {
                     ));
 
                     if let Some(ref ctx) = entry.context {
-                        dump.push_str(&format!("  Context: {}\n", ctx));
+                        dump.push_str(&format!("  Context: {ctx}\n"));
                     }
                 }
             }
@@ -188,6 +194,7 @@ impl DebugService {
     }
 
     /// Generate a summary of debug entries by component
+    #[must_use]
     pub fn generate_summary(&self) -> String {
         let mut summary = String::new();
         summary.push_str("=== DEBUG SUMMARY ===\n\n");
@@ -209,8 +216,7 @@ impl DebugService {
 
             for (component, (errors, warnings, others)) in component_counts {
                 summary.push_str(&format!(
-                    "{}: {} errors, {} warnings, {} info/trace\n",
-                    component, errors, warnings, others
+                    "{component}: {errors} errors, {warnings} warnings, {others} info/trace\n"
                 ));
             }
         }

@@ -21,6 +21,7 @@ impl ServiceContainer {
     }
 
     /// Clone the service container (for sharing with widgets)
+    #[must_use]
     pub fn clone_for_widget(&self) -> Self {
         Self {
             debug_service: self.debug_service.clone_service(),
@@ -52,6 +53,7 @@ impl ServiceContainer {
     }
 
     /// Generate a comprehensive debug dump
+    #[must_use]
     pub fn generate_debug_dump(&self) -> String {
         let mut dump = String::new();
 

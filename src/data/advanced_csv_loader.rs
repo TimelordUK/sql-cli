@@ -22,6 +22,7 @@ impl Default for StringInterner {
 }
 
 impl StringInterner {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             strings: HashMap::new(),
@@ -44,6 +45,7 @@ impl StringInterner {
     }
 
     /// Get statistics about interned strings
+    #[must_use]
     pub fn stats(&self) -> InternerStats {
         let total_strings = self.strings.len();
         let total_references: usize = self.usage_count.values().sum();
@@ -94,6 +96,7 @@ pub struct AdvancedCsvLoader {
 }
 
 impl AdvancedCsvLoader {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sample_size: 1000,          // Sample first 1000 rows for analysis
@@ -258,7 +261,7 @@ impl AdvancedCsvLoader {
         let headers = reader.headers()?.clone();
 
         let mut table = DataTable::new(table_name);
-        for header in headers.iter() {
+        for header in &headers {
             table.add_column(DataColumn::new(header.to_string()));
         }
 
@@ -310,8 +313,7 @@ impl AdvancedCsvLoader {
             // Track memory periodically
             if row_count % 10000 == 0 {
                 crate::utils::memory_tracker::track_memory(&format!(
-                    "advanced_csv_{}rows",
-                    row_count
+                    "advanced_csv_{row_count}rows"
                 ));
                 debug!("Loaded {} rows...", row_count);
             }
@@ -354,6 +356,7 @@ impl AdvancedCsvLoader {
     }
 
     /// Get interner statistics for debugging
+    #[must_use]
     pub fn get_interner_stats(&self) -> HashMap<usize, InternerStats> {
         self.interners
             .iter()

@@ -3,7 +3,7 @@ use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use sql_cli::data::query_engine::QueryEngine;
 use std::sync::Arc;
 
-/// Helper to get a value from a DataView
+/// Helper to get a value from a `DataView`
 fn get_value(view: &DataView, row_idx: usize, col_idx: usize) -> DataValue {
     view.get_row(row_idx).unwrap().get(col_idx).unwrap().clone()
 }
@@ -50,7 +50,7 @@ fn test_dateadd_days() {
     let engine = QueryEngine::new();
 
     // Add 10 days to 2024-01-15, should be 2024-01-25
-    let query = r#"SELECT DATEADD('day', 10, base_date) as new_date FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEADD('day', 10, base_date) as new_date FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -67,7 +67,7 @@ fn test_dateadd_negative_days() {
     let engine = QueryEngine::new();
 
     // Subtract 5 days from 2024-01-15, should be 2024-01-10
-    let query = r#"SELECT DATEADD('day', -5, base_date) as new_date FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEADD('day', -5, base_date) as new_date FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -83,7 +83,7 @@ fn test_dateadd_months() {
     let engine = QueryEngine::new();
 
     // Add 1 month to 2024-01-31, should be 2024-02-29 (leap year)
-    let query = r#"SELECT DATEADD('month', 1, base_date) as new_date FROM test WHERE id = 3"#;
+    let query = r"SELECT DATEADD('month', 1, base_date) as new_date FROM test WHERE id = 3";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -100,7 +100,7 @@ fn test_dateadd_years() {
     let engine = QueryEngine::new();
 
     // Add 1 year to 2024-02-29 (leap day), should be 2025-02-28
-    let query = r#"SELECT DATEADD('year', 1, base_date) as new_date FROM test WHERE id = 2"#;
+    let query = r"SELECT DATEADD('year', 1, base_date) as new_date FROM test WHERE id = 2";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -117,7 +117,7 @@ fn test_dateadd_hours() {
     let engine = QueryEngine::new();
 
     // Add 12 hours to a date
-    let query = r#"SELECT DATEADD('hour', 12, base_date) as new_date FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEADD('hour', 12, base_date) as new_date FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -133,7 +133,7 @@ fn test_dateadd_minutes() {
     let engine = QueryEngine::new();
 
     // Add 90 minutes (1.5 hours) to a date
-    let query = r#"SELECT DATEADD('minute', 90, base_date) as new_date FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEADD('minute', 90, base_date) as new_date FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -149,7 +149,7 @@ fn test_dateadd_seconds() {
     let engine = QueryEngine::new();
 
     // Add 3661 seconds (1 hour, 1 minute, 1 second)
-    let query = r#"SELECT DATEADD('second', 3661, base_date) as new_date FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEADD('second', 3661, base_date) as new_date FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -176,7 +176,7 @@ fn test_dateadd_with_datetime_input() {
     let engine = QueryEngine::new();
 
     // Add 2 hours to datetime
-    let query = r#"SELECT DATEADD('hour', 2, start_time) as new_time FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEADD('hour', 2, start_time) as new_time FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -192,7 +192,7 @@ fn test_dateadd_invalid_unit() {
     let engine = QueryEngine::new();
 
     // Use invalid unit
-    let query = r#"SELECT DATEADD('week', 1, base_date) as new_date FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEADD('week', 1, base_date) as new_date FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query);
 
     assert!(result.is_err());
@@ -221,13 +221,13 @@ fn test_dateadd_different_date_formats() {
     let engine = QueryEngine::new();
 
     // Add 1 day to each format
-    let query = r#"
+    let query = r"
         SELECT 
             DATEADD('day', 1, us_date) as us_plus_1,
             DATEADD('day', 1, eu_date) as eu_plus_1,
             DATEADD('day', 1, excel_date) as excel_plus_1
         FROM test WHERE id = 1
-    "#;
+    ";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);

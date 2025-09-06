@@ -59,13 +59,13 @@ pub fn execute_search_action(
             }
         }
         SearchMode::Filter => {
-            SearchActionResult::InProgress(format!("Filter mode with pattern: {}", pattern))
+            SearchActionResult::InProgress(format!("Filter mode with pattern: {pattern}"))
         }
         SearchMode::FuzzyFilter => {
-            SearchActionResult::InProgress(format!("Fuzzy filter mode with pattern: {}", pattern))
+            SearchActionResult::InProgress(format!("Fuzzy filter mode with pattern: {pattern}"))
         }
         SearchMode::ColumnSearch => {
-            SearchActionResult::InProgress(format!("Column search mode with pattern: {}", pattern))
+            SearchActionResult::InProgress(format!("Column search mode with pattern: {pattern}"))
         }
     }
 }
@@ -77,7 +77,12 @@ fn perform_search_with_context(ctx: &mut SearchContext) -> Result<SearchResult, 
         // Convert DataView rows to Vec<Vec<String>> for search
         let data: Vec<Vec<String>> = (0..dataview.row_count())
             .filter_map(|i| dataview.get_row(i))
-            .map(|row| row.values.iter().map(|v| v.to_string()).collect())
+            .map(|row| {
+                row.values
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect()
+            })
             .collect();
 
         // Perform search using AppStateContainer
@@ -89,7 +94,15 @@ fn perform_search_with_context(ctx: &mut SearchContext) -> Result<SearchResult, 
             .map(|(row, col, _, _)| (*row, *col))
             .collect();
 
-        if !buffer_matches.is_empty() {
+        if buffer_matches.is_empty() {
+            ctx.buffer.set_search_matches(Vec::new());
+
+            Ok(SearchResult {
+                matches_found: 0,
+                first_match: None,
+                status_message: "No matches found".to_string(),
+            })
+        } else {
             let first_match = buffer_matches[0];
 
             // Update buffer state
@@ -101,14 +114,6 @@ fn perform_search_with_context(ctx: &mut SearchContext) -> Result<SearchResult, 
                 matches_found: buffer_matches.len(),
                 first_match: Some(first_match),
                 status_message: format!("Found {} matches", buffer_matches.len()),
-            })
-        } else {
-            ctx.buffer.set_search_matches(Vec::new());
-
-            Ok(SearchResult {
-                matches_found: 0,
-                first_match: None,
-                status_message: "No matches found".to_string(),
             })
         }
     } else {

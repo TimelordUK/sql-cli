@@ -6,7 +6,7 @@ use crate::hybrid_parser::HybridParser;
 use crate::parser::SqlParser;
 use crate::sql_highlighter::SqlHighlighter;
 
-/// GlobalState contains all truly application-wide state that is shared across all buffers
+/// `GlobalState` contains all truly application-wide state that is shared across all buffers
 /// This includes services, parsers, configuration, and global UI state
 pub struct GlobalState {
     // --- Core Services ---
@@ -63,6 +63,7 @@ pub struct HistoryState {
 }
 
 impl GlobalState {
+    #[must_use]
     pub fn new(api_url: &str, config: Config) -> Self {
         Self {
             api_client: ApiClient::new(api_url),

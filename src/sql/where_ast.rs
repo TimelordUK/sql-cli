@@ -59,6 +59,7 @@ pub enum WhereValue {
 }
 
 impl WhereValue {
+    #[must_use]
     pub fn from_json(value: &Value) -> Self {
         match value {
             Value::String(s) => WhereValue::String(s.clone()),
@@ -75,7 +76,7 @@ impl WhereValue {
     }
 
     /// Try to coerce values for numeric comparison
-    /// Returns (left_value, right_value) if coercion is possible
+    /// Returns (`left_value`, `right_value`) if coercion is possible
     fn try_coerce_numeric(left: &WhereValue, right: &WhereValue) -> Option<(f64, f64)> {
         match (left, right) {
             // Both are already numbers
@@ -104,6 +105,7 @@ impl WhereValue {
     }
 }
 
+#[must_use]
 pub fn format_where_ast(expr: &WhereExpr, indent: usize) -> String {
     let indent_str = "  ".repeat(indent);
     match expr {
@@ -433,9 +435,9 @@ pub fn evaluate_where_expr_with_options(
                 };
 
                 // Simple LIKE implementation: % = any chars, _ = single char
-                let regex_pattern = pattern.replace("%", ".*").replace("_", ".");
+                let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
 
-                if let Ok(regex) = regex::Regex::new(&format!("^{}$", regex_pattern)) {
+                if let Ok(regex) = regex::Regex::new(&format!("^{regex_pattern}$")) {
                     Ok(regex.is_match(&str_value))
                 } else {
                     Ok(false)

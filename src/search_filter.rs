@@ -57,6 +57,7 @@ impl SearchFilter {
     }
 
     /// Apply fuzzy filter to data and return matching indices
+    #[must_use]
     pub fn apply_fuzzy_filter(data: &[Value], pattern: &str, score_threshold: i64) -> Vec<usize> {
         let matcher = SkimMatcherV2::default();
         let mut filtered_indices = Vec::new();
@@ -89,6 +90,7 @@ impl SearchFilter {
     }
 
     /// Find columns matching a search pattern
+    #[must_use]
     pub fn find_matching_columns(headers: &[&str], pattern: &str) -> Vec<(usize, String)> {
         let pattern_lower = pattern.to_lowercase();
         let mut matching = Vec::new();
@@ -103,6 +105,7 @@ impl SearchFilter {
     }
 
     /// Navigate to next search match
+    #[must_use]
     pub fn next_match(matches: &[(usize, usize)], current_index: usize) -> Option<(usize, usize)> {
         if matches.is_empty() {
             return None;
@@ -113,6 +116,7 @@ impl SearchFilter {
     }
 
     /// Navigate to previous search match
+    #[must_use]
     pub fn previous_match(
         matches: &[(usize, usize)],
         current_index: usize,

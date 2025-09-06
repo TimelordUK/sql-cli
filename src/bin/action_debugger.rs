@@ -93,7 +93,7 @@ impl ActionDebugger {
                 }
                 ChordResult::PartialChord(description) => {
                     self.chord_status = Some(description);
-                    let msg = format!("Chord partial: '{}'", key_str);
+                    let msg = format!("Chord partial: '{key_str}'");
                     self.action_history.push_front(msg);
                     if self.action_history.len() > MAX_HISTORY {
                         self.action_history.pop_back();
@@ -131,19 +131,16 @@ impl ActionDebugger {
         // Build action message
         let action_msg = if was_collecting && !is_collecting && !count_before.is_empty() {
             // Count was applied
-            format!(
-                "Count '{}' + Key '{}' → {:?}",
-                count_before, key_str, action
-            )
+            format!("Count '{count_before}' + Key '{key_str}' → {action:?}")
         } else if is_collecting {
             // Still collecting count
-            format!("Collecting count: '{}'", count_after)
+            format!("Collecting count: '{count_after}'")
         } else if let Some(ref act) = action {
             // Normal action
-            format!("Key '{}' → {:?}", key_str, act)
+            format!("Key '{key_str}' → {act:?}")
         } else {
             // No mapping
-            format!("Key '{}' → No mapping", key_str)
+            format!("Key '{key_str}' → No mapping")
         };
 
         self.action_history.push_front(action_msg);
@@ -328,7 +325,7 @@ fn format_key(key: &KeyEvent) -> String {
     // Add key code
     match key.code {
         KeyCode::Char(c) => result.push(c),
-        KeyCode::F(n) => result.push_str(&format!("F{}", n)),
+        KeyCode::F(n) => result.push_str(&format!("F{n}")),
         KeyCode::Up => result.push_str("Up"),
         KeyCode::Down => result.push_str("Down"),
         KeyCode::Left => result.push_str("Left"),
@@ -393,7 +390,7 @@ fn main() -> io::Result<()> {
     terminal.show_cursor()?;
 
     if let Err(err) = res {
-        println!("Error: {:?}", err);
+        println!("Error: {err:?}");
     }
 
     Ok(())

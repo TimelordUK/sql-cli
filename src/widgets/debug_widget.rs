@@ -22,6 +22,7 @@ pub struct DebugWidget {
 }
 
 impl DebugWidget {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             content: String::new(),
@@ -63,8 +64,7 @@ impl DebugWidget {
             let where_ast_info = match Self::parse_where_clause_ast(input_text) {
                 Ok(ast_str) => ast_str,
                 Err(e) => format!(
-                    "\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {}\n",
-                    e
+                    "\n========== WHERE CLAUSE AST ==========\nError parsing WHERE clause: {e}\n"
                 ),
             };
             debug_info.push_str(&where_ast_info);
@@ -185,6 +185,7 @@ impl DebugWidget {
     }
 
     /// Get the visible lines based on scroll offset
+    #[must_use]
     pub fn get_visible_lines(&self, height: usize) -> Vec<Line<'static>> {
         let lines: Vec<&str> = self.content.lines().collect();
         let start = self.scroll_offset as usize;
@@ -192,7 +193,7 @@ impl DebugWidget {
 
         lines[start..end]
             .iter()
-            .map(|line| Line::from(line.to_string()))
+            .map(|line| Line::from((*line).to_string()))
             .collect()
     }
 
@@ -223,6 +224,7 @@ impl DebugWidget {
     }
 
     /// Get the current content (for clipboard operations)
+    #[must_use]
     pub fn get_content(&self) -> &str {
         &self.content
     }
@@ -259,11 +261,11 @@ impl DebugWidget {
             match where_parser::WhereParser::parse(where_only) {
                 Ok(ast) => {
                     let mut result = String::from("\n========== WHERE CLAUSE AST ==========\n");
-                    result.push_str(&format!("Input: {}\n", where_only));
-                    result.push_str(&format!("Parsed AST:\n{:#?}\n", ast));
+                    result.push_str(&format!("Input: {where_only}\n"));
+                    result.push_str(&format!("Parsed AST:\n{ast:#?}\n"));
                     Ok(result)
                 }
-                Err(e) => Err(format!("Failed to parse WHERE clause: {}", e)),
+                Err(e) => Err(format!("Failed to parse WHERE clause: {e}")),
             }
         } else {
             Err("No WHERE clause found in query".to_string())

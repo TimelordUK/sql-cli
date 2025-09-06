@@ -22,13 +22,13 @@ fn create_test_table() -> Arc<DataTable> {
         table
             .add_row(DataRow::new(vec![
                 DataValue::Integer(i),
-                DataValue::String(format!("Item{}", i)),
-                DataValue::String(format!("ORD{:03}", i)),
-                DataValue::String(format!("EXT{:03}", i)),
-                DataValue::String(format!("PAR{:03}", i)),
-                DataValue::String(format!("PLAT{:03}", i)),
+                DataValue::String(format!("Item{i}")),
+                DataValue::String(format!("ORD{i:03}")),
+                DataValue::String(format!("EXT{i:03}")),
+                DataValue::String(format!("PAR{i:03}")),
+                DataValue::String(format!("PLAT{i:03}")),
                 DataValue::String("Active".to_string()),
-                DataValue::String(format!("2024-01-{:02}", i)),
+                DataValue::String(format!("2024-01-{i:02}")),
             ]))
             .unwrap();
     }

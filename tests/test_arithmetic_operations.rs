@@ -3,7 +3,7 @@ use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use sql_cli::data::query_engine::QueryEngine;
 use std::sync::Arc;
 
-/// Helper function to get a value from a DataView row by index
+/// Helper function to get a value from a `DataView` row by index
 fn get_value(view: &DataView, row_idx: usize, col_idx: usize) -> DataValue {
     view.get_row(row_idx).unwrap().get(col_idx).unwrap().clone()
 }

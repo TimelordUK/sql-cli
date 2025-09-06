@@ -11,17 +11,17 @@ fn main() {
     ];
 
     for sql in queries {
-        println!("\n=== Parsing: {} ===", sql);
+        println!("\n=== Parsing: {sql} ===");
         let mut parser = Parser::new(sql);
         match parser.parse() {
             Ok(stmt) => {
                 if let Some(where_clause) = &stmt.where_clause {
                     println!("WHERE clause parsed successfully:");
-                    println!("{:#?}", where_clause);
+                    println!("{where_clause:#?}");
                 }
             }
             Err(e) => {
-                println!("Parse error: {}", e);
+                println!("Parse error: {e}");
             }
         }
     }

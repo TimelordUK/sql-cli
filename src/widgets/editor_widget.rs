@@ -54,6 +54,7 @@ pub struct EditorWidget {
 }
 
 impl EditorWidget {
+    #[must_use]
     pub fn new() -> Self {
         Self {}
     }

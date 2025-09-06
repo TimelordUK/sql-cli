@@ -5,12 +5,13 @@ use anyhow::Result;
 use std::collections::HashMap;
 use tracing::{debug, info, trace};
 
-/// Adapter to make CsvApiClient implement DataSource trait
+/// Adapter to make `CsvApiClient` implement `DataSource` trait
 pub struct CsvDataSourceAdapter {
     client: CsvApiClient,
 }
 
 impl CsvDataSourceAdapter {
+    #[must_use]
     pub fn new(client: CsvApiClient) -> Self {
         Self { client }
     }
@@ -50,6 +51,7 @@ impl CsvDataSourceAdapter {
     }
 
     /// Get access to the underlying CSV client if needed
+    #[must_use]
     pub fn inner(&self) -> &CsvApiClient {
         &self.client
     }
@@ -118,7 +120,7 @@ impl DataSource for CsvDataSourceAdapter {
     }
 }
 
-/// Convert CsvApiClient's QueryResponse to our DataSourceQueryResponse
+/// Convert `CsvApiClient`'s `QueryResponse` to our `DataSourceQueryResponse`
 fn convert_query_response(response: QueryResponse) -> DataSourceQueryResponse {
     // Extract columns from the first row if available
     let columns = if let Some(first_row) = response.data.first() {

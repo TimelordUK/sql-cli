@@ -5,7 +5,7 @@ use std::cell::RefCell;
 // Arc import removed - no longer needed
 
 /// Trait that provides column operation behavior for TUI components
-/// This extracts column operation methods from EnhancedTui to reduce coupling
+/// This extracts column operation methods from `EnhancedTui` to reduce coupling
 pub trait ColumnBehavior {
     // Required methods - these provide access to TUI internals
     fn viewport_manager(&self) -> &RefCell<Option<ViewportManager>>;
@@ -59,7 +59,7 @@ pub trait ColumnBehavior {
         let message = match direction {
             "first" => "Moved to first column".to_string(),
             "last" => "Moved to last column".to_string(),
-            _ => format!("Moved to column {}", visual_position),
+            _ => format!("Moved to column {visual_position}"),
         };
         self.buffer_mut().set_status_message(message);
     }
@@ -89,8 +89,7 @@ pub trait ColumnBehavior {
                     .buffer()
                     .get_dataview()
                     .as_ref()
-                    .map(|dv| dv.get_pinned_columns().len())
-                    .unwrap_or(0);
+                    .map_or(0, |dv| dv.get_pinned_columns().len());
                 self.state_container().navigation_mut().scroll_offset.1 =
                     viewport.start.saturating_sub(pinned_count);
             }
@@ -110,24 +109,20 @@ pub trait ColumnBehavior {
             return;
         }
 
-        let result = self
-            .viewport_manager()
-            .borrow_mut()
-            .as_mut()
-            .map(|vm| vm.hide_current_column_with_result())
-            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
+        let result = self.viewport_manager().borrow_mut().as_mut().map_or_else(
+            || ColumnOperationResult::failure("No viewport manager"),
+            crate::ui::viewport_manager::ViewportManager::hide_current_column_with_result,
+        );
 
         self.apply_column_operation_result(result);
     }
 
     /// Unhide all columns
     fn unhide_all_columns(&mut self) {
-        let result = self
-            .viewport_manager()
-            .borrow_mut()
-            .as_mut()
-            .map(|vm| vm.unhide_all_columns_with_result())
-            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
+        let result = self.viewport_manager().borrow_mut().as_mut().map_or_else(
+            || ColumnOperationResult::failure("No viewport manager"),
+            crate::ui::viewport_manager::ViewportManager::unhide_all_columns_with_result,
+        );
 
         self.apply_column_operation_result(result);
     }
@@ -138,12 +133,10 @@ pub trait ColumnBehavior {
             return;
         }
 
-        let result = self
-            .viewport_manager()
-            .borrow_mut()
-            .as_mut()
-            .map(|vm| vm.reorder_column_left_with_result())
-            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
+        let result = self.viewport_manager().borrow_mut().as_mut().map_or_else(
+            || ColumnOperationResult::failure("No viewport manager"),
+            crate::ui::viewport_manager::ViewportManager::reorder_column_left_with_result,
+        );
 
         self.apply_column_operation_result(result);
     }
@@ -154,12 +147,10 @@ pub trait ColumnBehavior {
             return;
         }
 
-        let result = self
-            .viewport_manager()
-            .borrow_mut()
-            .as_mut()
-            .map(|vm| vm.reorder_column_right_with_result())
-            .unwrap_or_else(|| ColumnOperationResult::failure("No viewport manager"));
+        let result = self.viewport_manager().borrow_mut().as_mut().map_or_else(
+            || ColumnOperationResult::failure("No viewport manager"),
+            crate::ui::viewport_manager::ViewportManager::reorder_column_right_with_result,
+        );
 
         self.apply_column_operation_result(result);
     }

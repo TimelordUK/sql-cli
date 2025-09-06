@@ -55,7 +55,7 @@ pub struct KeybindingConfig {
     pub vim_mode: bool,
 
     /// Custom key mappings (future expansion)
-    /// Format: "action" -> "key_sequence"
+    /// Format: "action" -> "`key_sequence`"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_mappings: Option<std::collections::HashMap<String, String>>,
 }
@@ -120,7 +120,7 @@ pub struct CellSelectionStyle {
     /// Whether to use background color
     pub use_background: bool,
 
-    /// Background color if use_background is true
+    /// Background color if `use_background` is true
     pub background: String,
 
     /// Whether to bold the text
@@ -169,6 +169,7 @@ impl Default for IconConfig {
 
 impl IconConfig {
     /// Get simple ASCII alternatives for terminals without glyph support
+    #[must_use]
     pub fn simple() -> Self {
         Self {
             pin: "[P]".to_string(),
@@ -239,6 +240,7 @@ impl Default for CellSelectionStyle {
 
 impl Config {
     /// Generate debug info string for display
+    #[must_use]
     pub fn debug_info(&self) -> String {
         let mut info = String::new();
         info.push_str("\n========== CONFIGURATION ==========\n");
@@ -362,6 +364,7 @@ impl Config {
     }
 
     /// Create a default config file with comments
+    #[must_use]
     pub fn create_default_with_comments() -> String {
         r#"# SQL CLI Configuration File
 # Location: ~/.config/sql-cli/config.toml (Linux/macOS)

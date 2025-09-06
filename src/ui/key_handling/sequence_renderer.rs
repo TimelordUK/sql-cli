@@ -31,6 +31,7 @@ pub struct KeySequenceRenderer {
 }
 
 impl KeySequenceRenderer {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sequences: VecDeque::with_capacity(10),
@@ -62,7 +63,7 @@ impl KeySequenceRenderer {
         // Check if this is a repeat of the last key
         if let Some(last) = self.sequences.back_mut() {
             if last.key == key
-                && last.last_press.elapsed().as_millis() < self.collapse_window_ms as u128
+                && last.last_press.elapsed().as_millis() < u128::from(self.collapse_window_ms)
             {
                 // It's a rapid repeat - increment count
                 last.count += 1;
@@ -94,6 +95,7 @@ impl KeySequenceRenderer {
     }
 
     /// Get the display string for the status line
+    #[must_use]
     pub fn get_display(&self) -> String {
         if !self.enabled {
             return String::new();
@@ -195,7 +197,7 @@ impl KeySequenceRenderer {
 
         // Remove sequences older than fade duration
         self.sequences.retain(|seq| {
-            now.duration_since(seq.last_press).as_millis() < self.fade_duration_ms as u128
+            now.duration_since(seq.last_press).as_millis() < u128::from(self.fade_duration_ms)
         });
 
         // Keep only last N sequences for memory efficiency
@@ -205,6 +207,7 @@ impl KeySequenceRenderer {
     }
 
     /// Check if there's anything to display
+    #[must_use]
     pub fn has_content(&self) -> bool {
         self.enabled && (!self.sequences.is_empty() || self.chord_mode.is_some())
     }
@@ -234,18 +237,22 @@ impl KeySequenceRenderer {
     }
 
     // Debug getters for accessing internal state
+    #[must_use]
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
 
+    #[must_use]
     pub fn get_chord_mode(&self) -> &Option<String> {
         &self.chord_mode
     }
 
+    #[must_use]
     pub fn sequence_count(&self) -> usize {
         self.sequences.len()
     }
 
+    #[must_use]
     pub fn get_sequences(&self) -> Vec<(String, usize)> {
         self.sequences
             .iter()
@@ -320,7 +327,7 @@ mod tests {
 
         // Add more than limit
         for i in 1..=10 {
-            renderer.record_key(format!("{}", i));
+            renderer.record_key(format!("{i}"));
             sleep(Duration::from_millis(600));
         }
 

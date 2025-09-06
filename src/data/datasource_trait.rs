@@ -43,8 +43,8 @@ pub trait DataSource: Send + Sync {
     fn clone_box(&self) -> Box<dyn DataSource>;
 }
 
-/// Helper trait for converting to DataTable
+/// Helper trait for converting to `DataTable`
 pub trait ToDataTable {
-    /// Convert the data source to a DataTable structure
+    /// Convert the data source to a `DataTable` structure
     fn to_datatable(&self) -> Result<crate::datatable::DataTable>;
 }

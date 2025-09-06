@@ -5,7 +5,7 @@ use crate::buffer::BufferAPI;
 use crate::data::data_provider::DataProvider;
 use std::fmt::Debug;
 
-/// Minimal adapter that just uses DataView for everything
+/// Minimal adapter that just uses `DataView` for everything
 pub struct BufferAdapter<'a> {
     buffer: &'a (dyn BufferAPI + Send + Sync),
 }
@@ -16,18 +16,23 @@ impl<'a> BufferAdapter<'a> {
     }
 }
 
-impl<'a> Debug for BufferAdapter<'a> {
+impl Debug for BufferAdapter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BufferAdapter").finish()
     }
 }
 
-impl<'a> DataProvider for BufferAdapter<'a> {
+impl DataProvider for BufferAdapter<'_> {
     fn get_row(&self, index: usize) -> Option<Vec<String>> {
         // Use DataView if available
         if let Some(dataview) = self.buffer.get_dataview() {
             if let Some(row) = dataview.get_row(index) {
-                return Some(row.values.iter().map(|v| v.to_string()).collect());
+                return Some(
+                    row.values
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect(),
+                );
             }
         }
 

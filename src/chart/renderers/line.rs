@@ -1,4 +1,4 @@
-use crate::chart::types::*;
+use crate::chart::types::{ChartConfig, ChartViewport, DataSeries};
 use chrono::{DateTime, Utc};
 use ratatui::{
     layout::Rect,
@@ -13,6 +13,7 @@ pub struct LineRenderer {
 }
 
 impl LineRenderer {
+    #[must_use]
     pub fn new(viewport: ChartViewport) -> Self {
         Self { viewport }
     }
@@ -84,11 +85,11 @@ impl LineRenderer {
     fn create_time_labels(&self) -> Vec<String> {
         let num_labels = 5;
         let x_span = self.viewport.x_max - self.viewport.x_min;
-        let step = x_span / (num_labels as f64 - 1.0);
+        let step = x_span / (f64::from(num_labels) - 1.0);
 
         (0..num_labels)
             .map(|i| {
-                let timestamp_secs = self.viewport.x_min + (i as f64) * step;
+                let timestamp_secs = self.viewport.x_min + f64::from(i) * step;
                 let dt = DateTime::<Utc>::from_timestamp(timestamp_secs as i64, 0)
                     .unwrap_or_else(Utc::now);
                 format!("{}", dt.format("%H:%M:%S"))
@@ -98,17 +99,17 @@ impl LineRenderer {
 
     fn create_numeric_labels(&self, min: f64, max: f64) -> Vec<String> {
         let num_labels = 5;
-        let step = (max - min) / (num_labels as f64 - 1.0);
+        let step = (max - min) / (f64::from(num_labels) - 1.0);
 
         (0..num_labels)
             .map(|i| {
-                let value = min + (i as f64) * step;
+                let value = min + f64::from(i) * step;
                 if value.abs() > 1000.0 {
                     format!("{:.0}k", value / 1000.0)
                 } else if value.abs() < 1.0 {
-                    format!("{:.3}", value)
+                    format!("{value:.3}")
                 } else {
-                    format!("{:.1}", value)
+                    format!("{value:.1}")
                 }
             })
             .collect()
@@ -122,6 +123,7 @@ impl LineRenderer {
         &mut self.viewport
     }
 
+    #[must_use]
     pub fn viewport(&self) -> &ChartViewport {
         &self.viewport
     }

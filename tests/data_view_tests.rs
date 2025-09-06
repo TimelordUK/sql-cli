@@ -13,12 +13,12 @@ mod tests {
         path
     }
 
-    /// Helper function to load trades.json into a DataTable
+    /// Helper function to load trades.json into a `DataTable`
     fn load_trades_datatable() -> DataTable {
         let trades_path = get_test_data_path("trades.json");
 
         println!("\n=== Loading trades.json ===");
-        println!("Path: {:?}", trades_path);
+        println!("Path: {trades_path:?}");
 
         let table =
             load_json_to_datatable(trades_path, "trades").expect("Failed to load trades.json");

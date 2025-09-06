@@ -98,7 +98,7 @@ impl YankManager {
         )?;
 
         Ok(YankResult {
-            description: format!("{} ({} chars)", col_name, clipboard_len),
+            description: format!("{col_name} ({clipboard_len} chars)"),
             preview: display_value,
             full_value: value,
         })
@@ -147,12 +147,12 @@ impl YankManager {
         state_container.yank_row(
             actual_row_index,
             row_text.clone(),
-            format!("{} values", num_values),
+            format!("{num_values} values"),
         )?;
 
         Ok(YankResult {
             description: format!("Row {} ({} chars)", row_index + 1, clipboard_len),
-            preview: format!("{} values", num_values),
+            preview: format!("{num_values} values"),
             full_value: row_text,
         })
     }
@@ -260,7 +260,7 @@ impl YankManager {
         )?;
 
         Ok(YankResult {
-            description: format!("Column '{}' ({} chars)", header, clipboard_len),
+            description: format!("Column '{header}' ({clipboard_len} chars)"),
             preview,
             full_value: column_text,
         })
@@ -304,17 +304,17 @@ impl YankManager {
         };
 
         // Call AppStateContainer's yank_all
-        let preview = format!("{} rows × {} columns", row_count, col_count);
+        let preview = format!("{row_count} rows × {col_count} columns");
         state_container.yank_all(tsv_text.clone(), preview.clone())?;
 
         Ok(YankResult {
-            description: format!("All data{} as TSV ({} chars)", filter_info, clipboard_len),
+            description: format!("All data{filter_info} as TSV ({clipboard_len} chars)"),
             preview,
             full_value: tsv_text,
         })
     }
 
-    /// Helper to convert DataTable to JSON for TSV generation
+    /// Helper to convert `DataTable` to JSON for TSV generation
     fn datatable_to_json(datatable: &crate::data::datatable::DataTable) -> Result<Vec<Value>> {
         let headers = datatable.column_names();
         let mut json_data = Vec::new();

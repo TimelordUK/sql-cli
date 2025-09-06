@@ -65,6 +65,7 @@ impl Default for UnitConverter {
 }
 
 impl UnitConverter {
+    #[must_use]
     pub fn new() -> Self {
         let mut units = HashMap::new();
 
@@ -759,6 +760,7 @@ impl UnitConverter {
     }
 
     /// Get list of supported units for a category
+    #[must_use]
     pub fn get_units_for_category(&self, category: &str) -> Vec<String> {
         let cat = match category.to_lowercase().as_str() {
             "length" => Some(UnitCategory::Length),
@@ -795,6 +797,7 @@ pub fn convert_units(value: f64, from_unit: &str, to_unit: &str) -> Result<f64> 
 }
 
 /// Get list of units for a category
+#[must_use]
 pub fn list_units(category: &str) -> Vec<String> {
     CONVERTER.get_units_for_category(category)
 }

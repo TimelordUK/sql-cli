@@ -31,7 +31,7 @@ fn test_column_auto_sizing() {
     ]);
 
     let mut temp_file = NamedTempFile::new().unwrap();
-    write!(temp_file, "{}", test_data).unwrap();
+    write!(temp_file, "{test_data}").unwrap();
 
     let mut client = CsvApiClient::new();
     client.load_json(temp_file.path(), "test").unwrap();
@@ -56,7 +56,7 @@ fn test_column_auto_sizing() {
 
     // Verify the data can be loaded and processed
     for (i, row) in result.data.iter().enumerate() {
-        assert!(row.is_object(), "Row {} should be an object", i);
+        assert!(row.is_object(), "Row {i} should be an object");
         if let Some(obj) = row.as_object() {
             assert!(obj.contains_key("id"));
             assert!(obj.contains_key("platformOrderId"));

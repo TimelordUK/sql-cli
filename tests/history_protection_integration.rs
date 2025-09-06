@@ -26,7 +26,7 @@ fn test_history_protection_integration() {
 
     // Add some entries
     for i in 1..=5 {
-        let cmd = format!("SELECT * FROM table_{}", i);
+        let cmd = format!("SELECT * FROM table_{i}");
         history.add_entry(cmd.clone(), true, Some(100)).unwrap();
     }
 
@@ -41,7 +41,7 @@ fn test_history_protection_integration() {
     // by saving after adding entries
     let history_file = temp_dir.path().join("sql-cli").join("history.json");
     if history_file.exists() {
-        println!("History file exists at: {:?}", history_file);
+        println!("History file exists at: {history_file:?}");
     }
 
     // Test protection by trying to clear
@@ -51,7 +51,7 @@ fn test_history_protection_integration() {
     if backup_dir.exists() {
         let backups: Vec<_> = fs::read_dir(&backup_dir)
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .collect();
         assert!(
             !backups.is_empty(),

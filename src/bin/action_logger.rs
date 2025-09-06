@@ -25,7 +25,7 @@ fn format_key(key: &KeyEvent) -> String {
     // Add key code
     match key.code {
         KeyCode::Char(c) => result.push(c),
-        KeyCode::F(n) => result.push_str(&format!("F{}", n)),
+        KeyCode::F(n) => result.push_str(&format!("F{n}")),
         KeyCode::Up => result.push('↑'),
         KeyCode::Down => result.push('↓'),
         KeyCode::Left => result.push('←'),
@@ -47,16 +47,16 @@ fn format_key(key: &KeyEvent) -> String {
 
 fn format_action(action: &Action) -> String {
     match action {
-        Action::Navigate(nav) => format!("Navigate({:?})", nav),
+        Action::Navigate(nav) => format!("Navigate({nav:?})"),
         Action::ToggleSelectionMode => "ToggleSelectionMode".to_string(),
         Action::Quit => "Quit".to_string(),
         Action::ForceQuit => "ForceQuit".to_string(),
         Action::ShowHelp => "ShowHelp".to_string(),
         Action::ShowDebugInfo => "ShowDebugInfo".to_string(),
         Action::ToggleColumnPin => "ToggleColumnPin".to_string(),
-        Action::Sort(col) => format!("Sort({:?})", col),
+        Action::Sort(col) => format!("Sort({col:?})"),
         Action::ExitCurrentMode => "ExitCurrentMode".to_string(),
-        _ => format!("{:?}", action),
+        _ => format!("{action:?}"),
     }
 }
 
@@ -88,7 +88,7 @@ fn main() -> io::Result<()> {
 
                 // Debug: show if chord is active before processing
                 if chord_handler.is_chord_mode_active() {
-                    println!("│ {:6} │ [Chord active, processing...]", key_str);
+                    println!("│ {key_str:6} │ [Chord active, processing...]");
                 }
 
                 // Process through chord handler first
@@ -96,7 +96,7 @@ fn main() -> io::Result<()> {
 
                 match chord_result {
                     ChordResult::CompleteChord(action) => {
-                        println!("│ {:6} │ CHORD COMPLETE => {:?}", key_str, action);
+                        println!("│ {key_str:6} │ CHORD COMPLETE => {action:?}");
                         io::stdout().flush().unwrap();
 
                         // Check for quit action
@@ -106,12 +106,12 @@ fn main() -> io::Result<()> {
                         continue;
                     }
                     ChordResult::PartialChord(description) => {
-                        println!("│ {:6} │ CHORD: {}", key_str, description);
+                        println!("│ {key_str:6} │ CHORD: {description}");
                         io::stdout().flush().unwrap();
                         continue;
                     }
                     ChordResult::Cancelled => {
-                        println!("│ {:6} │ CHORD CANCELLED", key_str);
+                        println!("│ {key_str:6} │ CHORD CANCELLED");
                         io::stdout().flush().unwrap();
                         continue;
                     }
@@ -156,20 +156,20 @@ fn main() -> io::Result<()> {
                 } else if is_collecting {
                     // Building count
                     count_display = count_after.clone();
-                    println!("│ {:6} │ Building count: {} │", key_str, count_display);
+                    println!("│ {key_str:6} │ Building count: {count_display} │");
                 } else if let Some(ref act) = action {
                     // Normal action
                     println!("│ {:6} │ => {}", key_str, format_action(act));
                 } else {
                     // No mapping
-                    println!("│ {:6} │ (no mapping in Results mode)", key_str);
+                    println!("│ {key_str:6} │ (no mapping in Results mode)");
                 }
 
                 // Flush stdout to ensure each line appears immediately
                 io::stdout().flush().unwrap();
 
                 // Check for quit
-                if matches!(action, Some(Action::Quit) | Some(Action::ForceQuit)) {
+                if matches!(action, Some(Action::Quit | Action::ForceQuit)) {
                     break;
                 }
             }

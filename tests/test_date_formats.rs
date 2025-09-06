@@ -3,7 +3,7 @@ use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use sql_cli::data::query_engine::QueryEngine;
 use std::sync::Arc;
 
-/// Helper to get a value from a DataView
+/// Helper to get a value from a `DataView`
 fn get_value(view: &DataView, row_idx: usize, col_idx: usize) -> DataValue {
     view.get_row(row_idx).unwrap().get(col_idx).unwrap().clone()
 }
@@ -61,7 +61,7 @@ fn test_iso_format() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT DATEDIFF('day', '2024-01-01', iso_date) as days FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEDIFF('day', '2024-01-01', iso_date) as days FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -73,7 +73,7 @@ fn test_us_format() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT DATEDIFF('day', '01/01/2024', us_date) as days FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEDIFF('day', '01/01/2024', us_date) as days FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -85,7 +85,7 @@ fn test_european_format() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT DATEDIFF('day', '01/01/2024', eu_date) as days FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEDIFF('day', '01/01/2024', eu_date) as days FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -97,8 +97,7 @@ fn test_excel_format() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query =
-        r#"SELECT DATEDIFF('day', '01-Jan-2024', excel_date) as days FROM test WHERE id = 1"#;
+    let query = r"SELECT DATEDIFF('day', '01-Jan-2024', excel_date) as days FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -111,7 +110,7 @@ fn test_long_format() {
     let engine = QueryEngine::new();
 
     let query =
-        r#"SELECT DATEDIFF('day', 'January 1, 2024', long_date) as days FROM test WHERE id = 1"#;
+        r"SELECT DATEDIFF('day', 'January 1, 2024', long_date) as days FROM test WHERE id = 1";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -124,7 +123,7 @@ fn test_mixed_formats() {
     let engine = QueryEngine::new();
 
     // Mix different formats in one query
-    let query = r#"SELECT DATEDIFF('day', us_date, excel_date) as days FROM test WHERE id = 3"#;
+    let query = r"SELECT DATEDIFF('day', us_date, excel_date) as days FROM test WHERE id = 3";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);
@@ -137,7 +136,7 @@ fn test_cross_format_comparison() {
     let engine = QueryEngine::new();
 
     // Compare ISO with US format
-    let query = r#"SELECT id, DATEDIFF('day', iso_date, us_date) as diff FROM test"#;
+    let query = r"SELECT id, DATEDIFF('day', iso_date, us_date) as diff FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 3);
@@ -165,7 +164,7 @@ fn test_datetime_with_different_formats() {
     let table = Arc::new(table);
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT DATEDIFF('hour', datetime1, datetime2) as hours_diff FROM test"#;
+    let query = r"SELECT DATEDIFF('hour', datetime1, datetime2) as hours_diff FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.row_count(), 1);

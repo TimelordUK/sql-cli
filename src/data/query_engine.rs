@@ -13,7 +13,7 @@ use crate::sql::recursive_parser::{
     OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression,
 };
 
-/// Query engine that executes SQL directly on DataTable
+/// Query engine that executes SQL directly on `DataTable`
 pub struct QueryEngine {
     case_insensitive: bool,
     date_notation: String,
@@ -27,6 +27,7 @@ impl Default for QueryEngine {
 }
 
 impl QueryEngine {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             case_insensitive: false,
@@ -35,6 +36,7 @@ impl QueryEngine {
         }
     }
 
+    #[must_use]
     pub fn with_behavior_config(config: BehaviorConfig) -> Self {
         let case_insensitive = config.case_insensitive_default;
         let date_notation = config.default_date_notation.clone();
@@ -45,6 +47,7 @@ impl QueryEngine {
         }
     }
 
+    #[must_use]
     pub fn with_date_notation(date_notation: String) -> Self {
         Self {
             case_insensitive: false,
@@ -53,6 +56,7 @@ impl QueryEngine {
         }
     }
 
+    #[must_use]
     pub fn with_case_insensitive(case_insensitive: bool) -> Self {
         Self {
             case_insensitive,
@@ -61,6 +65,7 @@ impl QueryEngine {
         }
     }
 
+    #[must_use]
     pub fn with_case_insensitive_and_date_notation(
         case_insensitive: bool,
         date_notation: String,
@@ -111,7 +116,7 @@ impl QueryEngine {
 
         for (i, c1) in s1.chars().enumerate() {
             for (j, c2) in s2.chars().enumerate() {
-                let cost = if c1 == c2 { 0 } else { 1 };
+                let cost = usize::from(c1 != c2);
                 matrix[i + 1][j + 1] = std::cmp::min(
                     matrix[i][j + 1] + 1, // deletion
                     std::cmp::min(
@@ -125,7 +130,7 @@ impl QueryEngine {
         matrix[len1][len2]
     }
 
-    /// Execute a SQL query on a DataTable and return a DataView (for backward compatibility)
+    /// Execute a SQL query on a `DataTable` and return a `DataView` (for backward compatibility)
     pub fn execute(&self, table: Arc<DataTable>, sql: &str) -> Result<DataView> {
         let start_time = Instant::now();
 
@@ -154,7 +159,7 @@ impl QueryEngine {
         Ok(result)
     }
 
-    /// Build a DataView from a parsed SQL statement
+    /// Build a `DataView` from a parsed SQL statement
     fn build_view(&self, table: Arc<DataTable>, statement: SelectStatement) -> Result<DataView> {
         debug!(
             "QueryEngine::build_view - select_items: {:?}",
@@ -383,7 +388,7 @@ impl QueryEngine {
                 base_name.clone()
             } else {
                 // Duplicate, append a suffix
-                format!("{}_{}", base_name, count)
+                format!("{base_name}_{count}")
             };
             *count += 1;
 
@@ -486,7 +491,7 @@ impl QueryEngine {
         Ok(DataView::new(Arc::new(result_table)))
     }
 
-    /// Resolve SelectItem columns to indices (for simple column projections only)
+    /// Resolve `SelectItem` columns to indices (for simple column projections only)
     fn resolve_select_columns(
         &self,
         table: &DataTable,
@@ -820,7 +825,7 @@ mod tests {
         println!("Table has {} rows", table.row_count());
         for i in 0..table.row_count() {
             let status = table.get_value(i, 1);
-            println!("Row {}: status = {:?}", i, status);
+            println!("Row {i}: status = {status:?}");
         }
 
         // Test 1: Basic string contains (should work)
@@ -835,7 +840,7 @@ mod tests {
                 assert_eq!(view.row_count(), 2); // Should find both Pending rows
             }
             Err(e) => {
-                panic!("Query failed: {}", e);
+                panic!("Query failed: {e}");
             }
         }
 
@@ -855,7 +860,7 @@ mod tests {
                 assert!(view.row_count() >= 1);
             }
             Err(e) => {
-                panic!("Numeric coercion query failed: {}", e);
+                panic!("Numeric coercion query failed: {e}");
             }
         }
 
@@ -902,7 +907,7 @@ mod tests {
         println!("Table has {} rows", table.row_count());
         for i in 0..table.row_count() {
             let country = table.get_value(i, 1);
-            println!("Row {}: country = {:?}", i, country);
+            println!("Row {i}: country = {country:?}");
         }
 
         // Test NOT IN clause - should exclude CA, return US and UK (2 rows)
@@ -917,7 +922,7 @@ mod tests {
                 assert_eq!(view.row_count(), 2); // Should find US and UK
             }
             Err(e) => {
-                panic!("NOT IN query failed: {}", e);
+                panic!("NOT IN query failed: {e}");
             }
         }
 
@@ -963,7 +968,7 @@ mod tests {
         println!("Table has {} rows", table.row_count());
         for i in 0..table.row_count() {
             let country = table.get_value(i, 1);
-            println!("Row {}: country = {:?}", i, country);
+            println!("Row {i}: country = {country:?}");
         }
 
         // Test case-insensitive IN - should match 'CA' with 'ca'
@@ -979,7 +984,7 @@ mod tests {
                 assert_eq!(view.row_count(), 1); // Should find CA row
             }
             Err(e) => {
-                panic!("Case-insensitive IN query failed: {}", e);
+                panic!("Case-insensitive IN query failed: {e}");
             }
         }
 
@@ -998,7 +1003,7 @@ mod tests {
                 assert_eq!(view.row_count(), 2); // Should find us and UK rows
             }
             Err(e) => {
-                panic!("Case-insensitive NOT IN query failed: {}", e);
+                panic!("Case-insensitive NOT IN query failed: {e}");
             }
         }
 
@@ -1016,7 +1021,7 @@ mod tests {
                 assert_eq!(view.row_count(), 0); // Should find no rows (CA != ca)
             }
             Err(e) => {
-                panic!("Case-sensitive IN query failed: {}", e);
+                panic!("Case-sensitive IN query failed: {e}");
             }
         }
 
@@ -1077,10 +1082,7 @@ mod tests {
         for i in 0..table.row_count() {
             let status = table.get_value(i, 1);
             let priority = table.get_value(i, 2);
-            println!(
-                "Row {}: status = {:?}, priority = {:?}",
-                i, status, priority
-            );
+            println!("Row {i}: status = {status:?}, priority = {priority:?}");
         }
 
         // Test OR with parentheses - should get (Pending AND High) OR (Complete AND Low)
@@ -1098,7 +1100,7 @@ mod tests {
                 assert_eq!(view.row_count(), 2); // Should find rows 1 and 4
             }
             Err(e) => {
-                panic!("Parentheses query failed: {}", e);
+                panic!("Parentheses query failed: {e}");
             }
         }
 
@@ -1151,7 +1153,7 @@ mod tests {
         for i in 0..table.row_count() {
             let price = table.get_value(i, 1);
             let quantity = table.get_value(i, 2);
-            println!("Row {}: price = {:?}, quantity = {:?}", i, price, quantity);
+            println!("Row {i}: price = {price:?}, quantity = {quantity:?}");
         }
 
         // Test Contains on float values - should find rows with decimal points
@@ -1169,7 +1171,7 @@ mod tests {
                 assert_eq!(view.row_count(), 2); // Should find 99.50 and 150.0
             }
             Err(e) => {
-                panic!("Numeric Contains query failed: {}", e);
+                panic!("Numeric Contains query failed: {e}");
             }
         }
 
@@ -1188,7 +1190,7 @@ mod tests {
                 assert_eq!(view.row_count(), 2); // Should find 100 and 200
             }
             Err(e) => {
-                panic!("Integer Contains query failed: {}", e);
+                panic!("Integer Contains query failed: {e}");
             }
         }
 
@@ -1235,7 +1237,7 @@ mod tests {
         println!("Table has {} rows", table.row_count());
         for i in 0..table.row_count() {
             let date = table.get_value(i, 1);
-            println!("Row {}: created_date = {:?}", i, date);
+            println!("Row {i}: created_date = {date:?}");
         }
 
         // Test DateTime constructor comparison - should find dates after 2025-01-01
@@ -1250,7 +1252,7 @@ mod tests {
                 assert_eq!(view.row_count(), 2); // Should find 2025-01-15 and 2025-02-15
             }
             Err(e) => {
-                panic!("DateTime comparison query failed: {}", e);
+                panic!("DateTime comparison query failed: {e}");
             }
         }
 
@@ -1297,7 +1299,7 @@ mod tests {
         println!("Table has {} rows", table.row_count());
         for i in 0..table.row_count() {
             let status = table.get_value(i, 1);
-            println!("Row {}: status = {:?}", i, status);
+            println!("Row {i}: status = {status:?}");
         }
 
         // Test NOT with Contains - should exclude rows containing "pend"
@@ -1315,7 +1317,7 @@ mod tests {
                 assert_eq!(view.row_count(), 1); // Should find only "Complete"
             }
             Err(e) => {
-                panic!("NOT Contains query failed: {}", e);
+                panic!("NOT Contains query failed: {e}");
             }
         }
 
@@ -1334,7 +1336,7 @@ mod tests {
                 assert_eq!(view.row_count(), 1); // Should find only "Complete"
             }
             Err(e) => {
-                panic!("NOT StartsWith query failed: {}", e);
+                panic!("NOT StartsWith query failed: {e}");
             }
         }
 
@@ -1402,8 +1404,7 @@ mod tests {
             let priority = table.get_value(i, 2);
             let assigned = table.get_value(i, 3);
             println!(
-                "Row {}: status = {:?}, priority = {:?}, assigned = {:?}",
-                i, status, priority, assigned
+                "Row {i}: status = {status:?}, priority = {priority:?}, assigned = {assigned:?}"
             );
         }
 
@@ -1422,7 +1423,7 @@ mod tests {
                 assert_eq!(view.row_count(), 2); // Should find rows 1 and 3 (both Pending, one High priority, both assigned to John)
             }
             Err(e) => {
-                panic!("Complex logic query failed: {}", e);
+                panic!("Complex logic query failed: {e}");
             }
         }
 
@@ -1441,7 +1442,7 @@ mod tests {
                 assert_eq!(view.row_count(), 2); // Should find rows 1 (Pending+High) and 4 (In Progress+Medium)
             }
             Err(e) => {
-                panic!("NOT complex logic query failed: {}", e);
+                panic!("NOT complex logic query failed: {e}");
             }
         }
 
@@ -1501,10 +1502,7 @@ mod tests {
         for i in 0..table.row_count() {
             let value = table.get_value(i, 1);
             let nullable = table.get_value(i, 2);
-            println!(
-                "Row {}: value = {:?}, nullable_field = {:?}",
-                i, value, nullable
-            );
+            println!("Row {i}: value = {value:?}, nullable_field = {nullable:?}");
         }
 
         // Test type coercion with boolean Contains
@@ -1522,7 +1520,7 @@ mod tests {
                 assert_eq!(view.row_count(), 1); // Should find the boolean true row
             }
             Err(e) => {
-                panic!("Boolean coercion query failed: {}", e);
+                panic!("Boolean coercion query failed: {e}");
             }
         }
 
@@ -1535,7 +1533,7 @@ mod tests {
                 assert_eq!(view.row_count(), 2); // Should find rows with id 1 and 3
             }
             Err(e) => {
-                panic!("Multiple IN values query failed: {}", e);
+                panic!("Multiple IN values query failed: {e}");
             }
         }
 
@@ -1548,12 +1546,12 @@ mod tests {
 
         let query = "SELECT * FROM test WHERE country NOT IN ('CA')";
         println!("\n=== Testing NOT IN parsing ===");
-        println!("Parsing query: {}", query);
+        println!("Parsing query: {query}");
 
         let mut parser = Parser::new(query);
         match parser.parse() {
             Ok(statement) => {
-                println!("Parsed statement: {:#?}", statement);
+                println!("Parsed statement: {statement:#?}");
                 if let Some(where_clause) = statement.where_clause {
                     println!("WHERE conditions: {:#?}", where_clause.conditions);
                     if let Some(first_condition) = where_clause.conditions.first() {
@@ -1562,7 +1560,7 @@ mod tests {
                 }
             }
             Err(e) => {
-                panic!("Parse error: {}", e);
+                panic!("Parse error: {e}");
             }
         }
     }

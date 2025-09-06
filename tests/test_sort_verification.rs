@@ -14,7 +14,7 @@ fn test_json_preserves_numeric_types() {
     ]);
 
     let mut temp_file = NamedTempFile::new().unwrap();
-    write!(temp_file, "{}", test_data).unwrap();
+    write!(temp_file, "{test_data}").unwrap();
 
     let mut client = CsvApiClient::new();
     client.load_json(temp_file.path(), "test").unwrap();
@@ -28,8 +28,7 @@ fn test_json_preserves_numeric_types() {
                 // Should be a Number, not a String
                 assert!(
                     quantity.is_number(),
-                    "Quantity should be a number: {:?}",
-                    quantity
+                    "Quantity should be a number: {quantity:?}"
                 );
             }
         }
@@ -43,5 +42,5 @@ fn test_json_preserves_numeric_types() {
         .collect();
 
     assert_eq!(quantities, vec![1000, 500, 750, 2000]);
-    println!("✓ Original JSON preserves numeric types: {:?}", quantities);
+    println!("✓ Original JSON preserves numeric types: {quantities:?}");
 }

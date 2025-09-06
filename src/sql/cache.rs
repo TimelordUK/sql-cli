@@ -82,7 +82,7 @@ impl QueryCache {
 
         // Generate filename
         let id = self.metadata.next_id;
-        let filename = format!("query_{:06}.json", id);
+        let filename = format!("query_{id:06}.json");
         let file_path = self.cache_dir.join("data").join(&filename);
 
         // Save data to file
@@ -116,7 +116,7 @@ impl QueryCache {
             .queries
             .iter()
             .find(|q| q.id == id)
-            .ok_or(format!("Cache entry {} not found", id))?;
+            .ok_or(format!("Cache entry {id} not found"))?;
 
         let file_path = self.cache_dir.join("data").join(&cached_query.file_path);
         let json_data = fs::read_to_string(file_path)?;
@@ -125,6 +125,7 @@ impl QueryCache {
         Ok((cached_query.query_text.clone(), data))
     }
 
+    #[must_use]
     pub fn list_cached_queries(&self) -> &[CachedQuery] {
         &self.metadata.queries
     }
@@ -157,6 +158,7 @@ impl QueryCache {
         Ok(())
     }
 
+    #[must_use]
     pub fn get_cache_stats(&self) -> CacheStats {
         let total_size: u64 = self
             .metadata
@@ -206,10 +208,11 @@ pub struct CacheStats {
 }
 
 impl CacheStats {
+    #[must_use]
     pub fn format_size(&self) -> String {
         let size = self.total_size_bytes as f64;
         if size < 1024.0 {
-            format!("{} B", size)
+            format!("{size} B")
         } else if size < 1024.0 * 1024.0 {
             format!("{:.1} KB", size / 1024.0)
         } else if size < 1024.0 * 1024.0 * 1024.0 {

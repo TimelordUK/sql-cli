@@ -14,7 +14,7 @@ impl BufferDebugProvider {
 }
 
 impl DebugTrace for BufferDebugProvider {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Buffer"
     }
 
@@ -77,7 +77,7 @@ impl DebugTrace for BufferDebugProvider {
         let (scroll_row, scroll_col) = self.buffer.get_scroll_offset();
         builder.add_field(
             "Scroll Offset",
-            format!("row={}, col={}", scroll_row, scroll_col),
+            format!("row={scroll_row}, col={scroll_col}"),
         );
 
         // Viewport lock state
@@ -85,7 +85,7 @@ impl DebugTrace for BufferDebugProvider {
             "Viewport Lock",
             if self.buffer.is_viewport_lock() {
                 if let Some(lock_row) = self.buffer.get_viewport_lock_row() {
-                    format!("Locked at row {}", lock_row)
+                    format!("Locked at row {lock_row}")
                 } else {
                     "Locked (no specific row)".to_string()
                 }
@@ -97,7 +97,7 @@ impl DebugTrace for BufferDebugProvider {
         // Filter state
         let filter_pattern = self.buffer.get_filter_pattern();
         if !filter_pattern.is_empty() {
-            builder.add_field("Filter Pattern", format!("'{}'", filter_pattern));
+            builder.add_field("Filter Pattern", format!("'{filter_pattern}'"));
             builder.add_field("Filter Active", self.buffer.is_filter_active());
         }
 
@@ -128,13 +128,14 @@ impl DebugTrace for BufferDebugProvider {
     }
 }
 
-/// Debug provider for multiple buffers (BufferManager)
+/// Debug provider for multiple buffers (`BufferManager`)
 pub struct BufferManagerDebugProvider {
     buffers: Vec<Arc<dyn BufferAPI>>,
     current_index: usize,
 }
 
 impl BufferManagerDebugProvider {
+    #[must_use]
     pub fn new(buffers: Vec<Arc<dyn BufferAPI>>, current_index: usize) -> Self {
         Self {
             buffers,
@@ -144,7 +145,7 @@ impl BufferManagerDebugProvider {
 }
 
 impl DebugTrace for BufferManagerDebugProvider {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "BufferManager"
     }
 
@@ -190,8 +191,7 @@ impl DebugTrace for BufferManagerDebugProvider {
             self.current_index,
             self.buffers
                 .get(self.current_index)
-                .map(|b| b.get_name())
-                .unwrap_or_else(|| "none".to_string())
+                .map_or_else(|| "none".to_string(), |b| b.get_name())
         ))
     }
 }

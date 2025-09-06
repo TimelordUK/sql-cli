@@ -87,7 +87,7 @@ fn test_select_star_comma_arithmetic() {
             assert_eq!(row.get(3).unwrap(), &DataValue::Float(255.0)); // total
         }
         Err(e) => {
-            panic!("Query failed: {}", e);
+            panic!("Query failed: {e}");
         }
     }
 }

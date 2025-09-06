@@ -196,6 +196,7 @@ pub trait ActionHandler {
 }
 
 /// Default implementation for checking action availability
+#[must_use]
 pub fn can_perform_action(action: &Action, context: &ActionContext) -> bool {
     match action {
         // Navigation is usually available in Results mode

@@ -73,13 +73,13 @@ fn test_complex_query_with_not_and_method_call() -> anyhow::Result<()> {
     csv_client.load_json(trades_path.to_str().unwrap(), "trades")?;
 
     // The exact query from the TUI session that was failing
-    let problematic_query = r#"
+    let problematic_query = r"
         SELECT book,commission,confirmationStatus,instrumentId,platformOrderId,counterparty,instrumentName,counterpartyCountry,counterpartyType,createdDate,currency 
         FROM trades 
         where not confirmationStatus.Contains('pend') 
         and commission between 20 and 50 
         order by counterparty,book
-    "#;
+    ";
 
     // This should work - the WHERE clause parser handles it correctly
     let response = csv_client.query_csv(problematic_query)?;
@@ -111,15 +111,13 @@ fn test_complex_query_with_not_and_method_call() -> anyhow::Result<()> {
         // Commission should be between 20 and 50
         assert!(
             (20.0..=50.0).contains(&commission),
-            "Commission {} should be between 20 and 50",
-            commission
+            "Commission {commission} should be between 20 and 50"
         );
 
         // Confirmation status should NOT contain 'pend'
         assert!(
             !confirmation_status.to_lowercase().contains("pend"),
-            "Confirmation status '{}' should not contain 'pend'",
-            confirmation_status
+            "Confirmation status '{confirmation_status}' should not contain 'pend'"
         );
     }
 
@@ -130,9 +128,7 @@ fn test_complex_query_with_not_and_method_call() -> anyhow::Result<()> {
     // Should be alphabetically ordered by counterparty
     assert!(
         first_row_counterparty <= second_row_counterparty,
-        "Results should be ordered by counterparty: {} should come before {}",
-        first_row_counterparty,
-        second_row_counterparty
+        "Results should be ordered by counterparty: {first_row_counterparty} should come before {second_row_counterparty}"
     );
 
     println!("✅ Complex query with NOT and method call executed successfully!");
@@ -174,7 +170,7 @@ fn test_method_call_variations() -> anyhow::Result<()> {
     ];
 
     for (query, expected_count) in test_queries {
-        println!("Testing query: {}", query);
+        println!("Testing query: {query}");
         let response = csv_client.query_csv(query)?;
         assert_eq!(
             response.data.len(),
@@ -190,7 +186,7 @@ fn test_method_call_variations() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test with real sample_trades.json file using the exact query pattern that was failing
+/// Test with real `sample_trades.json` file using the exact query pattern that was failing
 #[test]
 fn test_real_trades_data_with_not_method_call() -> anyhow::Result<()> {
     let trades_file = "sample_trades.json";
@@ -207,15 +203,15 @@ fn test_real_trades_data_with_not_method_call() -> anyhow::Result<()> {
 
     // Test the pattern that was failing: NOT field.Contains('substring')
     // Using the status field since confirmationStatus doesn't exist in sample_trades.json
-    let failing_query = r#"
+    let failing_query = r"
         SELECT id,platformOrderId,status,counterparty,commission,trader 
         FROM trades 
         where not status.Contains('pend') 
         and commission between 50 and 100 
         order by counterparty,id
-    "#;
+    ";
 
-    println!("Testing query that was failing in TUI: {}", failing_query);
+    println!("Testing query that was failing in TUI: {failing_query}");
     let response = csv_client.query_csv(failing_query)?;
 
     println!(
@@ -236,18 +232,16 @@ fn test_real_trades_data_with_not_method_call() -> anyhow::Result<()> {
         // Status should NOT contain 'pend' (this should exclude "Pending" status)
         assert!(
             !status.to_lowercase().contains("pend"),
-            "Status '{}' should not contain 'pend'",
-            status
+            "Status '{status}' should not contain 'pend'"
         );
 
         // Commission should be between 50 and 100
         assert!(
             (50.0..=100.0).contains(&commission),
-            "Commission {} should be between 50 and 100",
-            commission
+            "Commission {commission} should be between 50 and 100"
         );
 
-        println!("   ✓ {} | {} | ${}", counterparty, status, commission);
+        println!("   ✓ {counterparty} | {status} | ${commission}");
     }
 
     // Let's also verify what data we're working with
@@ -261,8 +255,7 @@ fn test_real_trades_data_with_not_method_call() -> anyhow::Result<()> {
         let included = !contains_pend && commission_in_range;
 
         println!(
-            "   {} | ${} | contains_pend={} | in_range={} | included={}",
-            status, commission, contains_pend, commission_in_range, included
+            "   {status} | ${commission} | contains_pend={contains_pend} | in_range={commission_in_range} | included={included}"
         );
     }
 
@@ -292,14 +285,14 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
     println!("📊 Dataset loaded: {} trades", all_trades.data.len());
 
     // Test 1: Complex NOT with method call - your original failing query adapted to 100 trades
-    let complex_not_query = r#"
+    let complex_not_query = r"
         SELECT id,book,commission,confirmationStatus,counterparty,trader 
         FROM trades 
         WHERE NOT confirmationStatus.Contains('pend') 
         AND commission BETWEEN 30 AND 80 
         ORDER BY counterparty,book 
         LIMIT 20
-    "#;
+    ";
 
     println!("🔥 Testing complex NOT + method call query with 100 trades:");
     let response1 = csv_client.query_csv(complex_not_query)?;
@@ -311,27 +304,25 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
 
         assert!(
             !status.to_lowercase().contains("pend"),
-            "Status '{}' should not contain 'pend'",
-            status
+            "Status '{status}' should not contain 'pend'"
         );
         assert!(
             (30.0..=80.0).contains(&commission),
-            "Commission {} should be between 30 and 80",
-            commission
+            "Commission {commission} should be between 30 and 80"
         );
     }
 
     println!("✅ Complex NOT query: {} results", response1.data.len());
 
     // Test 2: Multiple NOT expressions in same query
-    let multi_not_query = r#"
+    let multi_not_query = r"
         SELECT id,counterparty,instrumentName,confirmationStatus,counterpartyType 
         FROM trades 
         WHERE NOT confirmationStatus.Contains('pend') 
         AND NOT instrumentName.Contains('Bond') 
         AND NOT counterpartyType.Contains('HEDGE')
         ORDER BY id LIMIT 15
-    "#;
+    ";
 
     println!("🔥 Testing multiple NOT expressions:");
     let response2 = csv_client.query_csv(multi_not_query)?;
@@ -349,14 +340,14 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
     println!("✅ Multiple NOT query: {} results", response2.data.len());
 
     // Test 3: NOT with complex nested conditions
-    let nested_not_query = r#"
+    let nested_not_query = r"
         SELECT id,trader,book,commission,confirmationStatus 
         FROM trades 
         WHERE (NOT confirmationStatus.Contains('pend') OR confirmationStatus = 'confirmed')
         AND commission > 50 
         AND (book = 'EQUITY_DESK_1' OR book = 'FOREX_DESK_1')
         ORDER BY commission DESC LIMIT 10
-    "#;
+    ";
 
     println!("🔥 Testing NOT with nested conditions:");
     let response3 = csv_client.query_csv(nested_not_query)?;
@@ -368,24 +359,19 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
 
         // Either status doesn't contain 'pend' OR it's 'confirmed'
         let status_condition = !status.to_lowercase().contains("pend") || status == "confirmed";
-        assert!(status_condition, "Status condition failed for: {}", status);
+        assert!(status_condition, "Status condition failed for: {status}");
 
-        assert!(
-            commission > 50.0,
-            "Commission should be > 50: {}",
-            commission
-        );
+        assert!(commission > 50.0, "Commission should be > 50: {commission}");
         assert!(
             book == "EQUITY_DESK_1" || book == "FOREX_DESK_1",
-            "Book should be EQUITY_DESK_1 or FOREX_DESK_1: {}",
-            book
+            "Book should be EQUITY_DESK_1 or FOREX_DESK_1: {book}"
         );
     }
 
     println!("✅ Nested NOT query: {} results", response3.data.len());
 
     // Test 4: Statistics on the 100 trades with NOT filtering
-    let stats_query = r#"
+    let stats_query = r"
         SELECT 
             COUNT(*) as total_trades,
             AVG(commission) as avg_commission,
@@ -395,7 +381,7 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
         FROM trades 
         WHERE NOT confirmationStatus.Contains('reject') 
         AND NOT confirmationStatus.Contains('cancel')
-    "#;
+    ";
 
     println!("🔥 Testing aggregation with NOT filters:");
     let stats_response = csv_client.query_csv(stats_query)?;
@@ -433,8 +419,8 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
             0.0
         };
 
-        println!("   📈 Total non-rejected/cancelled trades: {}", total);
-        println!("   💰 Average commission: ${:.2}", avg_comm);
+        println!("   📈 Total non-rejected/cancelled trades: {total}");
+        println!("   💰 Average commission: ${avg_comm:.2}");
 
         if total > 0.0 {
             assert!(avg_comm > 0.0, "Average commission should be positive");
@@ -450,7 +436,7 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
     println!("🔥 Performance test with complex query:");
     let perf_start = std::time::Instant::now();
 
-    let performance_query = r#"
+    let performance_query = r"
         SELECT 
             book,
             counterparty,
@@ -465,19 +451,22 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
         HAVING COUNT(*) >= 1
         ORDER BY total_value DESC
         LIMIT 15
-    "#;
+    ";
 
     let perf_response = csv_client.query_csv(performance_query)?;
     let perf_duration = perf_start.elapsed();
 
-    println!("   ⚡ Query executed in {:?}", perf_duration);
+    println!("   ⚡ Query executed in {perf_duration:?}");
     println!(
         "   📋 Grouped results: {} combinations",
         perf_response.data.len()
     );
 
     // Verify we got some results (even if aggregation details vary)
-    if !perf_response.data.is_empty() {
+    if perf_response.data.is_empty() {
+        println!("   ⚠️ No performance results - but query parsed successfully!");
+        // The important thing is that the NOT expressions parsed without error
+    } else {
         println!(
             "   ✅ Performance test returned {} grouped results",
             perf_response.data.len()
@@ -493,9 +482,6 @@ fn test_100_trades_comprehensive_parser_validation() -> anyhow::Result<()> {
                 println!("   #{}: {} + {}", i + 1, book, counterparty);
             }
         }
-    } else {
-        println!("   ⚠️ No performance results - but query parsed successfully!");
-        // The important thing is that the NOT expressions parsed without error
     }
 
     println!("✅ Performance test passed");
@@ -526,16 +512,16 @@ fn test_exact_user_query_from_debug_session() -> anyhow::Result<()> {
     csv_client.load_json(trades_file, "trades")?;
 
     // This is the EXACT query from the user's debug session that was failing
-    let exact_failing_query = r#"
+    let exact_failing_query = r"
         SELECT book,commission,confirmationStatus,instrumentId,platformOrderId,counterparty,instrumentName,counterpartyCountry,counterpartyType,createdDate,currency 
         FROM trades 
         where not confirmationStatus.Contains('pend') 
         and commission between 20 and 50 
         order by counterparty,book
-    "#;
+    ";
 
     println!("🔥 Testing the EXACT query from user's debug session:");
-    println!("{}", exact_failing_query);
+    println!("{exact_failing_query}");
 
     let response = csv_client.query_csv(exact_failing_query)?;
 
@@ -557,19 +543,14 @@ fn test_exact_user_query_from_debug_session() -> anyhow::Result<()> {
         // Verify filtering conditions
         assert!(
             !confirmation_status.to_lowercase().contains("pend"),
-            "confirmationStatus '{}' should not contain 'pend'",
-            confirmation_status
+            "confirmationStatus '{confirmation_status}' should not contain 'pend'"
         );
         assert!(
             (20.0..=50.0).contains(&commission),
-            "commission {} should be between 20 and 50",
-            commission
+            "commission {commission} should be between 20 and 50"
         );
 
-        println!(
-            "   ✓ {} | {} | {} | ${}",
-            counterparty, book, confirmation_status, commission
-        );
+        println!("   ✓ {counterparty} | {book} | {confirmation_status} | ${commission}");
         expected_rows += 1;
     }
 
@@ -631,10 +612,9 @@ fn test_full_parser_pipeline_validation() -> anyhow::Result<()> {
 
         assert!(
             !status.contains("pend"),
-            "Status should not contain 'pend': {}",
-            status
+            "Status should not contain 'pend': {status}"
         );
-        assert!(amount > 50.0, "Amount should be > 50: {}", amount);
+        assert!(amount > 50.0, "Amount should be > 50: {amount}");
     }
 
     println!("✅ Full parser pipeline validation passed!");

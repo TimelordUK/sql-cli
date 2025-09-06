@@ -52,6 +52,7 @@ pub struct SchemaManager {
 }
 
 impl SchemaManager {
+    #[must_use]
     pub fn new(api_client: crate::api_client::ApiClient) -> Self {
         let cache_path = AppPaths::schemas_file().unwrap_or_else(|_| PathBuf::from("schemas.json"));
 
@@ -191,6 +192,7 @@ impl SchemaManager {
         }
     }
 
+    #[must_use]
     pub fn get_tables(&self) -> Vec<String> {
         if let Some(ref cached) = self.cached_schema {
             cached.schemas.keys().cloned().collect()
@@ -199,6 +201,7 @@ impl SchemaManager {
         }
     }
 
+    #[must_use]
     pub fn get_columns(&self, table: &str) -> Vec<String> {
         if let Some(ref cached) = self.cached_schema {
             if let Some(schema) = cached.schemas.get(table) {

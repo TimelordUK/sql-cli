@@ -38,11 +38,13 @@ pub struct CellRenderer {
 }
 
 impl CellRenderer {
+    #[must_use]
     pub fn new(style_config: CellSelectionStyle) -> Self {
         Self { style_config }
     }
 
     /// Create a style for a selected cell based on configuration
+    #[must_use]
     pub fn get_selected_style(&self) -> Style {
         let mut style = Style::default();
 
@@ -88,6 +90,7 @@ impl CellRenderer {
     }
 
     /// Render a cell value with optional border/corner decorations
+    #[must_use]
     pub fn render_cell_value(&self, value: &str, is_selected: bool, width: usize) -> String {
         if !is_selected {
             return value.to_string();
@@ -155,6 +158,7 @@ impl CellRenderer {
     }
 
     /// Get a preview of all available styles for configuration UI
+    #[must_use]
     pub fn get_style_previews() -> Vec<(&'static str, &'static str)> {
         vec![
             ("underline", "Classic underline style"),
@@ -167,6 +171,7 @@ impl CellRenderer {
 }
 
 /// Helper to create bordered cell for special rendering
+#[must_use]
 pub fn create_bordered_cell<'a>(content: &str, border_style: &str) -> Block<'a> {
     let block = Block::default().borders(Borders::ALL);
 

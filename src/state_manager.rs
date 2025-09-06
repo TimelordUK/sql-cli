@@ -43,6 +43,7 @@ impl Default for StateManager {
 }
 
 impl StateManager {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             mode_stack: Vec::new(),
@@ -77,6 +78,7 @@ impl StateManager {
         }
     }
 
+    #[must_use]
     pub fn peek_previous_mode(&self) -> Option<AppMode> {
         self.mode_stack.last().map(|state| state.mode.clone())
     }
@@ -89,6 +91,7 @@ impl StateManager {
         self.restore_context(&self.current_context, buffer);
     }
 
+    #[must_use]
     pub fn get_stack_depth(&self) -> usize {
         self.mode_stack.len()
     }
@@ -104,20 +107,20 @@ impl StateManager {
             scroll_offset: buffer.get_scroll_offset(),
             selected_row: buffer.get_selected_row(),
             selected_column: buffer.get_current_column(),
-            search_pattern: if !buffer.get_search_pattern().is_empty() {
+            search_pattern: if buffer.get_search_pattern().is_empty() {
+                None
+            } else {
                 Some(buffer.get_search_pattern())
-            } else {
-                None
             },
-            filter_pattern: if !buffer.get_filter_pattern().is_empty() {
+            filter_pattern: if buffer.get_filter_pattern().is_empty() {
+                None
+            } else {
                 Some(buffer.get_filter_pattern())
-            } else {
-                None
             },
-            fuzzy_filter_pattern: if !buffer.get_fuzzy_filter_pattern().is_empty() {
-                Some(buffer.get_fuzzy_filter_pattern())
-            } else {
+            fuzzy_filter_pattern: if buffer.get_fuzzy_filter_pattern().is_empty() {
                 None
+            } else {
+                Some(buffer.get_fuzzy_filter_pattern())
             },
             column_search_pattern: {
                 // Column search migrated to AppStateContainer
@@ -176,6 +179,7 @@ impl StateManager {
         }
     }
 
+    #[must_use]
     pub fn format_debug_info(&self) -> String {
         let mut info = String::from("========== STATE MANAGER ==========\n");
         info.push_str(&format!("Stack Depth: {}\n", self.mode_stack.len()));

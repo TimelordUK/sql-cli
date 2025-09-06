@@ -223,7 +223,7 @@ lazy_static! {
         let mut map = HashMap::new();
         for molecule in MOLECULE_TABLE.iter() {
             for name in molecule.names {
-                map.insert(name.to_string(), molecule.formula);
+                map.insert((*name).to_string(), molecule.formula);
             }
         }
         map
@@ -478,7 +478,7 @@ impl AtomicMassFunction {
             ("URANIUM", 238.03),
         ]
         .iter()
-        .cloned()
+        .copied()
         .collect();
 
         masses.get(element.to_uppercase().as_str()).copied()
@@ -615,7 +615,7 @@ impl AtomicNumberFunction {
             ("URANIUM", 92),
         ]
         .iter()
-        .cloned()
+        .copied()
         .collect();
 
         numbers.get(element.to_uppercase().as_str()).copied()
@@ -687,7 +687,7 @@ impl SqlFunction for MoleculeFormulaFunction {
 
         // Check if it's a known molecule name
         if let Some(formula) = MOLECULE_LOOKUP.get(&upper_input) {
-            return Ok(DataValue::String(formula.to_string()));
+            return Ok(DataValue::String((*formula).to_string()));
         }
 
         // If not found, return an error

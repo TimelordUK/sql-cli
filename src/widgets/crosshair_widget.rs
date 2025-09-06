@@ -39,6 +39,7 @@ impl Default for CrosshairWidget {
 
 impl CrosshairWidget {
     /// Create a new crosshair widget
+    #[must_use]
     pub fn new() -> Self {
         Self {
             position: CrosshairPosition::default(),
@@ -67,6 +68,7 @@ impl CrosshairWidget {
     }
 
     /// Get the current position
+    #[must_use]
     pub fn position(&self) -> &CrosshairPosition {
         &self.position
     }
@@ -145,6 +147,7 @@ impl CrosshairWidget {
     }
 
     /// Calculate if scrolling is needed to show the crosshair
+    #[must_use]
     pub fn calculate_scroll_offset(
         &self,
         current_row_offset: usize,

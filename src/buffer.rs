@@ -107,7 +107,7 @@ pub enum SelectionMode {
     Column,
 }
 
-/// ViewState consolidates all view-related state for a buffer
+/// `ViewState` consolidates all view-related state for a buffer
 /// This is the single source of truth for navigation, selection, and viewport state
 #[derive(Clone, Debug)]
 pub struct ViewState {
@@ -186,7 +186,7 @@ pub struct ColumnStatistics {
 
 // pub type ColumnStatistics = std::collections::BTreeMap<String, String>; // Replaced with struct
 
-/// BufferAPI trait - defines the interface for interacting with buffer state
+/// `BufferAPI` trait - defines the interface for interacting with buffer state
 /// This abstraction allows the TUI to work with buffer state without knowing
 /// the implementation details, enabling gradual migration and testing
 pub trait BufferAPI: Send + Sync {
@@ -205,7 +205,7 @@ pub trait BufferAPI: Send + Sync {
     fn has_datatable(&self) -> bool;
     fn set_datatable(&mut self, datatable: Option<Arc<DataTable>>);
     fn get_original_source(&self) -> Option<&DataTable>;
-    /// V50: Helper to convert QueryResponse to DataTable and store it
+    /// V50: Helper to convert `QueryResponse` to `DataTable` and store it
     fn set_results_as_datatable(&mut self, response: Option<QueryResponse>) -> Result<(), String>;
 
     // --- V51: DataView support (direct query results) ---
@@ -375,9 +375,9 @@ pub struct Buffer {
 
     // --- Data State ---
     pub datatable: Option<Arc<DataTable>>,
-    /// Original unmodified DataTable (preserved for query operations)
+    /// Original unmodified `DataTable` (preserved for query operations)
     pub original_source: Option<Arc<DataTable>>,
-    /// DataView for applying filters like hidden columns without modifying the DataTable
+    /// `DataView` for applying filters like hidden columns without modifying the `DataTable`
     pub dataview: Option<DataView>,
 
     // --- UI State ---
@@ -456,7 +456,7 @@ impl BufferAPI for Buffer {
 
     // --- V50: DataTable is primary storage ---
     fn get_datatable(&self) -> Option<&DataTable> {
-        self.datatable.as_ref().map(|arc| arc.as_ref())
+        self.datatable.as_ref().map(std::convert::AsRef::as_ref)
     }
 
     fn get_datatable_mut(&mut self) -> Option<&mut DataTable> {
@@ -470,14 +470,16 @@ impl BufferAPI for Buffer {
     }
 
     fn get_original_source(&self) -> Option<&DataTable> {
-        self.original_source.as_ref().map(|arc| arc.as_ref())
+        self.original_source
+            .as_ref()
+            .map(std::convert::AsRef::as_ref)
     }
 
     fn set_datatable(&mut self, datatable: Option<Arc<DataTable>>) {
         debug!(
             "V50: Setting DataTable with {} rows, {} columns",
-            datatable.as_ref().map(|d| d.row_count()).unwrap_or(0),
-            datatable.as_ref().map(|d| d.column_count()).unwrap_or(0)
+            datatable.as_ref().map_or(0, |d| d.row_count()),
+            datatable.as_ref().map_or(0, |d| d.column_count())
         );
 
         // Log current state
@@ -503,7 +505,7 @@ impl BufferAPI for Buffer {
             self.original_source = datatable.clone();
             debug!(
                 "V50: Preserving original source DataTable with {} columns",
-                datatable.as_ref().map(|d| d.column_count()).unwrap_or(0)
+                datatable.as_ref().map_or(0, |d| d.column_count())
             );
         }
 
@@ -570,7 +572,7 @@ impl BufferAPI for Buffer {
                     Ok(())
                 }
                 Err(e) => {
-                    let err_msg = format!("V50: Failed to create DataTable: {}", e);
+                    let err_msg = format!("V50: Failed to create DataTable: {e}");
                     debug!("{}", err_msg);
                     self.datatable = None;
                     Err(err_msg)
@@ -592,7 +594,9 @@ impl BufferAPI for Buffer {
     fn set_dataview(&mut self, dataview: Option<DataView>) {
         debug!(
             "V51: Setting DataView with {} rows",
-            dataview.as_ref().map(|v| v.row_count()).unwrap_or(0)
+            dataview
+                .as_ref()
+                .map_or(0, super::data::data_view::DataView::row_count)
         );
         self.dataview = dataview;
     }
@@ -1261,11 +1265,12 @@ impl BufferAPI for Buffer {
 
 impl Buffer {
     /// Create a new empty buffer
+    #[must_use]
     pub fn new(id: usize) -> Self {
         Self {
             id,
             file_path: None,
-            name: format!("[Buffer {}]", id),
+            name: format!("[Buffer {id}]"),
             modified: false,
 
             // Legacy CSV/Cache fields removed
@@ -1313,6 +1318,7 @@ impl Buffer {
     }
 
     /// Create a buffer from a CSV file
+    #[must_use]
     pub fn from_csv(
         id: usize,
         path: PathBuf,
@@ -1334,6 +1340,7 @@ impl Buffer {
     }
 
     /// Create a buffer from a JSON file
+    #[must_use]
     pub fn from_json(
         id: usize,
         path: PathBuf,
@@ -1378,7 +1385,7 @@ impl Buffer {
         self.file_path.as_ref() == Some(path)
     }
 
-    /// Sync from InputManager to legacy fields (for compatibility during migration)
+    /// Sync from `InputManager` to legacy fields (for compatibility during migration)
     fn sync_from_input_manager(&mut self) {
         let text = self.input_manager.get_text();
         let cursor_pos = self.input_manager.get_cursor_position();
@@ -1388,7 +1395,7 @@ impl Buffer {
         self.input = Input::new(text).with_cursor(cursor_pos.min(text_len));
     }
 
-    /// Sync from legacy fields to InputManager (for compatibility during migration)
+    /// Sync from legacy fields to `InputManager` (for compatibility during migration)
     fn sync_to_input_manager(&mut self) {
         // Always sync from single-line input
         let _text = self.input.value().to_string();
@@ -1406,7 +1413,7 @@ impl Buffer {
         let new_pos = CursorOperations::find_word_boundary_backward(&text, cursor_pos);
         self.input_manager.set_cursor_position(new_pos);
         self.sync_from_input_manager();
-        self.status_message = format!("Moved to position {} (word boundary)", new_pos);
+        self.status_message = format!("Moved to position {new_pos} (word boundary)");
     }
 
     /// Move cursor to next word boundary
@@ -1520,7 +1527,7 @@ impl Buffer {
 
         // Find SELECT * pattern
         if let Some(select_pos) = query_upper.find("SELECT") {
-            if let Some(star_pos) = query_upper[select_pos..].find("*") {
+            if let Some(star_pos) = query_upper[select_pos..].find('*') {
                 let star_abs_pos = select_pos + star_pos;
 
                 // Find FROM clause after the *
@@ -1539,14 +1546,17 @@ impl Buffer {
                         // Get columns from the schema
                         let columns = parser.get_table_columns(table_name);
 
-                        if !columns.is_empty() {
+                        if columns.is_empty() {
+                            self.status_message =
+                                format!("No columns found for table '{table_name}'");
+                        } else {
                             // Build the replacement with all columns
                             let columns_str = columns.join(", ");
 
                             // Replace * with the column list
                             let before_star = &query[..star_abs_pos];
                             let after_star = &query[star_abs_pos + 1..];
-                            let new_query = format!("{}{}{}", before_star, columns_str, after_star);
+                            let new_query = format!("{before_star}{columns_str}{after_star}");
 
                             // Update the input
                             self.input_manager.set_text(new_query.clone());
@@ -1556,9 +1566,6 @@ impl Buffer {
                             self.status_message =
                                 format!("Expanded * to {} columns", columns.len());
                             return true;
-                        } else {
-                            self.status_message =
-                                format!("No columns found for table '{}'", table_name);
                         }
                     }
                 }
@@ -1576,7 +1583,7 @@ impl Buffer {
 
         // Find SELECT * pattern
         if let Some(select_pos) = query_upper.find("SELECT") {
-            if let Some(star_pos) = query_upper[select_pos..].find("*") {
+            if let Some(star_pos) = query_upper[select_pos..].find('*') {
                 let star_abs_pos = select_pos + star_pos;
 
                 // Get visible columns from the DataView
@@ -1590,7 +1597,7 @@ impl Buffer {
                         // Replace * with the column list
                         let before_star = &query[..star_abs_pos];
                         let after_star = &query[star_abs_pos + 1..];
-                        let new_query = format!("{}{}{}", before_star, columns_str, after_star);
+                        let new_query = format!("{before_star}{columns_str}{after_star}");
 
                         // Update the input
                         self.input_manager.set_text(new_query.clone());
@@ -1600,9 +1607,8 @@ impl Buffer {
                         self.status_message =
                             format!("Expanded * to {} visible columns", visible_columns.len());
                         return true;
-                    } else {
-                        self.status_message = "No visible columns available".to_string();
                     }
+                    self.status_message = "No visible columns available".to_string();
                 } else {
                     self.status_message = "No data loaded to expand from".to_string();
                 }
@@ -1675,6 +1681,7 @@ impl Default for BufferManager {
 }
 
 impl BufferManager {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             buffers: Vec::new(),
@@ -1695,6 +1702,7 @@ impl BufferManager {
     }
 
     /// Get current buffer
+    #[must_use]
     pub fn current(&self) -> Option<&Buffer> {
         self.buffers.get(self.current_buffer_index)
     }
@@ -1746,21 +1754,25 @@ impl BufferManager {
     }
 
     /// Find buffer by file path
+    #[must_use]
     pub fn find_by_path(&self, path: &PathBuf) -> Option<usize> {
         self.buffers.iter().position(|b| b.has_file(path))
     }
 
     /// Get all buffers for display
+    #[must_use]
     pub fn all_buffers(&self) -> &[Buffer] {
         &self.buffers
     }
 
     /// Get current buffer index
+    #[must_use]
     pub fn current_index(&self) -> usize {
         self.current_buffer_index
     }
 
     /// Check if we have multiple buffers
+    #[must_use]
     pub fn has_multiple(&self) -> bool {
         self.buffers.len() > 1
     }

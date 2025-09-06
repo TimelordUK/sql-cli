@@ -19,12 +19,14 @@ pub struct UndoContext<'a> {
 
 /// Get the cursor token position in the query text
 /// Returns (start, end) positions of the token at cursor
+#[must_use]
 pub fn get_cursor_token_position(ctx: &TextNavigationContext) -> (usize, usize) {
     TextNavigator::get_cursor_token_position(ctx.query, ctx.cursor_pos)
 }
 
 /// Get the token at the cursor position
 /// Returns the token string if found
+#[must_use]
 pub fn get_token_at_cursor(ctx: &TextNavigationContext) -> Option<String> {
     TextNavigator::get_token_at_cursor(ctx.query, ctx.cursor_pos)
 }
@@ -42,6 +44,7 @@ pub enum UndoResult {
 
 impl UndoResult {
     /// Get the status message for this result
+    #[must_use]
     pub fn status_message(&self) -> &'static str {
         match self {
             UndoResult::Success => "Undo performed",
@@ -66,6 +69,7 @@ pub fn perform_undo(ctx: &mut UndoContext) -> UndoResult {
 
 /// Check for common SQL parser errors in a query string
 /// Returns an error message if issues are found, None if the query looks valid
+#[must_use]
 pub fn check_parser_error(query: &str) -> Option<String> {
     // Quick check for common parser errors
     let mut paren_depth = 0;
@@ -93,7 +97,7 @@ pub fn check_parser_error(query: &str) -> Option<String> {
     }
 
     if paren_depth > 0 {
-        return Some(format!("Missing {} )", paren_depth));
+        return Some(format!("Missing {paren_depth} )"));
     }
 
     // Could add more checks here (unclosed strings, etc.)

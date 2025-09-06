@@ -5,6 +5,7 @@ pub struct ColumnManager;
 
 impl ColumnManager {
     /// Calculate optimal column widths based on data content
+    #[must_use]
     pub fn calculate_optimal_widths(data: &[Value]) -> Vec<u16> {
         if data.is_empty() {
             return Vec::new();
@@ -20,7 +21,7 @@ impl ColumnManager {
             None => return Vec::new(),
         };
 
-        let headers: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        let headers: Vec<&str> = obj.keys().map(std::string::String::as_str).collect();
         let mut widths = Vec::new();
 
         // For large datasets, sample rows instead of checking all
@@ -70,6 +71,7 @@ impl ColumnManager {
     }
 
     /// Calculate column widths for filtered data (string arrays)
+    #[must_use]
     pub fn calculate_widths_for_filtered(headers: &[String], data: &[Vec<String>]) -> Vec<u16> {
         let mut widths = Vec::new();
 
@@ -109,6 +111,7 @@ impl ColumnManager {
     }
 
     /// Get display width for a single value
+    #[must_use]
     pub fn get_value_display_width(value: &Value) -> usize {
         match value {
             Value::String(s) => s.len(),

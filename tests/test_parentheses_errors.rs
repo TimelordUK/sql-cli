@@ -9,7 +9,7 @@ fn test_unclosed_parenthesis_in_where() {
 
     assert!(result.is_err(), "Should fail with unclosed parenthesis");
     let error = result.unwrap_err();
-    println!("Error for unclosed paren: {}", error);
+    println!("Error for unclosed paren: {error}");
 
     // Check AST formatting shows helpful error
     let ast = format_ast_tree(query);
@@ -28,7 +28,7 @@ fn test_extra_closing_parenthesis() {
         "Should fail with extra closing parenthesis"
     );
     let error = result.unwrap_err();
-    println!("Error for extra closing paren: {}", error);
+    println!("Error for extra closing paren: {error}");
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn test_mismatched_parentheses_in_complex_query() {
 
     assert!(result.is_err(), "Should fail with mismatched parentheses");
     let error = result.unwrap_err();
-    println!("Error for mismatched parens: {}", error);
+    println!("Error for mismatched parens: {error}");
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn test_nested_unclosed_parentheses() {
         "Should fail with nested unclosed parentheses"
     );
     let error = result.unwrap_err();
-    println!("Error for nested unclosed: {}", error);
+    println!("Error for nested unclosed: {error}");
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn test_method_call_unclosed() {
 
     assert!(result.is_err(), "Should fail with unclosed method call");
     let error = result.unwrap_err();
-    println!("Error for unclosed method: {}", error);
+    println!("Error for unclosed method: {error}");
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn test_in_clause_unclosed() {
 
     assert!(result.is_err(), "Should fail with unclosed IN clause");
     let error = result.unwrap_err();
-    println!("Error for unclosed IN: {}", error);
+    println!("Error for unclosed IN: {error}");
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn test_between_with_unclosed_paren() {
         "Should fail with unclosed BETWEEN parenthesis"
     );
     let error = result.unwrap_err();
-    println!("Error for unclosed BETWEEN: {}", error);
+    println!("Error for unclosed BETWEEN: {error}");
 }
 
 #[test]

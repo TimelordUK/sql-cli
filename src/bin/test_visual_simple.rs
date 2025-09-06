@@ -37,13 +37,13 @@ fn main() {
 
     let (headers, data, widths) = viewport.get_visual_display(100, &row_indices);
 
-    println!("\nHeaders: {:?}", headers);
-    println!("Data: {:?}", data);
+    println!("\nHeaders: {headers:?}");
+    println!("Data: {data:?}");
     println!("\nAlignment check:");
     for (i, header) in headers.iter().enumerate() {
         if let Some(row) = data.first() {
             if let Some(value) = row.get(i) {
-                println!("  {} -> {}", header, value);
+                println!("  {header} -> {value}");
             }
         }
     }

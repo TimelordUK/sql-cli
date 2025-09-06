@@ -57,6 +57,7 @@ impl Default for SimpleInput {
 }
 
 impl SimpleInput {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             text: String::new(),
@@ -102,7 +103,7 @@ impl SimpleInput {
     }
 }
 
-/// A view of a DataTable with presentation logic
+/// A view of a `DataTable` with presentation logic
 #[derive(Clone)]
 pub struct DataTableView {
     /// The underlying data
@@ -135,7 +136,8 @@ pub struct DataTableView {
 }
 
 impl DataTableView {
-    /// Create a new view from a DataTable
+    /// Create a new view from a `DataTable`
+    #[must_use]
     pub fn new(table: DataTable) -> Self {
         let visible_rows: Vec<usize> = (0..table.row_count()).collect();
         let column_widths = Self::calculate_column_widths(&table, &visible_rows);
@@ -162,6 +164,7 @@ impl DataTableView {
     }
 
     /// Get the underlying table
+    #[must_use]
     pub fn table(&self) -> &DataTable {
         &self.table
     }
@@ -171,12 +174,13 @@ impl DataTableView {
         &mut self.table
     }
 
-    /// V47: Get reference to DataTable (for BufferAPI compatibility)
+    /// V47: Get reference to `DataTable` (for `BufferAPI` compatibility)
+    #[must_use]
     pub fn get_datatable(&self) -> &DataTable {
         &self.table
     }
 
-    /// V47: Get mutable reference to DataTable (for BufferAPI compatibility)
+    /// V47: Get mutable reference to `DataTable` (for `BufferAPI` compatibility)
     pub fn get_datatable_mut(&mut self) -> &mut DataTable {
         &mut self.table
     }
@@ -209,11 +213,13 @@ impl DataTableView {
     }
 
     /// Get current view mode
+    #[must_use]
     pub fn mode(&self) -> ViewMode {
         self.mode.clone()
     }
 
     /// Get visible row count after filtering
+    #[must_use]
     pub fn visible_row_count(&self) -> usize {
         self.visible_rows.len()
     }
@@ -506,26 +512,29 @@ impl DataTableView {
     }
 
     /// Get the currently selected cell value
+    #[must_use]
     pub fn get_selected_value(&self) -> Option<&DataValue> {
         let visible_row = *self.visible_rows.get(self.selected_row)?;
         self.table.get_value(visible_row, self.selected_col)
     }
 
     /// Get the currently selected column index
+    #[must_use]
     pub fn get_selected_column(&self) -> usize {
         self.selected_col
     }
 
     /// Get status information for display
+    #[must_use]
     pub fn get_status_info(&self) -> String {
         let total_rows = self.table.row_count();
         let visible_rows = self.visible_rows.len();
         let current_row = self.selected_row + 1;
 
-        let mut status = format!("Row {}/{}", current_row, visible_rows);
+        let mut status = format!("Row {current_row}/{visible_rows}");
 
         if visible_rows != total_rows {
-            status.push_str(&format!(" (filtered from {})", total_rows));
+            status.push_str(&format!(" (filtered from {total_rows})"));
         }
 
         if let Some(ref filter) = self.filter {
@@ -546,13 +555,14 @@ impl DataTableView {
                 SortOrder::Ascending => "↑",
                 SortOrder::Descending => "↓",
             };
-            status.push_str(&format!(" | Sort: {} {}", col_name, order));
+            status.push_str(&format!(" | Sort: {col_name} {order}"));
         }
 
         status
     }
 
     /// Create a ratatui Table widget for rendering
+    #[must_use]
     pub fn create_table_widget(&self) -> Table<'_> {
         // Create header for visible columns only
         let header = Row::new(
@@ -587,7 +597,7 @@ impl DataTableView {
                         let value = self
                             .table
                             .get_value(row_idx, col_idx)
-                            .map(|v| v.to_string())
+                            .map(std::string::ToString::to_string)
                             .unwrap_or_default();
 
                         let mut style = Style::default();
@@ -622,6 +632,7 @@ impl DataTableView {
     }
 
     /// Create input widget for filter/search modes
+    #[must_use]
     pub fn create_input_widget(&self) -> Option<Paragraph<'_>> {
         match self.mode {
             ViewMode::Filtering => Some(

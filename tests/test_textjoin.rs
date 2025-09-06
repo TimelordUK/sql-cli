@@ -3,7 +3,7 @@ use sql_cli::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use sql_cli::data::query_engine::QueryEngine;
 use std::sync::Arc;
 
-/// Helper to get a value from a DataView
+/// Helper to get a value from a `DataView`
 fn get_value(view: &DataView, row_idx: usize, col_idx: usize) -> DataValue {
     view.get_row(row_idx).unwrap().get(col_idx).unwrap().clone()
 }
@@ -46,7 +46,7 @@ fn create_test_table() -> Arc<DataTable> {
         .add_row(DataRow::new(vec![
             DataValue::Integer(3),
             DataValue::String("Bob".to_string()),
-            DataValue::String("".to_string()), // Empty last name
+            DataValue::String(String::new()), // Empty last name
             DataValue::Integer(25),
             DataValue::Float(65000.00),
             DataValue::Null, // Null department
@@ -61,7 +61,7 @@ fn test_textjoin_basic() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT TEXTJOIN(' ', 0, first_name, last_name) as full_name FROM test"#;
+    let query = r"SELECT TEXTJOIN(' ', 0, first_name, last_name) as full_name FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 1);
@@ -87,7 +87,7 @@ fn test_textjoin_ignore_empty() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT TEXTJOIN(' ', 1, first_name, last_name) as full_name FROM test"#;
+    let query = r"SELECT TEXTJOIN(' ', 1, first_name, last_name) as full_name FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 1);
@@ -113,7 +113,7 @@ fn test_textjoin_with_delimiter() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT TEXTJOIN(', ', 0, first_name, last_name, department) as info FROM test"#;
+    let query = r"SELECT TEXTJOIN(', ', 0, first_name, last_name, department) as info FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 1);
@@ -139,7 +139,7 @@ fn test_textjoin_with_numbers() {
     let table = create_test_table();
     let engine = QueryEngine::new();
 
-    let query = r#"SELECT TEXTJOIN(' - ', 1, first_name, id, age) as info FROM test"#;
+    let query = r"SELECT TEXTJOIN(' - ', 1, first_name, id, age) as info FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 1);
@@ -166,7 +166,7 @@ fn test_textjoin_with_expressions() {
     let engine = QueryEngine::new();
 
     let query =
-        r#"SELECT TEXTJOIN(' | ', 1, first_name, ROUND(salary, 0), department) as info FROM test"#;
+        r"SELECT TEXTJOIN(' | ', 1, first_name, ROUND(salary, 0), department) as info FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 1);
@@ -193,7 +193,7 @@ fn test_textjoin_many_args() {
     let engine = QueryEngine::new();
 
     // Test with many arguments
-    let query = r#"SELECT TEXTJOIN('-', 1, id, first_name, last_name, age, department, 'END') as long_join FROM test"#;
+    let query = r"SELECT TEXTJOIN('-', 1, id, first_name, last_name, age, department, 'END') as long_join FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 1);
@@ -221,7 +221,7 @@ fn test_textjoin_in_where_clause() {
     let engine = QueryEngine::new();
 
     // Use TEXTJOIN in WHERE clause
-    let query = r#"SELECT id, first_name FROM test WHERE TEXTJOIN(' ', 1, first_name, last_name) = 'John Doe'"#;
+    let query = r"SELECT id, first_name FROM test WHERE TEXTJOIN(' ', 1, first_name, last_name) = 'John Doe'";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 2);
@@ -241,7 +241,7 @@ fn test_textjoin_nested_with_functions() {
 
     // Nested with other functions
     let query =
-        r#"SELECT TEXTJOIN(' ', 1, first_name, TEXTJOIN('-', 0, 'Age', age)) as nested FROM test"#;
+        r"SELECT TEXTJOIN(' ', 1, first_name, TEXTJOIN('-', 0, 'Age', age)) as nested FROM test";
     let result = engine.execute(table.clone(), query).unwrap();
 
     assert_eq!(result.column_count(), 1);

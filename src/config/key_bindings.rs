@@ -91,6 +91,7 @@ pub struct KeyBinding {
 }
 
 impl KeyBinding {
+    #[must_use]
     pub fn new(code: KeyCode) -> Self {
         Self {
             code,
@@ -98,6 +99,7 @@ impl KeyBinding {
         }
     }
 
+    #[must_use]
     pub fn with_ctrl(code: KeyCode) -> Self {
         Self {
             code,
@@ -105,6 +107,7 @@ impl KeyBinding {
         }
     }
 
+    #[must_use]
     pub fn with_alt(code: KeyCode) -> Self {
         Self {
             code,
@@ -112,6 +115,7 @@ impl KeyBinding {
         }
     }
 
+    #[must_use]
     pub fn with_shift(code: KeyCode) -> Self {
         Self {
             code,
@@ -119,10 +123,12 @@ impl KeyBinding {
         }
     }
 
+    #[must_use]
     pub fn with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> Self {
         Self { code, modifiers }
     }
 
+    #[must_use]
     pub fn from_event(event: &KeyEvent) -> Self {
         Self {
             code: event.code,
@@ -145,6 +151,7 @@ impl Default for KeyBindingManager {
 }
 
 impl KeyBindingManager {
+    #[must_use]
     pub fn new() -> Self {
         let mut manager = Self {
             command_bindings: HashMap::new(),
@@ -408,18 +415,21 @@ impl KeyBindingManager {
     }
 
     /// Get the action for a key in command mode
+    #[must_use]
     pub fn get_command_action(&self, key: &KeyEvent) -> Option<&String> {
         let binding = KeyBinding::from_event(key);
         self.command_bindings.get(&binding)
     }
 
     /// Get the action for a key in results mode
+    #[must_use]
     pub fn get_results_action(&self, key: &KeyEvent) -> Option<&String> {
         let binding = KeyBinding::from_event(key);
         self.results_bindings.get(&binding)
     }
 
     /// Get the action for a key in search mode
+    #[must_use]
     pub fn get_search_action(&self, key: &KeyEvent) -> Option<&String> {
         let binding = KeyBinding::from_event(key);
         self.search_bindings.get(&binding)
@@ -458,6 +468,7 @@ impl KeyBindingManager {
     }
 
     /// Get all bindings for a mode (for help display)
+    #[must_use]
     pub fn get_bindings(&self, mode: &str) -> Vec<(KeyBinding, String)> {
         let map = match mode {
             "command" => &self.command_bindings,
@@ -467,7 +478,7 @@ impl KeyBindingManager {
         };
 
         let mut bindings: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-        bindings.sort_by_key(|(k, _)| format!("{:?}", k));
+        bindings.sort_by_key(|(k, _)| format!("{k:?}"));
         bindings
     }
 }

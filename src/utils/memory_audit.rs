@@ -11,6 +11,7 @@ pub struct MemoryAudit {
 }
 
 impl MemoryAudit {
+    #[must_use]
     pub fn new(component: &str, bytes: usize, description: &str) -> Self {
         Self {
             component: component.to_string(),
@@ -19,12 +20,14 @@ impl MemoryAudit {
         }
     }
 
+    #[must_use]
     pub fn mb(&self) -> f64 {
         self.bytes as f64 / (1024.0 * 1024.0)
     }
 }
 
-/// Estimate memory usage of a DataTable
+/// Estimate memory usage of a `DataTable`
+#[must_use]
 pub fn estimate_datatable_memory(table: &DataTable) -> usize {
     let mut total_bytes = 0;
 
@@ -75,7 +78,8 @@ pub fn estimate_datatable_memory(table: &DataTable) -> usize {
     total_bytes
 }
 
-/// Estimate memory usage of a DataView
+/// Estimate memory usage of a `DataView`
+#[must_use]
 pub fn estimate_dataview_memory(view: &DataView) -> usize {
     let mut total_bytes = 0;
 
@@ -99,6 +103,7 @@ pub fn estimate_dataview_memory(view: &DataView) -> usize {
 }
 
 /// Perform a comprehensive memory audit
+#[must_use]
 pub fn perform_memory_audit(
     datatable: Option<&DataTable>,
     original_source: Option<&DataTable>,

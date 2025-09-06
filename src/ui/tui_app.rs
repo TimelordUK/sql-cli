@@ -38,6 +38,7 @@ pub struct TuiApp {
 }
 
 impl TuiApp {
+    #[must_use]
     pub fn new(api_url: &str) -> Self {
         Self {
             api_client: ApiClient::new(api_url),
@@ -98,7 +99,7 @@ impl TuiApp {
                             self.handle_navigation(key.code);
                         }
                     }
-                    KeyCode::Char('g') | KeyCode::Char('G') => {
+                    KeyCode::Char('g' | 'G') => {
                         if self.mode == AppMode::Results {
                             self.handle_navigation(key.code);
                         } else {
@@ -123,7 +124,7 @@ impl TuiApp {
 
     fn execute_query(&mut self) {
         let query = self.input.value().trim();
-        self.status_message = format!("Executing: {}", query);
+        self.status_message = format!("Executing: {query}");
 
         match self.api_client.query_trades(query) {
             Ok(response) => {
@@ -136,7 +137,7 @@ impl TuiApp {
                 );
             }
             Err(e) => {
-                self.status_message = format!("Error: {}", e);
+                self.status_message = format!("Error: {e}");
             }
         }
     }
@@ -333,7 +334,7 @@ impl TuiApp {
             .collect();
 
         // Use VirtualTable for efficient rendering
-        let header_refs: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
+        let header_refs: Vec<&str> = headers.iter().map(std::string::String::as_str).collect();
         let current_row = self.virtual_table_state.selected + 1; // 1-based for display
         let virtual_table = crate::virtual_table::VirtualTable::new(header_refs, data, widths)
             .block(Block::default().borders(Borders::ALL).title(format!(

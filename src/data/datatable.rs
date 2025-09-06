@@ -22,6 +22,7 @@ pub enum DataType {
 
 impl DataType {
     /// Infer type from a string value
+    #[must_use]
     pub fn infer_from_string(value: &str) -> Self {
         // Handle explicit null string
         if value.eq_ignore_ascii_case("null") {
@@ -46,6 +47,7 @@ impl DataType {
     }
 
     /// Merge two types (for columns with mixed types)
+    #[must_use]
     pub fn merge(&self, other: &DataType) -> DataType {
         if self == other {
             return self.clone();
@@ -84,11 +86,13 @@ impl DataColumn {
         }
     }
 
+    #[must_use]
     pub fn with_type(mut self, data_type: DataType) -> Self {
         self.data_type = data_type;
         self
     }
 
+    #[must_use]
     pub fn with_nullable(mut self, nullable: bool) -> Self {
         self.nullable = nullable;
         self
@@ -117,12 +121,10 @@ impl DataValue {
             DataType::String => DataValue::String(s.to_string()),
             DataType::Integer => s
                 .parse::<i64>()
-                .map(DataValue::Integer)
-                .unwrap_or_else(|_| DataValue::String(s.to_string())),
+                .map_or_else(|_| DataValue::String(s.to_string()), DataValue::Integer),
             DataType::Float => s
                 .parse::<f64>()
-                .map(DataValue::Float)
-                .unwrap_or_else(|_| DataValue::String(s.to_string())),
+                .map_or_else(|_| DataValue::String(s.to_string()), DataValue::Float),
             DataType::Boolean => {
                 let lower = s.to_lowercase();
                 DataValue::Boolean(lower == "true" || lower == "1" || lower == "yes")
@@ -137,10 +139,12 @@ impl DataValue {
         }
     }
 
+    #[must_use]
     pub fn is_null(&self) -> bool {
         matches!(self, DataValue::Null)
     }
 
+    #[must_use]
     pub fn data_type(&self) -> DataType {
         match self {
             DataValue::String(_) | DataValue::InternedString(_) => DataType::String,
@@ -154,6 +158,7 @@ impl DataValue {
 
     /// Get string representation without allocation when possible
     /// Returns owned String for compatibility but tries to reuse existing strings
+    #[must_use]
     pub fn to_string_optimized(&self) -> String {
         match self {
             DataValue::String(s) => s.clone(), // Clone existing string
@@ -176,12 +181,12 @@ impl DataValue {
 impl fmt::Display for DataValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DataValue::String(s) => write!(f, "{}", s),
-            DataValue::InternedString(s) => write!(f, "{}", s),
-            DataValue::Integer(i) => write!(f, "{}", i),
-            DataValue::Float(fl) => write!(f, "{}", fl),
-            DataValue::Boolean(b) => write!(f, "{}", b),
-            DataValue::DateTime(dt) => write!(f, "{}", dt),
+            DataValue::String(s) => write!(f, "{s}"),
+            DataValue::InternedString(s) => write!(f, "{s}"),
+            DataValue::Integer(i) => write!(f, "{i}"),
+            DataValue::Float(fl) => write!(f, "{fl}"),
+            DataValue::Boolean(b) => write!(f, "{b}"),
+            DataValue::DateTime(dt) => write!(f, "{dt}"),
             DataValue::Null => write!(f, ""),
         }
     }
@@ -194,10 +199,12 @@ pub struct DataRow {
 }
 
 impl DataRow {
+    #[must_use]
     pub fn new(values: Vec<DataValue>) -> Self {
         Self { values }
     }
 
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<&DataValue> {
         self.values.get(index)
     }
@@ -206,16 +213,18 @@ impl DataRow {
         self.values.get_mut(index)
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
 }
 
-/// The main DataTable structure
+/// The main `DataTable` structure
 #[derive(Debug, Clone)]
 pub struct DataTable {
     pub name: String,
@@ -236,6 +245,7 @@ impl DataTable {
 
     /// Create a DUAL table (similar to Oracle's DUAL) with one row and one column
     /// Used for evaluating expressions without a data source
+    #[must_use]
     pub fn dual() -> Self {
         let mut table = DataTable::new("DUAL");
         table.add_column(DataColumn::new("DUMMY").with_type(DataType::String));
@@ -262,27 +272,33 @@ impl DataTable {
         Ok(())
     }
 
+    #[must_use]
     pub fn get_column(&self, name: &str) -> Option<&DataColumn> {
         self.columns.iter().find(|c| c.name == name)
     }
 
+    #[must_use]
     pub fn get_column_index(&self, name: &str) -> Option<usize> {
         self.columns.iter().position(|c| c.name == name)
     }
 
+    #[must_use]
     pub fn column_count(&self) -> usize {
         self.columns.len()
     }
 
+    #[must_use]
     pub fn row_count(&self) -> usize {
         self.rows.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
 
     /// Get column names as a vector
+    #[must_use]
     pub fn column_names(&self) -> Vec<String> {
         self.columns.iter().map(|c| c.name.clone()).collect()
     }
@@ -314,25 +330,34 @@ impl DataTable {
     }
 
     /// Get a value at specific row and column
+    #[must_use]
     pub fn get_value(&self, row: usize, col: usize) -> Option<&DataValue> {
         self.rows.get(row)?.get(col)
     }
 
     /// Get a value by row index and column name
+    #[must_use]
     pub fn get_value_by_name(&self, row: usize, col_name: &str) -> Option<&DataValue> {
         let col_idx = self.get_column_index(col_name)?;
         self.get_value(row, col_idx)
     }
 
     /// Convert to a vector of string vectors (for display/compatibility)
+    #[must_use]
     pub fn to_string_table(&self) -> Vec<Vec<String>> {
         self.rows
             .iter()
-            .map(|row| row.values.iter().map(|v| v.to_string_optimized()).collect())
+            .map(|row| {
+                row.values
+                    .iter()
+                    .map(DataValue::to_string_optimized)
+                    .collect()
+            })
             .collect()
     }
 
     /// Get table statistics
+    #[must_use]
     pub fn get_stats(&self) -> DataTableStats {
         DataTableStats {
             row_count: self.row_count(),
@@ -343,6 +368,7 @@ impl DataTable {
     }
 
     /// Generate a debug dump string for display
+    #[must_use]
     pub fn debug_dump(&self) -> String {
         let mut output = String::new();
 
@@ -356,7 +382,7 @@ impl DataTable {
         if !self.metadata.is_empty() {
             output.push_str("Metadata:\n");
             for (key, value) in &self.metadata {
-                output.push_str(&format!("  {}: {}\n", key, value));
+                output.push_str(&format!("  {key}: {value}\n"));
             }
         }
 
@@ -367,7 +393,7 @@ impl DataTable {
                 output.push_str(&format!(" - nullable, {} nulls", column.null_count));
             }
             if let Some(unique) = column.unique_values {
-                output.push_str(&format!(", {} unique", unique));
+                output.push_str(&format!(", {unique} unique"));
             }
             output.push('\n');
         }
@@ -375,10 +401,10 @@ impl DataTable {
         // Show first few rows
         if self.row_count() > 0 {
             let sample_size = 5.min(self.row_count());
-            output.push_str(&format!("\nFirst {} rows:\n", sample_size));
+            output.push_str(&format!("\nFirst {sample_size} rows:\n"));
 
             for row_idx in 0..sample_size {
-                output.push_str(&format!("  [{}]: ", row_idx));
+                output.push_str(&format!("  [{row_idx}]: "));
                 for (col_idx, value) in self.rows[row_idx].values.iter().enumerate() {
                     if col_idx > 0 {
                         output.push_str(", ");
@@ -392,6 +418,7 @@ impl DataTable {
         output
     }
 
+    #[must_use]
     pub fn estimate_memory_size(&self) -> usize {
         // Base structure size
         let mut size = std::mem::size_of::<Self>();
@@ -421,7 +448,7 @@ impl DataTable {
         size
     }
 
-    /// V46: Create DataTable from QueryResponse
+    /// V46: Create `DataTable` from `QueryResponse`
     /// This is the key conversion function that bridges old and new systems
     pub fn from_query_response(response: &QueryResponse, table_name: &str) -> Result<Self, String> {
         debug!(
@@ -452,8 +479,7 @@ impl DataTable {
                         for column in &table.columns {
                             let value = row_obj
                                 .get(&column.name)
-                                .map(json_value_to_data_value)
-                                .unwrap_or(DataValue::Null);
+                                .map_or(DataValue::Null, json_value_to_data_value);
                             values.push(value);
                         }
 
@@ -496,21 +522,24 @@ impl DataTable {
     }
 
     /// Get a single row by index
+    #[must_use]
     pub fn get_row(&self, index: usize) -> Option<&DataRow> {
         self.rows.get(index)
     }
 
     /// V50: Get a single row as strings
+    #[must_use]
     pub fn get_row_as_strings(&self, index: usize) -> Option<Vec<String>> {
         self.rows.get(index).map(|row| {
             row.values
                 .iter()
-                .map(|value| value.to_string_optimized())
+                .map(DataValue::to_string_optimized)
                 .collect()
         })
     }
 
-    /// Pretty print the DataTable with a nice box drawing
+    /// Pretty print the `DataTable` with a nice box drawing
+    #[must_use]
     pub fn pretty_print(&self) -> String {
         let mut output = String::new();
 
@@ -639,7 +668,8 @@ impl DataTable {
         }
     }
 
-    /// Get a schema summary of the DataTable
+    /// Get a schema summary of the `DataTable`
+    #[must_use]
     pub fn get_schema_summary(&self) -> String {
         let mut summary = String::new();
         summary.push_str(&format!(
@@ -680,6 +710,7 @@ impl DataTable {
     }
 
     /// Get detailed schema information as a structured format
+    #[must_use]
     pub fn get_schema_info(&self) -> Vec<(String, String, bool, usize)> {
         self.columns
             .iter()
@@ -703,7 +734,8 @@ impl DataTable {
         }
     }
 
-    /// Get actual memory usage estimate (more accurate than estimate_memory_size)
+    /// Get actual memory usage estimate (more accurate than `estimate_memory_size`)
+    #[must_use]
     pub fn get_memory_usage(&self) -> usize {
         let mut size = std::mem::size_of::<Self>();
 
@@ -742,7 +774,7 @@ impl DataTable {
     }
 }
 
-/// V46: Helper function to convert JSON value to DataValue
+/// V46: Helper function to convert JSON value to `DataValue`
 fn json_value_to_data_value(json: &JsonValue) -> DataValue {
     match json {
         JsonValue::Null => DataValue::Null,
@@ -772,7 +804,7 @@ fn json_value_to_data_value(json: &JsonValue) -> DataValue {
     }
 }
 
-/// Statistics about a DataTable
+/// Statistics about a `DataTable`
 #[derive(Debug, Clone)]
 pub struct DataTableStats {
     pub row_count: usize,
@@ -781,13 +813,16 @@ pub struct DataTableStats {
     pub null_count: usize,
 }
 
-/// Implementation of DataProvider for DataTable
-/// This allows DataTable to be used wherever DataProvider trait is expected
+/// Implementation of `DataProvider` for `DataTable`
+/// This allows `DataTable` to be used wherever `DataProvider` trait is expected
 impl DataProvider for DataTable {
     fn get_row(&self, index: usize) -> Option<Vec<String>> {
-        self.rows
-            .get(index)
-            .map(|row| row.values.iter().map(|v| v.to_string_optimized()).collect())
+        self.rows.get(index).map(|row| {
+            row.values
+                .iter()
+                .map(DataValue::to_string_optimized)
+                .collect()
+        })
     }
 
     fn get_column_names(&self) -> Vec<String> {

@@ -2,13 +2,14 @@ use crate::data::datatable::{DataTable, DataValue};
 use crate::sql::where_ast::{ComparisonOp, WhereExpr, WhereValue};
 use anyhow::Result;
 
-/// Evaluates WHERE clause expressions against DataTable rows
+/// Evaluates WHERE clause expressions against `DataTable` rows
 pub struct WhereEvaluator<'a> {
     table: &'a DataTable,
     column_indices: Vec<usize>,
 }
 
 impl<'a> WhereEvaluator<'a> {
+    #[must_use]
     pub fn new(table: &'a DataTable) -> Self {
         let column_indices = (0..table.column_count()).collect();
         Self {
@@ -248,7 +249,7 @@ impl<'a> WhereEvaluator<'a> {
                 let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
 
                 // Use case-insensitive matching
-                let regex = regex::RegexBuilder::new(&format!("^{}$", regex_pattern))
+                let regex = regex::RegexBuilder::new(&format!("^{regex_pattern}$"))
                     .case_insensitive(true)
                     .build()
                     .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
@@ -260,7 +261,7 @@ impl<'a> WhereEvaluator<'a> {
                 let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
 
                 // Use case-insensitive matching
-                let regex = regex::RegexBuilder::new(&format!("^{}$", regex_pattern))
+                let regex = regex::RegexBuilder::new(&format!("^{regex_pattern}$"))
                     .case_insensitive(true)
                     .build()
                     .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;

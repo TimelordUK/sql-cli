@@ -81,7 +81,11 @@ fn main() {
 
     for i in 0..view.row_count().min(3) {
         if let Some(row) = view.get_row(i) {
-            let values: Vec<String> = row.values.iter().map(|v| v.to_string()).collect();
+            let values: Vec<String> = row
+                .values
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             println!("    Row {}: {}", i, values.join(" | "));
         }
     }
@@ -102,7 +106,11 @@ fn main() {
 
     for i in 0..view.row_count() {
         if let Some(row) = view.get_row(i) {
-            let values: Vec<String> = row.values.iter().map(|v| v.to_string()).collect();
+            let values: Vec<String> = row
+                .values
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             println!("    {}", values.join(" | "));
         }
     }
@@ -119,7 +127,11 @@ fn main() {
 
     for i in 0..3 {
         if let Some(row) = view.get_row(i) {
-            let values: Vec<String> = row.values.iter().map(|v| v.to_string()).collect();
+            let values: Vec<String> = row
+                .values
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             println!("    {}", values.join(" | "));
         }
     }
@@ -160,7 +172,11 @@ fn main() {
     println!("\n  Final result (Sales people sorted by amount):");
     for i in 0..view.row_count() {
         if let Some(row) = view.get_row(i) {
-            let values: Vec<String> = row.values.iter().map(|v| v.to_string()).collect();
+            let values: Vec<String> = row
+                .values
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             println!("    {}", values.join(" | "));
         }
     }
@@ -190,7 +206,7 @@ fn main() {
     let json = view.to_json();
     println!(
         "  JSON array length: {}",
-        json.as_array().map(|a| a.len()).unwrap_or(0)
+        json.as_array().map_or(0, std::vec::Vec::len)
     );
 
     println!("\n✅ All DataView tests complete!");

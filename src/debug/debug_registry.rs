@@ -8,6 +8,7 @@ pub struct DebugRegistry {
 
 impl DebugRegistry {
     /// Create a new debug registry
+    #[must_use]
     pub fn new() -> Self {
         Self {
             providers: Arc::new(RwLock::new(Vec::new())),
@@ -39,6 +40,7 @@ impl DebugRegistry {
     }
 
     /// Get all debug sections from active providers
+    #[must_use]
     pub fn collect_debug_sections(&self) -> Vec<DebugSection> {
         let mut all_sections = Vec::new();
 
@@ -56,6 +58,7 @@ impl DebugRegistry {
     }
 
     /// Generate a complete debug report
+    #[must_use]
     pub fn generate_debug_report(&self) -> String {
         let sections = self.collect_debug_sections();
         let mut report = String::new();
@@ -68,6 +71,7 @@ impl DebugRegistry {
     }
 
     /// Get a list of registered provider names
+    #[must_use]
     pub fn list_providers(&self) -> Vec<String> {
         if let Ok(providers) = self.providers.read() {
             providers.iter().map(|p| p.name().to_string()).collect()
@@ -77,6 +81,7 @@ impl DebugRegistry {
     }
 
     /// Get debug summaries from all active providers
+    #[must_use]
     pub fn collect_summaries(&self) -> Vec<(String, String)> {
         let mut summaries = Vec::new();
 
@@ -94,6 +99,7 @@ impl DebugRegistry {
     }
 
     /// Check if a provider is registered
+    #[must_use]
     pub fn has_provider(&self, name: &str) -> bool {
         if let Ok(providers) = self.providers.read() {
             providers.iter().any(|p| p.name() == name)
@@ -103,6 +109,7 @@ impl DebugRegistry {
     }
 
     /// Get the count of registered providers
+    #[must_use]
     pub fn provider_count(&self) -> usize {
         if let Ok(providers) = self.providers.read() {
             providers.len()

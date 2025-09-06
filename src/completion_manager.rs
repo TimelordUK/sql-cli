@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 /// Manages tab completion for SQL queries
-/// Extracted from the monolithic enhanced_tui.rs
+/// Extracted from the monolithic `enhanced_tui.rs`
 #[derive(Debug, Clone)]
 pub struct CompletionManager {
     /// Current completion suggestions
@@ -30,6 +30,7 @@ impl Default for CompletionManager {
 }
 
 impl CompletionManager {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             suggestions: Vec::new(),
@@ -50,21 +51,25 @@ impl CompletionManager {
     }
 
     /// Check if we have active suggestions
+    #[must_use]
     pub fn has_suggestions(&self) -> bool {
         !self.suggestions.is_empty()
     }
 
     /// Get current suggestions
+    #[must_use]
     pub fn suggestions(&self) -> &[String] {
         &self.suggestions
     }
 
     /// Get current suggestion index
+    #[must_use]
     pub fn current_index(&self) -> usize {
         self.current_index
     }
 
     /// Get the currently selected suggestion
+    #[must_use]
     pub fn current_suggestion(&self) -> Option<&str> {
         if self.suggestions.is_empty() {
             None
@@ -269,7 +274,7 @@ impl CompletionManager {
         let mut suggestions: Vec<String> = SQL_KEYWORDS
             .iter()
             .filter(|k| k.to_lowercase().starts_with(&lower_partial))
-            .map(|k| k.to_string())
+            .map(|k| (*k).to_string())
             .collect();
 
         suggestions.sort();

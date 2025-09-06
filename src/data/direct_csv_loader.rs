@@ -1,4 +1,4 @@
-/// Direct CSV to DataTable loader - bypasses JSON intermediate format
+/// Direct CSV to `DataTable` loader - bypasses JSON intermediate format
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use anyhow::Result;
 use csv;
@@ -9,7 +9,7 @@ use tracing::{debug, info};
 pub struct DirectCsvLoader;
 
 impl DirectCsvLoader {
-    /// Load CSV directly into DataTable without JSON intermediate
+    /// Load CSV directly into `DataTable` without JSON intermediate
     pub fn load_csv_direct<P: AsRef<Path>>(path: P, table_name: &str) -> Result<DataTable> {
         let path = path.as_ref();
         info!("Direct CSV load: Loading {} into DataTable", path.display());
@@ -24,7 +24,7 @@ impl DirectCsvLoader {
         let headers = reader.headers()?.clone(); // Clone to release the borrow
         let mut table = DataTable::new(table_name);
 
-        for header in headers.iter() {
+        for header in &headers {
             table.add_column(DataColumn::new(header.to_string()));
         }
 
@@ -36,7 +36,7 @@ impl DirectCsvLoader {
             let record = result?;
             let mut values = Vec::with_capacity(headers.len());
 
-            for field in record.iter() {
+            for field in &record {
                 // Simple type inference - can be improved later
                 let value = if field.is_empty() {
                     DataValue::Null
@@ -64,10 +64,7 @@ impl DirectCsvLoader {
 
             // Track memory every 5000 rows
             if row_count % 5000 == 0 {
-                crate::utils::memory_tracker::track_memory(&format!(
-                    "direct_csv_{}rows",
-                    row_count
-                ));
+                crate::utils::memory_tracker::track_memory(&format!("direct_csv_{row_count}rows"));
             }
         }
 
@@ -86,7 +83,7 @@ impl DirectCsvLoader {
         Ok(table)
     }
 
-    /// Execute a SQL query directly on a DataTable (no JSON)
+    /// Execute a SQL query directly on a `DataTable` (no JSON)
     pub fn query_datatable(table: &DataTable, sql: &str) -> Result<DataTable> {
         // For now, just return a reference/clone of the table
         // In the future, this would apply WHERE/ORDER BY/etc directly on DataTable

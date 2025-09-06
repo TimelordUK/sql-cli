@@ -44,6 +44,7 @@ impl Default for SqlParser {
 }
 
 impl SqlParser {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tokens: Vec::new(),
@@ -261,6 +262,7 @@ pub struct CompletionContext {
 }
 
 impl CompletionContext {
+    #[must_use]
     pub fn get_suggestions(&self, schema: &Schema) -> Vec<String> {
         match self.state {
             ParseState::Start => vec![String::from("SELECT")],
@@ -268,7 +270,7 @@ impl CompletionContext {
                 let mut suggestions: Vec<String> = schema
                     .get_columns("trade_deal")
                     .iter()
-                    .map(|c| c.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect();
                 suggestions.push(String::from("*"));
                 self.filter_suggestions(suggestions)
@@ -277,7 +279,7 @@ impl CompletionContext {
                 let mut suggestions: Vec<String> = schema
                     .get_columns("trade_deal")
                     .iter()
-                    .map(|c| c.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect();
                 suggestions.push(String::from("FROM"));
                 self.filter_suggestions(suggestions)
@@ -294,7 +296,7 @@ impl CompletionContext {
                 let mut suggestions: Vec<String> = schema
                     .get_columns("trade_deal")
                     .iter()
-                    .map(|c| c.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect();
                 suggestions.extend(vec![
                     String::from("AND"),
@@ -317,7 +319,7 @@ impl CompletionContext {
                         schema
                             .get_columns("trade_deal")
                             .iter()
-                            .map(|c| c.to_string()),
+                            .map(std::string::ToString::to_string),
                     );
                 }
 
@@ -370,6 +372,7 @@ impl Default for Schema {
 }
 
 impl Schema {
+    #[must_use]
     pub fn new() -> Self {
         // Use the complete column list from schema_config
         let trade_deal_columns = crate::schema_config::get_full_trade_deal_columns();
@@ -392,6 +395,7 @@ impl Schema {
         }
     }
 
+    #[must_use]
     pub fn get_columns(&self, table_name: &str) -> Vec<String> {
         self.tables
             .iter()
@@ -411,10 +415,12 @@ impl Schema {
         }];
     }
 
+    #[must_use]
     pub fn get_first_table_name(&self) -> Option<&str> {
         self.tables.first().map(|t| t.name.as_str())
     }
 
+    #[must_use]
     pub fn get_table_names(&self) -> Vec<String> {
         self.tables.iter().map(|t| t.name.clone()).collect()
     }

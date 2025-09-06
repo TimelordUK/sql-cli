@@ -10,6 +10,7 @@ pub struct HistoryProtection {
 }
 
 impl HistoryProtection {
+    #[must_use]
     pub fn new(backup_dir: PathBuf) -> Self {
         // Create backup directory if it doesn't exist
         if !backup_dir.exists() {
@@ -26,8 +27,7 @@ impl HistoryProtection {
     pub fn backup_before_write(&self, current_data: &str, entry_count: usize) {
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
         let backup_file = self.backup_dir.join(format!(
-            "history_backup_{}_entries_{}.json",
-            timestamp, entry_count
+            "history_backup_{timestamp}_entries_{entry_count}.json"
         ));
 
         if let Err(e) = fs::write(&backup_file, current_data) {
@@ -84,7 +84,7 @@ impl HistoryProtection {
     fn cleanup_old_backups(&self) {
         if let Ok(entries) = fs::read_dir(&self.backup_dir) {
             let mut backups: Vec<_> = entries
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| {
                     e.file_name()
                         .to_string_lossy()
@@ -110,7 +110,7 @@ impl HistoryProtection {
     pub fn recover_from_backup(&self) -> Option<String> {
         if let Ok(entries) = fs::read_dir(&self.backup_dir) {
             let mut backups: Vec<_> = entries
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| {
                     e.file_name()
                         .to_string_lossy()

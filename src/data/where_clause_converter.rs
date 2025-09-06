@@ -2,11 +2,11 @@ use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereCla
 use crate::sql::where_ast::{WhereExpr, WhereValue};
 use anyhow::Result;
 
-/// Converts recursive_parser's WhereClause to where_ast's WhereExpr
+/// Converts `recursive_parser`'s `WhereClause` to `where_ast`'s `WhereExpr`
 pub struct WhereClauseConverter;
 
 impl WhereClauseConverter {
-    /// Convert a WhereClause from recursive_parser to WhereExpr for where_evaluator
+    /// Convert a `WhereClause` from `recursive_parser` to `WhereExpr` for `where_evaluator`
     pub fn convert(where_clause: &WhereClause) -> Result<WhereExpr> {
         if where_clause.conditions.is_empty() {
             return Err(anyhow::anyhow!("Empty WHERE clause"));
@@ -79,7 +79,7 @@ impl WhereClauseConverter {
         right: &SqlExpression,
     ) -> Result<WhereExpr> {
         // For debugging - let's see what we're getting
-        eprintln!("Converting binary op: {:?} {} {:?}", left, op, right);
+        eprintln!("Converting binary op: {left:?} {op} {right:?}");
 
         let column = Self::extract_column_name(left)?;
         let value = Self::convert_to_where_value(right)?;

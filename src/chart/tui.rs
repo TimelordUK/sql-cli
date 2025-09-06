@@ -1,4 +1,8 @@
-use crate::chart::{engine::ChartEngine, renderers::LineRenderer, types::*};
+use crate::chart::{
+    engine::ChartEngine,
+    renderers::LineRenderer,
+    types::{ChartConfig, ChartViewport, DataSeries},
+};
 use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
@@ -23,6 +27,7 @@ pub struct ChartTui {
 }
 
 impl ChartTui {
+    #[must_use]
     pub fn new(config: ChartConfig) -> Self {
         Self {
             config,
@@ -160,16 +165,16 @@ impl ChartTui {
                 }
 
                 // Zoom
-                KeyCode::Char('+') | KeyCode::Char('=') => {
+                KeyCode::Char('+' | '=') => {
                     let viewport = renderer.viewport();
-                    let center_x = (viewport.x_min + viewport.x_max) / 2.0;
-                    let center_y = (viewport.y_min + viewport.y_max) / 2.0;
+                    let center_x = f64::midpoint(viewport.x_min, viewport.x_max);
+                    let center_y = f64::midpoint(viewport.y_min, viewport.y_max);
                     renderer.viewport_mut().zoom(1.2, center_x, center_y);
                 }
                 KeyCode::Char('-') => {
                     let viewport = renderer.viewport();
-                    let center_x = (viewport.x_min + viewport.x_max) / 2.0;
-                    let center_y = (viewport.y_min + viewport.y_max) / 2.0;
+                    let center_x = f64::midpoint(viewport.x_min, viewport.x_max);
+                    let center_y = f64::midpoint(viewport.y_min, viewport.y_max);
                     renderer.viewport_mut().zoom(0.8, center_x, center_y);
                 }
 

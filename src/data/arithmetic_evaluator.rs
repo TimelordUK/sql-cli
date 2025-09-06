@@ -6,8 +6,8 @@ use anyhow::{anyhow, Result};
 use std::sync::Arc;
 use tracing::debug;
 
-/// Evaluates SQL expressions to compute DataValues (for SELECT clauses)
-/// This is different from RecursiveWhereEvaluator which returns boolean
+/// Evaluates SQL expressions to compute `DataValues` (for SELECT clauses)
+/// This is different from `RecursiveWhereEvaluator` which returns boolean
 pub struct ArithmeticEvaluator<'a> {
     table: &'a DataTable,
     date_notation: String,
@@ -17,6 +17,7 @@ pub struct ArithmeticEvaluator<'a> {
 }
 
 impl<'a> ArithmeticEvaluator<'a> {
+    #[must_use]
     pub fn new(table: &'a DataTable) -> Self {
         Self {
             table,
@@ -27,6 +28,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
     }
 
+    #[must_use]
     pub fn with_date_notation(table: &'a DataTable, date_notation: String) -> Self {
         Self {
             table,
@@ -38,11 +40,13 @@ impl<'a> ArithmeticEvaluator<'a> {
     }
 
     /// Set visible rows for aggregate functions (for filtered views)
+    #[must_use]
     pub fn with_visible_rows(mut self, rows: Vec<usize>) -> Self {
         self.visible_rows = Some(rows);
         self
     }
 
+    #[must_use]
     pub fn with_date_notation_and_registry(
         table: &'a DataTable,
         date_notation: String,
@@ -87,7 +91,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         crate::sql::functions::string_methods::EditDistanceFunction::calculate_edit_distance(s1, s2)
     }
 
-    /// Evaluate an SQL expression to produce a DataValue
+    /// Evaluate an SQL expression to produce a `DataValue`
     pub fn evaluate(&self, expr: &SqlExpression, row_index: usize) -> Result<DataValue> {
         debug!(
             "ArithmeticEvaluator: evaluating {:?} for row {}",
@@ -205,7 +209,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
     }
 
-    /// Add two DataValues with type coercion
+    /// Add two `DataValues` with type coercion
     fn add_values(&self, left: &DataValue, right: &DataValue) -> Result<DataValue> {
         match (left, right) {
             (DataValue::Integer(a), DataValue::Integer(b)) => Ok(DataValue::Integer(a + b)),
@@ -216,7 +220,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
     }
 
-    /// Subtract two DataValues with type coercion
+    /// Subtract two `DataValues` with type coercion
     fn subtract_values(&self, left: &DataValue, right: &DataValue) -> Result<DataValue> {
         match (left, right) {
             (DataValue::Integer(a), DataValue::Integer(b)) => Ok(DataValue::Integer(a - b)),
@@ -227,7 +231,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
     }
 
-    /// Multiply two DataValues with type coercion
+    /// Multiply two `DataValues` with type coercion
     fn multiply_values(&self, left: &DataValue, right: &DataValue) -> Result<DataValue> {
         match (left, right) {
             (DataValue::Integer(a), DataValue::Integer(b)) => Ok(DataValue::Integer(a * b)),
@@ -238,7 +242,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
     }
 
-    /// Divide two DataValues with type coercion
+    /// Divide two `DataValues` with type coercion
     fn divide_values(&self, left: &DataValue, right: &DataValue) -> Result<DataValue> {
         // Check for division by zero first
         let is_zero = match right {
@@ -267,17 +271,17 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
     }
 
-    /// Format a DataValue for debug output
+    /// Format a `DataValue` for debug output
     fn format_value(&self, value: &DataValue) -> String {
         match value {
             DataValue::Integer(i) => i.to_string(),
             DataValue::Float(f) => f.to_string(),
-            DataValue::String(s) => format!("'{}'", s),
-            _ => format!("{:?}", value),
+            DataValue::String(s) => format!("'{s}'"),
+            _ => format!("{value:?}"),
         }
     }
 
-    /// Compare two DataValues using the provided comparison function
+    /// Compare two `DataValues` using the provided comparison function
     fn compare_values<F>(&self, left: &DataValue, right: &DataValue, op: F) -> Result<DataValue>
     where
         F: Fn(f64, f64) -> bool,
@@ -500,7 +504,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
     }
 
-    /// Evaluate a method call on a column (e.g., column.Trim())
+    /// Evaluate a method call on a column (e.g., `column.Trim()`)
     fn evaluate_method_call(
         &self,
         object: &str,
@@ -606,7 +610,7 @@ impl<'a> ArithmeticEvaluator<'a> {
                     DataValue::Null => return Ok(DataValue::Integer(-1)),
                 };
 
-                let index = str_val.find(&search_str).map(|i| i as i64).unwrap_or(-1);
+                let index = str_val.find(&search_str).map_or(-1, |i| i as i64);
 
                 Ok(DataValue::Integer(index))
             }
@@ -725,15 +729,12 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
 
         // If no WHEN condition matched, evaluate ELSE clause (or return NULL)
-        match else_branch {
-            Some(else_expr) => {
-                debug!("CASE: No WHEN matched, evaluating ELSE expression");
-                self.evaluate(else_expr, row_index)
-            }
-            None => {
-                debug!("CASE: No WHEN matched and no ELSE, returning NULL");
-                Ok(DataValue::Null)
-            }
+        if let Some(else_expr) = else_branch {
+            debug!("CASE: No WHEN matched, evaluating ELSE expression");
+            self.evaluate(else_expr, row_index)
+        } else {
+            debug!("CASE: No WHEN matched and no ELSE, returning NULL");
+            Ok(DataValue::Null)
         }
     }
 

@@ -14,7 +14,7 @@ fn main() {
 
     // Test 1: HashSet for unique counting
     let start = Instant::now();
-    let refs: Vec<&str> = values.iter().map(|s| s.as_str()).collect();
+    let refs: Vec<&str> = values.iter().map(std::string::String::as_str).collect();
     let mut unique = HashSet::new();
     for value in &refs {
         unique.insert(*value);
@@ -57,7 +57,10 @@ fn main() {
     println!("  Total: {}", stats.total_count);
     println!(
         "  Frequency map entries: {}",
-        stats.frequency_map.as_ref().map(|m| m.len()).unwrap_or(0)
+        stats
+            .frequency_map
+            .as_ref()
+            .map_or(0, std::collections::BTreeMap::len)
     );
 
     // Test with actual string parsing for min/max
@@ -77,7 +80,7 @@ fn main() {
         }
     }
     println!("\nMin/max calculation: {:?}", start.elapsed());
-    println!("  Min: {:?}, Max: {:?}", min_str, max_str);
+    println!("  Min: {min_str:?}, Max: {max_str:?}");
 }
 
 struct Stats {

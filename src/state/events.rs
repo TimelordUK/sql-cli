@@ -64,6 +64,7 @@ pub struct StateChange {
 
 impl StateChange {
     /// Create a change that clears all search states
+    #[must_use]
     pub fn clear_searches() -> Self {
         Self {
             search_state: Some(SearchState::default()),
@@ -75,6 +76,7 @@ impl StateChange {
     }
 
     /// Create a mode change
+    #[must_use]
     pub fn mode(mode: AppMode) -> Self {
         Self {
             mode: Some(mode),

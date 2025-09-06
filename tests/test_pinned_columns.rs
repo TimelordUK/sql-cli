@@ -20,7 +20,7 @@ fn create_test_table() -> Arc<DataTable> {
         table
             .add_row(DataRow::new(vec![
                 DataValue::Integer(i),
-                DataValue::String(format!("Item{}", i)),
+                DataValue::String(format!("Item{i}")),
                 DataValue::Float(100.0 * i as f64),
                 DataValue::String(if i % 2 == 0 { "A" } else { "B" }.to_string()),
                 DataValue::String("Active".to_string()),

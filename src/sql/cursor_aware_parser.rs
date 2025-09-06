@@ -20,6 +20,7 @@ impl Default for CursorAwareParser {
 }
 
 impl CursorAwareParser {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             schema: Schema::new(),
@@ -34,10 +35,12 @@ impl CursorAwareParser {
         self.schema.set_single_table(table_name, columns);
     }
 
+    #[must_use]
     pub fn get_table_columns(&self, table_name: &str) -> Vec<String> {
         self.schema.get_columns(table_name)
     }
 
+    #[must_use]
     pub fn get_completions(&self, query: &str, cursor_pos: usize) -> ParseResult {
         // Use the recursive parser for better context detection
         let (cursor_context, partial_word) = detect_cursor_context(query, cursor_pos);
@@ -176,12 +179,12 @@ impl CursorAwareParser {
                     }
                     _ => vec![],
                 };
-                (suggestions, format!("AfterComparison({} {})", col_name, op))
+                (suggestions, format!("AfterComparison({col_name} {op})"))
             }
             CursorContext::InMethodCall(obj, method) => {
                 let property_type = self.get_property_type(obj).unwrap_or("string".to_string());
                 let suggestions = self.get_string_method_suggestions(&property_type, &partial_word);
-                (suggestions, format!("InMethodCall({}.{})", obj, method))
+                (suggestions, format!("InMethodCall({obj}.{method})"))
             }
             CursorContext::InExpression => {
                 // Generic expression context - could be anywhere
@@ -238,7 +241,7 @@ impl CursorAwareParser {
                 let suggestions = self.get_suggestions_for_context(&context, &partial_word, query);
                 return ParseResult {
                     suggestions,
-                    context: format!("{:?} (partial: {:?})", context, partial_word),
+                    context: format!("{context:?} (partial: {partial_word:?})"),
                     partial_word,
                 };
             }
@@ -311,7 +314,7 @@ impl CursorAwareParser {
 
         ParseResult {
             suggestions: final_suggestions,
-            context: format!("{} (partial: {:?})", context_str, partial_word),
+            context: format!("{context_str} (partial: {partial_word:?})"),
             partial_word,
         }
     }
@@ -341,10 +344,10 @@ impl CursorAwareParser {
         if start < end {
             // Extract partial word up to cursor
             let partial: String = chars[start..cursor_pos.min(end)].iter().collect();
-            if !partial.is_empty() {
-                Some(partial)
-            } else {
+            if partial.is_empty() {
                 None
+            } else {
+                Some(partial)
             }
         } else {
             None
@@ -374,8 +377,7 @@ impl CursorAwareParser {
         let words_check: Vec<&str> = query_upper.split_whitespace().collect();
         let last_word_is_and_or = words_check
             .last()
-            .map(|w| *w == "AND" || *w == "OR")
-            .unwrap_or(false);
+            .is_some_and(|w| *w == "AND" || *w == "OR");
 
         if ends_with_and_or || last_word_is_and_or {
             // After AND/OR, we're expecting a new column in WHERE context
@@ -781,6 +783,7 @@ impl CursorAwareParser {
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn test_extract_selected_columns(&self, query: &str, cursor_pos: usize) -> Vec<String> {
         self.extract_selected_columns(query, cursor_pos)
     }
@@ -821,7 +824,11 @@ impl CursorAwareParser {
                         }
                     }
                 } else {
-                    suggestions.extend(string_methods.into_iter().map(|s| s.to_string()));
+                    suggestions.extend(
+                        string_methods
+                            .into_iter()
+                            .map(std::string::ToString::to_string),
+                    );
                 }
             }
             "numeric" | "integer" | "float" | "decimal" => {
@@ -843,7 +850,11 @@ impl CursorAwareParser {
                         }
                     }
                 } else {
-                    suggestions.extend(numeric_string_methods.into_iter().map(|s| s.to_string()));
+                    suggestions.extend(
+                        numeric_string_methods
+                            .into_iter()
+                            .map(std::string::ToString::to_string),
+                    );
                 }
             }
             "datetime" => {
@@ -869,7 +880,11 @@ impl CursorAwareParser {
                         }
                     }
                 } else {
-                    suggestions.extend(datetime_methods.into_iter().map(|s| s.to_string()));
+                    suggestions.extend(
+                        datetime_methods
+                            .into_iter()
+                            .map(std::string::ToString::to_string),
+                    );
                 }
             }
             _ => {

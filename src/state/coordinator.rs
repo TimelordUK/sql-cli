@@ -65,10 +65,10 @@ impl Buffer {
 
         match (from, to) {
             // Exiting any search mode to Results
-            (AppMode::Search, AppMode::Results)
-            | (AppMode::Filter, AppMode::Results)
-            | (AppMode::FuzzyFilter, AppMode::Results)
-            | (AppMode::ColumnSearch, AppMode::Results) => {
+            (
+                AppMode::Search | AppMode::Filter | AppMode::FuzzyFilter | AppMode::ColumnSearch,
+                AppMode::Results,
+            ) => {
                 info!("Exiting search mode -> clearing all searches");
                 StateChange::clear_searches().and(StateChange::mode(AppMode::Results))
             }

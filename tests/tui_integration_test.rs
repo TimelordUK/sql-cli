@@ -174,7 +174,7 @@ fn test_csv_api_client_with_json_data() -> anyhow::Result<()> {
         csv_client.query_csv("SELECT COUNT(*) as count, SUM(quantity) as total FROM data")?;
     println!("Aggregation response: {} rows", agg_response.data.len());
     for (i, row) in agg_response.data.iter().enumerate() {
-        println!("Row {}: {:?}", i, row);
+        println!("Row {i}: {row:?}");
     }
     // The query might return each row separately instead of aggregating
     if agg_response.data.len() == 1 {
@@ -215,7 +215,7 @@ fn test_csv_api_client_with_csv_data() -> anyhow::Result<()> {
         .query_csv("SELECT executionSide, COUNT(*) as count FROM data GROUP BY executionSide")?;
     println!("Grouping response: {} rows", grouped_response.data.len());
     for (i, row) in grouped_response.data.iter().enumerate() {
-        println!("Row {}: {:?}", i, row);
+        println!("Row {i}: {row:?}");
     }
 
     // The query might not group properly or return individual rows
@@ -335,7 +335,7 @@ fn test_complex_query_scenarios() -> anyhow::Result<()> {
 }
 
 /// Test that would simulate the user workflow we're trying to achieve
-/// This is the equivalent of: load sample_trades.json -> SELECT * FROM trades -> navigate results
+/// This is the equivalent of: load `sample_trades.json` -> SELECT * FROM trades -> navigate results
 #[test]
 fn test_simulated_user_workflow() -> anyhow::Result<()> {
     let sample_path = std::path::PathBuf::from("sample_trades.json");
@@ -358,7 +358,7 @@ fn test_simulated_user_workflow() -> anyhow::Result<()> {
     );
 
     let row_count = all_results_response.data.len();
-    println!("Loaded {} rows from sample_trades.json", row_count);
+    println!("Loaded {row_count} rows from sample_trades.json");
 
     // Simulate user pressing 'j' to move down one row (results navigation)
     // In the TUI, this would move the table selection

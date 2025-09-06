@@ -1,7 +1,7 @@
 //! Aggregate functions for GROUP BY operations
 //!
 //! This module provides SQL aggregate functions like SUM, AVG, COUNT, MIN, MAX
-//! that work with the DataView partitioning system for efficient GROUP BY queries.
+//! that work with the `DataView` partitioning system for efficient GROUP BY queries.
 
 use anyhow::{anyhow, Result};
 
@@ -36,6 +36,7 @@ impl Default for SumState {
 }
 
 impl SumState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             int_sum: None,
@@ -74,6 +75,7 @@ impl SumState {
         }
     }
 
+    #[must_use]
     pub fn finalize(self) -> DataValue {
         if !self.has_values {
             return DataValue::Null;
@@ -103,6 +105,7 @@ impl Default for AvgState {
 }
 
 impl AvgState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sum: SumState::new(),
@@ -118,6 +121,7 @@ impl AvgState {
         Ok(())
     }
 
+    #[must_use]
     pub fn finalize(self) -> DataValue {
         if self.count == 0 {
             return DataValue::Null;
@@ -140,6 +144,7 @@ pub struct MinMaxState {
 }
 
 impl MinMaxState {
+    #[must_use]
     pub fn new(is_min: bool) -> Self {
         Self {
             is_min,
@@ -169,6 +174,7 @@ impl MinMaxState {
         Ok(())
     }
 
+    #[must_use]
     pub fn finalize(self) -> DataValue {
         self.current.unwrap_or(DataValue::Null)
     }
@@ -200,9 +206,15 @@ pub struct AggregateRegistry {
 }
 
 impl AggregateRegistry {
+    #[must_use]
     pub fn new() -> Self {
-        use analytics::*;
-        use functions::*;
+        use analytics::{
+            CumMaxFunction, CumMinFunction, DeltasFunction, MavgFunction, PctChangeFunction,
+            RankFunction, SumsFunction,
+        };
+        use functions::{
+            AvgFunction, CountFunction, CountStarFunction, MaxFunction, MinFunction, SumFunction,
+        };
 
         let functions: Vec<Box<dyn AggregateFunction>> = vec![
             Box::new(CountFunction),
@@ -224,14 +236,16 @@ impl AggregateRegistry {
         Self { functions }
     }
 
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&dyn AggregateFunction> {
         let name_upper = name.to_uppercase();
         self.functions
             .iter()
             .find(|f| f.name() == name_upper)
-            .map(|f| f.as_ref())
+            .map(std::convert::AsRef::as_ref)
     }
 
+    #[must_use]
     pub fn is_aggregate(&self, name: &str) -> bool {
         self.get(name).is_some() || name.to_uppercase() == "COUNT" // COUNT(*) special case
     }

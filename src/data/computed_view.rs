@@ -18,7 +18,7 @@ pub enum ViewColumn {
     },
 }
 
-/// A view over a DataTable that can contain both original and computed columns
+/// A view over a `DataTable` that can contain both original and computed columns
 /// This is query-scoped - exists only for the duration of one query result
 #[derive(Debug, Clone)]
 pub struct ComputedDataView {
@@ -29,12 +29,13 @@ pub struct ComputedDataView {
     columns: Vec<ViewColumn>,
 
     /// Which rows from the source table are visible (after WHERE clause filtering)
-    /// Indices refer to rows in source_table
+    /// Indices refer to rows in `source_table`
     visible_rows: Vec<usize>,
 }
 
 impl ComputedDataView {
     /// Create a new computed view with specified columns and visible rows
+    #[must_use]
     pub fn new(
         source_table: Arc<DataTable>,
         columns: Vec<ViewColumn>,
@@ -48,16 +49,19 @@ impl ComputedDataView {
     }
 
     /// Get the number of visible rows
+    #[must_use]
     pub fn row_count(&self) -> usize {
         self.visible_rows.len()
     }
 
     /// Get the number of columns (original + derived)
+    #[must_use]
     pub fn column_count(&self) -> usize {
         self.columns.len()
     }
 
     /// Get column names
+    #[must_use]
     pub fn column_names(&self) -> Vec<String> {
         self.columns
             .iter()
@@ -69,6 +73,7 @@ impl ComputedDataView {
     }
 
     /// Get a value at a specific row and column
+    #[must_use]
     pub fn get_value(&self, row_idx: usize, col_idx: usize) -> Option<DataValue> {
         // Check bounds
         if row_idx >= self.visible_rows.len() || col_idx >= self.columns.len() {
@@ -94,6 +99,7 @@ impl ComputedDataView {
     }
 
     /// Get all values for a row
+    #[must_use]
     pub fn get_row_values(&self, row_idx: usize) -> Option<Vec<DataValue>> {
         if row_idx >= self.visible_rows.len() {
             return None;
@@ -107,21 +113,25 @@ impl ComputedDataView {
     }
 
     /// Get the underlying source table (for reference, not modification)
+    #[must_use]
     pub fn source_table(&self) -> &Arc<DataTable> {
         &self.source_table
     }
 
     /// Get the visible row indices (useful for debugging)
+    #[must_use]
     pub fn visible_rows(&self) -> &[usize] {
         &self.visible_rows
     }
 
     /// Check if a column is derived
+    #[must_use]
     pub fn is_derived_column(&self, col_idx: usize) -> bool {
         matches!(self.columns.get(col_idx), Some(ViewColumn::Derived { .. }))
     }
 
     /// Create a simple view showing all columns from source (no computations)
+    #[must_use]
     pub fn from_source_all_columns(source: Arc<DataTable>) -> Self {
         let columns: Vec<ViewColumn> = source
             .column_names()
@@ -139,6 +149,7 @@ impl ComputedDataView {
     }
 
     /// Create a view with filtered rows (WHERE clause applied)
+    #[must_use]
     pub fn with_filtered_rows(mut self, row_indices: Vec<usize>) -> Self {
         self.visible_rows = row_indices;
 

@@ -28,7 +28,7 @@ impl DebugSection {
         priority: u32,
     ) -> Self {
         let title_str = title.into();
-        let header = format!("\n========== {} ==========\n", title_str);
+        let header = format!("\n========== {title_str} ==========\n");
         Self {
             title: title_str,
             content: format!("{}{}", header, content.into()),
@@ -84,6 +84,7 @@ pub struct DebugSectionBuilder {
 }
 
 impl DebugSectionBuilder {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sections: Vec::new(),
@@ -108,7 +109,7 @@ impl DebugSectionBuilder {
 
     pub fn add_field(&mut self, name: &str, value: impl fmt::Display) -> &mut Self {
         if let Some(last) = self.sections.last_mut() {
-            last.content.push_str(&format!("{}: {}\n", name, value));
+            last.content.push_str(&format!("{name}: {value}\n"));
         }
         self
     }
@@ -120,6 +121,7 @@ impl DebugSectionBuilder {
         self
     }
 
+    #[must_use]
     pub fn build(self) -> Vec<DebugSection> {
         self.sections
     }

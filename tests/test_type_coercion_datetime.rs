@@ -7,7 +7,7 @@ fn create_table_with_data(name: &str, columns: Vec<(&str, Vec<Option<DataValue>>
     let mut table = DataTable::new(name);
 
     // Find the number of rows
-    let row_count = columns.first().map(|(_, vals)| vals.len()).unwrap_or(0);
+    let row_count = columns.first().map_or(0, |(_, vals)| vals.len());
 
     // Add columns
     for (col_name, _) in &columns {

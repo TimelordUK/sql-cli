@@ -40,6 +40,7 @@ impl Default for TableWidgetManager {
 
 impl TableWidgetManager {
     /// Create a new table widget manager
+    #[must_use]
     pub fn new() -> Self {
         Self {
             position: TablePosition { row: 0, column: 0 },
@@ -167,6 +168,7 @@ impl TableWidgetManager {
     }
 
     /// Check if render is needed
+    #[must_use]
     pub fn needs_render(&self) -> bool {
         self.render_state.needs_render()
     }
@@ -179,11 +181,13 @@ impl TableWidgetManager {
     }
 
     /// Get current position
+    #[must_use]
     pub fn position(&self) -> TablePosition {
         self.position
     }
 
     /// Get previous position (for clearing)
+    #[must_use]
     pub fn previous_position(&self) -> Option<TablePosition> {
         self.previous_position
     }
@@ -200,6 +204,7 @@ impl TableWidgetManager {
     }
 
     /// Get the viewport manager
+    #[must_use]
     pub fn viewport_manager(&self) -> Option<&ViewportManager> {
         self.viewport_manager.as_ref()
     }
@@ -220,6 +225,7 @@ impl TableWidgetManager {
     }
 
     /// Get render state for debugging
+    #[must_use]
     pub fn render_state(&self) -> &RenderState {
         &self.render_state
     }
@@ -237,6 +243,7 @@ impl TableWidgetManager {
     }
 
     /// Get current scroll offset
+    #[must_use]
     pub fn scroll_offset(&self) -> (usize, usize) {
         self.scroll_offset
     }

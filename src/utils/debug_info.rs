@@ -112,8 +112,8 @@ impl DebugInfo {
         // Add buffer manager debug info
         debug_info.push_str("\n========== BUFFER MANAGER STATE ==========\n");
         debug_info.push_str("Buffer Manager: INITIALIZED\n");
-        debug_info.push_str(&format!("Number of Buffers: {}\n", buffer_count));
-        debug_info.push_str(&format!("Current Buffer Index: {}\n", buffer_index));
+        debug_info.push_str(&format!("Number of Buffers: {buffer_count}\n"));
+        debug_info.push_str(&format!("Current Buffer Index: {buffer_index}\n"));
         debug_info.push_str(&format!("Has Multiple Buffers: {}\n", buffer_count > 1));
 
         // Add info about all buffers
@@ -135,18 +135,18 @@ impl DebugInfo {
         let mut context = String::new();
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
 
-        context.push_str(&format!("=== TUI Debug Context - {} ===\n\n", timestamp));
+        context.push_str(&format!("=== TUI Debug Context - {timestamp} ===\n\n"));
 
         // Current query info
         context.push_str("CURRENT QUERY:\n");
         let query = buffer.get_query();
         let last_query = buffer.get_last_query();
-        let current_query = if !query.is_empty() {
-            &query
-        } else {
+        let current_query = if query.is_empty() {
             &last_query
+        } else {
+            &query
         };
-        context.push_str(&format!("{}\n\n", current_query));
+        context.push_str(&format!("{current_query}\n\n"));
 
         // Buffer state
         context.push_str("BUFFER STATE:\n");
@@ -155,8 +155,7 @@ impl DebugInfo {
             "- File: {}\n",
             buffer
                 .get_file_path()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "memory".to_string())
+                .map_or_else(|| "memory".to_string(), |p| p.to_string_lossy().to_string())
         ));
         context.push_str(&format!("- Mode: {:?}\n", buffer.get_mode()));
         context.push_str(&format!(
@@ -214,10 +213,10 @@ impl DebugInfo {
     pub fn generate_test_case(buffer: &dyn BufferAPI) -> String {
         let query = buffer.get_query();
         let last_query = buffer.get_last_query();
-        let current_query = if !query.is_empty() {
-            &query
-        } else {
+        let current_query = if query.is_empty() {
             &last_query
+        } else {
+            &query
         };
 
         let mut test_case = String::new();
@@ -225,15 +224,13 @@ impl DebugInfo {
 
         // Header comment with session info
         test_case.push_str(&format!(
-            "// Test case generated from TUI session at {}\n",
-            timestamp
+            "// Test case generated from TUI session at {timestamp}\n"
         ));
         test_case.push_str(&format!(
             "// Buffer: {} (ID: {})\n",
             buffer
                 .get_file_path()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "memory".to_string()),
+                .map_or_else(|| "memory".to_string(), |p| p.to_string_lossy().to_string()),
             buffer.get_id()
         ));
 
@@ -251,8 +248,7 @@ impl DebugInfo {
 
         test_case.push_str("    harness.add_query(CapturedQuery {\n");
         test_case.push_str(&format!(
-            "        description: \"Captured from TUI session {}\".to_string(),\n",
-            timestamp
+            "        description: \"Captured from TUI session {timestamp}\".to_string(),\n"
         ));
 
         // Add data file path
@@ -281,7 +277,7 @@ impl DebugInfo {
             // Add column names
             test_case.push_str("        expected_columns: vec![\n");
             for column_name in datatable.column_names() {
-                test_case.push_str(&format!("            \"{}\".to_string(), \n", column_name));
+                test_case.push_str(&format!("            \"{column_name}\".to_string(), \n"));
             }
             test_case.push_str("        ],\n");
         } else {
@@ -305,7 +301,7 @@ impl DebugInfo {
         test_case
     }
 
-    /// Convert a serde_json::Value to Rust code representation
+    /// Convert a `serde_json::Value` to Rust code representation
     fn value_to_rust_code(value: &Value) -> String {
         match value {
             Value::String(s) => format!(
@@ -314,22 +310,18 @@ impl DebugInfo {
             ),
             Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
-                    format!("serde_json::Value::Number(serde_json::Number::from({}))", i)
+                    format!("serde_json::Value::Number(serde_json::Number::from({i}))")
                 } else if let Some(f) = n.as_f64() {
-                    format!(
-                        "serde_json::Value::Number(serde_json::Number::from_f64({}).unwrap())",
-                        f
-                    )
+                    format!("serde_json::Value::Number(serde_json::Number::from_f64({f}).unwrap())")
                 } else {
                     format!(
-                        "serde_json::Value::Number(serde_json::Number::from_str(\"{}\").unwrap())",
-                        n
+                        "serde_json::Value::Number(serde_json::Number::from_str(\"{n}\").unwrap())"
                     )
                 }
             }
-            Value::Bool(b) => format!("serde_json::Value::Bool({})", b),
+            Value::Bool(b) => format!("serde_json::Value::Bool({b})"),
             Value::Null => "serde_json::Value::Null".to_string(),
-            _ => format!("serde_json::json!({})", value),
+            _ => format!("serde_json::json!({value})"),
         }
     }
 
@@ -365,15 +357,16 @@ impl DebugInfo {
     }
 
     /// Generate query execution debug info
+    #[must_use]
     pub fn generate_query_debug(query: &str, error: Option<&str>) -> String {
         let mut debug = String::new();
         let timestamp = Local::now().format("%H:%M:%S%.3f");
 
-        debug.push_str(&format!("[{}] Query execution:\n", timestamp));
-        debug.push_str(&format!("Query: {}\n", query));
+        debug.push_str(&format!("[{timestamp}] Query execution:\n"));
+        debug.push_str(&format!("Query: {query}\n"));
 
         if let Some(err) = error {
-            debug.push_str(&format!("Error: {}\n", err));
+            debug.push_str(&format!("Error: {err}\n"));
         } else {
             debug.push_str("Status: Success\n");
         }
@@ -389,6 +382,7 @@ pub struct DebugView {
 }
 
 impl DebugView {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             content: String::new(),
@@ -429,17 +423,19 @@ impl DebugView {
         self.scroll_offset = self.get_max_scroll() as u16;
     }
 
+    #[must_use]
     pub fn get_max_scroll(&self) -> usize {
         let line_count = self.content.lines().count();
         line_count.saturating_sub(10) // Assuming 10 visible lines
     }
 
+    #[must_use]
     pub fn get_visible_lines(&self, height: usize) -> Vec<String> {
         self.content
             .lines()
             .skip(self.scroll_offset as usize)
             .take(height)
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect()
     }
 }

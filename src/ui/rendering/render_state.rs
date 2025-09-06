@@ -51,6 +51,7 @@ impl Default for RenderState {
 
 impl RenderState {
     /// Create a new render state manager
+    #[must_use]
     pub fn new() -> Self {
         Self {
             dirty: true, // Start dirty to trigger initial render
@@ -122,11 +123,13 @@ impl RenderState {
     }
 
     /// Get the current dirty reason
+    #[must_use]
     pub fn dirty_reason(&self) -> Option<&RenderReason> {
         self.dirty_reason.as_ref()
     }
 
     /// Check if currently dirty
+    #[must_use]
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }

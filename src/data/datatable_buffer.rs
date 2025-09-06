@@ -18,8 +18,8 @@ use std::sync::Arc;
 use tracing::debug;
 use tui_input::Input;
 
-/// A Buffer implementation backed by DataTable
-/// This allows us to integrate our clean DataTable architecture with the existing enhanced TUI
+/// A Buffer implementation backed by `DataTable`
+/// This allows us to integrate our clean `DataTable` architecture with the existing enhanced TUI
 pub struct DataTableBuffer {
     // --- Identity ---
     id: usize,
@@ -81,7 +81,8 @@ pub struct DataTableBuffer {
 }
 
 impl DataTableBuffer {
-    /// Create a new DataTableBuffer from a DataTable
+    /// Create a new `DataTableBuffer` from a `DataTable`
+    #[must_use]
     pub fn new(id: usize, table: DataTable) -> Self {
         let name = table.name.clone();
         let view = DataTableView::new(table);
@@ -162,13 +163,13 @@ impl DataTableBuffer {
         Ok(buffer)
     }
 
-    /// Update column widths from the DataTableView
+    /// Update column widths from the `DataTableView`
     fn update_column_widths(&mut self) {
         // Update column widths based on the data
         self.column_widths = self.calculate_column_widths();
     }
 
-    /// Calculate column widths from the DataTable
+    /// Calculate column widths from the `DataTable`
     fn calculate_column_widths(&self) -> Vec<u16> {
         let table = self.view.table();
         let mut widths = Vec::new();
@@ -221,12 +222,12 @@ impl DataTableBuffer {
         }
     }
 
-    /// Get the underlying DataTable (read-only access)
+    /// Get the underlying `DataTable` (read-only access)
     pub fn table(&self) -> &DataTable {
         self.view.table()
     }
 
-    /// Get the DataTableView (read-only access)  
+    /// Get the `DataTableView` (read-only access)  
     pub fn view(&self) -> &DataTableView {
         &self.view
     }
@@ -304,7 +305,9 @@ impl BufferAPI for DataTableBuffer {
     fn set_dataview(&mut self, dataview: Option<DataView>) {
         debug!(
             "V51: Setting DataView with {} rows in DataTableBuffer",
-            dataview.as_ref().map(|v| v.row_count()).unwrap_or(0)
+            dataview
+                .as_ref()
+                .map_or(0, super::data_view::DataView::row_count)
         );
         self.dataview = dataview;
     }

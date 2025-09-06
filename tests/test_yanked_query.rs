@@ -49,7 +49,7 @@ fn test_yanked_query_direct() -> anyhow::Result<()> {
     // Check if the data file exists
     let data_file = "data/trades.json";
     if !std::path::Path::new(data_file).exists() {
-        println!("Skipping test - {} not found", data_file);
+        println!("Skipping test - {data_file} not found");
         return Ok(());
     }
 
@@ -69,7 +69,7 @@ fn test_yanked_query_direct() -> anyhow::Result<()> {
 
     // Check first row if available
     if let Some(first_row) = response.data.first() {
-        println!("First row: {:?}", first_row);
+        println!("First row: {first_row:?}");
 
         // Verify the expected columns exist
         if let Some(obj) = first_row.as_object() {
@@ -85,17 +85,16 @@ fn test_yanked_query_direct() -> anyhow::Result<()> {
 
             // Check specific values from the first row
             if let Some(book) = obj.get("book").and_then(|v| v.as_str()) {
-                println!("First row book: {}", book);
+                println!("First row book: {book}");
             }
             if let Some(commission) = obj.get("commission") {
-                println!("First row commission: {}", commission);
+                println!("First row commission: {commission}");
             }
             if let Some(status) = obj.get("confirmationStatus").and_then(|v| v.as_str()) {
-                println!("First row confirmationStatus: {}", status);
+                println!("First row confirmationStatus: {status}");
                 assert!(
                     !status.to_lowercase().contains("pend"),
-                    "confirmationStatus should not contain 'pend': {}",
-                    status
+                    "confirmationStatus should not contain 'pend': {status}"
                 );
             }
         }
@@ -108,9 +107,7 @@ fn test_yanked_query_direct() -> anyhow::Result<()> {
             if let Some(status) = obj.get("confirmationStatus").and_then(|v| v.as_str()) {
                 assert!(
                     !status.to_lowercase().contains("pend"),
-                    "Row {} confirmationStatus '{}' should not contain 'pend'",
-                    i,
-                    status
+                    "Row {i} confirmationStatus '{status}' should not contain 'pend'"
                 );
             }
 
@@ -123,9 +120,7 @@ fn test_yanked_query_direct() -> anyhow::Result<()> {
                 };
                 assert!(
                     (20.0..=50.0).contains(&commission),
-                    "Row {} commission {} should be between 20 and 50",
-                    i,
-                    commission
+                    "Row {i} commission {commission} should be between 20 and 50"
                 );
             }
         }

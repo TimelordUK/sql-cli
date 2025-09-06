@@ -12,7 +12,7 @@ use crate::widgets::search_modes_widget::SearchMode;
 
 use tracing::{debug, error};
 
-/// StateCoordinator manages and synchronizes all state components in the TUI
+/// `StateCoordinator` manages and synchronizes all state components in the TUI
 /// This centralizes state management and reduces coupling in the main TUI
 pub struct StateCoordinator {
     /// Core application state
@@ -33,7 +33,7 @@ impl StateCoordinator {
     // These methods work with references and can be called without owning the components
     // This allows incremental migration from EnhancedTuiApp
 
-    /// Static version of sync_mode that works with references
+    /// Static version of `sync_mode` that works with references
     pub fn sync_mode_with_refs(
         state_container: &mut AppStateContainer,
         shadow_state: &RefCell<crate::ui::state::shadow_state::ShadowStateManager>,
@@ -57,7 +57,7 @@ impl StateCoordinator {
         shadow_state.borrow_mut().observe_mode_change(mode, trigger);
     }
 
-    /// Static version of update_parser_for_current_buffer
+    /// Static version of `update_parser_for_current_buffer`
     pub fn update_parser_with_refs(state_container: &AppStateContainer, parser: &mut HybridParser) {
         if let Some(dataview) = state_container.get_buffer_dataview() {
             let table_name = dataview.source().name.clone();
@@ -91,7 +91,7 @@ impl StateCoordinator {
     // ========== MODE SYNCHRONIZATION ==========
 
     /// Synchronize mode across all state containers
-    /// This ensures AppStateContainer, Buffer, and ShadowState are all in sync
+    /// This ensures `AppStateContainer`, Buffer, and `ShadowState` are all in sync
     pub fn sync_mode(&mut self, mode: AppMode, trigger: &str) {
         debug!(
             "StateCoordinator::sync_mode: Setting mode to {:?} with trigger '{}'",
@@ -140,7 +140,7 @@ impl StateCoordinator {
         self.update_parser_for_current_buffer();
     }
 
-    /// Update parser schema from current buffer's DataView
+    /// Update parser schema from current buffer's `DataView`
     pub fn update_parser_for_current_buffer(&mut self) {
         // Update parser schema from DataView
         if let Some(dataview) = self.state_container.get_buffer_dataview() {
@@ -379,7 +379,7 @@ impl StateCoordinator {
         let status = if pattern.is_empty() {
             "Filter cleared".to_string()
         } else {
-            format!("Filter applied: '{}' - {} matches", pattern, rows_after)
+            format!("Filter applied: '{pattern}' - {rows_after} matches")
         };
         state_container.set_status_message(status);
 
@@ -392,7 +392,7 @@ impl StateCoordinator {
     }
 
     /// Apply fuzzy filter and coordinate all state updates
-    /// Returns (match_count, filter_indices)
+    /// Returns (`match_count`, `filter_indices`)
     pub fn apply_fuzzy_filter_with_refs(
         state_container: &mut AppStateContainer,
         viewport_manager: &RefCell<Option<ViewportManager>>,
@@ -422,7 +422,7 @@ impl StateCoordinator {
             state_container.set_status_message("Fuzzy filter cleared".to_string());
         } else {
             state_container.set_fuzzy_filter_active(true);
-            state_container.set_status_message(format!("Fuzzy filter: {} matches", match_count));
+            state_container.set_status_message(format!("Fuzzy filter: {match_count} matches"));
 
             // Reset navigation to first match if we have results
             if match_count > 0 {
@@ -507,7 +507,7 @@ impl StateCoordinator {
 
     // ========== DATAVIEW MANAGEMENT ==========
 
-    /// Add a new DataView and coordinate all necessary state updates
+    /// Add a new `DataView` and coordinate all necessary state updates
     /// This centralizes the complex logic of adding a new data source
     pub fn add_dataview_with_refs(
         state_container: &mut AppStateContainer,
@@ -593,7 +593,7 @@ impl StateCoordinator {
         );
 
         // Create the initial SQL query
-        let auto_query = format!("SELECT * FROM {}", table_name);
+        let auto_query = format!("SELECT * FROM {table_name}");
 
         // Update the hybrid parser with the table information
         if let Some(dataview) = state_container
@@ -605,16 +605,16 @@ impl StateCoordinator {
             parser.update_single_table(table_name.to_string(), columns);
 
             // Set status message
-            let display_msg = if raw_table_name != table_name {
+            let display_msg = if raw_table_name == table_name {
                 format!(
-                    "Loaded '{}' as table '{}' with {} columns. Query pre-populated.",
-                    raw_table_name,
+                    "Loaded table '{}' with {} columns. Query pre-populated.",
                     table_name,
                     dataview.column_count()
                 )
             } else {
                 format!(
-                    "Loaded table '{}' with {} columns. Query pre-populated.",
+                    "Loaded '{}' as table '{}' with {} columns. Query pre-populated.",
+                    raw_table_name,
                     table_name,
                     dataview.column_count()
                 )
@@ -683,7 +683,7 @@ impl StateCoordinator {
             Ok(false)
         } else {
             // Regular SQL query - execution handled by TUI
-            state_container.set_status_message(format!("Processing query: '{}'", trimmed));
+            state_container.set_status_message(format!("Processing query: '{trimmed}'"));
             Ok(false)
         }
     }
@@ -730,8 +730,7 @@ impl StateCoordinator {
         // Log the state before and after
         let before_count = state_container
             .get_buffer_dataview()
-            .map(|v| v.source().row_count())
-            .unwrap_or(0);
+            .map_or(0, |v| v.source().row_count());
 
         debug!(
             "StateCoordinator: Filter search - case_insensitive={}, rows_before={}",
@@ -762,8 +761,7 @@ impl StateCoordinator {
 
         let before_count = state_container
             .get_buffer_dataview()
-            .map(|v| v.source().row_count())
-            .unwrap_or(0);
+            .map_or(0, |v| v.source().row_count());
 
         // Set the fuzzy filter pattern
         state_container.set_fuzzy_filter_pattern(pattern.to_string());
@@ -856,7 +854,7 @@ impl StateCoordinator {
 
         // Get match count for status
         let match_count = state_container.history_search().matches.len();
-        state_container.set_status_message(format!("History search: {} matches", match_count));
+        state_container.set_status_message(format!("History search: {match_count} matches"));
 
         // Switch to History mode
         state_container.set_mode(AppMode::History);
@@ -948,12 +946,12 @@ impl StateCoordinator {
 
     // ========== STATE ACCESS ==========
 
-    /// Get reference to AppStateContainer
+    /// Get reference to `AppStateContainer`
     pub fn state_container(&self) -> &AppStateContainer {
         &self.state_container
     }
 
-    /// Get mutable reference to AppStateContainer
+    /// Get mutable reference to `AppStateContainer`
     pub fn state_container_mut(&mut self) -> &mut AppStateContainer {
         &mut self.state_container
     }

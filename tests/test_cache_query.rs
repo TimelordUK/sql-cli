@@ -92,13 +92,13 @@ fn test_user_scenario_with_trade_deal() {
     // Create test data similar to user's trade_deal table
     let mut test_data = vec![];
     for i in 1..=100 {
-        let commission = (i as f64) * 1.5;
+        let commission = f64::from(i) * 1.5;
         let counterparty = if i % 3 == 0 {
-            format!("Bank {}", i)
+            format!("Bank {i}")
         } else if i % 5 == 0 {
-            format!("Financial Corp {}", i)
+            format!("Financial Corp {i}")
         } else {
-            format!("Trading Company {}", i)
+            format!("Trading Company {i}")
         };
 
         test_data.push(json!({
@@ -210,22 +210,19 @@ fn test_complex_query_with_in_clause() {
         let country = row["counterpartyCountry"].as_str().unwrap();
         assert!(
             country == "JP" || country == "FR",
-            "Country should be JP or FR, got {}",
-            country
+            "Country should be JP or FR, got {country}"
         );
 
         let commission = row["commission"].as_f64().unwrap();
         assert!(
             commission > 50.0,
-            "Commission should be > 50, got {}",
-            commission
+            "Commission should be > 50, got {commission}"
         );
 
         let counterparty = row["counterparty"].as_str().unwrap();
         assert!(
             counterparty.contains("Bank"),
-            "Counterparty should contain 'Bank', got {}",
-            counterparty
+            "Counterparty should contain 'Bank', got {counterparty}"
         );
     }
 }

@@ -56,6 +56,7 @@ pub enum ArgCount {
 }
 
 impl ArgCount {
+    #[must_use]
     pub fn is_valid(&self, count: usize) -> bool {
         match self {
             ArgCount::Fixed(n) => count == *n,
@@ -64,12 +65,13 @@ impl ArgCount {
         }
     }
 
+    #[must_use]
     pub fn description(&self) -> String {
         match self {
             ArgCount::Fixed(0) => "no arguments".to_string(),
             ArgCount::Fixed(1) => "1 argument".to_string(),
-            ArgCount::Fixed(n) => format!("{} arguments", n),
-            ArgCount::Range(min, max) => format!("{} to {} arguments", min, max),
+            ArgCount::Fixed(n) => format!("{n} arguments"),
+            ArgCount::Range(min, max) => format!("{min} to {max} arguments"),
             ArgCount::Variadic => "any number of arguments".to_string(),
         }
     }
@@ -118,6 +120,7 @@ pub struct FunctionRegistry {
 
 impl FunctionRegistry {
     /// Create a new registry with all built-in functions
+    #[must_use]
     pub fn new() -> Self {
         let mut registry = Self {
             functions: HashMap::new(),
@@ -152,16 +155,21 @@ impl FunctionRegistry {
     }
 
     /// Get a function by name (case-insensitive)
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&dyn SqlFunction> {
-        self.functions.get(&name.to_uppercase()).map(|b| b.as_ref())
+        self.functions
+            .get(&name.to_uppercase())
+            .map(std::convert::AsRef::as_ref)
     }
 
     /// Check if a function exists
+    #[must_use]
     pub fn contains(&self, name: &str) -> bool {
         self.functions.contains_key(&name.to_uppercase())
     }
 
     /// Get all functions matching a prefix (for autocomplete)
+    #[must_use]
     pub fn autocomplete(&self, prefix: &str) -> Vec<FunctionSignature> {
         let prefix_upper = prefix.to_uppercase();
         self.functions
@@ -172,6 +180,7 @@ impl FunctionRegistry {
     }
 
     /// Get all functions in a category
+    #[must_use]
     pub fn get_by_category(&self, category: FunctionCategory) -> Vec<FunctionSignature> {
         self.by_category
             .get(&category)
@@ -186,6 +195,7 @@ impl FunctionRegistry {
     }
 
     /// Get all available functions
+    #[must_use]
     pub fn all_functions(&self) -> Vec<FunctionSignature> {
         self.functions
             .values()
@@ -200,6 +210,7 @@ impl FunctionRegistry {
     }
 
     /// Get a method function by name
+    #[must_use]
     pub fn get_method(&self, name: &str) -> Option<Arc<dyn MethodFunction>> {
         // Try exact match first
         if let Some(method) = self.methods.get(&name.to_uppercase()) {
@@ -217,11 +228,13 @@ impl FunctionRegistry {
     }
 
     /// Check if a method exists
+    #[must_use]
     pub fn has_method(&self, name: &str) -> bool {
         self.get_method(name).is_some()
     }
 
     /// Generate markdown documentation for all functions
+    #[must_use]
     pub fn generate_markdown_docs(&self) -> String {
         use std::fmt::Write;
         let mut doc = String::new();
@@ -235,7 +248,7 @@ impl FunctionRegistry {
 
         // Get all categories in a deterministic order
         let mut categories: Vec<FunctionCategory> = self.by_category.keys().copied().collect();
-        categories.sort_by_key(|c| format!("{:?}", c));
+        categories.sort_by_key(|c| format!("{c:?}"));
 
         for category in categories {
             let functions = self.get_by_category(category);
@@ -243,7 +256,7 @@ impl FunctionRegistry {
                 continue;
             }
 
-            writeln!(&mut doc, "## {} Functions\n", category).unwrap();
+            writeln!(&mut doc, "## {category} Functions\n").unwrap();
 
             // Sort functions by name for consistent output
             let mut functions = functions;
@@ -264,7 +277,7 @@ impl FunctionRegistry {
                     writeln!(&mut doc, "**Examples:**").unwrap();
                     writeln!(&mut doc, "```sql").unwrap();
                     for example in &func.examples {
-                        writeln!(&mut doc, "{}", example).unwrap();
+                        writeln!(&mut doc, "{example}").unwrap();
                     }
                     writeln!(&mut doc, "```\n").unwrap();
                 }
@@ -275,6 +288,7 @@ impl FunctionRegistry {
     }
 
     /// Generate help text for a specific function
+    #[must_use]
     pub fn generate_function_help(&self, name: &str) -> Option<String> {
         self.get(name).map(|func| {
             let sig = func.signature();
@@ -290,7 +304,7 @@ impl FunctionRegistry {
             if !sig.examples.is_empty() {
                 writeln!(&mut help, "\nExamples:").unwrap();
                 for example in &sig.examples {
-                    writeln!(&mut help, "  {}", example).unwrap();
+                    writeln!(&mut help, "  {example}").unwrap();
                 }
             }
 
@@ -299,6 +313,7 @@ impl FunctionRegistry {
     }
 
     /// List all available functions with brief descriptions
+    #[must_use]
     pub fn list_functions(&self) -> String {
         use std::fmt::Write;
         let mut list = String::new();
@@ -306,7 +321,7 @@ impl FunctionRegistry {
         writeln!(&mut list, "Available SQL Functions:\n").unwrap();
 
         let mut categories: Vec<FunctionCategory> = self.by_category.keys().copied().collect();
-        categories.sort_by_key(|c| format!("{:?}", c));
+        categories.sort_by_key(|c| format!("{c:?}"));
 
         for category in categories {
             let functions = self.get_by_category(category);
@@ -314,7 +329,7 @@ impl FunctionRegistry {
                 continue;
             }
 
-            writeln!(&mut list, "{} Functions:", category).unwrap();
+            writeln!(&mut list, "{category} Functions:").unwrap();
 
             let mut functions = functions;
             functions.sort_by_key(|f| f.name);
@@ -336,7 +351,10 @@ impl FunctionRegistry {
 
     /// Register constant functions
     fn register_constants(&mut self) {
-        use constants::*;
+        use constants::{
+            EFunction, HbarFunction, MassElectronFunction, MeFunction, PhiFunction, PiFunction,
+            TauFunction,
+        };
 
         self.register(Box::new(PiFunction));
         self.register(Box::new(EFunction));
@@ -349,7 +367,16 @@ impl FunctionRegistry {
 
     /// Register astronomical functions
     fn register_astronomical_functions(&mut self) {
-        use astronomy::*;
+        use astronomy::{
+            AuFunction, DistJupiterFunction, DistMarsFunction, DistMercuryFunction,
+            DistNeptuneFunction, DistSaturnFunction, DistUranusFunction, DistVenusFunction,
+            LightYearFunction, MassEarthFunction, MassJupiterFunction, MassMarsFunction,
+            MassMercuryFunction, MassMoonFunction, MassNeptuneFunction, MassSaturnFunction,
+            MassSunFunction, MassUranusFunction, MassVenusFunction, ParsecFunction,
+            RadiusEarthFunction, RadiusJupiterFunction, RadiusMarsFunction, RadiusMercuryFunction,
+            RadiusMoonFunction, RadiusNeptuneFunction, RadiusSaturnFunction, RadiusSunFunction,
+            RadiusUranusFunction, RadiusVenusFunction,
+        };
 
         self.register(Box::new(MassEarthFunction));
         self.register(Box::new(MassSunFunction));
@@ -391,7 +418,9 @@ impl FunctionRegistry {
 
     /// Register chemical functions
     fn register_chemical_functions(&mut self) {
-        use chemistry::*;
+        use chemistry::{
+            AtomicMassFunction, AtomicNumberFunction, AvogadroFunction, MoleculeFormulaFunction,
+        };
 
         self.register(Box::new(AvogadroFunction));
         self.register(Box::new(AtomicMassFunction));
@@ -411,7 +440,10 @@ impl FunctionRegistry {
 
     /// Register mathematical functions
     fn register_mathematical_functions(&mut self) {
-        use mathematics::*;
+        use mathematics::{
+            IsPrimeFunction, NextPrimeFunction, PrevPrimeFunction, PrimeCountFunction,
+            PrimeFunction,
+        };
 
         // Prime number functions
         self.register(Box::new(PrimeFunction));

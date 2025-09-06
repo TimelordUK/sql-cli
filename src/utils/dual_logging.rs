@@ -15,8 +15,7 @@ fn get_log_dir() -> PathBuf {
         // Windows: Use %TEMP% or %LOCALAPPDATA%
         std::env::var("LOCALAPPDATA")
             .or_else(|_| std::env::var("TEMP"))
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("C:\\temp"))
+            .map_or_else(|_| PathBuf::from("C:\\temp"), PathBuf::from)
             .join("sql-cli")
     } else {
         // Unix-like: Use /tmp or $HOME/.local/share
@@ -46,6 +45,7 @@ impl Default for DualLogger {
 }
 
 impl DualLogger {
+    #[must_use]
     pub fn new() -> Self {
         let log_dir = get_log_dir();
 
@@ -54,7 +54,7 @@ impl DualLogger {
 
         // Create timestamped log file
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let log_filename = format!("sql-cli_{}.log", timestamp);
+        let log_filename = format!("sql-cli_{timestamp}.log");
         let log_path = log_dir.join(&log_filename);
 
         // Create a "latest.log" pointer - different approach for different OS
@@ -137,11 +137,13 @@ impl DualLogger {
     }
 
     /// Get the ring buffer for F5 display
+    #[must_use]
     pub fn ring_buffer(&self) -> &LogRingBuffer {
         &self.ring_buffer
     }
 
     /// Get the log file path
+    #[must_use]
     pub fn log_path(&self) -> &PathBuf {
         &self.log_path
     }

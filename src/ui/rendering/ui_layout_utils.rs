@@ -12,6 +12,7 @@ const TABLE_CHROME_ROWS: u16 = 3; // Table header (1) + top border (1) + bottom 
 
 /// Calculate the number of data rows available for display in the terminal
 /// This accounts for all UI chrome including input area, status bar, table header, and borders
+#[must_use]
 pub fn calculate_available_data_rows(terminal_height: u16) -> u16 {
     terminal_height
         .saturating_sub(TOTAL_UI_CHROME) // Remove input area and status bar
@@ -20,12 +21,14 @@ pub fn calculate_available_data_rows(terminal_height: u16) -> u16 {
 
 /// Calculate the number of data rows available for a table area
 /// This accounts only for table chrome (header, borders)
+#[must_use]
 pub fn calculate_table_data_rows(table_area_height: u16) -> u16 {
     table_area_height.saturating_sub(TABLE_CHROME_ROWS)
 }
 
 /// Extract timing information from debug strings
 /// Parses strings like "total=123µs" or "total=1.5ms" and returns milliseconds as f64
+#[must_use]
 pub fn extract_timing_from_debug_string(s: &str) -> Option<f64> {
     if let Some(total_pos) = s.find("total=") {
         let after_total = &s[total_pos + 6..];

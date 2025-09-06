@@ -14,6 +14,7 @@ pub struct Debouncer {
 
 impl Debouncer {
     /// Create a new debouncer with the specified delay in milliseconds
+    #[must_use]
     pub fn new(delay_ms: u64) -> Self {
         Self {
             delay: Duration::from_millis(delay_ms),
@@ -47,6 +48,7 @@ impl Debouncer {
 
     /// Get the time remaining before the action will trigger
     /// Returns None if no action is pending
+    #[must_use]
     pub fn time_remaining(&self) -> Option<Duration> {
         if !self.pending {
             return None;
@@ -69,6 +71,7 @@ impl Debouncer {
     }
 
     /// Check if there's a pending action
+    #[must_use]
     pub fn is_pending(&self) -> bool {
         self.pending
     }
