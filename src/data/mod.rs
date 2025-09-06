@@ -41,4 +41,6 @@ pub mod where_evaluator;
 
 // Test modules
 #[cfg(test)]
+mod group_by_test;
+#[cfg(test)]
 mod test_type_coercion_datetime;

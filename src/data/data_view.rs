@@ -1,7 +1,8 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tracing::{debug, info};
 
@@ -66,6 +67,19 @@ impl Default for SortState {
             column: None,
             order: SortOrder::None,
         }
+    }
+}
+
+/// Key for grouping rows by column values
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct GroupKey(pub Vec<DataValue>);
+
+// Manual implementation of Eq and Ord for BTreeMap compatibility
+impl Eq for GroupKey {}
+
+impl Ord for GroupKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
@@ -864,6 +878,58 @@ impl DataView {
     /// Get the visible row indices
     pub fn get_visible_rows(&self) -> Vec<usize> {
         self.visible_rows.clone()
+    }
+
+    /// Group rows by specified columns, returning a map of group keys to DataViews
+    /// Each DataView contains only the rows that match the group key
+    pub fn group_by(&self, group_columns: &[String]) -> Result<BTreeMap<GroupKey, DataView>> {
+        let mut groups = BTreeMap::new();
+
+        // Get column indices for grouping columns
+        let col_indices: Vec<usize> = group_columns
+            .iter()
+            .map(|col_name| {
+                self.source
+                    .get_column_index(col_name)
+                    .ok_or_else(|| anyhow!("Column '{}' not found for GROUP BY", col_name))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Track which rows belong to which group
+        let mut group_rows: BTreeMap<GroupKey, Vec<usize>> = BTreeMap::new();
+
+        // Process each visible row
+        for &row_idx in &self.visible_rows {
+            // Build the group key from this row's values
+            let mut key_values = Vec::new();
+            for &col_idx in &col_indices {
+                let value = self
+                    .source
+                    .get_value(row_idx, col_idx)
+                    .cloned()
+                    .unwrap_or(DataValue::Null);
+                key_values.push(value);
+            }
+            let key = GroupKey(key_values);
+
+            // Add this row to the appropriate group
+            group_rows.entry(key).or_insert_with(Vec::new).push(row_idx);
+        }
+
+        // Create a DataView for each group
+        for (key, rows) in group_rows {
+            let mut group_view = DataView::new(Arc::clone(&self.source));
+            // Set the visible rows to only those in this group
+            group_view.visible_rows = rows;
+            // Preserve the column visibility from the parent view
+            group_view.visible_columns = self.visible_columns.clone();
+            group_view.base_rows = group_view.visible_rows.clone();
+            group_view.base_columns = group_view.visible_columns.clone();
+
+            groups.insert(key, group_view);
+        }
+
+        Ok(groups)
     }
 
     /// Sort rows by a column (consuming version - returns new Self)

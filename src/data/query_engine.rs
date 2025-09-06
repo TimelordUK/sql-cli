@@ -1,4 +1,5 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
@@ -218,25 +219,33 @@ impl QueryEngine {
         let mut view = DataView::new(table.clone());
         view = view.with_rows(visible_rows);
 
-        // Apply column projection or computed expressions (SELECT clause) - do this AFTER filtering
-        if !statement.select_items.is_empty() {
-            // Check if we have ANY non-star items (not just the first one)
-            let has_non_star_items = statement
-                .select_items
-                .iter()
-                .any(|item| !matches!(item, SelectItem::Star));
-
-            // Apply select items if:
-            // 1. We have computed expressions or explicit columns
-            // 2. OR we have a mix of star and other items (e.g., SELECT *, computed_col)
-            if has_non_star_items || statement.select_items.len() > 1 {
-                view = self.apply_select_items(view, &statement.select_items)?;
+        // Handle GROUP BY if present
+        if let Some(group_by_columns) = &statement.group_by {
+            if !group_by_columns.is_empty() {
+                debug!("QueryEngine: Processing GROUP BY: {:?}", group_by_columns);
+                view = self.apply_group_by(view, group_by_columns, &statement.select_items)?;
             }
-            // If it's just a single star, no projection needed
-        } else if !statement.columns.is_empty() && statement.columns[0] != "*" {
-            // Fallback to legacy column projection for backward compatibility
-            let column_indices = self.resolve_column_indices(&*table, &statement.columns)?;
-            view = view.with_columns(column_indices);
+        } else {
+            // Apply column projection or computed expressions (SELECT clause) - do this AFTER filtering
+            if !statement.select_items.is_empty() {
+                // Check if we have ANY non-star items (not just the first one)
+                let has_non_star_items = statement
+                    .select_items
+                    .iter()
+                    .any(|item| !matches!(item, SelectItem::Star));
+
+                // Apply select items if:
+                // 1. We have computed expressions or explicit columns
+                // 2. OR we have a mix of star and other items (e.g., SELECT *, computed_col)
+                if has_non_star_items || statement.select_items.len() > 1 {
+                    view = self.apply_select_items(view, &statement.select_items)?;
+                }
+                // If it's just a single star, no projection needed
+            } else if !statement.columns.is_empty() && statement.columns[0] != "*" {
+                // Fallback to legacy column projection for backward compatibility
+                let column_indices = self.resolve_column_indices(&*table, &statement.columns)?;
+                view = view.with_columns(column_indices);
+            }
         }
 
         // Apply ORDER BY sorting
@@ -545,6 +554,104 @@ impl QueryEngine {
         // Apply multi-column sorting
         view.apply_multi_sort(&sort_columns)?;
         Ok(view)
+    }
+
+    /// Apply GROUP BY to the view
+    fn apply_group_by(
+        &self,
+        view: DataView,
+        group_by_columns: &[String],
+        select_items: &[SelectItem],
+    ) -> Result<DataView> {
+        debug!(
+            "QueryEngine::apply_group_by - grouping by: {:?}",
+            group_by_columns
+        );
+
+        // Group the data using DataView's group_by method
+        let groups = view.group_by(group_by_columns)?;
+        debug!(
+            "QueryEngine::apply_group_by - created {} groups",
+            groups.len()
+        );
+
+        // Create a result table for the grouped data
+        let mut result_table = DataTable::new("grouped_result");
+
+        // Determine which columns to include in the result
+        // 1. GROUP BY columns always come first
+        // 2. Then aggregate functions
+
+        // Add GROUP BY columns to result
+        for col_name in group_by_columns {
+            result_table.add_column(DataColumn::new(col_name));
+        }
+
+        // Process SELECT items to find aggregates and their aliases
+        let mut aggregate_columns = Vec::new();
+        for item in select_items {
+            match item {
+                SelectItem::Expression { expr, alias } => {
+                    if contains_aggregate(expr) {
+                        // Expression always has an alias in the AST
+                        result_table.add_column(DataColumn::new(alias));
+                        aggregate_columns.push((expr.clone(), alias.clone()));
+                    }
+                }
+                SelectItem::Column(col_name) => {
+                    // Non-aggregate columns must be in GROUP BY
+                    if !group_by_columns.contains(col_name) {
+                        return Err(anyhow!(
+                            "Column '{}' must appear in GROUP BY clause or be used in an aggregate function",
+                            col_name
+                        ));
+                    }
+                }
+                SelectItem::Star => {
+                    // For GROUP BY queries, * is not really meaningful
+                    // We'll just include the GROUP BY columns which we already added
+                }
+            }
+        }
+
+        // Process each group
+        for (group_key, group_view) in groups {
+            let mut row_values = Vec::new();
+
+            // Add GROUP BY column values from the key
+            for value in &group_key.0 {
+                row_values.push(value.clone());
+            }
+
+            // Calculate aggregate values for this group
+            for (expr, _col_name) in &aggregate_columns {
+                // Set the visible rows for this group so aggregates work correctly
+                let group_rows = group_view.get_visible_rows();
+                let evaluator = ArithmeticEvaluator::new(group_view.source())
+                    .with_visible_rows(group_rows.clone());
+
+                // For aggregates, we need to evaluate across all rows in the group
+                let value = if group_view.row_count() > 0 && !group_rows.is_empty() {
+                    // Evaluate the aggregate expression
+                    // The arithmetic evaluator will handle the aggregate across visible rows
+                    evaluator
+                        .evaluate(expr, group_rows[0])
+                        .unwrap_or(crate::data::datatable::DataValue::Null)
+                } else {
+                    crate::data::datatable::DataValue::Null
+                };
+
+                row_values.push(value);
+            }
+
+            // Add the row to the result table
+            result_table
+                .add_row(DataRow::new(row_values))
+                .map_err(|e| anyhow!("Failed to add row to result table: {}", e))?;
+        }
+
+        // Return a DataView of the grouped result
+        Ok(DataView::new(Arc::new(result_table)))
     }
 }
 
