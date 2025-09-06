@@ -15,3 +15,4 @@ pub mod smart_parser;
 pub mod sql_highlighter;
 pub mod where_ast;
 pub mod where_parser;
+pub mod window_context;

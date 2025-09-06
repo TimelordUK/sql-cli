@@ -22,13 +22,16 @@ pub enum Token {
     Desc,
     Limit,
     Offset,
-    DateTime, // DateTime constructor
-    Case,     // CASE expression
-    When,     // WHEN clause
-    Then,     // THEN clause
-    Else,     // ELSE clause
-    End,      // END keyword
-    Distinct, // DISTINCT keyword for aggregate functions
+    DateTime,  // DateTime constructor
+    Case,      // CASE expression
+    When,      // WHEN clause
+    Then,      // THEN clause
+    Else,      // ELSE clause
+    End,       // END keyword
+    Distinct,  // DISTINCT keyword for aggregate functions
+    Over,      // OVER keyword for window functions
+    Partition, // PARTITION keyword for window functions
+    By,        // BY keyword (used with PARTITION BY, ORDER BY)
 
     // Literals
     Identifier(String),
@@ -349,6 +352,9 @@ impl Lexer {
                     "ELSE" => Token::Else,
                     "END" => Token::End,
                     "DISTINCT" => Token::Distinct,
+                    "OVER" => Token::Over,
+                    "PARTITION" => Token::Partition,
+                    "BY" => Token::By,
                     _ => Token::Identifier(ident),
                 }
             }
@@ -443,6 +449,11 @@ pub enum SqlExpression {
         name: String,
         args: Vec<SqlExpression>,
     },
+    WindowFunction {
+        name: String,
+        args: Vec<SqlExpression>,
+        window_spec: WindowSpec,
+    },
     BinaryOp {
         left: Box<SqlExpression>,
         op: String,
@@ -503,6 +514,12 @@ pub enum SortDirection {
 pub struct OrderByColumn {
     pub column: String,
     pub direction: SortDirection,
+}
+
+#[derive(Debug, Clone)]
+pub struct WindowSpec {
+    pub partition_by: Vec<String>,
+    pub order_by: Vec<OrderByColumn>,
 }
 
 /// Represents a SELECT item - either a simple column or a computed expression with alias
@@ -897,6 +914,44 @@ impl Parser {
         }
 
         Ok(identifiers)
+    }
+
+    fn parse_window_spec(&mut self) -> Result<WindowSpec, String> {
+        let mut partition_by = Vec::new();
+        let mut order_by = Vec::new();
+
+        // Check for PARTITION BY
+        if matches!(self.current_token, Token::Partition) {
+            self.advance(); // consume PARTITION
+            if !matches!(self.current_token, Token::By) {
+                return Err("Expected BY after PARTITION".to_string());
+            }
+            self.advance(); // consume BY
+
+            // Parse partition columns
+            partition_by = self.parse_identifier_list()?;
+        }
+
+        // Check for ORDER BY
+        if matches!(self.current_token, Token::OrderBy) {
+            self.advance(); // consume ORDER BY (as single token)
+            order_by = self.parse_order_by_list()?;
+        } else if let Token::Identifier(s) = &self.current_token {
+            if s.to_uppercase() == "ORDER" {
+                // Handle ORDER BY as two tokens
+                self.advance(); // consume ORDER
+                if !matches!(self.current_token, Token::By) {
+                    return Err("Expected BY after ORDER".to_string());
+                }
+                self.advance(); // consume BY
+                order_by = self.parse_order_by_list()?;
+            }
+        }
+
+        Ok(WindowSpec {
+            partition_by,
+            order_by,
+        })
     }
 
     fn parse_order_by_list(&mut self) -> Result<Vec<OrderByColumn>, String> {
@@ -1366,6 +1421,20 @@ impl Parser {
                     self.advance(); // consume (
                     let args = self.parse_function_args()?;
                     self.consume(Token::RightParen)?;
+
+                    // Check for OVER clause for window functions
+                    if matches!(self.current_token, Token::Over) {
+                        self.advance(); // consume OVER
+                        self.consume(Token::LeftParen)?;
+                        let window_spec = self.parse_window_spec()?;
+                        self.consume(Token::RightParen)?;
+                        return Ok(SqlExpression::WindowFunction {
+                            name: id_upper,
+                            args,
+                            window_spec,
+                        });
+                    }
+
                     return Ok(SqlExpression::FunctionCall {
                         name: id_upper,
                         args,
@@ -1792,6 +1861,34 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("FunctionCall({name}({args_str}))")
+        }
+        SqlExpression::WindowFunction {
+            name,
+            args,
+            window_spec,
+        } => {
+            let args_str = args
+                .iter()
+                .map(format_expression_ast)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let partition_str = if !window_spec.partition_by.is_empty() {
+                format!(" PARTITION BY {}", window_spec.partition_by.join(", "))
+            } else {
+                String::new()
+            };
+            let order_str = if !window_spec.order_by.is_empty() {
+                let cols = window_spec
+                    .order_by
+                    .iter()
+                    .map(|col| format!("{} {:?}", col.column, col.direction))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(" ORDER BY {}", cols)
+            } else {
+                String::new()
+            };
+            format!("WindowFunction({name}({args_str}) OVER({partition_str}{order_str}))")
         }
         SqlExpression::BinaryOp { left, op, right } => {
             format!(
@@ -2427,6 +2524,40 @@ fn format_expression(expr: &SqlExpression) -> String {
                 .join(", ");
             format!("{name}({args_str})")
         }
+        SqlExpression::WindowFunction {
+            name,
+            args,
+            window_spec,
+        } => {
+            let args_str = args
+                .iter()
+                .map(format_expression)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let partition_str = if !window_spec.partition_by.is_empty() {
+                format!(" PARTITION BY {}", window_spec.partition_by.join(", "))
+            } else {
+                String::new()
+            };
+            let order_str = if !window_spec.order_by.is_empty() {
+                let cols = window_spec
+                    .order_by
+                    .iter()
+                    .map(|col| {
+                        let dir = match col.direction {
+                            SortDirection::Asc => "ASC",
+                            SortDirection::Desc => "DESC",
+                        };
+                        format!("{} {}", col.column, dir)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(" ORDER BY {}", cols)
+            } else {
+                String::new()
+            };
+            format!("{name}({args_str}) OVER({partition_str}{order_str})")
+        }
         SqlExpression::CaseExpression {
             when_branches,
             else_branch,
@@ -2461,6 +2592,9 @@ fn format_token(token: &Token) -> String {
         Token::Else => "ELSE".to_string(),
         Token::End => "END".to_string(),
         Token::Distinct => "DISTINCT".to_string(),
+        Token::Over => "OVER".to_string(),
+        Token::Partition => "PARTITION".to_string(),
+        Token::By => "BY".to_string(),
         Token::LeftParen => "(".to_string(),
         Token::RightParen => ")".to_string(),
         Token::Comma => ",".to_string(),
@@ -2969,6 +3103,52 @@ fn is_sql_keyword(word: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tokenizer_window_functions() {
+        let mut lexer = Lexer::new("LAG(value) OVER (PARTITION BY category ORDER BY id)");
+        assert!(matches!(lexer.next_token(), Token::Identifier(s) if s == "LAG"));
+        assert!(matches!(lexer.next_token(), Token::LeftParen));
+        assert!(matches!(lexer.next_token(), Token::Identifier(s) if s == "value"));
+        assert!(matches!(lexer.next_token(), Token::RightParen));
+
+        let over_token = lexer.next_token();
+        println!("Expected OVER, got: {:?}", over_token);
+        assert!(matches!(over_token, Token::Over));
+
+        assert!(matches!(lexer.next_token(), Token::LeftParen));
+        assert!(matches!(lexer.next_token(), Token::Partition));
+        assert!(matches!(lexer.next_token(), Token::By));
+        assert!(matches!(lexer.next_token(), Token::Identifier(s) if s == "category"));
+    }
+
+    #[test]
+    fn test_parse_window_function() {
+        let query = "SELECT LAG(value, 1) OVER (ORDER BY id) as prev_value FROM test";
+        let mut parser = Parser::new(query);
+        let result = parser.parse();
+
+        assert!(
+            result.is_ok(),
+            "Failed to parse window function: {:?}",
+            result
+        );
+        let stmt = result.unwrap();
+
+        // Check that we have a WindowFunction in the AST
+        if let Some(item) = stmt.select_items.get(0) {
+            match item {
+                SelectItem::Expression { expr, alias } => {
+                    println!("Parsed expression: {:?}", expr);
+                    assert!(matches!(expr, SqlExpression::WindowFunction { .. }));
+                    assert_eq!(alias, "prev_value");
+                }
+                _ => panic!("Expected expression, got: {:?}", item),
+            }
+        } else {
+            panic!("No select items found");
+        }
+    }
 
     #[test]
     fn test_chained_method_calls() {
