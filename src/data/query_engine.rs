@@ -1,17 +1,16 @@
 use anyhow::{anyhow, Result};
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
 
 use crate::config::config::BehaviorConfig;
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
-use crate::data::data_view::DataView;
-use crate::data::datatable::{DataColumn, DataRow, DataTable};
+use crate::data::data_view::{DataView, GroupKey};
+use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use crate::sql::aggregates::contains_aggregate;
 use crate::sql::recursive_parser::{
-    OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection,
+    OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression,
 };
 
 /// Query engine that executes SQL directly on DataTable
@@ -223,7 +222,12 @@ impl QueryEngine {
         if let Some(group_by_columns) = &statement.group_by {
             if !group_by_columns.is_empty() {
                 debug!("QueryEngine: Processing GROUP BY: {:?}", group_by_columns);
-                view = self.apply_group_by(view, group_by_columns, &statement.select_items)?;
+                view = self.apply_group_by(
+                    view,
+                    group_by_columns,
+                    &statement.select_items,
+                    statement.having.as_ref(),
+                )?;
             }
         } else {
             // Apply column projection or computed expressions (SELECT clause) - do this AFTER filtering
@@ -556,12 +560,13 @@ impl QueryEngine {
         Ok(view)
     }
 
-    /// Apply GROUP BY to the view
+    /// Apply GROUP BY to the view with optional HAVING clause
     fn apply_group_by(
         &self,
         view: DataView,
         group_by_columns: &[String],
         select_items: &[SelectItem],
+        having: Option<&SqlExpression>,
     ) -> Result<DataView> {
         debug!(
             "QueryEngine::apply_group_by - grouping by: {:?}",
@@ -617,14 +622,19 @@ impl QueryEngine {
         // Process each group
         for (group_key, group_view) in groups {
             let mut row_values = Vec::new();
+            let mut aggregate_values = std::collections::HashMap::new();
 
             // Add GROUP BY column values from the key
-            for value in &group_key.0 {
+            for (i, value) in group_key.0.iter().enumerate() {
                 row_values.push(value.clone());
+                // Store GROUP BY columns for HAVING evaluation
+                if i < group_by_columns.len() {
+                    aggregate_values.insert(group_by_columns[i].clone(), value.clone());
+                }
             }
 
             // Calculate aggregate values for this group
-            for (expr, _col_name) in &aggregate_columns {
+            for (expr, col_name) in &aggregate_columns {
                 // Set the visible rows for this group so aggregates work correctly
                 let group_rows = group_view.get_visible_rows();
                 let evaluator = ArithmeticEvaluator::new(group_view.source())
@@ -636,12 +646,42 @@ impl QueryEngine {
                     // The arithmetic evaluator will handle the aggregate across visible rows
                     evaluator
                         .evaluate(expr, group_rows[0])
-                        .unwrap_or(crate::data::datatable::DataValue::Null)
+                        .unwrap_or(DataValue::Null)
                 } else {
-                    crate::data::datatable::DataValue::Null
+                    DataValue::Null
                 };
 
+                // Store aggregate value for HAVING evaluation
+                aggregate_values.insert(col_name.clone(), value.clone());
                 row_values.push(value);
+            }
+
+            // Evaluate HAVING clause if present
+            if let Some(having_expr) = having {
+                // Create a temporary table with one row containing the aggregate values
+                let mut temp_table = DataTable::new("having_eval");
+                for (col_name, _) in &aggregate_values {
+                    temp_table.add_column(DataColumn::new(col_name));
+                }
+
+                let temp_row_values: Vec<DataValue> =
+                    aggregate_values.iter().map(|(_, v)| v.clone()).collect();
+                temp_table
+                    .add_row(DataRow::new(temp_row_values))
+                    .map_err(|e| anyhow!("Failed to create temp table for HAVING: {}", e))?;
+
+                // Evaluate HAVING expression on the aggregate values
+                let evaluator = ArithmeticEvaluator::new(&temp_table);
+                let having_result = evaluator
+                    .evaluate(having_expr, 0)
+                    .unwrap_or(DataValue::Boolean(false));
+
+                // Skip this group if HAVING condition is not met
+                match having_result {
+                    DataValue::Boolean(false) => continue,
+                    DataValue::Null => continue,
+                    _ => {} // Include the row
+                }
             }
 
             // Add the row to the result table

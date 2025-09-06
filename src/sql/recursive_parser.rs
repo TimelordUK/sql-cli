@@ -522,6 +522,7 @@ pub struct SelectStatement {
     pub where_clause: Option<WhereClause>,
     pub order_by: Option<Vec<OrderByColumn>>,
     pub group_by: Option<Vec<String>>,
+    pub having: Option<SqlExpression>, // HAVING clause for post-aggregation filtering
     pub limit: Option<usize>,
     pub offset: Option<usize>,
 }
@@ -699,6 +700,17 @@ impl Parser {
             None
         };
 
+        // Parse HAVING clause (must come after GROUP BY)
+        let having = if matches!(self.current_token, Token::Having) {
+            if group_by.is_none() {
+                return Err("HAVING clause requires GROUP BY".to_string());
+            }
+            self.advance();
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+
         // Parse LIMIT clause
         let limit = if matches!(self.current_token, Token::Limit) {
             self.advance();
@@ -753,6 +765,7 @@ impl Parser {
             where_clause,
             order_by,
             group_by,
+            having,
             limit,
             offset,
         })
