@@ -475,6 +475,57 @@ WHERE timestamp > DATEADD('hour', -24, NOW())
 ORDER BY timestamp DESC;
 ```
 
+## 📚 Examples Gallery
+
+Explore the full power of SQL CLI with our comprehensive examples collection in the `examples/` directory:
+
+### 🎯 Run Examples
+
+```bash
+# Run any example directly
+sql-cli -f examples/prime_numbers.sql
+sql-cli -f examples/physics_constants.sql
+sql-cli -f examples/string_functions.sql
+
+# Or with your own data
+sql-cli your_data.csv -f examples/group_by_aggregates.sql
+```
+
+### 📂 Available Example Files
+
+- **`prime_numbers.sql`** - Prime number theory functions: IS_PRIME(), NTH_PRIME(), PRIME_PI()
+- **`physics_constants.sql`** - Scientific constants and calculations using built-in physics values
+- **`chemical_formulas.sql`** - Parse chemical formulas and calculate molecular masses
+- **`string_functions.sql`** - Comprehensive text manipulation, regex, and hashing
+- **`date_time_functions.sql`** - Date arithmetic, formatting, and time-based analysis
+- **`group_by_aggregates.sql`** - GROUP BY with HAVING clause and complex aggregations
+- **`math_functions.sql`** - Mathematical operations from basic to advanced
+- **`least_label.sql`** - Find minimum labeled values with LEAST_LABEL()
+- **`case_test_mass_fns.sql`** - CASE expressions with physics constants
+
+### 🚀 Quick Feature Showcase
+
+```sql
+-- Combine multiple advanced features in one query
+SELECT 
+    trader_name,
+    COUNT(*) as trade_count,
+    SUM(quantity) as total_volume,
+    AVG(price) as avg_price,
+    GET_MOLECULAR_MASS('C8H10N4O2') as caffeine_mass,      -- Chemistry
+    IS_PRIME(COUNT(*)) as is_prime_count,                  -- Prime check
+    DATEDIFF('day', MIN(trade_date), NOW()) as days_trading, -- Date math
+    MD5(trader_name) as trader_hash,                       -- Hashing
+    MASS_EARTH() / MASS_MOON() as earth_moon_ratio        -- Physics
+FROM trades
+WHERE trade_date >= DATEADD('month', -3, TODAY())
+GROUP BY trader_name
+HAVING COUNT(*) > 10 AND SUM(quantity) > 1000
+ORDER BY total_volume DESC;
+```
+
+Check out the [examples README](examples/README.md) for detailed documentation and more examples.
+
 ## 📦 Installation
 
 ### Install with Cargo

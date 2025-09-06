@@ -394,6 +394,31 @@ impl SqlFunction for PrimeFunction {
     }
 }
 
+/// `NTH_PRIME(n)` - Alias for PRIME function (more descriptive name)
+pub struct NthPrimeFunction;
+
+impl SqlFunction for NthPrimeFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "NTH_PRIME",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the Nth prime number (1-indexed) - alias for PRIME",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT NTH_PRIME(1)",     // Returns 2
+                "SELECT NTH_PRIME(100)",   // Returns 541
+                "SELECT NTH_PRIME(10000)", // Returns 104729
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        // Delegate to PRIME implementation
+        PrimeFunction.evaluate(args)
+    }
+}
+
 /// `IS_PRIME(n)` - Check if a number is prime
 pub struct IsPrimeFunction;
 
@@ -461,6 +486,32 @@ impl SqlFunction for PrimeCountFunction {
         };
 
         Ok(DataValue::Integer(PrimeEngine::prime_count(n) as i64))
+    }
+}
+
+/// `PRIME_PI(n)` - Alias for PRIME_COUNT (standard mathematical notation π(n))
+pub struct PrimePiFunction;
+
+impl SqlFunction for PrimePiFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "PRIME_PI",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(1),
+            description:
+                "Returns the count of prime numbers up to n (π(n)) - alias for PRIME_COUNT",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT PRIME_PI(10)",   // Returns 4 (2,3,5,7)
+                "SELECT PRIME_PI(100)",  // Returns 25
+                "SELECT PRIME_PI(1000)", // Returns 168
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        // Delegate to PRIME_COUNT implementation
+        PrimeCountFunction.evaluate(args)
     }
 }
 

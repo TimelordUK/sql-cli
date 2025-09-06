@@ -324,12 +324,18 @@ fn main() -> io::Result<()> {
     // If we have a query, run in non-interactive mode
     if is_non_interactive {
         // Read query from file if specified
-        let query = if let Some(file) = query_file_arg {
-            std::fs::read_to_string(&file)
+        let query_file = query_file_arg.clone();
+        let query = if let Some(file) = &query_file {
+            std::fs::read_to_string(file)
                 .map_err(|e| io::Error::other(format!("Failed to read query file {file}: {e}")))?
         } else {
             query_arg.unwrap()
         };
+
+        // Check if this is a multi-statement script (contains GO separator)
+        let is_script = query
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case("go"));
 
         // Check if query uses DUAL or has no FROM clause
         let uses_dual_or_no_from = {
@@ -364,8 +370,13 @@ fn main() -> io::Result<()> {
                 query_plan: query_plan_arg,
             };
 
-            return sql_cli::non_interactive::execute_non_interactive(config)
-                .map_err(io::Error::other);
+            // Use script executor if GO separator is detected
+            if is_script {
+                return sql_cli::non_interactive::execute_script(config).map_err(io::Error::other);
+            } else {
+                return sql_cli::non_interactive::execute_non_interactive(config)
+                    .map_err(io::Error::other);
+            }
         } else if uses_dual_or_no_from {
             // Use empty string for data_file when using DUAL
             let config = sql_cli::non_interactive::NonInteractiveConfig {
@@ -380,8 +391,13 @@ fn main() -> io::Result<()> {
                 query_plan: query_plan_arg,
             };
 
-            return sql_cli::non_interactive::execute_non_interactive(config)
-                .map_err(io::Error::other);
+            // Use script executor if GO separator is detected
+            if is_script {
+                return sql_cli::non_interactive::execute_script(config).map_err(io::Error::other);
+            } else {
+                return sql_cli::non_interactive::execute_non_interactive(config)
+                    .map_err(io::Error::other);
+            }
         }
         eprintln!("Error: Data file (CSV or JSON) required for non-interactive query mode");
         eprintln!("Usage: sql-cli <data.csv> -q \"SELECT * FROM table\"");

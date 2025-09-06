@@ -441,14 +441,16 @@ impl FunctionRegistry {
     /// Register mathematical functions
     fn register_mathematical_functions(&mut self) {
         use mathematics::{
-            IsPrimeFunction, NextPrimeFunction, PrevPrimeFunction, PrimeCountFunction,
-            PrimeFunction,
+            IsPrimeFunction, NextPrimeFunction, NthPrimeFunction, PrevPrimeFunction,
+            PrimeCountFunction, PrimeFunction, PrimePiFunction,
         };
 
         // Prime number functions
         self.register(Box::new(PrimeFunction));
+        self.register(Box::new(NthPrimeFunction)); // Alias for PRIME
         self.register(Box::new(IsPrimeFunction));
         self.register(Box::new(PrimeCountFunction));
+        self.register(Box::new(PrimePiFunction)); // Alias for PRIME_COUNT
         self.register(Box::new(NextPrimeFunction));
         self.register(Box::new(PrevPrimeFunction));
 

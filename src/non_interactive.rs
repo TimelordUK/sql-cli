@@ -10,6 +10,7 @@ use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable};
 use crate::services::query_execution_service::QueryExecutionService;
+use crate::sql::script_parser::{ScriptParser, ScriptResult};
 
 /// Output format for query results
 #[derive(Debug, Clone)]
@@ -172,6 +173,151 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     }
 
     output_result
+}
+
+/// Execute a script file with multiple SQL statements separated by GO
+pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
+    let start_time = Instant::now();
+
+    // Parse the script into individual statements
+    let parser = ScriptParser::new(&config.query);
+    let statements = parser.parse_and_validate()?;
+
+    info!("Found {} statements in script", statements.len());
+
+    // Load the data file once (or use DUAL)
+    let (data_table, is_dual) = if config.data_file.is_empty() {
+        info!("Using DUAL table for script execution");
+        (DataTable::dual(), true)
+    } else {
+        info!("Loading data from: {}", config.data_file);
+        let table = load_data_file(&config.data_file)?;
+        info!(
+            "Loaded {} rows with {} columns",
+            table.row_count(),
+            table.column_count()
+        );
+        (table, false)
+    };
+
+    // Track script results
+    let mut script_result = ScriptResult::new();
+    let mut output = Vec::new();
+
+    // Execute each statement
+    for (idx, statement) in statements.iter().enumerate() {
+        let statement_num = idx + 1;
+        let stmt_start = Instant::now();
+
+        // Print separator for table format
+        if matches!(config.output_format, OutputFormat::Table) {
+            if idx > 0 {
+                output.push(String::new()); // Empty line between queries
+            }
+            output.push(format!("-- Query {} --", statement_num));
+        }
+
+        // Create a fresh DataView for each statement
+        let dataview = DataView::new(std::sync::Arc::new(data_table.clone()));
+
+        // Execute the statement
+        let service = QueryExecutionService::new(config.case_insensitive, config.auto_hide_empty);
+        match service.execute(statement, Some(&dataview), None) {
+            Ok(result) => {
+                let exec_time = stmt_start.elapsed().as_secs_f64() * 1000.0;
+                let final_view = result.dataview;
+
+                // Format the output based on the output format
+                let mut statement_output = Vec::new();
+                match config.output_format {
+                    OutputFormat::Csv => {
+                        output_csv(&final_view, &mut statement_output, ',')?;
+                    }
+                    OutputFormat::Json => {
+                        output_json(&final_view, &mut statement_output)?;
+                    }
+                    OutputFormat::Table => {
+                        output_table(&final_view, &mut statement_output)?;
+                        writeln!(
+                            &mut statement_output,
+                            "Query completed: {} rows in {:.2}ms",
+                            final_view.row_count(),
+                            exec_time
+                        )?;
+                    }
+                    OutputFormat::Tsv => {
+                        output_csv(&final_view, &mut statement_output, '\t')?;
+                    }
+                }
+
+                // Add to overall output
+                output.extend(
+                    String::from_utf8_lossy(&statement_output)
+                        .lines()
+                        .map(String::from),
+                );
+
+                script_result.add_success(
+                    statement_num,
+                    statement.clone(),
+                    final_view.row_count(),
+                    exec_time,
+                );
+            }
+            Err(e) => {
+                let exec_time = stmt_start.elapsed().as_secs_f64() * 1000.0;
+                let error_msg = format!("Query {} failed: {}", statement_num, e);
+
+                if matches!(config.output_format, OutputFormat::Table) {
+                    output.push(error_msg.clone());
+                }
+
+                script_result.add_failure(
+                    statement_num,
+                    statement.clone(),
+                    e.to_string(),
+                    exec_time,
+                );
+
+                // Continue to next statement (don't stop on error)
+            }
+        }
+    }
+
+    // Write output
+    if let Some(ref output_file) = config.output_file {
+        let mut file = fs::File::create(output_file)?;
+        for line in &output {
+            writeln!(file, "{}", line)?;
+        }
+        info!("Results written to: {}", output_file);
+    } else {
+        for line in &output {
+            println!("{}", line);
+        }
+    }
+
+    // Print summary if in table mode
+    if matches!(config.output_format, OutputFormat::Table) {
+        println!("\n=== Script Summary ===");
+        println!("Total statements: {}", script_result.total_statements);
+        println!("Successful: {}", script_result.successful_statements);
+        println!("Failed: {}", script_result.failed_statements);
+        println!(
+            "Total execution time: {:.2}ms",
+            script_result.total_execution_time_ms
+        );
+    }
+
+    if !script_result.all_successful() {
+        return Err(anyhow::anyhow!(
+            "{} of {} statements failed",
+            script_result.failed_statements,
+            script_result.total_statements
+        ));
+    }
+
+    Ok(())
 }
 
 /// Load a data file (CSV or JSON) into a `DataTable`
