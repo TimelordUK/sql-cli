@@ -7,6 +7,13 @@
 -- Run: ./target/release/sql-cli -f examples/range_statistical_analysis.sql -o table
 -- ============================================================================
 
+
+-- 5. Cumulative Sum Sequence
+WITH numbers AS (
+    SELECT value FROM RANGE(1, 10)
+) select value as n from numbers;
+GO
+
 -- 1. Basic Statistics: Mean, Variance, and Standard Deviation simulation
 WITH numbers AS (
     SELECT value FROM RANGE(1, 100)

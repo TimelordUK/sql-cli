@@ -693,6 +693,47 @@ impl SqlFunction for FactorialFunction {
     }
 }
 
+/// SUM_N function - Sum of first n natural numbers (triangular number)
+pub struct SumNFunction;
+
+impl SqlFunction for SumNFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "SUM_N",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(1),
+            description: "Calculate sum of first n natural numbers (triangular number)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT SUM_N(10)",  // Returns 55 (1+2+3+...+10)
+                "SELECT SUM_N(100)", // Returns 5050
+                "SELECT SUM_N(5)",   // Returns 15 (1+2+3+4+5)
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let n = match &args[0] {
+            DataValue::Integer(n) if *n >= 0 => *n,
+            DataValue::Float(f) if f.is_finite() && *f >= 0.0 && f.floor() == *f => *f as i64,
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("SUM_N requires a non-negative integer")),
+        };
+
+        // Calculate n * (n + 1) / 2
+        // Check for overflow
+        if n > 3037000499 {
+            // sqrt(i64::MAX * 2) approximately
+            return Err(anyhow!("SUM_N: argument {} too large (would overflow)", n));
+        }
+
+        let result = n * (n + 1) / 2;
+        Ok(DataValue::Integer(result))
+    }
+}
+
 /// Register all math functions
 pub fn register_math_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(RoundFunction));
@@ -712,4 +753,5 @@ pub fn register_math_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(DegreesFunction));
     registry.register(Box::new(RadiansFunction));
     registry.register(Box::new(FactorialFunction));
+    registry.register(Box::new(SumNFunction));
 }

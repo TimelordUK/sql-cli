@@ -7,16 +7,19 @@
 -- Run: ./target/release/sql-cli -f examples/range_mathematical_sequences.sql -o table
 -- ============================================================================
 
--- 1. Prime Numbers Analysis
-WITH primes AS (
+-- 1. Prime Numbers Analysi s
+WITH is_primes AS (
     SELECT 
         value,
         IS_PRIME(value) AS is_prime,
         PRIME_PI(value) AS cumulative_primes
     FROM RANGE(1, 50)
+),
+primes as (
+  select value, is_prime, cumulative_primes from is_primes where is_prime = true
 )
 SELECT 
-    value AS number,
+    value,
     CASE WHEN is_prime = true THEN 'PRIME' ELSE '' END AS is_prime,
     cumulative_primes,
     value - LAG(value, 1, 0) OVER (ORDER BY value) AS gap_from_prev
@@ -27,16 +30,16 @@ GO
 
 -- 2. Triangular Numbers Sequence
 WITH sequence AS (
-    SELECT value AS n FROM RANGE(1, 15)
+    SELECT value FROM RANGE(1, 15)
 ),
 triangular AS (
     SELECT 
-        n,
-        SUM(value) OVER (ORDER BY value) AS triangular_number
+        value as n,
+        SUM_N(value) AS triangular_number
     FROM sequence
 )
 SELECT 
-    n AS position,
+    n,
     triangular_number,
     n * (n + 1) / 2 AS formula_check,
     triangular_number - LAG(triangular_number, 1, 0) OVER (ORDER BY n) AS difference
