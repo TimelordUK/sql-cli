@@ -1,71 +1,52 @@
-# SQL CLI v1.39.0
+# SQL CLI v1.41.0
 
-**Release Date:** September 06, 2025
+**Release Date:** September 07, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 20
-- **Files updated:** 266
+- **Commits in this release:** 17
+- **Files updated:** 33
 
 ## ✨ Highlights
 
 ### 🔍 Enhanced Debugging
 - **Better Diagnostics**: Improved error messages and state dumps
 
-### 💾 Data Protection
-- **History Recovery**: Automatic recovery from corrupted files
-- **Atomic Writes**: Safer file operations to prevent data loss
-
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- v1.39.0 - Add hash functions and geometry formulas
-- Add window functions support (LAG, LEAD, ROW_NUMBER, FIRST_VALUE, LAST_VALUE)
-- add window functions parsing and WindowContext infrastructure
-- implement STDDEV and VARIANCE aggregate functions
-- add comprehensive SQL-CLI feature showcase and test script
-- implement FACTORIAL function and clean up examples
-- add PRIME_PI and NTH_PRIME functions, improve script parser
-- implement HAVING clause for GROUP BY filtering
-- implement GROUP BY with aggregate function support
+- Add SUM_N function for triangular numbers
+- Add SUM() and COUNT() as window functions
+- Add DISTINCT support for SELECT queries
+- Add % modulo operator support as alias to MOD function
 
 ### 🐛 Bug Fixes
-- clean up string_functions.sql to only show implemented functions
-- correct function names in physics_constants.sql
-- correct function names in chemical examples
-- apply clippy pedantic fixes and code formatting
-- resolve clippy warnings and improve code quality
-
-### 🔧 Refactoring
-- proxy string methods through function registry
-- move date functions from arithmetic_evaluator to function registry
-- move constants from arithmetic_evaluator to function registry
+- Support COUNT(*) OVER (PARTITION BY ...) window function
+- Update examples to work around CASE WHEN limitations
+- Add support for OR operator in WHERE clause
 
 ### 📚 Documentation
-- update README with GROUP BY feature documentation
+- Add example SQL files showcasing RANGE with CTEs and window functions
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat: v1.39.0 - Add hash functions and geometry formulas (TimelordUK)
-- feat: Add window functions support (LAG, LEAD, ROW_NUMBER, FIRST_VALUE, LAST_VALUE) (TimelordUK)
-- feat: add window functions parsing and WindowContext infrastructure (TimelordUK)
-- refactor: proxy string methods through function registry (TimelordUK)
-- feat: implement STDDEV and VARIANCE aggregate functions (TimelordUK)
-- feat: add comprehensive SQL-CLI feature showcase and test script (TimelordUK)
-- fix: clean up string_functions.sql to only show implemented functions (TimelordUK)
-- fix: correct function names in physics_constants.sql (TimelordUK)
-- feat: implement FACTORIAL function and clean up examples (TimelordUK)
-- fix: correct function names in chemical examples (TimelordUK)
-- feat: add PRIME_PI and NTH_PRIME functions, improve script parser (TimelordUK)
-- fix: apply clippy pedantic fixes and code formatting (TimelordUK)
-- fix: resolve clippy warnings and improve code quality (TimelordUK)
-- feat: implement HAVING clause for GROUP BY filtering (TimelordUK)
-- docs: update README with GROUP BY feature documentation (TimelordUK)
-- feat: implement GROUP BY with aggregate function support (TimelordUK)
-- refactor: move date functions from arithmetic_evaluator to function registry (TimelordUK)
-- refactor: move constants from arithmetic_evaluator to function registry (TimelordUK)
-- edit distance function (TimelordUK)
-- fix python tests (TimelordUK)
+- chore: Release version 1.41.0 (TimelordUK)
+- fix: Support COUNT(*) OVER (PARTITION BY ...) window function (TimelordUK)
+- fix: Update examples to work around CASE WHEN limitations (TimelordUK)
+- feat: Add SUM_N function for triangular numbers (TimelordUK)
+- docs: Add example SQL files showcasing RANGE with CTEs and window functions (TimelordUK)
+- feat: Add SUM() and COUNT() as window functions (TimelordUK)
+- test: Update Python tests to match actual system capabilities (TimelordUK)
+- fix the example suite (TimelordUK)
+- fix: Add support for OR operator in WHERE clause (TimelordUK)
+- add distinct (TimelordUK)
+- feat: Add DISTINCT support for SELECT queries (TimelordUK)
+- feat: Add % modulo operator support as alias to MOD function (TimelordUK)
+- fix format (TimelordUK)
+- primes (TimelordUK)
+- add prime finder sql (TimelordUK)
+- trade example using cte (TimelordUK)
+- add range conversions (TimelordUK)
 
 </details>
 
