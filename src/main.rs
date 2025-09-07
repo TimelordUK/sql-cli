@@ -340,39 +340,46 @@ fn main() -> io::Result<()> {
         // Check if query uses DUAL, RANGE, or has no FROM clause
         let uses_dual_or_no_from = {
             use sql_cli::sql::recursive_parser::{Parser, SelectStatement};
-            
+
             fn check_statement_for_range(stmt: &SelectStatement) -> bool {
                 // Check main query
                 if stmt.from_function.is_some() {
                     return true;
                 }
-                
+
                 // Check if it's DUAL or no FROM
-                if stmt.from_table.as_ref().is_some_and(|t| t.to_uppercase() == "DUAL") {
+                if stmt
+                    .from_table
+                    .as_ref()
+                    .is_some_and(|t| t.to_uppercase() == "DUAL")
+                {
                     return true;
                 }
-                
-                if stmt.from_table.is_none() && stmt.from_subquery.is_none() && stmt.from_function.is_none() {
+
+                if stmt.from_table.is_none()
+                    && stmt.from_subquery.is_none()
+                    && stmt.from_function.is_none()
+                {
                     return true;
                 }
-                
+
                 // Recursively check CTEs
                 for cte in &stmt.ctes {
                     if check_statement_for_range(&cte.query) {
                         return true;
                     }
                 }
-                
+
                 // Check subqueries
                 if let Some(ref subquery) = stmt.from_subquery {
                     if check_statement_for_range(subquery) {
                         return true;
                     }
                 }
-                
+
                 false
             }
-            
+
             if let Ok(statement) = Parser::new(&query).parse() {
                 check_statement_for_range(&statement)
             } else {
