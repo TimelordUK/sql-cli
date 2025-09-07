@@ -106,10 +106,13 @@ divisor_analysis AS (
     SELECT 
         n,
         -- Count divisors (simplified - checking common divisors)
+        -- Note: AND/OR not supported in CASE, using mathematical workarounds
         CASE 
-            WHEN n % 2 = 0 AND n % 3 = 0 THEN 'Highly Composite'
+            WHEN n % 6 = 0 THEN 'Divisible by 6'
             WHEN IS_PRIME(n) = true THEN 'Prime (2 divisors)'
-            WHEN n % 2 = 0 OR n % 3 = 0 OR n % 5 = 0 THEN 'Composite'
+            WHEN n % 2 = 0 THEN 'Even Composite'
+            WHEN n % 3 = 0 THEN 'Divisible by 3'
+            WHEN n % 5 = 0 THEN 'Divisible by 5'
             ELSE 'Other'
         END AS divisor_class,
         -- Sum of factors approximation
