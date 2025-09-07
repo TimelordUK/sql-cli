@@ -332,4 +332,75 @@ impl WindowContext {
     pub fn has_partitions(&self) -> bool {
         !self.spec.partition_by.is_empty()
     }
+
+    /// Calculate sum of a column over the partition containing the given row
+    pub fn get_partition_sum(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let partition_key = self.row_to_partition.get(&row_index)?;
+        let partition = self.partitions.get(partition_key)?;
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        let mut sum = 0.0;
+        let mut has_float = false;
+        let mut has_value = false;
+
+        // Sum all values in the partition
+        for &row_idx in &partition.rows {
+            if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                match value {
+                    DataValue::Integer(i) => {
+                        sum += *i as f64;
+                        has_value = true;
+                    }
+                    DataValue::Float(f) => {
+                        sum += f;
+                        has_float = true;
+                        has_value = true;
+                    }
+                    DataValue::Null => {
+                        // Skip NULL values
+                    }
+                    _ => {
+                        // Non-numeric values - return NULL
+                        return Some(DataValue::Null);
+                    }
+                }
+            }
+        }
+
+        if !has_value {
+            return Some(DataValue::Null);
+        }
+
+        // Return as integer if all values were integers and sum is whole
+        if !has_float && sum.fract() == 0.0 && sum >= i64::MIN as f64 && sum <= i64::MAX as f64 {
+            Some(DataValue::Integer(sum as i64))
+        } else {
+            Some(DataValue::Float(sum))
+        }
+    }
+
+    /// Calculate count of non-null values in a column over the partition
+    pub fn get_partition_count(&self, row_index: usize, column: Option<&str>) -> Option<DataValue> {
+        let partition_key = self.row_to_partition.get(&row_index)?;
+        let partition = self.partitions.get(partition_key)?;
+
+        if let Some(col_name) = column {
+            // COUNT(column) - count non-null values
+            let source_table = self.source.source();
+            let col_idx = source_table.get_column_index(col_name)?;
+
+            let count = partition
+                .rows
+                .iter()
+                .filter_map(|&row_idx| source_table.get_value(row_idx, col_idx))
+                .filter(|v| !matches!(v, DataValue::Null))
+                .count();
+
+            Some(DataValue::Integer(count as i64))
+        } else {
+            // COUNT(*) - count all rows in partition
+            Some(DataValue::Integer(partition.rows.len() as i64))
+        }
+    }
 }

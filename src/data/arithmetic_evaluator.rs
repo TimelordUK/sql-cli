@@ -645,6 +645,50 @@ impl<'a> ArithmeticEvaluator<'a> {
                     .get_last_value(row_index, &column)
                     .unwrap_or(DataValue::Null))
             }
+            "SUM" => {
+                // SUM(column) OVER (PARTITION BY ...)
+                if args.is_empty() {
+                    return Err(anyhow!("SUM requires 1 argument"));
+                }
+
+                let column = match &args[0] {
+                    SqlExpression::Column(col) => col.clone(),
+                    _ => return Err(anyhow!("SUM argument must be a column")),
+                };
+
+                Ok(context
+                    .get_partition_sum(row_index, &column)
+                    .unwrap_or(DataValue::Null))
+            }
+            "COUNT" => {
+                // COUNT(*) or COUNT(column) OVER (PARTITION BY ...)
+                // Note: In window functions, COUNT(*) seems to come with no args
+                if args.is_empty() {
+                    // COUNT(*) OVER (...) - count all rows in partition
+                    Ok(context
+                        .get_partition_count(row_index, None)
+                        .unwrap_or(DataValue::Null))
+                } else {
+                    // Check for COUNT(*)
+                    let column = match &args[0] {
+                        SqlExpression::Column(col) => {
+                            if col == "*" {
+                                // COUNT(*) - count all rows in partition
+                                return Ok(context
+                                    .get_partition_count(row_index, None)
+                                    .unwrap_or(DataValue::Null));
+                            }
+                            col.clone()
+                        }
+                        _ => return Err(anyhow!("COUNT argument must be a column or *")),
+                    };
+
+                    // COUNT(column) - count non-null values
+                    Ok(context
+                        .get_partition_count(row_index, Some(&column))
+                        .unwrap_or(DataValue::Null))
+                }
+            }
             _ => Err(anyhow!("Unknown window function: {}", name)),
         }
     }

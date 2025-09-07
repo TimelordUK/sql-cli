@@ -326,8 +326,8 @@ def test_range_with_order_by():
 
 def test_range_with_window_functions():
     """Test RANGE with window functions (PARTITION BY)"""
-    # NOTE: Only ROW_NUMBER() window function is currently implemented
-    # SUM, COUNT, AVG etc. as window functions are not yet supported
+    # NOTE: ROW_NUMBER() and SUM() window functions are now implemented
+    # COUNT(*) as a window function has parsing issues
     
     query = """
     WITH data AS (
@@ -339,7 +339,8 @@ def test_range_with_window_functions():
     SELECT 
         value,
         grp,
-        ROW_NUMBER() OVER (PARTITION BY grp ORDER BY value) AS row_num
+        ROW_NUMBER() OVER (PARTITION BY grp ORDER BY value) AS row_num,
+        SUM(value) OVER (PARTITION BY grp) AS group_sum
     FROM data
     ORDER BY value
     """
@@ -350,20 +351,25 @@ def test_range_with_window_functions():
     assert int(result[0]['grp']) == 1
     assert int(result[0]['row_num']) == 1
     
-    # Verify row numbers restart for each group
+    # Group 0: 3,6,9,12 sum = 30
+    # Group 1: 1,4,7,10 sum = 22
+    # Group 2: 2,5,8,11 sum = 26
+    
+    # Check group sums for some values
     for row in result:
         grp = int(row['grp'])
-        val = int(row['value'])
-        expected_row_num = ((val - grp - 1) // 3) + 1 if grp != 0 else (val // 3)
-        # Simpler check: row_num should be between 1 and 4 for each group
-        row_num = int(row['row_num'])
-        assert 1 <= row_num <= 4, f"Row number should be between 1 and 4"
+        if grp == 0:
+            assert int(row['group_sum']) == 30, f"Group 0 sum should be 30"
+        elif grp == 1:
+            assert int(row['group_sum']) == 22, f"Group 1 sum should be 22"
+        elif grp == 2:
+            assert int(row['group_sum']) == 26, f"Group 2 sum should be 26"
     
-    print("✓ RANGE with ROW_NUMBER() window function test passed")
+    print("✓ RANGE with window functions (ROW_NUMBER and SUM) test passed")
 
 def test_cte_range_with_partition():
     """Test CTE with RANGE in one CTE and PARTITION BY in another"""
-    # NOTE: Only ROW_NUMBER() is supported as a window function
+    # NOTE: Using ROW_NUMBER() and COUNT(column) window functions
     query = """
     WITH base_numbers AS (
         SELECT value AS num FROM RANGE(1, 20)
@@ -381,7 +387,8 @@ def test_cte_range_with_partition():
     SELECT 
         num,
         category,
-        ROW_NUMBER() OVER (PARTITION BY category ORDER BY num) AS position_in_category
+        ROW_NUMBER() OVER (PARTITION BY category ORDER BY num) AS position_in_category,
+        COUNT(num) OVER (PARTITION BY category) AS category_count
     FROM categorized
     ORDER BY num
     """
@@ -399,6 +406,16 @@ def test_cte_range_with_partition():
     prime_2 = [r for r in result if int(r['num']) == 2][0]
     assert prime_2['category'] == 'prime'
     assert int(prime_2['position_in_category']) == 1
+    assert int(prime_2['category_count']) == 8  # 8 primes in 1-20
+    
+    # Verify counts for each category
+    for row in result:
+        if row['category'] == 'prime':
+            assert int(row['category_count']) == 8  # 2,3,5,7,11,13,17,19
+        elif row['category'] == 'even':
+            assert int(row['category_count']) == 9  # 4,6,8,10,12,14,16,18,20
+        elif row['category'] == 'odd':
+            assert int(row['category_count']) == 3  # 1,9,15 (odd non-primes)
     
     print("✓ CTE with RANGE and PARTITION BY test passed")
 
