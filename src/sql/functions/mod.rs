@@ -9,6 +9,7 @@ pub mod astronomy;
 pub mod chemistry;
 pub mod comparison;
 pub mod constants;
+pub mod convert;
 pub mod date_time;
 pub mod geometry;
 pub mod hash;
@@ -32,6 +33,7 @@ pub enum FunctionCategory {
     Date,         // Date/time operations
     String,       // String manipulation
     Aggregate,    // Aggregation functions
+    Conversion,   // Unit conversion functions
 }
 
 impl fmt::Display for FunctionCategory {
@@ -44,6 +46,7 @@ impl fmt::Display for FunctionCategory {
             FunctionCategory::Date => write!(f, "Date"),
             FunctionCategory::String => write!(f, "String"),
             FunctionCategory::Aggregate => write!(f, "Aggregate"),
+            FunctionCategory::Conversion => write!(f, "Conversion"),
         }
     }
 }
@@ -141,6 +144,7 @@ impl FunctionRegistry {
         registry.register_physics_functions();
         registry.register_date_time_functions();
         registry.register_string_methods();
+        registry.register_conversion_functions();
         registry.register_hash_functions();
         registry.register_comparison_functions();
 
@@ -533,6 +537,13 @@ impl FunctionRegistry {
     /// Register date/time functions
     fn register_date_time_functions(&mut self) {
         date_time::register_date_time_functions(self);
+    }
+
+    /// Register conversion functions
+    fn register_conversion_functions(&mut self) {
+        use convert::ConvertFunction;
+
+        self.register(Box::new(ConvertFunction));
     }
 }
 

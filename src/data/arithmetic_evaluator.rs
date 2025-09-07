@@ -504,54 +504,8 @@ impl<'a> ArithmeticEvaluator<'a> {
             return func.evaluate(&evaluated_args);
         }
 
-        // If not in registry, check built-in functions that need special handling
-        // (functions that need access to table data or row context)
-        // Convert function name to uppercase for case-insensitive matching
-        match name_upper.as_str() {
-            "CONVERT" => {
-                if args.len() != 3 {
-                    return Err(anyhow!(
-                        "CONVERT requires exactly 3 arguments: value, from_unit, to_unit"
-                    ));
-                }
-
-                // Evaluate the value
-                let value = self.evaluate(&args[0], row_index)?;
-                let numeric_value = match value {
-                    DataValue::Integer(n) => n as f64,
-                    DataValue::Float(f) => f,
-                    _ => return Err(anyhow!("CONVERT first argument must be numeric")),
-                };
-
-                // Get unit strings
-                let from_unit = match self.evaluate(&args[1], row_index)? {
-                    DataValue::String(s) => s,
-                    DataValue::InternedString(s) => s.to_string(),
-                    _ => {
-                        return Err(anyhow!(
-                            "CONVERT second argument must be a string (from_unit)"
-                        ))
-                    }
-                };
-
-                let to_unit = match self.evaluate(&args[2], row_index)? {
-                    DataValue::String(s) => s,
-                    DataValue::InternedString(s) => s.to_string(),
-                    _ => return Err(anyhow!("CONVERT third argument must be a string (to_unit)")),
-                };
-
-                // Perform conversion
-                match crate::data::unit_converter::convert_units(
-                    numeric_value,
-                    &from_unit,
-                    &to_unit,
-                ) {
-                    Ok(result) => Ok(DataValue::Float(result)),
-                    Err(e) => Err(anyhow!("Unit conversion error: {}", e)),
-                }
-            }
-            _ => Err(anyhow!("Unknown function: {}", name)),
-        }
+        // If not in registry, return error for unknown function
+        Err(anyhow!("Unknown function: {}", name))
     }
 
     /// Get or create a WindowContext for the given specification
