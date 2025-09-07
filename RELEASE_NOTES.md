@@ -1,71 +1,68 @@
-# SQL CLI v1.39.0
+# SQL CLI v1.40.0
 
-**Release Date:** September 06, 2025
+**Release Date:** September 07, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 20
-- **Files updated:** 266
+- **Commits in this release:** 21
+- **Files updated:** 40
 
 ## ✨ Highlights
+
+### 🎨 Visual Improvements
 
 ### 🔍 Enhanced Debugging
 - **Better Diagnostics**: Improved error messages and state dumps
 
-### 💾 Data Protection
-- **History Recovery**: Automatic recovery from corrupted files
-- **Atomic Writes**: Safer file operations to prevent data loss
-
 ## 📝 Changes by Category
 
 ### 🚀 New Features
-- v1.39.0 - Add hash functions and geometry formulas
-- Add window functions support (LAG, LEAD, ROW_NUMBER, FIRST_VALUE, LAST_VALUE)
-- add window functions parsing and WindowContext infrastructure
-- implement STDDEV and VARIANCE aggregate functions
-- add comprehensive SQL-CLI feature showcase and test script
-- implement FACTORIAL function and clean up examples
-- add PRIME_PI and NTH_PRIME functions, improve script parser
-- implement HAVING clause for GROUP BY filtering
-- implement GROUP BY with aggregate function support
+- Add comprehensive CTE cookbook with real-world sales patterns
+- Add CTE chaining and window function filtering examples
+- Add working solar system CTE examples
+- Add Common Table Expression (CTE) support
+- Improve example test runner and add comprehensive examples
+- Add comprehensive NULL literal support and handling
+- Add COULOMB() and BOHR() physics constants
+- Add signed particle charge functions
+- Add solar system lookup functions
 
 ### 🐛 Bug Fixes
-- clean up string_functions.sql to only show implemented functions
-- correct function names in physics_constants.sql
-- correct function names in chemical examples
-- apply clippy pedantic fixes and code formatting
-- resolve clippy warnings and improve code quality
+- Correct CTE ORDER BY example and document CASE syntax limitation
+- Configure solar system examples and fix function names
 
 ### 🔧 Refactoring
-- proxy string methods through function registry
-- move date functions from arithmetic_evaluator to function registry
-- move constants from arithmetic_evaluator to function registry
+- Remove broken CTE examples and create working simplified versions
+- Move CONVERT function to function registry
 
 ### 📚 Documentation
-- update README with GROUP BY feature documentation
+- Add subquery implementation plan leveraging CTE architecture
+- Add comprehensive CTE ORDER BY patterns and best practices
+- Improve ORDER BY error messages and document CTE limitations
+- Enhance CLAUDE.md with comprehensive AI context guide
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat: v1.39.0 - Add hash functions and geometry formulas (TimelordUK)
-- feat: Add window functions support (LAG, LEAD, ROW_NUMBER, FIRST_VALUE, LAST_VALUE) (TimelordUK)
-- feat: add window functions parsing and WindowContext infrastructure (TimelordUK)
-- refactor: proxy string methods through function registry (TimelordUK)
-- feat: implement STDDEV and VARIANCE aggregate functions (TimelordUK)
-- feat: add comprehensive SQL-CLI feature showcase and test script (TimelordUK)
-- fix: clean up string_functions.sql to only show implemented functions (TimelordUK)
-- fix: correct function names in physics_constants.sql (TimelordUK)
-- feat: implement FACTORIAL function and clean up examples (TimelordUK)
-- fix: correct function names in chemical examples (TimelordUK)
-- feat: add PRIME_PI and NTH_PRIME functions, improve script parser (TimelordUK)
-- fix: apply clippy pedantic fixes and code formatting (TimelordUK)
-- fix: resolve clippy warnings and improve code quality (TimelordUK)
-- feat: implement HAVING clause for GROUP BY filtering (TimelordUK)
-- docs: update README with GROUP BY feature documentation (TimelordUK)
-- feat: implement GROUP BY with aggregate function support (TimelordUK)
-- refactor: move date functions from arithmetic_evaluator to function registry (TimelordUK)
-- refactor: move constants from arithmetic_evaluator to function registry (TimelordUK)
-- edit distance function (TimelordUK)
-- fix python tests (TimelordUK)
+- docs: Add subquery implementation plan leveraging CTE architecture (TimelordUK)
+- feat: Add comprehensive CTE cookbook with real-world sales patterns (TimelordUK)
+- refactor: Remove broken CTE examples and create working simplified versions (TimelordUK)
+- feat: Add CTE chaining and window function filtering examples (TimelordUK)
+- fix: Correct CTE ORDER BY example and document CASE syntax limitation (TimelordUK)
+- docs: Add comprehensive CTE ORDER BY patterns and best practices (TimelordUK)
+- docs: Improve ORDER BY error messages and document CTE limitations (TimelordUK)
+- feat: Add working solar system CTE examples (TimelordUK)
+- feat: Add Common Table Expression (CTE) support (TimelordUK)
+- docs: Enhance CLAUDE.md with comprehensive AI context guide (TimelordUK)
+- cleanup: Remove problematic solar_system_demo.sql (TimelordUK)
+- fix: Configure solar system examples and fix function names (TimelordUK)
+- refactor: Move CONVERT function to function registry (TimelordUK)
+- feat: Improve example test runner and add comprehensive examples (TimelordUK)
+- feat: Add comprehensive NULL literal support and handling (TimelordUK)
+- feat: Add COULOMB() and BOHR() physics constants (TimelordUK)
+- feat: Add signed particle charge functions (TimelordUK)
+- feat: Add solar system lookup functions (TimelordUK)
+- fix to null vs empty string read from csv (TimelordUK)
+- docs on cte (TimelordUK)
 
 </details>
 
