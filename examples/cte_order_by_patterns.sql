@@ -73,17 +73,17 @@ FROM calculations
 ORDER BY mass_earths DESC;  -- ORDER BY computed alias
 GO
 
--- Pattern 5: ORDER BY with CASE expressions
+-- Pattern 5: Multi-column ORDER BY with aliases
 WITH categorized AS (
     SELECT 
         name,
         type,
         GRAVITY_SOLAR_BODY(name) AS gravity_raw,
         CASE 
-            WHEN GRAVITY_SOLAR_BODY(name) < 5 THEN 'Low'
-            WHEN GRAVITY_SOLAR_BODY(name) < 15 THEN 'Medium'
-            ELSE 'High'
-        END AS gravity_category
+            WHEN GRAVITY_SOLAR_BODY(name) < 5 THEN 1  -- Low gravity
+            WHEN GRAVITY_SOLAR_BODY(name) < 15 THEN 2  -- Medium gravity
+            ELSE 3  -- High gravity
+        END AS gravity_priority
     FROM test
     WHERE name != 'Sun'
 )
@@ -91,9 +91,14 @@ SELECT
     name,
     type,
     ROUND(gravity_raw, 2) AS gravity,
-    gravity_category AS category
+    gravity_priority AS priority,
+    CASE 
+        WHEN gravity_priority = 1 THEN 'Low'
+        WHEN gravity_priority = 2 THEN 'Medium'
+        ELSE 'High'
+    END AS category
 FROM categorized
-ORDER BY gravity DESC;  -- ORDER BY the numeric value
+ORDER BY priority DESC, gravity DESC;  -- Multi-column ORDER BY works!
 GO
 
 -- ============================================================================
@@ -101,5 +106,9 @@ GO
 -- 1. Always ORDER BY the SELECT alias when you transform columns
 -- 2. You can re-alias CTE columns without transformation for ORDER BY
 -- 3. If you need the original CTE column for ORDER BY, include it in SELECT
--- 4. Multiple ORDER BY columns work as expected with aliases
+-- 4. Multiple ORDER BY columns work perfectly with aliases
+--
+-- Note: Currently only supports CASE WHEN syntax, not CASE column WHEN value
+--   Supported:     CASE WHEN col = 1 THEN 'A' ELSE 'B' END
+--   Not supported: CASE col WHEN 1 THEN 'A' ELSE 'B' END
 -- ============================================================================
