@@ -19,6 +19,10 @@ declare -A example_data_files
 example_data_files["group_by_aggregates.sql"]="data/sales_sample.csv"
 example_data_files["window_functions.sql"]="data/sales_data.csv"
 example_data_files["window_functions_filtering.sql"]="data/sales_data.csv"
+example_data_files["solar_system_demo.sql"]="data/solar_system.csv"
+example_data_files["solar_system_calculations.sql"]="data/solar_system.csv"
+example_data_files["solar_system_calculations_simple.sql"]="data/solar_system.csv"
+example_data_files["solar_system_working.sql"]="data/solar_system.csv"
 
 # Examples to skip (e.g., work in progress or future features)
 declare -A skip_examples

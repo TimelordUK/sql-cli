@@ -11,8 +11,8 @@ SELECT
     G() as gravitational_constant,
     C() as speed_of_light,
     H() as planck_constant,
-    KB() as boltzmann_constant,
-    NA() as avogadro_number,
+    K() as boltzmann_constant,
+    AVOGADRO() as avogadro_number,
     E() as elementary_charge,
     ME() as electron_mass,
     MP() as proton_mass;
@@ -129,7 +129,7 @@ SELECT
 -- Energy Scales
 SELECT 
     '=== ENERGY SCALES ===' as category,
-    KB() * 300 as room_temp_energy,
+    K() * 300 as room_temp_energy,
     H() * C() / 500e-9 as green_photon_energy,
     13.6 * E() as hydrogen_ionization_energy,
     RY() * H() * C() as rydberg_energy;
