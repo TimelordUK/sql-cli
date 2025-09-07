@@ -7,66 +7,64 @@ SQL_CLI="./target/release/sql-cli"
 # Color codes for output
 GREEN='\033[0;32m'
 RED='\033[0;31m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo "Testing all SQL example files..."
+echo -e "${BLUE}Testing all SQL example files...${NC}"
 echo "================================"
 
-# Array of example files to test
-examples=(
-    "math_functions.sql"
-    "string_functions.sql"
-    "date_time_functions.sql"
-    "physics_constants.sql"
-    "chemical_formulas.sql"
-    "showcase_all_features.sql"
-)
+# Configuration for examples that need specific data files
+declare -A example_data_files
+example_data_files["group_by_aggregates.sql"]="data/sales_sample.csv"
+example_data_files["window_functions.sql"]="data/sales_data.csv"
+example_data_files["window_functions_filtering.sql"]="data/sales_data.csv"
 
-# Test group_by_aggregates.sql with sample data if available
-if [ -f "data/sales_sample.csv" ]; then
-    examples+=("group_by_aggregates.sql")
-    GROUP_BY_DATA="data/sales_sample.csv"
-fi
-
-# Test window functions with sales data
-if [ -f "data/sales_data.csv" ]; then
-    examples+=("window_functions.sql")
-    examples+=("window_functions_filtering.sql")
-    WINDOW_DATA="data/sales_data.csv"
-fi
+# Examples to skip (e.g., work in progress or future features)
+declare -A skip_examples
+skip_examples["solar_system_with_cte_future.sql"]=1  # CTE not yet implemented
 
 failed=0
 passed=0
+skipped=0
 
-for example in "${examples[@]}"; do
-    if [ -f "$EXAMPLES_DIR/$example" ]; then
+# Find all SQL files in examples directory
+for example_file in "$EXAMPLES_DIR"/*.sql; do
+    if [ -f "$example_file" ]; then
+        example=$(basename "$example_file")
+        
+        # Check if this example should be skipped
+        if [[ -n "${skip_examples[$example]}" ]]; then
+            echo -e "${YELLOW}⊘ SKIPPED${NC} $example (future feature)"
+            ((skipped++))
+            continue
+        fi
+        
         echo -n "Testing $example... "
         
-        # Special handling for group_by_aggregates.sql
-        if [ "$example" = "group_by_aggregates.sql" ] && [ -n "$GROUP_BY_DATA" ]; then
-            if $SQL_CLI "$GROUP_BY_DATA" -f "$EXAMPLES_DIR/$example" -o csv > /dev/null 2>&1; then
-                echo -e "${GREEN}✓ PASSED${NC}"
-                ((passed++))
+        # Check if this example needs a specific data file
+        data_file="${example_data_files[$example]}"
+        
+        if [ -n "$data_file" ]; then
+            # Example needs a data file
+            if [ -f "$data_file" ]; then
+                # Run with data file
+                if $SQL_CLI "$data_file" -f "$example_file" -o csv > /dev/null 2>&1; then
+                    echo -e "${GREEN}✓ PASSED${NC} (with $data_file)"
+                    ((passed++))
+                else
+                    echo -e "${RED}✗ FAILED${NC} (with $data_file)"
+                    ((failed++))
+                    echo "  Error details:"
+                    $SQL_CLI "$data_file" -f "$example_file" -o csv 2>&1 | grep -E "Error|Failed" | head -3
+                fi
             else
-                echo -e "${RED}✗ FAILED${NC}"
-                ((failed++))
-                echo "  Error details:"
-                $SQL_CLI "$GROUP_BY_DATA" -f "$EXAMPLES_DIR/$example" -o csv 2>&1 | grep -E "Error|Failed" | head -3
-            fi
-        # Special handling for window function examples
-        elif [[ "$example" = "window_functions.sql" || "$example" = "window_functions_filtering.sql" ]] && [ -n "$WINDOW_DATA" ]; then
-            if $SQL_CLI "$WINDOW_DATA" -f "$EXAMPLES_DIR/$example" -o csv > /dev/null 2>&1; then
-                echo -e "${GREEN}✓ PASSED${NC}"
-                ((passed++))
-            else
-                echo -e "${RED}✗ FAILED${NC}"
-                ((failed++))
-                echo "  Error details:"
-                $SQL_CLI "$WINDOW_DATA" -f "$EXAMPLES_DIR/$example" -o csv 2>&1 | grep -E "Error|Failed" | head -3
+                echo -e "${YELLOW}⊘ SKIPPED${NC} (data file $data_file not found)"
+                ((skipped++))
             fi
         else
-            # Run the example normally
-            if $SQL_CLI -f "$EXAMPLES_DIR/$example" -o csv > /dev/null 2>&1; then
+            # Example runs standalone
+            if $SQL_CLI -f "$example_file" -o csv > /dev/null 2>&1; then
                 echo -e "${GREEN}✓ PASSED${NC}"
                 ((passed++))
             else
@@ -74,20 +72,22 @@ for example in "${examples[@]}"; do
                 ((failed++))
                 # Show the error
                 echo "  Error details:"
-                $SQL_CLI -f "$EXAMPLES_DIR/$example" -o csv 2>&1 | grep -E "Error|Failed" | head -3
+                $SQL_CLI -f "$example_file" -o csv 2>&1 | grep -E "Error|Failed" | head -3
             fi
         fi
-    else
-        echo -e "${RED}✗ File not found: $EXAMPLES_DIR/$example${NC}"
-        ((failed++))
     fi
 done
 
 echo "================================"
-echo "Results: $passed passed, $failed failed"
+echo -e "Results: ${GREEN}$passed passed${NC}, ${RED}$failed failed${NC}, ${YELLOW}$skipped skipped${NC}"
 
 if [ $failed -eq 0 ]; then
-    echo -e "${GREEN}All examples working correctly!${NC}"
+    if [ $skipped -gt 0 ]; then
+        echo -e "${GREEN}All testable examples working correctly!${NC}"
+        echo -e "${YELLOW}Note: $skipped examples were skipped (future features or missing data)${NC}"
+    else
+        echo -e "${GREEN}All examples working correctly!${NC}"
+    fi
     exit 0
 else
     echo -e "${RED}Some examples failed. Please review.${NC}"
