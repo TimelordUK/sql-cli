@@ -680,6 +680,12 @@ impl<'a> ArithmeticEvaluator<'a> {
                             }
                             col.clone()
                         }
+                        SqlExpression::StringLiteral(s) if s == "*" => {
+                            // COUNT(*) as StringLiteral (how parser sends it)
+                            return Ok(context
+                                .get_partition_count(row_index, None)
+                                .unwrap_or(DataValue::Null));
+                        }
                         _ => return Err(anyhow!("COUNT argument must be a column or *")),
                     };
 
