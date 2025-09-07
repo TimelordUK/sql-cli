@@ -529,6 +529,18 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             );
         }
 
+        // Handle logical operators (AND, OR) specially
+        if op.to_uppercase() == "OR" || op.to_uppercase() == "AND" {
+            let left_result = self.evaluate_expression(left, row_index)?;
+            let right_result = self.evaluate_expression(right, row_index)?;
+
+            return Ok(match op.to_uppercase().as_str() {
+                "OR" => left_result || right_result,
+                "AND" => left_result && right_result,
+                _ => unreachable!(),
+            });
+        }
+
         // For nested binary operations (like value % 3), evaluate the left side as an expression
         if matches!(left, SqlExpression::BinaryOp { .. }) {
             // Use ArithmeticEvaluator to evaluate the complex expression
