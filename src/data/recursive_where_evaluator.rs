@@ -227,12 +227,12 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             _ => false,
         }
     }
-    
+
     /// Compare two DataValue instances using the given operator
     fn compare_data_values(&self, left: &DataValue, op: &str, right: &DataValue) -> Result<bool> {
         use crate::data::datavalue_compare::compare_datavalues;
         use std::cmp::Ordering;
-        
+
         let ordering = compare_datavalues(left, right);
         Ok(match op {
             "=" => ordering == Ordering::Equal,
@@ -520,7 +520,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         row_index: usize,
     ) -> Result<bool> {
         use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
-        
+
         // Only log first few rows to avoid performance impact
         if row_index < 3 {
             debug!(
@@ -532,9 +532,10 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         // For nested binary operations (like value % 3), evaluate the left side as an expression
         if matches!(left, SqlExpression::BinaryOp { .. }) {
             // Use ArithmeticEvaluator to evaluate the complex expression
-            let mut evaluator = ArithmeticEvaluator::with_date_notation(self.table, self.date_notation.clone());
+            let mut evaluator =
+                ArithmeticEvaluator::with_date_notation(self.table, self.date_notation.clone());
             let left_result = evaluator.evaluate(left, row_index)?;
-            
+
             // Convert right ExprValue to DataValue
             let right_expr_value = self.extract_value(right)?;
             let right_data_value = match right_expr_value {
@@ -548,10 +549,12 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     }
                 }
                 ExprValue::Boolean(b) => DataValue::Boolean(b),
-                ExprValue::DateTime(_) => return Err(anyhow!("DateTime comparison not supported in this context")),
+                ExprValue::DateTime(_) => {
+                    return Err(anyhow!("DateTime comparison not supported in this context"))
+                }
                 ExprValue::Null => DataValue::Null,
             };
-            
+
             return self.compare_data_values(&left_result, op, &right_data_value);
         }
 

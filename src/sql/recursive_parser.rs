@@ -543,8 +543,8 @@ pub enum SelectItem {
 
 #[derive(Debug, Clone)]
 pub struct SelectStatement {
-    pub distinct: bool,                              // SELECT DISTINCT flag
-    pub columns: Vec<String>, // Keep for backward compatibility, will be deprecated
+    pub distinct: bool,                // SELECT DISTINCT flag
+    pub columns: Vec<String>,          // Keep for backward compatibility, will be deprecated
     pub select_items: Vec<SelectItem>, // New field for computed expressions
     pub from_table: Option<String>,
     pub from_subquery: Option<Box<SelectStatement>>, // Subquery in FROM clause
