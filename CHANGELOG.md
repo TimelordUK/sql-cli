@@ -5,6 +5,53 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.40.0] - 2025-09-07
+
+### 🚀 Common Table Expressions (CTEs) Support
+
+This release introduces full CTE (WITH clause) support, enabling powerful multi-stage queries and solving the "can't use alias in WHERE" limitation. CTEs can reference previous CTEs in the chain, unlocking advanced SQL patterns.
+
+### ✨ New Features
+
+#### **Common Table Expressions**
+- **`WITH` clause** - Define named temporary result sets
+- **CTE chaining** - Each CTE can reference ALL previous CTEs
+- **Column aliasing** - Optional column list syntax `WITH cte_name (col1, col2) AS ...`
+- **Window functions in CTEs** - Enables "top N per group" patterns
+- **Materialized execution** - CTEs are evaluated once and cached
+
+#### **NULL Handling Improvements**
+- **NULL literal** - Proper NULL support in SQL expressions
+- **IS NULL / IS NOT NULL** - Standard SQL null checking operators
+- **CASE with NULL** - Correct NULL handling in CASE expressions
+- **Arithmetic with NULL** - Operations with NULL correctly return NULL
+
+#### **Function Registry Updates**
+- **CONVERT()** - Moved from special handling to proper function registry
+- **Physics constants** - Fixed function names (K, AVOGADRO, etc.)
+
+### 📚 Examples
+```sql
+-- CTEs with chaining - each references the previous
+WITH 
+    filtered AS (SELECT * FROM data WHERE value > 100),
+    aggregated AS (SELECT category, AVG(value) as avg_val FROM filtered GROUP BY category),
+    top_categories AS (SELECT * FROM aggregated WHERE avg_val > 500)
+SELECT * FROM top_categories ORDER BY avg_val DESC;
+
+-- Top N per group using window functions in CTEs
+WITH ranked AS (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY category ORDER BY sales DESC) as rank
+    FROM products
+)
+SELECT * FROM ranked WHERE rank <= 3;
+```
+
+### 🔧 Improvements
+- **Subquery foundation** - CTE architecture enables future subquery support
+- **Query optimization** - CTEs evaluated once, results cached
+- **Examples** - Added comprehensive CTE cookbook and chaining examples
+
 ## [1.39.0] - 2025-09-06
 
 ### 🪟 Window Functions, Hash Functions & Geometry Formulas

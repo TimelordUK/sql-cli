@@ -395,6 +395,39 @@ ORDER BY
 LIMIT 100
 ```
 
+#### **Common Table Expressions (CTEs)**
+```sql
+-- CTEs enable powerful multi-stage queries with labeled intermediate results
+WITH 
+    high_value_orders AS (
+        SELECT customer_id, SUM(amount) as total_spent
+        FROM orders 
+        WHERE amount > 100
+        GROUP BY customer_id
+    ),
+    top_customers AS (
+        -- CTEs can reference previous CTEs!
+        SELECT * FROM high_value_orders
+        WHERE total_spent > 1000
+        ORDER BY total_spent DESC
+    )
+SELECT * FROM top_customers
+WHERE total_spent BETWEEN 5000 AND 10000;
+
+-- Window functions in CTEs for "top N per group" patterns
+WITH ranked_products AS (
+    SELECT 
+        category,
+        product_name,
+        sales,
+        ROW_NUMBER() OVER (PARTITION BY category ORDER BY sales DESC) as rank
+    FROM products
+)
+SELECT * FROM ranked_products WHERE rank <= 3;
+```
+
+> 📚 **See `examples/*.sql` for comprehensive CTE patterns including cascading CTEs, time series analysis, and performance tier calculations!**
+
 ### 🧠 **Smart Type Handling**
 - **Automatic Coercion**: String methods work on numbers (`quantity.Contains('5')`)
 - **Flexible Parsing**: Multiple date formats automatically recognized
