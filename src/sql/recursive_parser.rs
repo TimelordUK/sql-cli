@@ -543,6 +543,7 @@ pub enum SelectItem {
 
 #[derive(Debug, Clone)]
 pub struct SelectStatement {
+    pub distinct: bool,                              // SELECT DISTINCT flag
     pub columns: Vec<String>, // Keep for backward compatibility, will be deprecated
     pub select_items: Vec<SelectItem>, // New field for computed expressions
     pub from_table: Option<String>,
@@ -781,6 +782,14 @@ impl Parser {
 
     fn parse_select_statement_inner(&mut self) -> Result<SelectStatement, String> {
         self.consume(Token::Select)?;
+
+        // Check for DISTINCT keyword
+        let distinct = if matches!(self.current_token, Token::Distinct) {
+            self.advance();
+            true
+        } else {
+            false
+        };
 
         // Parse SELECT items (supports computed expressions)
         let select_items = self.parse_select_items()?;
@@ -1043,6 +1052,7 @@ impl Parser {
         };
 
         Ok(SelectStatement {
+            distinct,
             columns,
             select_items,
             from_table,

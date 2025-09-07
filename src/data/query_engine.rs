@@ -413,6 +413,11 @@ impl QueryEngine {
             }
         }
 
+        // Apply DISTINCT if specified
+        if statement.distinct {
+            view = self.apply_distinct(view)?;
+        }
+
         // Apply ORDER BY sorting
         if let Some(order_by_columns) = &statement.order_by {
             if !order_by_columns.is_empty() {
@@ -684,6 +689,40 @@ impl QueryEngine {
         }
 
         Ok(indices)
+    }
+
+    /// Apply DISTINCT to remove duplicate rows
+    fn apply_distinct(&self, view: DataView) -> Result<DataView> {
+        use std::collections::HashSet;
+        use crate::data::datavalue_compare::compare_datavalues;
+        
+        let source = view.source();
+        let visible_cols = view.visible_column_indices();
+        let visible_rows = view.visible_row_indices();
+        
+        // Build a set to track unique rows
+        let mut seen_rows = HashSet::new();
+        let mut unique_row_indices = Vec::new();
+        
+        for &row_idx in visible_rows {
+            // Build a key representing this row's visible column values
+            let mut row_key = Vec::new();
+            for &col_idx in visible_cols {
+                let value = source.get_value(row_idx, col_idx)
+                    .ok_or_else(|| anyhow!("Invalid cell reference"))?;
+                // Convert value to a hashable representation
+                row_key.push(format!("{:?}", value));
+            }
+            
+            // Check if we've seen this row before
+            if seen_rows.insert(row_key) {
+                // First time seeing this row combination
+                unique_row_indices.push(row_idx);
+            }
+        }
+        
+        // Create a new view with only unique rows
+        Ok(view.with_rows(unique_row_indices))
     }
 
     /// Apply multi-column ORDER BY sorting to the view
