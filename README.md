@@ -153,6 +153,23 @@ WHERE SQRT(area) BETWEEN 10 AND 50
 - **Prime Numbers:** `PRIME(n)` - nth prime, `IS_PRIME(n)` - primality test, `PRIME_COUNT(n)` - count primes ≤ n, `NEXT_PRIME(n)`, `PREV_PRIME(n)`
 - **Constants:** `PI()`, `E()` - mathematical constants
 
+
+
+```sql
+-- sql-cli data/numbers_1_to_100.csv -f find_primes_1_to_100.sql -o table
+with is_prime as 
+  (
+    select 
+      n as n,
+      is_prime(n) as n_prime 
+    from numbers
+  ) 
+  select n,n_prime 
+    from is_prime 
+    where n_prime = true;
+  go
+```
+
 ```sql
 -- Prime number operations
 SELECT PRIME(100);  -- 100th prime = 541
