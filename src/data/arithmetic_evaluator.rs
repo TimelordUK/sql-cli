@@ -110,6 +110,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             SqlExpression::StringLiteral(s) => Ok(DataValue::String(s.clone())),
             SqlExpression::BooleanLiteral(b) => Ok(DataValue::Boolean(*b)),
             SqlExpression::NumberLiteral(n) => self.evaluate_number_literal(n),
+            SqlExpression::Null => Ok(DataValue::Null),
             SqlExpression::BinaryOp { left, op, right } => {
                 self.evaluate_binary_op(left, op, right, row_index)
             }
@@ -217,6 +218,9 @@ impl<'a> ArithmeticEvaluator<'a> {
             "<=" => self.compare_values(&left_val, &right_val, |a, b| a <= b),
             "=" => self.compare_values(&left_val, &right_val, |a, b| a == b),
             "!=" | "<>" => self.compare_values(&left_val, &right_val, |a, b| a != b),
+            // IS NULL / IS NOT NULL operators
+            "IS NULL" => Ok(DataValue::Boolean(matches!(left_val, DataValue::Null))),
+            "IS NOT NULL" => Ok(DataValue::Boolean(!matches!(left_val, DataValue::Null))),
             _ => Err(anyhow!("Unsupported arithmetic operator: {}", op)),
         }
     }

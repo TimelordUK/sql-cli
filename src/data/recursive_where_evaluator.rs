@@ -970,11 +970,17 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                 Ok(regex.is_match(text.as_ref()))
             }
 
-            // IS NULL / IS NOT NULL
+            // IS NULL / IS NOT NULL (old style)
             (None | Some(DataValue::Null), "IS", ExprValue::Null) => Ok(true),
             (Some(_), "IS", ExprValue::Null) => Ok(false),
             (None | Some(DataValue::Null), "IS NOT", ExprValue::Null) => Ok(false),
             (Some(_), "IS NOT", ExprValue::Null) => Ok(true),
+
+            // IS NULL / IS NOT NULL (new style with combined operator)
+            (None | Some(DataValue::Null), "IS NULL", _) => Ok(true),
+            (Some(_), "IS NULL", _) => Ok(false),
+            (None | Some(DataValue::Null), "IS NOT NULL", _) => Ok(false),
+            (Some(_), "IS NOT NULL", _) => Ok(true),
 
             // DateTime comparisons
             (Some(DataValue::String(ref date_str)), op_str, ExprValue::DateTime(dt)) => {

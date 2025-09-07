@@ -280,8 +280,13 @@ class TestAdvancedSqlQueries:
             assert row['floor_val'] == math.floor(val)
             # CEIL should round up
             assert row['ceil_val'] == math.ceil(val)
-            # ROUND should round to nearest
-            assert row['round_val'] == round(val)
+            # SQL ROUND uses round-half-away-from-zero (not Python's banker's rounding)
+            # For positive numbers, this means 0.5 rounds up
+            if val >= 0:
+                expected_round = math.floor(val + 0.5)
+            else:
+                expected_round = math.ceil(val - 0.5)
+            assert row['round_val'] == expected_round
     
     def test_aggregate_like_calculations(self):
         """Test complex calculations that simulate aggregates"""

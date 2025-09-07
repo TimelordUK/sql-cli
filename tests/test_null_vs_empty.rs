@@ -1,5 +1,7 @@
 use sql_cli::data::csv_datasource::CsvDataSource;
 use sql_cli::data::datatable::DataValue;
+use std::env;
+use std::path::PathBuf;
 
 #[test]
 fn test_null_vs_empty_string() {
@@ -11,9 +13,13 @@ fn test_null_vs_empty_string() {
 4,"",200,quoted_empty_name
 5,Charlie,,"double_null""#;
 
+    // Use cross-platform temp directory
+    let mut temp_path = env::temp_dir();
+    temp_path.push("test_null_empty.csv");
+    let temp_file = temp_path.to_str().unwrap();
+
     // Write to temp file
-    let temp_file = "/tmp/test_null_empty.csv";
-    std::fs::write(temp_file, csv_content).unwrap();
+    std::fs::write(&temp_path, csv_content).unwrap();
 
     // Load the CSV
     let datasource = CsvDataSource::load_from_file(temp_file, "test").unwrap();
@@ -66,5 +72,5 @@ fn test_null_vs_empty_string() {
     );
 
     // Clean up
-    std::fs::remove_file(temp_file).ok();
+    std::fs::remove_file(&temp_path).ok();
 }

@@ -422,6 +422,7 @@ pub enum SqlExpression {
     StringLiteral(String),
     NumberLiteral(String),
     BooleanLiteral(bool),
+    Null, // NULL literal
     DateTimeConstructor {
         year: i32,
         month: u32,
@@ -837,7 +838,7 @@ impl Parser {
                 self.advance();
             } else {
                 // Parse expression or column
-                let expr = self.parse_additive()?; // Use additive to support arithmetic
+                let expr = self.parse_comparison()?; // Use comparison to support IS NULL and other comparisons
 
                 // Check for AS alias
                 let alias = if matches!(self.current_token, Token::As) {
@@ -1109,8 +1110,34 @@ impl Parser {
             return Err("Expected IN after NOT".to_string());
         }
 
+        // Handle IS NULL / IS NOT NULL
+        if matches!(self.current_token, Token::Is) {
+            self.advance(); // consume IS
+            if matches!(self.current_token, Token::Not) {
+                self.advance(); // consume NOT
+                if matches!(self.current_token, Token::Null) {
+                    self.advance(); // consume NULL
+                    left = SqlExpression::BinaryOp {
+                        left: Box::new(left),
+                        op: "IS NOT NULL".to_string(),
+                        right: Box::new(SqlExpression::Null),
+                    };
+                } else {
+                    return Err("Expected NULL after IS NOT".to_string());
+                }
+            } else if matches!(self.current_token, Token::Null) {
+                self.advance(); // consume NULL
+                left = SqlExpression::BinaryOp {
+                    left: Box::new(left),
+                    op: "IS NULL".to_string(),
+                    right: Box::new(SqlExpression::Null),
+                };
+            } else {
+                return Err("Expected NULL or NOT after IS".to_string());
+            }
+        }
         // Handle comparison operators
-        if let Some(op) = self.get_binary_op() {
+        else if let Some(op) = self.get_binary_op() {
             self.advance();
             let right = self.parse_additive()?;
             left = SqlExpression::BinaryOp {
@@ -1466,6 +1493,10 @@ impl Parser {
                 self.advance();
                 Ok(expr)
             }
+            Token::Null => {
+                self.advance();
+                Ok(SqlExpression::Null)
+            }
             Token::LeftParen => {
                 self.advance();
 
@@ -1799,6 +1830,7 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
         SqlExpression::StringLiteral(value) => format!("StringLiteral(\"{value}\")"),
         SqlExpression::NumberLiteral(value) => format!("NumberLiteral({value})"),
         SqlExpression::BooleanLiteral(value) => format!("BooleanLiteral({value})"),
+        SqlExpression::Null => "Null".to_string(),
         SqlExpression::DateTimeConstructor {
             year,
             month,
@@ -2409,6 +2441,7 @@ fn format_expression(expr: &SqlExpression) -> String {
         SqlExpression::StringLiteral(s) => format!("'{s}'"),
         SqlExpression::NumberLiteral(n) => n.clone(),
         SqlExpression::BooleanLiteral(b) => b.to_string(),
+        SqlExpression::Null => "NULL".to_string(),
         SqlExpression::DateTimeConstructor {
             year,
             month,
