@@ -57,6 +57,7 @@ pub enum Token {
     Plus,
     Minus,
     Divide,
+    Modulo,
 
     // Special
     Eof,
@@ -239,6 +240,10 @@ impl Lexer {
                 }
                 self.advance();
                 Token::Divide
+            }
+            Some('%') => {
+                self.advance();
+                Token::Modulo
             }
             Some('.') => {
                 self.advance();
@@ -1489,10 +1494,14 @@ impl Parser {
             }
         }
 
-        while matches!(self.current_token, Token::Star | Token::Divide) {
+        while matches!(
+            self.current_token,
+            Token::Star | Token::Divide | Token::Modulo
+        ) {
             let op = match self.current_token {
                 Token::Star => "*",
                 Token::Divide => "/",
+                Token::Modulo => "%",
                 _ => unreachable!(),
             };
             self.advance();
@@ -1897,6 +1906,7 @@ impl Parser {
             Token::Minus => Some("-".to_string()),
             Token::Star => Some("*".to_string()), // Multiplication (context-sensitive)
             Token::Divide => Some("/".to_string()),
+            Token::Modulo => Some("%".to_string()),
             _ => None,
         }
     }

@@ -216,6 +216,7 @@ impl TextNavigator {
             Token::Plus => "+",
             Token::Minus => "-",
             Token::Divide => "/",
+            Token::Modulo => "%",
             Token::Eof => "EOF",
         }
     }

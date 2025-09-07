@@ -211,6 +211,11 @@ impl<'a> ArithmeticEvaluator<'a> {
             "-" => self.subtract_values(&left_val, &right_val),
             "*" => self.multiply_values(&left_val, &right_val),
             "/" => self.divide_values(&left_val, &right_val),
+            "%" => {
+                // Modulo operator - call MOD function
+                let args = vec![left.clone(), right.clone()];
+                self.evaluate_function("MOD", &args, row_index)
+            }
             // Comparison operators (return boolean results)
             ">" => self.compare_values(&left_val, &right_val, |a, b| a > b),
             "<" => self.compare_values(&left_val, &right_val, |a, b| a < b),

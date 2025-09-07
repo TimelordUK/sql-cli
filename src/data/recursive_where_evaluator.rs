@@ -227,6 +227,23 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             _ => false,
         }
     }
+    
+    /// Compare two DataValue instances using the given operator
+    fn compare_data_values(&self, left: &DataValue, op: &str, right: &DataValue) -> Result<bool> {
+        use crate::data::datavalue_compare::compare_datavalues;
+        use std::cmp::Ordering;
+        
+        let ordering = compare_datavalues(left, right);
+        Ok(match op {
+            "=" => ordering == Ordering::Equal,
+            "!=" | "<>" => ordering != Ordering::Equal,
+            ">" => ordering == Ordering::Greater,
+            ">=" => ordering != Ordering::Less,
+            "<" => ordering == Ordering::Less,
+            "<=" => ordering != Ordering::Greater,
+            _ => return Err(anyhow!("Unsupported operator: {}", op)),
+        })
+    }
 
     /// Evaluate the `Length()` method on a column value
     fn evaluate_length(
@@ -502,12 +519,40 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         right: &SqlExpression,
         row_index: usize,
     ) -> Result<bool> {
+        use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
+        
         // Only log first few rows to avoid performance impact
         if row_index < 3 {
             debug!(
                 "RecursiveWhereEvaluator: evaluate_binary_op() ENTRY - row {}, op = '{}'",
                 row_index, op
             );
+        }
+
+        // For nested binary operations (like value % 3), evaluate the left side as an expression
+        if matches!(left, SqlExpression::BinaryOp { .. }) {
+            // Use ArithmeticEvaluator to evaluate the complex expression
+            let mut evaluator = ArithmeticEvaluator::with_date_notation(self.table, self.date_notation.clone());
+            let left_result = evaluator.evaluate(left, row_index)?;
+            
+            // Convert right ExprValue to DataValue
+            let right_expr_value = self.extract_value(right)?;
+            let right_data_value = match right_expr_value {
+                ExprValue::String(s) => DataValue::String(s),
+                ExprValue::Number(n) => {
+                    // Check if it's an integer or float
+                    if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
+                        DataValue::Integer(n as i64)
+                    } else {
+                        DataValue::Float(n)
+                    }
+                }
+                ExprValue::Boolean(b) => DataValue::Boolean(b),
+                ExprValue::DateTime(_) => return Err(anyhow!("DateTime comparison not supported in this context")),
+                ExprValue::Null => DataValue::Null,
+            };
+            
+            return self.compare_data_values(&left_result, op, &right_data_value);
         }
 
         // Handle left side - could be a column or a method call
