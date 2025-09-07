@@ -648,11 +648,13 @@ impl QueryEngine {
         let mut sort_columns = Vec::new();
 
         for order_col in order_by_columns {
-            // Get column index
+            // Try to find the column index
+            // First check in the current view's source (this handles both regular columns and computed columns)
             let col_index = view
                 .source()
                 .get_column_index(&order_col.column)
                 .ok_or_else(|| {
+                    // If not found, provide helpful error with suggestions
                     let suggestion = self.find_similar_column(view.source(), &order_col.column);
                     match suggestion {
                         Some(similar) => anyhow::anyhow!(
@@ -660,7 +662,15 @@ impl QueryEngine {
                             order_col.column,
                             similar
                         ),
-                        None => anyhow::anyhow!("Column '{}' not found", order_col.column),
+                        None => {
+                            // Also list available columns for debugging
+                            let available_cols = view.source().column_names().join(", ");
+                            anyhow::anyhow!(
+                                "Column '{}' not found. Available columns: {}",
+                                order_col.column,
+                                available_cols
+                            )
+                        }
                     }
                 })?;
 

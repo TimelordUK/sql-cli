@@ -112,7 +112,7 @@ FROM temperature_zones
 WHERE temp_zone = 'Habitable zone';
 GO
 
--- Example 6: Giant planets comparison
+-- Example 6: Giant planets comparison with ORDER BY
 WITH giants AS (
     SELECT 
         name,
@@ -130,7 +130,8 @@ SELECT
     ROUND(mass_earths, 0) AS mass_ratio,
     ROUND(gravity_earths, 2) AS gravity_ratio
 FROM giants
-WHERE mass_earths > 50;  -- Filter for the largest planets
+WHERE mass_earths > 50  -- Filter for the largest planets
+ORDER BY mass_ratio DESC;  -- ORDER BY uses the SELECT alias!
 GO
 
 -- ============================================================================
@@ -140,4 +141,10 @@ GO
 -- 3. Use CASE expressions with computed values
 -- 4. Clean, readable queries without repeated function calls
 -- 5. Better performance - functions evaluated once per row, not multiple times
+--
+-- Current Limitations:
+-- - ORDER BY must use the SELECT alias, not the CTE column name
+--   Wrong: SELECT ROUND(gravity_ms2, 2) AS gravity ... ORDER BY gravity_ms2
+--   Right: SELECT ROUND(gravity_ms2, 2) AS gravity ... ORDER BY gravity
+--   Or:    SELECT gravity_ms2 ... ORDER BY gravity_ms2
 -- ============================================================================
