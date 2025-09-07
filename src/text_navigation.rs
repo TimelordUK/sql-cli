@@ -171,6 +171,7 @@ impl TextNavigator {
             Token::Select => "SELECT",
             Token::From => "FROM",
             Token::Where => "WHERE",
+            Token::With => "WITH",
             Token::GroupBy => "GROUP BY",
             Token::OrderBy => "ORDER BY",
             Token::Having => "HAVING",

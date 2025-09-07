@@ -6,6 +6,7 @@ pub enum Token {
     Select,
     From,
     Where,
+    With, // WITH clause for CTEs
     And,
     Or,
     In,
@@ -321,6 +322,7 @@ impl Lexer {
                     "SELECT" => Token::Select,
                     "FROM" => Token::From,
                     "WHERE" => Token::Where,
+                    "WITH" => Token::With,
                     "AND" => Token::And,
                     "OR" => Token::Or,
                     "IN" => Token::In,
@@ -539,12 +541,34 @@ pub struct SelectStatement {
     pub columns: Vec<String>, // Keep for backward compatibility, will be deprecated
     pub select_items: Vec<SelectItem>, // New field for computed expressions
     pub from_table: Option<String>,
+    pub from_subquery: Option<Box<SelectStatement>>, // Subquery in FROM clause
+    pub from_alias: Option<String>,                  // Alias for subquery (AS name)
     pub where_clause: Option<WhereClause>,
     pub order_by: Option<Vec<OrderByColumn>>,
     pub group_by: Option<Vec<String>>,
     pub having: Option<SqlExpression>, // HAVING clause for post-aggregation filtering
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    pub ctes: Vec<CTE>, // Common Table Expressions (WITH clause)
+}
+
+/// Common Table Expression (CTE) structure
+#[derive(Debug, Clone)]
+pub struct CTE {
+    pub name: String,
+    pub column_list: Option<Vec<String>>, // Optional column list: WITH t(col1, col2) AS ...
+    pub query: SelectStatement,
+}
+
+/// Table source - either a file/table name or a derived table (subquery/CTE)
+#[derive(Debug, Clone)]
+pub enum TableSource {
+    Table(String), // Regular table from CSV/JSON
+    DerivedTable {
+        // Both CTE and subquery
+        query: Box<SelectStatement>,
+        alias: String, // Required alias for subqueries
+    },
 }
 
 #[derive(Default)]
@@ -656,10 +680,90 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Result<SelectStatement, String> {
-        self.parse_select_statement()
+        // Check for WITH clause at the beginning
+        if matches!(self.current_token, Token::With) {
+            self.parse_with_clause()
+        } else {
+            self.parse_select_statement()
+        }
+    }
+
+    fn parse_with_clause(&mut self) -> Result<SelectStatement, String> {
+        self.consume(Token::With)?;
+
+        let mut ctes = Vec::new();
+
+        // Parse CTEs
+        loop {
+            // Parse CTE name
+            let name = match &self.current_token {
+                Token::Identifier(name) => name.clone(),
+                _ => return Err("Expected CTE name after WITH".to_string()),
+            };
+            self.advance();
+
+            // Optional column list: WITH t(col1, col2) AS ...
+            let column_list = if matches!(self.current_token, Token::LeftParen) {
+                self.advance();
+                let cols = self.parse_identifier_list()?;
+                self.consume(Token::RightParen)?;
+                Some(cols)
+            } else {
+                None
+            };
+
+            // Expect AS
+            self.consume(Token::As)?;
+
+            // Expect opening parenthesis
+            self.consume(Token::LeftParen)?;
+
+            // Parse the CTE query (inner version that doesn't check parentheses)
+            let query = self.parse_select_statement_inner()?;
+
+            // Expect closing parenthesis
+            self.consume(Token::RightParen)?;
+
+            ctes.push(CTE {
+                name,
+                column_list,
+                query,
+            });
+
+            // Check for more CTEs
+            if !matches!(self.current_token, Token::Comma) {
+                break;
+            }
+            self.advance();
+        }
+
+        // Parse the main SELECT statement (with parenthesis checking)
+        let mut main_query = self.parse_select_statement()?;
+        main_query.ctes = ctes;
+
+        Ok(main_query)
     }
 
     fn parse_select_statement(&mut self) -> Result<SelectStatement, String> {
+        let result = self.parse_select_statement_inner()?;
+
+        // Check for balanced parentheses at the end of parsing
+        if self.paren_depth > 0 {
+            return Err(format!(
+                "Unclosed parenthesis - missing {} closing parenthes{}",
+                self.paren_depth,
+                if self.paren_depth == 1 { "is" } else { "es" }
+            ));
+        } else if self.paren_depth < 0 {
+            return Err(
+                "Extra closing parenthesis found - no matching opening parenthesis".to_string(),
+            );
+        }
+
+        Ok(result)
+    }
+
+    fn parse_select_statement_inner(&mut self) -> Result<SelectStatement, String> {
         self.consume(Token::Select)?;
 
         // Parse SELECT items (supports computed expressions)
@@ -675,24 +779,108 @@ impl Parser {
             })
             .collect();
 
-        let from_table = if matches!(self.current_token, Token::From) {
+        // Parse FROM clause - can be a table name or a subquery
+        let (from_table, from_subquery, from_alias) = if matches!(self.current_token, Token::From) {
             self.advance();
-            match &self.current_token {
-                Token::Identifier(table) => {
-                    let table_name = table.clone();
+
+            // Check for subquery: FROM (SELECT ...)
+            if matches!(self.current_token, Token::LeftParen) {
+                self.advance();
+
+                // Parse the subquery (inner version that doesn't check parentheses)
+                let subquery = self.parse_select_statement_inner()?;
+
+                self.consume(Token::RightParen)?;
+
+                // Subqueries must have an alias
+                let alias = if matches!(self.current_token, Token::As) {
                     self.advance();
-                    Some(table_name)
+                    match &self.current_token {
+                        Token::Identifier(name) => {
+                            let alias = name.clone();
+                            self.advance();
+                            alias
+                        }
+                        _ => return Err("Expected alias name after AS".to_string()),
+                    }
+                } else {
+                    // AS is optional, but alias is required
+                    match &self.current_token {
+                        Token::Identifier(name) => {
+                            let alias = name.clone();
+                            self.advance();
+                            alias
+                        }
+                        _ => {
+                            return Err(
+                                "Subquery in FROM must have an alias (e.g., AS t)".to_string()
+                            )
+                        }
+                    }
+                };
+
+                (None, Some(Box::new(subquery)), Some(alias))
+            } else {
+                // Regular table name
+                match &self.current_token {
+                    Token::Identifier(table) => {
+                        let table_name = table.clone();
+                        self.advance();
+
+                        // Check for optional alias
+                        let alias = if matches!(self.current_token, Token::As) {
+                            self.advance();
+                            match &self.current_token {
+                                Token::Identifier(name) => {
+                                    let alias = name.clone();
+                                    self.advance();
+                                    Some(alias)
+                                }
+                                _ => return Err("Expected alias name after AS".to_string()),
+                            }
+                        } else if let Token::Identifier(name) = &self.current_token {
+                            // AS is optional for table aliases
+                            let alias = name.clone();
+                            self.advance();
+                            Some(alias)
+                        } else {
+                            None
+                        };
+
+                        (Some(table_name), None, alias)
+                    }
+                    Token::QuotedIdentifier(table) => {
+                        // Handle quoted table names
+                        let table_name = table.clone();
+                        self.advance();
+
+                        // Check for optional alias
+                        let alias = if matches!(self.current_token, Token::As) {
+                            self.advance();
+                            match &self.current_token {
+                                Token::Identifier(name) => {
+                                    let alias = name.clone();
+                                    self.advance();
+                                    Some(alias)
+                                }
+                                _ => return Err("Expected alias name after AS".to_string()),
+                            }
+                        } else if let Token::Identifier(name) = &self.current_token {
+                            // AS is optional for table aliases
+                            let alias = name.clone();
+                            self.advance();
+                            Some(alias)
+                        } else {
+                            None
+                        };
+
+                        (Some(table_name), None, alias)
+                    }
+                    _ => return Err("Expected table name or subquery after FROM".to_string()),
                 }
-                Token::QuotedIdentifier(table) => {
-                    // Handle quoted table names
-                    let table_name = table.clone();
-                    self.advance();
-                    Some(table_name)
-                }
-                _ => return Err("Expected table name after FROM".to_string()),
             }
         } else {
-            None
+            (None, None, None)
         };
 
         let where_clause = if matches!(self.current_token, Token::Where) {
@@ -761,29 +949,19 @@ impl Parser {
             None
         };
 
-        // Check for balanced parentheses at the end of parsing
-        if self.paren_depth > 0 {
-            return Err(format!(
-                "Unclosed parenthesis - missing {} closing parenthes{}",
-                self.paren_depth,
-                if self.paren_depth == 1 { "is" } else { "es" }
-            ));
-        } else if self.paren_depth < 0 {
-            return Err(
-                "Extra closing parenthesis found - no matching opening parenthesis".to_string(),
-            );
-        }
-
         Ok(SelectStatement {
             columns,
             select_items,
             from_table,
+            from_subquery,
+            from_alias,
             where_clause,
             order_by,
             group_by,
             having,
             limit,
             offset,
+            ctes: Vec::new(), // Will be populated by WITH clause parser
         })
     }
 

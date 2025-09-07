@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
@@ -10,7 +11,7 @@ use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use crate::sql::aggregates::contains_aggregate;
 use crate::sql::recursive_parser::{
-    OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression,
+    OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression, CTE,
 };
 
 /// Query engine that executes SQL directly on `DataTable`
@@ -144,7 +145,9 @@ impl QueryEngine {
 
         // Convert SelectStatement to DataView operations
         let build_start = Instant::now();
-        let result = self.build_view(table, statement)?;
+        // Create an empty context for CTEs
+        let mut cte_context = HashMap::new();
+        let result = self.build_view_with_context(table, statement, &mut cte_context)?;
         let build_duration = build_start.elapsed();
 
         let total_duration = start_time.elapsed();
@@ -161,6 +164,105 @@ impl QueryEngine {
 
     /// Build a `DataView` from a parsed SQL statement
     fn build_view(&self, table: Arc<DataTable>, statement: SelectStatement) -> Result<DataView> {
+        let mut cte_context = HashMap::new();
+        self.build_view_with_context(table, statement, &mut cte_context)
+    }
+
+    /// Build a DataView from a SelectStatement with CTE context
+    fn build_view_with_context(
+        &self,
+        table: Arc<DataTable>,
+        statement: SelectStatement,
+        cte_context: &mut HashMap<String, Arc<DataView>>,
+    ) -> Result<DataView> {
+        // First, process any CTEs
+        for cte in &statement.ctes {
+            debug!("QueryEngine: Processing CTE '{}'...", cte.name);
+            // Execute the CTE query (it might reference earlier CTEs)
+            let cte_result =
+                self.build_view_with_context(table.clone(), cte.query.clone(), cte_context)?;
+
+            // Store the result in the context for later use
+            cte_context.insert(cte.name.clone(), Arc::new(cte_result));
+            debug!(
+                "QueryEngine: CTE '{}' processed, stored in context",
+                cte.name
+            );
+        }
+
+        // Determine the source table for the main query
+        let source_table = if let Some(ref subquery) = statement.from_subquery {
+            // Execute the subquery and use its result as the source
+            debug!("QueryEngine: Processing FROM subquery...");
+            let subquery_result =
+                self.build_view_with_context(table.clone(), *subquery.clone(), cte_context)?;
+
+            // Convert the DataView to a DataTable for use as source
+            // This materializes the subquery result
+            let materialized = self.materialize_view(subquery_result)?;
+            Arc::new(materialized)
+        } else if let Some(ref table_name) = statement.from_table {
+            // Check if this references a CTE
+            if let Some(cte_view) = cte_context.get(table_name) {
+                debug!("QueryEngine: Using CTE '{}' as source table", table_name);
+                // Materialize the CTE view as a table
+                let materialized = self.materialize_view((**cte_view).clone())?;
+                Arc::new(materialized)
+            } else {
+                // Regular table reference - use the provided table
+                table.clone()
+            }
+        } else {
+            // No FROM clause - use the provided table
+            table.clone()
+        };
+
+        // Continue with the existing build_view logic but using source_table
+        self.build_view_internal(source_table, statement)
+    }
+
+    /// Materialize a DataView into a new DataTable
+    fn materialize_view(&self, view: DataView) -> Result<DataTable> {
+        let source = view.source();
+        let mut result_table = DataTable::new("derived");
+
+        // Get the visible columns from the view
+        let visible_cols = view.visible_column_indices().to_vec();
+
+        // Copy column definitions
+        for col_idx in &visible_cols {
+            let col = &source.columns[*col_idx];
+            let new_col = DataColumn {
+                name: col.name.clone(),
+                data_type: col.data_type.clone(),
+                nullable: col.nullable,
+                unique_values: col.unique_values,
+                null_count: col.null_count,
+                metadata: col.metadata.clone(),
+            };
+            result_table.add_column(new_col);
+        }
+
+        // Copy visible rows
+        for row_idx in view.visible_row_indices() {
+            let source_row = &source.rows[*row_idx];
+            let mut new_row = DataRow { values: Vec::new() };
+
+            for col_idx in &visible_cols {
+                new_row.values.push(source_row.values[*col_idx].clone());
+            }
+
+            result_table.add_row(new_row);
+        }
+
+        Ok(result_table)
+    }
+
+    fn build_view_internal(
+        &self,
+        table: Arc<DataTable>,
+        statement: SelectStatement,
+    ) -> Result<DataView> {
         debug!(
             "QueryEngine::build_view - select_items: {:?}",
             statement.select_items

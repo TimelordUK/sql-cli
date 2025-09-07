@@ -13,6 +13,7 @@ SELECT
     CONVERT(25, 'celsius', 'kelvin') as room_temp_k,
     CONVERT(98.6, 'fahrenheit', 'celsius') as body_temp_c,
     CONVERT(0, 'kelvin', 'celsius') as absolute_zero_c;
+GO
 
 -- Distance Conversions
 SELECT 
@@ -22,6 +23,7 @@ SELECT
     CONVERT(1, 'mile', 'km') as mile_to_km,
     CONVERT(1, 'yard', 'meters') as yard_to_m,
     CONVERT(1, 'inch', 'cm') as inch_to_cm;
+GO
 
 -- Weight/Mass Conversions
 SELECT 
@@ -31,6 +33,7 @@ SELECT
     CONVERT(1, 'ounce', 'grams') as oz_to_g,
     CONVERT(1, 'ton', 'kg') as ton_to_kg,
     CONVERT(1, 'stone', 'kg') as stone_to_kg;
+GO
 
 -- Volume Conversions
 SELECT 
@@ -40,6 +43,7 @@ SELECT
     CONVERT(1, 'cup', 'ml') as cup_to_ml,
     CONVERT(1, 'tablespoon', 'ml') as tbsp_to_ml,
     CONVERT(1, 'teaspoon', 'ml') as tsp_to_ml;
+GO
 
 -- Area Conversions
 SELECT 
@@ -48,6 +52,7 @@ SELECT
     CONVERT(1, 'hectare', 'acres') as ha_to_acre,
     CONVERT(1, 'sqkm', 'sqmiles') as sqkm_to_sqmi,
     CONVERT(1, 'acre', 'sqm') as acre_to_sqm;
+GO
 
 -- Speed Conversions
 SELECT 
@@ -56,6 +61,7 @@ SELECT
     CONVERT(60, 'mph', 'kph') as highway_kph,
     CONVERT(1, 'mps', 'kph') as meters_per_sec_to_kph,
     CONVERT(1, 'knot', 'mph') as knot_to_mph;
+GO
 
 -- Pressure Conversions
 SELECT 
@@ -64,6 +70,7 @@ SELECT
     CONVERT(14.696, 'psi', 'bar') as atm_to_bar,
     CONVERT(1, 'atm', 'pascal') as atm_to_pa,
     CONVERT(760, 'torr', 'mbar') as torr_to_mbar;
+GO
 
 -- Time Conversions
 SELECT 
@@ -73,6 +80,7 @@ SELECT
     CONVERT(1, 'week', 'days') as week_to_days,
     CONVERT(1, 'year', 'days') as year_to_days,
     CONVERT(1000, 'milliseconds', 'seconds') as ms_to_s;
+GO
 
 -- Energy Conversions
 SELECT 
@@ -81,14 +89,16 @@ SELECT
     CONVERT(1, 'kwh', 'joule') as kwh_to_j,
     CONVERT(1, 'btu', 'joule') as btu_to_j,
     CONVERT(1, 'erg', 'joule') as erg_to_j;
+GO
 
 -- Astronomical Distance Conversions Using Physics Constants
 SELECT 
     '=== ASTRONOMICAL ===' as category,
     CONVERT(AU(), 'meters', 'km') as au_in_km,
-    CONVERT(LIGHTYEAR(), 'meters', 'km') as lightyear_in_km,
+    CONVERT(LIGHT_YEAR(), 'meters', 'km') as lightyear_in_km,
     CONVERT(PARSEC(), 'meters', 'lightyear') as parsec_in_ly,
     CONVERT(DIST_EARTH(), 'meters', 'au') as earth_orbit_au;
+GO
 
 -- Practical Examples: International Travel
 SELECT 
@@ -97,6 +107,7 @@ SELECT
     CONVERT(70, 'mph', 'kph') as speed_limit_kph,
     CONVERT(50, 'pounds', 'kg') as luggage_kg,
     CONVERT(72, 'fahrenheit', 'celsius') as weather_c;
+GO
 
 -- Practical Examples: Cooking
 SELECT 
@@ -105,6 +116,7 @@ SELECT
     CONVERT(2, 'cup', 'ml') as flour_ml,
     CONVERT(3, 'tablespoon', 'ml') as sugar_ml,
     CONVERT(8, 'ounce', 'grams') as butter_g;
+GO
 
 -- Practical Examples: Science Lab
 SELECT 
@@ -113,6 +125,7 @@ SELECT
     CONVERT(300, 'kelvin', 'celsius') as lab_temp_c,
     CONVERT(1500, 'ml', 'liter') as solution_l,
     CONVERT(2.5, 'grams', 'mg') as sample_mg;
+GO
 
 -- Complex Calculations with Mixed Units
 SELECT 
@@ -123,6 +136,7 @@ SELECT
     CONVERT(SQRT(2 * G() * MASS_EARTH() / RADIUS_EARTH()), 'mps', 'kph') as escape_velocity_kph,
     -- Solar radiation at Earth's distance in different units
     CONVERT(1361, 'watt', 'btu') as solar_constant_btu;
+GO
 
 -- Data Storage Conversions
 SELECT 
@@ -131,6 +145,7 @@ SELECT
     CONVERT(1, 'tb', 'gb') as tb_to_gb,
     CONVERT(1024, 'mb', 'gb') as mb_to_gb,
     CONVERT(1, 'gib', 'gb') as gib_to_gb;
+GO
 
 -- Summary of Available Conversion Categories
 SELECT 
@@ -138,3 +153,4 @@ SELECT
     'Supports temperature, distance, weight, volume, area, speed, pressure, time, energy, data' as categories,
     'CONVERT(value, from_unit, to_unit)' as syntax,
     'Case-insensitive units, handles abbreviations and full names' as notes;
+GO
