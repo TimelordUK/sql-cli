@@ -48,7 +48,7 @@ GO
 -- Area Conversions
 SELECT 
     '=== AREA ===' as category,
-    CONVERT(100, 'sqm', 'sqft') as apt_sqft,
+    CONVERT(100, 'sqm', 'sq_ft') as apt_sqft,
     CONVERT(1, 'hectare', 'acres') as ha_to_acre,
     CONVERT(1, 'sqkm', 'sqmiles') as sqkm_to_sqmi,
     CONVERT(1, 'acre', 'sqm') as acre_to_sqm;
@@ -91,13 +91,13 @@ SELECT
     CONVERT(1, 'erg', 'joule') as erg_to_j;
 GO
 
--- Astronomical Distance Conversions Using Physics Constants
+-- Astronomical Distance Conversions
 SELECT 
     '=== ASTRONOMICAL ===' as category,
-    CONVERT(AU(), 'meters', 'km') as au_in_km,
-    CONVERT(LIGHT_YEAR(), 'meters', 'km') as lightyear_in_km,
-    CONVERT(PARSEC(), 'meters', 'lightyear') as parsec_in_ly,
-    CONVERT(DIST_EARTH(), 'meters', 'au') as earth_orbit_au;
+    CONVERT(1, 'au', 'km') as au_in_km,
+    CONVERT(1, 'lightyear', 'km') as lightyear_in_km,
+    CONVERT(1, 'parsec', 'lightyear') as parsec_in_ly,
+    CONVERT(384400, 'km', 'miles') as moon_distance_miles;
 GO
 
 -- Practical Examples: International Travel
@@ -134,18 +134,18 @@ SELECT
     G() * MASS_EARTH() / POWER(CONVERT(RADIUS_EARTH(), 'meters', 'km'), 2) as g_calc,
     -- Convert escape velocity to km/h
     CONVERT(SQRT(2 * G() * MASS_EARTH() / RADIUS_EARTH()), 'mps', 'kph') as escape_velocity_kph,
-    -- Solar radiation at Earth's distance in different units
-    CONVERT(1361, 'watt', 'btu') as solar_constant_btu;
+    -- Energy conversions
+    CONVERT(3600, 'joule', 'kwh') as joules_to_kwh;
 GO
 
 -- Data Storage Conversions
-SELECT 
-    '=== DATA STORAGE ===' as category,
-    CONVERT(1, 'gb', 'mb') as gb_to_mb,
-    CONVERT(1, 'tb', 'gb') as tb_to_gb,
-    CONVERT(1024, 'mb', 'gb') as mb_to_gb,
-    CONVERT(1, 'gib', 'gb') as gib_to_gb;
-GO
+--SELECT 
+--    '=== DATA STORAGE ===' as category,
+--    CONVERT(1, 'gb', 'mb') as gb_to_mb,
+--    CONVERT(1, 'tb', 'gb') as tb_to_gb,
+--    CONVERT(1024, 'mb', 'gb') as mb_to_gb,
+--    CONVERT(1, 'gib', 'gb') as gib_to_gb;
+--GO
 
 -- Summary of Available Conversion Categories
 SELECT 

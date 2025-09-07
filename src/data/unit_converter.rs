@@ -12,6 +12,8 @@ enum UnitCategory {
     Area,
     Speed,
     Pressure,
+    Energy,
+    FuelEfficiency,
 }
 
 /// Unit definition with conversion factor to SI base unit
@@ -170,6 +172,36 @@ impl UnitConverter {
         units.insert(
             "nautical_mile".to_string(),
             Unit::simple(UnitCategory::Length, 1852.0),
+        );
+
+        // Astronomical
+        units.insert(
+            "au".to_string(),
+            Unit::simple(UnitCategory::Length, 1.495978707e11), // astronomical unit in meters
+        );
+        units.insert(
+            "astronomical_unit".to_string(),
+            Unit::simple(UnitCategory::Length, 1.495978707e11),
+        );
+        units.insert(
+            "lightyear".to_string(),
+            Unit::simple(UnitCategory::Length, 9.4607304725808e15), // light-year in meters
+        );
+        units.insert(
+            "light_year".to_string(),
+            Unit::simple(UnitCategory::Length, 9.4607304725808e15),
+        );
+        units.insert(
+            "ly".to_string(),
+            Unit::simple(UnitCategory::Length, 9.4607304725808e15),
+        );
+        units.insert(
+            "parsec".to_string(),
+            Unit::simple(UnitCategory::Length, 3.0857e16), // parsec in meters
+        );
+        units.insert(
+            "pc".to_string(),
+            Unit::simple(UnitCategory::Length, 3.0857e16),
         );
 
         // MASS - Base unit: kilogram (kg)
@@ -510,6 +542,10 @@ impl UnitConverter {
             Unit::simple(UnitCategory::Area, 1000000.0),
         );
         units.insert(
+            "sqkm".to_string(),
+            Unit::simple(UnitCategory::Area, 1000000.0),
+        );
+        units.insert(
             "square_kilometer".to_string(),
             Unit::simple(UnitCategory::Area, 1000000.0),
         );
@@ -521,6 +557,10 @@ impl UnitConverter {
 
         units.insert(
             "sq_ft".to_string(),
+            Unit::simple(UnitCategory::Area, 0.09290304),
+        );
+        units.insert(
+            "sqft".to_string(),
             Unit::simple(UnitCategory::Area, 0.09290304),
         );
         units.insert(
@@ -541,6 +581,10 @@ impl UnitConverter {
         );
         units.insert(
             "sq_mi".to_string(),
+            Unit::simple(UnitCategory::Area, 2589988.110336),
+        );
+        units.insert(
+            "sqmiles".to_string(),
             Unit::simple(UnitCategory::Area, 2589988.110336),
         );
         units.insert(
@@ -720,6 +764,165 @@ impl UnitConverter {
             Unit::simple(UnitCategory::Pressure, 133.322368421),
         );
 
+        // ENERGY - Base unit: Joule (J)
+        units.insert("j".to_string(), Unit::simple(UnitCategory::Energy, 1.0));
+        units.insert("joule".to_string(), Unit::simple(UnitCategory::Energy, 1.0));
+        units.insert(
+            "joules".to_string(),
+            Unit::simple(UnitCategory::Energy, 1.0),
+        );
+
+        units.insert("kj".to_string(), Unit::simple(UnitCategory::Energy, 1000.0));
+        units.insert(
+            "kilojoule".to_string(),
+            Unit::simple(UnitCategory::Energy, 1000.0),
+        );
+        units.insert(
+            "kilojoules".to_string(),
+            Unit::simple(UnitCategory::Energy, 1000.0),
+        );
+
+        units.insert("mj".to_string(), Unit::simple(UnitCategory::Energy, 1e6));
+        units.insert(
+            "megajoule".to_string(),
+            Unit::simple(UnitCategory::Energy, 1e6),
+        );
+
+        units.insert("cal".to_string(), Unit::simple(UnitCategory::Energy, 4.184));
+        units.insert(
+            "calorie".to_string(),
+            Unit::simple(UnitCategory::Energy, 4.184),
+        );
+        units.insert(
+            "calories".to_string(),
+            Unit::simple(UnitCategory::Energy, 4.184),
+        );
+
+        units.insert(
+            "kcal".to_string(),
+            Unit::simple(UnitCategory::Energy, 4184.0),
+        );
+        units.insert(
+            "kilocalorie".to_string(),
+            Unit::simple(UnitCategory::Energy, 4184.0),
+        );
+        units.insert(
+            "kilocalories".to_string(),
+            Unit::simple(UnitCategory::Energy, 4184.0),
+        );
+
+        units.insert("kwh".to_string(), Unit::simple(UnitCategory::Energy, 3.6e6));
+        units.insert(
+            "kilowatt_hour".to_string(),
+            Unit::simple(UnitCategory::Energy, 3.6e6),
+        );
+        units.insert(
+            "kilowatt_hours".to_string(),
+            Unit::simple(UnitCategory::Energy, 3.6e6),
+        );
+
+        units.insert("wh".to_string(), Unit::simple(UnitCategory::Energy, 3600.0));
+        units.insert(
+            "watt_hour".to_string(),
+            Unit::simple(UnitCategory::Energy, 3600.0),
+        );
+
+        units.insert(
+            "btu".to_string(),
+            Unit::simple(UnitCategory::Energy, 1055.056),
+        );
+        units.insert(
+            "british_thermal_unit".to_string(),
+            Unit::simple(UnitCategory::Energy, 1055.056),
+        );
+
+        units.insert(
+            "ev".to_string(),
+            Unit::simple(UnitCategory::Energy, 1.60218e-19),
+        );
+        units.insert(
+            "electron_volt".to_string(),
+            Unit::simple(UnitCategory::Energy, 1.60218e-19),
+        );
+
+        units.insert("erg".to_string(), Unit::simple(UnitCategory::Energy, 1e-7));
+        units.insert("ergs".to_string(), Unit::simple(UnitCategory::Energy, 1e-7));
+
+        // FUEL EFFICIENCY - Base unit: km/L (kilometers per liter)
+        units.insert(
+            "km/l".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 1.0),
+        );
+        units.insert(
+            "kml".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 1.0),
+        );
+
+        // Miles per gallon (US)
+        units.insert(
+            "mpg".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.425144), // 1 mpg = 0.425144 km/L
+        );
+        units.insert(
+            "miles/gallon".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.425144),
+        );
+
+        // Miles per gallon (UK/Imperial)
+        units.insert(
+            "mpg_uk".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.354006), // 1 mpg (UK) = 0.354006 km/L
+        );
+        units.insert(
+            "mpg_imp".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.354006),
+        );
+
+        // Electric vehicle efficiency - km per kWh
+        // Gasoline has ~9.5 kWh/L energy content
+        units.insert(
+            "km/kwh".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.105263), // 1 km/kWh ≈ 0.105 km/L (based on energy content)
+        );
+        units.insert(
+            "kmkwh".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.105263),
+        );
+
+        // Miles per kWh (for US EVs)
+        units.insert(
+            "mi/kwh".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.169349), // 1 mi/kWh ≈ 0.169 km/L
+        );
+        units.insert(
+            "miles/kwh".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.169349),
+        );
+
+        // MPGe - Miles Per Gallon equivalent (EPA rating for EVs)
+        // Based on 33.7 kWh = 1 gallon gasoline equivalent
+        units.insert(
+            "mpge".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.425144), // Same as regular MPG for comparison
+        );
+
+        // Nautical miles per ton (for ships)
+        // Assuming bunker fuel density ~0.95 tons/m³ = 950 kg/m³
+        units.insert(
+            "nmi/ton".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.001948), // 1 nmi/ton ≈ 0.00195 km/L
+        );
+        units.insert(
+            "nautical_miles/ton".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.001948),
+        );
+
+        // Kilometers per ton (for ships and heavy vehicles)
+        units.insert(
+            "km/ton".to_string(),
+            Unit::simple(UnitCategory::FuelEfficiency, 0.001053), // 1 km/ton ≈ 0.00105 km/L
+        );
+
         UnitConverter { units }
     }
 
@@ -771,6 +974,8 @@ impl UnitConverter {
             "area" => Some(UnitCategory::Area),
             "speed" | "velocity" => Some(UnitCategory::Speed),
             "pressure" => Some(UnitCategory::Pressure),
+            "energy" => Some(UnitCategory::Energy),
+            "fuel_efficiency" | "efficiency" => Some(UnitCategory::FuelEfficiency),
             _ => None,
         };
 
