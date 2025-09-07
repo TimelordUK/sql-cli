@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use md5;
 use sha1::Sha1;
 use sha2::{Digest, Sha256, Sha512};

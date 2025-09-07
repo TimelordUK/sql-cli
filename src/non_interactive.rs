@@ -53,21 +53,48 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     let start_time = Instant::now();
 
     // Check if query uses DUAL or has no FROM clause
-    use crate::sql::recursive_parser::Parser;
+    use crate::sql::recursive_parser::{Parser, SelectStatement};
+    
+    fn check_statement_for_range(stmt: &SelectStatement) -> bool {
+        // Check main query
+        if stmt.from_function.is_some() {
+            return true;
+        }
+        
+        // Check if it's DUAL or no FROM
+        if stmt.from_table.as_ref().is_some_and(|t| t.to_uppercase() == "DUAL") {
+            return true;
+        }
+        
+        if stmt.from_table.is_none() && stmt.from_subquery.is_none() && stmt.from_function.is_none() {
+            return true;
+        }
+        
+        // Recursively check CTEs
+        for cte in &stmt.ctes {
+            if check_statement_for_range(&cte.query) {
+                return true;
+            }
+        }
+        
+        // Check subqueries
+        if let Some(ref subquery) = stmt.from_subquery {
+            if check_statement_for_range(subquery) {
+                return true;
+            }
+        }
+        
+        false
+    }
+    
     let mut parser = Parser::new(&config.query);
     let statement = parser
         .parse()
         .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
 
-    let uses_dual = statement
-        .from_table
-        .as_ref()
-        .is_some_and(|t| t.to_uppercase() == "DUAL");
-
-    let no_from_clause = statement.from_table.is_none();
-
     // 1. Load the data file or create DUAL table
-    let (data_table, is_dual) = if uses_dual || no_from_clause || config.data_file.is_empty() {
+    let (data_table, is_dual) = if check_statement_for_range(&statement) || config.data_file.is_empty()
+    {
         info!("Using DUAL table for expression evaluation");
         (crate::data::datatable::DataTable::dual(), true)
     } else {

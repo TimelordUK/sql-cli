@@ -9,9 +9,10 @@ use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
+use crate::data::virtual_table_generator::VirtualTableGenerator;
 use crate::sql::aggregates::contains_aggregate;
 use crate::sql::recursive_parser::{
-    OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression, CTE,
+    OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression, TableFunction,
 };
 
 /// Query engine that executes SQL directly on `DataTable`
@@ -191,7 +192,54 @@ impl QueryEngine {
         }
 
         // Determine the source table for the main query
-        let source_table = if let Some(ref subquery) = statement.from_subquery {
+        let source_table = if let Some(ref table_func) = statement.from_function {
+            // Handle table functions like RANGE()
+            debug!("QueryEngine: Processing table function...");
+            match table_func {
+                TableFunction::Range { start, end, step } => {
+                    // Evaluate expressions to get numeric values
+                    let mut evaluator =
+                        ArithmeticEvaluator::with_date_notation(&table, self.date_notation.clone());
+
+                    // Create a dummy row for evaluating constant expressions
+                    let dummy_row = 0;
+
+                    let start_val = evaluator.evaluate(start, dummy_row)?;
+                    let end_val = evaluator.evaluate(end, dummy_row)?;
+                    let step_val = if let Some(step_expr) = step {
+                        Some(evaluator.evaluate(step_expr, dummy_row)?)
+                    } else {
+                        None
+                    };
+
+                    // Convert DataValues to integers
+                    let start_int = match start_val {
+                        DataValue::Integer(i) => i,
+                        DataValue::Float(f) => f as i64,
+                        _ => return Err(anyhow!("RANGE start must be numeric")),
+                    };
+
+                    let end_int = match end_val {
+                        DataValue::Integer(i) => i,
+                        DataValue::Float(f) => f as i64,
+                        _ => return Err(anyhow!("RANGE end must be numeric")),
+                    };
+
+                    let step_int = if let Some(step) = step_val {
+                        match step {
+                            DataValue::Integer(i) => Some(i),
+                            DataValue::Float(f) => Some(f as i64),
+                            _ => return Err(anyhow!("RANGE step must be numeric")),
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Generate the virtual table
+                    VirtualTableGenerator::generate_range(start_int, end_int, step_int, None)?
+                }
+            }
+        } else if let Some(ref subquery) = statement.from_subquery {
             // Execute the subquery and use its result as the source
             debug!("QueryEngine: Processing FROM subquery...");
             let subquery_result =

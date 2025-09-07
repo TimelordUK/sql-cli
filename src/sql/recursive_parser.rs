@@ -542,6 +542,7 @@ pub struct SelectStatement {
     pub select_items: Vec<SelectItem>, // New field for computed expressions
     pub from_table: Option<String>,
     pub from_subquery: Option<Box<SelectStatement>>, // Subquery in FROM clause
+    pub from_function: Option<TableFunction>,        // Table function like RANGE() in FROM clause
     pub from_alias: Option<String>,                  // Alias for subquery (AS name)
     pub where_clause: Option<WhereClause>,
     pub order_by: Option<Vec<OrderByColumn>>,
@@ -550,6 +551,16 @@ pub struct SelectStatement {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub ctes: Vec<CTE>, // Common Table Expressions (WITH clause)
+}
+
+/// Table function that generates virtual tables
+#[derive(Debug, Clone)]
+pub enum TableFunction {
+    Range {
+        start: SqlExpression,
+        end: SqlExpression,
+        step: Option<SqlExpression>,
+    },
 }
 
 /// Common Table Expression (CTE) structure
@@ -779,109 +790,186 @@ impl Parser {
             })
             .collect();
 
-        // Parse FROM clause - can be a table name or a subquery
-        let (from_table, from_subquery, from_alias) = if matches!(self.current_token, Token::From) {
-            self.advance();
-
-            // Check for subquery: FROM (SELECT ...)
-            if matches!(self.current_token, Token::LeftParen) {
+        // Parse FROM clause - can be a table name, subquery, or table function
+        let (from_table, from_subquery, from_function, from_alias) =
+            if matches!(self.current_token, Token::From) {
                 self.advance();
 
-                // Parse the subquery (inner version that doesn't check parentheses)
-                let subquery = self.parse_select_statement_inner()?;
+                // Check for table function like RANGE()
+                if let Token::Identifier(name) = &self.current_token.clone() {
+                    if name.to_uppercase() == "RANGE" {
+                        self.advance();
+                        // Parse RANGE function
+                        self.consume(Token::LeftParen)?;
 
-                self.consume(Token::RightParen)?;
+                        // Parse start expression
+                        let start = self.parse_expression()?;
+                        self.consume(Token::Comma)?;
 
-                // Subqueries must have an alias
-                let alias = if matches!(self.current_token, Token::As) {
+                        // Parse end expression
+                        let end = self.parse_expression()?;
+
+                        // Parse optional step
+                        let step = if matches!(self.current_token, Token::Comma) {
+                            self.advance();
+                            Some(self.parse_expression()?)
+                        } else {
+                            None
+                        };
+
+                        self.consume(Token::RightParen)?;
+
+                        // Optional alias
+                        let alias = if matches!(self.current_token, Token::As) {
+                            self.advance();
+                            match &self.current_token {
+                                Token::Identifier(name) => {
+                                    let alias = name.clone();
+                                    self.advance();
+                                    Some(alias)
+                                }
+                                _ => return Err("Expected alias name after AS".to_string()),
+                            }
+                        } else if let Token::Identifier(name) = &self.current_token {
+                            let alias = name.clone();
+                            self.advance();
+                            Some(alias)
+                        } else {
+                            None
+                        };
+
+                        (
+                            None,
+                            None,
+                            Some(TableFunction::Range { start, end, step }),
+                            alias,
+                        )
+                    } else {
+                        // Not a RANGE function, so it's a regular table name
+                        let table_name = name.clone();
+                        self.advance();
+
+                        // Check for optional alias
+                        let alias = if matches!(self.current_token, Token::As) {
+                            self.advance();
+                            match &self.current_token {
+                                Token::Identifier(name) => {
+                                    let alias = name.clone();
+                                    self.advance();
+                                    Some(alias)
+                                }
+                                _ => return Err("Expected alias name after AS".to_string()),
+                            }
+                        } else if let Token::Identifier(name) = &self.current_token {
+                            // AS is optional for table aliases
+                            let alias = name.clone();
+                            self.advance();
+                            Some(alias)
+                        } else {
+                            None
+                        };
+
+                        (Some(table_name), None, None, alias)
+                    }
+                } else if matches!(self.current_token, Token::LeftParen) {
+                    // Check for subquery: FROM (SELECT ...)
                     self.advance();
-                    match &self.current_token {
-                        Token::Identifier(name) => {
-                            let alias = name.clone();
-                            self.advance();
-                            alias
+
+                    // Parse the subquery (inner version that doesn't check parentheses)
+                    let subquery = self.parse_select_statement_inner()?;
+
+                    self.consume(Token::RightParen)?;
+
+                    // Subqueries must have an alias
+                    let alias = if matches!(self.current_token, Token::As) {
+                        self.advance();
+                        match &self.current_token {
+                            Token::Identifier(name) => {
+                                let alias = name.clone();
+                                self.advance();
+                                alias
+                            }
+                            _ => return Err("Expected alias name after AS".to_string()),
                         }
-                        _ => return Err("Expected alias name after AS".to_string()),
-                    }
+                    } else {
+                        // AS is optional, but alias is required
+                        match &self.current_token {
+                            Token::Identifier(name) => {
+                                let alias = name.clone();
+                                self.advance();
+                                alias
+                            }
+                            _ => {
+                                return Err(
+                                    "Subquery in FROM must have an alias (e.g., AS t)".to_string()
+                                )
+                            }
+                        }
+                    };
+
+                    (None, Some(Box::new(subquery)), None, Some(alias))
                 } else {
-                    // AS is optional, but alias is required
+                    // Regular table name
                     match &self.current_token {
-                        Token::Identifier(name) => {
-                            let alias = name.clone();
+                        Token::Identifier(table) => {
+                            let table_name = table.clone();
                             self.advance();
-                            alias
-                        }
-                        _ => {
-                            return Err(
-                                "Subquery in FROM must have an alias (e.g., AS t)".to_string()
-                            )
-                        }
-                    }
-                };
 
-                (None, Some(Box::new(subquery)), Some(alias))
-            } else {
-                // Regular table name
-                match &self.current_token {
-                    Token::Identifier(table) => {
-                        let table_name = table.clone();
-                        self.advance();
-
-                        // Check for optional alias
-                        let alias = if matches!(self.current_token, Token::As) {
-                            self.advance();
-                            match &self.current_token {
-                                Token::Identifier(name) => {
-                                    let alias = name.clone();
-                                    self.advance();
-                                    Some(alias)
+                            // Check for optional alias
+                            let alias = if matches!(self.current_token, Token::As) {
+                                self.advance();
+                                match &self.current_token {
+                                    Token::Identifier(name) => {
+                                        let alias = name.clone();
+                                        self.advance();
+                                        Some(alias)
+                                    }
+                                    _ => return Err("Expected alias name after AS".to_string()),
                                 }
-                                _ => return Err("Expected alias name after AS".to_string()),
-                            }
-                        } else if let Token::Identifier(name) = &self.current_token {
-                            // AS is optional for table aliases
-                            let alias = name.clone();
-                            self.advance();
-                            Some(alias)
-                        } else {
-                            None
-                        };
+                            } else if let Token::Identifier(name) = &self.current_token {
+                                // AS is optional for table aliases
+                                let alias = name.clone();
+                                self.advance();
+                                Some(alias)
+                            } else {
+                                None
+                            };
 
-                        (Some(table_name), None, alias)
-                    }
-                    Token::QuotedIdentifier(table) => {
-                        // Handle quoted table names
-                        let table_name = table.clone();
-                        self.advance();
-
-                        // Check for optional alias
-                        let alias = if matches!(self.current_token, Token::As) {
+                            (Some(table_name), None, None, alias)
+                        }
+                        Token::QuotedIdentifier(table) => {
+                            // Handle quoted table names
+                            let table_name = table.clone();
                             self.advance();
-                            match &self.current_token {
-                                Token::Identifier(name) => {
-                                    let alias = name.clone();
-                                    self.advance();
-                                    Some(alias)
+
+                            // Check for optional alias
+                            let alias = if matches!(self.current_token, Token::As) {
+                                self.advance();
+                                match &self.current_token {
+                                    Token::Identifier(name) => {
+                                        let alias = name.clone();
+                                        self.advance();
+                                        Some(alias)
+                                    }
+                                    _ => return Err("Expected alias name after AS".to_string()),
                                 }
-                                _ => return Err("Expected alias name after AS".to_string()),
-                            }
-                        } else if let Token::Identifier(name) = &self.current_token {
-                            // AS is optional for table aliases
-                            let alias = name.clone();
-                            self.advance();
-                            Some(alias)
-                        } else {
-                            None
-                        };
+                            } else if let Token::Identifier(name) = &self.current_token {
+                                // AS is optional for table aliases
+                                let alias = name.clone();
+                                self.advance();
+                                Some(alias)
+                            } else {
+                                None
+                            };
 
-                        (Some(table_name), None, alias)
+                            (Some(table_name), None, None, alias)
+                        }
+                        _ => return Err("Expected table name or subquery after FROM".to_string()),
                     }
-                    _ => return Err("Expected table name or subquery after FROM".to_string()),
                 }
-            }
-        } else {
-            (None, None, None)
-        };
+            } else {
+                (None, None, None, None)
+            };
 
         let where_clause = if matches!(self.current_token, Token::Where) {
             self.advance();
@@ -954,6 +1042,7 @@ impl Parser {
             select_items,
             from_table,
             from_subquery,
+            from_function,
             from_alias,
             where_clause,
             order_by,
