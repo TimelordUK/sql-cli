@@ -25,6 +25,7 @@ example_data_files["solar_system_calculations_simple.sql"]="data/solar_system.cs
 example_data_files["solar_system_working.sql"]="data/solar_system.csv"
 example_data_files["solar_system_with_cte.sql"]="data/solar_system.csv"
 example_data_files["cte_demo.sql"]="data/test_simple_math.csv"
+example_data_files["cte_order_by_patterns.sql"]="data/solar_system.csv"
 
 # Examples to skip (e.g., work in progress or future features)
 declare -A skip_examples
