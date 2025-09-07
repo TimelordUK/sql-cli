@@ -1,82 +1,267 @@
-# SQL CLI Project
+# SQL CLI Project - AI Context Guide
 
 Vim-like terminal SQL editor with in-memory query engine for ultra-fast navigation and data exploration. Built in Rust using ratatui.
 
-## Core Philosophy
-- **Vim-inspired**: Modal editing, vim keybindings (hjkl navigation, i/a/A insert modes)
-- **In-memory queries**: All data loaded to memory for instant filtering/sorting
-- **Fast navigation**: Optimized for keyboard-only workflow with minimal latency
-- **Power user focused**: Built for rapid data exploration without mouse
+## 🚀 QUICK START - Essential Commands
 
-## Tech Stack
-- **Language**: Rust 1.26.2
-- **TUI Framework**: ratatui + crossterm (high-performance terminal UI)
-- **SQL Parser**: Custom recursive descent parser with AST (in-memory evaluation)
-- **Data Sources**: CSV, JSON files, REST API (cached in memory)
-
-## Build & Test Commands
 ```bash
-# Build
-cargo build --release
+# When in doubt about available functions:
+./target/release/sql-cli --list-functions           # List all SQL functions
+./target/release/sql-cli --function-help CONVERT    # Get help for specific function
 
-# Run Rust tests
-cargo test
-cargo test --test data_view_trades_test  # Important DataView tests
+# Test SQL queries quickly:
+./target/release/sql-cli -q "SELECT CONVERT(100, 'km', 'miles')" -o csv
+./target/release/sql-cli data/test.csv -q "SELECT * FROM test WHERE id > 5" -o csv
 
-# Run Python tests (IMPORTANT: Run after parser/SQL engine changes)
-./run_python_tests.sh  # Automatically discovers and runs all tests in tests/python_tests/
-./run_all_tests.sh     # Runs both Rust and Python tests
-
-# IMPORTANT: Always run before committing!
-cargo fmt  # Required - formats all code to project standards
-
-# Lint
-cargo clippy
-
-# Run application
-./target/release/sql-cli <file.csv>
-./target/release/sql-cli --enhanced <file.json>
-
-# Test SQL queries non-interactively (use for testing new features)
-./target/release/sql-cli data/test_simple_strings.csv -q "SELECT * FROM test" -o csv
-./target/release/sql-cli data/test_simple_strings.csv -q "SELECT * FROM test" --query-plan  # Shows AST
+# Test examples:
+./scripts/test_all_examples.sh                      # Run all SQL examples
 ```
 
-## Testing Guidelines (CRITICAL)
+## 🏗️ CORE ARCHITECTURE - Key Files
 
-### When to Add Python Tests
-**ALWAYS add Python tests when:**
-- Adding new SQL functions or operators
-- Modifying the parser (recursive_parser.rs)
-- Adding new string/math methods
-- Changing WHERE clause evaluation
-- Implementing new SQL features (GROUP BY, aggregates, etc.)
+### Entry Points & CLI
+- `src/main.rs` - CLI entry point, argument parsing, mode selection (TUI vs non-interactive)
+- `src/non_interactive.rs` - Handles `-q` queries, script execution, output formatting
 
-### How to Test SQL Engine Changes
-1. **Use non-interactive mode for quick testing:**
-   ```bash
-   # Test your changes quickly
-   ./target/release/sql-cli data/test_simple_strings.csv -q "YOUR_QUERY" -o csv
+### SQL Parsing & Execution Pipeline
+1. **Parser**: `src/sql/recursive_parser.rs` - Recursive descent parser, builds AST
+   - Parses SELECT, WHERE, GROUP BY, ORDER BY, functions, expressions
+   - Returns `SelectStatement` AST structure
+
+2. **Evaluator**: `src/data/arithmetic_evaluator.rs` - Evaluates expressions against data
+   - Handles arithmetic, comparisons, function calls
+   - **IMPORTANT**: Do NOT add function implementations here - use function registry
+
+3. **Query Executor**: `src/data/query_executor.rs` - Orchestrates query execution
+   - Applies WHERE filters, GROUP BY, ORDER BY, LIMIT
+
+### Function System (CRITICAL)
+- **Registry**: `src/sql/functions/mod.rs` - Central function registry
+  - ALL new functions must be registered here
+  - Categories: Mathematical, String, Date, Conversion, etc.
+  
+- **Adding New Functions**:
+  1. Create implementation in `src/sql/functions/<category>.rs`
+  2. Implement `SqlFunction` trait
+  3. Register in `mod.rs` under appropriate category
+  4. Function automatically available in CLI and help
+
+- **Example Function Modules**:
+  - `src/sql/functions/math.rs` - Mathematical functions
+  - `src/sql/functions/string_methods.rs` - String manipulation
+  - `src/sql/functions/convert.rs` - Unit conversions (CONVERT function)
+  - `src/sql/functions/astronomy.rs` - Astronomical constants
+  - `src/sql/functions/chemistry.rs` - Chemical elements
+
+### Data Structures
+- `src/data/datatable.rs` - Core data table structure (columns, rows, types)
+- `src/data/data_view.rs` - View layer with sorting, filtering, column operations
+- `src/data/csv_datasource.rs` - CSV loading and parsing
+- `src/data/json_datasource.rs` - JSON data handling
+
+### TUI Components (for interactive mode)
+- `src/ui/enhanced_tui.rs` - Main TUI interface
+- `src/app_state_container.rs` - Central state management
+- `src/action.rs` - Action system for state updates
+- `src/handlers/` - Event handlers for keyboard input
+
+### Unit Conversion System
+- `src/data/unit_converter.rs` - Core conversion logic
+- `src/sql/functions/convert.rs` - CONVERT() SQL function
+- Supports: temperature, distance, weight, volume, area, speed, pressure, time, energy
+
+## 📝 DEVELOPMENT WORKFLOW
+
+### Adding a New SQL Function
+
+1. **Choose the right category** or create new one in `src/sql/functions/mod.rs`:
+   ```rust
+   pub enum FunctionCategory {
+       Mathematical,
+       String,
+       Date,
+       Conversion,  // etc.
+   }
+   ```
+
+2. **Create function implementation**:
+   ```rust
+   // In src/sql/functions/your_category.rs
+   pub struct YourFunction;
    
-   # Debug parser issues with --query-plan
-   ./target/release/sql-cli data/test_simple_strings.csv -q "YOUR_QUERY" --query-plan
+   impl SqlFunction for YourFunction {
+       fn signature(&self) -> FunctionSignature {
+           FunctionSignature {
+               name: "YOUR_FUNC",
+               category: FunctionCategory::YourCategory,
+               arg_count: ArgCount::Fixed(2),
+               description: "What it does",
+               returns: "Return type",
+               examples: vec!["SELECT YOUR_FUNC(arg1, arg2)"],
+           }
+       }
+       
+       fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+           // Implementation
+       }
+   }
    ```
 
-2. **Add tests to Python test suite:**
-   - String methods: `tests/test_string_methods_comprehensive.py`
-   - General SQL: `tests/test_sql_engine_pytest.py`
-   - Cross-reference results with pandas for validation
+3. **Register in function registry** (`src/sql/functions/mod.rs`):
+   ```rust
+   fn register_your_category(&mut self) {
+       self.register(Box::new(YourFunction));
+   }
+   ```
 
-3. **Run Python tests after changes:**
+4. **Test it**:
    ```bash
-   uv run pytest tests/test_sql_engine_pytest.py -v  # Run specific test
-   ./run_python_tests.sh  # Run all Python tests
+   ./target/release/sql-cli -q "SELECT YOUR_FUNC(1, 2)" -o csv
+   ./target/release/sql-cli --function-help YOUR_FUNC
    ```
 
-### Test Data Files
-- `data/test_simple_strings.csv` - String operations, text methods
-- `data/test_simple_math.csv` - Arithmetic, math functions
-- Generate new test data in `scripts/` if needed
+### Parser Modifications
+- **File**: `src/sql/recursive_parser.rs`
+- **Key methods**:
+  - `parse_select_list()` - SELECT clause items
+  - `parse_where_clause()` - WHERE conditions
+  - `parse_expression()` - Expressions and operators
+  - `parse_function_call()` - Function parsing
+- **ALWAYS add Python tests** after parser changes
+
+### Testing Strategy
+
+1. **Quick command-line testing**:
+   ```bash
+   # Test new feature
+   ./target/release/sql-cli -q "YOUR_QUERY" -o csv
+   
+   # Debug parser
+   ./target/release/sql-cli -q "YOUR_QUERY" --query-plan
+   ```
+
+2. **Run test suites**:
+   ```bash
+   cargo test                    # Rust tests
+   ./run_python_tests.sh        # Python integration tests
+   ./scripts/test_all_examples.sh  # Example SQL files
+   ```
+
+3. **Always run before committing**:
+   ```bash
+   cargo fmt                    # Required formatting
+   cargo clippy                 # Linting
+   ./run_all_tests.sh          # All tests
+   ```
+
+## 🗂️ Project Structure
+
+```
+sql-cli/
+├── src/
+│   ├── main.rs                 # Entry point
+│   ├── non_interactive.rs      # CLI query mode
+│   ├── sql/
+│   │   ├── recursive_parser.rs # SQL parser (builds AST)
+│   │   ├── functions/          # Function implementations
+│   │   │   ├── mod.rs         # Function registry
+│   │   │   ├── math.rs        # Math functions
+│   │   │   ├── string_methods.rs # String functions
+│   │   │   └── convert.rs     # Unit conversions
+│   │   └── script_parser.rs   # Script with GO separators
+│   ├── data/
+│   │   ├── datatable.rs       # Core data structure
+│   │   ├── arithmetic_evaluator.rs # Expression evaluation
+│   │   ├── query_executor.rs  # Query orchestration
+│   │   └── unit_converter.rs  # Unit conversion logic
+│   └── ui/                     # TUI components
+├── examples/                   # SQL example files
+├── data/                       # Test data files
+├── tests/
+│   └── python_tests/          # Python integration tests
+└── scripts/
+    └── test_all_examples.sh   # Example test runner
+```
+
+## 🎯 Key Principles
+
+1. **Function Registry**: ALL functions go through the registry - no special cases in parser/evaluator
+2. **Test Everything**: Add Python tests for SQL features, Rust tests for internals
+3. **Use Non-Interactive Mode**: Test queries with `-q` flag before TUI testing
+4. **Format Always**: Run `cargo fmt` before every commit
+5. **Check Functions**: Use `--list-functions` when unsure about available functions
+
+## 🔧 Common Tasks
+
+### Finding Functions
+```bash
+# List all functions
+./target/release/sql-cli --list-functions
+
+# Search for specific function
+./target/release/sql-cli --list-functions | grep -i convert
+
+# Get function help
+./target/release/sql-cli --function-help CONVERT
+```
+
+### Testing Queries
+```bash
+# Simple query
+./target/release/sql-cli -q "SELECT 1+1" -o csv
+
+# Query with data file
+./target/release/sql-cli data/test.csv -q "SELECT * FROM test" -o csv
+
+# Query with functions
+./target/release/sql-cli -q "SELECT CONVERT(100, 'celsius', 'fahrenheit')" -o csv
+
+# Show query plan (AST)
+./target/release/sql-cli -q "SELECT * FROM test WHERE id > 5" --query-plan
+```
+
+### Running Tests
+```bash
+# All tests
+./run_all_tests.sh
+
+# Just Rust tests
+cargo test
+
+# Just Python tests
+./run_python_tests.sh
+
+# Test examples
+./scripts/test_all_examples.sh
+
+# Specific test
+cargo test test_convert
+python tests/python_tests/test_unit_conversions.py
+```
+
+## 📚 Test Data Files
+
+- `data/test_simple_strings.csv` - String operations testing
+- `data/test_simple_math.csv` - Math operations testing  
+- `data/sales_data.csv` - Window functions, aggregates
+- `data/solar_system.csv` - Astronomical calculations
+- `data/trades.json` - JSON data source testing
+
+## 🚨 Important Notes
+
+- **ALWAYS run `cargo fmt` before committing** - Required for all commits
+- **NULL handling**: Empty CSV fields are NULL, use IS NULL/IS NOT NULL
+- **CONVERT function**: Use for all unit conversions, don't create individual functions
+- **GO separator**: Supported in script files for batch execution
+- **F5 in TUI**: Shows debug view with internal state
+
+## 🔗 Quick Links
+
+- Function Registry: `src/sql/functions/mod.rs`
+- Parser: `src/sql/recursive_parser.rs`
+- Expression Evaluator: `src/data/arithmetic_evaluator.rs`
+- Query Executor: `src/data/query_executor.rs`
+- Unit Converter: `src/data/unit_converter.rs`
 
 ## Agents (IMPORTANT: Always delegate to these specialized agents)
 
@@ -104,67 +289,3 @@ cargo clippy
 - Performance bottlenecks need investigation
 
 **CRITICAL**: Do NOT try to fix compilation errors or test failures yourself. ALWAYS delegate to the appropriate agent immediately.
-
-## docs
-- place all docs in the docs folder
-
-## Project Structure
-- `src/ui/enhanced_tui.rs` - Main TUI interface (key handling to be migrated)
-- `src/app_state_container.rs` - Central state management
-- `src/data/data_view.rs` - DataView with column operations
-- `src/handlers/` - Event handlers (migration in progress)
-- `src/action.rs` - Action system for state updates
-- `src/sql/` - SQL parsing and AST evaluation
-- `integration_tests/` - Integration test suite
-- `integration_tests/test_scripts/` - Shell script test suite
-
-## Current Work: Key Handler Migration
-Migrating key handling from TUI main loop to dedicated action system. See KEY_MIGRATION_STATUS.md for details.
-
-**Branch**: key_migration_v2 (based on tui_widgets_v1)
-
-**Recently Fixed**:
-- Column sorting with pinned columns
-- Unified visible_columns architecture
-- Key history display (10 keys max, 2s fade)
-
-## Vim-like Features
-- **Modal editing**: Insert (i), Append (a/A), Command mode
-- **Vim navigation**: hjkl for movement, g/G for top/bottom
-- **Fast column ops**: Pin (p), Hide (H), Sort (s) - single keystrokes
-- **Search modes**: `/` for column search, `?` for data search, n/N to navigate
-- **Visual feedback**: Key history display, mode indicators
-
-## Performance Features
-- **In-memory operations**: All queries run on cached data
-- **Virtual scrolling**: Handle 100K+ rows smoothly
-- **Instant filtering**: Fuzzy search, regex, SQL WHERE - all sub-second
-- **Zero-latency navigation**: Optimized keyboard response
-- **Smart caching**: Query results cached for instant re-filtering
-
-## Performance Targets
-- 10K-100K rows: Interactive queries (50-200ms)
-- Complex queries on 100K rows: ~100-200ms
-- Memory: ~50MB for 100K rows
-
-## Testing Scripts
-```bash
-# Column operations
-./integration_tests/test_scripts/test_column_ops.sh
-
-# Sorting with cycles
-./integration_tests/test_scripts/test_sort_cycles.sh
-
-# TUI sort fixes
-./integration_tests/test_scripts/test_tui_sort_fix.sh
-```
-
-## Important Notes
-- **ALWAYS run `cargo fmt` before committing** - This is required for all commits
-- Windows compatibility required before merge
-- Direct DataView state manipulation being removed
-- Action system handles all state changes
-- F5 shows debug view with internal state
-
-## Documentation
-Extensive docs in `docs/` folder covering architecture, refactoring plans, and feature designs.
