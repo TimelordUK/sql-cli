@@ -165,7 +165,7 @@ harmonic AS (
     SELECT 
         n,
         1.0 / n AS term,
-        SUM(1.0 / value) OVER (ORDER BY value) AS harmonic_sum,
+        SUM(1.0 / n) OVER (ORDER BY n) AS harmonic_sum,
         LOG(n) AS ln_n
     FROM sequence
 )

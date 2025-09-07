@@ -5,6 +5,66 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.41.0] - 2025-09-08
+
+### 🚀 Major Enhancements
+
+This release brings significant improvements to the SQL engine with new operators, window functions, and mathematical capabilities.
+
+### ✨ New Features
+
+#### **Operators & Expression Support**
+- **Modulo operator (%)** - Now supports `value % 5` as an alias to `MOD(value, 5)`
+- **OR operator in WHERE** - Fixed support for OR conditions like `WHERE (col = 'A' OR col = 'B')`
+- **DISTINCT keyword** - Full support for `SELECT DISTINCT` to remove duplicate rows
+
+#### **Window Functions**
+- **SUM() window function** - Calculate sums over partitions: `SUM(amount) OVER (PARTITION BY category)`
+- **COUNT() window function** - Enhanced with COUNT(*) support: `COUNT(*) OVER (PARTITION BY group)`
+- **COUNT(column)** - Count non-null values in partitions
+
+#### **Mathematical Functions**
+- **SUM_N(n)** - Calculate triangular numbers (sum of first n natural numbers)
+  - Formula: n * (n + 1) / 2
+  - Example: `SUM_N(10)` returns 55
+
+#### **RANGE Function & CTEs**
+- **Comprehensive examples** - Added three new example files showcasing RANGE with CTEs:
+  - `range_statistical_analysis.sql` - Statistical calculations
+  - `range_test_data_generation.sql` - Mock data generation
+  - `range_mathematical_sequences.sql` - Mathematical patterns
+
+### 🐛 Bug Fixes
+- Fixed OR operator not working in WHERE clauses with parentheses
+- Fixed COUNT(*) not working as a window function (was parsed as StringLiteral instead of Column)
+- Updated Python tests to match actual system capabilities
+
+### 📚 Examples
+```sql
+-- Modulo operator
+SELECT value, value % 3 AS remainder FROM RANGE(1, 10);
+
+-- DISTINCT rows
+SELECT DISTINCT category, status FROM products;
+
+-- SUM window function with PARTITION BY
+SELECT 
+    region,
+    sales_amount,
+    SUM(sales_amount) OVER (PARTITION BY region) AS region_total
+FROM sales_data;
+
+-- Triangular numbers
+SELECT n, SUM_N(n) AS triangular FROM RANGE(1, 10);
+-- Returns: 1→1, 2→3, 3→6, 4→10, 5→15, etc.
+```
+
+### 🔧 Known Limitations
+- CASE WHEN doesn't support AND/OR operators (use mathematical workarounds)
+- GROUP BY only supports column names, not expressions (use CTEs as workaround)
+- Cross-joins with multiple RANGE CTEs have column resolution issues
+- No ROWS BETWEEN support in window functions yet
+
 ## [1.40.0] - 2025-09-07
 
 ### 🚀 Common Table Expressions (CTEs) Support
