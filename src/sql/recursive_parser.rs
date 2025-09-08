@@ -456,6 +456,7 @@ pub enum SqlExpression {
     FunctionCall {
         name: String,
         args: Vec<SqlExpression>,
+        distinct: bool,  // For COUNT(DISTINCT col), SUM(DISTINCT col), etc.
     },
     WindowFunction {
         name: String,
@@ -1732,7 +1733,7 @@ impl Parser {
                     // Treat any identifier followed by () as a potential function call
                     // The evaluator will validate if it's a known function
                     self.advance(); // consume (
-                    let args = self.parse_function_args()?;
+                    let (args, has_distinct) = self.parse_function_args()?;
                     self.consume(Token::RightParen)?;
 
                     // Check for OVER clause for window functions
@@ -1751,6 +1752,7 @@ impl Parser {
                     return Ok(SqlExpression::FunctionCall {
                         name: id_upper,
                         args,
+                        distinct: has_distinct,
                     });
                 }
 
@@ -1852,33 +1854,28 @@ impl Parser {
         Ok(args)
     }
 
-    fn parse_function_args(&mut self) -> Result<Vec<SqlExpression>, String> {
+    fn parse_function_args(&mut self) -> Result<(Vec<SqlExpression>, bool), String> {
         let mut args = Vec::new();
+        let mut has_distinct = false;
 
         if !matches!(self.current_token, Token::RightParen) {
             // Check if first argument starts with DISTINCT
             if matches!(self.current_token, Token::Distinct) {
                 self.advance(); // consume DISTINCT
-                                // Parse the expression after DISTINCT
-                let expr = self.parse_additive()?;
-                // Create a special expression to represent DISTINCT column
-                args.push(SqlExpression::FunctionCall {
-                    name: "DISTINCT".to_string(),
-                    args: vec![expr],
-                });
-            } else {
-                // Parse normal expression
-                args.push(self.parse_additive()?);
+                has_distinct = true;
             }
+            
+            // Parse the expression (either after DISTINCT or directly)
+            args.push(self.parse_additive()?);
 
-            // Parse any remaining arguments
+            // Parse any remaining arguments (DISTINCT only applies to first arg for aggregates)
             while matches!(self.current_token, Token::Comma) {
                 self.advance();
                 args.push(self.parse_additive()?);
             }
         }
 
-        Ok(args)
+        Ok((args, has_distinct))
     }
 
     fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String> {
@@ -2173,13 +2170,17 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
                 args_str
             )
         }
-        SqlExpression::FunctionCall { name, args } => {
+        SqlExpression::FunctionCall { name, args, distinct } => {
             let args_str = args
                 .iter()
                 .map(format_expression_ast)
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("FunctionCall({name}({args_str}))")
+            if *distinct {
+                format!("FunctionCall({name}(DISTINCT {args_str}))")
+            } else {
+                format!("FunctionCall({name}({args_str}))")
+            }
         }
         SqlExpression::WindowFunction {
             name,
@@ -2836,13 +2837,17 @@ fn format_expression(expr: &SqlExpression) -> String {
                 .join(", ");
             format!("{}.{}({})", format_expression(base), method, args_str)
         }
-        SqlExpression::FunctionCall { name, args } => {
+        SqlExpression::FunctionCall { name, args, distinct } => {
             let args_str = args
                 .iter()
                 .map(format_expression)
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("{name}({args_str})")
+            if *distinct {
+                format!("{name}(DISTINCT {args_str})")
+            } else {
+                format!("{name}({args_str})")
+            }
         }
         SqlExpression::WindowFunction {
             name,

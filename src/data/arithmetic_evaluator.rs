@@ -114,8 +114,8 @@ impl<'a> ArithmeticEvaluator<'a> {
             SqlExpression::BinaryOp { left, op, right } => {
                 self.evaluate_binary_op(left, op, right, row_index)
             }
-            SqlExpression::FunctionCall { name, args } => {
-                self.evaluate_function(name, args, row_index)
+            SqlExpression::FunctionCall { name, args, distinct } => {
+                self.evaluate_function_with_distinct(name, args, *distinct, row_index)
             }
             SqlExpression::WindowFunction {
                 name,
@@ -417,6 +417,137 @@ impl<'a> ArithmeticEvaluator<'a> {
     }
 
     /// Evaluate a function call
+    fn evaluate_function_with_distinct(
+        &mut self,
+        name: &str,
+        args: &[SqlExpression],
+        distinct: bool,
+        row_index: usize,
+    ) -> Result<DataValue> {
+        // If DISTINCT is specified, handle it specially for aggregate functions
+        if distinct {
+            let name_upper = name.to_uppercase();
+            
+            // DISTINCT is only valid for aggregate functions
+            if name_upper == "COUNT" || name_upper == "SUM" || name_upper == "AVG" 
+                || name_upper == "MIN" || name_upper == "MAX" {
+                return self.evaluate_aggregate_distinct(&name_upper, args, row_index);
+            } else {
+                return Err(anyhow!("DISTINCT can only be used with aggregate functions"));
+            }
+        }
+        
+        // Otherwise, use the regular evaluation
+        self.evaluate_function(name, args, row_index)
+    }
+
+    fn evaluate_aggregate_distinct(
+        &mut self,
+        name: &str,
+        args: &[SqlExpression],
+        row_index: usize,
+    ) -> Result<DataValue> {
+        use std::collections::HashSet;
+        
+        if args.is_empty() {
+            return Err(anyhow!("{} DISTINCT requires at least one argument", name));
+        }
+        
+        // Determine which rows to process
+        let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
+            visible.clone()
+        } else {
+            (0..self.table.rows.len()).collect()
+        };
+        
+        // Collect unique values
+        let mut unique_values = HashSet::new();
+        let mut numeric_values = Vec::new();
+        
+        for row_idx in &rows_to_process {
+            // Evaluate the expression for this row
+            let value = self.evaluate(&args[0], *row_idx)?;
+            
+            // Skip NULL values
+            if matches!(value, DataValue::Null) {
+                continue;
+            }
+            
+            // Convert to string for uniqueness check
+            let value_str = match &value {
+                DataValue::String(s) => s.clone(),
+                DataValue::InternedString(s) => s.to_string(),
+                DataValue::Integer(i) => i.to_string(),
+                DataValue::Float(f) => f.to_string(),
+                DataValue::Boolean(b) => b.to_string(),
+                DataValue::DateTime(dt) => dt.to_string(),
+                DataValue::Null => continue,
+            };
+            
+            // Only process if we haven't seen this value before
+            if unique_values.insert(value_str) {
+                // For numeric aggregates, collect the numeric value
+                if name != "COUNT" {
+                    match value {
+                        DataValue::Integer(i) => numeric_values.push(i as f64),
+                        DataValue::Float(f) => numeric_values.push(f),
+                        _ => {} // Skip non-numeric for SUM/AVG
+                    }
+                }
+            }
+        }
+        
+        // Calculate the result based on the aggregate function
+        match name {
+            "COUNT" => Ok(DataValue::Integer(unique_values.len() as i64)),
+            "SUM" => {
+                if numeric_values.is_empty() {
+                    Ok(DataValue::Null)
+                } else {
+                    let sum: f64 = numeric_values.iter().sum();
+                    if sum.fract() == 0.0 && sum.abs() < 1e10 {
+                        Ok(DataValue::Integer(sum as i64))
+                    } else {
+                        Ok(DataValue::Float(sum))
+                    }
+                }
+            }
+            "AVG" => {
+                if numeric_values.is_empty() {
+                    Ok(DataValue::Null)
+                } else {
+                    let sum: f64 = numeric_values.iter().sum();
+                    Ok(DataValue::Float(sum / numeric_values.len() as f64))
+                }
+            }
+            "MIN" => {
+                if numeric_values.is_empty() {
+                    Ok(DataValue::Null)
+                } else {
+                    let min = numeric_values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+                    if min.fract() == 0.0 && min.abs() < 1e10 {
+                        Ok(DataValue::Integer(min as i64))
+                    } else {
+                        Ok(DataValue::Float(min))
+                    }
+                }
+            }
+            "MAX" => {
+                if numeric_values.is_empty() {
+                    Ok(DataValue::Null)
+                } else {
+                    let max = numeric_values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+                    if max.fract() == 0.0 && max.abs() < 1e10 {
+                        Ok(DataValue::Integer(max as i64))
+                    } else {
+                        Ok(DataValue::Float(max))
+                    }
+                }
+            }
+            _ => Err(anyhow!("Unsupported DISTINCT aggregate: {}", name))
+        }
+    }
+
     fn evaluate_function(
         &mut self,
         name: &str,

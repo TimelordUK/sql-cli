@@ -343,7 +343,7 @@ pub fn contains_aggregate(expr: &crate::recursive_parser::SqlExpression) -> bool
     use crate::recursive_parser::SqlExpression;
 
     match expr {
-        SqlExpression::FunctionCall { name, args } => {
+        SqlExpression::FunctionCall { name, args, .. } => {
             let registry = AggregateRegistry::new();
             if registry.is_aggregate(name) {
                 return true;

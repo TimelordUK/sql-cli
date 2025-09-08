@@ -7,7 +7,8 @@ SELECT
     ATOMIC_MASS('CO2') as carbon_dioxide_mass,
     ATOMIC_MASS('C6H12O6') as glucose_mass,
     ATOMIC_MASS('C8H10N4O2') as caffeine_mass,
-    ATOMIC_MASS('NaCl') as salt_mass;
+    ATOMIC_MASS('NaCl') as salt_mass 
+    FROM DUAL;
 GO
 
 -- Get chemical formula from common names
@@ -16,13 +17,15 @@ SELECT
     MOLECULE_FORMULA('glucose') as glucose_formula,
     MOLECULE_FORMULA('ethanol') as ethanol_formula,
     MOLECULE_FORMULA('caffeine') as caffeine_formula,
-    MOLECULE_FORMULA('aspirin') as aspirin_formula;
+    MOLECULE_FORMULA('aspirin') as aspirin_formula
+    FROM DUAL;
 GO
 
 -- Combined usage - get formula then calculate mass
 SELECT 
     MOLECULE_FORMULA('methane') as formula,
-    ATOMIC_MASS(MOLECULE_FORMULA('methane')) as molecular_mass;
+    ATOMIC_MASS(MOLECULE_FORMULA('methane')) as molecular_mass
+    FROM DUAL;
 GO
 
 -- Practical example with physics constants
@@ -31,5 +34,6 @@ SELECT
     MOLECULE_FORMULA('water') as formula,
     ATOMIC_MASS('H2O') as molecular_mass_amu,
     AVOGADRO() as avogadro_constant,
-    ATOMIC_MASS('H2O') / AVOGADRO() * 1e23 as grams_per_mole;
+    ATOMIC_MASS('H2O') / AVOGADRO() * 1e23 as grams_per_mole
+    FROM DUAL;
 GO
