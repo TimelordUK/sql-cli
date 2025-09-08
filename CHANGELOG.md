@@ -5,6 +5,77 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.0] - 2025-09-09
+
+### 🚀 Major Performance & Functionality Improvements
+
+This release delivers critical performance optimizations, powerful new aggregate capabilities, and smarter script execution.
+
+### ✨ New Features
+
+#### **COUNT(DISTINCT) and DISTINCT Aggregates**
+- **Full DISTINCT support** for all aggregate functions: COUNT, SUM, AVG, MIN, MAX
+- **COUNT(DISTINCT column)** - Count unique values within groups
+- Works seamlessly with GROUP BY clauses
+- Example: `SELECT region, COUNT(DISTINCT customer_id) FROM sales GROUP BY region`
+
+#### **GROUP_NUM() Function**
+- **Value enumeration function** - Assigns unique sequential numbers (0-based) to distinct values
+- Maintains consistency across entire query execution
+- Alternative to JOINs for creating unique identifiers
+- Example: `SELECT order_id, GROUP_NUM(order_id) as order_num FROM orders`
+
+#### **Data File Hint System**
+- **Script data hints** - Specify data file in SQL scripts with `-- #!data: path/to/file.csv`
+- Supports relative paths (resolved from script location)
+- Command-line arguments override script hints
+- Examples:
+  - `-- #!data: ../data/sales.csv`
+  - `-- #!datafile: /absolute/path/to/data.csv`
+
+### 🐛 Bug Fixes & Improvements
+
+#### **Performance Optimization**
+- **Fixed severe performance issue** with script execution on large files
+- Scripts no longer clone entire DataTable for each GO block
+- Creates Arc<DataTable> once and reuses for all statements
+- Dramatic speedup on 50k+ row datasets
+
+#### **DUAL Script Support**
+- **Scripts using only DUAL now work** without requiring a data file
+- Automatically detects when scripts use DUAL, RANGE(), or no FROM clause
+- Only requires data file when script references actual tables
+- Fixes issue with pure SQL calculation scripts like chemical_formulas.sql
+
+### 📚 Examples
+```sql
+-- COUNT(DISTINCT) in action
+SELECT 
+    root_order_id,
+    COUNT(DISTINCT security_id) as unique_securities,
+    SUM(DISTINCT quantity) as unique_quantities
+FROM trades
+GROUP BY root_order_id;
+
+-- GROUP_NUM for enumeration
+SELECT 
+    customer,
+    GROUP_NUM(customer) as customer_num,
+    total_sales
+FROM sales_summary
+ORDER BY customer_num;
+
+-- Script with data hint
+-- #!data: ../data/production.csv
+SELECT * FROM production WHERE status = 'active';
+```
+
+### 🔧 Technical Details
+- Added `distinct` flag to SqlExpression::FunctionCall in parser
+- Implemented evaluate_aggregate_distinct() for efficient unique value tracking
+- Global memoization for GROUP_NUM using lazy_static
+- Smart script analysis to determine data file requirements
+
 ## [1.41.0] - 2025-09-08
 
 ### 🚀 Major Enhancements
