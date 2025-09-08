@@ -186,27 +186,23 @@ end
 
 -- Execute visual selection
 function M.execute_selection()
-  -- Get visual selection
-  local start_pos = vim.fn.getpos("'<")
-  local end_pos = vim.fn.getpos("'>")
-  local lines = vim.api.nvim_buf_get_lines(
-    0, start_pos[2] - 1, end_pos[2], false
-  )
+  -- Get the current visual selection properly
+  -- Save the current register content
+  local save_reg = vim.fn.getreg('"')
+  local save_regtype = vim.fn.getregtype('"')
   
-  if #lines == 0 then
+  -- Yank the current visual selection
+  vim.cmd('normal! y')
+  local query = vim.fn.getreg('"')
+  
+  -- Restore the register
+  vim.fn.setreg('"', save_reg, save_regtype)
+  
+  if not query or query == "" then
     vim.notify("No selection", vim.log.levels.WARN)
     return
   end
   
-  -- Handle partial line selection
-  if #lines == 1 then
-    lines[1] = string.sub(lines[1], start_pos[3], end_pos[3])
-  else
-    lines[1] = string.sub(lines[1], start_pos[3])
-    lines[#lines] = string.sub(lines[#lines], 1, end_pos[3])
-  end
-  
-  local query = table.concat(lines, "\n")
   M.execute_query(query)
 end
 
@@ -253,7 +249,17 @@ function M.run_command(query, show_plan)
       if data then
         for _, line in ipairs(data) do
           if line ~= "" then
-            table.insert(output_lines, "ERROR: " .. line)
+            -- Check if it's actually an error or just info
+            if line:match("^#") or line:match("Query completed:") or line:match("rows in") then
+              -- This is informational output (like "# Query completed: 10 rows in 906.909µs")
+              table.insert(output_lines, line)
+            elseif line:match("^Error:") or line:match("^ERROR:") or line:match("failed") then
+              -- This is an actual error
+              table.insert(output_lines, "ERROR: " .. line)
+            else
+              -- Default to showing as-is (could be warnings or other info)
+              table.insert(output_lines, line)
+            end
           end
         end
       end
@@ -303,11 +309,12 @@ function M.build_command(query, show_plan)
     table.insert(cmd_parts, vim.fn.shellescape(state.data_file))
   end
   
-  -- Check if it's a script (has GO separator)
+  -- Check if it's a script (has GO separator) or multi-line query
   local is_script = query:match("%sGO%s") or query:match("^GO%s") or query:match("%sGO$")
+  local is_multiline = query:find("\n") ~= nil
   
-  if is_script then
-    -- Save to temp file for script execution
+  if is_script or is_multiline then
+    -- Save to temp file for script execution or multi-line queries
     local temp_file = vim.fn.tempname() .. ".sql"
     local file = io.open(temp_file, "w")
     file:write(query)
@@ -316,7 +323,7 @@ function M.build_command(query, show_plan)
     table.insert(cmd_parts, "-f")
     table.insert(cmd_parts, vim.fn.shellescape(temp_file))
   else
-    -- Direct query
+    -- Direct single-line query
     table.insert(cmd_parts, "-q")
     table.insert(cmd_parts, vim.fn.shellescape(query))
   end
@@ -500,6 +507,13 @@ function M.setup_output_highlighting()
     
     -- Error messages
     vim.cmd([[syntax match SqlCliError /^ERROR:.*$/]])
+    vim.cmd([[syntax match SqlCliError /Error:.*$/]])
+    vim.cmd([[syntax match SqlCliError /failed.*$/]])
+    
+    -- Success messages (like "# Query completed: 10 rows in 906.909µs")
+    vim.cmd([[syntax match SqlCliSuccess /^#.*Query completed:.*$/]])
+    vim.cmd([[syntax match SqlCliSuccess /.*rows in.*µs$/]])
+    vim.cmd([[syntax match SqlCliSuccess /^#.*$/]])
     
     -- Exit code line
     vim.cmd([[syntax match SqlCliExitCode /^-- Exit code:.*$/]])
@@ -517,6 +531,7 @@ function M.setup_output_highlighting()
     vim.cmd([[highlight SqlCliNull guifg=#ff79c6 ctermfg=5]])
     vim.cmd([[highlight SqlCliBoolean guifg=#50fa7b ctermfg=10]])
     vim.cmd([[highlight SqlCliError guifg=#ff5555 ctermfg=9]])
+    vim.cmd([[highlight SqlCliSuccess guifg=#50fa7b ctermfg=10]])  -- Green for success
     vim.cmd([[highlight SqlCliExitCode guifg=#f8f8f2 ctermfg=7]])
     vim.cmd([[highlight SqlCliString guifg=#f1fa8c ctermfg=11]])
   end)
