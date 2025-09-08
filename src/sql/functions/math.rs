@@ -850,7 +850,7 @@ impl SqlFunction for HarmonicFunction {
         for i in 1..=n {
             sum += 1.0 / i as f64;
         }
-        
+
         Ok(DataValue::Float(sum))
     }
 }
@@ -897,13 +897,13 @@ impl SqlFunction for FibonacciFunction {
 
         let mut a = 0i64;
         let mut b = 1i64;
-        
+
         for _ in 2..=n {
             let temp = a + b;
             a = b;
             b = temp;
         }
-        
+
         Ok(DataValue::Integer(b))
     }
 }
@@ -964,7 +964,7 @@ impl SqlFunction for GeometricFunction {
         } else {
             a * (1.0 - r.powi(n as i32)) / (1.0 - r)
         };
-        
+
         Ok(DataValue::Float(sum))
     }
 }

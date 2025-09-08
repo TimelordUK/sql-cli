@@ -1,3 +1,4 @@
+-- #! ../data/test_dummy.csv
 -- Classical Mathematical Series Functions
 -- Demonstrates various series summations and sequences
 
@@ -30,23 +31,23 @@ ORDER BY n;
 GO
 
 -- 3. Fibonacci sequence
-WITH fib_sequence AS (
-    SELECT value as n FROM RANGE(0, 15)
-)
-SELECT 
-    n,
-    FIBONACCI(n) as fib_n,
-    CASE 
-        WHEN n > 0 THEN FIBONACCI(n-1) 
-        ELSE 0 
-    END as fib_prev,
-    CASE 
-        WHEN n > 1 THEN ROUND(CAST(FIBONACCI(n) AS FLOAT) / FIBONACCI(n-1), 3)
-        ELSE 0 
-    END as ratio
-FROM fib_sequence
-ORDER BY n;
-GO
+-- WITH fib_sequence AS (
+    -- SELECT value as n FROM RANGE(0, 15)
+--)
+-- SELECT 
+    -- n,
+    -- FIBONACCI(n) as fib_n,
+--    CASE 
+    --     WHEN n > 0 THEN FIBONACCI(n-1) 
+    --     ELSE 0 
+    -- END as fib_prev,
+--     CASE 
+--        WHEN n > 1 THEN ROUND(CAST(FIBONACCI(n) AS FLOAT) / FIBONACCI(n-1), 3)
+--         ELSE 0 
+--     END as ratio
+-- FROM fib_sequence
+-- ORDER BY n;
+-- GO
 
 -- 4. Harmonic series convergence (slowly!)
 WITH harmonic_series AS (
@@ -91,6 +92,6 @@ GO
 SELECT 
     SQRT(6 * HARMONIC(10000)) as pi_approx,      -- π ≈ 3.1414... (gets better with larger n)
     POWER(1 + 1.0/10000, 10000) as e_approx,     -- e ≈ 2.7181...
-    CAST(FIBONACCI(20) AS FLOAT) / FIBONACCI(19) as golden_ratio  -- φ ≈ 1.618...
+    FIBONACCI(20) / FIBONACCI(19) as golden_ratio  -- φ ≈ 1.618...
 FROM DUAL;
 GO
