@@ -17,10 +17,11 @@ A Neovim plugin for the SQL CLI tool that provides seamless integration for exec
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 
+**From GitHub repository:**
 ```lua
 {
   "TimelordUK/sql-cli",
-  dir = "/path/to/sql-cli/nvim-plugin",  -- Point to the plugin directory
+  subdir = "nvim-plugin",  -- Plugin is in nvim-plugin subdirectory
   config = function()
     require('sql-cli').setup({
       -- Your configuration here
@@ -29,8 +30,7 @@ A Neovim plugin for the SQL CLI tool that provides seamless integration for exec
 }
 ```
 
-Or if you want to load it from the repo directly:
-
+**From local development directory:**
 ```lua
 {
   dir = vim.fn.expand("~/dev/sql-cli/nvim-plugin"),

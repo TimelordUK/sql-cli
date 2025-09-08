@@ -6,6 +6,5 @@ if vim.g.loaded_sql_cli then
 end
 vim.g.loaded_sql_cli = true
 
--- Setup with default configuration
--- Users can call setup() again with custom config
-require('sql-cli').setup()
+-- Don't auto-setup, let the user call it from their config
+-- This prevents timing issues with lazy.nvim
