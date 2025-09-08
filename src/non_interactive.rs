@@ -245,21 +245,57 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
         String::new()
     };
 
+    // Check if script needs a data file
+    let needs_data_file = if data_file.is_empty() {
+        // Parse statements to check if they use DUAL or RANGE
+        use crate::sql::recursive_parser::Parser;
+        
+        let mut needs_file = false;
+        for statement_sql in &statements {
+            let mut parser = Parser::new(statement_sql);
+            match parser.parse() {
+                Ok(stmt) => {
+                    // Check if statement uses DUAL, RANGE, or has no FROM clause
+                    let uses_dual = stmt.from_table.as_ref().map_or(false, |t| t.eq_ignore_ascii_case("dual"));
+                    let uses_range = stmt.from_function.is_some();
+                    let no_from = stmt.from_table.is_none() && stmt.from_subquery.is_none() && stmt.from_function.is_none();
+                    
+                    // Check CTEs for RANGE usage
+                    let cte_has_range = stmt.ctes.iter().any(|cte| {
+                        cte.query.from_function.is_some() || 
+                        cte.query.from_table.as_ref().map_or(false, |t| t.eq_ignore_ascii_case("dual"))
+                    });
+                    
+                    if !uses_dual && !uses_range && !no_from && !cte_has_range {
+                        needs_file = true;
+                        break;
+                    }
+                }
+                Err(_) => {
+                    // If we can't parse, assume it needs a data file
+                    needs_file = true;
+                    break;
+                }
+            }
+        }
+        needs_file
+    } else {
+        // Data file was specified, so we'll use it
+        false
+    };
+
     // Load the data file once (or use DUAL)
     let (data_table, _is_dual) = if data_file.is_empty() {
-        // No data file specified and no hint found
-        if parser.data_file_hint().is_none() {
+        if needs_data_file {
             anyhow::bail!(
-                "No data file specified. Either:\n\
+                "Script requires a data file. Either:\n\
                 1. Provide a data file: sql-cli data.csv -f script.sql\n\
-                2. Add a data hint to your script: -- #!data: path/to/data.csv\n\
-                3. Use DUAL table with no FROM clause"
+                2. Add a data hint to your script: -- #!data: path/to/data.csv"
             );
         } else {
-            // Had a hint but couldn't resolve the file
-            anyhow::bail!(
-                "Data file hint found but file doesn't exist or couldn't be resolved"
-            );
+            // Script doesn't need a data file, use DUAL
+            info!("Using DUAL table for script execution");
+            (DataTable::dual(), true)
         }
     } else {
         // Check if file exists before trying to load
