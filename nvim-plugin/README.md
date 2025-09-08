@@ -198,6 +198,41 @@ Add to your statusline to show the current data file:
 vim.o.statusline = vim.o.statusline .. ' %{luaeval("require(\"sql-cli\").statusline()")}'
 ```
 
+## Troubleshooting
+
+### Plugin not loading
+
+If you get `attempt to call field 'setup' (a nil value)`, ensure:
+
+1. The plugin is properly installed:
+   ```vim
+   :Lazy show sql-cli
+   ```
+
+2. Check plugin health:
+   ```vim
+   :checkhealth sql-cli
+   ```
+
+3. Verify the Lua module can be loaded:
+   ```vim
+   :lua print(vim.inspect(require('sql-cli')))
+   ```
+
+4. For local development, ensure the path is correct:
+   ```lua
+   {
+     dir = vim.fn.expand("~/dev/sql-cli/nvim-plugin"),
+     name = "sql-cli.nvim",
+     lazy = false,  -- Load immediately
+     config = function()
+       require('sql-cli').setup({
+         command = vim.fn.expand("~/dev/sql-cli/target/release/sql-cli"),
+       })
+     end,
+   }
+   ```
+
 ## License
 
 Same as SQL CLI - MIT
