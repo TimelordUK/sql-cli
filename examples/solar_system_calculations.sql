@@ -1,3 +1,4 @@
+-- #! ../data/solar_system.csv
 -- Solar System Calculations Example
 -- This example demonstrates using the lookup functions to calculate various properties
 -- of solar system bodies from their names
