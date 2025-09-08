@@ -17,29 +17,51 @@ A Neovim plugin for the SQL CLI tool that provides seamless integration for exec
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 
-**From GitHub repository:**
-```lua
-{
-  "TimelordUK/sql-cli",
-  subdir = "nvim-plugin",  -- Plugin is in nvim-plugin subdirectory
-  config = function()
-    require('sql-cli').setup({
-      -- Your configuration here
-    })
-  end,
-}
-```
+**IMPORTANT**: Since the plugin is in a subdirectory of the main repo, you need to use one of these approaches:
 
-**From local development directory:**
+**Option 1 - Clone and use locally (Recommended):**
 ```lua
 {
   dir = vim.fn.expand("~/dev/sql-cli/nvim-plugin"),
   name = "sql-cli.nvim",
+  lazy = false,
   config = function()
     require('sql-cli').setup({
       command = vim.fn.expand("~/dev/sql-cli/target/release/sql-cli"),
       output_format = "table",
     })
+  end,
+}
+```
+
+**Option 2 - Manual installation:**
+```bash
+# Clone the repo
+git clone https://github.com/TimelordUK/sql-cli.git ~/sql-cli-temp
+
+# Copy plugin files to your Neovim config
+cp -r ~/sql-cli-temp/nvim-plugin/* ~/.config/nvim/
+
+# Then in your lazy.nvim config, just require it:
+```
+```lua
+require('sql-cli').setup({
+  command = "sql-cli",  -- Or full path to executable
+})
+```
+
+**Option 3 - Symlink approach:**
+```bash
+# Create a symlink in your local lazy.nvim directory
+ln -s ~/dev/sql-cli/nvim-plugin ~/.local/share/nvim/lazy/sql-cli.nvim
+```
+
+Then configure normally:
+```lua
+{
+  "sql-cli.nvim",
+  config = function()
+    require('sql-cli').setup()
   end,
 }
 ```
