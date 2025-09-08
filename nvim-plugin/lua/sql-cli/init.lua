@@ -165,7 +165,13 @@ function M.execute_query(query)
     
     -- Auto-detect data file from hints
     if M.config.auto_detect.data_hints and not state.data_file then
-      state.data_file = M.detect_data_hint(lines)
+      -- Get the directory of the current buffer
+      local buf_path = vim.api.nvim_buf_get_name(bufnr)
+      local buf_dir = nil
+      if buf_path and buf_path ~= "" then
+        buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+      end
+      state.data_file = M.detect_data_hint(lines, buf_dir)
     end
     
     -- Auto-detect if current buffer is a CSV
@@ -438,7 +444,7 @@ function M.clear_data_file()
 end
 
 -- Detect data hint from SQL comments
-function M.detect_data_hint(lines)
+function M.detect_data_hint(lines, base_dir)
   for _, line in ipairs(lines) do
     -- Match various hint patterns
     local patterns = {
@@ -452,11 +458,35 @@ function M.detect_data_hint(lines)
       local hint = line:match(pattern)
       if hint then
         hint = vim.trim(hint)
-        -- Expand path
-        hint = vim.fn.expand(hint)
-        if vim.fn.filereadable(hint) == 1 then
-          vim.notify("Auto-detected data file: " .. hint, vim.log.levels.INFO)
-          return hint
+        
+        -- Resolve the path
+        local resolved_path = hint
+        
+        -- Check if it's a relative path
+        if not hint:match("^/") and not hint:match("^~") then
+          if base_dir then
+            -- Resolve relative to the buffer's directory
+            resolved_path = base_dir .. "/" .. hint
+          else
+            -- Resolve relative to current working directory
+            resolved_path = vim.fn.getcwd() .. "/" .. hint
+          end
+        end
+        
+        -- Expand ~ and normalize the path
+        resolved_path = vim.fn.expand(resolved_path)
+        resolved_path = vim.fn.fnamemodify(resolved_path, ":p")
+        
+        if vim.fn.filereadable(resolved_path) == 1 then
+          vim.notify("Auto-detected data file: " .. resolved_path, vim.log.levels.INFO)
+          return resolved_path
+        else
+          -- Try the original hint as-is (might be already correct)
+          hint = vim.fn.expand(hint)
+          if vim.fn.filereadable(hint) == 1 then
+            vim.notify("Auto-detected data file: " .. hint, vim.log.levels.INFO)
+            return hint
+          end
         end
       end
     end
