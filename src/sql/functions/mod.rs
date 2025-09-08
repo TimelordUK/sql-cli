@@ -12,6 +12,7 @@ pub mod constants;
 pub mod convert;
 pub mod date_time;
 pub mod geometry;
+pub mod group_num;
 pub mod hash;
 pub mod math;
 pub mod mathematics;
@@ -147,6 +148,7 @@ impl FunctionRegistry {
         registry.register_conversion_functions();
         registry.register_hash_functions();
         registry.register_comparison_functions();
+        registry.register_aggregate_functions();
 
         registry
     }
@@ -544,6 +546,15 @@ impl FunctionRegistry {
         use convert::ConvertFunction;
 
         self.register(Box::new(ConvertFunction));
+    }
+
+    /// Register aggregate and analytic functions
+    fn register_aggregate_functions(&mut self) {
+        use group_num::GroupNumFunction;
+        
+        // Register GROUP_NUM function
+        // Note: We create a new instance per query to ensure clean memoization
+        self.register(Box::new(GroupNumFunction::new()));
     }
 }
 

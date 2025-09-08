@@ -144,24 +144,24 @@ FROM test;
 GO
 
 -- 13. Detect sales trends using LAG
-SELECT 
-    salesperson,
-    month,
-    sales_amount,
-    LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month) as m1,
-    LAG(sales_amount, 2) OVER (PARTITION BY salesperson ORDER BY month) as m2,
-    CASE 
-        WHEN LAG(sales_amount, 2) OVER (PARTITION BY salesperson ORDER BY month) IS NULL THEN 'NEW'
-        WHEN sales_amount > LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month)
-         AND LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month) > LAG(sales_amount, 2) OVER (PARTITION BY salesperson ORDER BY month)
-        THEN 'RISING'
-        WHEN sales_amount < LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month)
-         AND LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month) < LAG(sales_amount, 2) OVER (PARTITION BY salesperson ORDER BY month)
-        THEN 'FALLING'
-        ELSE 'MIXED'
-    END as trend
-FROM test;
-GO
+-- SELECT 
+--     salesperson,
+--     month,
+--     sales_amount,
+--     LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month) as m1,
+--     LAG(sales_amount, 2) OVER (PARTITION BY salesperson ORDER BY month) as m2,
+--     CASE 
+--         WHEN LAG(sales_amount, 2) OVER (PARTITION BY salesperson ORDER BY month) IS NULL THEN 'NEW'
+--         WHEN sales_amount > LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month)
+--          AND LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month) > LAG(sales_amount, 2) OVER (PARTITION BY salesperson ORDER BY month)
+--         THEN 'RISING'
+--         WHEN sales_amount < LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month)
+--          AND LAG(sales_amount, 1) OVER (PARTITION BY salesperson ORDER BY month) < LAG(sales_amount, 2) OVER (PARTITION BY salesperson ORDER BY month)
+--         THEN 'FALLING'
+--         ELSE 'MIXED'
+--     END as trend
+-- FROM test;
+-- GO
 
 -- 14. Gap analysis - find gaps in sequences
 SELECT 
