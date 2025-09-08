@@ -154,6 +154,19 @@ WHERE SQRT(area) BETWEEN 10 AND 50
 - **Constants:** `PI()`, `E()` - mathematical constants
 
 
+```
+sql-cli -q "select sum_n(value) as triangle from range(1,10)"
+```
+
+```sql
+-- use distinct to only select unique values
+sql-cli -q "select distinct value % 4 from range(1,50)"
+```
+
+```sql
+-- can use a range cte to select primes
+sql-cli -q "WITH primes as (select is_prime(value) as is_p, value as n from range(2,100)) select n from primes where is_p = true "
+```
 
 ```sql
 -- sql-cli data/numbers_1_to_100.csv -f find_primes_1_to_100.sql -o table

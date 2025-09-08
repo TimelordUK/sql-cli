@@ -611,7 +611,7 @@ impl DataTable {
         if sample_count > 0 {
             // Column headers
             output.push('┌');
-            for (i, col) in self.columns.iter().enumerate() {
+            for (i, _col) in self.columns.iter().enumerate() {
                 if i > 0 {
                     output.push('┬');
                 }
@@ -729,7 +729,7 @@ impl DataTable {
     /// Shrink vectors to fit actual data (removes excess capacity)
     pub fn shrink_to_fit(&mut self) {
         self.rows.shrink_to_fit();
-        for column in &mut self.columns {
+        for _column in &mut self.columns {
             // Shrink any column-specific data if needed
         }
     }

@@ -671,13 +671,6 @@ impl SqlFunction for TextJoinFunction {
                         Some(String::new())
                     }
                 }
-                _ => {
-                    if ignore_empty {
-                        None
-                    } else {
-                        Some(String::new())
-                    }
-                }
             };
 
             if let Some(s) = string_value {

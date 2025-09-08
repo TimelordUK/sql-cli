@@ -5609,7 +5609,6 @@ impl EnhancedTuiApp {
 
     /// Debug method to dump current buffer state (disabled to prevent TUI corruption)
     #[allow(dead_code)]
-
     fn ui(&mut self, f: &mut Frame) {
         // Always use single-line mode input height
         let input_height = INPUT_AREA_HEIGHT;

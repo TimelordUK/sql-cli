@@ -104,7 +104,6 @@ impl ColumnOperationResult {
 
 /// Column packing mode for optimizing data display
 /// Default column width if no data (used as fallback)
-
 /// Number of rows used by the table widget chrome (header + borders)
 /// This includes:
 /// - 1 row for the header

@@ -38,7 +38,7 @@ impl DataTableExecutor {
 impl QueryExecutor for DataTableExecutor {
     fn execute(&self, query: &str) -> Result<QueryResponse> {
         // For now, only handle SELECT * FROM table
-        let upper_query = query.trim().to_uppercase();
+        let _upper_query = query.trim().to_uppercase();
         if !self.can_handle(query) {
             return Err(anyhow::anyhow!(
                 "DataTableExecutor can only handle simple SELECT * queries"

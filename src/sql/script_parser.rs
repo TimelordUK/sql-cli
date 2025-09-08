@@ -6,14 +6,57 @@ use anyhow::Result;
 /// Parses SQL scripts into individual statements using GO as separator
 pub struct ScriptParser {
     content: String,
+    data_file_hint: Option<String>,
 }
 
 impl ScriptParser {
     /// Create a new script parser with the given content
     pub fn new(content: &str) -> Self {
+        let data_file_hint = Self::extract_data_file_hint(content);
         Self {
             content: content.to_string(),
+            data_file_hint,
         }
+    }
+
+    /// Extract data file hint from script comments
+    /// Looks for patterns like:
+    /// -- #!data: path/to/file.csv
+    /// -- #!datafile: path/to/file.csv  
+    /// -- #! /path/to/file.csv
+    fn extract_data_file_hint(content: &str) -> Option<String> {
+        for line in content.lines() {
+            let trimmed = line.trim();
+
+            // Skip non-comment lines
+            if !trimmed.starts_with("--") {
+                continue;
+            }
+
+            // Remove the comment prefix
+            let comment_content = trimmed.strip_prefix("--").unwrap().trim();
+
+            // Check for data file hint patterns
+            if let Some(path) = comment_content.strip_prefix("#!data:") {
+                return Some(path.trim().to_string());
+            }
+            if let Some(path) = comment_content.strip_prefix("#!datafile:") {
+                return Some(path.trim().to_string());
+            }
+            if let Some(path) = comment_content.strip_prefix("#!") {
+                let path = path.trim();
+                // Check if it looks like a file path
+                if path.contains('.') || path.contains('/') || path.contains('\\') {
+                    return Some(path.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    /// Get the data file hint if present
+    pub fn data_file_hint(&self) -> Option<&str> {
+        self.data_file_hint.as_deref()
     }
 
     /// Parse the script into individual SQL statements

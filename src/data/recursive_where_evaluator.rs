@@ -1,4 +1,3 @@
-use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
 use anyhow::{anyhow, Result};

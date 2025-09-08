@@ -693,7 +693,6 @@ impl QueryEngine {
 
     /// Apply DISTINCT to remove duplicate rows
     fn apply_distinct(&self, view: DataView) -> Result<DataView> {
-        use crate::data::datavalue_compare::compare_datavalues;
         use std::collections::HashSet;
 
         let source = view.source();

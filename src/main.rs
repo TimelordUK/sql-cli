@@ -405,6 +405,7 @@ fn main() -> io::Result<()> {
                 auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
                 limit: limit_arg,
                 query_plan: query_plan_arg,
+                script_file: query_file_arg.clone(),
             };
 
             // Use script executor if GO separator is detected
@@ -426,6 +427,7 @@ fn main() -> io::Result<()> {
                 auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
                 limit: limit_arg,
                 query_plan: query_plan_arg,
+                script_file: query_file_arg.clone(),
             };
 
             // Use script executor if GO separator is detected
@@ -436,6 +438,27 @@ fn main() -> io::Result<()> {
                     .map_err(io::Error::other);
             }
         }
+        
+        // Check if it's a script with a data file hint
+        if is_script {
+            // Try to execute as a script - it might have a data file hint
+            let config = sql_cli::non_interactive::NonInteractiveConfig {
+                data_file: String::new(),
+                query,
+                output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
+                    .map_err(io::Error::other)?,
+                output_file: output_file_arg,
+                case_insensitive: args.contains(&"--case-insensitive".to_string()),
+                auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
+                limit: limit_arg,
+                query_plan: query_plan_arg,
+                script_file: query_file_arg.clone(),
+            };
+            
+            // The script executor will check for data file hints
+            return sql_cli::non_interactive::execute_script(config).map_err(io::Error::other);
+        }
+        
         eprintln!("Error: Data file (CSV or JSON) required for non-interactive query mode");
         eprintln!("Usage: sql-cli <data.csv> -q \"SELECT * FROM table\"");
         eprintln!("       sql-cli -q \"SELECT expression FROM DUAL\"");

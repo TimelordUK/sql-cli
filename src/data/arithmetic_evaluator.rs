@@ -523,9 +523,9 @@ impl<'a> ArithmeticEvaluator<'a> {
         }
 
         // Create a DataView from the table (with visible rows if filtered)
-        let data_view = if let Some(ref visible_rows) = self.visible_rows {
+        let data_view = if let Some(ref _visible_rows) = self.visible_rows {
             // Create a filtered view
-            let mut view = DataView::new(Arc::new(self.table.clone()));
+            let view = DataView::new(Arc::new(self.table.clone()));
             // Apply filtering based on visible rows
             // Note: This is a simplified approach - in production we'd need proper filtering
             view

@@ -46,6 +46,7 @@ pub struct NonInteractiveConfig {
     pub auto_hide_empty: bool,
     pub limit: Option<usize>,
     pub query_plan: bool,
+    pub script_file: Option<String>, // Path to the script file for relative path resolution
 }
 
 /// Execute a query in non-interactive mode
@@ -98,7 +99,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
 
     // 1. Load the data file or create DUAL table
-    let (data_table, is_dual) =
+    let (data_table, _is_dual) =
         if check_statement_for_range(&statement) || config.data_file.is_empty() {
             info!("Using DUAL table for expression evaluation");
             (crate::data::datatable::DataTable::dual(), true)
@@ -112,7 +113,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
             );
             (table, false)
         };
-    let table_name = data_table.name.clone();
+    let _table_name = data_table.name.clone();
 
     // 2. Create a DataView from the table
     let dataview = DataView::new(std::sync::Arc::new(data_table));
@@ -209,7 +210,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
 
 /// Execute a script file with multiple SQL statements separated by GO
 pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
-    let start_time = Instant::now();
+    let _start_time = Instant::now();
 
     // Parse the script into individual statements
     let parser = ScriptParser::new(&config.query);
@@ -217,13 +218,61 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
 
     info!("Found {} statements in script", statements.len());
 
-    // Load the data file once (or use DUAL)
-    let (data_table, is_dual) = if config.data_file.is_empty() {
-        info!("Using DUAL table for script execution");
-        (DataTable::dual(), true)
+    // Determine data file to use (command-line overrides script hint)
+    let data_file = if !config.data_file.is_empty() {
+        // Command-line argument takes precedence
+        config.data_file.clone()
+    } else if let Some(hint) = parser.data_file_hint() {
+        // Use data file hint from script
+        info!("Using data file from script hint: {}", hint);
+
+        // Resolve relative paths relative to script file if provided
+        if let Some(script_path) = config.script_file.as_ref() {
+            let script_dir = std::path::Path::new(script_path)
+                .parent()
+                .unwrap_or(std::path::Path::new("."));
+            let hint_path = std::path::Path::new(hint);
+
+            if hint_path.is_relative() {
+                script_dir.join(hint_path).to_string_lossy().to_string()
+            } else {
+                hint.to_string()
+            }
+        } else {
+            hint.to_string()
+        }
     } else {
-        info!("Loading data from: {}", config.data_file);
-        let table = load_data_file(&config.data_file)?;
+        String::new()
+    };
+
+    // Load the data file once (or use DUAL)
+    let (data_table, _is_dual) = if data_file.is_empty() {
+        // No data file specified and no hint found
+        if parser.data_file_hint().is_none() {
+            anyhow::bail!(
+                "No data file specified. Either:\n\
+                1. Provide a data file: sql-cli data.csv -f script.sql\n\
+                2. Add a data hint to your script: -- #!data: path/to/data.csv\n\
+                3. Use DUAL table with no FROM clause"
+            );
+        } else {
+            // Had a hint but couldn't resolve the file
+            anyhow::bail!(
+                "Data file hint found but file doesn't exist or couldn't be resolved"
+            );
+        }
+    } else {
+        // Check if file exists before trying to load
+        if !std::path::Path::new(&data_file).exists() {
+            anyhow::bail!(
+                "Data file not found: {}\n\
+                Please check the path is correct",
+                data_file
+            );
+        }
+        
+        info!("Loading data from: {}", data_file);
+        let table = load_data_file(&data_file)?;
         info!(
             "Loaded {} rows with {} columns",
             table.row_count(),
@@ -235,6 +284,9 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
     // Track script results
     let mut script_result = ScriptResult::new();
     let mut output = Vec::new();
+
+    // Create Arc<DataTable> once for all statements - avoids expensive cloning
+    let arc_data_table = std::sync::Arc::new(data_table);
 
     // Execute each statement
     for (idx, statement) in statements.iter().enumerate() {
@@ -249,8 +301,8 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
             output.push(format!("-- Query {} --", statement_num));
         }
 
-        // Create a fresh DataView for each statement
-        let dataview = DataView::new(std::sync::Arc::new(data_table.clone()));
+        // Create a fresh DataView for each statement (reuses the Arc)
+        let dataview = DataView::new(arc_data_table.clone());
 
         // Execute the statement
         let service = QueryExecutionService::new(config.case_insensitive, config.auto_hide_empty);
