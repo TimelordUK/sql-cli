@@ -12,6 +12,7 @@ fn test_registry_constant_functions() {
     let pi_expr = SqlExpression::FunctionCall {
         name: "PI".to_string(),
         args: vec![],
+        distinct: false,
     };
     let pi_result = evaluator.evaluate(&pi_expr, 0).unwrap();
     match pi_result {
@@ -23,6 +24,7 @@ fn test_registry_constant_functions() {
     let me_expr = SqlExpression::FunctionCall {
         name: "ME".to_string(),
         args: vec![],
+        distinct: false,
     };
     let me_result = evaluator.evaluate(&me_expr, 0).unwrap();
     match me_result {
@@ -34,6 +36,7 @@ fn test_registry_constant_functions() {
     let e_expr = SqlExpression::FunctionCall {
         name: "E".to_string(),
         args: vec![],
+        distinct: false,
     };
     let e_result = evaluator.evaluate(&e_expr, 0).unwrap();
     match e_result {
@@ -51,6 +54,7 @@ fn test_registry_astronomical_functions() {
     let earth_expr = SqlExpression::FunctionCall {
         name: "MASS_EARTH".to_string(),
         args: vec![],
+        distinct: false,
     };
     let earth_result = evaluator.evaluate(&earth_expr, 0).unwrap();
     match earth_result {
@@ -62,6 +66,7 @@ fn test_registry_astronomical_functions() {
     let sun_expr = SqlExpression::FunctionCall {
         name: "MASS_SUN".to_string(),
         args: vec![],
+        distinct: false,
     };
     let sun_result = evaluator.evaluate(&sun_expr, 0).unwrap();
     match sun_result {
@@ -73,6 +78,7 @@ fn test_registry_astronomical_functions() {
     let au_expr = SqlExpression::FunctionCall {
         name: "AU".to_string(),
         args: vec![],
+        distinct: false,
     };
     let au_result = evaluator.evaluate(&au_expr, 0).unwrap();
     match au_result {
@@ -84,6 +90,7 @@ fn test_registry_astronomical_functions() {
     let ly_expr = SqlExpression::FunctionCall {
         name: "LIGHT_YEAR".to_string(),
         args: vec![],
+        distinct: false,
     };
     let ly_result = evaluator.evaluate(&ly_expr, 0).unwrap();
     match ly_result {
@@ -101,6 +108,7 @@ fn test_registry_chemistry_functions() {
     let avogadro_expr = SqlExpression::FunctionCall {
         name: "AVOGADRO".to_string(),
         args: vec![],
+        distinct: false,
     };
     let avogadro_result = evaluator.evaluate(&avogadro_expr, 0).unwrap();
     match avogadro_result {
@@ -112,6 +120,7 @@ fn test_registry_chemistry_functions() {
     let carbon_mass_expr = SqlExpression::FunctionCall {
         name: "ATOMIC_MASS".to_string(),
         args: vec![SqlExpression::StringLiteral("Carbon".to_string())],
+        distinct: false,
     };
     let carbon_result = evaluator.evaluate(&carbon_mass_expr, 0).unwrap();
     match carbon_result {
@@ -123,6 +132,7 @@ fn test_registry_chemistry_functions() {
     let gold_number_expr = SqlExpression::FunctionCall {
         name: "ATOMIC_NUMBER".to_string(),
         args: vec![SqlExpression::StringLiteral("Au".to_string())],
+        distinct: false,
     };
     let gold_result = evaluator.evaluate(&gold_number_expr, 0).unwrap();
     match gold_result {
@@ -140,6 +150,7 @@ fn test_registry_function_errors() {
     let pi_with_args = SqlExpression::FunctionCall {
         name: "PI".to_string(),
         args: vec![SqlExpression::NumberLiteral("1.0".to_string())],
+        distinct: false,
     };
     assert!(evaluator.evaluate(&pi_with_args, 0).is_err());
 
@@ -147,6 +158,7 @@ fn test_registry_function_errors() {
     let unknown_element = SqlExpression::FunctionCall {
         name: "ATOMIC_MASS".to_string(),
         args: vec![SqlExpression::StringLiteral("Xyz".to_string())],
+        distinct: false,
     };
     assert!(evaluator.evaluate(&unknown_element, 0).is_err());
 
@@ -154,6 +166,7 @@ fn test_registry_function_errors() {
     let wrong_type = SqlExpression::FunctionCall {
         name: "ATOMIC_MASS".to_string(),
         args: vec![SqlExpression::NumberLiteral("42".to_string())],
+        distinct: false,
     };
     assert!(evaluator.evaluate(&wrong_type, 0).is_err());
 }

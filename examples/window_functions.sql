@@ -1,3 +1,4 @@
+-- #! ../data/sales_data.csv
 -- Window Functions Examples for SQL-CLI
 -- 
 -- This file demonstrates various window functions including:
