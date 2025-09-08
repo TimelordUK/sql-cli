@@ -734,6 +734,241 @@ impl SqlFunction for SumNFunction {
     }
 }
 
+/// SUM_N_SQR function - sum of squares from 1 to n
+pub struct SumNSqrFunction;
+
+impl SqlFunction for SumNSqrFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "SUM_N_SQR",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(1),
+            description: "Sum of squares from 1 to n: 1² + 2² + ... + n²",
+            returns: "Integer - sum of squares (n(n+1)(2n+1)/6)",
+            examples: vec![
+                "SELECT SUM_N_SQR(5) -- Returns 55 (1+4+9+16+25)",
+                "SELECT SUM_N_SQR(10) -- Returns 385",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("SUM_N_SQR requires exactly 1 argument"));
+        }
+
+        let n = match &args[0] {
+            DataValue::Integer(i) => *i,
+            DataValue::Float(f) => *f as i64,
+            _ => return Err(anyhow!("SUM_N_SQR requires a numeric argument")),
+        };
+
+        if n < 0 {
+            return Err(anyhow!("SUM_N_SQR requires a non-negative number"));
+        }
+
+        // Formula: n(n+1)(2n+1)/6
+        let result = n * (n + 1) * (2 * n + 1) / 6;
+        Ok(DataValue::Integer(result))
+    }
+}
+
+/// SUM_N_CUBE function - sum of cubes from 1 to n
+pub struct SumNCubeFunction;
+
+impl SqlFunction for SumNCubeFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "SUM_N_CUBE",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(1),
+            description: "Sum of cubes from 1 to n: 1³ + 2³ + ... + n³",
+            returns: "Integer - sum of cubes ([n(n+1)/2]²)",
+            examples: vec![
+                "SELECT SUM_N_CUBE(4) -- Returns 100 (1+8+27+64)",
+                "SELECT SUM_N_CUBE(5) -- Returns 225",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("SUM_N_CUBE requires exactly 1 argument"));
+        }
+
+        let n = match &args[0] {
+            DataValue::Integer(i) => *i,
+            DataValue::Float(f) => *f as i64,
+            _ => return Err(anyhow!("SUM_N_CUBE requires a numeric argument")),
+        };
+
+        if n < 0 {
+            return Err(anyhow!("SUM_N_CUBE requires a non-negative number"));
+        }
+
+        // Formula: [n(n+1)/2]² - which is the square of sum_n!
+        let sum_n = n * (n + 1) / 2;
+        let result = sum_n * sum_n;
+        Ok(DataValue::Integer(result))
+    }
+}
+
+/// HARMONIC function - harmonic series sum 1 + 1/2 + 1/3 + ... + 1/n
+pub struct HarmonicFunction;
+
+impl SqlFunction for HarmonicFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "HARMONIC",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(1),
+            description: "Harmonic series: 1 + 1/2 + 1/3 + ... + 1/n",
+            returns: "Float - sum of harmonic series",
+            examples: vec![
+                "SELECT HARMONIC(4) -- Returns 2.0833... (1 + 0.5 + 0.333... + 0.25)",
+                "SELECT HARMONIC(10) -- Returns 2.9290...",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("HARMONIC requires exactly 1 argument"));
+        }
+
+        let n = match &args[0] {
+            DataValue::Integer(i) => *i,
+            DataValue::Float(f) => *f as i64,
+            _ => return Err(anyhow!("HARMONIC requires a numeric argument")),
+        };
+
+        if n <= 0 {
+            return Err(anyhow!("HARMONIC requires a positive number"));
+        }
+
+        let mut sum = 0.0;
+        for i in 1..=n {
+            sum += 1.0 / i as f64;
+        }
+        
+        Ok(DataValue::Float(sum))
+    }
+}
+
+/// FIBONACCI function - returns the nth Fibonacci number
+pub struct FibonacciFunction;
+
+impl SqlFunction for FibonacciFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "FIBONACCI",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the nth Fibonacci number (0, 1, 1, 2, 3, 5, 8, ...)",
+            returns: "Integer - nth Fibonacci number",
+            examples: vec![
+                "SELECT FIBONACCI(7) -- Returns 13",
+                "SELECT FIBONACCI(10) -- Returns 55",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("FIBONACCI requires exactly 1 argument"));
+        }
+
+        let n = match &args[0] {
+            DataValue::Integer(i) => *i,
+            DataValue::Float(f) => *f as i64,
+            _ => return Err(anyhow!("FIBONACCI requires a numeric argument")),
+        };
+
+        if n < 0 {
+            return Err(anyhow!("FIBONACCI requires a non-negative number"));
+        }
+
+        if n == 0 {
+            return Ok(DataValue::Integer(0));
+        }
+        if n == 1 {
+            return Ok(DataValue::Integer(1));
+        }
+
+        let mut a = 0i64;
+        let mut b = 1i64;
+        
+        for _ in 2..=n {
+            let temp = a + b;
+            a = b;
+            b = temp;
+        }
+        
+        Ok(DataValue::Integer(b))
+    }
+}
+
+/// GEOMETRIC function - geometric series sum: a + ar + ar² + ... + ar^(n-1)
+pub struct GeometricFunction;
+
+impl SqlFunction for GeometricFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "GEOMETRIC",
+            category: FunctionCategory::Mathematical,
+            arg_count: ArgCount::Fixed(3),
+            description: "Geometric series sum: a + ar + ar² + ... + ar^(n-1)",
+            returns: "Float - sum of geometric series",
+            examples: vec![
+                "SELECT GEOMETRIC(1, 2, 5) -- Returns 31 (1 + 2 + 4 + 8 + 16)",
+                "SELECT GEOMETRIC(1, 0.5, 10) -- Returns 1.998... (converging series)",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 3 {
+            return Err(anyhow!("GEOMETRIC requires exactly 3 arguments (a, r, n)"));
+        }
+
+        let a = match &args[0] {
+            DataValue::Integer(i) => *i as f64,
+            DataValue::Float(f) => *f,
+            _ => return Err(anyhow!("GEOMETRIC first argument (a) must be numeric")),
+        };
+
+        let r = match &args[1] {
+            DataValue::Integer(i) => *i as f64,
+            DataValue::Float(f) => *f,
+            _ => return Err(anyhow!("GEOMETRIC second argument (r) must be numeric")),
+        };
+
+        let n = match &args[2] {
+            DataValue::Integer(i) => *i,
+            DataValue::Float(f) => *f as i64,
+            _ => return Err(anyhow!("GEOMETRIC third argument (n) must be numeric")),
+        };
+
+        if n < 0 {
+            return Err(anyhow!("GEOMETRIC requires non-negative n"));
+        }
+
+        if n == 0 {
+            return Ok(DataValue::Float(0.0));
+        }
+
+        // Formula: a * (1 - r^n) / (1 - r) for r != 1
+        // If r = 1, sum = a * n
+        let sum = if (r - 1.0).abs() < 1e-10 {
+            a * n as f64
+        } else {
+            a * (1.0 - r.powi(n as i32)) / (1.0 - r)
+        };
+        
+        Ok(DataValue::Float(sum))
+    }
+}
+
 /// Register all math functions
 pub fn register_math_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(RoundFunction));
@@ -754,4 +989,9 @@ pub fn register_math_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(RadiansFunction));
     registry.register(Box::new(FactorialFunction));
     registry.register(Box::new(SumNFunction));
+    registry.register(Box::new(SumNSqrFunction));
+    registry.register(Box::new(SumNCubeFunction));
+    registry.register(Box::new(HarmonicFunction));
+    registry.register(Box::new(FibonacciFunction));
+    registry.register(Box::new(GeometricFunction));
 }
