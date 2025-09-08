@@ -456,7 +456,7 @@ pub enum SqlExpression {
     FunctionCall {
         name: String,
         args: Vec<SqlExpression>,
-        distinct: bool,  // For COUNT(DISTINCT col), SUM(DISTINCT col), etc.
+        distinct: bool, // For COUNT(DISTINCT col), SUM(DISTINCT col), etc.
     },
     WindowFunction {
         name: String,
@@ -1864,7 +1864,7 @@ impl Parser {
                 self.advance(); // consume DISTINCT
                 has_distinct = true;
             }
-            
+
             // Parse the expression (either after DISTINCT or directly)
             args.push(self.parse_additive()?);
 
@@ -2170,7 +2170,11 @@ fn format_expression_ast(expr: &SqlExpression) -> String {
                 args_str
             )
         }
-        SqlExpression::FunctionCall { name, args, distinct } => {
+        SqlExpression::FunctionCall {
+            name,
+            args,
+            distinct,
+        } => {
             let args_str = args
                 .iter()
                 .map(format_expression_ast)
@@ -2837,7 +2841,11 @@ fn format_expression(expr: &SqlExpression) -> String {
                 .join(", ");
             format!("{}.{}({})", format_expression(base), method, args_str)
         }
-        SqlExpression::FunctionCall { name, args, distinct } => {
+        SqlExpression::FunctionCall {
+            name,
+            args,
+            distinct,
+        } => {
             let args_str = args
                 .iter()
                 .map(format_expression)

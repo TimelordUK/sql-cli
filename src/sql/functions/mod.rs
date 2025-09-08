@@ -551,7 +551,7 @@ impl FunctionRegistry {
     /// Register aggregate and analytic functions
     fn register_aggregate_functions(&mut self) {
         use group_num::GroupNumFunction;
-        
+
         // Register GROUP_NUM function
         // Note: We create a new instance per query to ensure clean memoization
         self.register(Box::new(GroupNumFunction::new()));

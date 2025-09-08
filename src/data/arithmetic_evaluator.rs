@@ -114,9 +114,11 @@ impl<'a> ArithmeticEvaluator<'a> {
             SqlExpression::BinaryOp { left, op, right } => {
                 self.evaluate_binary_op(left, op, right, row_index)
             }
-            SqlExpression::FunctionCall { name, args, distinct } => {
-                self.evaluate_function_with_distinct(name, args, *distinct, row_index)
-            }
+            SqlExpression::FunctionCall {
+                name,
+                args,
+                distinct,
+            } => self.evaluate_function_with_distinct(name, args, *distinct, row_index),
             SqlExpression::WindowFunction {
                 name,
                 args,
@@ -427,16 +429,22 @@ impl<'a> ArithmeticEvaluator<'a> {
         // If DISTINCT is specified, handle it specially for aggregate functions
         if distinct {
             let name_upper = name.to_uppercase();
-            
+
             // DISTINCT is only valid for aggregate functions
-            if name_upper == "COUNT" || name_upper == "SUM" || name_upper == "AVG" 
-                || name_upper == "MIN" || name_upper == "MAX" {
+            if name_upper == "COUNT"
+                || name_upper == "SUM"
+                || name_upper == "AVG"
+                || name_upper == "MIN"
+                || name_upper == "MAX"
+            {
                 return self.evaluate_aggregate_distinct(&name_upper, args, row_index);
             } else {
-                return Err(anyhow!("DISTINCT can only be used with aggregate functions"));
+                return Err(anyhow!(
+                    "DISTINCT can only be used with aggregate functions"
+                ));
             }
         }
-        
+
         // Otherwise, use the regular evaluation
         self.evaluate_function(name, args, row_index)
     }
@@ -448,31 +456,31 @@ impl<'a> ArithmeticEvaluator<'a> {
         row_index: usize,
     ) -> Result<DataValue> {
         use std::collections::HashSet;
-        
+
         if args.is_empty() {
             return Err(anyhow!("{} DISTINCT requires at least one argument", name));
         }
-        
+
         // Determine which rows to process
         let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
             visible.clone()
         } else {
             (0..self.table.rows.len()).collect()
         };
-        
+
         // Collect unique values
         let mut unique_values = HashSet::new();
         let mut numeric_values = Vec::new();
-        
+
         for row_idx in &rows_to_process {
             // Evaluate the expression for this row
             let value = self.evaluate(&args[0], *row_idx)?;
-            
+
             // Skip NULL values
             if matches!(value, DataValue::Null) {
                 continue;
             }
-            
+
             // Convert to string for uniqueness check
             let value_str = match &value {
                 DataValue::String(s) => s.clone(),
@@ -483,7 +491,7 @@ impl<'a> ArithmeticEvaluator<'a> {
                 DataValue::DateTime(dt) => dt.to_string(),
                 DataValue::Null => continue,
             };
-            
+
             // Only process if we haven't seen this value before
             if unique_values.insert(value_str) {
                 // For numeric aggregates, collect the numeric value
@@ -496,7 +504,7 @@ impl<'a> ArithmeticEvaluator<'a> {
                 }
             }
         }
-        
+
         // Calculate the result based on the aggregate function
         match name {
             "COUNT" => Ok(DataValue::Integer(unique_values.len() as i64)),
@@ -536,7 +544,9 @@ impl<'a> ArithmeticEvaluator<'a> {
                 if numeric_values.is_empty() {
                     Ok(DataValue::Null)
                 } else {
-                    let max = numeric_values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+                    let max = numeric_values
+                        .iter()
+                        .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
                     if max.fract() == 0.0 && max.abs() < 1e10 {
                         Ok(DataValue::Integer(max as i64))
                     } else {
@@ -544,7 +554,7 @@ impl<'a> ArithmeticEvaluator<'a> {
                     }
                 }
             }
-            _ => Err(anyhow!("Unsupported DISTINCT aggregate: {}", name))
+            _ => Err(anyhow!("Unsupported DISTINCT aggregate: {}", name)),
         }
     }
 

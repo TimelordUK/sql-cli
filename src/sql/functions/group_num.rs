@@ -8,7 +8,8 @@ use std::sync::Mutex;
 // Global memoization state for GROUP_NUM function
 // This ensures consistency across the entire query
 lazy_static! {
-    static ref GROUP_NUM_MEMO: Mutex<HashMap<String, HashMap<String, i64>>> = Mutex::new(HashMap::new());
+    static ref GROUP_NUM_MEMO: Mutex<HashMap<String, HashMap<String, i64>>> =
+        Mutex::new(HashMap::new());
 }
 
 /// GROUP_NUM function - assigns a unique number (starting from 0) to each distinct value
@@ -19,7 +20,7 @@ impl GroupNumFunction {
     pub fn new() -> Self {
         Self
     }
-    
+
     /// Clear all memoization (should be called before each new query)
     pub fn clear_memoization() {
         let mut memo = GROUP_NUM_MEMO.lock().unwrap();
@@ -63,7 +64,9 @@ impl SqlFunction for GroupNumFunction {
         let column_id = "_default_";
 
         let mut memo = GROUP_NUM_MEMO.lock().unwrap();
-        let column_map = memo.entry(column_id.to_string()).or_insert_with(HashMap::new);
+        let column_map = memo
+            .entry(column_id.to_string())
+            .or_insert_with(HashMap::new);
 
         // Check if we've seen this value before
         if let Some(&num) = column_map.get(&value_str) {
@@ -75,7 +78,6 @@ impl SqlFunction for GroupNumFunction {
             Ok(DataValue::Integer(new_num))
         }
     }
-
 }
 
 /// Extended version that can track column context
@@ -103,7 +105,9 @@ impl GroupNumWithContext {
         };
 
         let mut memo = GROUP_NUM_MEMO.lock().unwrap();
-        let column_map = memo.entry(column_name.to_string()).or_insert_with(HashMap::new);
+        let column_map = memo
+            .entry(column_name.to_string())
+            .or_insert_with(HashMap::new);
 
         if let Some(&num) = column_map.get(&value_str) {
             Ok(DataValue::Integer(num))
