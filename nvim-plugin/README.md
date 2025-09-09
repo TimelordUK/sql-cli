@@ -17,6 +17,7 @@ A Neovim plugin for the SQL CLI tool that provides seamless integration for exec
 - 🎨 Syntax highlighting for output (tables, numbers, errors, success messages)
 - 📚 Built-in function help system (LSP-like documentation)
 - 🔎 Function search and discovery
+- 🔤 Intelligent autocompletion for column names, SQL functions, and keywords
 
 ## Installation
 
@@ -166,6 +167,17 @@ require('sql-cli').setup({
 - `<leader>sf` - List all available SQL functions
 - `<leader>sF` - Search SQL functions interactively
 
+#### Schema & Column Information
+- `<leader>sh` - Show table schema (columns and types)
+- `<leader>sk` - Smart detection at cursor (shows column info or function help)
+
+#### Autocompletion
+- `<C-x><C-o>` - Trigger SQL autocompletion (in INSERT mode)
+  - Completes column names from current data file
+  - Suggests SQL functions with descriptions
+  - Includes SQL keywords
+  - Sorted by relevance: columns → functions → keywords
+
 ### Data File Hints
 
 Add hints in your SQL files to specify the data source:
@@ -232,6 +244,8 @@ When you open a CSV file, it's automatically set as the data source. You can the
 - The output window is a regular buffer, so you can search, copy, etc.
 - Syntax highlighting is automatically applied to output for better readability
 - SQL files get additional buffer-local keymaps (`<LocalLeader>r` to run, `<LocalLeader>p` for plan)
+- Autocompletion works best after setting a data file - it reads the schema automatically
+- Use `<C-x><C-o>` in INSERT mode to trigger intelligent SQL completion
 
 ## Statusline Integration
 

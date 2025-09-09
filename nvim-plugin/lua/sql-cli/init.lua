@@ -42,6 +42,8 @@ M.config = {
     function_help = "K",            -- Show function help at cursor
     list_functions = "<leader>sf",  -- List all SQL functions
     search_functions = "<leader>sF", -- Search SQL functions
+    show_schema = "<leader>sh",     -- Show table schema
+    column_help = "<leader>sk",     -- Smart column/function detection at cursor
   },
   
   -- Output window settings
@@ -77,6 +79,9 @@ function M.setup(opts)
   
   -- Setup autocommands
   M.setup_autocmds()
+  
+  -- Setup completion
+  M.setup_completion()
 end
 
 -- Create user commands
@@ -192,6 +197,16 @@ function M.setup_keymaps()
   if keymaps.search_functions then
     vim.keymap.set("n", keymaps.search_functions, M.search_functions,
       { desc = "Search SQL functions", silent = true })
+  end
+  
+  if keymaps.show_schema then
+    vim.keymap.set("n", keymaps.show_schema, M.show_schema,
+      { desc = "Show table schema", silent = true })
+  end
+  
+  if keymaps.column_help then
+    vim.keymap.set("n", keymaps.column_help, M.get_column_at_cursor,
+      { desc = "Smart column/function detection at cursor", silent = true })
   end
 end
 
@@ -1197,6 +1212,132 @@ function M.search_functions()
   end)
 end
 
+-- Show table schema
+function M.show_schema()
+  if not state.data_file then
+    -- Try to detect from current buffer
+    local bufnr = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local buf_path = vim.api.nvim_buf_get_name(bufnr)
+    local buf_dir = nil
+    if buf_path and buf_path ~= "" then
+      buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+    end
+    state.data_file = M.detect_data_hint(lines, buf_dir)
+    
+    -- Check if current buffer is a CSV
+    if not state.data_file and buf_path:match("%.csv$") then
+      state.data_file = buf_path
+    end
+  end
+  
+  if not state.data_file then
+    vim.notify("No data file set or detected", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Run schema command
+  local cmd = M.config.command .. " " .. vim.fn.shellescape(state.data_file) .. " --schema"
+  local result = vim.fn.system(cmd)
+  local exit_code = vim.v.shell_error
+  
+  if exit_code ~= 0 then
+    vim.notify("Failed to get schema: " .. result, vim.log.levels.ERROR)
+    return
+  end
+  
+  -- Parse schema output to extract column names for state
+  state.schema_columns = {}
+  for line in result:gmatch("[^\n]+") do
+    local col_name = line:match("%d+%.%s+([%w_]+)")
+    if col_name then
+      table.insert(state.schema_columns, col_name)
+    end
+  end
+  
+  -- Show in floating window
+  M.show_help_in_float("Schema: " .. vim.fn.fnamemodify(state.data_file, ":t"), result)
+end
+
+-- Show column help at cursor
+function M.show_column_help()
+  -- Get word under cursor
+  local word = vim.fn.expand("<cword>")
+  
+  if word == "" then
+    vim.notify("No word under cursor", vim.log.levels.WARN)
+    return
+  end
+  
+  -- First, ensure we have schema information
+  if not state.schema_columns or #state.schema_columns == 0 then
+    -- Try to load schema
+    if state.data_file then
+      local cmd = M.config.command .. " " .. vim.fn.shellescape(state.data_file) .. " --schema"
+      local result = vim.fn.system(cmd)
+      
+      if vim.v.shell_error == 0 then
+        state.schema_columns = {}
+        for line in result:gmatch("[^\n]+") do
+          local col_name = line:match("%d+%.%s+([%w_]+)")
+          if col_name then
+            table.insert(state.schema_columns, col_name)
+          end
+        end
+      end
+    end
+  end
+  
+  -- Check if word is a column
+  if state.schema_columns then
+    local found_column = nil
+    local word_lower = word:lower()
+    
+    for _, col in ipairs(state.schema_columns) do
+      if col:lower() == word_lower then
+        found_column = col
+        break
+      end
+    end
+    
+    if found_column then
+      -- Get schema info and highlight the specific column
+      if state.data_file then
+        local cmd = M.config.command .. " " .. vim.fn.shellescape(state.data_file) .. " --schema"
+        local result = vim.fn.system(cmd)
+        
+        if vim.v.shell_error == 0 then
+          -- Extract just the column info
+          local column_info = {}
+          local found = false
+          for line in result:gmatch("[^\n]+") do
+            if line:match(found_column) then
+              table.insert(column_info, line)
+              found = true
+            elseif found and line:match("^%s*%d+%.") then
+              -- Stop at next column
+              break
+            elseif found then
+              table.insert(column_info, line)
+            end
+          end
+          
+          if #column_info > 0 then
+            M.show_help_in_float("Column: " .. found_column, table.concat(column_info, "\n"))
+            return
+          end
+        end
+      end
+    else
+      -- Try function help as fallback
+      M.show_function_help()
+    end
+  else
+    -- No schema loaded, try function help
+    M.show_function_help()
+  end
+end
+
 -- Setup syntax highlighting for output buffer
 function M.setup_output_highlighting()
   if not state.output_buf or not vim.api.nvim_buf_is_valid(state.output_buf) then
@@ -1252,6 +1393,170 @@ function M.setup_output_highlighting()
     vim.cmd([[highlight SqlCliExitCode guifg=#f8f8f2 ctermfg=7]])
     vim.cmd([[highlight SqlCliString guifg=#f1fa8c ctermfg=11]])
   end)
+end
+
+-- Get column info at cursor (smart detection)
+function M.get_column_at_cursor()
+  local word = vim.fn.expand('<cword>')
+  if not word or word == "" then
+    vim.notify("No word under cursor", vim.log.levels.WARN)
+    return
+  end
+  
+  -- First try column info from cached schema
+  if state.schema_columns then
+    for _, col in ipairs(state.schema_columns) do
+      if col.name:lower() == word:lower() then
+        local content = string.format("Column: %s\nType: %s", col.name, col.type or "Unknown")
+        M.show_help_in_float(col.name, content)
+        return
+      end
+    end
+  end
+  
+  -- If not a column, try function help
+  M.show_function_help()
+end
+
+-- Column name completion function for omnifunc
+function M.complete_columns(findstart, base)
+  if findstart == 1 then
+    -- Find the start of the word to complete
+    local line = vim.api.nvim_get_current_line()
+    local col = vim.api.nvim_win_get_cursor(0)[2]
+    local start_col = col
+    
+    -- Find the start of the current word
+    while start_col > 0 and line:sub(start_col, start_col):match('[%w_]') do
+      start_col = start_col - 1
+    end
+    
+    return start_col
+  else
+    -- Return completions based on the partial word
+    local completions = {}
+    
+    -- Add column names from cached schema
+    if state.schema_columns then
+      for _, col in ipairs(state.schema_columns) do
+        if base == "" or col.name:lower():find('^' .. vim.pesc(base:lower())) then
+          table.insert(completions, {
+            word = col.name,
+            menu = '[Col: ' .. (col.type or "?") .. ']',
+            kind = 'v',  -- Variable kind
+            info = string.format("Column: %s\nType: %s", col.name, col.type or "Unknown")
+          })
+        end
+      end
+    end
+    
+    -- Add common SQL functions
+    local sql_functions = {
+      {name = "COUNT", desc = "Count rows"},
+      {name = "SUM", desc = "Sum values"},
+      {name = "AVG", desc = "Average values"},
+      {name = "MIN", desc = "Minimum value"},
+      {name = "MAX", desc = "Maximum value"},
+      {name = "ROUND", desc = "Round number"},
+      {name = "ABS", desc = "Absolute value"},
+      {name = "UPPER", desc = "Uppercase string"},
+      {name = "LOWER", desc = "Lowercase string"},
+      {name = "LENGTH", desc = "String length"},
+      {name = "TRIM", desc = "Trim whitespace"},
+      {name = "SUBSTR", desc = "Substring"},
+      {name = "REPLACE", desc = "Replace string"},
+      {name = "CONCAT", desc = "Concatenate strings"},
+      {name = "COALESCE", desc = "First non-null value"},
+      {name = "CAST", desc = "Type conversion"},
+      {name = "DATE", desc = "Extract date"},
+      {name = "NOW", desc = "Current timestamp"},
+      {name = "RANK", desc = "Window rank"},
+      {name = "ROW_NUMBER", desc = "Row number"},
+      {name = "LEAD", desc = "Next row value"},
+      {name = "LAG", desc = "Previous row value"},
+      {name = "CONVERT", desc = "Unit conversion"},
+      {name = "RANGE", desc = "Generate range"},
+      {name = "RANDOM", desc = "Random number"},
+      {name = "SQRT", desc = "Square root"},
+      {name = "POW", desc = "Power"},
+      {name = "LOG", desc = "Logarithm"},
+      {name = "EXP", desc = "Exponential"},
+      {name = "SIN", desc = "Sine"},
+      {name = "COS", desc = "Cosine"},
+      {name = "TAN", desc = "Tangent"},
+    }
+    
+    for _, func in ipairs(sql_functions) do
+      if base == "" or func.name:lower():find('^' .. vim.pesc(base:lower())) then
+        table.insert(completions, {
+          word = func.name .. '(',
+          menu = '[Func]',
+          kind = 'f',  -- Function kind
+          info = func.desc
+        })
+      end
+    end
+    
+    -- Add SQL keywords
+    local keywords = {
+      'SELECT', 'FROM', 'WHERE', 'GROUP', 'BY', 'ORDER', 'HAVING',
+      'LIMIT', 'OFFSET', 'AS', 'WITH', 'DISTINCT', 'ALL', 'AND', 'OR',
+      'NOT', 'IN', 'EXISTS', 'BETWEEN', 'LIKE', 'IS', 'NULL', 'ASC', 'DESC',
+      'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'OVER', 'PARTITION',
+      'INNER', 'LEFT', 'RIGHT', 'OUTER', 'JOIN', 'ON', 'USING'
+    }
+    
+    for _, kw in ipairs(keywords) do
+      if base == "" or kw:lower():find('^' .. vim.pesc(base:lower())) then
+        table.insert(completions, {
+          word = kw,
+          menu = '[SQL]',
+          kind = 'k',  -- Keyword kind
+        })
+      end
+    end
+    
+    -- Sort completions: columns first, then functions, then keywords
+    table.sort(completions, function(a, b)
+      if a.kind ~= b.kind then
+        local order = {v = 1, f = 2, k = 3}
+        return (order[a.kind] or 4) < (order[b.kind] or 4)
+      end
+      return a.word < b.word
+    end)
+    
+    return completions
+  end
+end
+
+-- Enable column completion for SQL files
+function M.setup_completion()
+  -- Set omnifunc for SQL files
+  vim.api.nvim_create_autocmd("FileType", {
+    pattern = "sql",
+    callback = function()
+      vim.bo.omnifunc = 'v:lua.require("sql-cli").complete_columns'
+      -- Set completion options
+      vim.opt_local.completeopt = 'menu,menuone,noselect'
+      
+      -- Add instructions in buffer-local variable
+      vim.b.sql_cli_completion = true
+      
+      -- Show a hint about completion once per session
+      if not state.completion_hint_shown then
+        vim.defer_fn(function()
+          vim.notify("SQL completion enabled. Use <C-x><C-o> to trigger.", vim.log.levels.INFO)
+          state.completion_hint_shown = true
+        end, 100)
+      end
+    end
+  })
+  
+  -- Also enable for buffers that are already SQL
+  if vim.bo.filetype == "sql" then
+    vim.bo.omnifunc = 'v:lua.require("sql-cli").complete_columns'
+    vim.opt_local.completeopt = 'menu,menuone,noselect'
+  end
 end
 
 -- Cleanup

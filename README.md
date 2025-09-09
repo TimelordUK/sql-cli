@@ -54,6 +54,8 @@ A sophisticated Neovim plugin provides an IDE-like experience for SQL developmen
 " - Query navigation (]q, [q)
 " - Live results in split panes
 " - CSV/JSON export capabilities
+" - Intelligent autocompletion (columns, functions, keywords)
+" - Schema inspection with type inference
 ```
 
 See [nvim-plugin/README.md](nvim-plugin/README.md) for installation and full feature list.
