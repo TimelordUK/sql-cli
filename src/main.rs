@@ -154,7 +154,7 @@ fn print_help() {
         "  {}               - Show table schema (columns and types)",
         "--schema".green()
     );
-    
+
     println!();
     println!("{}", "Function Documentation:".yellow());
     println!(
@@ -273,7 +273,7 @@ fn main() -> io::Result<()> {
         println!("Generated function reference documentation at: {doc_path}");
         return Ok(());
     }
-    
+
     // Check for schema inspection
     if args.contains(&"--schema".to_string()) {
         // Find the file argument
@@ -281,14 +281,14 @@ fn main() -> io::Result<()> {
             .iter()
             .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
             .or_else(|| args.last().filter(|arg| !arg.starts_with('-')));
-            
+
         if let Some(file_path) = file_arg {
             // Load the table using the appropriate loader
             let table_name = std::path::Path::new(file_path)
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("data");
-            
+
             let table = if file_path.ends_with(".json") {
                 sql_cli::data::datatable_loaders::load_json_to_datatable(file_path, table_name)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
@@ -296,7 +296,7 @@ fn main() -> io::Result<()> {
                 sql_cli::data::datatable_loaders::load_csv_to_datatable(file_path, table_name)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
             };
-            
+
             // Print schema information
             println!("{}", "Table Schema".blue().bold());
             println!("{}", "═".repeat(60));
@@ -306,47 +306,59 @@ fn main() -> io::Result<()> {
             println!();
             println!("{}", "Column Information:".yellow());
             println!("{}", "─".repeat(60));
-            
+
             // Analyze column types by sampling data
             for (idx, column) in table.columns.iter().enumerate() {
                 let mut type_counts = std::collections::HashMap::new();
                 let mut null_count = 0;
                 let sample_size = std::cmp::min(100, table.row_count());
-                
+
                 for row_idx in 0..sample_size {
                     if let Some(value) = table.get_value(row_idx, idx) {
                         match value {
                             sql_cli::data::datatable::DataValue::Null => null_count += 1,
-                            sql_cli::data::datatable::DataValue::Integer(_) => *type_counts.entry("INTEGER").or_insert(0) += 1,
-                            sql_cli::data::datatable::DataValue::Float(_) => *type_counts.entry("FLOAT").or_insert(0) += 1,
-                            sql_cli::data::datatable::DataValue::String(_) | 
-                            sql_cli::data::datatable::DataValue::InternedString(_) => *type_counts.entry("STRING").or_insert(0) += 1,
-                            sql_cli::data::datatable::DataValue::Boolean(_) => *type_counts.entry("BOOLEAN").or_insert(0) += 1,
-                            sql_cli::data::datatable::DataValue::DateTime(_) => *type_counts.entry("DATETIME").or_insert(0) += 1,
+                            sql_cli::data::datatable::DataValue::Integer(_) => {
+                                *type_counts.entry("INTEGER").or_insert(0) += 1
+                            }
+                            sql_cli::data::datatable::DataValue::Float(_) => {
+                                *type_counts.entry("FLOAT").or_insert(0) += 1
+                            }
+                            sql_cli::data::datatable::DataValue::String(_)
+                            | sql_cli::data::datatable::DataValue::InternedString(_) => {
+                                *type_counts.entry("STRING").or_insert(0) += 1
+                            }
+                            sql_cli::data::datatable::DataValue::Boolean(_) => {
+                                *type_counts.entry("BOOLEAN").or_insert(0) += 1
+                            }
+                            sql_cli::data::datatable::DataValue::DateTime(_) => {
+                                *type_counts.entry("DATETIME").or_insert(0) += 1
+                            }
                         }
                     }
                 }
-                
+
                 // Determine primary type
                 let primary_type = type_counts
                     .iter()
                     .max_by_key(|(_, count)| *count)
                     .map(|(type_name, _)| *type_name)
                     .unwrap_or("UNKNOWN");
-                
+
                 println!(
                     "  {:3}. {:<30} {:<10} {}",
                     idx + 1,
                     column.name.clone().green(),
                     primary_type.cyan(),
                     if null_count > 0 {
-                        format!("({}% NULL)", null_count * 100 / sample_size).red().to_string()
+                        format!("({}% NULL)", null_count * 100 / sample_size)
+                            .red()
+                            .to_string()
                     } else {
                         "".to_string()
                     }
                 );
             }
-            
+
             println!();
             println!("{}", "Note: Types inferred from first 100 rows".italic());
         } else {

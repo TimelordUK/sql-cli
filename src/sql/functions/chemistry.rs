@@ -667,9 +667,9 @@ impl SqlFunction for NeutronsFunction {
             description: "Returns the number of neutrons in the most common isotope",
             returns: "INTEGER",
             examples: vec![
-                "SELECT NEUTRONS('C')",      // Carbon-12 has 6 neutrons
-                "SELECT NEUTRONS('U')",      // Uranium-238 has 146 neutrons
-                "SELECT NEUTRONS('Gold')",   // Gold-197 has 118 neutrons
+                "SELECT NEUTRONS('C')",    // Carbon-12 has 6 neutrons
+                "SELECT NEUTRONS('U')",    // Uranium-238 has 146 neutrons
+                "SELECT NEUTRONS('Gold')", // Gold-197 has 118 neutrons
             ],
         }
     }
