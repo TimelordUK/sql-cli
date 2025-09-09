@@ -993,13 +993,6 @@ impl Parser {
             None
         };
 
-        let order_by = if matches!(self.current_token, Token::OrderBy) {
-            self.advance();
-            Some(self.parse_order_by_list()?)
-        } else {
-            None
-        };
-
         let group_by = if matches!(self.current_token, Token::GroupBy) {
             self.advance();
             Some(self.parse_identifier_list()?)
@@ -1014,6 +1007,28 @@ impl Parser {
             }
             self.advance();
             Some(self.parse_expression()?)
+        } else {
+            None
+        };
+
+        // Parse ORDER BY clause (comes after GROUP BY and HAVING)
+        let order_by = if matches!(self.current_token, Token::OrderBy) {
+            self.advance();
+            Some(self.parse_order_by_list()?)
+        } else if let Token::Identifier(s) = &self.current_token {
+            if s.to_uppercase() == "ORDER" {
+                // Handle ORDER BY as two separate tokens
+                self.advance(); // consume ORDER
+                if matches!(&self.current_token, Token::Identifier(by_token) if by_token.to_uppercase() == "BY")
+                {
+                    self.advance(); // consume BY
+                    Some(self.parse_order_by_list()?)
+                } else {
+                    return Err("Expected BY after ORDER".to_string());
+                }
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -1179,6 +1194,15 @@ impl Parser {
         loop {
             match &self.current_token {
                 Token::Identifier(id) => {
+                    // Check if this is a reserved keyword that should stop identifier parsing
+                    let id_upper = id.to_uppercase();
+                    if matches!(
+                        id_upper.as_str(),
+                        "ORDER" | "HAVING" | "LIMIT" | "OFFSET" | "UNION" | "INTERSECT" | "EXCEPT"
+                    ) {
+                        // Stop parsing identifiers if we hit a reserved keyword
+                        break;
+                    }
                     identifiers.push(id.clone());
                     self.advance();
                 }
@@ -1187,7 +1211,10 @@ impl Parser {
                     identifiers.push(id.clone());
                     self.advance();
                 }
-                _ => return Err("Expected identifier".to_string()),
+                _ => {
+                    // Stop parsing if we hit any other token type
+                    break;
+                }
             }
 
             if matches!(self.current_token, Token::Comma) {
@@ -1195,6 +1222,10 @@ impl Parser {
             } else {
                 break;
             }
+        }
+
+        if identifiers.is_empty() {
+            return Err("Expected at least one identifier".to_string());
         }
 
         Ok(identifiers)

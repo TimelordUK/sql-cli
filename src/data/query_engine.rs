@@ -736,7 +736,8 @@ impl QueryEngine {
 
         for order_col in order_by_columns {
             // Try to find the column index
-            // First check in the current view's source (this handles both regular columns and computed columns)
+            // Check in the current view's source table (this handles both regular columns and computed columns)
+            // This is especially important after GROUP BY where we have a new result table with aggregate aliases
             let col_index = view
                 .source()
                 .get_column_index(&order_col.column)
