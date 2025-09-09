@@ -224,6 +224,8 @@ function M.setup_autocmds()
         if not state.data_file then
           state.data_file = ev.file
           vim.notify("SQL CLI: Using " .. ev.file .. " as data file", vim.log.levels.INFO)
+          -- Load schema for completion
+          M.load_schema_for_completion()
         end
       end,
     })
@@ -255,6 +257,10 @@ function M.execute_query(query)
         buf_dir = vim.fn.fnamemodify(buf_path, ":h")
       end
       state.data_file = M.detect_data_hint(lines, buf_dir)
+      if state.data_file then
+        -- Load schema for completion
+        M.load_schema_for_completion()
+      end
     end
     
     -- Auto-detect if current buffer is a CSV
@@ -262,6 +268,8 @@ function M.execute_query(query)
       local filename = vim.api.nvim_buf_get_name(bufnr)
       if filename:match("%.csv$") then
         state.data_file = filename
+        -- Load schema for completion
+        M.load_schema_for_completion()
       end
     end
   end
@@ -541,6 +549,9 @@ function M.set_data_file(file)
     if vim.fn.filereadable(file) == 1 then
       state.data_file = file
       vim.notify("Data file set to: " .. file, vim.log.levels.INFO)
+      
+      -- Load schema for completion
+      M.load_schema_for_completion()
     else
       vim.notify("File not found: " .. file, vim.log.levels.ERROR)
     end
@@ -550,7 +561,40 @@ end
 -- Clear data file
 function M.clear_data_file()
   state.data_file = nil
+  state.schema_columns = nil  -- Clear cached schema
   vim.notify("Data file cleared", vim.log.levels.INFO)
+end
+
+-- Load schema for completion (called when data file is set)
+function M.load_schema_for_completion()
+  if not state.data_file then
+    return
+  end
+  
+  -- Run schema command silently to populate cache
+  local cmd = M.config.command .. " " .. vim.fn.shellescape(state.data_file) .. " --schema"
+  local result = vim.fn.system(cmd)
+  local exit_code = vim.v.shell_error
+  
+  if exit_code == 0 then
+    -- Parse schema output to extract column names and types
+    state.schema_columns = {}
+    local clean_result = strip_ansi_codes(result)
+    for line in clean_result:gmatch("[^\n]+") do
+      -- Match lines like "1. column_name TYPE"
+      local num, col_name, col_type = line:match("%s*(%d+)%.%s+([%w_]+)%s+([%w]+)")
+      if col_name and col_type then
+        table.insert(state.schema_columns, {
+          name = col_name,
+          type = col_type
+        })
+      end
+    end
+    
+    if #state.schema_columns > 0 then
+      vim.notify(string.format("Loaded schema: %d columns", #state.schema_columns), vim.log.levels.INFO)
+    end
+  end
 end
 
 -- Detect data hint from SQL comments
@@ -1443,23 +1487,36 @@ function M.complete_columns(findstart, base)
   if findstart == 1 then
     -- Find the start of the word to complete
     local line = vim.api.nvim_get_current_line()
-    local col = vim.api.nvim_win_get_cursor(0)[2]
-    local start_col = col
+    local col = vim.api.nvim_win_get_cursor(0)[2]  -- 1-based column
     
-    -- Find the start of the current word
-    while start_col > 0 and line:sub(start_col, start_col):match('[%w_]') do
+    -- Move backwards to find word start
+    local start_col = col
+    while start_col > 0 do
+      local char = line:sub(start_col, start_col)
+      if not char:match('[%w_]') then
+        break
+      end
       start_col = start_col - 1
     end
     
+    -- Debug: Show what we found (uncomment for debugging)
+    -- vim.notify(string.format("Completion: col=%d, start_col=%d, text='%s'", col, start_col, line:sub(start_col+1, col)), vim.log.levels.INFO)
+    
+    -- Return 0-based column for vim (start_col is now at the character before the word)
     return start_col
   else
+    -- Debug: Show base string (uncomment for debugging)
+    -- vim.notify(string.format("Completing base='%s', schema_loaded=%s", base, state.schema_columns and "yes" or "no"), vim.log.levels.INFO)
     -- Return completions based on the partial word
     local completions = {}
     
     -- Add column names from cached schema
     if state.schema_columns then
       for _, col in ipairs(state.schema_columns) do
-        if base == "" or col.name:lower():find('^' .. vim.pesc(base:lower())) then
+        -- Use simple pattern matching without vim.pesc to avoid issues
+        local base_lower = base:lower()
+        local col_lower = col.name:lower()
+        if base == "" or col_lower:sub(1, #base_lower) == base_lower then
           table.insert(completions, {
             word = col.name,
             menu = '[Col: ' .. (col.type or "?") .. ']',
@@ -1507,7 +1564,9 @@ function M.complete_columns(findstart, base)
     }
     
     for _, func in ipairs(sql_functions) do
-      if base == "" or func.name:lower():find('^' .. vim.pesc(base:lower())) then
+      local base_lower = base:lower()
+      local func_lower = func.name:lower()
+      if base == "" or func_lower:sub(1, #base_lower) == base_lower then
         table.insert(completions, {
           word = func.name .. '(',
           menu = '[Func]',
@@ -1527,7 +1586,9 @@ function M.complete_columns(findstart, base)
     }
     
     for _, kw in ipairs(keywords) do
-      if base == "" or kw:lower():find('^' .. vim.pesc(base:lower())) then
+      local base_lower = base:lower()
+      local kw_lower = kw:lower()
+      if base == "" or kw_lower:sub(1, #base_lower) == base_lower then
         table.insert(completions, {
           word = kw,
           menu = '[SQL]',
@@ -1569,6 +1630,22 @@ function M.setup_completion()
       -- Also map <C-S-Space> for compatibility
       vim.keymap.set('i', '<C-S-Space>', '<C-x><C-o>', 
         { buffer = true, desc = 'Trigger SQL completion' })
+      
+      -- Check for data hints and load schema if found
+      local bufnr = vim.api.nvim_get_current_buf()
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, math.min(20, vim.api.nvim_buf_line_count(bufnr)), false)
+      local buf_path = vim.api.nvim_buf_get_name(bufnr)
+      local buf_dir = nil
+      if buf_path and buf_path ~= "" then
+        buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+      end
+      
+      local detected_file = M.detect_data_hint(lines, buf_dir)
+      if detected_file and not state.data_file then
+        state.data_file = detected_file
+        M.load_schema_for_completion()
+        vim.notify("SQL CLI: Auto-detected data file from hint", vim.log.levels.INFO)
+      end
       
       -- Show a hint about completion once per session
       if not state.completion_hint_shown then
