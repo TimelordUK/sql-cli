@@ -137,14 +137,26 @@ require('sql-cli').setup({
 
 ### Default Keymaps
 
+#### Query Execution
 - `<leader>sq` - Execute SQL query (normal mode)
 - `<leader>ss` - Execute selected SQL (visual mode)
 - `<leader>sx` - Execute query at cursor (from SELECT to GO/semicolon)
+- `<leader>sp` - Show query plan
+
+#### Navigation
+- `]q` - Jump to next query
+- `[q` - Jump to previous query
+- `<leader>s/` - Toggle comment for query at cursor
+
+#### Output Management
 - `<leader>so` - Toggle output window
 - `<leader>st` - Toggle split orientation (vertical/horizontal)
+- `<leader>sw` - Save results to CSV file
+- `<leader>sb` - Open results in new buffer
+
+#### Data Files
 - `<leader>sd` - Set data file
 - `<leader>sc` - Clear data file
-- `<leader>sp` - Show query plan
 - `<leader>sv` - View data file in buffer
 
 ### Data File Hints

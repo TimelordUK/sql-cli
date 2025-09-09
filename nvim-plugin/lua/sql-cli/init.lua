@@ -34,6 +34,11 @@ M.config = {
     clear_data_file = "<leader>sc", -- Clear data file
     show_plan = "<leader>sp",       -- Show query plan
     open_data_file = "<leader>sv",  -- View data file
+    next_query = "]q",              -- Jump to next query
+    prev_query = "[q",              -- Jump to previous query
+    toggle_comment = "<leader>s/",  -- Toggle comment for query at cursor
+    save_results_csv = "<leader>sw", -- Write results to CSV file
+    results_to_buffer = "<leader>sb", -- Results to new buffer
   },
   
   -- Output window settings
@@ -51,6 +56,8 @@ local state = {
   output_buf = nil,
   output_win = nil,
   last_query = nil,
+  last_results = nil,  -- Store last query results for saving
+  query_markers = {},  -- Track query positions in output
 }
 
 -- Setup function
@@ -142,6 +149,31 @@ function M.setup_keymaps()
   if keymaps.open_data_file then
     vim.keymap.set("n", keymaps.open_data_file, M.open_data_file,
       { desc = "Open data file in buffer", silent = true })
+  end
+  
+  if keymaps.next_query then
+    vim.keymap.set("n", keymaps.next_query, M.next_query,
+      { desc = "Jump to next query", silent = true })
+  end
+  
+  if keymaps.prev_query then
+    vim.keymap.set("n", keymaps.prev_query, M.prev_query,
+      { desc = "Jump to previous query", silent = true })
+  end
+  
+  if keymaps.toggle_comment then
+    vim.keymap.set("n", keymaps.toggle_comment, M.toggle_comment_query,
+      { desc = "Toggle comment for query at cursor", silent = true })
+  end
+  
+  if keymaps.save_results_csv then
+    vim.keymap.set("n", keymaps.save_results_csv, M.save_results_csv,
+      { desc = "Save results to CSV file", silent = true })
+  end
+  
+  if keymaps.results_to_buffer then
+    vim.keymap.set("n", keymaps.results_to_buffer, M.results_to_buffer,
+      { desc = "Open results in new buffer", silent = true })
   end
 end
 
@@ -257,6 +289,9 @@ function M.run_command(query, show_plan)
   
   -- Run command asynchronously
   local output_lines = {}
+  local csv_lines = {}  -- Store CSV format results
+  local in_table = false  -- Track if we're in table output
+  
   local job_id = vim.fn.jobstart(cmd, {
     stdout_buffered = true,
     stderr_buffered = true,
@@ -265,6 +300,17 @@ function M.run_command(query, show_plan)
         for _, line in ipairs(data) do
           if line ~= "" then
             table.insert(output_lines, line)
+            
+            -- Try to detect and store CSV-formatted data
+            if line:match("^[^|]*,[^|]*") or line:match("^%d+,") or line:match('^"[^"]*",') then
+              table.insert(csv_lines, line)
+            elseif line:match("^│") or line:match("^|") then
+              -- Convert table format to CSV (basic conversion)
+              local csv_line = line:gsub("^[│|]%s*", ""):gsub("%s*[│|]%s*", ","):gsub("%s*[│|]$", "")
+              if not csv_line:match("^[─┬┴┼├┤┌┐└┘]+") then
+                table.insert(csv_lines, csv_line)
+              end
+            end
           end
         end
       end
@@ -292,6 +338,13 @@ function M.run_command(query, show_plan)
       vim.schedule(function()
         -- Append output
         vim.api.nvim_buf_set_lines(state.output_buf, -1, -1, false, output_lines)
+        
+        -- Store results for saving (prefer CSV format if available)
+        if #csv_lines > 0 then
+          state.last_results = csv_lines
+        else
+          state.last_results = output_lines
+        end
         
         -- Add footer
         local footer = {
@@ -663,6 +716,189 @@ function M.open_data_file()
   -- Open file in a new split
   vim.cmd("split " .. vim.fn.fnameescape(file))
   vim.notify("Opened data file: " .. file, vim.log.levels.INFO)
+end
+
+-- Jump to next query
+function M.next_query()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  
+  -- Find next SELECT statement
+  for i = cursor_line + 1, #lines do
+    if lines[i]:upper():match("^%s*SELECT") then
+      vim.api.nvim_win_set_cursor(0, {i, 0})
+      return
+    end
+  end
+  
+  -- Wrap around to beginning
+  for i = 1, cursor_line do
+    if lines[i]:upper():match("^%s*SELECT") then
+      vim.api.nvim_win_set_cursor(0, {i, 0})
+      vim.notify("Wrapped to first query", vim.log.levels.INFO)
+      return
+    end
+  end
+  
+  vim.notify("No queries found", vim.log.levels.WARN)
+end
+
+-- Jump to previous query
+function M.prev_query()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  
+  -- Find previous SELECT statement
+  for i = cursor_line - 1, 1, -1 do
+    if lines[i]:upper():match("^%s*SELECT") then
+      vim.api.nvim_win_set_cursor(0, {i, 0})
+      return
+    end
+  end
+  
+  -- Wrap around to end
+  for i = #lines, cursor_line, -1 do
+    if lines[i]:upper():match("^%s*SELECT") then
+      vim.api.nvim_win_set_cursor(0, {i, 0})
+      vim.notify("Wrapped to last query", vim.log.levels.INFO)
+      return
+    end
+  end
+  
+  vim.notify("No queries found", vim.log.levels.WARN)
+end
+
+-- Toggle comment for query at cursor
+function M.toggle_comment_query()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  
+  -- Find query boundaries
+  local start_line = nil
+  local end_line = nil
+  
+  -- Search backwards for SELECT
+  for i = cursor_line, 1, -1 do
+    if lines[i]:upper():match("^%s*SELECT") or lines[i]:upper():match("^%s*%-%-.*SELECT") then
+      start_line = i
+      break
+    end
+  end
+  
+  if not start_line then
+    -- Search forward
+    for i = cursor_line, #lines do
+      if lines[i]:upper():match("^%s*SELECT") or lines[i]:upper():match("^%s*%-%-.*SELECT") then
+        start_line = i
+        break
+      end
+    end
+  end
+  
+  if not start_line then
+    vim.notify("No query found at cursor", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Find end of query
+  for i = start_line + 1, #lines do
+    local line = lines[i]
+    if line:match("^%s*GO%s*$") or line:match(";%s*$") then
+      end_line = i
+      break
+    elseif i > start_line and (line:upper():match("^%s*SELECT") or line:upper():match("^%s*%-%-.*SELECT")) then
+      end_line = i - 1
+      break
+    end
+  end
+  
+  if not end_line then
+    end_line = #lines
+  end
+  
+  -- Check if query is commented
+  local is_commented = lines[start_line]:match("^%s*%-%-")
+  
+  -- Toggle comments
+  for i = start_line, end_line do
+    local line = lines[i]
+    if is_commented then
+      -- Remove comment
+      lines[i] = line:gsub("^%s*%-%-", "")
+    else
+      -- Add comment
+      if line:match("^%s*$") then
+        -- Don't comment empty lines
+        lines[i] = line
+      else
+        lines[i] = "-- " .. line
+      end
+    end
+  end
+  
+  vim.api.nvim_buf_set_lines(bufnr, start_line - 1, end_line, false, vim.list_slice(lines, start_line, end_line))
+  
+  if is_commented then
+    vim.notify("Query uncommented", vim.log.levels.INFO)
+  else
+    vim.notify("Query commented", vim.log.levels.INFO)
+  end
+end
+
+-- Save results to CSV file
+function M.save_results_csv()
+  if not state.last_results or #state.last_results == 0 then
+    vim.notify("No results to save", vim.log.levels.WARN)
+    return
+  end
+  
+  vim.ui.input({ prompt = "Save results to: ", completion = "file", default = "results.csv" }, function(filename)
+    if not filename then return end
+    
+    -- Ensure .csv extension
+    if not filename:match("%.csv$") then
+      filename = filename .. ".csv"
+    end
+    
+    -- Write results to file
+    local file = io.open(filename, "w")
+    if not file then
+      vim.notify("Failed to create file: " .. filename, vim.log.levels.ERROR)
+      return
+    end
+    
+    for _, line in ipairs(state.last_results) do
+      file:write(line .. "\n")
+    end
+    file:close()
+    
+    vim.notify("Results saved to: " .. filename, vim.log.levels.INFO)
+  end)
+end
+
+-- Open results in new buffer
+function M.results_to_buffer()
+  if not state.last_results or #state.last_results == 0 then
+    vim.notify("No results to display", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Create new buffer
+  vim.cmd("new")
+  local buf = vim.api.nvim_get_current_buf()
+  
+  -- Set buffer content
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, state.last_results)
+  
+  -- Set buffer options
+  vim.bo[buf].filetype = "csv"
+  vim.bo[buf].modified = false
+  vim.api.nvim_buf_set_name(buf, "[SQL Results]")
+  
+  vim.notify("Results opened in new buffer", vim.log.levels.INFO)
 end
 
 -- Setup syntax highlighting for output buffer
