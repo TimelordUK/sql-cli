@@ -1,5 +1,5 @@
+-- #! ../data/sales_data.csv
 -- Test GROUP_NUM function
--- #!data: ../data/sales_data.csv
 
 -- Example 1: Enumerate unique regions
 SELECT DISTINCT

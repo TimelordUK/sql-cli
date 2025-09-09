@@ -6,12 +6,15 @@ A Neovim plugin for the SQL CLI tool that provides seamless integration for exec
 
 - 🚀 Execute SQL queries/scripts directly from Neovim
 - 📊 Split pane output window with results
+- 🔄 Dynamic split orientation toggle (vertical/horizontal)
+- 🎯 Execute query at cursor (smart SELECT to GO/semicolon detection)
+- 📝 Visual selection execution
+- 📄 View data files directly in buffer
 - 🔍 Auto-detect CSV files and data hints
 - ⌨️ Customizable keymaps
-- 📝 Visual selection execution
 - 🎯 Query plan visualization
 - 🔄 Async execution with live output
-- 🎨 Syntax highlighting for output (tables, numbers, errors, etc.)
+- 🎨 Syntax highlighting for output (tables, numbers, errors, success messages)
 
 ## Installation
 
@@ -103,10 +106,13 @@ require('sql-cli').setup({
   keymaps = {
     execute = "<leader>sq",         -- Execute entire buffer
     execute_selection = "<leader>ss", -- Execute visual selection
+    execute_at_cursor = "<leader>sx", -- Execute query at cursor
     toggle_output = "<leader>so",   -- Toggle output window
+    toggle_orientation = "<leader>st", -- Toggle split orientation
     set_data_file = "<leader>sd",   -- Set data file
     clear_data_file = "<leader>sc", -- Clear data file
     show_plan = "<leader>sp",       -- Show query plan
+    open_data_file = "<leader>sv",  -- View data file in buffer
   },
   
   -- Output window settings
@@ -133,10 +139,13 @@ require('sql-cli').setup({
 
 - `<leader>sq` - Execute SQL query (normal mode)
 - `<leader>ss` - Execute selected SQL (visual mode)
+- `<leader>sx` - Execute query at cursor (from SELECT to GO/semicolon)
 - `<leader>so` - Toggle output window
+- `<leader>st` - Toggle split orientation (vertical/horizontal)
 - `<leader>sd` - Set data file
 - `<leader>sc` - Clear data file
 - `<leader>sp` - Show query plan
+- `<leader>sv` - View data file in buffer
 
 ### Data File Hints
 

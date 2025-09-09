@@ -27,10 +27,13 @@ M.config = {
   keymaps = {
     execute = "<leader>sq",         -- Execute query
     execute_selection = "<leader>ss", -- Execute visual selection
+    execute_at_cursor = "<leader>sx", -- Execute query at cursor
     toggle_output = "<leader>so",   -- Toggle output window
+    toggle_orientation = "<leader>st", -- Toggle split orientation
     set_data_file = "<leader>sd",   -- Set data file
     clear_data_file = "<leader>sc", -- Clear data file
     show_plan = "<leader>sp",       -- Show query plan
+    open_data_file = "<leader>sv",  -- View data file
   },
   
   -- Output window settings
@@ -124,6 +127,21 @@ function M.setup_keymaps()
   if keymaps.show_plan then
     vim.keymap.set("n", keymaps.show_plan, M.show_query_plan,
       { desc = "Show SQL query plan", silent = true })
+  end
+  
+  if keymaps.execute_at_cursor then
+    vim.keymap.set("n", keymaps.execute_at_cursor, M.execute_at_cursor,
+      { desc = "Execute SQL query at cursor", silent = true })
+  end
+  
+  if keymaps.toggle_orientation then
+    vim.keymap.set("n", keymaps.toggle_orientation, M.toggle_split_orientation,
+      { desc = "Toggle split orientation", silent = true })
+  end
+  
+  if keymaps.open_data_file then
+    vim.keymap.set("n", keymaps.open_data_file, M.open_data_file,
+      { desc = "Open data file in buffer", silent = true })
   end
 end
 
@@ -365,9 +383,15 @@ function M.create_output_window()
     vim.api.nvim_win_set_height(0, size)
   end
   
-  -- Create buffer for output
-  state.output_buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_name(state.output_buf, "[SQL CLI Output]")
+  -- Create or reuse buffer for output
+  if not state.output_buf or not vim.api.nvim_buf_is_valid(state.output_buf) then
+    state.output_buf = vim.api.nvim_create_buf(false, true)
+    -- Try to set name, but handle if it already exists
+    pcall(function()
+      vim.api.nvim_buf_set_name(state.output_buf, "[SQL CLI Output]")
+    end)
+  end
+  
   vim.api.nvim_win_set_buf(0, state.output_buf)
   state.output_win = vim.api.nvim_get_current_win()
   
@@ -508,6 +532,137 @@ function M.statusline()
   else
     return "SQL[∅]"
   end
+end
+
+-- Toggle split orientation
+function M.toggle_split_orientation()
+  -- Toggle the configuration
+  if M.config.split.direction == "vertical" then
+    M.config.split.direction = "horizontal"
+    vim.notify("Split orientation: horizontal", vim.log.levels.INFO)
+  else
+    M.config.split.direction = "vertical"
+    vim.notify("Split orientation: vertical", vim.log.levels.INFO)
+  end
+  
+  -- If output window is open, recreate it with new orientation
+  if M.is_output_window_valid() then
+    -- Close current window
+    vim.api.nvim_win_close(state.output_win, false)
+    state.output_win = nil
+    
+    -- Recreate with new orientation
+    M.create_output_window()
+    
+    -- Re-run last query if available
+    if state.last_query then
+      M.run_command(state.last_query, false)
+    end
+  end
+end
+
+-- Execute query at cursor position
+function M.execute_at_cursor()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  
+  -- Find the query boundaries (SELECT to GO/semicolon or next SELECT)
+  local start_line = nil
+  local end_line = nil
+  
+  -- Search backwards for SELECT or start of file
+  for i = cursor_line, 1, -1 do
+    if lines[i]:upper():match("^%s*SELECT") then
+      start_line = i
+      break
+    end
+  end
+  
+  -- If no SELECT found before cursor, search forward
+  if not start_line then
+    for i = cursor_line, #lines do
+      if lines[i]:upper():match("^%s*SELECT") then
+        start_line = i
+        break
+      end
+    end
+  end
+  
+  if not start_line then
+    vim.notify("No SELECT statement found", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Search forward for GO, semicolon, or next SELECT
+  for i = start_line + 1, #lines do
+    local line = lines[i]
+    if line:match("^%s*GO%s*$") or line:match(";%s*$") then
+      end_line = i
+      break
+    elseif i > start_line and line:upper():match("^%s*SELECT") then
+      end_line = i - 1
+      break
+    end
+  end
+  
+  -- If no end found, use end of file
+  if not end_line then
+    end_line = #lines
+  end
+  
+  -- Extract the query
+  local query_lines = {}
+  for i = start_line, end_line do
+    table.insert(query_lines, lines[i])
+  end
+  
+  local query = table.concat(query_lines, "\n")
+  
+  -- Auto-detect data file if needed
+  if M.config.auto_detect.data_hints and not state.data_file then
+    local buf_path = vim.api.nvim_buf_get_name(bufnr)
+    local buf_dir = nil
+    if buf_path and buf_path ~= "" then
+      buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+    end
+    state.data_file = M.detect_data_hint(lines, buf_dir)
+  end
+  
+  -- Execute the query
+  M.execute_query(query)
+end
+
+-- Open data file in a new buffer
+function M.open_data_file()
+  local file = state.data_file
+  
+  -- If no data file is set, try to detect from current buffer
+  if not file then
+    local bufnr = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local buf_path = vim.api.nvim_buf_get_name(bufnr)
+    local buf_dir = nil
+    if buf_path and buf_path ~= "" then
+      buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+    end
+    file = M.detect_data_hint(lines, buf_dir)
+  end
+  
+  if not file then
+    vim.notify("No data file set or detected", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Check if file exists
+  if vim.fn.filereadable(file) ~= 1 then
+    vim.notify("Data file not found: " .. file, vim.log.levels.ERROR)
+    return
+  end
+  
+  -- Open file in a new split
+  vim.cmd("split " .. vim.fn.fnameescape(file))
+  vim.notify("Opened data file: " .. file, vim.log.levels.INFO)
 end
 
 -- Setup syntax highlighting for output buffer
