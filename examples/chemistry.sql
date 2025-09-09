@@ -13,38 +13,17 @@ SELECT
 FROM 
   periodic_table
 WHERE 
-  Type.Contains('Noble')
-GO
-
-SELECT 
-  Element, 
-  Symbol, 
-  Group, 
-  Type  
-FROM 
-  periodic_table
-WHERE 
   Type.Contains('Noble');
 GO
 
-with groups 
-as
-(
 SELECT 
   Type, 
-  Count(*) as member_count
+  Count(*) as count
 FROM 
   periodic_table
-GROUP BY
-  Type
-) 
-SELECT 
-Type, 
-member_count
-FROM 
-  groups
+WHERE Type.Length() > 0
+GROUP BY Type
 ORDER BY 
-  member_count desc
+  count desc;
 GO
-
 

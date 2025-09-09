@@ -172,11 +172,12 @@ require('sql-cli').setup({
 - `<leader>sk` - Smart detection at cursor (shows column info or function help)
 
 #### Autocompletion
-- `<C-x><C-o>` - Trigger SQL autocompletion (in INSERT mode)
+- `<C-Space>` - Trigger SQL autocompletion (in INSERT mode)
   - Completes column names from current data file
   - Suggests SQL functions with descriptions
   - Includes SQL keywords
   - Sorted by relevance: columns → functions → keywords
+- `<C-x><C-o>` - Alternative way to trigger completion (Vim's standard omnicompletion)
 
 ### Data File Hints
 
@@ -245,7 +246,7 @@ When you open a CSV file, it's automatically set as the data source. You can the
 - Syntax highlighting is automatically applied to output for better readability
 - SQL files get additional buffer-local keymaps (`<LocalLeader>r` to run, `<LocalLeader>p` for plan)
 - Autocompletion works best after setting a data file - it reads the schema automatically
-- Use `<C-x><C-o>` in INSERT mode to trigger intelligent SQL completion
+- Use `<C-Space>` in INSERT mode to trigger intelligent SQL completion
 
 ## Statusline Integration
 

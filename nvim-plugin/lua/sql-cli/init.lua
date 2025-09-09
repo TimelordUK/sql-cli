@@ -1562,10 +1562,18 @@ function M.setup_completion()
       -- Add instructions in buffer-local variable
       vim.b.sql_cli_completion = true
       
+      -- Map <C-Space> to trigger omni completion in insert mode
+      vim.keymap.set('i', '<C-Space>', '<C-x><C-o>', 
+        { buffer = true, desc = 'Trigger SQL completion' })
+      
+      -- Also map <C-S-Space> for compatibility
+      vim.keymap.set('i', '<C-S-Space>', '<C-x><C-o>', 
+        { buffer = true, desc = 'Trigger SQL completion' })
+      
       -- Show a hint about completion once per session
       if not state.completion_hint_shown then
         vim.defer_fn(function()
-          vim.notify("SQL completion enabled. Use <C-x><C-o> to trigger.", vim.log.levels.INFO)
+          vim.notify("SQL completion enabled. Use <C-Space> to trigger.", vim.log.levels.INFO)
           state.completion_hint_shown = true
         end, 100)
       end
@@ -1576,6 +1584,12 @@ function M.setup_completion()
   if vim.bo.filetype == "sql" then
     vim.bo.omnifunc = 'v:lua.require("sql-cli").complete_columns'
     vim.opt_local.completeopt = 'menu,menuone,noselect'
+    
+    -- Map <C-Space> for current buffer
+    vim.keymap.set('i', '<C-Space>', '<C-x><C-o>', 
+      { buffer = true, desc = 'Trigger SQL completion' })
+    vim.keymap.set('i', '<C-S-Space>', '<C-x><C-o>', 
+      { buffer = true, desc = 'Trigger SQL completion' })
   end
 end
 

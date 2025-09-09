@@ -5,26 +5,26 @@
 -- AUTOCOMPLETION FEATURES
 -- ============================================
 -- In Neovim with the SQL CLI plugin loaded:
--- 1. Press <C-x><C-o> in INSERT mode to trigger completion
+-- 1. Press <C-Space> (Ctrl+Space) in INSERT mode to trigger completion
 -- 2. Completion provides:
 --    - Column names from your data file
 --    - SQL functions with descriptions
 --    - SQL keywords
 --
--- Try these examples by typing partial text and pressing <C-x><C-o>:
+-- Try these examples by typing partial text and pressing <C-Space>:
 
 -- Example 1: Column name completion
--- Type: SELECT reg<C-x><C-o>
+-- Type: SELECT reg<C-Space>
 -- Result: Suggests 'region' column
 SELECT region FROM sales_data;
 
 -- Example 2: Function completion
--- Type: SELECT COU<C-x><C-o>
+-- Type: SELECT COU<C-Space>
 -- Result: Suggests COUNT( function
 SELECT COUNT(*) FROM sales_data;
 
 -- Example 3: Multiple column completion
--- Type: SELECT <C-x><C-o>
+-- Type: SELECT <C-Space>
 -- Result: Shows all available columns
 SELECT 
     region,
@@ -35,13 +35,13 @@ SELECT
 FROM sales_data;
 
 -- Example 4: WHERE clause completion
--- Type: WHERE sal<C-x><C-o>
+-- Type: WHERE sal<C-Space>
 -- Result: Suggests 'salesperson' and 'sales_amount'
 SELECT * FROM sales_data 
 WHERE salesperson = 'Alice';
 
 -- Example 5: Aggregate functions
--- Type: SELECT SU<C-x><C-o>
+-- Type: SELECT SU<C-Space>
 -- Result: Suggests SUM( function
 SELECT 
     region,
@@ -52,7 +52,7 @@ FROM sales_data
 GROUP BY region;
 
 -- Example 6: String functions
--- Type: SELECT UPP<C-x><C-o>
+-- Type: SELECT UPP<C-Space>
 -- Result: Suggests UPPER( function
 SELECT 
     UPPER(region) as region_upper,
@@ -61,7 +61,7 @@ SELECT
 FROM sales_data;
 
 -- Example 7: SQL keywords
--- Type: SELECT * FROM sales_data ORD<C-x><C-o>
+-- Type: SELECT * FROM sales_data ORD<C-Space>
 -- Result: Suggests ORDER keyword
 SELECT * FROM sales_data 
 ORDER BY sales_amount DESC;
