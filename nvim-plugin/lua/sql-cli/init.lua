@@ -39,6 +39,9 @@ M.config = {
     toggle_comment = "<leader>s/",  -- Toggle comment for query at cursor
     save_results_csv = "<leader>sw", -- Write results to CSV file
     results_to_buffer = "<leader>sb", -- Results to new buffer
+    function_help = "K",            -- Show function help at cursor
+    list_functions = "<leader>sf",  -- List all SQL functions
+    search_functions = "<leader>sF", -- Search SQL functions
   },
   
   -- Output window settings
@@ -174,6 +177,21 @@ function M.setup_keymaps()
   if keymaps.results_to_buffer then
     vim.keymap.set("n", keymaps.results_to_buffer, M.results_to_buffer,
       { desc = "Open results in new buffer", silent = true })
+  end
+  
+  if keymaps.function_help then
+    vim.keymap.set("n", keymaps.function_help, M.show_function_help,
+      { desc = "Show SQL function help", silent = true })
+  end
+  
+  if keymaps.list_functions then
+    vim.keymap.set("n", keymaps.list_functions, M.list_functions,
+      { desc = "List all SQL functions", silent = true })
+  end
+  
+  if keymaps.search_functions then
+    vim.keymap.set("n", keymaps.search_functions, M.search_functions,
+      { desc = "Search SQL functions", silent = true })
   end
 end
 
@@ -899,6 +917,284 @@ function M.results_to_buffer()
   vim.api.nvim_buf_set_name(buf, "[SQL Results]")
   
   vim.notify("Results opened in new buffer", vim.log.levels.INFO)
+end
+
+-- Show function help for word under cursor
+function M.show_function_help()
+  -- Get word under cursor
+  local word = vim.fn.expand("<cword>"):upper()
+  
+  if word == "" then
+    vim.notify("No word under cursor", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Build command to get function help
+  local cmd = M.config.command .. " --function-help " .. vim.fn.shellescape(word)
+  
+  -- Execute command
+  local result = vim.fn.system(cmd)
+  local exit_code = vim.v.shell_error
+  
+  if exit_code ~= 0 then
+    -- Try searching for functions containing this word
+    local search_cmd = M.config.command .. " --list-functions"
+    local all_functions = vim.fn.system(search_cmd)
+    
+    -- Check if any function contains this word
+    local matches = {}
+    for line in all_functions:gmatch("[^\n]+") do
+      if line:upper():find(word) then
+        table.insert(matches, line)
+      end
+    end
+    
+    if #matches > 0 then
+      vim.notify("Function '" .. word .. "' not found. Similar functions:\n" .. table.concat(matches, "\n"), vim.log.levels.WARN)
+    else
+      vim.notify("Function '" .. word .. "' not found", vim.log.levels.WARN)
+    end
+    return
+  end
+  
+  -- Create a floating window to show help
+  M.show_help_in_float(word, result)
+end
+
+-- Show help text in a floating window
+function M.show_help_in_float(title, content)
+  -- Split content into lines
+  local lines = {}
+  for line in content:gmatch("[^\n]+") do
+    table.insert(lines, line)
+  end
+  
+  -- Create buffer
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  
+  -- Set buffer options
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].filetype = "markdown"  -- For nice highlighting
+  
+  -- Calculate window size
+  local width = 80
+  local height = math.min(#lines, 30)
+  
+  -- Get editor dimensions
+  local ui = vim.api.nvim_list_uis()[1]
+  local row = math.floor((ui.height - height) / 2)
+  local col = math.floor((ui.width - width) / 2)
+  
+  -- Create floating window
+  local opts = {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+    title = " " .. title .. " Function Help ",
+    title_pos = "center",
+  }
+  
+  local win = vim.api.nvim_open_win(buf, true, opts)
+  
+  -- Set window options
+  vim.wo[win].wrap = true
+  vim.wo[win].linebreak = true
+  vim.wo[win].cursorline = true
+  
+  -- Set up keymaps to close window
+  vim.keymap.set("n", "q", function()
+    vim.api.nvim_win_close(win, true)
+  end, { buffer = buf, silent = true })
+  
+  vim.keymap.set("n", "<Esc>", function()
+    vim.api.nvim_win_close(win, true)
+  end, { buffer = buf, silent = true })
+  
+  -- Add syntax highlighting for SQL code blocks
+  vim.cmd([[
+    syntax match SqlFunctionName /^[A-Z_]\+/
+    syntax match SqlFunctionCategory /^Category:.*/
+    syntax match SqlFunctionArgs /^Arguments:.*/
+    syntax match SqlFunctionReturns /^Returns:.*/
+    syntax match SqlFunctionExample /^Example:/
+    syntax region SqlCodeBlock start=/^  / end=/$/
+    
+    highlight SqlFunctionName guifg=#8be9fd ctermfg=14
+    highlight SqlFunctionCategory guifg=#50fa7b ctermfg=10
+    highlight SqlFunctionArgs guifg=#f1fa8c ctermfg=11
+    highlight SqlFunctionReturns guifg=#ff79c6 ctermfg=13
+    highlight SqlFunctionExample guifg=#bd93f9 ctermfg=5
+    highlight SqlCodeBlock guifg=#f8f8f2 ctermfg=7
+  ]])
+end
+
+-- List all available SQL functions
+function M.list_functions()
+  -- Build command
+  local cmd = M.config.command .. " --list-functions"
+  
+  -- Execute command
+  local result = vim.fn.system(cmd)
+  local exit_code = vim.v.shell_error
+  
+  if exit_code ~= 0 then
+    vim.notify("Failed to list functions", vim.log.levels.ERROR)
+    return
+  end
+  
+  -- Parse functions into categories
+  local categories = {}
+  local current_category = nil
+  
+  for line in result:gmatch("[^\n]+") do
+    if line:match("^%s*$") then
+      -- Skip empty lines
+    elseif line:match("^Available SQL Functions:") then
+      -- Skip header
+    elseif line:match("^[A-Z].*:$") then
+      -- Category header (e.g., "Aggregate Functions:", "Mathematical Functions:")
+      current_category = line:gsub(":$", "")
+      categories[current_category] = {}
+    elseif current_category and line:match("^%s+") then
+      -- Function in current category (indented lines)
+      table.insert(categories[current_category], line)
+    end
+  end
+  
+  -- Create a buffer to show functions
+  vim.cmd("new")
+  local buf = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_name(buf, "[SQL Functions]")
+  
+  -- Build content
+  local lines = {"# SQL CLI Functions", "", "Press <CR> on any function to see detailed help", ""}
+  
+  -- Keep categories in order they appear in output
+  local category_order = {}
+  for line in result:gmatch("[^\n]+") do
+    if line:match("^[A-Z].*:$") then
+      local category = line:gsub(":$", "")
+      if categories[category] then
+        table.insert(category_order, category)
+      end
+    end
+  end
+  
+  -- Add functions by category in order
+  for _, category in ipairs(category_order) do
+    local functions = categories[category]
+    if functions and #functions > 0 then
+      table.insert(lines, "## " .. category)
+      table.insert(lines, "")
+      for _, func in ipairs(functions) do
+        table.insert(lines, func)
+      end
+      table.insert(lines, "")
+    end
+  end
+  
+  -- Set buffer content
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  
+  -- Set buffer options
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].filetype = "markdown"
+  
+  -- Add keymap to get help for function under cursor
+  vim.keymap.set("n", "<CR>", function()
+    local word = vim.fn.expand("<cword>")
+    if word and word ~= "" then
+      M.show_function_help()
+    end
+  end, { buffer = buf, desc = "Show help for function under cursor" })
+  
+  vim.notify("Press <CR> on any function to see its help", vim.log.levels.INFO)
+end
+
+-- Search for SQL functions
+function M.search_functions()
+  vim.ui.input({ prompt = "Search functions: " }, function(query)
+    if not query or query == "" then return end
+    
+    -- Build command
+    local cmd = M.config.command .. " --list-functions"
+    
+    -- Execute command
+    local result = vim.fn.system(cmd)
+    local exit_code = vim.v.shell_error
+    
+    if exit_code ~= 0 then
+      vim.notify("Failed to list functions", vim.log.levels.ERROR)
+      return
+    end
+    
+    -- Search for matching functions
+    local matches = {}
+    local query_upper = query:upper()
+    
+    for line in result:gmatch("[^\n]+") do
+      if line:upper():find(query_upper) then
+        table.insert(matches, line)
+      end
+    end
+    
+    if #matches == 0 then
+      vim.notify("No functions found matching: " .. query, vim.log.levels.WARN)
+      return
+    end
+    
+    -- If only one match, show its help directly
+    if #matches == 1 then
+      local func_name = matches[1]:match("^%s*([A-Z_]+)")
+      if func_name then
+        local help_cmd = M.config.command .. " --function-help " .. vim.fn.shellescape(func_name)
+        local help_result = vim.fn.system(help_cmd)
+        if vim.v.shell_error == 0 then
+          M.show_help_in_float(func_name, help_result)
+          return
+        end
+      end
+    end
+    
+    -- Show matches in a buffer
+    vim.cmd("new")
+    local buf = vim.api.nvim_get_current_buf()
+    vim.api.nvim_buf_set_name(buf, "[Search Results: " .. query .. "]")
+    
+    local lines = {
+      "# Function Search Results",
+      "## Query: " .. query,
+      "",
+      "Found " .. #matches .. " matching functions:",
+      ""
+    }
+    
+    for _, match in ipairs(matches) do
+      table.insert(lines, match)
+    end
+    
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    
+    -- Set buffer options
+    vim.bo[buf].modifiable = false
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].filetype = "markdown"
+    
+    -- Add keymap to get help for function under cursor
+    vim.keymap.set("n", "<CR>", function()
+      local word = vim.fn.expand("<cword>")
+      if word and word ~= "" then
+        M.show_function_help()
+      end
+    end, { buffer = buf, desc = "Show help for function under cursor" })
+  end)
 end
 
 -- Setup syntax highlighting for output buffer

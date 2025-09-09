@@ -94,4 +94,16 @@ SELECT
     POWER(1 + 1.0/10000, 10000) as e_approx,     -- e ≈ 2.7181...
     FIBONACCI(20) / FIBONACCI(19) as golden_ratio  -- φ ≈ 1.618...
 FROM DUAL;
+
+-- 8. use range with some series calculations
+
+GO
+SELECT 
+    value as n,
+    SUM_N(value) as triangular,   
+    SUM_N_SQR(value) as squares,  
+    SUM_N_CUBE(value) as cubes,   
+    HARMONIC(value) as harmonic,  
+    FACTORIAL(value) as factorial 
+FROM RANGE(1,10);
 GO

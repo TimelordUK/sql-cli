@@ -31,7 +31,7 @@ sql-cli data.csv
 SELECT * FROM data WHERE amount > 1000 ORDER BY date DESC LIMIT 10
 ```
 
-## 🎯 Two Powerful Modes
+## 🎯 Three Powerful Modes
 
 ### 🖥️ **Interactive TUI Mode** (Default)
 Launch the full vim-inspired terminal interface for data exploration:
@@ -44,7 +44,21 @@ sql-cli trades.json
 # Navigate with hjkl, search with /, execute queries interactively
 ```
 
-### 🚀 **Non-Interactive Query Mode** (New!)
+### 📝 **Neovim Plugin Mode** (Advanced)
+A sophisticated Neovim plugin provides an IDE-like experience for SQL development:
+
+```vim
+" Execute queries directly from Neovim with intelligent features:
+" - Visual selection execution
+" - Function documentation (K for help)
+" - Query navigation (]q, [q)
+" - Live results in split panes
+" - CSV/JSON export capabilities
+```
+
+See [nvim-plugin/README.md](nvim-plugin/README.md) for installation and full feature list.
+
+### 🚀 **Non-Interactive Query Mode**
 Execute SQL queries directly from the command line - perfect for scripting and automation:
 
 ```bash

@@ -15,6 +15,8 @@ A Neovim plugin for the SQL CLI tool that provides seamless integration for exec
 - 🎯 Query plan visualization
 - 🔄 Async execution with live output
 - 🎨 Syntax highlighting for output (tables, numbers, errors, success messages)
+- 📚 Built-in function help system (LSP-like documentation)
+- 🔎 Function search and discovery
 
 ## Installation
 
@@ -158,6 +160,11 @@ require('sql-cli').setup({
 - `<leader>sd` - Set data file
 - `<leader>sc` - Clear data file
 - `<leader>sv` - View data file in buffer
+
+#### Function Help (LSP-like features)
+- `K` - Show help for SQL function under cursor
+- `<leader>sf` - List all available SQL functions
+- `<leader>sF` - Search SQL functions interactively
 
 ### Data File Hints
 
