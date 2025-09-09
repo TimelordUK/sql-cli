@@ -3,6 +3,18 @@
 
 local M = {}
 
+-- Helper function: Strip ANSI escape sequences from text
+local function strip_ansi_codes(text)
+  -- Remove ANSI color codes and formatting codes
+  -- \x1b is the escape character (octal 033, decimal 27)
+  text = text:gsub("\x1b%[[%d;]*m", "")  -- Color codes like \x1b[38;5;12m
+  text = text:gsub("\x1b%[%d*m", "")      -- Simple codes like \x1b[0m
+  text = text:gsub("\x1b%[%d*;%d*m", "")  -- Codes like \x1b[1;32m
+  text = text:gsub("\x1b%[K", "")         -- Clear to end of line
+  text = text:gsub("\x1b%[[%d;]*[A-Za-z]", "") -- Other control sequences
+  return text
+end
+
 -- Default configuration
 M.config = {
   -- Path to sql-cli executable
@@ -1020,17 +1032,6 @@ function M.show_function_help()
   M.show_help_in_float(word, result)
 end
 
--- Strip ANSI escape sequences from text
-local function strip_ansi_codes(text)
-  -- Remove ANSI color codes and formatting codes
-  -- \x1b is the escape character (octal 033, decimal 27)
-  text = text:gsub("\x1b%[[%d;]*m", "")  -- Color codes like \x1b[38;5;12m
-  text = text:gsub("\x1b%[%d*m", "")      -- Simple codes like \x1b[0m
-  text = text:gsub("\x1b%[%d*;%d*m", "")  -- Codes like \x1b[1;32m
-  text = text:gsub("\x1b%[K", "")         -- Clear to end of line
-  text = text:gsub("\x1b%[[%d;]*[A-Za-z]", "") -- Other control sequences
-  return text
-end
 
 -- Show help text in a floating window
 function M.show_help_in_float(title, content)
