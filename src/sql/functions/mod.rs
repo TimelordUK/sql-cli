@@ -450,11 +450,13 @@ impl FunctionRegistry {
     fn register_chemical_functions(&mut self) {
         use chemistry::{
             AtomicMassFunction, AtomicNumberFunction, AvogadroFunction, MoleculeFormulaFunction,
+            NeutronsFunction,
         };
 
         self.register(Box::new(AvogadroFunction));
         self.register(Box::new(AtomicMassFunction));
         self.register(Box::new(AtomicNumberFunction));
+        self.register(Box::new(NeutronsFunction));
         self.register(Box::new(MoleculeFormulaFunction));
     }
 

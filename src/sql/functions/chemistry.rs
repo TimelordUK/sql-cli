@@ -655,6 +655,52 @@ impl SqlFunction for AtomicNumberFunction {
     }
 }
 
+/// Returns the number of neutrons in the most common isotope of an element
+pub struct NeutronsFunction;
+
+impl SqlFunction for NeutronsFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "NEUTRONS",
+            category: FunctionCategory::Chemical,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the number of neutrons in the most common isotope",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT NEUTRONS('C')",      // Carbon-12 has 6 neutrons
+                "SELECT NEUTRONS('U')",      // Uranium-238 has 146 neutrons
+                "SELECT NEUTRONS('Gold')",   // Gold-197 has 118 neutrons
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let element = match &args[0] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            _ => return Err(anyhow!("NEUTRONS() requires a string argument")),
+        };
+
+        // Get atomic number (protons)
+        let protons = AtomicNumberFunction::get_atomic_number(element)
+            .ok_or_else(|| anyhow!("Unknown element: {}", element))?;
+
+        // Get atomic mass
+        let atomic_mass = AtomicMassFunction::get_atomic_mass(element)
+            .ok_or_else(|| anyhow!("Unknown element: {}", element))?;
+
+        // Mass number is the rounded atomic mass (most common isotope)
+        let mass_number = atomic_mass.round() as i64;
+
+        // Neutrons = mass_number - protons
+        let neutrons = mass_number - protons;
+
+        Ok(DataValue::Integer(neutrons))
+    }
+}
+
 /// Returns the molecular formula for a given compound name
 pub struct MoleculeFormulaFunction;
 
