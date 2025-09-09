@@ -17,7 +17,10 @@ WHERE
 GO
 
 SELECT 
-  Element, Symbol, Group, Type  
+  Element, 
+  Symbol, 
+  Group, 
+  Type  
 FROM 
   periodic_table
 WHERE 

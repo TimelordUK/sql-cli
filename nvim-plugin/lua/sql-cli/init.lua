@@ -976,8 +976,23 @@ function M.show_function_help()
   M.show_help_in_float(word, result)
 end
 
+-- Strip ANSI escape sequences from text
+local function strip_ansi_codes(text)
+  -- Remove ANSI color codes and formatting codes
+  -- \x1b is the escape character (octal 033, decimal 27)
+  text = text:gsub("\x1b%[[%d;]*m", "")  -- Color codes like \x1b[38;5;12m
+  text = text:gsub("\x1b%[%d*m", "")      -- Simple codes like \x1b[0m
+  text = text:gsub("\x1b%[%d*;%d*m", "")  -- Codes like \x1b[1;32m
+  text = text:gsub("\x1b%[K", "")         -- Clear to end of line
+  text = text:gsub("\x1b%[[%d;]*[A-Za-z]", "") -- Other control sequences
+  return text
+end
+
 -- Show help text in a floating window
 function M.show_help_in_float(title, content)
+  -- Strip ANSI codes from content
+  content = strip_ansi_codes(content)
+  
   -- Split content into lines
   local lines = {}
   for line in content:gmatch("[^\n]+") do
@@ -1246,12 +1261,17 @@ function M.show_schema()
     return
   end
   
-  -- Parse schema output to extract column names for state
+  -- Parse schema output to extract column names and types for state
   state.schema_columns = {}
-  for line in result:gmatch("[^\n]+") do
-    local col_name = line:match("%d+%.%s+([%w_]+)")
-    if col_name then
-      table.insert(state.schema_columns, col_name)
+  local clean_result = strip_ansi_codes(result)
+  for line in clean_result:gmatch("[^\n]+") do
+    -- Match lines like "1. column_name TYPE"
+    local num, col_name, col_type = line:match("%s*(%d+)%.%s+([%w_]+)%s+([%w]+)")
+    if col_name and col_type then
+      table.insert(state.schema_columns, {
+        name = col_name,
+        type = col_type
+      })
     end
   end
   
