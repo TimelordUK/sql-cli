@@ -34,6 +34,16 @@ pub enum Token {
     Partition, // PARTITION keyword for window functions
     By,        // BY keyword (used with PARTITION BY, ORDER BY)
 
+    // JOIN keywords
+    Join,  // JOIN keyword
+    Inner, // INNER JOIN
+    Left,  // LEFT JOIN
+    Right, // RIGHT JOIN
+    Full,  // FULL JOIN
+    Outer, // OUTER keyword (LEFT OUTER, RIGHT OUTER, FULL OUTER)
+    On,    // ON keyword for join conditions
+    Cross, // CROSS JOIN
+
     // Literals
     Identifier(String),
     QuotedIdentifier(String), // For "Customer Id" style identifiers
@@ -362,6 +372,15 @@ impl Lexer {
                     "OVER" => Token::Over,
                     "PARTITION" => Token::Partition,
                     "BY" => Token::By,
+                    // JOIN keywords
+                    "JOIN" => Token::Join,
+                    "INNER" => Token::Inner,
+                    "LEFT" => Token::Left,
+                    "RIGHT" => Token::Right,
+                    "FULL" => Token::Full,
+                    "OUTER" => Token::Outer,
+                    "ON" => Token::On,
+                    "CROSS" => Token::Cross,
                     _ => Token::Identifier(ident),
                 }
             }
@@ -551,6 +570,7 @@ pub struct SelectStatement {
     pub from_subquery: Option<Box<SelectStatement>>, // Subquery in FROM clause
     pub from_function: Option<TableFunction>,        // Table function like RANGE() in FROM clause
     pub from_alias: Option<String>,                  // Alias for subquery (AS name)
+    pub joins: Vec<JoinClause>,                      // JOIN clauses
     pub where_clause: Option<WhereClause>,
     pub order_by: Option<Vec<OrderByColumn>>,
     pub group_by: Option<Vec<String>>,
@@ -587,6 +607,44 @@ pub enum TableSource {
         query: Box<SelectStatement>,
         alias: String, // Required alias for subqueries
     },
+}
+
+/// Join type enumeration
+#[derive(Debug, Clone, PartialEq)]
+pub enum JoinType {
+    Inner,
+    Left,
+    Right,
+    Full,
+    Cross,
+}
+
+/// Join operator for join conditions
+#[derive(Debug, Clone)]
+pub enum JoinOperator {
+    Equal,
+    NotEqual,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
+}
+
+/// Join condition - initially just column equality
+#[derive(Debug, Clone)]
+pub struct JoinCondition {
+    pub left_column: String, // Column from left table (can include table prefix)
+    pub operator: JoinOperator, // Join operator (initially just Equal)
+    pub right_column: String, // Column from right table (can include table prefix)
+}
+
+/// Join clause structure
+#[derive(Debug, Clone)]
+pub struct JoinClause {
+    pub join_type: JoinType,
+    pub table: TableSource,       // The table being joined
+    pub alias: Option<String>,    // Optional alias for the joined table
+    pub condition: JoinCondition, // ON condition
 }
 
 #[derive(Default)]
@@ -986,6 +1044,12 @@ impl Parser {
                 (None, None, None, None)
             };
 
+        // Parse JOIN clauses
+        let mut joins = Vec::new();
+        while self.is_join_token() {
+            joins.push(self.parse_join_clause()?);
+        }
+
         let where_clause = if matches!(self.current_token, Token::Where) {
             self.advance();
             Some(self.parse_where_clause()?)
@@ -1075,6 +1139,7 @@ impl Parser {
             from_subquery,
             from_function,
             from_alias,
+            joins,
             where_clause,
             order_by,
             group_by,
@@ -1952,6 +2017,227 @@ impl Parser {
     #[must_use]
     pub fn get_position(&self) -> usize {
         self.lexer.get_position()
+    }
+
+    // Check if current token is a JOIN-related token
+    fn is_join_token(&self) -> bool {
+        matches!(
+            self.current_token,
+            Token::Join | Token::Inner | Token::Left | Token::Right | Token::Full | Token::Cross
+        )
+    }
+
+    // Parse a JOIN clause
+    fn parse_join_clause(&mut self) -> Result<JoinClause, String> {
+        // Determine join type
+        let join_type = match &self.current_token {
+            Token::Join => {
+                self.advance();
+                JoinType::Inner // Default JOIN is INNER JOIN
+            }
+            Token::Inner => {
+                self.advance();
+                if !matches!(self.current_token, Token::Join) {
+                    return Err("Expected JOIN after INNER".to_string());
+                }
+                self.advance();
+                JoinType::Inner
+            }
+            Token::Left => {
+                self.advance();
+                // Handle optional OUTER keyword
+                if matches!(self.current_token, Token::Outer) {
+                    self.advance();
+                }
+                if !matches!(self.current_token, Token::Join) {
+                    return Err("Expected JOIN after LEFT".to_string());
+                }
+                self.advance();
+                JoinType::Left
+            }
+            Token::Right => {
+                self.advance();
+                // Handle optional OUTER keyword
+                if matches!(self.current_token, Token::Outer) {
+                    self.advance();
+                }
+                if !matches!(self.current_token, Token::Join) {
+                    return Err("Expected JOIN after RIGHT".to_string());
+                }
+                self.advance();
+                JoinType::Right
+            }
+            Token::Full => {
+                self.advance();
+                // Handle optional OUTER keyword
+                if matches!(self.current_token, Token::Outer) {
+                    self.advance();
+                }
+                if !matches!(self.current_token, Token::Join) {
+                    return Err("Expected JOIN after FULL".to_string());
+                }
+                self.advance();
+                JoinType::Full
+            }
+            Token::Cross => {
+                self.advance();
+                if !matches!(self.current_token, Token::Join) {
+                    return Err("Expected JOIN after CROSS".to_string());
+                }
+                self.advance();
+                JoinType::Cross
+            }
+            _ => return Err("Expected JOIN keyword".to_string()),
+        };
+
+        // Parse the table being joined
+        let (table, alias) = self.parse_join_table_source()?;
+
+        // Parse ON condition (required for all joins except CROSS JOIN)
+        let condition = if join_type == JoinType::Cross {
+            // CROSS JOIN doesn't have ON condition
+            JoinCondition {
+                left_column: String::new(),
+                operator: JoinOperator::Equal,
+                right_column: String::new(),
+            }
+        } else {
+            if !matches!(self.current_token, Token::On) {
+                return Err("Expected ON keyword after JOIN table".to_string());
+            }
+            self.advance();
+            self.parse_join_condition()?
+        };
+
+        Ok(JoinClause {
+            join_type,
+            table,
+            alias,
+            condition,
+        })
+    }
+
+    fn parse_join_table_source(&mut self) -> Result<(TableSource, Option<String>), String> {
+        let table = match &self.current_token {
+            Token::Identifier(name) => {
+                let table_name = name.clone();
+                self.advance();
+                TableSource::Table(table_name)
+            }
+            Token::LeftParen => {
+                // Subquery as table source
+                self.advance();
+                let subquery = self.parse_select_statement_inner()?;
+                if !matches!(self.current_token, Token::RightParen) {
+                    return Err("Expected ')' after subquery".to_string());
+                }
+                self.advance();
+
+                // Subqueries must have an alias
+                let alias = match &self.current_token {
+                    Token::Identifier(alias_name) => {
+                        let alias = alias_name.clone();
+                        self.advance();
+                        alias
+                    }
+                    Token::As => {
+                        self.advance();
+                        match &self.current_token {
+                            Token::Identifier(alias_name) => {
+                                let alias = alias_name.clone();
+                                self.advance();
+                                alias
+                            }
+                            _ => return Err("Expected alias after AS keyword".to_string()),
+                        }
+                    }
+                    _ => return Err("Subqueries must have an alias".to_string()),
+                };
+
+                return Ok((
+                    TableSource::DerivedTable {
+                        query: Box::new(subquery),
+                        alias: alias.clone(),
+                    },
+                    Some(alias),
+                ));
+            }
+            _ => return Err("Expected table name or subquery in JOIN clause".to_string()),
+        };
+
+        // Check for optional alias
+        let alias = match &self.current_token {
+            Token::Identifier(alias_name) => {
+                let alias = alias_name.clone();
+                self.advance();
+                Some(alias)
+            }
+            Token::As => {
+                self.advance();
+                match &self.current_token {
+                    Token::Identifier(alias_name) => {
+                        let alias = alias_name.clone();
+                        self.advance();
+                        Some(alias)
+                    }
+                    _ => return Err("Expected alias after AS keyword".to_string()),
+                }
+            }
+            _ => None,
+        };
+
+        Ok((table, alias))
+    }
+
+    fn parse_join_condition(&mut self) -> Result<JoinCondition, String> {
+        // Parse left column (can include table prefix)
+        let left_column = self.parse_column_reference()?;
+
+        // Parse operator
+        let operator = match &self.current_token {
+            Token::Equal => JoinOperator::Equal,
+            Token::NotEqual => JoinOperator::NotEqual,
+            Token::LessThan => JoinOperator::LessThan,
+            Token::LessThanOrEqual => JoinOperator::LessThanOrEqual,
+            Token::GreaterThan => JoinOperator::GreaterThan,
+            Token::GreaterThanOrEqual => JoinOperator::GreaterThanOrEqual,
+            _ => return Err("Expected comparison operator in JOIN condition".to_string()),
+        };
+        self.advance();
+
+        // Parse right column (can include table prefix)
+        let right_column = self.parse_column_reference()?;
+
+        Ok(JoinCondition {
+            left_column,
+            operator,
+            right_column,
+        })
+    }
+
+    fn parse_column_reference(&mut self) -> Result<String, String> {
+        match &self.current_token {
+            Token::Identifier(name) => {
+                let mut column_ref = name.clone();
+                self.advance();
+
+                // Check for table.column notation
+                if matches!(self.current_token, Token::Dot) {
+                    self.advance();
+                    match &self.current_token {
+                        Token::Identifier(col_name) => {
+                            column_ref.push('.');
+                            column_ref.push_str(col_name);
+                            self.advance();
+                        }
+                        _ => return Err("Expected column name after '.'".to_string()),
+                    }
+                }
+
+                Ok(column_ref)
+            }
+            _ => Err("Expected column reference".to_string()),
+        }
     }
 }
 

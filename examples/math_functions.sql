@@ -35,6 +35,12 @@ SELECT
     LEAST(1, 5, 3, 9, 2) as minimum;
 GO
 
+-- Comparison functions with null
+SELECT 
+    GREATEST(null, null, 3, 9, 2) as maximum,
+    LEAST(null, 1, 5, 3, 9, 2) as minimum;
+GO
+
 -- Advanced mathematical operations  
 SELECT 
     FACTORIAL(5) as five_factorial,

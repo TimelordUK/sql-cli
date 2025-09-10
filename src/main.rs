@@ -740,8 +740,9 @@ fn main() -> io::Result<()> {
     }
 
     // Don't launch TUI if we're just checking schema
-    let is_schema_check = args.contains(&"--schema".to_string()) || args.contains(&"--schema-json".to_string());
-    
+    let is_schema_check =
+        args.contains(&"--schema".to_string()) || args.contains(&"--schema-json".to_string());
+
     let use_classic_tui = args.contains(&"--simple".to_string());
     let use_tui = !args.contains(&"--classic".to_string()) && !is_schema_check;
 
