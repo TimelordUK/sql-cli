@@ -583,28 +583,44 @@ function M.load_schema_for_completion()
     return
   end
   
-  -- Run schema command silently to populate cache
-  local cmd = M.config.command .. " " .. vim.fn.shellescape(state.data_file) .. " --schema"
+  -- Run schema-json command to get clean JSON output
+  local cmd = M.config.command .. " " .. vim.fn.shellescape(state.data_file) .. " --schema-json"
   local result = vim.fn.system(cmd)
   local exit_code = vim.v.shell_error
   
   if exit_code == 0 then
-    -- Parse schema output to extract column names and types
-    state.schema_columns = {}
-    local clean_result = strip_ansi_codes(result)
-    for line in clean_result:gmatch("[^\n]+") do
-      -- Match lines like "1. column_name TYPE"
-      local num, col_name, col_type = line:match("%s*(%d+)%.%s+([%w_]+)%s+([%w]+)")
-      if col_name and col_type then
+    -- Parse JSON schema
+    local ok, schema = pcall(vim.json.decode, result)
+    if ok and schema and schema.columns then
+      state.schema_columns = {}
+      for _, col in ipairs(schema.columns) do
         table.insert(state.schema_columns, {
-          name = col_name,
-          type = col_type
+          name = col.name,
+          type = col.type
         })
       end
-    end
-    
-    if #state.schema_columns > 0 then
-      vim.notify(string.format("Loaded schema: %d columns", #state.schema_columns), vim.log.levels.INFO)
+      
+      if #state.schema_columns > 0 then
+        vim.notify(string.format("Loaded schema: %d columns from %s", #state.schema_columns, schema.table), vim.log.levels.INFO)
+      end
+    else
+      -- Fallback to old method if JSON parsing fails
+      state.schema_columns = {}
+      local clean_result = strip_ansi_codes(result)
+      for line in clean_result:gmatch("[^\n]+") do
+        -- Match lines like "1. column_name TYPE"
+        local num, col_name, col_type = line:match("%s*(%d+)%.%s+([%w_]+)%s+([%w]+)")
+        if col_name and col_type then
+          table.insert(state.schema_columns, {
+            name = col_name,
+            type = col_type
+          })
+        end
+      end
+      
+      if #state.schema_columns > 0 then
+        vim.notify(string.format("Loaded schema: %d columns", #state.schema_columns), vim.log.levels.INFO)
+      end
     end
   end
 end
@@ -1296,8 +1312,8 @@ function M.show_schema()
     return
   end
   
-  -- Run schema command
-  local cmd = M.config.command .. " " .. vim.fn.shellescape(state.data_file) .. " --schema"
+  -- Run schema-json command
+  local cmd = M.config.command .. " " .. vim.fn.shellescape(state.data_file) .. " --schema-json"
   local result = vim.fn.system(cmd)
   local exit_code = vim.v.shell_error
   
@@ -1306,22 +1322,38 @@ function M.show_schema()
     return
   end
   
-  -- Parse schema output to extract column names and types for state
-  state.schema_columns = {}
-  local clean_result = strip_ansi_codes(result)
-  for line in clean_result:gmatch("[^\n]+") do
-    -- Match lines like "1. column_name TYPE"
-    local num, col_name, col_type = line:match("%s*(%d+)%.%s+([%w_]+)%s+([%w]+)")
-    if col_name and col_type then
+  -- Parse JSON schema
+  local ok, schema = pcall(vim.json.decode, result)
+  if ok and schema and schema.columns then
+    state.schema_columns = {}
+    local display_lines = {}
+    table.insert(display_lines, "Table: " .. schema.table)
+    table.insert(display_lines, "Rows: " .. schema.rows)
+    table.insert(display_lines, "Columns: " .. #schema.columns)
+    table.insert(display_lines, "")
+    table.insert(display_lines, "Column Information:")
+    table.insert(display_lines, string.rep("-", 60))
+    
+    for i, col in ipairs(schema.columns) do
       table.insert(state.schema_columns, {
-        name = col_name,
-        type = col_type
+        name = col.name,
+        type = col.type
       })
+      
+      local nullable_str = ""
+      if col.nullable and col.null_percentage > 0 then
+        nullable_str = string.format(" (%d%% NULL)", col.null_percentage)
+      end
+      
+      table.insert(display_lines, string.format("  %3d. %-30s %-10s%s", 
+        i, col.name, col.type, nullable_str))
     end
+    
+    -- Show in floating window
+    M.show_help_in_float("Schema: " .. vim.fn.fnamemodify(state.data_file, ":t"), table.concat(display_lines, "\n"))
+  else
+    vim.notify("Failed to parse schema JSON", vim.log.levels.ERROR)
   end
-  
-  -- Show in floating window
-  M.show_help_in_float("Schema: " .. vim.fn.fnamemodify(state.data_file, ":t"), result)
 end
 
 -- Show column help at cursor
@@ -1483,6 +1515,48 @@ function M.get_column_at_cursor()
   M.show_function_help()
 end
 
+-- Trigger column-specific completion with better UI
+function M.trigger_column_completion()
+  -- Get current word under cursor
+  local line = vim.api.nvim_get_current_line()
+  local col = vim.api.nvim_win_get_cursor(0)[2]
+  
+  -- Find word start
+  local word_start = col
+  while word_start > 0 and line:sub(word_start, word_start):match('[%w_]') do
+    word_start = word_start - 1
+  end
+  
+  local prefix = line:sub(word_start + 1, col)
+  
+  -- Build completion items
+  local items = {}
+  
+  -- Add columns from schema if available
+  if state.schema_columns then
+    for _, column in ipairs(state.schema_columns) do
+      if prefix == "" or column.name:lower():sub(1, #prefix) == prefix:lower() then
+        table.insert(items, {
+          word = column.name,
+          abbr = column.name,
+          menu = '[' .. column.type .. ']',
+          kind = 'Column',
+          info = 'Column: ' .. column.name .. '\nType: ' .. column.type
+        })
+      end
+    end
+  end
+  
+  -- If we have items, show them using built-in completion
+  if #items > 0 then
+    -- Use vim.fn.complete() to show the menu
+    vim.fn.complete(word_start + 1, items)
+  else
+    -- Fall back to regular omnifunc completion
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<C-x><C-o>', true, false, true), 'n', false)
+  end
+end
+
 -- Column name completion function for omnifunc
 function M.complete_columns(findstart, base)
   if findstart == 1 then
@@ -1618,7 +1692,8 @@ function M.setup_completion()
     pattern = "sql",
     callback = function()
       vim.bo.omnifunc = 'v:lua.require("sql-cli").complete_columns'
-      -- Set completion options
+      -- Set completion options - menuone shows menu even with single match
+      -- noselect doesn't auto-select first item
       vim.opt_local.completeopt = 'menu,menuone,noselect'
       
       -- Add instructions in buffer-local variable
@@ -1631,6 +1706,58 @@ function M.setup_completion()
       -- Also map <C-S-Space> for compatibility
       vim.keymap.set('i', '<C-S-Space>', '<C-x><C-o>', 
         { buffer = true, desc = 'Trigger SQL completion' })
+      
+      -- Map M-; (Alt+semicolon) to trigger SQL column completion
+      vim.keymap.set('i', '<M-;>', function()
+        -- Trigger column-specific completion
+        M.trigger_column_completion()
+      end, { buffer = true, desc = 'Trigger SQL column completion' })
+      
+      -- Also map Alt+. as an alternative
+      vim.keymap.set('i', '<M-.>', function()
+        M.trigger_column_completion()
+      end, { buffer = true, desc = 'Trigger SQL column completion' })
+      
+      -- Map Tab to accept completion when popup menu is visible
+      vim.keymap.set('i', '<Tab>', function()
+        if vim.fn.pumvisible() == 1 then
+          return vim.api.nvim_replace_termcodes('<C-n>', true, false, true)
+        else
+          return vim.api.nvim_replace_termcodes('<Tab>', true, false, true)
+        end
+      end, { buffer = true, expr = true, desc = 'Tab through completions' })
+      
+      -- Map Shift-Tab to go backwards in completion
+      vim.keymap.set('i', '<S-Tab>', function()
+        if vim.fn.pumvisible() == 1 then
+          return vim.api.nvim_replace_termcodes('<C-p>', true, false, true)
+        else
+          return vim.api.nvim_replace_termcodes('<S-Tab>', true, false, true)
+        end
+      end, { buffer = true, expr = true, desc = 'Reverse tab through completions' })
+      
+      -- Map Enter to accept selected completion
+      vim.keymap.set('i', '<CR>', function()
+        if vim.fn.pumvisible() == 1 then
+          return vim.api.nvim_replace_termcodes('<C-y>', true, false, true)
+        else
+          return vim.api.nvim_replace_termcodes('<CR>', true, false, true)
+        end
+      end, { buffer = true, expr = true, desc = 'Accept completion' })
+      
+      -- Map numbers 1-9 to quickly select completion items
+      for i = 1, 9 do
+        vim.keymap.set('i', tostring(i), function()
+          if vim.fn.pumvisible() == 1 then
+            -- Select the i-th item and accept it
+            local keys = string.rep(vim.api.nvim_replace_termcodes('<C-n>', true, false, true), i - 1)
+            keys = keys .. vim.api.nvim_replace_termcodes('<C-y>', true, false, true)
+            return keys
+          else
+            return tostring(i)
+          end
+        end, { buffer = true, expr = true, desc = 'Quick select completion item ' .. i })
+      end
       
       -- Check for data hints and load schema if found
       local bufnr = vim.api.nvim_get_current_buf()
@@ -1651,7 +1778,7 @@ function M.setup_completion()
       -- Show a hint about completion once per session
       if not state.completion_hint_shown then
         vim.defer_fn(function()
-          vim.notify("SQL completion enabled. Use <C-Space> to trigger.", vim.log.levels.INFO)
+          vim.notify("SQL completion enabled. Use <C-Space> or <M-;> to trigger.", vim.log.levels.INFO)
           state.completion_hint_shown = true
         end, 100)
       end
@@ -1668,6 +1795,49 @@ function M.setup_completion()
       { buffer = true, desc = 'Trigger SQL completion' })
     vim.keymap.set('i', '<C-S-Space>', '<C-x><C-o>', 
       { buffer = true, desc = 'Trigger SQL completion' })
+    vim.keymap.set('i', '<M-;>', function()
+      M.trigger_column_completion()
+    end, { buffer = true, desc = 'Trigger SQL column completion' })
+    vim.keymap.set('i', '<M-.>', function()
+      M.trigger_column_completion()
+    end, { buffer = true, desc = 'Trigger SQL column completion' })
+    
+    -- Add Tab/Enter/Number selection mappings
+    vim.keymap.set('i', '<Tab>', function()
+      if vim.fn.pumvisible() == 1 then
+        return vim.api.nvim_replace_termcodes('<C-n>', true, false, true)
+      else
+        return vim.api.nvim_replace_termcodes('<Tab>', true, false, true)
+      end
+    end, { buffer = true, expr = true, desc = 'Tab through completions' })
+    
+    vim.keymap.set('i', '<S-Tab>', function()
+      if vim.fn.pumvisible() == 1 then
+        return vim.api.nvim_replace_termcodes('<C-p>', true, false, true)
+      else
+        return vim.api.nvim_replace_termcodes('<S-Tab>', true, false, true)
+      end
+    end, { buffer = true, expr = true, desc = 'Reverse tab through completions' })
+    
+    vim.keymap.set('i', '<CR>', function()
+      if vim.fn.pumvisible() == 1 then
+        return vim.api.nvim_replace_termcodes('<C-y>', true, false, true)
+      else
+        return vim.api.nvim_replace_termcodes('<CR>', true, false, true)
+      end
+    end, { buffer = true, expr = true, desc = 'Accept completion' })
+    
+    for i = 1, 9 do
+      vim.keymap.set('i', tostring(i), function()
+        if vim.fn.pumvisible() == 1 then
+          local keys = string.rep(vim.api.nvim_replace_termcodes('<C-n>', true, false, true), i - 1)
+          keys = keys .. vim.api.nvim_replace_termcodes('<C-y>', true, false, true)
+          return keys
+        else
+          return tostring(i)
+        end
+      end, { buffer = true, expr = true, desc = 'Quick select completion item ' .. i })
+    end
   end
 end
 

@@ -154,6 +154,10 @@ fn print_help() {
         "  {}               - Show table schema (columns and types)",
         "--schema".green()
     );
+    println!(
+        "  {}          - Show table schema as JSON (no colors)",
+        "--schema-json".green()
+    );
 
     println!();
     println!("{}", "Function Documentation:".yellow());
@@ -274,7 +278,92 @@ fn main() -> io::Result<()> {
         return Ok(());
     }
 
-    // Check for schema inspection
+    // Check for schema inspection (JSON format)
+    if args.contains(&"--schema-json".to_string()) {
+        // Find the file argument
+        let file_arg = args
+            .iter()
+            .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
+            .or_else(|| args.last().filter(|arg| !arg.starts_with('-')));
+
+        if let Some(file_path) = file_arg {
+            // Load the table using the appropriate loader
+            let table_name = std::path::Path::new(file_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("data");
+
+            let table = if file_path.ends_with(".json") {
+                sql_cli::data::datatable_loaders::load_json_to_datatable(file_path, table_name)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+            } else {
+                sql_cli::data::datatable_loaders::load_csv_to_datatable(file_path, table_name)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+            };
+
+            // Output JSON schema
+            let mut schema = serde_json::json!({
+                "table": table.name,
+                "rows": table.row_count(),
+                "columns": []
+            });
+
+            // Analyze column types by sampling data
+            let mut columns = Vec::new();
+            for (idx, column) in table.columns.iter().enumerate() {
+                let mut type_counts = std::collections::HashMap::new();
+                let mut null_count = 0;
+                let sample_size = std::cmp::min(100, table.row_count());
+
+                for row_idx in 0..sample_size {
+                    if let Some(value) = table.get_value(row_idx, idx) {
+                        match value {
+                            sql_cli::data::datatable::DataValue::Null => null_count += 1,
+                            sql_cli::data::datatable::DataValue::Integer(_) => {
+                                *type_counts.entry("INTEGER").or_insert(0) += 1
+                            }
+                            sql_cli::data::datatable::DataValue::Float(_) => {
+                                *type_counts.entry("FLOAT").or_insert(0) += 1
+                            }
+                            sql_cli::data::datatable::DataValue::String(_)
+                            | sql_cli::data::datatable::DataValue::InternedString(_) => {
+                                *type_counts.entry("STRING").or_insert(0) += 1
+                            }
+                            sql_cli::data::datatable::DataValue::Boolean(_) => {
+                                *type_counts.entry("BOOLEAN").or_insert(0) += 1
+                            }
+                            sql_cli::data::datatable::DataValue::DateTime(_) => {
+                                *type_counts.entry("DATETIME").or_insert(0) += 1
+                            }
+                        }
+                    }
+                }
+
+                // Determine primary type
+                let primary_type = type_counts
+                    .iter()
+                    .max_by_key(|(_, count)| *count)
+                    .map(|(type_name, _)| *type_name)
+                    .unwrap_or("UNKNOWN");
+
+                columns.push(serde_json::json!({
+                    "name": column.name,
+                    "type": primary_type,
+                    "nullable": null_count > 0,
+                    "null_percentage": if sample_size > 0 { (null_count * 100) / sample_size } else { 0 }
+                }));
+            }
+
+            schema["columns"] = serde_json::json!(columns);
+            println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+        } else {
+            eprintln!("Error: No data file specified");
+            eprintln!("Usage: sql-cli <file.csv|file.json> --schema-json");
+        }
+        return Ok(());
+    }
+
+    // Check for schema inspection (colored format)
     if args.contains(&"--schema".to_string()) {
         // Find the file argument
         let file_arg = args
@@ -650,8 +739,11 @@ fn main() -> io::Result<()> {
         }
     }
 
+    // Don't launch TUI if we're just checking schema
+    let is_schema_check = args.contains(&"--schema".to_string()) || args.contains(&"--schema-json".to_string());
+    
     let use_classic_tui = args.contains(&"--simple".to_string());
-    let use_tui = !args.contains(&"--classic".to_string());
+    let use_tui = !args.contains(&"--classic".to_string()) && !is_schema_check;
 
     // Check for data file argument (CSV or JSON)
     // First check for --csv flag (legacy)
