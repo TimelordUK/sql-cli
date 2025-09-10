@@ -7993,6 +7993,22 @@ impl BufferManagementBehavior for EnhancedTuiApp {
 }
 
 pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()> {
+    // Set up panic hook to restore terminal on panic
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // Restore terminal
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            io::stdout(),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            crossterm::cursor::Show
+        );
+
+        // Call the original panic hook
+        original_hook(panic_info);
+    }));
+
     let app = if data_files.is_empty() {
         EnhancedTuiApp::new(api_url)
     } else {
@@ -8035,7 +8051,13 @@ pub fn run_enhanced_tui_multi(api_url: &str, data_files: Vec<&str>) -> Result<()
         app
     };
 
-    app.run()
+    let result = app.run();
+
+    // Restore the original panic hook
+    let _ = std::panic::take_hook(); // Drop our hook
+                                     // Note: We can't restore the original hook here as it was moved into the closure
+
+    result
 }
 
 pub fn run_enhanced_tui(api_url: &str, data_file: Option<&str>) -> Result<()> {

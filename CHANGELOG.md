@@ -5,6 +5,87 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.43.0] - 2025-09-10
+
+### 🚀 Parser & Plugin Enhancements
+
+This release introduces SQL JOIN parser support, significantly improves the Neovim plugin autocomplete, and fixes critical terminal handling issues.
+
+### ✨ New Features
+
+#### **SQL JOIN Parser Support**
+- **Complete JOIN grammar implementation** - Parser now supports all standard SQL JOIN types
+- **Supported JOIN types**: INNER, LEFT, RIGHT, FULL OUTER, CROSS
+- **Table aliasing** - Full support for table aliases in FROM and JOIN clauses
+- **Complex ON conditions** - Support for various comparison operators in JOIN conditions
+- **CTE with JOINs** - CTEs can now be used in JOIN operations
+- **Subquery JOINs** - Support for joining with subqueries
+- Note: Parser only - execution implementation coming in future release
+
+#### **Enhanced Neovim Plugin Autocomplete**
+- **New `--schema-json` flag** - Clean JSON output for schema information without ANSI colors
+- **Improved completion system** - Plugin now uses JSON parsing instead of regex for reliability
+- **Better keybindings**:
+  - `Alt+;` or `Alt+.` - Trigger column-specific completion
+  - `Ctrl+Space` - General SQL completion
+  - `Tab`/`Shift+Tab` - Navigate completion menu
+  - `Enter` - Accept selected completion
+  - `1-9` - Quick select numbered completion item
+- **Smart schema detection** - Automatically loads schema from data file hints in SQL comments
+- **Context-aware completions** - Shows columns, SQL functions, and keywords based on context
+
+### 🐛 Bug Fixes & Improvements
+
+#### **Terminal Corruption Fix**
+- **Fixed terminal corruption on TUI crash** - Terminal now properly restores on errors
+- **Added panic hook** - Automatically restores terminal state on panic
+- **Enhanced error handling** - Terminal cleanup happens even when TUI fails to start
+- **File validation timing** - Files are now validated before entering raw terminal mode
+- Prevents the need to open new terminal when TUI fails with invalid file paths
+
+#### **Parser Improvements**
+- **Fixed function scope errors** in recursive_parser.rs
+- **Added missing JOIN token patterns** in text navigation
+- **Proper TableSource handling** for derived tables and subqueries
+- **CROSS JOIN support** - Correctly handles CROSS JOIN without ON clause
+
+### 📚 Examples
+
+#### JOIN Parser Examples
+```sql
+-- Simple INNER JOIN
+SELECT * FROM users JOIN orders ON users.id = orders.user_id;
+
+-- LEFT JOIN with table aliases
+SELECT * FROM users u LEFT JOIN orders o ON u.id = o.user_id;
+
+-- Multiple JOINs
+SELECT * FROM users 
+JOIN orders ON users.id = orders.user_id
+JOIN products ON orders.product_id = products.id;
+
+-- JOIN with CTE
+WITH active_users AS (SELECT * FROM users WHERE active = 1)
+SELECT * FROM active_users JOIN orders ON active_users.id = orders.user_id;
+```
+
+#### Neovim Plugin Usage
+```vim
+" In your .vimrc or init.vim
+" The plugin auto-detects data files from comments:
+" -- #!data: data/sales.csv
+
+" Then in insert mode:
+" Type 'SELECT ' then press Alt+; to see column completions
+" Use Tab to navigate, Enter to accept, or 1-9 for quick select
+```
+
+### 🔧 Technical Details
+- JOIN AST structures: `JoinType`, `JoinOperator`, `JoinCondition`, `JoinClause`
+- SelectStatement now includes `joins: Vec<JoinClause>` field
+- Parser correctly handles table.column vs object.method() disambiguation in most cases
+- Known limitation: WHERE clauses after JOINs may misinterpret table.column as method calls
+
 ## [1.42.0] - 2025-09-09
 
 ### 🚀 Major Performance & Functionality Improvements

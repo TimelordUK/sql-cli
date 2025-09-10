@@ -1,4 +1,5 @@
 use crossterm::style::Stylize;
+use crossterm::{cursor, event, execute, terminal};
 use reedline::{
     default_emacs_keybindings, ColumnarMenu, Emacs, FileBackedHistory, KeyCode, KeyModifiers,
     MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline,
@@ -799,6 +800,15 @@ fn main() -> io::Result<()> {
             };
 
             if let Err(e) = result {
+                // Ensure terminal is restored in case of error
+                let _ = crossterm::terminal::disable_raw_mode();
+                let _ = crossterm::execute!(
+                    std::io::stdout(),
+                    crossterm::terminal::LeaveAlternateScreen,
+                    crossterm::event::DisableMouseCapture,
+                    crossterm::cursor::Show
+                );
+
                 eprintln!("Enhanced TUI Error: {e}");
                 eprintln!("Falling back to classic CLI mode...");
                 eprintln!();
