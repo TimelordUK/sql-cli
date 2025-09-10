@@ -1,36 +1,43 @@
-# SQL CLI v1.42.0
+# SQL CLI v1.43.1
 
-**Release Date:** September 08, 2025
+**Release Date:** September 10, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 13
-- **Files updated:** 37
+- **Commits in this release:** 18
+- **Files updated:** 26
 
 ## ✨ Highlights
 
-### 🎨 Visual Improvements
-
 ### 🔍 Enhanced Debugging
 - **Better Diagnostics**: Improved error messages and state dumps
+
+### 💾 Data Protection
+- **History Recovery**: Automatic recovery from corrupted files
+- **Atomic Writes**: Safer file operations to prevent data loss
 
 ## 📝 Changes by Category
 
 <details>
 <summary>📋 View all commits</summary>
 
-- fixed unit tests (TimelordUK)
-- Update Neovim plugin README with correct installation methods (TimelordUK)
-- Fix Neovim plugin module loading issue (TimelordUK)
-- Fix Neovim plugin auto-setup issue for lazy.nvim compatibility (TimelordUK)
-- Add comprehensive Neovim plugin for SQL CLI (TimelordUK)
-- fixes (TimelordUK)
-- Add classic mathematical series functions for fun (TimelordUK)
-- Release v1.42.0 - Performance, DISTINCT aggregates, and GROUP_NUM (TimelordUK)
+- Release v1.43.0: JOIN parser, Neovim plugin improvements, terminal fixes (TimelordUK)
+- fix unit tests (TimelordUK)
+- add AST for joins for CTEs (TimelordUK)
+- fix auto complete (TimelordUK)
+- Fix strip_ansi_codes function scope error in Neovim plugin (TimelordUK)
+- Fix SQL autocompletion to work with partial text (TimelordUK)
+- Fix ORDER BY with aggregate column aliases after GROUP BY (TimelordUK)
 - format (TimelordUK)
-- Fix data hint system to allow DUAL-only scripts (TimelordUK)
-- Implement COUNT(DISTINCT) and other DISTINCT aggregates (TimelordUK)
-- Add GROUP_NUM function for value enumeration (TimelordUK)
-- Fix script performance issue and add data file hint system (TimelordUK)
+- Add Ctrl+Space keybinding for SQL autocompletion (TimelordUK)
+- Fix ANSI escape sequences in Neovim schema floating window (TimelordUK)
+- Add intelligent SQL autocompletion to Neovim plugin (TimelordUK)
+- add a neutrons function to chemistry (TimelordUK)
+- add K to get function definition and other features for nvim plugin (TimelordUK)
+- navigate back and forth a query toggle comment a query and save results to buffer (TimelordUK)
+- add switch orientation and execute at cursor and load data file (TimelordUK)
+- fix data file for solar system (TimelordUK)
+- fix the data file hint so we run in nvim the correct data (TimelordUK)
+- fix lua plugin show success in green and highlight submit (TimelordUK)
 
 </details>
 
