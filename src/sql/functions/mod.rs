@@ -11,6 +11,7 @@ pub mod comparison;
 pub mod constants;
 pub mod convert;
 pub mod date_time;
+pub mod format;
 pub mod geometry;
 pub mod group_num;
 pub mod hash;
@@ -18,6 +19,7 @@ pub mod math;
 pub mod mathematics;
 pub mod particle_charges;
 pub mod physics;
+pub mod random;
 pub mod solar_system;
 pub mod string_methods;
 
@@ -149,6 +151,8 @@ impl FunctionRegistry {
         registry.register_hash_functions();
         registry.register_comparison_functions();
         registry.register_aggregate_functions();
+        registry.register_random_functions();
+        registry.register_format_functions();
 
         registry
     }
@@ -557,6 +561,28 @@ impl FunctionRegistry {
         // Register GROUP_NUM function
         // Note: We create a new instance per query to ensure clean memoization
         self.register(Box::new(GroupNumFunction::new()));
+    }
+
+    /// Register random number generation functions
+    fn register_random_functions(&mut self) {
+        use random::{RandIntFunction, RandRangeFunction, RandomFunction};
+
+        self.register(Box::new(RandomFunction));
+        self.register(Box::new(RandIntFunction));
+        self.register(Box::new(RandRangeFunction));
+    }
+
+    /// Register formatting functions
+    fn register_format_functions(&mut self) {
+        use format::{
+            CenterFunction, FormatDateFunction, FormatNumberFunction, LPadFunction, RPadFunction,
+        };
+
+        self.register(Box::new(FormatNumberFunction));
+        self.register(Box::new(FormatDateFunction));
+        self.register(Box::new(LPadFunction));
+        self.register(Box::new(RPadFunction));
+        self.register(Box::new(CenterFunction));
     }
 }
 
