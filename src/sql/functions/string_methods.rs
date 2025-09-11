@@ -757,6 +757,56 @@ impl SqlFunction for EditDistanceFunction {
     }
 }
 
+/// FREQUENCY function - Count occurrences of a substring in a string
+pub struct FrequencyFunction;
+
+impl SqlFunction for FrequencyFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "FREQUENCY",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(2),
+            description: "Count occurrences of a substring within a string",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT FREQUENCY('hello world', 'o')",  // Returns 2
+                "SELECT FREQUENCY('mississippi', 'ss')", // Returns 2
+                "SELECT FREQUENCY(text_column, 'error') FROM logs",
+                "SELECT name, FREQUENCY(name, 'a') as a_count FROM users",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        // Get the string to search in
+        let text = match &args[0] {
+            DataValue::String(s) => s.clone(),
+            DataValue::InternedString(s) => s.to_string(),
+            DataValue::Null => return Ok(DataValue::Integer(0)),
+            _ => return Err(anyhow!("FREQUENCY expects string as first argument")),
+        };
+
+        // Get the substring to search for
+        let search = match &args[1] {
+            DataValue::String(s) => s.clone(),
+            DataValue::InternedString(s) => s.to_string(),
+            DataValue::Null => return Ok(DataValue::Integer(0)),
+            _ => return Err(anyhow!("FREQUENCY expects string as second argument")),
+        };
+
+        // Empty search string returns 0
+        if search.is_empty() {
+            return Ok(DataValue::Integer(0));
+        }
+
+        // Count occurrences
+        let count = text.matches(&search).count();
+        Ok(DataValue::Integer(count as i64))
+    }
+}
+
 /// Register all string method functions
 pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     use std::sync::Arc;
@@ -768,6 +818,7 @@ pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(TrimFunction));
     registry.register(Box::new(TextJoinFunction));
     registry.register(Box::new(EditDistanceFunction));
+    registry.register(Box::new(FrequencyFunction));
 
     // Register ToUpper
     let to_upper = Arc::new(ToUpperMethod);
