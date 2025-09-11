@@ -159,10 +159,11 @@ impl AdvancedCsvLoader {
 
             // Check if this might be a datetime column based on sample values
             let is_datetime = Self::is_likely_datetime(&unique_values[idx]);
-            
+
             // Consider categorical if low cardinality or common patterns, but NOT if it's a datetime
-            let is_categorical = !is_datetime && (unique_ratio < self.cardinality_threshold
-                || Self::is_likely_categorical(header, cardinality, avg_length));
+            let is_categorical = !is_datetime
+                && (unique_ratio < self.cardinality_threshold
+                    || Self::is_likely_categorical(header, cardinality, avg_length));
 
             analyses.push(ColumnAnalysis {
                 index: idx,
@@ -191,26 +192,27 @@ impl AdvancedCsvLoader {
         if unique_values.is_empty() {
             return false;
         }
-        
+
         // Check a sample of values to see if they look like datetimes
         let sample_size = unique_values.len().min(10);
         let mut datetime_count = 0;
-        
+
         for (i, value) in unique_values.iter().enumerate() {
             if i >= sample_size {
                 break;
             }
-            
+
             // Simple heuristic: contains date/time separators and has right length
-            if (value.contains('-') || value.contains('/') || value.contains(':')) 
-                && value.len() >= 8 
-                && value.len() <= 30 {
+            if (value.contains('-') || value.contains('/') || value.contains(':'))
+                && value.len() >= 8
+                && value.len() <= 30
+            {
                 datetime_count += 1;
             }
         }
-        
+
         // If most samples look like datetimes, consider it a datetime column
-        datetime_count >= (sample_size * 7) / 10  // 70% threshold
+        datetime_count >= (sample_size * 7) / 10 // 70% threshold
     }
 
     /// Heuristic to identify likely categorical columns by name and characteristics
@@ -347,9 +349,10 @@ impl AdvancedCsvLoader {
                 } else {
                     // Check for DateTime first, before considering interning
                     // Support both - and / as date separators, and : for time
-                    if (field.contains('-') || field.contains('/') || field.contains(':')) 
-                        && field.len() >= 8 
-                        && field.len() <= 30 {
+                    if (field.contains('-') || field.contains('/') || field.contains(':'))
+                        && field.len() >= 8
+                        && field.len() <= 30
+                    {
                         DataValue::DateTime(field.to_string())
                     } else if categorical_columns.contains(&idx) {
                         // Only intern if it's not a datetime
