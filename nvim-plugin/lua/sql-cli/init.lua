@@ -56,6 +56,7 @@ M.config = {
     search_functions = "<leader>sF", -- Search SQL functions
     show_schema = "<leader>sh",     -- Show table schema
     column_help = "<leader>sk",     -- Smart column/function detection at cursor
+    expand_star = "<leader>se",     -- Expand SELECT * to column names
   },
   
   -- Output window settings
@@ -219,6 +220,13 @@ function M.setup_keymaps()
   if keymaps.column_help then
     vim.keymap.set("n", keymaps.column_help, M.get_column_at_cursor,
       { desc = "Smart column/function detection at cursor", silent = true })
+  end
+  
+  if keymaps.expand_star then
+    vim.keymap.set("n", keymaps.expand_star, M.expand_star,
+      { desc = "Expand SELECT * to column names", silent = true })
+    vim.keymap.set("v", keymaps.expand_star, M.expand_star_visual,
+      { desc = "Expand SELECT * in selection", silent = true })
   end
 end
 
@@ -1067,7 +1075,26 @@ function M.show_help_in_float(title, content)
   -- Set buffer options
   vim.bo[buf].modifiable = false
   vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].filetype = "markdown"  -- For nice highlighting
+  vim.bo[buf].filetype = ""  -- No filetype to avoid unwanted highlighting
+  
+  -- Apply custom syntax highlighting for schema display
+  vim.api.nvim_buf_call(buf, function()
+    -- Highlight column numbers consistently
+    vim.cmd([[syntax match SqlSchemaNumber /^\s*\d\+\./]])
+    vim.cmd([[syntax match SqlSchemaColumnName /\d\+\.\s\+\zs\S\+/]])
+    vim.cmd([[syntax match SqlSchemaType /\s\+\zs\(String\|Integer\|Float\|Boolean\|DateTime\|Mixed\|Null\)\ze/]])
+    vim.cmd([[syntax match SqlSchemaNullPercent /(\d\+% NULL)/]])
+    vim.cmd([[syntax match SqlSchemaHeader /^Table:\|^Rows:\|^Columns:/]])
+    vim.cmd([[syntax match SqlSchemaSeparator /^-\+$/]])
+    
+    -- Define colors
+    vim.cmd([[hi def link SqlSchemaNumber Number]])
+    vim.cmd([[hi def link SqlSchemaColumnName Identifier]])
+    vim.cmd([[hi def link SqlSchemaType Type]])
+    vim.cmd([[hi def link SqlSchemaNullPercent Comment]])
+    vim.cmd([[hi def link SqlSchemaHeader Title]])
+    vim.cmd([[hi def link SqlSchemaSeparator NonText]])
+  end)
   
   -- Calculate window size
   local width = 80
@@ -1353,6 +1380,168 @@ function M.show_schema()
     M.show_help_in_float("Schema: " .. vim.fn.fnamemodify(state.data_file, ":t"), table.concat(display_lines, "\n"))
   else
     vim.notify("Failed to parse schema JSON", vim.log.levels.ERROR)
+  end
+end
+
+-- Expand SELECT * to column names
+function M.expand_star()
+  -- First ensure we have schema information
+  if not state.data_file then
+    -- Try to detect from current buffer
+    local bufnr = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local buf_path = vim.api.nvim_buf_get_name(bufnr)
+    local buf_dir = nil
+    if buf_path and buf_path ~= "" then
+      buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+    end
+    state.data_file = M.detect_data_hint(lines, buf_dir)
+    
+    -- Check if current buffer is a CSV
+    if not state.data_file and buf_path:match("%.csv$") then
+      state.data_file = buf_path
+    end
+  end
+  
+  if not state.data_file then
+    vim.notify("No data file set. Use :SqlCliSetData or open a CSV file", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Get schema if not already loaded
+  if not state.schema_columns or #state.schema_columns == 0 then
+    local cmd = M.config.command .. " " .. vim.fn.shellescape(state.data_file) .. " --schema-json"
+    local result = vim.fn.system(cmd)
+    local exit_code = vim.v.shell_error
+    
+    if exit_code ~= 0 then
+      vim.notify("Failed to get schema: " .. result, vim.log.levels.ERROR)
+      return
+    end
+    
+    -- Parse JSON schema
+    local ok, schema = pcall(vim.json.decode, result)
+    if ok and schema and schema.columns then
+      state.schema_columns = {}
+      for _, col in ipairs(schema.columns) do
+        table.insert(state.schema_columns, {
+          name = col.name,
+          type = col.type
+        })
+      end
+    else
+      vim.notify("Failed to parse schema", vim.log.levels.ERROR)
+      return
+    end
+  end
+  
+  -- Get current line
+  local line = vim.api.nvim_get_current_line()
+  local cursor_pos = vim.api.nvim_win_get_cursor(0)
+  
+  -- Check if line contains SELECT *
+  local select_pattern = "SELECT%s+%*"
+  local select_start, select_end = line:find(select_pattern)
+  
+  if not select_start then
+    -- Try case-insensitive match
+    local line_lower = line:lower()
+    select_start, select_end = line_lower:find("select%s+%*")
+    
+    if not select_start then
+      vim.notify("No SELECT * found on current line", vim.log.levels.INFO)
+      return
+    end
+  end
+  
+  -- Build column list
+  local column_names = {}
+  for _, col in ipairs(state.schema_columns) do
+    -- Quote column names that contain special characters or spaces
+    if col.name:match("[%-%. ]") then
+      table.insert(column_names, '"' .. col.name .. '"')
+    else
+      table.insert(column_names, col.name)
+    end
+  end
+  
+  -- Join columns with appropriate formatting
+  local expanded_inline = "SELECT " .. table.concat(column_names, ", ")
+  
+  -- Check if there's more after the * (like FROM clause)
+  local after_star = line:sub(select_end + 1)
+  local from_clause = ""
+  if after_star:match("^%s+FROM") or after_star:match("^%s+from") then
+    from_clause = " " .. after_star:match("^%s+(.*)")
+  end
+  
+  -- Determine if we should use multi-line format (if too many columns or too long)
+  local total_length = #expanded_inline + #from_clause
+  local use_multiline = #column_names > 5 or total_length > 100
+  
+  if use_multiline then
+    -- Multi-line format with nice indentation
+    local lines = {"SELECT"}
+    for i, col in ipairs(column_names) do
+      local prefix = i == 1 and "    " or "  , "
+      table.insert(lines, prefix .. col)
+    end
+    if from_clause ~= "" then
+      table.insert(lines, from_clause:match("^%s*(.*)"))
+    end
+    
+    -- Get current line number
+    local row = cursor_pos[1]
+    
+    -- Delete current line and insert new lines
+    vim.api.nvim_buf_set_lines(0, row - 1, row, false, lines)
+    
+    vim.notify("Expanded * to " .. #column_names .. " columns (multi-line format)", vim.log.levels.INFO)
+  else
+    -- Single line format
+    local expanded = expanded_inline .. from_clause
+    vim.api.nvim_set_current_line(expanded)
+    
+    vim.notify("Expanded * to " .. #column_names .. " columns", vim.log.levels.INFO)
+  end
+end
+
+-- Expand SELECT * in visual selection
+function M.expand_star_visual()
+  -- Get visual selection range
+  local start_pos = vim.fn.getpos("'<")
+  local end_pos = vim.fn.getpos("'>")
+  local start_line = start_pos[2]
+  local end_line = end_pos[2]
+  
+  -- Process each line in the selection
+  local expanded_count = 0
+  for line_num = start_line, end_line do
+    -- Set cursor to this line
+    vim.api.nvim_win_set_cursor(0, {line_num, 0})
+    
+    -- Get the line
+    local line = vim.api.nvim_buf_get_lines(0, line_num - 1, line_num, false)[1]
+    
+    -- Check if it contains SELECT *
+    if line:match("SELECT%s+%*") or line:lower():match("select%s+%*") then
+      -- Call the normal expand function
+      M.expand_star()
+      expanded_count = expanded_count + 1
+      
+      -- Adjust end_line if we inserted multiple lines
+      local new_line_count = vim.api.nvim_buf_line_count(0)
+      local lines_added = new_line_count - (end_line - start_line + 1)
+      if lines_added > 0 then
+        end_line = end_line + lines_added
+      end
+    end
+  end
+  
+  if expanded_count > 0 then
+    vim.notify("Expanded " .. expanded_count .. " SELECT * statements", vim.log.levels.INFO)
+  else
+    vim.notify("No SELECT * found in selection", vim.log.levels.INFO)
   end
 end
 
