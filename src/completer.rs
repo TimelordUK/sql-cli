@@ -17,7 +17,7 @@ impl SqlCompleter {
     }
 
     pub fn update_schema(&mut self, table_name: String, columns: Vec<String>) {
-        self.schema.set_single_table(table_name, columns);
+        self.schema.set_single_table(&table_name, columns);
     }
 }
 
@@ -27,7 +27,7 @@ impl Completer for SqlCompleter {
 
         let mut parser = self.parser.lock().unwrap();
         let context = parser.get_completion_context(input);
-        let suggestions = context.get_suggestions(&self.schema);
+        let suggestions = context.state.get_suggestions(&self.schema);
 
         let start_pos = if let Some(partial) = &context.partial_word {
             pos.saturating_sub(partial.len())

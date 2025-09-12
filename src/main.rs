@@ -26,13 +26,10 @@ impl Validator for SqlValidator {
 
         let mut parser = SqlParser::new();
         match parser.parse_partial(line) {
-            Ok(state) => match state {
-                ParseState::Start => ValidationResult::Incomplete,
-                ParseState::AfterSelect => ValidationResult::Incomplete,
-                ParseState::AfterFrom => ValidationResult::Incomplete,
-                _ => ValidationResult::Complete,
-            },
-            Err(_) => ValidationResult::Complete,
+            ParseState::Start => ValidationResult::Incomplete,
+            ParseState::AfterSelect => ValidationResult::Incomplete,
+            ParseState::AfterFrom => ValidationResult::Incomplete,
+            _ => ValidationResult::Complete,
         }
     }
 }
