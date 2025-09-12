@@ -7,8 +7,20 @@ use crate::data::datatable::DataValue;
 
 // Helper function for parsing dates with multiple format support
 pub fn parse_datetime(s: &str) -> Result<DateTime<Utc>> {
+    // Try parsing as ISO 8601 with timezone first (most unambiguous)
+    if let Ok(dt) = s.parse::<DateTime<Utc>>() {
+        return Ok(dt);
+    }
+
     // ISO formats (most common and unambiguous)
-    // With milliseconds
+    // With T separator
+    if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
+        return Ok(Utc.from_utc_datetime(&dt));
+    }
+    if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.3f") {
+        return Ok(Utc.from_utc_datetime(&dt));
+    }
+    // With space separator
     if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.3f") {
         return Ok(Utc.from_utc_datetime(&dt));
     }

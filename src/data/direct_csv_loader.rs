@@ -1,5 +1,6 @@
 /// Direct CSV to `DataTable` loader - bypasses JSON intermediate format
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
+use crate::sql::functions::date_time::parse_datetime;
 use anyhow::Result;
 use csv;
 use std::fs::File;
@@ -64,9 +65,21 @@ impl DirectCsvLoader {
                 } else if let Ok(f) = field.parse::<f64>() {
                     DataValue::Float(f)
                 } else {
-                    // Check for date-like strings
-                    if field.contains('-') && field.len() >= 8 && field.len() <= 30 {
-                        DataValue::DateTime(field.to_string())
+                    // Only try to parse as date if it looks like a date
+                    // Must contain date separators (-, /, or T) and be reasonable length
+                    let looks_like_date = (field.contains('-') || field.contains('/') || field.contains('T'))
+                        && field.len() >= 8  // Minimum for a date like "1/1/2024"
+                        && field.len() <= 30 // Maximum reasonable date length
+                        && !field.starts_with("--") // Avoid things like "--option"
+                        && field.chars().filter(|c| c.is_ascii_digit()).count() >= 4; // At least 4 digits
+
+                    if looks_like_date {
+                        if let Ok(dt) = parse_datetime(field) {
+                            // Store as ISO 8601 string for consistent comparisons
+                            DataValue::DateTime(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
+                        } else {
+                            DataValue::String(field.to_string())
+                        }
                     } else {
                         DataValue::String(field.to_string())
                     }

@@ -5,6 +5,7 @@ use std::time::Instant;
 use tracing::{debug, info};
 
 use crate::config::config::BehaviorConfig;
+use crate::config::global::get_date_notation;
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
@@ -33,7 +34,7 @@ impl QueryEngine {
     pub fn new() -> Self {
         Self {
             case_insensitive: false,
-            date_notation: "us".to_string(),
+            date_notation: get_date_notation(),
             behavior_config: None,
         }
     }
@@ -41,7 +42,8 @@ impl QueryEngine {
     #[must_use]
     pub fn with_behavior_config(config: BehaviorConfig) -> Self {
         let case_insensitive = config.case_insensitive_default;
-        let date_notation = config.default_date_notation.clone();
+        // Use get_date_notation() to respect environment variable override
+        let date_notation = get_date_notation();
         Self {
             case_insensitive,
             date_notation,
@@ -50,10 +52,10 @@ impl QueryEngine {
     }
 
     #[must_use]
-    pub fn with_date_notation(date_notation: String) -> Self {
+    pub fn with_date_notation(_date_notation: String) -> Self {
         Self {
             case_insensitive: false,
-            date_notation,
+            date_notation: get_date_notation(), // Always use the global function
             behavior_config: None,
         }
     }
@@ -62,7 +64,7 @@ impl QueryEngine {
     pub fn with_case_insensitive(case_insensitive: bool) -> Self {
         Self {
             case_insensitive,
-            date_notation: "us".to_string(),
+            date_notation: get_date_notation(),
             behavior_config: None,
         }
     }
@@ -70,11 +72,11 @@ impl QueryEngine {
     #[must_use]
     pub fn with_case_insensitive_and_date_notation(
         case_insensitive: bool,
-        date_notation: String,
+        _date_notation: String, // Keep parameter for compatibility but use get_date_notation()
     ) -> Self {
         Self {
             case_insensitive,
-            date_notation,
+            date_notation: get_date_notation(), // Always use the global function
             behavior_config: None,
         }
     }

@@ -15,34 +15,15 @@ from pathlib import Path
 # Get the path to the sql-cli binary
 SQL_CLI = Path(__file__).parent.parent.parent / "target" / "release" / "sql-cli"
 
-def run_query(csv_file, query, config_file=None):
+def run_query(csv_file, query, date_notation="us"):
     """Run a SQL query and return the results."""
     cmd = [str(SQL_CLI), csv_file, "-q", query, "-o", "json"]
     
-    # Since --config flag doesn't exist, we need to temporarily copy the config
-    # to the default location that Config::load() expects
-    if config_file:
-        config_dir = Path.home() / ".config" / "sql-cli"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        default_config = config_dir / "config.toml"
-        
-        # Backup existing config if it exists
-        backup_file = None
-        if default_config.exists():
-            backup_file = default_config.with_suffix('.toml.bak')
-            shutil.copy2(default_config, backup_file)
-        
-        # Copy our test config to the default location
-        shutil.copy2(config_file, default_config)
+    # Set environment variable to override date notation
+    env = os.environ.copy()
+    env["SQL_CLI_DATE_NOTATION"] = date_notation
     
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
-    # Restore original config if we backed it up
-    if config_file:
-        if backup_file and backup_file.exists():
-            shutil.move(backup_file, default_config)
-        elif default_config.exists():
-            default_config.unlink()
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     
     if result.returncode != 0:
         raise Exception(f"Query failed: {result.stderr}")
@@ -66,14 +47,6 @@ def create_test_csv(filename, content):
     with open(filename, 'w') as f:
         f.write(content)
 
-def create_config(filename, date_notation):
-    """Create a config file with the specified date notation."""
-    config_content = f"""[behavior]
-default_date_notation = "{date_notation}"
-"""
-    with open(filename, 'w') as f:
-        f.write(config_content)
-
 class TestDateFormats:
     """Test date parsing with different notation preferences."""
     
@@ -90,18 +63,13 @@ class TestDateFormats:
 5,15/03/2024 11:00:00,20/03/2024 12:00:00,March unambiguous
 6,25/12/2024 08:00:00,31/12/2024 23:59:59,December unambiguous""")
         
-        # Create config files
-        cls.us_config = "test_config_us.toml"
-        cls.eu_config = "test_config_eu.toml"
-        create_config(cls.us_config, "us")
-        create_config(cls.eu_config, "european")
+        # No longer need config files - using environment variable instead
     
     @classmethod
     def teardown_class(cls):
         """Clean up test files."""
-        for f in [cls.test_csv, cls.us_config, cls.eu_config]:
-            if os.path.exists(f):
-                os.remove(f)
+        if os.path.exists(cls.test_csv):
+            os.remove(cls.test_csv)
     
     def test_datediff_us_format(self):
         """Test DATEDIFF with US date format."""
@@ -110,7 +78,7 @@ class TestDateFormats:
                DATEDIFF('day', start_date, end_date) as days_diff
         FROM test_dates
         """
-        results = run_query(self.test_csv, query, self.us_config)
+        results = run_query(self.test_csv, query, "us")
         
         # With US format:
         # Row 1: 01/02 = Jan 2, 03/02 = Mar 2 -> 60 days
@@ -138,7 +106,7 @@ class TestDateFormats:
                DATEDIFF('day', start_date, end_date) as days_diff
         FROM test_dates
         """
-        results = run_query(self.test_csv, query, self.eu_config)
+        results = run_query(self.test_csv, query, "european")
         
         # With EU format:
         # Row 1: 01/02 = Feb 1, 03/02 = Feb 3 -> 2 days
@@ -164,7 +132,7 @@ class TestDateFormats:
         WHERE start_date > '06/01/2024 00:00:00'
         ORDER BY id
         """
-        results = run_query(self.test_csv, query, self.us_config)
+        results = run_query(self.test_csv, query, "us")
         
         # With US format, 06/01 = June 1
         # Rows that should match:
@@ -185,7 +153,7 @@ class TestDateFormats:
         WHERE start_date > '01/06/2024 00:00:00'
         ORDER BY id
         """
-        results = run_query(self.test_csv, query, self.eu_config)
+        results = run_query(self.test_csv, query, "european")
         
         # With EU format, 01/06 = June 1
         # Rows that should match:
@@ -206,7 +174,7 @@ class TestDateFormats:
         FROM test_dates
         WHERE id = 1
         """
-        results = run_query(self.test_csv, query, self.us_config)
+        results = run_query(self.test_csv, query, "us")
         
         # With US format: 01/02/2024 = Jan 2, 2024
         # Plus 10 days = Jan 12, 2024
@@ -221,7 +189,7 @@ class TestDateFormats:
         FROM test_dates
         WHERE id = 1
         """
-        results = run_query(self.test_csv, query, self.eu_config)
+        results = run_query(self.test_csv, query, "european")
         
         # With EU format: 01/02/2024 = Feb 1, 2024
         # Plus 10 days = Feb 11, 2024
@@ -239,7 +207,7 @@ class TestDateFormats:
           AND start_date <= '03/31/2024 23:59:59'
         ORDER BY id
         """
-        results = run_query(self.test_csv, query, self.us_config)
+        results = run_query(self.test_csv, query, "us")
         
         # With US format, date range is Jan 1 - Mar 31
         # Should include rows 1, 2, 5
@@ -259,7 +227,7 @@ class TestDateFormats:
           AND start_date <= '31/03/2024 23:59:59'
         ORDER BY id
         """
-        results = run_query(self.test_csv, query, self.eu_config)
+        results = run_query(self.test_csv, query, "european")
         
         # With EU format, date range is Jan 1 - Mar 31  
         # Should include rows 1, 2, 5
@@ -274,8 +242,8 @@ class TestDateFormats:
         SELECT DATEDIFF('day', '2024-03-15 10:00:00', '2024-03-20 10:00:00') as diff
         """
         
-        us_results = run_query(self.test_csv, query, self.us_config)
-        eu_results = run_query(self.test_csv, query, self.eu_config)
+        us_results = run_query(self.test_csv, query, "us")
+        eu_results = run_query(self.test_csv, query, "european")
         
         assert us_results[0]['diff'] == 5
         assert eu_results[0]['diff'] == 5

@@ -12,7 +12,13 @@ pub fn init_config(config: Config) {
 
 /// Get the date notation preference from the global config.
 /// Returns "us" if config is not initialized or on error.
+/// Can be overridden by SQL_CLI_DATE_NOTATION environment variable for testing.
 pub fn get_date_notation() -> String {
+    // Check for environment variable override first (useful for testing)
+    if let Ok(notation) = std::env::var("SQL_CLI_DATE_NOTATION") {
+        return notation;
+    }
+
     CONFIG.get().and_then(|c| c.read().ok()).map_or_else(
         || "us".to_string(),
         |c| c.behavior.default_date_notation.clone(),

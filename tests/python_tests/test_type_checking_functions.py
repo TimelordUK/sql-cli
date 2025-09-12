@@ -28,7 +28,11 @@ class TestTypeCheckingFunctions:
         else:
             cmd = [self.sql_cli, "-q", query, "-o", "csv"]
         
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # Set environment to use US date notation for consistent testing
+        env = os.environ.copy()
+        env["SQL_CLI_DATE_NOTATION"] = "us"
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
         assert result.returncode == 0, f"Query failed: {result.stderr}"
         
         lines = result.stdout.strip().split('\n')
