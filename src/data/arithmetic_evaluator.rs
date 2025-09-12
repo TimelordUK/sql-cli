@@ -1,6 +1,7 @@
 use crate::config::global::get_date_notation;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
+use crate::data::value_comparisons::compare_with_op;
 use crate::sql::aggregates::AggregateRegistry;
 use crate::sql::functions::date_time::parse_datetime;
 use crate::sql::functions::FunctionRegistry;
@@ -221,12 +222,11 @@ impl<'a> ArithmeticEvaluator<'a> {
                 self.evaluate_function("MOD", &args, row_index)
             }
             // Comparison operators (return boolean results)
-            ">" => self.compare_values(&left_val, &right_val, |a, b| a > b),
-            "<" => self.compare_values(&left_val, &right_val, |a, b| a < b),
-            ">=" => self.compare_values(&left_val, &right_val, |a, b| a >= b),
-            "<=" => self.compare_values(&left_val, &right_val, |a, b| a <= b),
-            "=" => self.compare_values(&left_val, &right_val, |a, b| a == b),
-            "!=" | "<>" => self.compare_values(&left_val, &right_val, |a, b| a != b),
+            // Use centralized comparison logic for consistency
+            ">" | "<" | ">=" | "<=" | "=" | "!=" | "<>" => {
+                let result = compare_with_op(&left_val, &right_val, op, false);
+                Ok(DataValue::Boolean(result))
+            }
             // IS NULL / IS NOT NULL operators
             "IS NULL" => Ok(DataValue::Boolean(matches!(left_val, DataValue::Null))),
             "IS NOT NULL" => Ok(DataValue::Boolean(!matches!(left_val, DataValue::Null))),
@@ -324,192 +324,6 @@ impl<'a> ArithmeticEvaluator<'a> {
             DataValue::String(s) => format!("'{s}'"),
             _ => format!("{value:?}"),
         }
-    }
-
-    /// Compare two `DataValues` using the provided comparison function
-    fn compare_values<F>(&self, left: &DataValue, right: &DataValue, op: F) -> Result<DataValue>
-    where
-        F: Fn(f64, f64) -> bool,
-    {
-        debug!(
-            "ArithmeticEvaluator: comparing values {:?} and {:?}",
-            left, right
-        );
-
-        let result = match (left, right) {
-            // Integer comparisons
-            (DataValue::Integer(a), DataValue::Integer(b)) => op(*a as f64, *b as f64),
-            (DataValue::Integer(a), DataValue::Float(b)) => op(*a as f64, *b),
-            (DataValue::Float(a), DataValue::Integer(b)) => op(*a, *b as f64),
-            (DataValue::Float(a), DataValue::Float(b)) => op(*a, *b),
-
-            // String comparisons (try date first, then numeric, then lexicographic)
-            (DataValue::String(a), DataValue::String(b)) => {
-                // First try to parse as dates
-                let a_date = parse_datetime(a);
-                let b_date = parse_datetime(b);
-
-                debug!(
-                    "ArithmeticEvaluator: Comparing strings '{}' and '{}' - dates: {:?}, {:?}",
-                    a,
-                    b,
-                    a_date.is_ok(),
-                    b_date.is_ok()
-                );
-
-                match (a_date, b_date) {
-                    (Ok(a_dt), Ok(b_dt)) => {
-                        // Both are valid dates, compare timestamps
-                        let result = op(a_dt.timestamp() as f64, b_dt.timestamp() as f64);
-                        debug!("ArithmeticEvaluator: Date comparison result: {}", result);
-                        result
-                    }
-                    _ => {
-                        // Not dates, try as numbers
-                        let a_num = a.parse::<f64>();
-                        let b_num = b.parse::<f64>();
-                        match (a_num, b_num) {
-                            (Ok(a_val), Ok(b_val)) => op(a_val, b_val), // Both are numbers
-                            _ => op(a.len() as f64, b.len() as f64), // Fallback to length comparison
-                        }
-                    }
-                }
-            }
-            (DataValue::InternedString(a), DataValue::InternedString(b)) => {
-                // First try to parse as dates
-                let a_date = parse_datetime(a.as_str());
-                let b_date = parse_datetime(b.as_str());
-
-                match (a_date, b_date) {
-                    (Ok(a_dt), Ok(b_dt)) => {
-                        // Both are valid dates, compare timestamps
-                        op(a_dt.timestamp() as f64, b_dt.timestamp() as f64)
-                    }
-                    _ => {
-                        // Not dates, try as numbers
-                        let a_num = a.parse::<f64>();
-                        let b_num = b.parse::<f64>();
-                        match (a_num, b_num) {
-                            (Ok(a_val), Ok(b_val)) => op(a_val, b_val), // Both are numbers
-                            _ => op(a.len() as f64, b.len() as f64), // Fallback to length comparison
-                        }
-                    }
-                }
-            }
-            (DataValue::String(a), DataValue::InternedString(b)) => {
-                // First try to parse as dates
-                let a_date = parse_datetime(a);
-                let b_date = parse_datetime(b.as_str());
-
-                match (a_date, b_date) {
-                    (Ok(a_dt), Ok(b_dt)) => {
-                        // Both are valid dates, compare timestamps
-                        op(a_dt.timestamp() as f64, b_dt.timestamp() as f64)
-                    }
-                    _ => {
-                        // Not dates, try as numbers
-                        let a_num = a.parse::<f64>();
-                        let b_num = b.parse::<f64>();
-                        match (a_num, b_num) {
-                            (Ok(a_val), Ok(b_val)) => op(a_val, b_val), // Both are numbers
-                            _ => op(a.len() as f64, b.len() as f64), // Fallback to length comparison
-                        }
-                    }
-                }
-            }
-            (DataValue::InternedString(a), DataValue::String(b)) => {
-                // First try to parse as dates
-                let a_date = parse_datetime(a.as_str());
-                let b_date = parse_datetime(b);
-
-                debug!("ArithmeticEvaluator: Comparing InternedString '{}' and String '{}' - dates: {:?}, {:?}", a, b, a_date.is_ok(), b_date.is_ok());
-
-                match (a_date, b_date) {
-                    (Ok(a_dt), Ok(b_dt)) => {
-                        // Both are valid dates, compare timestamps
-                        let result = op(a_dt.timestamp() as f64, b_dt.timestamp() as f64);
-                        debug!("ArithmeticEvaluator: Date comparison result: {}", result);
-                        result
-                    }
-                    _ => {
-                        // Not dates, try as numbers
-                        let a_num = a.parse::<f64>();
-                        let b_num = b.parse::<f64>();
-                        match (a_num, b_num) {
-                            (Ok(a_val), Ok(b_val)) => op(a_val, b_val), // Both are numbers
-                            _ => op(a.len() as f64, b.len() as f64), // Fallback to length comparison
-                        }
-                    }
-                }
-            }
-
-            // Mixed type comparisons (try to convert to numbers)
-            (DataValue::String(a), DataValue::Integer(b)) => {
-                match a.parse::<f64>() {
-                    Ok(a_val) => op(a_val, *b as f64),
-                    Err(_) => false, // String can't be compared with number
-                }
-            }
-            (DataValue::Integer(a), DataValue::String(b)) => {
-                match b.parse::<f64>() {
-                    Ok(b_val) => op(*a as f64, b_val),
-                    Err(_) => false, // String can't be compared with number
-                }
-            }
-            (DataValue::String(a), DataValue::Float(b)) => match a.parse::<f64>() {
-                Ok(a_val) => op(a_val, *b),
-                Err(_) => false,
-            },
-            (DataValue::Float(a), DataValue::String(b)) => match b.parse::<f64>() {
-                Ok(b_val) => op(*a, b_val),
-                Err(_) => false,
-            },
-
-            // NULL comparisons
-            (DataValue::Null, _) | (_, DataValue::Null) => false,
-
-            // Boolean comparisons
-            (DataValue::Boolean(a), DataValue::Boolean(b)) => {
-                op(if *a { 1.0 } else { 0.0 }, if *b { 1.0 } else { 0.0 })
-            }
-
-            // DateTime comparisons (stored as ISO strings in DateTime variant)
-            (DataValue::DateTime(a), DataValue::DateTime(b)) => {
-                // DateTime values are stored as ISO strings, parse and compare them
-                let a_date = parse_datetime(a);
-                let b_date = parse_datetime(b);
-
-                match (a_date, b_date) {
-                    (Ok(a_dt), Ok(b_dt)) => op(a_dt.timestamp() as f64, b_dt.timestamp() as f64),
-                    _ => {
-                        // Fallback to string comparison if parsing fails
-                        op(a.len() as f64, b.len() as f64)
-                    }
-                }
-            }
-            (DataValue::DateTime(a), DataValue::String(b))
-            | (DataValue::String(b), DataValue::DateTime(a)) => {
-                // Compare DateTime with String by parsing both as dates
-                let a_date = parse_datetime(a);
-                let b_date = parse_datetime(b);
-
-                match (a_date, b_date) {
-                    (Ok(a_dt), Ok(b_dt)) => op(a_dt.timestamp() as f64, b_dt.timestamp() as f64),
-                    _ => false,
-                }
-            }
-
-            _ => {
-                debug!(
-                    "ArithmeticEvaluator: unsupported comparison between {:?} and {:?}",
-                    left, right
-                );
-                false
-            }
-        };
-
-        debug!("ArithmeticEvaluator: comparison result: {}", result);
-        Ok(DataValue::Boolean(result))
     }
 
     /// Evaluate a function call

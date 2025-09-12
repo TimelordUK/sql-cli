@@ -1,4 +1,5 @@
 use crate::data::datatable::DataValue;
+use crate::data::value_parsing::is_bool_value;
 use crate::sql::functions::date_time::parse_datetime;
 use crate::sql::functions::{ArgCount, FunctionCategory, FunctionSignature, SqlFunction};
 use anyhow::Result;
@@ -61,29 +62,7 @@ impl SqlFunction for IsBoolFunction {
             return Ok(DataValue::Boolean(false));
         }
 
-        let result = match &args[0] {
-            DataValue::Boolean(_) => true,
-            DataValue::String(s) => {
-                s.eq_ignore_ascii_case("true")
-                    || s.eq_ignore_ascii_case("false")
-                    || s == "1"
-                    || s == "0"
-                    || s.eq_ignore_ascii_case("yes")
-                    || s.eq_ignore_ascii_case("no")
-            }
-            DataValue::InternedString(s) => {
-                s.eq_ignore_ascii_case("true")
-                    || s.eq_ignore_ascii_case("false")
-                    || s.as_str() == "1"
-                    || s.as_str() == "0"
-                    || s.eq_ignore_ascii_case("yes")
-                    || s.eq_ignore_ascii_case("no")
-            }
-            DataValue::Integer(i) => *i == 0 || *i == 1,
-            DataValue::Null => false,
-            _ => false,
-        };
-
+        let result = is_bool_value(&args[0]);
         Ok(DataValue::Boolean(result))
     }
 }

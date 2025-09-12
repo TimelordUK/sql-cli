@@ -1,6 +1,6 @@
 /// Direct CSV to `DataTable` loader - bypasses JSON intermediate format
-use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
-use crate::sql::functions::date_time::parse_datetime;
+use crate::data::datatable::{DataColumn, DataRow, DataTable};
+use crate::data::value_parsing::parse_value;
 use anyhow::Result;
 use csv;
 use std::fs::File;
@@ -51,39 +51,9 @@ impl DirectCsvLoader {
             let mut values = Vec::with_capacity(headers.len());
 
             for (i, field) in record.iter().enumerate() {
-                // Distinguish between null (,,) and empty string ("")
-                let value = if field.is_empty() {
-                    if Self::is_null_field(&raw_line, i) {
-                        DataValue::Null
-                    } else {
-                        DataValue::String(String::new())
-                    }
-                } else if let Ok(b) = field.parse::<bool>() {
-                    DataValue::Boolean(b)
-                } else if let Ok(i) = field.parse::<i64>() {
-                    DataValue::Integer(i)
-                } else if let Ok(f) = field.parse::<f64>() {
-                    DataValue::Float(f)
-                } else {
-                    // Only try to parse as date if it looks like a date
-                    // Must contain date separators (-, /, or T) and be reasonable length
-                    let looks_like_date = (field.contains('-') || field.contains('/') || field.contains('T'))
-                        && field.len() >= 8  // Minimum for a date like "1/1/2024"
-                        && field.len() <= 30 // Maximum reasonable date length
-                        && !field.starts_with("--") // Avoid things like "--option"
-                        && field.chars().filter(|c| c.is_ascii_digit()).count() >= 4; // At least 4 digits
-
-                    if looks_like_date {
-                        if let Ok(dt) = parse_datetime(field) {
-                            // Store as ISO 8601 string for consistent comparisons
-                            DataValue::DateTime(dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
-                        } else {
-                            DataValue::String(field.to_string())
-                        }
-                    } else {
-                        DataValue::String(field.to_string())
-                    }
-                };
+                // Check if this field is truly null (between commas) vs empty string
+                let is_null = field.is_empty() && Self::is_null_field(&raw_line, i);
+                let value = parse_value(field, is_null);
                 values.push(value);
             }
 
