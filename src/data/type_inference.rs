@@ -12,14 +12,24 @@ static DATE_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     vec![
         // YYYY-MM-DD (year must be 19xx or 20xx, month 01-12, day 01-31)
         Regex::new(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$").unwrap(),
+        // YYYY-MM-DD HH:MM:SS (with space separator)
+        Regex::new(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\s+\d{2}:\d{2}:\d{2}$").unwrap(),
+        // YYYY-MM-DD HH:MM:SS.mmm (with milliseconds)
+        Regex::new(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\s+\d{2}:\d{2}:\d{2}\.\d{1,3}$").unwrap(),
         // MM/DD/YYYY
         Regex::new(r"^(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/(19|20)\d{2}$").unwrap(),
         // DD/MM/YYYY
         Regex::new(r"^(0[1-9]|[12]\d|3[01])/(0[1-9]|1[0-2])/(19|20)\d{2}$").unwrap(),
+        // DD/MM/YYYY HH:MM:SS (UK format with time)
+        Regex::new(r"^(0[1-9]|[12]\d|3[01])/(0[1-9]|1[0-2])/(19|20)\d{2}\s+\d{2}:\d{2}:\d{2}$").unwrap(),
+        // DD/MM/YYYY HH:MM:SS.mmm (UK format with milliseconds)
+        Regex::new(r"^(0[1-9]|[12]\d|3[01])/(0[1-9]|1[0-2])/(19|20)\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{1,3}$").unwrap(),
         // DD-MM-YYYY
         Regex::new(r"^(0[1-9]|[12]\d|3[01])-(0[1-9]|1[0-2])-(19|20)\d{2}$").unwrap(),
         // YYYY/MM/DD
         Regex::new(r"^(19|20)\d{2}/(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])$").unwrap(),
+        // YYYY/MM/DD HH:MM:SS
+        Regex::new(r"^(19|20)\d{2}/(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])\s+\d{2}:\d{2}:\d{2}$").unwrap(),
         // ISO 8601 with time: YYYY-MM-DDTHH:MM:SS
         Regex::new(r"^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T\d{2}:\d{2}:\d{2}")
             .unwrap(),

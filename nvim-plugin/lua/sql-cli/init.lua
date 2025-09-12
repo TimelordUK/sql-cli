@@ -57,6 +57,8 @@ M.config = {
     show_schema = "<leader>sh",     -- Show table schema
     column_help = "<leader>sk",     -- Smart column/function detection at cursor
     expand_star = "<leader>se",     -- Expand SELECT * to column names
+    copy_query = "<leader>sy",       -- Copy query at cursor to clipboard (y for yank)
+    format_query = "<leader>s=",     -- Format/prettify query at cursor
   },
   
   -- Output window settings
@@ -118,6 +120,14 @@ function M.create_commands()
   vim.api.nvim_create_user_command("SqlCliToggleOutput", function()
     M.toggle_output_window()
   end, { desc = "Toggle output window" })
+  
+  vim.api.nvim_create_user_command("SqlCliCopyQuery", function()
+    M.copy_query_at_cursor()
+  end, { desc = "Copy query at cursor to clipboard" })
+  
+  vim.api.nvim_create_user_command("SqlCliFormatQuery", function()
+    M.format_query_at_cursor()
+  end, { desc = "Format SQL query at cursor" })
 end
 
 -- Setup keymaps
@@ -227,6 +237,16 @@ function M.setup_keymaps()
       { desc = "Expand SELECT * to column names", silent = true })
     vim.keymap.set("v", keymaps.expand_star, M.expand_star_visual,
       { desc = "Expand SELECT * in selection", silent = true })
+  end
+  
+  if keymaps.copy_query then
+    vim.keymap.set("n", keymaps.copy_query, M.copy_query_at_cursor,
+      { desc = "Copy SQL query at cursor to clipboard", silent = true })
+  end
+  
+  if keymaps.format_query then
+    vim.keymap.set("n", keymaps.format_query, M.format_query_at_cursor,
+      { desc = "Format SQL query at cursor", silent = true })
   end
 end
 
@@ -797,6 +817,226 @@ function M.execute_at_cursor()
   
   -- Execute the query
   M.execute_query(query)
+end
+
+-- Copy query at cursor to clipboard
+function M.copy_query_at_cursor()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  
+  -- Find the query boundaries (SELECT to GO/semicolon or next SELECT)
+  local start_line = nil
+  local end_line = nil
+  
+  -- Search backwards for SELECT or start of file
+  for i = cursor_line, 1, -1 do
+    if lines[i]:upper():match("^%s*SELECT") then
+      start_line = i
+      break
+    end
+  end
+  
+  -- If no SELECT found before cursor, search forward
+  if not start_line then
+    for i = cursor_line, #lines do
+      if lines[i]:upper():match("^%s*SELECT") then
+        start_line = i
+        break
+      end
+    end
+  end
+  
+  if not start_line then
+    vim.notify("No SELECT statement found", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Search forward for GO, semicolon, or next SELECT
+  for i = start_line + 1, #lines do
+    local line = lines[i]
+    if line:match("^%s*GO%s*$") or line:match(";%s*$") then
+      end_line = i
+      break
+    elseif i > start_line and line:upper():match("^%s*SELECT") then
+      end_line = i - 1
+      break
+    end
+  end
+  
+  -- If no end found, use end of file
+  if not end_line then
+    end_line = #lines
+  end
+  
+  -- Extract the query
+  local query_lines = {}
+  for i = start_line, end_line do
+    table.insert(query_lines, lines[i])
+  end
+  
+  local query = table.concat(query_lines, "\n")
+  
+  -- Copy to system clipboard (+ register)
+  vim.fn.setreg('+', query)
+  -- Also copy to unnamed register for convenience
+  vim.fn.setreg('"', query)
+  
+  vim.notify("Query copied to clipboard", vim.log.levels.INFO)
+end
+
+-- Format SQL query at cursor
+function M.format_query_at_cursor()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  
+  -- Find the query boundaries (SELECT to GO/semicolon or next SELECT)
+  local start_line = nil
+  local end_line = nil
+  
+  -- Search backwards for SELECT or start of file
+  for i = cursor_line, 1, -1 do
+    if lines[i]:upper():match("^%s*SELECT") then
+      start_line = i
+      break
+    end
+  end
+  
+  -- If no SELECT found before cursor, search forward
+  if not start_line then
+    for i = cursor_line, #lines do
+      if lines[i]:upper():match("^%s*SELECT") then
+        start_line = i
+        break
+      end
+    end
+  end
+  
+  if not start_line then
+    vim.notify("No SELECT statement found", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Search forward for GO, semicolon, or next SELECT
+  for i = start_line + 1, #lines do
+    local line = lines[i]
+    if line:match("^%s*GO%s*$") or line:match(";%s*$") then
+      end_line = i
+      break
+    elseif i > start_line and line:upper():match("^%s*SELECT") then
+      end_line = i - 1
+      break
+    end
+  end
+  
+  -- If no end found, use end of file
+  if not end_line then
+    end_line = #lines
+  end
+  
+  -- Extract the query
+  local query_lines = {}
+  for i = start_line, end_line do
+    table.insert(query_lines, lines[i])
+  end
+  
+  local query = table.concat(query_lines, " ")
+  
+  -- Format the query
+  local formatted = M.format_sql(query)
+  
+  -- Split formatted query into lines
+  local formatted_lines = vim.split(formatted, "\n")
+  
+  -- Replace the original query with formatted version
+  vim.api.nvim_buf_set_lines(bufnr, start_line - 1, end_line, false, formatted_lines)
+  
+  vim.notify("Query formatted", vim.log.levels.INFO)
+end
+
+-- SQL Formatter function
+function M.format_sql(query)
+  -- Remove extra whitespace and normalize
+  query = query:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  
+  -- SQL keywords that should be on new lines
+  local keywords = {
+    "SELECT", "FROM", "WHERE", "GROUP BY", "HAVING", "ORDER BY", 
+    "LIMIT", "OFFSET", "JOIN", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN",
+    "OUTER JOIN", "CROSS JOIN", "ON", "AND", "OR", "CASE", "WHEN", 
+    "THEN", "ELSE", "END", "WITH", "AS", "UNION", "UNION ALL", "EXCEPT", 
+    "INTERSECT"
+  }
+  
+  -- Create a pattern for keywords (case-insensitive)
+  local function make_keyword_pattern(keyword)
+    local pattern = ""
+    for i = 1, #keyword do
+      local char = keyword:sub(i, i)
+      if char == " " then
+        pattern = pattern .. "%s+"
+      else
+        pattern = pattern .. "[" .. char:upper() .. char:lower() .. "]"
+      end
+    end
+    return pattern
+  end
+  
+  -- First, handle SELECT clause - put columns on separate lines
+  query = query:gsub("([Ss][Ee][Ll][Ee][Cc][Tt])%s+", "%1\n    ")
+  
+  -- Handle commas in SELECT clause (before FROM)
+  local select_part, rest = query:match("^(.-)%s+([Ff][Rr][Oo][Mm].*)$")
+  if select_part then
+    -- Add newline after commas in SELECT, maintaining indentation
+    select_part = select_part:gsub(",%s*", ",\n    ")
+    query = select_part .. "\n" .. rest
+  end
+  
+  -- Put major clauses on new lines
+  query = query:gsub("%s+([Ff][Rr][Oo][Mm])%s+", "\nFROM ")
+  query = query:gsub("%s+([Ww][Hh][Ee][Rr][Ee])%s+", "\nWHERE ")
+  query = query:gsub("%s+([Gg][Rr][Oo][Uu][Pp]%s+[Bb][Yy])%s+", "\nGROUP BY ")
+  query = query:gsub("%s+([Hh][Aa][Vv][Ii][Nn][Gg])%s+", "\nHAVING ")
+  query = query:gsub("%s+([Oo][Rr][Dd][Ee][Rr]%s+[Bb][Yy])%s+", "\nORDER BY ")
+  query = query:gsub("%s+([Ll][Ii][Mm][Ii][Tt])%s+", "\nLIMIT ")
+  query = query:gsub("%s+([Oo][Ff][Ff][Ss][Ee][Tt])%s+", "\nOFFSET ")
+  
+  -- Handle JOIN clauses (must be before single JOIN to avoid breaking compound joins)
+  query = query:gsub("%s+([Ff][Uu][Ll][Ll]%s+[Oo][Uu][Tt][Ee][Rr]%s+[Jj][Oo][Ii][Nn])%s+", "\nFULL OUTER JOIN ")
+  query = query:gsub("%s+([Ll][Ee][Ff][Tt]%s+[Jj][Oo][Ii][Nn])%s+", "\nLEFT JOIN ")
+  query = query:gsub("%s+([Rr][Ii][Gg][Hh][Tt]%s+[Jj][Oo][Ii][Nn])%s+", "\nRIGHT JOIN ")
+  query = query:gsub("%s+([Ii][Nn][Nn][Ee][Rr]%s+[Jj][Oo][Ii][Nn])%s+", "\nINNER JOIN ")
+  query = query:gsub("%s+([Cc][Rr][Oo][Ss][Ss]%s+[Jj][Oo][Ii][Nn])%s+", "\nCROSS JOIN ")
+  -- Only convert standalone JOIN if it wasn't already part of a compound JOIN
+  query = query:gsub("([^%w])([Jj][Oo][Ii][Nn])%s+", "%1\nJOIN ")
+  
+  -- Indent ON clauses for JOINs
+  query = query:gsub("%s+([Oo][Nn])%s+", "\n    ON ")
+  
+  -- Handle AND/OR in WHERE clause with proper indentation
+  query = query:gsub("%s+([Aa][Nn][Dd])%s+", "\n    AND ")
+  query = query:gsub("%s+([Oo][Rr])%s+", "\n    OR ")
+  
+  -- Handle CASE statements
+  query = query:gsub("%s+([Cc][Aa][Ss][Ee])%s+", "\n    CASE ")
+  query = query:gsub("%s+([Ww][Hh][Ee][Nn])%s+", "\n        WHEN ")
+  query = query:gsub("%s+([Tt][Hh][Ee][Nn])%s+", " THEN ")
+  query = query:gsub("%s+([Ee][Ll][Ss][Ee])%s+", "\n        ELSE ")
+  query = query:gsub("%s+([Ee][Nn][Dd])%s+", "\n    END ")
+  
+  -- Clean up any double newlines
+  query = query:gsub("\n\n+", "\n")
+  
+  -- Remove trailing semicolon or GO for reformatting
+  query = query:gsub(";%s*$", "")
+  query = query:gsub("%s*GO%s*$", "")
+  
+  -- Add semicolon at the end
+  query = query .. ";"
+  
+  return query
 end
 
 -- Open data file in a new buffer

@@ -177,11 +177,40 @@ sql-cli/
 │   └── ui/                     # TUI components
 ├── examples/                   # SQL example files
 ├── data/                       # Test data files
+├── docs/                       # Technical documentation
 ├── tests/
-│   └── python_tests/          # Python integration tests
-└── scripts/
-    └── test_all_examples.sh   # Example test runner
+│   ├── python_tests/          # Python integration tests
+│   ├── integration/           # Shell/Lua integration tests
+│   └── sql_examples/          # Test SQL queries
+├── scripts/
+│   └── test_all_examples.sh   # Example test runner
+└── nvim-plugin/               # Neovim plugin
 ```
+
+## 📁 File Organization Guidelines
+
+When creating new files, please follow these conventions:
+
+### Keep in Root Directory:
+- `README.md` - Main project documentation
+- `CHANGELOG.md` - Version history
+- `RELEASE_NOTES.md` - Release information  
+- `CLAUDE.md` - This AI context guide
+- `Cargo.toml`, `Cargo.lock` - Rust project files
+- `.gitignore`, `.github/` - Git configuration
+
+### Place in Appropriate Directories:
+- **Test SQL files** (`test_*.sql`) → `tests/sql_examples/`
+- **Test scripts** (`test_*.sh`, `test_*.lua`) → `tests/integration/`
+- **Python tests** → `tests/python_tests/`
+- **Technical docs** (implementation details, TODOs) → `docs/`
+- **Sample data** → `data/`
+- **SQL examples** → `examples/`
+
+### Naming Conventions:
+- Test files should start with `test_`
+- Data files should have descriptive names (e.g., `trade_reconciliation.csv`)
+- Documentation should use UPPER_SNAKE_CASE for visibility (e.g., `MIGRATION_TODO.md`)
 
 ## 🎯 Key Principles
 

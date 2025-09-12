@@ -1,0 +1,42 @@
+-- #! ../data/trade_reconciliation.csv
+
+
+SELECT
+    *
+FROM trade_reconciliation;;
+
+
+SELECT * FROM trade_reconciliation 
+WHERE 
+  IS_DATE("Prod-Value") = true;
+go
+
+SELECT
+    PlatformOrderId,
+    count(*) as difference_count
+FROM trade_reconciliation
+GROUP BY PlatformOrderId
+ORDER BY PlatformOrderId;
+GO
+
+SELECT
+    *,
+    DateDiff('day',
+    "Prod-Value",
+    "Test-Value") as delta_days
+FROM trade_reconciliation
+WHERE IS_DATE("Prod-Value") = true;
+
+SELECT
+    PlatformOrderId,
+    FieldName,
+    "Prod-Value",
+    IS_DATE("Prod-Value") as is_date,
+    IS_BOOL("Prod-Value") as is_bool,
+    IS_NUMERIC("Prod-Value") as is_numeric,
+    IS_FLOAT("Prod-Value") as is_float,
+    IS_INTEGER("Prod-Value") as is_int
+FROM trade_reconciliation;
+GO
+
+

@@ -6,8 +6,16 @@ use crate::config::global::get_date_notation;
 use crate::data::datatable::DataValue;
 
 // Helper function for parsing dates with multiple format support
-fn parse_datetime(s: &str) -> Result<DateTime<Utc>> {
+pub fn parse_datetime(s: &str) -> Result<DateTime<Utc>> {
     // ISO formats (most common and unambiguous)
+    // With milliseconds
+    if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.3f") {
+        return Ok(Utc.from_utc_datetime(&dt));
+    }
+    if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f") {
+        return Ok(Utc.from_utc_datetime(&dt));
+    }
+    // Without milliseconds
     if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
         return Ok(Utc.from_utc_datetime(&dt));
     }
@@ -28,7 +36,10 @@ fn parse_datetime(s: &str) -> Result<DateTime<Utc>> {
         if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
             return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
         }
-        // With time formats
+        // With time formats (with milliseconds)
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S%.3f") {
+            return Ok(Utc.from_utc_datetime(&dt));
+        }
         if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S") {
             return Ok(Utc.from_utc_datetime(&dt));
         }
@@ -44,7 +55,10 @@ fn parse_datetime(s: &str) -> Result<DateTime<Utc>> {
         if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
             return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
         }
-        // With time formats
+        // With time formats (with milliseconds)
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S%.3f") {
+            return Ok(Utc.from_utc_datetime(&dt));
+        }
         if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S") {
             return Ok(Utc.from_utc_datetime(&dt));
         }
@@ -60,7 +74,10 @@ fn parse_datetime(s: &str) -> Result<DateTime<Utc>> {
         if let Ok(dt) = NaiveDate::parse_from_str(s, "%m-%d-%Y") {
             return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
         }
-        // With time formats
+        // With time formats (with milliseconds)
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S%.3f") {
+            return Ok(Utc.from_utc_datetime(&dt));
+        }
         if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%m/%d/%Y %H:%M:%S") {
             return Ok(Utc.from_utc_datetime(&dt));
         }
@@ -76,7 +93,10 @@ fn parse_datetime(s: &str) -> Result<DateTime<Utc>> {
         if let Ok(dt) = NaiveDate::parse_from_str(s, "%d-%m-%Y") {
             return Ok(Utc.from_utc_datetime(&dt.and_hms_opt(0, 0, 0).unwrap()));
         }
-        // With time formats
+        // With time formats (with milliseconds)
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S%.3f") {
+            return Ok(Utc.from_utc_datetime(&dt));
+        }
         if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%d/%m/%Y %H:%M:%S") {
             return Ok(Utc.from_utc_datetime(&dt));
         }

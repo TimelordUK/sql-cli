@@ -137,6 +137,8 @@ require('sql-cli').setup({
 - `:SqlCliClearData` - Clear data file setting
 - `:SqlCliShowPlan` - Show query execution plan
 - `:SqlCliToggleOutput` - Toggle output window
+- `:SqlCliCopyQuery` - Copy query at cursor to clipboard
+- `:SqlCliFormatQuery` - Format/prettify SQL query at cursor
 
 ### Default Keymaps
 
@@ -145,6 +147,8 @@ require('sql-cli').setup({
 - `<leader>ss` - Execute selected SQL (visual mode)
 - `<leader>sx` - Execute query at cursor (from SELECT to GO/semicolon)
 - `<leader>sp` - Show query plan
+- `<leader>sy` - Copy query at cursor to clipboard
+- `<leader>s=` - Format/prettify query at cursor
 
 #### Navigation
 - `]q` - Jump to next query

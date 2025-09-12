@@ -22,6 +22,7 @@ pub mod physics;
 pub mod random;
 pub mod solar_system;
 pub mod string_methods;
+pub mod type_checking;
 
 // Re-export MethodFunction trait
 pub use string_methods::MethodFunction;
@@ -153,6 +154,7 @@ impl FunctionRegistry {
         registry.register_aggregate_functions();
         registry.register_random_functions();
         registry.register_format_functions();
+        registry.register_type_checking_functions();
 
         registry
     }
@@ -583,6 +585,22 @@ impl FunctionRegistry {
         self.register(Box::new(LPadFunction));
         self.register(Box::new(RPadFunction));
         self.register(Box::new(CenterFunction));
+    }
+
+    /// Register type checking functions
+    fn register_type_checking_functions(&mut self) {
+        use type_checking::{
+            IsBoolFunction, IsDateFunction, IsFloatFunction, IsIntegerFunction, IsNotNullFunction,
+            IsNullFunction, IsNumericFunction,
+        };
+
+        self.register(Box::new(IsDateFunction));
+        self.register(Box::new(IsBoolFunction));
+        self.register(Box::new(IsNumericFunction));
+        self.register(Box::new(IsIntegerFunction));
+        self.register(Box::new(IsFloatFunction));
+        self.register(Box::new(IsNullFunction));
+        self.register(Box::new(IsNotNullFunction));
     }
 }
 
