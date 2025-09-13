@@ -1,0 +1,21 @@
+region,country,product,amount,currency,quantity,date
+North America,USA,Laptop,2499.99,USD,5,2024-01-15
+Europe,Germany,Laptop,2299.00,EUR,3,2024-01-16
+Europe,France,Phone,899.99,EUR,12,2024-01-17
+Asia,Japan,Camera,125000,JPY,8,2024-01-18
+Europe,UK,Tablet,1599.99,GBP,7,2024-01-19
+North America,Canada,Phone,1299.00,CAD,15,2024-01-20
+Europe,Switzerland,Watch,4500.00,CHF,2,2024-01-21
+Asia,China,Laptop,15999,CNY,6,2024-01-22
+Asia,India,Phone,74999,INR,20,2024-01-23
+Oceania,Australia,Tablet,2199.50,AUD,9,2024-01-24
+Europe,Sweden,Camera,12999,SEK,4,2024-01-25
+Europe,Norway,Watch,45999,NOK,3,2024-01-26
+Europe,Denmark,Laptop,17999,DKK,5,2024-01-27
+North America,USA,Phone,1899.99,USD,25,2024-01-28
+Europe,Germany,Watch,3299.00,EUR,6,2024-01-29
+Asia,Japan,Phone,98000,JPY,18,2024-01-30
+Europe,UK,Camera,2799.99,GBP,11,2024-01-31
+North America,USA,Tablet,3999.99,USD,14,2024-02-01
+Asia,China,Watch,28888,CNY,8,2024-02-02
+Europe,France,Camera,1899.00,EUR,7,2024-02-03
