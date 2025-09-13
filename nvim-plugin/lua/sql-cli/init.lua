@@ -28,6 +28,21 @@ function M.setup(opts)
   -- Initialize state
   M.state = state.new()
 
+  -- Add UI callbacks to config
+  M.config.ui_callbacks = {
+    create_output_window = function()
+      ui.create_output_window(M.config, M.state)
+    end,
+    is_output_window_valid = function()
+      return ui.is_output_window_valid(M.state)
+    end,
+  }
+
+  -- Add load schema callback to config
+  M.config.load_schema_callback = function()
+    functions.load_schema_for_completion(M.config, M.state)
+  end
+
   -- Setup commands
   M.create_commands()
 
