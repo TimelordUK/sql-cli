@@ -1,5 +1,5 @@
 //! SQL Lexer - Tokenization of SQL queries
-//! 
+//!
 //! This module handles the conversion of raw SQL text into tokens
 //! that can be consumed by the parser.
 

@@ -152,17 +152,27 @@ pub fn compare_values(
         }
 
         // DateTime vs String comparisons
-        (DataValue::DateTime(a), DataValue::String(b))
-        | (DataValue::String(b), DataValue::DateTime(a)) => {
-            match (parse_datetime(a), parse_datetime(b)) {
-                (Ok(a_dt), Ok(b_dt)) => Some(a_dt.cmp(&b_dt)),
+        (DataValue::DateTime(dt), DataValue::String(s)) => {
+            match (parse_datetime(dt), parse_datetime(s)) {
+                (Ok(dt_val), Ok(s_val)) => Some(dt_val.cmp(&s_val)),
                 _ => None,
             }
         }
-        (DataValue::DateTime(a), DataValue::InternedString(b))
-        | (DataValue::InternedString(b), DataValue::DateTime(a)) => {
-            match (parse_datetime(a), parse_datetime(b.as_str())) {
-                (Ok(a_dt), Ok(b_dt)) => Some(a_dt.cmp(&b_dt)),
+        (DataValue::String(s), DataValue::DateTime(dt)) => {
+            match (parse_datetime(s), parse_datetime(dt)) {
+                (Ok(s_val), Ok(dt_val)) => Some(s_val.cmp(&dt_val)),
+                _ => None,
+            }
+        }
+        (DataValue::DateTime(dt), DataValue::InternedString(s)) => {
+            match (parse_datetime(dt), parse_datetime(s.as_str())) {
+                (Ok(dt_val), Ok(s_val)) => Some(dt_val.cmp(&s_val)),
+                _ => None,
+            }
+        }
+        (DataValue::InternedString(s), DataValue::DateTime(dt)) => {
+            match (parse_datetime(s.as_str()), parse_datetime(dt)) {
+                (Ok(s_val), Ok(dt_val)) => Some(s_val.cmp(&dt_val)),
                 _ => None,
             }
         }

@@ -203,6 +203,8 @@ impl Schema {
     }
 
     pub fn has_table(&self, table_name: &str) -> bool {
-        self.tables.iter().any(|t| t.name.eq_ignore_ascii_case(table_name))
+        self.tables
+            .iter()
+            .any(|t| t.name.eq_ignore_ascii_case(table_name))
     }
 }

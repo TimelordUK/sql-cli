@@ -3,15 +3,13 @@ use chrono::{Datelike, Local, NaiveDateTime};
 
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
-    CTE, Condition, JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp,
-    OrderByColumn, SelectItem, SelectStatement, SortDirection, SqlExpression,
-    TableFunction, TableSource, WhenBranch, WhereClause, WindowSpec,
+    Condition, JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn,
+    SelectItem, SelectStatement, SortDirection, SqlExpression, TableFunction, TableSource,
+    WhenBranch, WhereClause, WindowSpec, CTE,
 };
-pub use super::parser::lexer::{Lexer, Token};
 pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
+pub use super::parser::lexer::{Lexer, Token};
 pub use super::parser::ParserConfig;
-
-
 
 pub struct Parser {
     lexer: Lexer,

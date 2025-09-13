@@ -1,3 +1,4 @@
+use crate::data::csv_fixes::quote_if_needed;
 use crate::parser::{ParseState, Schema};
 use crate::recursive_parser::{detect_cursor_context, CursorContext, LogicalOp};
 
@@ -48,12 +49,20 @@ impl CursorAwareParser {
         // If we didn't get a partial word from recursive parser, try our own extraction
         let partial_word = partial_word.or_else(|| self.extract_word_at_cursor(query, cursor_pos));
 
-        let default_table = self.schema.get_first_table_name().unwrap_or("trade_deal".to_string());
+        let default_table = self
+            .schema
+            .get_first_table_name()
+            .unwrap_or("trade_deal".to_string());
 
         let (suggestions, context_str) = match &cursor_context {
             CursorContext::SelectClause => {
-                // get_columns already applies quote_if_needed, so don't double-quote
-                let mut cols = self.schema.get_columns(&default_table);
+                // Apply quote_if_needed to column names
+                let mut cols = self
+                    .schema
+                    .get_columns(&default_table)
+                    .into_iter()
+                    .map(|col| quote_if_needed(&col))
+                    .collect::<Vec<_>>();
                 cols.push("*".to_string());
 
                 // Add math functions
@@ -93,7 +102,12 @@ impl CursorAwareParser {
             }
             CursorContext::WhereClause | CursorContext::AfterLogicalOp(_) => {
                 // We're in WHERE clause or after AND/OR - suggest columns
-                let mut suggestions = self.schema.get_columns(&default_table);
+                let mut suggestions = self
+                    .schema
+                    .get_columns(&default_table)
+                    .into_iter()
+                    .map(|col| quote_if_needed(&col))
+                    .collect::<Vec<_>>();
 
                 // Add math functions that can be used in WHERE
                 suggestions.extend(vec![
@@ -188,7 +202,12 @@ impl CursorAwareParser {
             }
             CursorContext::InExpression => {
                 // Generic expression context - could be anywhere
-                let mut suggestions = self.schema.get_columns(&default_table);
+                let mut suggestions = self
+                    .schema
+                    .get_columns(&default_table)
+                    .into_iter()
+                    .map(|col| quote_if_needed(&col))
+                    .collect::<Vec<_>>();
 
                 // Add math functions
                 suggestions.extend(vec![
@@ -224,8 +243,13 @@ impl CursorAwareParser {
                     suggestions.extend(selected_columns);
                 } else {
                     // Fallback to all columns if SELECT * or no columns detected
-                    // get_columns already applies quote_if_needed
-                    suggestions.extend(self.schema.get_columns(&default_table));
+                    // Apply quote_if_needed to column names
+                    suggestions.extend(
+                        self.schema
+                            .get_columns(&default_table)
+                            .into_iter()
+                            .map(|col| quote_if_needed(&col)),
+                    );
                 }
 
                 // Always add ASC/DESC options
@@ -493,17 +517,30 @@ impl CursorAwareParser {
         partial_word: &Option<String>,
         query: &str,
     ) -> Vec<String> {
-        let default_table = self.schema.get_first_table_name().unwrap_or("trade_deal".to_string());
+        let default_table = self
+            .schema
+            .get_first_table_name()
+            .unwrap_or("trade_deal".to_string());
 
         let mut suggestions = match context {
             ParseState::Start => vec!["SELECT".to_string()],
             ParseState::AfterSelect => {
-                let mut cols = self.schema.get_columns(&default_table);
+                let mut cols = self
+                    .schema
+                    .get_columns(&default_table)
+                    .into_iter()
+                    .map(|col| quote_if_needed(&col))
+                    .collect::<Vec<_>>();
                 cols.push("*".to_string());
                 cols
             }
             ParseState::InColumnList => {
-                let mut cols = self.schema.get_columns(&default_table);
+                let mut cols = self
+                    .schema
+                    .get_columns(&default_table)
+                    .into_iter()
+                    .map(|col| quote_if_needed(&col))
+                    .collect::<Vec<_>>();
                 cols.push("FROM".to_string());
                 cols
             }
@@ -513,7 +550,12 @@ impl CursorAwareParser {
             }
             ParseState::InWhere => {
                 // Prioritize column names over SQL keywords in WHERE clauses
-                let mut suggestions = self.schema.get_columns(&default_table);
+                let mut suggestions = self
+                    .schema
+                    .get_columns(&default_table)
+                    .into_iter()
+                    .map(|col| quote_if_needed(&col))
+                    .collect::<Vec<_>>();
 
                 // Only add SQL keywords if no partial word or if partial doesn't match any columns
                 let add_keywords = if let Some(partial) = partial_word {
@@ -548,7 +590,12 @@ impl CursorAwareParser {
                     suggestions.extend(selected_columns);
                 } else {
                     // Fallback to all columns if SELECT * or no columns detected
-                    suggestions.extend(self.schema.get_columns(&default_table));
+                    suggestions.extend(
+                        self.schema
+                            .get_columns(&default_table)
+                            .into_iter()
+                            .map(|col| quote_if_needed(&col)),
+                    );
                 }
 
                 // Always add ASC/DESC options

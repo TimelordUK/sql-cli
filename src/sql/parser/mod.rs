@@ -4,14 +4,14 @@
 //! breaking down the monolithic parser into focused components.
 
 pub mod ast;
-pub mod lexer;
 pub mod legacy;
+pub mod lexer;
 
 // Re-export commonly used types for convenience
 pub use ast::{
-    CTE, Condition, JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp,
-    OrderByColumn, SelectItem, SelectStatement, SortDirection, SqlExpression,
-    TableFunction, TableSource, WhenBranch, WhereClause, WindowSpec,
+    Condition, JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn,
+    SelectItem, SelectStatement, SortDirection, SqlExpression, TableFunction, TableSource,
+    WhenBranch, WhereClause, WindowSpec, CTE,
 };
 
 pub use lexer::{Lexer, Token};
