@@ -320,9 +320,8 @@ class TestCaseWhenEvaluation:
                 assert pd.isna(row['special_numbers']) or row['special_numbers'] == ''
     
     def test_case_with_complex_conditions(self):
-        """Test CASE with complex boolean conditions - LIMITATION: AND/OR not supported in CASE conditions"""
-        # This test documents a known limitation - complex boolean expressions 
-        # with AND/OR are not yet supported in CASE WHEN conditions
+        """Test CASE with complex boolean conditions - NOW SUPPORTED after Phase 2.4 refactoring"""
+        # After Phase 2.4 refactoring, AND/OR operators are now properly supported in CASE WHEN
         
         # Test simple conditions that work
         query = """
@@ -355,17 +354,34 @@ class TestCaseWhenEvaluation:
             else:
                 assert row['simple_condition'] == 'Mixed'
         
-        # Document the limitation - this should fail
+        # Test complex AND/OR conditions - NOW SUPPORTED!
         complex_query = """
         SELECT id, a, b,
-            CASE WHEN a > 10 AND b > 100 THEN 'Both High' ELSE 'Other' END
+            CASE WHEN a > 10 AND b > 100 THEN 'Both High' ELSE 'Other' END as result
         FROM test_simple_math WHERE id = 1
         """
         df_complex, err_complex = self.run_query("test_simple_math.csv", complex_query)
         
-        # Assert that complex AND/OR conditions are not yet supported
-        assert df_complex is None, "Complex AND/OR conditions should not be supported yet"
-        assert "Parse error" in err_complex and "And" in err_complex
+        # Complex conditions should now work
+        assert df_complex is not None, f"Complex AND/OR query failed: {err_complex}"
+        assert len(df_complex) == 1
+        # For id=1: a=1, b=10 -> a > 10 is false, so result should be 'Other'
+        assert df_complex.iloc[0]['result'] == 'Other'
+        
+        # Test more complex conditions with OR
+        or_query = """
+        SELECT id, a, b,
+            CASE 
+                WHEN a > 15 OR b > 150 THEN 'At Least One High'
+                WHEN a > 10 AND b > 100 THEN 'Both Moderate'
+                ELSE 'Low'
+            END as category
+        FROM test_simple_math WHERE id IN (1, 6, 11)
+        """
+        df_or, err_or = self.run_query("test_simple_math.csv", or_query)
+        
+        assert df_or is not None, f"OR condition query failed: {err_or}"
+        assert len(df_or) == 3
     
     # COMPLEX NESTED SCENARIOS
     
