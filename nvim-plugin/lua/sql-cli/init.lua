@@ -417,7 +417,21 @@ function M.open_data_file()
   end
   local data_file = M.state:get_data_file()
   if data_file then
-    vim.cmd("edit " .. vim.fn.fnameescape(data_file))
+    -- Save current window to return focus if needed
+    local current_win = vim.api.nvim_get_current_win()
+
+    -- Create a new split for the data file
+    local split_cmd = M.config.split.direction == "vertical" and "vsplit" or "split"
+    vim.cmd(split_cmd .. " " .. vim.fn.fnameescape(data_file))
+
+    -- Optionally resize the window
+    if M.config.split.direction == "vertical" then
+      local size = math.floor(vim.o.columns * M.config.split.size)
+      vim.api.nvim_win_set_width(0, size)
+    else
+      local size = math.floor(vim.o.lines * M.config.split.size)
+      vim.api.nvim_win_set_height(0, size)
+    end
   else
     vim.notify("No data file set", vim.log.levels.WARN)
   end
