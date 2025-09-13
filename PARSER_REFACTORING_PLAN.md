@@ -57,7 +57,7 @@ src/sql/parser/
 
 **Result**: Reduced main parser from 4,598 to 3,933 lines (665 lines removed, 14.5% reduction)
 
-### ✅ Phase 2: Extract Expression Parsing (Completed)
+### ✅ Phase 2: Extract Expression Parsing (COMPLETED)
 - [x] Create `expressions/` module structure
 - [x] Extract `primary.rs` - literals, identifiers, function calls (~343 lines)
 - [x] Extract `arithmetic.rs` - additive, multiplicative expressions (~182 lines)
@@ -66,13 +66,16 @@ src/sql/parser/
 - [x] Create expression traits (ParsePrimary, ParseArithmetic, ParseComparison)
 - [x] Handle method calls within multiplicative precedence
 - [x] Extract `logical.rs` - AND, OR, NOT operations (~144 lines)
-- [ ] Extract `case.rs` - CASE/WHEN expressions (Phase 2.5)
+- [x] Extract `case.rs` - CASE/WHEN expressions (~110 lines)
 
 **Phase 2.1**: Primary expressions extracted (~220 lines)
 **Phase 2.2**: Arithmetic expressions extracted (~95 lines)
 **Phase 2.3**: Comparison expressions extracted (~80 lines)
 **Phase 2.4**: Logical expressions extracted (~144 lines)
-**Total reduction**: ~539 lines moved to modular structure
+**Phase 2.5**: CASE expressions extracted (~110 lines)
+**Total reduction**: ~649 lines moved to modular structure
+
+**Bonus**: AND/OR operators now work in CASE WHEN conditions!
 
 ### 🔄 Phase 3: Extract Statement Components
 - [ ] Create `statements/` module structure
@@ -127,8 +130,8 @@ src/sql/parser/
 | Phase 2.1 | ✅ | 220 | 3,713 | Dec 13, 2024 |
 | Phase 2.2 | ✅ | 95 | 3,618 | Dec 13, 2024 |
 | Phase 2.3 | ✅ | 80 | 3,538 | Dec 13, 2024 |
-| Phase 2.4 | ✅ | 144 | 3,394 | Dec 13, 2024 |
-| Phase 2.5 | ⏳ | - | - | - |
+| Phase 2.4 | ✅ | 144 | 3,655 | Dec 13, 2024 |
+| Phase 2.5 | ✅ | 110 | 3,633 | Dec 13, 2024 |
 | Phase 3 | ⏳ | - | - | - |
 | Phase 4 | ⏳ | - | - | - |
 | Phase 5 | ⏳ | - | - | - |
@@ -142,13 +145,16 @@ src/sql/parser/
 - [ ] Improved code navigation
 - [ ] Better testability
 
-## 📝 Notes for Tomorrow
+## 📝 Notes for Next Session
 
-### Next Session Priority:
-1. Continue with Phase 2 - Expression parsing extraction
-2. Start with `primary.rs` as it has fewest dependencies
-3. Work up the expression hierarchy
-4. Test thoroughly after each extraction
+### Phase 2 Complete! 🎉
+All expression parsing has been successfully extracted into modular components.
+
+### Next Priority - Phase 3:
+1. Extract formatting code (916 lines!) to separate module
+2. Extract statement components (SELECT, FROM, WHERE, etc.)
+3. Extract utility functions
+4. Continue reducing main parser file size
 
 ### Considerations for JOINs:
 - Need to extend AST with comprehensive JOIN types
