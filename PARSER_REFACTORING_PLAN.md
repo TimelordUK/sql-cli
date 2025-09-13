@@ -57,18 +57,20 @@ src/sql/parser/
 
 **Result**: Reduced main parser from 4,598 to 3,933 lines (665 lines removed, 14.5% reduction)
 
-### 🔄 Phase 2: Extract Expression Parsing (In Progress)
+### ✅ Phase 2: Extract Expression Parsing (Completed)
 - [x] Create `expressions/` module structure
-- [x] Extract `primary.rs` - literals, identifiers, function calls (~280 lines)
+- [x] Extract `primary.rs` - literals, identifiers, function calls (~343 lines)
+- [x] Extract `arithmetic.rs` - additive, multiplicative expressions (~182 lines)
 - [x] Add debug/trace logging infrastructure
-- [x] Create expression trait/interface for clean API (ParsePrimary trait)
-- [ ] Extract `arithmetic.rs` - additive, multiplicative expressions
-- [ ] Extract `comparison.rs` - comparison operators, BETWEEN, IN, LIKE
-- [ ] Extract `logical.rs` - AND, OR, NOT operations
-- [ ] Extract `case.rs` - CASE/WHEN expressions
+- [x] Create expression traits (ParsePrimary, ParseArithmetic)
+- [x] Handle method calls within multiplicative precedence
+- [ ] Extract `comparison.rs` - comparison operators, BETWEEN, IN, LIKE (Phase 2.3)
+- [ ] Extract `logical.rs` - AND, OR, NOT operations (Phase 2.4)
+- [ ] Extract `case.rs` - CASE/WHEN expressions (Phase 2.5)
 
-**Progress**: Primary expressions extracted and tested
-**Reduction so far**: ~220 lines moved to modular structure
+**Phase 2.1**: Primary expressions extracted (~220 lines)
+**Phase 2.2**: Arithmetic expressions extracted (~95 lines)
+**Total reduction**: ~315 lines moved to modular structure
 
 ### 🔄 Phase 3: Extract Statement Components
 - [ ] Create `statements/` module structure
@@ -121,7 +123,8 @@ src/sql/parser/
 | Initial | ❌ | 0 | 4,598 | - |
 | Phase 1 | ✅ | 665 | 3,933 | Dec 12, 2024 |
 | Phase 2.1 | ✅ | 220 | 3,713 | Dec 13, 2024 |
-| Phase 2.2 | 🔄 | - | - | - |
+| Phase 2.2 | ✅ | 95 | 3,618 | Dec 13, 2024 |
+| Phase 2.3 | ⏳ | - | - | - |
 | Phase 3 | ⏳ | - | - | - |
 | Phase 4 | ⏳ | - | - | - |
 | Phase 5 | ⏳ | - | - | - |

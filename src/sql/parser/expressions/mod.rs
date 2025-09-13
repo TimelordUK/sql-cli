@@ -5,6 +5,7 @@ use crate::sql::parser::ast::SqlExpression;
 use crate::sql::parser::lexer::Token;
 use tracing::{debug, trace};
 
+pub mod arithmetic;
 pub mod primary;
 
 /// Trait for expression parsers

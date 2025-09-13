@@ -12,6 +12,10 @@ pub use super::parser::lexer::{Lexer, Token};
 pub use super::parser::ParserConfig;
 
 // Import the new expression modules
+use super::parser::expressions::arithmetic::{
+    parse_additive as parse_additive_expr, parse_multiplicative as parse_multiplicative_expr,
+    ParseArithmetic,
+};
 use super::parser::expressions::primary::{
     parse_primary as parse_primary_expr, ParsePrimary, PrimaryExpressionContext,
 };
@@ -894,97 +898,13 @@ impl Parser {
     }
 
     fn parse_additive(&mut self) -> Result<SqlExpression, String> {
-        let mut left = self.parse_multiplicative()?;
-
-        while matches!(self.current_token, Token::Plus | Token::Minus) {
-            let op = match self.current_token {
-                Token::Plus => "+",
-                Token::Minus => "-",
-                _ => unreachable!(),
-            };
-            self.advance();
-            let right = self.parse_multiplicative()?;
-            left = SqlExpression::BinaryOp {
-                left: Box::new(left),
-                op: op.to_string(),
-                right: Box::new(right),
-            };
-        }
-
-        Ok(left)
+        // Use the new modular arithmetic expression parser
+        parse_additive_expr(self)
     }
 
     fn parse_multiplicative(&mut self) -> Result<SqlExpression, String> {
-        let mut left = self.parse_primary()?;
-
-        // Handle method calls on the primary expression
-        while matches!(self.current_token, Token::Dot) {
-            self.advance();
-            if let Token::Identifier(method) = &self.current_token {
-                let method_name = method.clone();
-                self.advance();
-
-                if matches!(self.current_token, Token::LeftParen) {
-                    self.advance();
-                    let args = self.parse_method_args()?;
-                    self.consume(Token::RightParen)?;
-
-                    // Support chained method calls
-                    match left {
-                        SqlExpression::Column(obj) => {
-                            // First method call on a column
-                            left = SqlExpression::MethodCall {
-                                object: obj,
-                                method: method_name,
-                                args,
-                            };
-                        }
-                        SqlExpression::MethodCall { .. }
-                        | SqlExpression::ChainedMethodCall { .. } => {
-                            // Chained method call on a previous method call
-                            left = SqlExpression::ChainedMethodCall {
-                                base: Box::new(left),
-                                method: method_name,
-                                args,
-                            };
-                        }
-                        _ => {
-                            // Method call on any other expression
-                            left = SqlExpression::ChainedMethodCall {
-                                base: Box::new(left),
-                                method: method_name,
-                                args,
-                            };
-                        }
-                    }
-                } else {
-                    return Err(format!("Expected '(' after method name '{method_name}'"));
-                }
-            } else {
-                return Err("Expected method name after '.'".to_string());
-            }
-        }
-
-        while matches!(
-            self.current_token,
-            Token::Star | Token::Divide | Token::Modulo
-        ) {
-            let op = match self.current_token {
-                Token::Star => "*",
-                Token::Divide => "/",
-                Token::Modulo => "%",
-                _ => unreachable!(),
-            };
-            self.advance();
-            let right = self.parse_primary()?;
-            left = SqlExpression::BinaryOp {
-                left: Box::new(left),
-                op: op.to_string(),
-                right: Box::new(right),
-            };
-        }
-
-        Ok(left)
+        // Use the new modular arithmetic expression parser
+        parse_multiplicative_expr(self)
     }
 
     fn parse_logical_or(&mut self) -> Result<SqlExpression, String> {
@@ -2924,6 +2844,33 @@ impl ParsePrimary for Parser {
 
     fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String> {
         self.parse_expression_list()
+    }
+}
+
+// Implement the ParseArithmetic trait for Parser to use the modular arithmetic parsing
+impl ParseArithmetic for Parser {
+    fn current_token(&self) -> &Token {
+        &self.current_token
+    }
+
+    fn advance(&mut self) {
+        self.advance();
+    }
+
+    fn consume(&mut self, expected: Token) -> Result<(), String> {
+        self.consume(expected)
+    }
+
+    fn parse_primary(&mut self) -> Result<SqlExpression, String> {
+        self.parse_primary()
+    }
+
+    fn parse_multiplicative(&mut self) -> Result<SqlExpression, String> {
+        self.parse_multiplicative()
+    }
+
+    fn parse_method_args(&mut self) -> Result<Vec<SqlExpression>, String> {
+        self.parse_method_args()
     }
 }
 
