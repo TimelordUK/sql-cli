@@ -57,9 +57,14 @@ M.defaults = {
     search_functions = "<leader>sF", -- Search SQL functions
     show_schema = "<leader>sh",     -- Show table schema
     column_help = "<leader>sk",     -- Smart column/function detection at cursor
-    expand_star = "<leader>se",     -- Expand SELECT * to column names
+    expand_star = "<leader>sE",     -- Expand SELECT * to column names (capital E)
     copy_query = "<leader>sy",       -- Copy query at cursor to clipboard (y for yank)
     toggle_table_nav = "<leader>sn", -- Toggle table navigation mode (n for nav)
+    -- Export keymaps (when in table navigation mode)
+    export_menu = "<leader>se",     -- Export menu (all formats)
+    export_browser = "<leader>sb",  -- Open in Browser for Gmail/Teams
+    export_markdown = "<leader>sm", -- Export as Markdown
+    export_tsv = "<leader>st",      -- Export as Tab-separated (Excel)
   },
 
   -- Output window settings

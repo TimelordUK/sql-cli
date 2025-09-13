@@ -508,30 +508,46 @@ function M.setup_keymaps(bufnr)
   vim.keymap.set("n", "gg", M.go_to_first_row, opts)
   vim.keymap.set("n", "G", M.go_to_last_row, opts)
 
-  -- Yank operations
+  -- Yank operations (basic cell operations)
   vim.keymap.set("n", "yy", M.yank_cell, opts)
   vim.keymap.set("n", "Y", M.yank_row, opts)
   vim.keymap.set("n", "yc", M.yank_column, opts)
 
-  -- Export operations
-  vim.keymap.set("n", "ye", function()
+  -- Export operations with \s prefix
+  vim.keymap.set("n", "<leader>se", function()
     export.show_export_menu(bufnr, nav_state.table_info)
   end, opts)
 
-  vim.keymap.set("n", "yh", function()
-    export.yank_as_html(bufnr, nav_state.table_info, false)  -- Just yank HTML code
-  end, opts)
-
-  vim.keymap.set("n", "yb", function()
+  vim.keymap.set("n", "<leader>sb", function()
     export.yank_as_html(bufnr, nav_state.table_info, true)   -- Open in browser
   end, opts)
 
-  vim.keymap.set("n", "ym", function()
+  vim.keymap.set("n", "<leader>sH", function()
+    export.yank_as_html(bufnr, nav_state.table_info, false)  -- Just yank HTML code
+  end, opts)
+
+  vim.keymap.set("n", "<leader>sm", function()
     export.yank_as_markdown(bufnr, nav_state.table_info)
   end, opts)
 
-  vim.keymap.set("n", "yt", function()
+  vim.keymap.set("n", "<leader>st", function()
     export.yank_as_tsv(bufnr, nav_state.table_info)
+  end, opts)
+
+  vim.keymap.set("n", "<leader>si", function()
+    vim.ui.input({ prompt = "Table name: ", default = "my_table" }, function(name)
+      if name then
+        export.yank_as_insert(bufnr, nav_state.table_info, name)
+      end
+    end)
+  end, opts)
+
+  vim.keymap.set("n", "<leader>sC", function()
+    vim.ui.input({ prompt = "Table name: ", default = "my_table" }, function(name)
+      if name then
+        export.yank_create_table(bufnr, nav_state.table_info, name)
+      end
+    end)
   end, opts)
 
   -- Tab navigation
