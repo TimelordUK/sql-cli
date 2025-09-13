@@ -2,6 +2,7 @@
 -- Functions for executing SQL queries and managing execution
 
 local utils = require('sql-cli.utils')
+local table_nav = require('sql-cli.table_nav')
 
 local M = {}
 
@@ -440,6 +441,16 @@ function M.run_command(query, show_plan, config, state)
         -- Notify completion
         if exit_code == 0 then
           vim.notify("Query executed successfully", vim.log.levels.INFO)
+
+          -- Enable table navigation for results
+          if output_buf and vim.api.nvim_buf_is_valid(output_buf) then
+            vim.defer_fn(function()
+              if table_nav.init_navigation(output_buf) then
+                table_nav.setup_keymaps(output_buf)
+                vim.notify("Table navigation enabled (h/j/k/l to move, yy to yank)", vim.log.levels.INFO)
+              end
+            end, 200) -- Small delay to ensure buffer is fully populated
+          end
         else
           vim.notify("Query failed with exit code: " .. exit_code, vim.log.levels.ERROR)
         end
