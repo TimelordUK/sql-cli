@@ -5,6 +5,101 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.44.0] - 2025-09-13
+
+### 🚀 SQL Parser Modularization & Enhanced Nvim Plugin
+
+This major release introduces a complete SQL parser refactoring for better maintainability, significant improvements to the Neovim plugin's query boundary detection, and new execution plan functionality.
+
+### ✨ New Features
+
+#### **SQL Parser Modularization (Phase 1)**
+- **Modular parser architecture** - Refactored monolithic parser into specialized modules
+- **Expression parser modules**:
+  - `expressions/arithmetic.rs` - Arithmetic operations and math functions
+  - `expressions/case.rs` - CASE/WHEN expressions
+  - `expressions/comparison.rs` - Comparison operators and predicates  
+  - `expressions/logical.rs` - AND, OR, NOT logical operations
+- **Centralized type system** - Unified comparison logic with proper NULL handling
+- **Improved maintainability** - Easier to extend and debug parser functionality
+- **Enhanced error handling** - Better error messages and recovery
+
+#### **Enhanced Neovim Plugin Query Detection**
+- **Improved boundary detection** - Completely rewritten query-at-cursor logic
+- **Consistent behavior** - All cursor functions now use same boundary detection:
+  - `\sx` - Execute query at cursor
+  - `\sX` - Execute query with detailed execution plan (NEW!)
+  - `\sy` - Copy query to clipboard  
+  - `\s/` - Smart comment toggle
+  - `\s=` - Format query
+  - `\sv` - Visual select query
+  - `\sP` - Preview query in floating window
+- **Smart terminator detection** - Properly handles `;` and `GO` statement separators
+- **Multi-statement support** - Works with WITH, SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER
+- **Enhanced navigation** - `]q` and `[q` now find any SQL statement type, not just SELECT
+
+#### **Execution Plan Integration**
+- **New `\sX` keymap** - Execute query with detailed timing breakdown
+- **Performance insights**:
+  - Parse time, data loading time, query execution time
+  - Row processing statistics (loaded, filtered, returned)
+  - Column counts and memory usage
+  - Total execution time breakdown
+- **Same boundary detection** - Uses identical query detection as `\sx`
+
+#### **Smart Comment Toggle**
+- **Documentation-aware** - Preserves documentation comments when toggling
+- **Distinguishes comment types**:
+  - Documentation comments (preserved): `-- This explains the query`
+  - Commented-out SQL code (toggled): `-- SELECT * FROM table`
+- **Consistent boundaries** - Comments exactly what `\sx` would execute
+
+### 🐛 Bug Fixes & Improvements
+
+#### **Parser Stability**
+- **Fixed compilation errors** - Resolved all test suite compilation issues
+- **Removed unused imports** - Clean codebase with proper dependency management
+- **Better error recovery** - Parser handles malformed queries more gracefully
+- **Type system consistency** - Unified comparison logic across all data types
+
+#### **Date and Boolean Handling**
+- **Enhanced date parsing** - Better support for various date formats
+- **Boolean type improvements** - Consistent boolean literal handling
+- **NULL comparison fixes** - Proper three-valued logic implementation
+
+#### **Plugin Reliability**
+- **Boundary detection edge cases** - Handles queries at start/end of file
+- **Empty line handling** - Proper trimming of whitespace in query boundaries
+- **Comment preservation** - Never damages documentation when toggling comments
+
+### 🏗️ Internal Improvements
+
+#### **Code Organization**
+- **Modular parser structure** - Easier to maintain and extend
+- **Centralized type system** - Single source of truth for data type handling
+- **Consistent APIs** - Unified interfaces across parser modules
+- **Better test coverage** - All 342 tests passing with improved reliability
+
+#### **Performance**
+- **Execution plan insights** - Detailed performance metrics for query optimization
+- **Memory efficiency** - Better data structure reuse in joins and aggregations
+- **Parsing performance** - Modular structure enables better optimization
+
+### 📚 Examples & Documentation
+
+#### **New SQL Examples**
+- **Chemistry examples** - JOIN queries with periodic table data
+- **Complex CTEs** - Multi-CTE queries with joins and aggregations  
+- **Execution plan demos** - Example files showing performance analysis
+
+#### **JOIN Implementation Examples**
+- **Working JOIN examples** in `examples/chemistry.sql`:
+  - CTE with aggregations joined back to main table
+  - LEFT JOIN examples with NULL handling
+  - Self-joins and complex conditions
+- **Documented limitations** - Current JOIN implementation constraints
+- **Performance insights** - Using `\sX` to analyze JOIN performance
+
 ## [1.43.0] - 2025-09-10
 
 ### 🚀 Parser & Plugin Enhancements

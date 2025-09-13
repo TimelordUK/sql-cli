@@ -143,6 +143,14 @@ fn print_help() {
         "--auto-hide-empty".green()
     );
     println!(
+        "  {}         - Show SQL query AST (parse tree)",
+        "--query-plan".green()
+    );
+    println!(
+        "  {}    - Show detailed execution plan with timings",
+        "--execution-plan".green()
+    );
+    println!(
         "  {}  - Launch action system logger (console)",
         "--keys-simple".green()
     );
@@ -188,6 +196,9 @@ fn print_help() {
     println!();
     println!("  # Query with output to file");
     println!("  sql-cli data.csv -q \"SELECT * FROM data\" -O results.csv");
+    println!();
+    println!("  # Debug query with execution plan");
+    println!("  sql-cli data.csv -q \"SELECT * FROM data WHERE id > 100\" --execution-plan");
 
     println!();
     println!("{}", "Commands:".yellow());
@@ -484,6 +495,10 @@ fn main() -> io::Result<()> {
         .iter()
         .any(|arg| arg == "--query-plan" || arg == "--query_plan");
 
+    let execution_plan_arg = args
+        .iter()
+        .any(|arg| arg == "--execution-plan" || arg == "--execution_plan");
+
     let limit_arg = args
         .iter()
         .position(|arg| arg == "-l" || arg == "--limit")
@@ -593,6 +608,7 @@ fn main() -> io::Result<()> {
                 auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
                 limit: limit_arg,
                 query_plan: query_plan_arg,
+                execution_plan: execution_plan_arg,
                 script_file: query_file_arg.clone(),
             };
 
@@ -615,6 +631,7 @@ fn main() -> io::Result<()> {
                 auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
                 limit: limit_arg,
                 query_plan: query_plan_arg,
+                execution_plan: execution_plan_arg,
                 script_file: query_file_arg.clone(),
             };
 
@@ -640,6 +657,7 @@ fn main() -> io::Result<()> {
                 auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
                 limit: limit_arg,
                 query_plan: query_plan_arg,
+                execution_plan: execution_plan_arg,
                 script_file: query_file_arg.clone(),
             };
 
