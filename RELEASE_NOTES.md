@@ -1,43 +1,57 @@
-# SQL CLI v1.43.1
+# SQL CLI v1.45.0
 
-**Release Date:** September 10, 2025
+**Release Date:** September 13, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 18
-- **Files updated:** 26
+- **Commits in this release:** 34
+- **Files updated:** 85
 
 ## ✨ Highlights
 
+### 🎨 Visual Improvements
+
 ### 🔍 Enhanced Debugging
 - **Better Diagnostics**: Improved error messages and state dumps
-
-### 💾 Data Protection
-- **History Recovery**: Automatic recovery from corrupted files
-- **Atomic Writes**: Safer file operations to prevent data loss
 
 ## 📝 Changes by Category
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Release v1.43.0: JOIN parser, Neovim plugin improvements, terminal fixes (TimelordUK)
-- fix unit tests (TimelordUK)
-- add AST for joins for CTEs (TimelordUK)
-- fix auto complete (TimelordUK)
-- Fix strip_ansi_codes function scope error in Neovim plugin (TimelordUK)
-- Fix SQL autocompletion to work with partial text (TimelordUK)
-- Fix ORDER BY with aggregate column aliases after GROUP BY (TimelordUK)
-- format (TimelordUK)
-- Add Ctrl+Space keybinding for SQL autocompletion (TimelordUK)
-- Fix ANSI escape sequences in Neovim schema floating window (TimelordUK)
-- Add intelligent SQL autocompletion to Neovim plugin (TimelordUK)
-- add a neutrons function to chemistry (TimelordUK)
-- add K to get function definition and other features for nvim plugin (TimelordUK)
-- navigate back and forth a query toggle comment a query and save results to buffer (TimelordUK)
-- add switch orientation and execute at cursor and load data file (TimelordUK)
-- fix data file for solar system (TimelordUK)
-- fix the data file hint so we run in nvim the correct data (TimelordUK)
-- fix lua plugin show success in green and highlight submit (TimelordUK)
+- Release v1.45.0: Enhanced CTE support and comprehensive execution plans (TimelordUK)
+- Fix AST formatter to properly handle method call expressions (TimelordUK)
+- Fix CTE context propagation to subqueries for proper name resolution (TimelordUK)
+- Add AST-based SQL formatter with full nvim integration (TimelordUK)
+- Add GROUP BY expression support (TimelordUK)
+- Add time-based aggregation functions for financial data (TimelordUK)
+- Add comprehensive subquery support (scalar, IN, NOT IN) (TimelordUK)
+- Implement subquery parsing infrastructure for SQL CLI (TimelordUK)
+- Merge implement_execution_plan into main (TimelordUK)
+- Release v1.44.0: SQL Parser Modularization & Enhanced Nvim Plugin (TimelordUK)
+- Add --execution-plan flag for query debugging (TimelordUK)
+- Extract recursive_parser tests to separate module (Phase 2.7) (TimelordUK)
+- add to trade-rec (TimelordUK)
+- Extract formatting functions into separate module (Phase 2.6) (TimelordUK)
+- Update refactoring plan - Phase 2 complete! (TimelordUK)
+- Extract CASE expression parsing (Phase 2.5) (TimelordUK)
+- Temporarily skip failing SQL examples (TimelordUK)
+- Fix integration test for new WHERE clause structure (TimelordUK)
+- Update CASE WHEN test to reflect newly supported AND/OR operators (TimelordUK)
+- Update refactoring plan - Phase 2.4 complete (TimelordUK)
+- Extract logical expression parsing (Phase 2.4) (TimelordUK)
+- Extract comparison expression parsing (Phase 2.3) (TimelordUK)
+- Extract arithmetic expression parsing (Phase 2.2) (TimelordUK)
+- Extract primary expression parsing to modular structure (TimelordUK)
+- Fix parser refactoring Phase 1 issues (TimelordUK)
+- Refactor SQL parser into modular structure (Phase 1) (TimelordUK)
+- Create unified type system with centralized comparison logic (TimelordUK)
+- Fix date parsing and comparison issues in WHERE clauses (TimelordUK)
+- add is_date, type based functions and add features to nvim plugin (TimelordUK)
+- add frequency function (TimelordUK)
+- reformat (TimelordUK)
+- add expand * to all columns in nvim plugin. (TimelordUK)
+- Fix DateDiff issue with datetime columns in TUI mode (TimelordUK)
+- add new functions (TimelordUK)
 
 </details>
 
