@@ -6,6 +6,7 @@ use crate::sql::parser::lexer::Token;
 use tracing::{debug, trace};
 
 pub mod arithmetic;
+pub mod case;
 pub mod comparison;
 pub mod logical;
 pub mod primary;

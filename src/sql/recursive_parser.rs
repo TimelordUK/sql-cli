@@ -16,6 +16,7 @@ use super::parser::expressions::arithmetic::{
     parse_additive as parse_additive_expr, parse_multiplicative as parse_multiplicative_expr,
     ParseArithmetic,
 };
+use super::parser::expressions::case::{parse_case_expression as parse_case_expr, ParseCase};
 use super::parser::expressions::comparison::{
     parse_comparison as parse_comparison_expr, parse_in_operator, ParseComparison,
 };
@@ -817,50 +818,8 @@ impl Parser {
     }
 
     fn parse_case_expression(&mut self) -> Result<SqlExpression, String> {
-        // Consume CASE keyword
-        self.consume(Token::Case)?;
-
-        let mut when_branches = Vec::new();
-
-        // Parse WHEN clauses
-        while matches!(self.current_token, Token::When) {
-            self.advance(); // consume WHEN
-
-            // Parse the condition
-            let condition = self.parse_expression()?;
-
-            // Expect THEN
-            self.consume(Token::Then)?;
-
-            // Parse the result expression
-            let result = self.parse_expression()?;
-
-            when_branches.push(WhenBranch {
-                condition: Box::new(condition),
-                result: Box::new(result),
-            });
-        }
-
-        // Check for at least one WHEN clause
-        if when_branches.is_empty() {
-            return Err("CASE expression must have at least one WHEN clause".to_string());
-        }
-
-        // Parse optional ELSE clause
-        let else_branch = if matches!(self.current_token, Token::Else) {
-            self.advance(); // consume ELSE
-            Some(Box::new(self.parse_expression()?))
-        } else {
-            None
-        };
-
-        // Expect END keyword
-        self.consume(Token::End)?;
-
-        Ok(SqlExpression::CaseExpression {
-            when_branches,
-            else_branch,
-        })
+        // Use the new modular CASE expression parser
+        parse_case_expr(self)
     }
 
     fn parse_primary(&mut self) -> Result<SqlExpression, String> {
@@ -2804,6 +2763,25 @@ impl ParseLogical for Parser {
 
     fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String> {
         self.parse_expression_list()
+    }
+}
+
+// Implement the ParseCase trait for Parser to use the modular CASE parsing
+impl ParseCase for Parser {
+    fn current_token(&self) -> &Token {
+        &self.current_token
+    }
+
+    fn advance(&mut self) {
+        self.advance();
+    }
+
+    fn consume(&mut self, expected: Token) -> Result<(), String> {
+        self.consume(expected)
+    }
+
+    fn parse_expression(&mut self) -> Result<SqlExpression, String> {
+        self.parse_expression()
     }
 }
 
