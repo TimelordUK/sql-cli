@@ -5,6 +5,7 @@
 
 pub mod ast;
 pub mod expressions;
+pub mod formatter;
 pub mod legacy;
 pub mod lexer;
 
