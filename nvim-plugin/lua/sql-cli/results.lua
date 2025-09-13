@@ -2,21 +2,43 @@
 -- Functions for managing query results and expanding SELECT * statements
 
 local utils = require('sql-cli.utils')
-local state = require('sql-cli.state')
 
 local M = {}
 
 -- Save query results to CSV file
-function M.save_results_csv()
-  local last_results = state.get_last_results()
+function M.save_results_csv(filename, state)
+  local last_results = state:get_last_results()
   if not last_results or #last_results == 0 then
     vim.notify("No results to save", vim.log.levels.WARN)
     return
   end
 
-  vim.ui.input({ prompt = "Save results to: ", completion = "file", default = "results.csv" }, function(filename)
-    if not filename then return end
+  if not filename or filename == "" then
+    -- Use file picker
+    vim.ui.input({ prompt = "Save results to: ", completion = "file", default = "results.csv" }, function(input_filename)
+      if not input_filename then return end
 
+      -- Ensure .csv extension
+      if not input_filename:match("%.csv$") then
+        input_filename = input_filename .. ".csv"
+      end
+
+      -- Write results to file
+      local file = io.open(input_filename, "w")
+      if not file then
+        vim.notify("Failed to create file: " .. input_filename, vim.log.levels.ERROR)
+        return
+      end
+
+      for _, line in ipairs(last_results) do
+        file:write(line .. "\n")
+      end
+      file:close()
+
+      vim.notify("Results saved to: " .. input_filename, vim.log.levels.INFO)
+    end)
+  else
+    -- Use provided filename
     -- Ensure .csv extension
     if not filename:match("%.csv$") then
       filename = filename .. ".csv"
@@ -35,12 +57,12 @@ function M.save_results_csv()
     file:close()
 
     vim.notify("Results saved to: " .. filename, vim.log.levels.INFO)
-  end)
+  end
 end
 
 -- Open results in new buffer
-function M.results_to_buffer()
-  local last_results = state.get_last_results()
+function M.results_to_buffer(state)
+  local last_results = state:get_last_results()
   if not last_results or #last_results == 0 then
     vim.notify("No results to display", vim.log.levels.WARN)
     return
@@ -62,9 +84,9 @@ function M.results_to_buffer()
 end
 
 -- Expand SELECT * to column names at cursor
-function M.expand_star_columns(config, load_schema_callback)
+function M.expand_star_columns(config, state)
   -- First ensure we have schema information
-  local data_file = state.get_data_file()
+  local data_file = state:get_data_file()
   if not data_file then
     -- Try to detect from current buffer
     local bufnr = vim.api.nvim_get_current_buf()
@@ -76,13 +98,13 @@ function M.expand_star_columns(config, load_schema_callback)
     end
     data_file = utils.detect_data_hint(lines, buf_dir)
     if data_file then
-      state.set_data_file(data_file)
+      state:set_data_file(data_file)
     end
 
     -- Check if current buffer is a CSV
     if not data_file and buf_path:match("%.csv$") then
       data_file = buf_path
-      state.set_data_file(data_file)
+      state:set_data_file(data_file)
     end
   end
 
@@ -92,7 +114,7 @@ function M.expand_star_columns(config, load_schema_callback)
   end
 
   -- Get schema if not already loaded
-  local schema_columns = state.schema_columns
+  local schema_columns = state:get_schema_columns()
   if not schema_columns or #schema_columns == 0 then
     local command_path, err = utils.get_command_path(config.command)
     if not command_path then
@@ -119,7 +141,7 @@ function M.expand_star_columns(config, load_schema_callback)
           type = col.type
         })
       end
-      state.schema_columns = schema_columns
+      state:set_schema_columns(schema_columns)
     else
       vim.notify("Failed to parse schema", vim.log.levels.ERROR)
       return
@@ -199,7 +221,7 @@ function M.expand_star_columns(config, load_schema_callback)
 end
 
 -- Expand SELECT * in visual selection
-function M.expand_star_visual(config, load_schema_callback)
+function M.expand_star_visual(config, state)
   -- Get visual selection range
   local start_pos = vim.fn.getpos("'<")
   local end_pos = vim.fn.getpos("'>")
@@ -218,7 +240,7 @@ function M.expand_star_visual(config, load_schema_callback)
     -- Check if it contains SELECT *
     if line:match("SELECT%s+%*") or line:lower():match("select%s+%*") then
       -- Call the normal expand function
-      M.expand_star_columns(config, load_schema_callback)
+      M.expand_star_columns(config, state)
       expanded_count = expanded_count + 1
 
       -- Adjust end_line if we inserted multiple lines

@@ -16,6 +16,7 @@ function M.new()
     last_query = nil,
     last_results = nil,  -- Store last query results for saving
     query_markers = {},  -- Track query positions in output
+    schema_columns = {},  -- Store column schema information
   }
   return setmetatable(state, State)
 end
@@ -81,6 +82,14 @@ function State:clear_query_markers()
   self.query_markers = {}
 end
 
+function State:get_schema_columns()
+  return self.schema_columns
+end
+
+function State:set_schema_columns(columns)
+  self.schema_columns = columns or {}
+end
+
 -- Cleanup function
 function State:cleanup()
   if self.output_buf and vim.api.nvim_buf_is_valid(self.output_buf) then
@@ -98,6 +107,7 @@ function State:cleanup()
   self.last_query = nil
   self.last_results = nil
   self.query_markers = {}
+  self.schema_columns = {}
 end
 
 return M

@@ -2,12 +2,11 @@
 -- Functions for executing SQL queries and managing execution
 
 local utils = require('sql-cli.utils')
-local state = require('sql-cli.state')
 
 local M = {}
 
 -- Execute query from buffer or provided string
-function M.execute_query(query, config)
+function M.execute_query(query, config, state)
   -- Get query from buffer if not provided
   if not query or query == "" then
     local bufnr = vim.api.nvim_get_current_buf()
@@ -15,7 +14,7 @@ function M.execute_query(query, config)
     query = table.concat(lines, "\n")
 
     -- Auto-detect data file from hints
-    if config.auto_detect.data_hints and not state.get_data_file() then
+    if config.auto_detect.data_hints and not state:get_data_file() then
       -- Get the directory of the current buffer
       local buf_path = vim.api.nvim_buf_get_name(bufnr)
       local buf_dir = nil
@@ -24,7 +23,7 @@ function M.execute_query(query, config)
       end
       local data_file = utils.detect_data_hint(lines, buf_dir)
       if data_file then
-        state.set_data_file(data_file)
+        state:set_data_file(data_file)
         -- Load schema for completion would need to be called from main module
         if config.load_schema_callback then
           config.load_schema_callback()
@@ -33,10 +32,10 @@ function M.execute_query(query, config)
     end
 
     -- Auto-detect if current buffer is a CSV
-    if config.auto_detect.csv_files and not state.get_data_file() then
+    if config.auto_detect.csv_files and not state:get_data_file() then
       local filename = vim.api.nvim_buf_get_name(bufnr)
       if filename:match("%.csv$") then
-        state.set_data_file(filename)
+        state:set_data_file(filename)
         -- Load schema for completion would need to be called from main module
         if config.load_schema_callback then
           config.load_schema_callback()
@@ -46,14 +45,14 @@ function M.execute_query(query, config)
   end
 
   -- Save the query
-  state.set_last_query(query)
+  state:set_last_query(query)
 
   -- Execute
-  M.run_command(query, false, config)
+  M.run_command(query, false, config, state)
 end
 
 -- Execute query with execution plan
-function M.execute_query_with_plan(query, config)
+function M.execute_query_with_plan(query, config, state)
   -- Get query from buffer if not provided
   if not query or query == "" then
     local bufnr = vim.api.nvim_get_current_buf()
@@ -61,7 +60,7 @@ function M.execute_query_with_plan(query, config)
     query = table.concat(lines, "\n")
 
     -- Auto-detect data file from hints
-    if config.auto_detect.data_hints and not state.get_data_file() then
+    if config.auto_detect.data_hints and not state:get_data_file() then
       -- Get the directory of the current buffer
       local buf_path = vim.api.nvim_buf_get_name(bufnr)
       local buf_dir = nil
@@ -70,7 +69,7 @@ function M.execute_query_with_plan(query, config)
       end
       local data_file = utils.detect_data_hint(lines, buf_dir)
       if data_file then
-        state.set_data_file(data_file)
+        state:set_data_file(data_file)
         -- Load schema for completion would need to be called from main module
         if config.load_schema_callback then
           config.load_schema_callback()
@@ -79,10 +78,10 @@ function M.execute_query_with_plan(query, config)
     end
 
     -- Auto-detect if current buffer is a CSV
-    if config.auto_detect.csv_files and not state.get_data_file() then
+    if config.auto_detect.csv_files and not state:get_data_file() then
       local filename = vim.api.nvim_buf_get_name(bufnr)
       if filename:match("%.csv$") then
-        state.set_data_file(filename)
+        state:set_data_file(filename)
         -- Load schema for completion would need to be called from main module
         if config.load_schema_callback then
           config.load_schema_callback()
@@ -92,14 +91,14 @@ function M.execute_query_with_plan(query, config)
   end
 
   -- Save the query
-  state.set_last_query(query)
+  state:set_last_query(query)
 
   -- Execute with execution plan
-  M.run_command(query, true, config)
+  M.run_command(query, true, config, state)
 end
 
 -- Execute visual selection
-function M.execute_selection(config)
+function M.execute_selection(config, state)
   -- Get the current visual selection properly
   -- Save the current register content
   local save_reg = vim.fn.getreg('"')
@@ -117,11 +116,11 @@ function M.execute_selection(config)
     return
   end
 
-  M.execute_query(query, config)
+  M.execute_query(query, config, state)
 end
 
 -- Execute query at cursor
-function M.execute_at_cursor(config)
+function M.execute_at_cursor(config, state)
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -166,7 +165,7 @@ function M.execute_at_cursor(config)
   local query = table.concat(query_lines, "\n")
 
   -- Auto-detect data file if needed
-  if config.auto_detect.data_hints and not state.get_data_file() then
+  if config.auto_detect.data_hints and not state:get_data_file() then
     local buf_path = vim.api.nvim_buf_get_name(bufnr)
     local buf_dir = nil
     if buf_path and buf_path ~= "" then
@@ -174,7 +173,7 @@ function M.execute_at_cursor(config)
     end
     local data_file = utils.detect_data_hint(lines, buf_dir)
     if data_file then
-      state.set_data_file(data_file)
+      state:set_data_file(data_file)
       if config.load_schema_callback then
         config.load_schema_callback()
       end
@@ -182,21 +181,21 @@ function M.execute_at_cursor(config)
   end
 
   -- Auto-detect if current buffer is a CSV
-  if config.auto_detect.csv_files and not state.get_data_file() then
+  if config.auto_detect.csv_files and not state:get_data_file() then
     local filename = vim.api.nvim_buf_get_name(bufnr)
     if filename:match("%.csv$") then
-      state.set_data_file(filename)
+      state:set_data_file(filename)
       if config.load_schema_callback then
         config.load_schema_callback()
       end
     end
   end
 
-  M.execute_query(query, config)
+  M.execute_query(query, config, state)
 end
 
 -- Execute query at cursor with execution plan
-function M.execute_at_cursor_with_plan(config)
+function M.execute_at_cursor_with_plan(config, state)
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -241,7 +240,7 @@ function M.execute_at_cursor_with_plan(config)
   local query = table.concat(query_lines, "\n")
 
   -- Auto-detect data file if needed
-  if config.auto_detect.data_hints and not state.get_data_file() then
+  if config.auto_detect.data_hints and not state:get_data_file() then
     local buf_path = vim.api.nvim_buf_get_name(bufnr)
     local buf_dir = nil
     if buf_path and buf_path ~= "" then
@@ -249,7 +248,7 @@ function M.execute_at_cursor_with_plan(config)
     end
     local data_file = utils.detect_data_hint(lines, buf_dir)
     if data_file then
-      state.set_data_file(data_file)
+      state:set_data_file(data_file)
       if config.load_schema_callback then
         config.load_schema_callback()
       end
@@ -257,21 +256,21 @@ function M.execute_at_cursor_with_plan(config)
   end
 
   -- Auto-detect if current buffer is a CSV
-  if config.auto_detect.csv_files and not state.get_data_file() then
+  if config.auto_detect.csv_files and not state:get_data_file() then
     local filename = vim.api.nvim_buf_get_name(bufnr)
     if filename:match("%.csv$") then
-      state.set_data_file(filename)
+      state:set_data_file(filename)
       if config.load_schema_callback then
         config.load_schema_callback()
       end
     end
   end
 
-  M.execute_query_with_plan(query, config)
+  M.execute_query_with_plan(query, config, state)
 end
 
 -- Build command line for SQL CLI execution
-function M.build_command(query, show_plan, config)
+function M.build_command(query, show_plan, config, state)
   local command_path, err = utils.get_command_path(config.command)
   if not command_path then
     vim.notify(err, vim.log.levels.ERROR)
@@ -281,7 +280,7 @@ function M.build_command(query, show_plan, config)
   local cmd_parts = { command_path }
 
   -- Add data file if set
-  local data_file = state.get_data_file()
+  local data_file = state:get_data_file()
   if data_file then
     table.insert(cmd_parts, vim.fn.shellescape(data_file))
   end
@@ -322,7 +321,7 @@ function M.build_command(query, show_plan, config)
 end
 
 -- Run SQL CLI command
-function M.run_command(query, show_plan, config)
+function M.run_command(query, show_plan, config, state)
   local ui_callbacks = config.ui_callbacks or {}
 
   -- Create output window if needed
@@ -336,13 +335,13 @@ function M.run_command(query, show_plan, config)
   end
 
   -- Clear output if configured
-  local output_buf = state.get_output_buf()
+  local output_buf = state:get_output_buf()
   if config.output.clear_on_run and output_buf then
     vim.api.nvim_buf_set_lines(output_buf, 0, -1, false, {})
   end
 
   -- Build command
-  local cmd = M.build_command(query, show_plan, config)
+  local cmd = M.build_command(query, show_plan, config, state)
   if not cmd then
     return
   end
@@ -414,9 +413,9 @@ function M.run_command(query, show_plan, config)
 
         -- Store results for saving (prefer CSV format if available)
         if #csv_lines > 0 then
-          state.set_last_results(csv_lines)
+          state:set_last_results(csv_lines)
         else
-          state.set_last_results(output_lines)
+          state:set_last_results(output_lines)
         end
 
         -- Add footer
@@ -430,7 +429,7 @@ function M.run_command(query, show_plan, config)
         end
 
         -- Focus output window if configured
-        local output_win = state.get_output_win()
+        local output_win = state:get_output_win()
         if config.output.focus_on_run and ui_callbacks.is_output_window_valid and ui_callbacks.is_output_window_valid() and output_win then
           vim.api.nvim_set_current_win(output_win)
           -- Move cursor to end

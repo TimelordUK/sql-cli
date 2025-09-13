@@ -2,12 +2,11 @@
 -- Functions for creating and managing UI windows and output
 
 local utils = require('sql-cli.utils')
-local state = require('sql-cli.state')
 
 local M = {}
 
 -- Create output window for SQL CLI results
-function M.create_output_window(config)
+function M.create_output_window(config, state)
   -- Save current window
   local current_win = vim.api.nvim_get_current_win()
 
@@ -26,10 +25,10 @@ function M.create_output_window(config)
   end
 
   -- Create or reuse buffer for output
-  local output_buf = state.get_output_buf()
+  local output_buf = state:get_output_buf()
   if not output_buf or not vim.api.nvim_buf_is_valid(output_buf) then
     output_buf = vim.api.nvim_create_buf(false, true)
-    state.set_output_buf(output_buf)
+    state:set_output_buf(output_buf)
     -- Try to set name, but handle if it already exists
     pcall(function()
       vim.api.nvim_buf_set_name(output_buf, "[SQL CLI Output]")
@@ -38,7 +37,7 @@ function M.create_output_window(config)
 
   vim.api.nvim_win_set_buf(0, output_buf)
   local output_win = vim.api.nvim_get_current_win()
-  state.set_output_win(output_win)
+  state:set_output_win(output_win)
 
   -- Set buffer options
   vim.bo[output_buf].buftype = "nofile"
@@ -47,7 +46,7 @@ function M.create_output_window(config)
   vim.bo[output_buf].filetype = "sql-cli-output"
 
   -- Apply syntax highlighting
-  M.setup_output_highlighting()
+  M.setup_output_highlighting(state)
 
   -- Set window options
   vim.wo[output_win].wrap = config.output.wrap
@@ -61,24 +60,20 @@ function M.create_output_window(config)
 end
 
 -- Toggle output window visibility
-function M.toggle_output_window(config, execute_callback)
-  if M.is_output_window_valid() then
-    local output_win = state.get_output_win()
+function M.toggle_output_window(config, state)
+  if M.is_output_window_valid(state) then
+    local output_win = state:get_output_win()
     vim.api.nvim_win_close(output_win, false)
-    state.set_output_win(nil)
+    state:set_output_win(nil)
   else
-    M.create_output_window(config)
-    local last_query = state.get_last_query()
-    if last_query and execute_callback then
-      execute_callback(last_query, config)
-    end
+    M.create_output_window(config, state)
   end
 end
 
 -- Check if output window is valid
-function M.is_output_window_valid()
-  local output_win = state.get_output_win()
-  local output_buf = state.get_output_buf()
+function M.is_output_window_valid(state)
+  local output_win = state:get_output_win()
+  local output_buf = state:get_output_buf()
   return output_win
     and vim.api.nvim_win_is_valid(output_win)
     and output_buf
@@ -86,7 +81,7 @@ function M.is_output_window_valid()
 end
 
 -- Toggle split orientation
-function M.toggle_split_orientation(config, run_command_callback)
+function M.toggle_split_orientation(config, state)
   -- Toggle the configuration
   if config.split.direction == "vertical" then
     config.split.direction = "horizontal"
@@ -97,25 +92,19 @@ function M.toggle_split_orientation(config, run_command_callback)
   end
 
   -- If output window is open, recreate it with new orientation
-  if M.is_output_window_valid() then
+  if M.is_output_window_valid(state) then
     -- Close current window
-    local output_win = state.get_output_win()
+    local output_win = state:get_output_win()
     vim.api.nvim_win_close(output_win, false)
-    state.set_output_win(nil)
+    state:set_output_win(nil)
 
     -- Recreate with new orientation
-    M.create_output_window(config)
-
-    -- Re-run last query if available
-    local last_query = state.get_last_query()
-    if last_query and run_command_callback then
-      run_command_callback(last_query, false, config)
-    end
+    M.create_output_window(config, state)
   end
 end
 
 -- Preview query at cursor position in floating window
-function M.preview_query_at_cursor(execute_at_cursor_callback)
+function M.preview_query_at_cursor(config)
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -202,15 +191,13 @@ function M.preview_query_at_cursor(execute_at_cursor_callback)
   vim.keymap.set("n", "<Esc>", close_preview, { buffer = preview_buf })
   vim.keymap.set("n", "<CR>", function()
     close_preview()
-    if execute_at_cursor_callback then
-      execute_at_cursor_callback()
-    end
-  end, { buffer = preview_buf, desc = "Execute query and close preview" })
+    vim.notify("Use :SqlCliExecuteAtCursor or keybind to execute", vim.log.levels.INFO)
+  end, { buffer = preview_buf, desc = "Close preview" })
 end
 
 -- Get statusline information
-function M.statusline()
-  local data_file = state.get_data_file()
+function M.statusline(state)
+  local data_file = state:get_data_file()
   if data_file then
     local filename = vim.fn.fnamemodify(data_file, ":t")
     return string.format("SQL[📄%s]", filename)
@@ -220,8 +207,8 @@ function M.statusline()
 end
 
 -- Setup output buffer syntax highlighting
-function M.setup_output_highlighting()
-  local output_buf = state.get_output_buf()
+function M.setup_output_highlighting(state)
+  local output_buf = state:get_output_buf()
   if not output_buf or not vim.api.nvim_buf_is_valid(output_buf) then
     return
   end

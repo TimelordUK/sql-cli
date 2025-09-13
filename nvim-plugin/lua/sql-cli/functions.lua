@@ -2,7 +2,6 @@
 -- Functions for providing help and information about SQL functions and schema
 
 local utils = require('sql-cli.utils')
-local state = require('sql-cli.state')
 
 local M = {}
 
@@ -235,7 +234,7 @@ function M.search_functions(config)
 end
 
 -- Show column help at cursor (smart detection)
-function M.column_help_at_cursor(config)
+function M.column_help_at_cursor(config, state)
   -- Get word under cursor
   local word = vim.fn.expand("<cword>")
 
@@ -245,12 +244,13 @@ function M.column_help_at_cursor(config)
   end
 
   -- First, ensure we have schema information
-  if not state.schema_columns or #state.schema_columns == 0 then
-    M.load_schema_for_completion(config)
+  local schema_columns = state:get_schema_columns()
+  if not schema_columns or #schema_columns == 0 then
+    M.load_schema_for_completion(config, state)
+    schema_columns = state:get_schema_columns()
   end
 
   -- Check if word is a column
-  local schema_columns = state.schema_columns or {}
   local found_column = nil
   local word_lower = word:lower()
 
@@ -264,7 +264,7 @@ function M.column_help_at_cursor(config)
 
   if found_column then
     -- Show column info from schema
-    local data_file = state.get_data_file()
+    local data_file = state:get_data_file()
     if data_file then
       local command_path, err = utils.get_command_path(config.command)
       if not command_path then
@@ -298,8 +298,8 @@ function M.column_help_at_cursor(config)
 end
 
 -- Show schema information
-function M.show_schema(config)
-  local data_file = state.get_data_file()
+function M.show_schema(config, state)
+  local data_file = state:get_data_file()
   if not data_file then
     -- Try to detect from current buffer
     local bufnr = vim.api.nvim_get_current_buf()
@@ -311,13 +311,13 @@ function M.show_schema(config)
     end
     data_file = utils.detect_data_hint(lines, buf_dir)
     if data_file then
-      state.set_data_file(data_file)
+      state:set_data_file(data_file)
     end
 
     -- Check if current buffer is a CSV
     if not data_file and buf_path:match("%.csv$") then
       data_file = buf_path
-      state.set_data_file(data_file)
+      state:set_data_file(data_file)
     end
   end
 
@@ -345,7 +345,6 @@ function M.show_schema(config)
   -- Parse JSON schema
   local ok, schema = pcall(vim.json.decode, result)
   if ok and schema and schema.columns then
-    state.set_schema_columns({})
     local schema_columns = {}
     local display_lines = {}
     table.insert(display_lines, "Table: " .. schema.table)
@@ -372,7 +371,7 @@ function M.show_schema(config)
     end
 
     -- Store schema for completion
-    state.schema_columns = schema_columns
+    state:set_schema_columns(schema_columns)
 
     -- Show in floating window
     M.show_help_in_float("Schema: " .. schema.table, table.concat(display_lines, "\n"))
@@ -382,8 +381,8 @@ function M.show_schema(config)
 end
 
 -- Load schema for completion (called when data file is set)
-function M.load_schema_for_completion(config)
-  local data_file = state.get_data_file()
+function M.load_schema_for_completion(config, state)
+  local data_file = state:get_data_file()
   if not data_file then
     return
   end
@@ -409,7 +408,7 @@ function M.load_schema_for_completion(config)
           type = col.type
         })
       end
-      state.schema_columns = schema_columns
+      state:set_schema_columns(schema_columns)
 
       if #schema_columns > 0 then
         vim.notify(string.format("Loaded schema: %d columns from %s", #schema_columns, schema.table), vim.log.levels.INFO)
@@ -428,7 +427,7 @@ function M.load_schema_for_completion(config)
           })
         end
       end
-      state.schema_columns = schema_columns
+      state:set_schema_columns(schema_columns)
 
       if #schema_columns > 0 then
         vim.notify(string.format("Loaded schema: %d columns", #schema_columns), vim.log.levels.INFO)
