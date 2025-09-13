@@ -519,7 +519,11 @@ function M.setup_keymaps(bufnr)
   end, opts)
 
   vim.keymap.set("n", "yh", function()
-    export.yank_as_html(bufnr, nav_state.table_info)
+    export.yank_as_html(bufnr, nav_state.table_info, false)  -- Just yank HTML code
+  end, opts)
+
+  vim.keymap.set("n", "yb", function()
+    export.yank_as_html(bufnr, nav_state.table_info, true)   -- Open in browser
   end, opts)
 
   vim.keymap.set("n", "ym", function()

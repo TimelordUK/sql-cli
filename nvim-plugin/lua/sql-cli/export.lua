@@ -41,8 +41,31 @@ local function get_table_data(bufnr, table_info)
 end
 
 -- Export to HTML table (works great in Outlook/Teams)
-function M.yank_as_html(bufnr, table_info)
+function M.yank_as_html(bufnr, table_info, open_browser)
   local data = get_table_data(bufnr, table_info)
+
+  -- Create full HTML document for browser viewing
+  local full_html = {
+    '<!DOCTYPE html>',
+    '<html>',
+    '<head>',
+    '  <meta charset="UTF-8">',
+    '  <title>SQL Query Results</title>',
+    '  <style>',
+    '    body { font-family: Arial, sans-serif; margin: 20px; }',
+    '    table { border-collapse: collapse; width: auto; }',
+    '    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }',
+    '    th { background-color: #4CAF50; color: white; }',
+    '    tr:nth-child(even) { background-color: #f2f2f2; }',
+    '    tr:hover { background-color: #ddd; }',
+    '    .info { margin: 20px 0; padding: 10px; background: #e7f3fe; border-left: 4px solid #2196F3; }',
+    '  </style>',
+    '</head>',
+    '<body>',
+    '  <div class="info">',
+    '    <strong>Tip:</strong> Select the table below and copy (Ctrl+C/Cmd+C) to paste into Gmail, Outlook, or Teams.',
+    '  </div>',
+  }
 
   local html = {'<table border="1" cellpadding="4" cellspacing="0" style="border-collapse: collapse;">'}
 
@@ -69,12 +92,44 @@ function M.yank_as_html(bufnr, table_info)
   table.insert(html, '  </tbody>')
   table.insert(html, '</table>')
 
-  local html_str = table.concat(html, '\n')
-  vim.fn.setreg('+', html_str)
-  vim.fn.setreg('"', html_str)
+  local html_table = table.concat(html, '\n')
 
-  vim.notify(string.format("Yanked %d rows as HTML table (paste into Outlook/Teams)", #data.rows), vim.log.levels.INFO)
-  return html_str
+  if open_browser then
+    -- Add table to full HTML
+    table.insert(full_html, html_table)
+    table.insert(full_html, '</body>')
+    table.insert(full_html, '</html>')
+
+    -- Write to temp file and open in browser
+    local temp_file = os.tmpname() .. '.html'
+    local file = io.open(temp_file, 'w')
+    if file then
+      file:write(table.concat(full_html, '\n'))
+      file:close()
+
+      -- Open in default browser (cross-platform)
+      local open_cmd
+      if vim.fn.has('mac') == 1 then
+        open_cmd = 'open'
+      elseif vim.fn.has('unix') == 1 then
+        open_cmd = 'xdg-open'
+      elseif vim.fn.has('win32') == 1 then
+        open_cmd = 'start'
+      end
+
+      if open_cmd then
+        vim.fn.system(string.format('%s "%s"', open_cmd, temp_file))
+        vim.notify(string.format("Opened HTML table in browser - copy from there to paste into Gmail", #data.rows), vim.log.levels.INFO)
+      end
+    end
+  else
+    -- Just yank the HTML code
+    vim.fn.setreg('+', html_table)
+    vim.fn.setreg('"', html_table)
+    vim.notify(string.format("Yanked %d rows as HTML table", #data.rows), vim.log.levels.INFO)
+  end
+
+  return html_table
 end
 
 -- Export to Markdown table
@@ -272,12 +327,13 @@ end
 -- Show export menu
 function M.show_export_menu(bufnr, table_info)
   local options = {
-    "1. HTML Table (Outlook/Teams)",
-    "2. Markdown Table",
-    "3. Tab-Separated (Excel)",
-    "4. CSV (Proper escaping)",
-    "5. SQL INSERT Statements",
-    "6. CREATE TABLE Statement",
+    "1. Open HTML in Browser (for Gmail/Teams copy)",
+    "2. HTML Table Code (raw HTML)",
+    "3. Markdown Table",
+    "4. Tab-Separated (Excel)",
+    "5. CSV (Proper escaping)",
+    "6. SQL INSERT Statements",
+    "7. CREATE TABLE Statement",
   }
 
   vim.ui.select(options, {
@@ -287,20 +343,22 @@ function M.show_export_menu(bufnr, table_info)
 
     local choice_num = tonumber(choice:match("^(%d+)"))
     if choice_num == 1 then
-      M.yank_as_html(bufnr, table_info)
+      M.yank_as_html(bufnr, table_info, true)  -- Open in browser
     elseif choice_num == 2 then
-      M.yank_as_markdown(bufnr, table_info)
+      M.yank_as_html(bufnr, table_info, false) -- Just yank HTML
     elseif choice_num == 3 then
-      M.yank_as_tsv(bufnr, table_info)
+      M.yank_as_markdown(bufnr, table_info)
     elseif choice_num == 4 then
-      M.yank_as_csv(bufnr, table_info)
+      M.yank_as_tsv(bufnr, table_info)
     elseif choice_num == 5 then
+      M.yank_as_csv(bufnr, table_info)
+    elseif choice_num == 6 then
       vim.ui.input({ prompt = "Table name: ", default = "my_table" }, function(name)
         if name then
           M.yank_as_insert(bufnr, table_info, name)
         end
       end)
-    elseif choice_num == 6 then
+    elseif choice_num == 7 then
       vim.ui.input({ prompt = "Table name: ", default = "my_table" }, function(name)
         if name then
           M.yank_create_table(bufnr, table_info, name)
