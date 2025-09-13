@@ -297,6 +297,68 @@ function M.setup_keymaps()
       table_nav.toggle_navigation()
     end, { desc = "Toggle table navigation mode", silent = true })
   end
+
+  -- Export keymaps (auto-enable table nav if needed)
+  local function try_export(format_type)
+    return function()
+      local bufnr = vim.api.nvim_get_current_buf()
+      local export = require('sql-cli.export')
+      local table_nav_module = require('sql-cli.table_nav')
+
+      -- Check if table nav is already active
+      if table_nav_module.is_active() then
+        local table_info = table_nav_module.get_table_info()
+        if format_type == "menu" then
+          export.show_export_menu(bufnr, table_info)
+        elseif format_type == "browser" then
+          export.yank_as_html(bufnr, table_info, true)
+        elseif format_type == "markdown" then
+          export.yank_as_markdown(bufnr, table_info)
+        elseif format_type == "tsv" then
+          export.yank_as_tsv(bufnr, table_info)
+        end
+      else
+        -- Try to activate table nav temporarily
+        local success = table_nav_module.init_navigation(bufnr)
+        if success then
+          local table_info = table_nav_module.get_table_info()
+          if format_type == "menu" then
+            export.show_export_menu(bufnr, table_info)
+          elseif format_type == "browser" then
+            export.yank_as_html(bufnr, table_info, true)
+          elseif format_type == "markdown" then
+            export.yank_as_markdown(bufnr, table_info)
+          elseif format_type == "tsv" then
+            export.yank_as_tsv(bufnr, table_info)
+          end
+          -- Disable nav after export
+          table_nav_module.disable_navigation()
+        else
+          vim.notify("No table found in buffer. Run a query first (\\sx)", vim.log.levels.WARN)
+        end
+      end
+    end
+  end
+
+  if keymaps.export_menu then
+    vim.keymap.set("n", keymaps.export_menu, try_export("menu"),
+      { desc = "Export table (all formats)", silent = true })
+  end
+
+  if keymaps.export_browser then
+    vim.keymap.set("n", keymaps.export_browser, try_export("browser"),
+      { desc = "Export to browser (Gmail/Teams)", silent = true })
+  end
+
+  if keymaps.export_markdown then
+    vim.keymap.set("n", keymaps.export_markdown, try_export("markdown"),
+      { desc = "Export as Markdown table", silent = true })
+  end
+
+  if keymaps.export_tsv then
+    vim.keymap.set("n", keymaps.export_tsv, try_export("tsv"),
+      { desc = "Export as TSV (Excel)", silent = true })
+  end
 end
 
 -- Setup autocommands
