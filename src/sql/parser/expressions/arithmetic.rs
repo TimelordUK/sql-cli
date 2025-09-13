@@ -4,7 +4,7 @@
 
 use crate::sql::parser::ast::SqlExpression;
 use crate::sql::parser::lexer::Token;
-use tracing::{debug, trace};
+use tracing::debug;
 
 use super::{log_parse_decision, trace_parse_entry, trace_parse_exit};
 

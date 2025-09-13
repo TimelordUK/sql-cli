@@ -1,5 +1,4 @@
 // Keep chrono imports for the parser implementation
-use chrono::{Datelike, Local, NaiveDateTime};
 
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
@@ -1225,7 +1224,6 @@ pub fn tokenize_query(query: &str) -> Vec<String> {
 }
 
 #[must_use]
-
 fn analyze_statement(
     stmt: &SelectStatement,
     query: &str,

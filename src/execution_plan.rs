@@ -1,8 +1,7 @@
 // Execution Plan Module
 // Provides detailed tracing and timing for query execution
 
-use crate::data::datatable::DataValue;
-use crate::sql::parser::ast::{SelectStatement, SqlExpression, WhereClause};
+use crate::sql::parser::ast::{SqlExpression, WhereClause};
 use std::fmt;
 use std::time::{Duration, Instant};
 

@@ -40,12 +40,15 @@ M.config = {
     execute = "<leader>sq",         -- Execute query
     execute_selection = "<leader>ss", -- Execute visual selection
     execute_at_cursor = "<leader>sx", -- Execute query at cursor
+    execute_with_plan = "<leader>sX", -- Execute query at cursor with execution plan
+    select_query = "<leader>sv",    -- Visually select query at cursor
+    preview_query = "<leader>sP",   -- Preview query in floating window
     toggle_output = "<leader>so",   -- Toggle output window
     toggle_orientation = "<leader>st", -- Toggle split orientation
     set_data_file = "<leader>sd",   -- Set data file
     clear_data_file = "<leader>sc", -- Clear data file
     show_plan = "<leader>sp",       -- Show query plan
-    open_data_file = "<leader>sv",  -- View data file
+    open_data_file = "<leader>sV",  -- View data file (capital V to avoid conflict)
     next_query = "]q",              -- Jump to next query
     prev_query = "[q",              -- Jump to previous query
     toggle_comment = "<leader>s/",  -- Toggle comment for query at cursor
@@ -79,6 +82,64 @@ local state = {
   last_results = nil,  -- Store last query results for saving
   query_markers = {},  -- Track query positions in output
 }
+
+-- Helper function to check if a line starts a SQL statement
+local function is_statement_start(line)
+  if not line then return false end
+  local upper = line:upper()
+  return upper:match("^%s*WITH%s+") or        -- CTE
+         upper:match("^%s*SELECT%s+") or      -- SELECT
+         upper:match("^%s*INSERT%s+") or      -- INSERT
+         upper:match("^%s*UPDATE%s+") or      -- UPDATE
+         upper:match("^%s*DELETE%s+") or      -- DELETE
+         upper:match("^%s*CREATE%s+") or      -- CREATE
+         upper:match("^%s*DROP%s+") or        -- DROP
+         upper:match("^%s*ALTER%s+")          -- ALTER
+end
+
+-- Helper function to find query boundaries at cursor position
+local function find_query_at_cursor(lines, cursor_line)
+  -- Helper function to check if a line is a query terminator
+  local function is_terminator(line)
+    if not line then return false end
+    return line:match("^%s*GO%s*$") or        -- GO on its own line
+           line:match(";%s*$") or              -- Semicolon at end of line
+           line:match(";%s*%-%-") or           -- Semicolon followed by comment
+           line:match(";%s*/")                 -- Semicolon followed by comment
+  end
+  
+  local start_line = 1
+  local end_line = #lines
+  
+  -- STEP 1: Search backwards from cursor for previous terminator
+  for i = cursor_line - 1, 1, -1 do
+    if is_terminator(lines[i]) then
+      start_line = i + 1
+      break
+    end
+  end
+  
+  -- STEP 2: Search forwards from cursor for next terminator  
+  for i = cursor_line, #lines do
+    if is_terminator(lines[i]) then
+      end_line = i
+      break
+    end
+  end
+  
+  -- Trim empty lines at start and end
+  while start_line <= end_line and (not lines[start_line] or lines[start_line]:match("^%s*$")) do
+    start_line = start_line + 1
+  end
+  
+  if not is_terminator(lines[end_line]) then
+    while end_line > start_line and (not lines[end_line] or lines[end_line]:match("^%s*$")) do
+      end_line = end_line - 1
+    end
+  end
+  
+  return start_line, end_line
+end
 
 -- Setup function
 function M.setup(opts)
@@ -125,6 +186,14 @@ function M.create_commands()
     M.copy_query_at_cursor()
   end, { desc = "Copy query at cursor to clipboard" })
   
+  vim.api.nvim_create_user_command("SqlCliSelectQuery", function()
+    M.select_query_at_cursor()
+  end, { desc = "Visually select SQL query at cursor" })
+  
+  vim.api.nvim_create_user_command("SqlCliPreviewQuery", function()
+    M.preview_query_at_cursor()
+  end, { desc = "Preview SQL query at cursor in floating window" })
+  
   vim.api.nvim_create_user_command("SqlCliFormatQuery", function()
     M.format_query_at_cursor()
   end, { desc = "Format SQL query at cursor" })
@@ -170,6 +239,21 @@ function M.setup_keymaps()
   if keymaps.execute_at_cursor then
     vim.keymap.set("n", keymaps.execute_at_cursor, M.execute_at_cursor,
       { desc = "Execute SQL query at cursor", silent = true })
+  end
+  
+  if keymaps.execute_with_plan then
+    vim.keymap.set("n", keymaps.execute_with_plan, M.execute_at_cursor_with_plan,
+      { desc = "Execute SQL query at cursor with execution plan", silent = true })
+  end
+  
+  if keymaps.select_query then
+    vim.keymap.set("n", keymaps.select_query, M.select_query_at_cursor,
+      { desc = "Visually select SQL query at cursor", silent = true })
+  end
+  
+  if keymaps.preview_query then
+    vim.keymap.set("n", keymaps.preview_query, M.preview_query_at_cursor,
+      { desc = "Preview SQL query at cursor in floating window", silent = true })
   end
   
   if keymaps.toggle_orientation then
@@ -319,6 +403,47 @@ function M.execute_query(query)
   
   -- Execute
   M.run_command(query, false)
+end
+
+-- Execute query with execution plan
+function M.execute_query_with_plan(query)
+  -- Get query from buffer if not provided
+  if not query or query == "" then
+    local bufnr = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    query = table.concat(lines, "\n")
+    
+    -- Auto-detect data file from hints
+    if M.config.auto_detect.data_hints and not state.data_file then
+      -- Get the directory of the current buffer
+      local buf_path = vim.api.nvim_buf_get_name(bufnr)
+      local buf_dir = nil
+      if buf_path and buf_path ~= "" then
+        buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+      end
+      state.data_file = M.detect_data_hint(lines, buf_dir)
+      if state.data_file then
+        -- Load schema for completion
+        M.load_schema_for_completion()
+      end
+    end
+    
+    -- Auto-detect if current buffer is a CSV
+    if M.config.auto_detect.csv_files and not state.data_file then
+      local filename = vim.api.nvim_buf_get_name(bufnr)
+      if filename:match("%.csv$") then
+        state.data_file = filename
+        -- Load schema for completion
+        M.load_schema_for_completion()
+      end
+    end
+  end
+  
+  -- Save the query
+  state.last_query = query
+  
+  -- Execute with execution plan
+  M.run_command(query, true)
 end
 
 -- Execute visual selection
@@ -492,7 +617,7 @@ function M.build_command(query, show_plan)
   
   -- Add query plan flag if requested
   if show_plan then
-    table.insert(cmd_parts, "--query-plan")
+    table.insert(cmd_parts, "--execution-plan")
   end
   
   return table.concat(cmd_parts, " ")
@@ -747,60 +872,170 @@ function M.toggle_split_orientation()
   end
 end
 
+-- Visually select query at cursor position
+function M.select_query_at_cursor()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  
+  -- Find query boundaries
+  local start_line, end_line = find_query_at_cursor(lines, cursor_line)
+  
+  if not start_line then
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Enter visual line mode and select the query
+  vim.cmd('normal! ' .. start_line .. 'G')  -- Go to start line
+  vim.cmd('normal! V')                      -- Enter visual line mode
+  vim.cmd('normal! ' .. end_line .. 'G')    -- Extend selection to end line
+  
+  -- Show a notification about what was selected
+  local query_type = "Query"
+  if lines[start_line]:upper():match("^%s*WITH%s+") then
+    query_type = "CTE"
+  elseif lines[start_line]:upper():match("^%s*SELECT%s+") then
+    query_type = "SELECT"
+  elseif lines[start_line]:upper():match("^%s*INSERT%s+") then
+    query_type = "INSERT"
+  elseif lines[start_line]:upper():match("^%s*UPDATE%s+") then
+    query_type = "UPDATE"
+  elseif lines[start_line]:upper():match("^%s*DELETE%s+") then
+    query_type = "DELETE"
+  end
+  
+  vim.notify(string.format("%s selected (lines %d-%d)", query_type, start_line, end_line), vim.log.levels.INFO)
+end
+
+-- Preview query at cursor with highlighting (shows in floating window)
+function M.preview_query_at_cursor()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  
+  -- Find query boundaries
+  local start_line, end_line = find_query_at_cursor(lines, cursor_line)
+  
+  if not start_line then
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Extract the query lines
+  local query_lines = {}
+  for i = start_line, end_line do
+    table.insert(query_lines, lines[i])
+  end
+  
+  -- Create floating window for preview
+  local width = math.min(80, vim.o.columns - 10)
+  local height = math.min(#query_lines + 4, vim.o.lines - 10)
+  
+  -- Calculate centered position
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+  
+  -- Create buffer for preview
+  local preview_buf = vim.api.nvim_create_buf(false, true)
+  
+  -- Add header
+  local header = "─── Query Preview (press q or <Esc> to close) ───"
+  local padding = math.floor((width - #header) / 2)
+  vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, {
+    string.rep(" ", padding) .. header,
+    "",
+  })
+  
+  -- Add query lines
+  vim.api.nvim_buf_set_lines(preview_buf, -1, -1, false, query_lines)
+  
+  -- Add footer with line info
+  local footer = string.format("Lines %d-%d (%d lines)", start_line, end_line, end_line - start_line + 1)
+  vim.api.nvim_buf_set_lines(preview_buf, -1, -1, false, {
+    "",
+    string.rep(" ", math.floor((width - #footer) / 2)) .. footer,
+  })
+  
+  -- Create floating window
+  local win_opts = {
+    relative = "editor",
+    row = row,
+    col = col,
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = " SQL Query Preview ",
+    title_pos = "center",
+  }
+  
+  local preview_win = vim.api.nvim_open_win(preview_buf, true, win_opts)
+  
+  -- Set buffer options
+  vim.api.nvim_buf_set_option(preview_buf, "bufhidden", "delete")
+  vim.api.nvim_buf_set_option(preview_buf, "filetype", "sql")
+  vim.api.nvim_buf_set_option(preview_buf, "modifiable", false)
+  
+  -- Set window options
+  vim.api.nvim_win_set_option(preview_win, "cursorline", true)
+  vim.api.nvim_win_set_option(preview_win, "wrap", false)
+  
+  -- Add keymaps to close preview
+  local close_preview = function()
+    if vim.api.nvim_win_is_valid(preview_win) then
+      vim.api.nvim_win_close(preview_win, true)
+    end
+  end
+  
+  vim.keymap.set("n", "q", close_preview, { buffer = preview_buf })
+  vim.keymap.set("n", "<Esc>", close_preview, { buffer = preview_buf })
+  vim.keymap.set("n", "<CR>", function()
+    close_preview()
+    M.execute_at_cursor()
+  end, { buffer = preview_buf, desc = "Execute query and close preview" })
+end
+
 -- Execute query at cursor position
 function M.execute_at_cursor()
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   
-  -- Find the query boundaries (SELECT to GO/semicolon or next SELECT)
-  local start_line = nil
-  local end_line = nil
-  
-  -- Search backwards for SELECT or start of file
-  for i = cursor_line, 1, -1 do
-    if lines[i]:upper():match("^%s*SELECT") then
-      start_line = i
-      break
-    end
-  end
-  
-  -- If no SELECT found before cursor, search forward
-  if not start_line then
-    for i = cursor_line, #lines do
-      if lines[i]:upper():match("^%s*SELECT") then
-        start_line = i
-        break
-      end
-    end
-  end
+  -- Find query boundaries
+  local start_line, end_line = find_query_at_cursor(lines, cursor_line)
   
   if not start_line then
-    vim.notify("No SELECT statement found", vim.log.levels.WARN)
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
     return
   end
   
-  -- Search forward for GO, semicolon, or next SELECT
-  for i = start_line + 1, #lines do
-    local line = lines[i]
-    if line:match("^%s*GO%s*$") or line:match(";%s*$") then
-      end_line = i
-      break
-    elseif i > start_line and line:upper():match("^%s*SELECT") then
-      end_line = i - 1
-      break
-    end
-  end
-  
-  -- If no end found, use end of file
-  if not end_line then
-    end_line = #lines
+  -- Optionally highlight the query briefly before execution
+  if vim.g.sql_cli_highlight_before_execute then
+    -- Save current position
+    local save_cursor = vim.fn.getpos('.')
+    
+    -- Highlight the query
+    vim.cmd('normal! ' .. start_line .. 'G')
+    vim.cmd('normal! V')
+    vim.cmd('normal! ' .. end_line .. 'G')
+    vim.cmd('redraw')
+    
+    -- Brief pause to show selection
+    vim.cmd('sleep 200m')
+    
+    -- Exit visual mode and restore cursor
+    vim.cmd('normal! <Esc>')
+    vim.fn.setpos('.', save_cursor)
   end
   
   -- Extract the query
   local query_lines = {}
   for i = start_line, end_line do
-    table.insert(query_lines, lines[i])
+    -- Skip GO terminators
+    if not lines[i]:match("^%s*GO%s*$") then
+      table.insert(query_lines, lines[i])
+    end
   end
   
   local query = table.concat(query_lines, "\n")
@@ -819,60 +1054,85 @@ function M.execute_at_cursor()
   M.execute_query(query)
 end
 
+-- Execute query at cursor position with execution plan
+function M.execute_at_cursor_with_plan()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  
+  -- Find query boundaries
+  local start_line, end_line = find_query_at_cursor(lines, cursor_line)
+  
+  if not start_line then
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Optionally highlight the query briefly before execution
+  if vim.g.sql_cli_highlight_before_execute then
+    -- Save current position
+    local save_cursor = vim.fn.getpos('.')
+    
+    -- Highlight the query
+    vim.cmd('normal! ' .. start_line .. 'G')
+    vim.cmd('normal! V')
+    vim.cmd('normal! ' .. end_line .. 'G')
+    vim.cmd('redraw')
+    
+    -- Brief pause to show selection
+    vim.cmd('sleep 200m')
+    
+    -- Exit visual mode and restore cursor
+    vim.cmd('normal! <Esc>')
+    vim.fn.setpos('.', save_cursor)
+  end
+  
+  -- Extract the query
+  local query_lines = {}
+  for i = start_line, end_line do
+    -- Skip GO terminators
+    if not lines[i]:match("^%s*GO%s*$") then
+      table.insert(query_lines, lines[i])
+    end
+  end
+  
+  local query = table.concat(query_lines, "\n")
+  
+  -- Auto-detect data file if needed
+  if M.config.auto_detect.data_hints and not state.data_file then
+    local buf_path = vim.api.nvim_buf_get_name(bufnr)
+    local buf_dir = nil
+    if buf_path and buf_path ~= "" then
+      buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+    end
+    state.data_file = M.detect_data_hint(lines, buf_dir)
+  end
+  
+  -- Execute the query with execution plan
+  M.execute_query_with_plan(query)
+end
+
 -- Copy query at cursor to clipboard
 function M.copy_query_at_cursor()
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   
-  -- Find the query boundaries (SELECT to GO/semicolon or next SELECT)
-  local start_line = nil
-  local end_line = nil
-  
-  -- Search backwards for SELECT or start of file
-  for i = cursor_line, 1, -1 do
-    if lines[i]:upper():match("^%s*SELECT") then
-      start_line = i
-      break
-    end
-  end
-  
-  -- If no SELECT found before cursor, search forward
-  if not start_line then
-    for i = cursor_line, #lines do
-      if lines[i]:upper():match("^%s*SELECT") then
-        start_line = i
-        break
-      end
-    end
-  end
+  -- Find query boundaries
+  local start_line, end_line = find_query_at_cursor(lines, cursor_line)
   
   if not start_line then
-    vim.notify("No SELECT statement found", vim.log.levels.WARN)
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
     return
-  end
-  
-  -- Search forward for GO, semicolon, or next SELECT
-  for i = start_line + 1, #lines do
-    local line = lines[i]
-    if line:match("^%s*GO%s*$") or line:match(";%s*$") then
-      end_line = i
-      break
-    elseif i > start_line and line:upper():match("^%s*SELECT") then
-      end_line = i - 1
-      break
-    end
-  end
-  
-  -- If no end found, use end of file
-  if not end_line then
-    end_line = #lines
   end
   
   -- Extract the query
   local query_lines = {}
   for i = start_line, end_line do
-    table.insert(query_lines, lines[i])
+    -- Skip GO terminators
+    if not lines[i]:match("^%s*GO%s*$") then
+      table.insert(query_lines, lines[i])
+    end
   end
   
   local query = table.concat(query_lines, "\n")
@@ -891,48 +1151,12 @@ function M.format_query_at_cursor()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   
-  -- Find the query boundaries (SELECT to GO/semicolon or next SELECT)
-  local start_line = nil
-  local end_line = nil
-  
-  -- Search backwards for SELECT or start of file
-  for i = cursor_line, 1, -1 do
-    if lines[i]:upper():match("^%s*SELECT") then
-      start_line = i
-      break
-    end
-  end
-  
-  -- If no SELECT found before cursor, search forward
-  if not start_line then
-    for i = cursor_line, #lines do
-      if lines[i]:upper():match("^%s*SELECT") then
-        start_line = i
-        break
-      end
-    end
-  end
+  -- Find query boundaries using the same logic as execute_at_cursor
+  local start_line, end_line = find_query_at_cursor(lines, cursor_line)
   
   if not start_line then
-    vim.notify("No SELECT statement found", vim.log.levels.WARN)
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
     return
-  end
-  
-  -- Search forward for GO, semicolon, or next SELECT
-  for i = start_line + 1, #lines do
-    local line = lines[i]
-    if line:match("^%s*GO%s*$") or line:match(";%s*$") then
-      end_line = i
-      break
-    elseif i > start_line and line:upper():match("^%s*SELECT") then
-      end_line = i - 1
-      break
-    end
-  end
-  
-  -- If no end found, use end of file
-  if not end_line then
-    end_line = #lines
   end
   
   -- Extract the query
@@ -1077,9 +1301,9 @@ function M.next_query()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   
-  -- Find next SELECT statement
+  -- Find next SQL statement
   for i = cursor_line + 1, #lines do
-    if lines[i]:upper():match("^%s*SELECT") then
+    if is_statement_start(lines[i]) then
       vim.api.nvim_win_set_cursor(0, {i, 0})
       return
     end
@@ -1087,7 +1311,7 @@ function M.next_query()
   
   -- Wrap around to beginning
   for i = 1, cursor_line do
-    if lines[i]:upper():match("^%s*SELECT") then
+    if is_statement_start(lines[i]) then
       vim.api.nvim_win_set_cursor(0, {i, 0})
       vim.notify("Wrapped to first query", vim.log.levels.INFO)
       return
@@ -1103,9 +1327,9 @@ function M.prev_query()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   
-  -- Find previous SELECT statement
+  -- Find previous SQL statement
   for i = cursor_line - 1, 1, -1 do
-    if lines[i]:upper():match("^%s*SELECT") then
+    if is_statement_start(lines[i]) then
       vim.api.nvim_win_set_cursor(0, {i, 0})
       return
     end
@@ -1113,7 +1337,7 @@ function M.prev_query()
   
   -- Wrap around to end
   for i = #lines, cursor_line, -1 do
-    if lines[i]:upper():match("^%s*SELECT") then
+    if is_statement_start(lines[i]) then
       vim.api.nvim_win_set_cursor(0, {i, 0})
       vim.notify("Wrapped to last query", vim.log.levels.INFO)
       return
@@ -1129,65 +1353,55 @@ function M.toggle_comment_query()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   
-  -- Find query boundaries
-  local start_line = nil
-  local end_line = nil
-  
-  -- Search backwards for SELECT
-  for i = cursor_line, 1, -1 do
-    if lines[i]:upper():match("^%s*SELECT") or lines[i]:upper():match("^%s*%-%-.*SELECT") then
-      start_line = i
-      break
-    end
-  end
+  -- Find query boundaries using the same logic as execute_at_cursor
+  local start_line, end_line = find_query_at_cursor(lines, cursor_line)
   
   if not start_line then
-    -- Search forward
-    for i = cursor_line, #lines do
-      if lines[i]:upper():match("^%s*SELECT") or lines[i]:upper():match("^%s*%-%-.*SELECT") then
-        start_line = i
-        break
-      end
-    end
-  end
-  
-  if not start_line then
-    vim.notify("No query found at cursor", vim.log.levels.WARN)
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
     return
   end
   
-  -- Find end of query
-  for i = start_line + 1, #lines do
+  -- Find the first actual SQL statement line (skip documentation comments)
+  local sql_start_line = start_line
+  for i = start_line, end_line do
     local line = lines[i]
-    if line:match("^%s*GO%s*$") or line:match(";%s*$") then
-      end_line = i
+    if line and not line:match("^%s*$") and not line:match("^%s*%-%-") then
+      sql_start_line = i
       break
-    elseif i > start_line and (line:upper():match("^%s*SELECT") or line:upper():match("^%s*%-%-.*SELECT")) then
-      end_line = i - 1
+    elseif line and line:match("^%s*%-%-") and is_statement_start(line:gsub("^%s*%-%-", "")) then
+      -- This is a commented-out SQL statement
+      sql_start_line = i
       break
     end
   end
   
-  if not end_line then
-    end_line = #lines
+  -- Check if the SQL code is commented (not just documentation comments)
+  local is_commented = false
+  local first_sql_line = lines[sql_start_line]
+  if first_sql_line and first_sql_line:match("^%s*%-%-") then
+    local uncommented = first_sql_line:gsub("^%s*%-%-", "")
+    -- Only consider it "commented" if the uncommented line is SQL code
+    if is_statement_start(uncommented) then
+      is_commented = true
+    end
   end
   
-  -- Check if query is commented
-  local is_commented = lines[start_line]:match("^%s*%-%-")
-  
-  -- Toggle comments
+  -- Toggle comments on SQL lines only (preserve documentation comments)
   for i = start_line, end_line do
     local line = lines[i]
-    if is_commented then
-      -- Remove comment
-      lines[i] = line:gsub("^%s*%-%-", "")
-    else
-      -- Add comment
-      if line:match("^%s*$") then
-        -- Don't comment empty lines
-        lines[i] = line
-      else
-        lines[i] = "-- " .. line
+    if line and not line:match("^%s*$") then
+      -- Skip documentation comments that aren't SQL code
+      local is_doc_comment = line:match("^%s*%-%-") and not is_statement_start(line:gsub("^%s*%-%-", ""))
+      
+      if not is_doc_comment then
+        if is_commented then
+          -- Remove comment from SQL lines
+          lines[i] = line:gsub("^(%s*)%-%-(%s?)", "%1")
+        else
+          -- Add comment to SQL lines
+          local indent = line:match("^(%s*)")
+          lines[i] = indent .. "-- " .. line:sub(#indent + 1)
+        end
       end
     end
   end

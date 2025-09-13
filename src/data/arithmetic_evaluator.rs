@@ -3,7 +3,6 @@ use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::value_comparisons::compare_with_op;
 use crate::sql::aggregates::AggregateRegistry;
-use crate::sql::functions::date_time::parse_datetime;
 use crate::sql::functions::FunctionRegistry;
 use crate::sql::recursive_parser::{SqlExpression, WindowSpec};
 use crate::sql::window_context::WindowContext;
@@ -383,7 +382,7 @@ impl<'a> ArithmeticEvaluator<'a> {
         &mut self,
         name: &str,
         args: &[SqlExpression],
-        row_index: usize,
+        _row_index: usize,
     ) -> Result<DataValue> {
         use std::collections::HashSet;
 

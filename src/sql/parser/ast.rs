@@ -3,8 +3,6 @@
 //! This module contains all the data structures that represent
 //! the parsed SQL query structure.
 
-use chrono::{Datelike, Local, NaiveDateTime};
-
 // ===== Expression Types =====
 
 #[derive(Debug, Clone)]
@@ -195,7 +193,7 @@ pub enum JoinType {
 }
 
 /// Join operator for join conditions
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum JoinOperator {
     Equal,
     NotEqual,

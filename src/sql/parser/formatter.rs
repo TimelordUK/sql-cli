@@ -1,10 +1,7 @@
 // SQL Formatter Module
 // Handles pretty-printing of SQL queries and AST structures
 
-use super::ast::{
-    Condition, LogicalOp, OrderByColumn, SelectItem, SelectStatement, SortDirection, SqlExpression,
-    WhenBranch, WhereClause, WindowSpec,
-};
+use super::ast::{LogicalOp, SelectStatement, SortDirection, SqlExpression, WhereClause};
 use super::lexer::{Lexer, Token};
 use crate::sql::recursive_parser::Parser;
 
@@ -237,7 +234,7 @@ pub fn format_expression_ast(expr: &SqlExpression) -> String {
         SqlExpression::WindowFunction {
             name,
             args,
-            window_spec,
+            window_spec: _,
         } => {
             let args_str = args
                 .iter()
@@ -339,7 +336,7 @@ pub fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Ve
     while i < tokens_with_pos.len() {
         match &tokens_with_pos[i].0 {
             Token::Select => {
-                let select_start = tokens_with_pos[i].1;
+                let _select_start = tokens_with_pos[i].1;
                 i += 1;
 
                 // Check for DISTINCT
@@ -354,9 +351,9 @@ pub fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Ve
                 }
 
                 // Find the end of SELECT clause (before FROM)
-                let mut select_end = query.len();
-                let mut col_count = 0;
-                let mut current_line_cols: Vec<String> = Vec::new();
+                let _select_end = query.len();
+                let _col_count = 0;
+                let _current_line_cols: Vec<String> = Vec::new();
                 let mut all_select_lines = Vec::new();
 
                 // Determine if we should use pretty formatting

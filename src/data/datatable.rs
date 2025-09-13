@@ -111,6 +111,45 @@ pub enum DataValue {
     Null,
 }
 
+// Custom Hash implementation for DataValue to handle f64
+impl std::hash::Hash for DataValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            DataValue::String(s) => {
+                0u8.hash(state);
+                s.hash(state);
+            }
+            DataValue::InternedString(s) => {
+                1u8.hash(state);
+                s.hash(state);
+            }
+            DataValue::Integer(i) => {
+                2u8.hash(state);
+                i.hash(state);
+            }
+            DataValue::Float(f) => {
+                3u8.hash(state);
+                // Hash the bits of the float for consistency
+                f.to_bits().hash(state);
+            }
+            DataValue::Boolean(b) => {
+                4u8.hash(state);
+                b.hash(state);
+            }
+            DataValue::DateTime(dt) => {
+                5u8.hash(state);
+                dt.hash(state);
+            }
+            DataValue::Null => {
+                6u8.hash(state);
+            }
+        }
+    }
+}
+
+// Custom Eq implementation for DataValue
+impl Eq for DataValue {}
+
 impl DataValue {
     pub fn from_string(s: &str, data_type: &DataType) -> Self {
         if s.is_empty() || s.eq_ignore_ascii_case("null") {

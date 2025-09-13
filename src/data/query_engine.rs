@@ -9,10 +9,12 @@ use crate::config::global::get_date_notation;
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
+use crate::data::hash_join::HashJoinExecutor;
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use crate::data::virtual_table_generator::VirtualTableGenerator;
 use crate::execution_plan::{ExecutionPlan, ExecutionPlanBuilder, StepType};
 use crate::sql::aggregates::contains_aggregate;
+use crate::sql::parser::ast::TableSource;
 use crate::sql::recursive_parser::{
     OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression, TableFunction,
 };
@@ -301,8 +303,64 @@ impl QueryEngine {
             table.clone()
         };
 
-        // Continue with the existing build_view logic but using source_table
-        self.build_view_internal(source_table, statement)
+        // Process JOINs if present
+        let final_table = if !statement.joins.is_empty() {
+            plan.begin_step(StepType::Filter, "Process JOINs".to_string());
+            plan.add_detail(format!(
+                "{} JOIN clause(s) to process",
+                statement.joins.len()
+            ));
+
+            let join_executor = HashJoinExecutor::new(self.case_insensitive);
+            let mut current_table = source_table;
+
+            for join_clause in &statement.joins {
+                plan.add_detail(format!(
+                    "Executing {:?} JOIN on {}",
+                    join_clause.join_type, join_clause.condition.left_column
+                ));
+
+                // Resolve the right table for the join
+                let right_table = match &join_clause.table {
+                    TableSource::Table(name) => {
+                        // Check if it's a CTE reference
+                        if let Some(cte_view) = cte_context.get(name) {
+                            let materialized = self.materialize_view((**cte_view).clone())?;
+                            Arc::new(materialized)
+                        } else {
+                            // For now, we need the actual table data
+                            // In a real implementation, this would load from file
+                            return Err(anyhow!("Cannot resolve table '{}' for JOIN", name));
+                        }
+                    }
+                    TableSource::DerivedTable { query, alias: _ } => {
+                        // Execute the subquery
+                        let subquery_result = self.build_view_with_context(
+                            table.clone(),
+                            *query.clone(),
+                            cte_context,
+                        )?;
+                        let materialized = self.materialize_view(subquery_result)?;
+                        Arc::new(materialized)
+                    }
+                };
+
+                // Execute the join
+                let joined =
+                    join_executor.execute_join(current_table.clone(), join_clause, right_table)?;
+
+                plan.add_detail(format!("JOIN produced {} rows", joined.row_count()));
+                current_table = Arc::new(joined);
+            }
+
+            plan.end_step();
+            current_table
+        } else {
+            source_table
+        };
+
+        // Continue with the existing build_view logic but using final_table
+        self.build_view_internal(final_table, statement)
     }
 
     /// Materialize a DataView into a new DataTable
