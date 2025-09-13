@@ -446,6 +446,34 @@ impl<'a> AstFormatter<'a> {
                     )
                 }
             }
+            SqlExpression::MethodCall {
+                object,
+                method,
+                args,
+            } => {
+                let mut result = format!("{}.{}", object, method);
+                result.push('(');
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        result.push_str(", ");
+                    }
+                    result.push_str(&self.format_expression(arg));
+                }
+                result.push(')');
+                result
+            }
+            SqlExpression::ChainedMethodCall { base, method, args } => {
+                let mut result = format!("{}.{}", self.format_expression(base), method);
+                result.push('(');
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        result.push_str(", ");
+                    }
+                    result.push_str(&self.format_expression(arg));
+                }
+                result.push(')');
+                result
+            }
             _ => format!("{:?}", expr), // Fallback for unhandled expression types
         }
     }
