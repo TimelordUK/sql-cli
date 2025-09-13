@@ -13,6 +13,7 @@ local ui = require('sql-cli.ui')
 local navigation = require('sql-cli.navigation')
 local functions = require('sql-cli.functions')
 local results = require('sql-cli.results')
+local table_nav = require('sql-cli.table_nav')
 
 -- Plugin configuration
 M.config = {}
@@ -119,6 +120,10 @@ function M.create_commands()
   vim.api.nvim_create_user_command("SqlCliExpandStar", function()
     results.expand_star_columns(M.config, M.state)
   end, { desc = "Expand SELECT * to column names" })
+
+  vim.api.nvim_create_user_command("SqlCliToggleTableNav", function()
+    table_nav.toggle_navigation()
+  end, { desc = "Toggle table navigation mode in current buffer" })
 end
 
 -- Setup keymaps
@@ -274,6 +279,12 @@ function M.setup_keymaps()
       formatter.format_query_at_cursor(M.config, M.state)
     end, { desc = "Format SQL query at cursor", silent = true })
   end
+
+  if keymaps.toggle_table_nav then
+    vim.keymap.set("n", keymaps.toggle_table_nav, function()
+      table_nav.toggle_navigation()
+    end, { desc = "Toggle table navigation mode", silent = true })
+  end
 end
 
 -- Setup autocommands
@@ -417,9 +428,6 @@ function M.open_data_file()
   end
   local data_file = M.state:get_data_file()
   if data_file then
-    -- Save current window to return focus if needed
-    local current_win = vim.api.nvim_get_current_win()
-
     -- Create a new split for the data file
     local split_cmd = M.config.split.direction == "vertical" and "vsplit" or "split"
     vim.cmd(split_cmd .. " " .. vim.fn.fnameescape(data_file))

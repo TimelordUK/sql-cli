@@ -59,6 +59,7 @@ M.defaults = {
     column_help = "<leader>sk",     -- Smart column/function detection at cursor
     expand_star = "<leader>se",     -- Expand SELECT * to column names
     copy_query = "<leader>sy",       -- Copy query at cursor to clipboard (y for yank)
+    toggle_table_nav = "<leader>sn", -- Toggle table navigation mode (n for nav)
   },
 
   -- Output window settings

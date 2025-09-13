@@ -139,13 +139,66 @@ function M.init_navigation(bufnr)
   if nav_state.table_info.data_start then
     nav_state.current_row = 1
     nav_state.current_col = 1
+
+    -- Make buffer non-modifiable to prevent accidental edits
+    vim.bo[bufnr].modifiable = false
+    vim.bo[bufnr].readonly = true
+
     M.highlight_current_cell()
   else
-    vim.notify("No table found in buffer", vim.log.levels.WARN)
+    -- Debug output to see what we're parsing
+    vim.notify("No table found in buffer. Buffer has " .. #lines .. " lines", vim.log.levels.WARN)
+    if #lines > 0 then
+      vim.notify("First line: " .. lines[1]:sub(1, 50), vim.log.levels.INFO)
+      vim.notify("Looking for table patterns like ┌, ├, │, or |", vim.log.levels.INFO)
+    end
     return false
   end
 
   return true
+end
+
+-- Disable navigation
+function M.disable_navigation()
+  if nav_state.buffer and vim.api.nvim_buf_is_valid(nav_state.buffer) then
+    -- Clear highlights
+    vim.api.nvim_buf_clear_namespace(nav_state.buffer, nav_state.highlight_ns, 0, -1)
+
+    -- Remove buffer variable
+    vim.b[nav_state.buffer].sql_cli_table_nav_active = false
+
+    -- Clear keymaps
+    local opts = { buffer = nav_state.buffer }
+    pcall(vim.keymap.del, "n", "h", opts)
+    pcall(vim.keymap.del, "n", "j", opts)
+    pcall(vim.keymap.del, "n", "k", opts)
+    pcall(vim.keymap.del, "n", "l", opts)
+    pcall(vim.keymap.del, "n", "yy", opts)
+    pcall(vim.keymap.del, "n", "Y", opts)
+    pcall(vim.keymap.del, "n", "yc", opts)
+  end
+
+  -- Reset state
+  nav_state.buffer = nil
+  nav_state.window = nil
+  nav_state.table_info = nil
+  nav_state.current_row = 1
+  nav_state.current_col = 1
+end
+
+-- Toggle navigation mode
+function M.toggle_navigation(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+
+  if nav_state.buffer == bufnr and M.is_active() then
+    M.disable_navigation()
+    vim.notify("Table navigation disabled", vim.log.levels.INFO)
+  else
+    if M.init_navigation(bufnr) then
+      M.setup_keymaps(bufnr)
+      vim.notify("Table navigation enabled - " .. M.get_status(), vim.log.levels.INFO)
+    end
+  end
 end
 
 -- Highlight current cell
@@ -310,15 +363,55 @@ function M.get_cell_info()
   )
 end
 
+-- Check if navigation is active
+function M.is_active()
+  return nav_state.buffer ~= nil and nav_state.table_info ~= nil
+end
+
+-- Get navigation mode status
+function M.get_status()
+  if not M.is_active() then
+    return ""
+  end
+
+  local col_name = nav_state.table_info.columns[nav_state.current_col] or ("Col " .. nav_state.current_col)
+  local max_row = nav_state.table_info.data_end - nav_state.table_info.data_start + 1
+  local max_col = #nav_state.table_info.column_positions
+
+  return string.format("📊 TABLE NAV [%d/%d, %d/%d] %s",
+    nav_state.current_row, max_row,
+    nav_state.current_col, max_col,
+    col_name
+  )
+end
+
 -- Setup keymaps for navigation
 function M.setup_keymaps(bufnr)
   local opts = { noremap = true, silent = true, buffer = bufnr }
 
-  -- Navigation
-  vim.keymap.set("n", "h", M.move_left, opts)
-  vim.keymap.set("n", "j", M.move_down, opts)
-  vim.keymap.set("n", "k", M.move_up, opts)
-  vim.keymap.set("n", "l", M.move_right, opts)
+  -- Store that we're in table nav mode
+  vim.b[bufnr].sql_cli_table_nav_active = true
+
+  -- Navigation with visual feedback
+  vim.keymap.set("n", "h", function()
+    M.move_left()
+    vim.notify(M.get_status(), vim.log.levels.INFO)
+  end, opts)
+
+  vim.keymap.set("n", "j", function()
+    M.move_down()
+    vim.notify(M.get_status(), vim.log.levels.INFO)
+  end, opts)
+
+  vim.keymap.set("n", "k", function()
+    M.move_up()
+    vim.notify(M.get_status(), vim.log.levels.INFO)
+  end, opts)
+
+  vim.keymap.set("n", "l", function()
+    M.move_right()
+    vim.notify(M.get_status(), vim.log.levels.INFO)
+  end, opts)
 
   -- Jump to boundaries
   vim.keymap.set("n", "0", M.go_to_first_column, opts)
