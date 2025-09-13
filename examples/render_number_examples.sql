@@ -1,7 +1,7 @@
 -- #! ../data/international_sales.csv
+
 -- RENDER_NUMBER Function Examples
 -- Demonstrates various number formatting options
--- data: data/international_sales.csv
 
 -- Standard formatting with thousand separators
 SELECT
@@ -78,6 +78,17 @@ SELECT
     RENDER_NUMBER(SUM(total_value), 'compact', 2) as compact_two_dec
 FROM valued_sales
 GROUP BY country
-HAVING total > 20000  -- Note: Use alias 'total' instead of SUM(total_value)
+HAVING total > 20000
 ORDER BY total DESC;
+GO
+
+-- Accounting format for negative numbers (shown in parentheses)
+SELECT
+    product,
+    amount - 5000 AS profit_loss,
+    RENDER_NUMBER(amount - 5000) AS standard_format,
+    RENDER_NUMBER(amount - 5000, 'accounting') AS accounting_format
+FROM international_sales
+WHERE amount < 10000
+LIMIT 5;
 GO

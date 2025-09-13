@@ -17,6 +17,7 @@ impl SqlFunction for RenderNumberFunction {
                 "SELECT RENDER_NUMBER(1234567.89)",            // "1,234,567.89"
                 "SELECT RENDER_NUMBER(1234567.89, 'compact')", // "1.2M"
                 "SELECT RENDER_NUMBER(1234.56, 'eu')",         // "1.234,56"
+                "SELECT RENDER_NUMBER(-1234.56, 'accounting')", // "(1,234.56)"
                 "SELECT RENDER_NUMBER(1500000, 'compact', 1)", // "1.5M"
             ],
         }
@@ -57,6 +58,7 @@ impl SqlFunction for RenderNumberFunction {
             "eu" | "european" => format_european(value, decimals),
             "ch" | "swiss" => format_swiss(value, decimals),
             "in" | "indian" => format_indian(value, decimals),
+            "accounting" => format_accounting(value, decimals),
             _ => format_standard(value, decimals), // Default US/UK style
         };
 
@@ -238,6 +240,32 @@ fn format_currency(
     let abs_value = value.abs();
 
     match format {
+        "accounting" => {
+            // Accounting format: negative numbers in parentheses
+            let formatted = format_standard(abs_value, decimals);
+            if info.symbol_before {
+                if is_negative {
+                    format!("({}{})", info.symbol, formatted)
+                } else {
+                    format!("{}{}", info.symbol, formatted)
+                }
+            } else {
+                if is_negative {
+                    format!("({}{})", formatted, info.symbol)
+                } else {
+                    format!("{}{}", formatted, info.symbol)
+                }
+            }
+        }
+        "accounting_code" => {
+            // Accounting format with currency code
+            let formatted = format_standard(abs_value, decimals);
+            if is_negative {
+                format!("({} {})", formatted, code)
+            } else {
+                format!("{} {}", formatted, code)
+            }
+        }
         "compact" => {
             let compact = format_compact(abs_value, decimals.min(1));
             if info.symbol_before {
@@ -346,6 +374,20 @@ fn format_swiss(value: f64, decimals: usize) -> String {
 fn format_indian(value: f64, decimals: usize) -> String {
     let formatted = format!("{:.prec$}", value, prec = decimals);
     add_indian_separators(&formatted)
+}
+
+// Format with accounting style (negatives in parentheses)
+fn format_accounting(value: f64, decimals: usize) -> String {
+    let is_negative = value < 0.0;
+    let abs_value = value.abs();
+    let formatted = format!("{:.prec$}", abs_value, prec = decimals);
+    let with_separators = add_separators(&formatted, ',', '.');
+
+    if is_negative {
+        format!("({})", with_separators)
+    } else {
+        with_separators
+    }
 }
 
 // Format in compact notation (k, M, B, T)
