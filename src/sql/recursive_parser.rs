@@ -19,6 +19,10 @@ use super::parser::expressions::arithmetic::{
 use super::parser::expressions::comparison::{
     parse_comparison as parse_comparison_expr, parse_in_operator, ParseComparison,
 };
+use super::parser::expressions::logical::{
+    parse_logical_and as parse_logical_and_expr, parse_logical_or as parse_logical_or_expr,
+    ParseLogical,
+};
 use super::parser::expressions::primary::{
     parse_primary as parse_primary_expr, ParsePrimary, PrimaryExpressionContext,
 };
@@ -755,57 +759,30 @@ impl Parser {
     }
 
     fn parse_where_clause(&mut self) -> Result<WhereClause, String> {
-        let mut conditions = Vec::new();
+        // Parse the entire WHERE clause as a single expression tree
+        // The logical operators (AND/OR) are now handled within parse_expression
+        let expr = self.parse_expression()?;
 
-        loop {
-            let expr = self.parse_expression()?;
-
-            let connector = match &self.current_token {
-                Token::And => {
-                    self.advance();
-                    Some(LogicalOp::And)
-                }
-                Token::Or => {
-                    self.advance();
-                    Some(LogicalOp::Or)
-                }
-                Token::RightParen if self.paren_depth <= 0 => {
-                    // Unexpected closing parenthesis
-                    return Err(
-                        "Unexpected closing parenthesis - no matching opening parenthesis"
-                            .to_string(),
-                    );
-                }
-                _ => None,
-            };
-
-            conditions.push(Condition {
-                expr,
-                connector: connector.clone(),
-            });
-
-            if connector.is_none() {
-                break;
-            }
+        // Check for unexpected closing parenthesis
+        if matches!(self.current_token, Token::RightParen) && self.paren_depth <= 0 {
+            return Err(
+                "Unexpected closing parenthesis - no matching opening parenthesis".to_string(),
+            );
         }
+
+        // Create a single condition with the entire expression
+        let conditions = vec![Condition {
+            expr,
+            connector: None,
+        }];
 
         Ok(WhereClause { conditions })
     }
 
     fn parse_expression(&mut self) -> Result<SqlExpression, String> {
-        let mut left = self.parse_comparison()?;
-
-        // Handle binary operators at expression level (should be handled in parse_comparison now)
-        // Keep this for backward compatibility but it shouldn't be reached
-        if let Some(op) = self.get_binary_op() {
-            self.advance();
-            let right = self.parse_expression()?;
-            left = SqlExpression::BinaryOp {
-                left: Box::new(left),
-                op,
-                right: Box::new(right),
-            };
-        }
+        // Start with logical OR as the lowest precedence operator
+        // The hierarchy is: OR -> AND -> comparison -> additive -> multiplicative -> primary
+        let mut left = self.parse_logical_or()?;
 
         // Handle IN operator (not preceded by NOT)
         // This uses the modular comparison module
@@ -830,39 +807,13 @@ impl Parser {
     }
 
     fn parse_logical_or(&mut self) -> Result<SqlExpression, String> {
-        let mut left = self.parse_logical_and()?;
-
-        while matches!(self.current_token, Token::Or) {
-            self.advance();
-            let right = self.parse_logical_and()?;
-            // For now, we'll just return the left side to make it compile
-            // In a real implementation, we'd need a LogicalOp variant in SqlExpression
-            // but for the AST visualization, the WHERE clause handles this properly
-            left = SqlExpression::BinaryOp {
-                left: Box::new(left),
-                op: "OR".to_string(),
-                right: Box::new(right),
-            };
-        }
-
-        Ok(left)
+        // Use the new modular logical expression parser
+        parse_logical_or_expr(self)
     }
 
     fn parse_logical_and(&mut self) -> Result<SqlExpression, String> {
-        let mut left = self.parse_expression()?;
-
-        while matches!(self.current_token, Token::And) {
-            self.advance();
-            let right = self.parse_expression()?;
-            // Similar to OR, we use BinaryOp to represent AND
-            left = SqlExpression::BinaryOp {
-                left: Box::new(left),
-                op: "AND".to_string(),
-                right: Box::new(right),
-            };
-        }
-
-        Ok(left)
+        // Use the new modular logical expression parser
+        parse_logical_and_expr(self)
     }
 
     fn parse_case_expression(&mut self) -> Result<SqlExpression, String> {
@@ -2823,6 +2774,39 @@ impl ParseComparison for Parser {
     }
 }
 
+// Implement the ParseLogical trait for Parser to use the modular logical parsing
+impl ParseLogical for Parser {
+    fn current_token(&self) -> &Token {
+        &self.current_token
+    }
+
+    fn advance(&mut self) {
+        self.advance();
+    }
+
+    fn consume(&mut self, expected: Token) -> Result<(), String> {
+        self.consume(expected)
+    }
+
+    fn parse_logical_and(&mut self) -> Result<SqlExpression, String> {
+        self.parse_logical_and()
+    }
+
+    fn parse_base_logical_expression(&mut self) -> Result<SqlExpression, String> {
+        // This is the base for logical AND - it should parse comparison expressions
+        // to avoid infinite recursion with parse_expression
+        self.parse_comparison()
+    }
+
+    fn parse_comparison(&mut self) -> Result<SqlExpression, String> {
+        self.parse_comparison()
+    }
+
+    fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String> {
+        self.parse_expression_list()
+    }
+}
+
 fn is_sql_keyword(word: &str) -> bool {
     matches!(
         word.to_uppercase().as_str(),
@@ -3237,26 +3221,25 @@ mod tests {
 
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
-        assert_eq!(where_clause.conditions.len(), 2);
+        assert_eq!(where_clause.conditions.len(), 1); // Single expression tree
 
-        // First condition should be the parenthesized OR expression
-        if let SqlExpression::BinaryOp { op, .. } = &where_clause.conditions[0].expr {
-            assert_eq!(op, "OR");
+        // The root should be an AND expression
+        if let SqlExpression::BinaryOp { op, left, right } = &where_clause.conditions[0].expr {
+            assert_eq!(op, "AND");
+            // The left side should be the parenthesized OR expression
+            if let SqlExpression::BinaryOp { op, .. } = &**left {
+                assert_eq!(op, "OR");
+            } else {
+                panic!("Expected left side to be OR expression");
+            }
+            // The right side should be price > 100
+            if let SqlExpression::BinaryOp { op, .. } = &**right {
+                assert_eq!(op, ">");
+            } else {
+                panic!("Expected right side to be price > 100");
+            }
         } else {
-            panic!("Expected first condition to be OR expression");
-        }
-
-        // Should have AND connector to next condition
-        assert!(matches!(
-            where_clause.conditions[0].connector,
-            Some(LogicalOp::And)
-        ));
-
-        // Second condition should be price > 100
-        if let SqlExpression::BinaryOp { op, .. } = &where_clause.conditions[1].expr {
-            assert_eq!(op, ">");
-        } else {
-            panic!("Expected second condition to be price > 100");
+            panic!("Expected root to be AND expression");
         }
     }
 
@@ -3285,13 +3268,14 @@ mod tests {
 
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
-        assert_eq!(where_clause.conditions.len(), 2);
+        assert_eq!(where_clause.conditions.len(), 1); // Single expression tree
 
-        // First condition group should have OR
-        assert!(matches!(
-            where_clause.conditions[0].connector,
-            Some(LogicalOp::And)
-        ));
+        // Root should be AND connecting two groups
+        if let SqlExpression::BinaryOp { op, .. } = &where_clause.conditions[0].expr {
+            assert_eq!(op, "AND");
+        } else {
+            panic!("Expected root to be AND expression");
+        }
     }
 
     #[test]
@@ -3304,15 +3288,21 @@ mod tests {
 
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
-        assert_eq!(where_clause.conditions.len(), 2);
+        assert_eq!(where_clause.conditions.len(), 1); // Single expression tree
 
-        // First condition should be the OR of two method calls
-        if let SqlExpression::BinaryOp { op, left, right } = &where_clause.conditions[0].expr {
-            assert_eq!(op, "OR");
-            assert!(matches!(left.as_ref(), SqlExpression::MethodCall { .. }));
-            assert!(matches!(right.as_ref(), SqlExpression::MethodCall { .. }));
+        // Root should be AND, left should be OR of method calls
+        if let SqlExpression::BinaryOp { op, left, .. } = &where_clause.conditions[0].expr {
+            assert_eq!(op, "AND");
+            // Left side should be the OR of two method calls
+            if let SqlExpression::BinaryOp { op, left, right } = &**left {
+                assert_eq!(op, "OR");
+                assert!(matches!(left.as_ref(), SqlExpression::MethodCall { .. }));
+                assert!(matches!(right.as_ref(), SqlExpression::MethodCall { .. }));
+            } else {
+                panic!("Expected OR of method calls");
+            }
         } else {
-            panic!("Expected OR of method calls");
+            panic!("Expected AND expression");
         }
     }
 
@@ -3326,13 +3316,14 @@ mod tests {
 
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
-        assert_eq!(where_clause.conditions.len(), 2);
+        assert_eq!(where_clause.conditions.len(), 1); // Single expression tree
 
-        // Both condition groups should parse correctly
-        assert!(matches!(
-            where_clause.conditions[0].connector,
-            Some(LogicalOp::And)
-        ));
+        // Root should be AND connecting two groups
+        if let SqlExpression::BinaryOp { op, .. } = &where_clause.conditions[0].expr {
+            assert_eq!(op, "AND");
+        } else {
+            panic!("Expected root to be AND expression");
+        }
     }
 
     #[test]
@@ -3579,7 +3570,7 @@ mod tests {
 
         assert!(stmt.where_clause.is_some());
         let where_clause = stmt.where_clause.unwrap();
-        assert_eq!(where_clause.conditions.len(), 2); // Two conditions joined by AND
+        assert_eq!(where_clause.conditions.len(), 1); // Single expression tree with AND operator
     }
 
     #[test]

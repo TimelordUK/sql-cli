@@ -7,6 +7,7 @@ use tracing::{debug, trace};
 
 pub mod arithmetic;
 pub mod comparison;
+pub mod logical;
 pub mod primary;
 
 /// Trait for expression parsers

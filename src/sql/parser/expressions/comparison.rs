@@ -27,9 +27,9 @@ where
         );
 
         parser.advance(); // consume BETWEEN
-        let lower = parser.parse_primary()?;
+        let lower = parser.parse_additive()?;
         parser.consume(Token::And)?; // BETWEEN requires AND
-        let upper = parser.parse_primary()?;
+        let upper = parser.parse_additive()?;
 
         let result = Ok(SqlExpression::Between {
             expr: Box::new(left),

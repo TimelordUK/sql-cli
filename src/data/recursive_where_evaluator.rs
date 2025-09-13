@@ -275,29 +275,45 @@ impl<'a> RecursiveWhereEvaluator<'a> {
             return Ok(true);
         }
 
-        // Evaluate first condition
-        if row_index < 3 {
-            debug!(
-                "RecursiveWhereEvaluator: evaluate() - evaluating first condition for row {}",
-                row_index
-            );
-        }
-        let mut result = self.evaluate_condition(&where_clause.conditions[0], row_index)?;
-
-        // Apply connectors (AND/OR) with subsequent conditions
-        for i in 1..where_clause.conditions.len() {
-            let next_result = self.evaluate_condition(&where_clause.conditions[i], row_index)?;
-
-            // Use the connector from the previous condition
-            if let Some(connector) = &where_clause.conditions[i - 1].connector {
-                result = match connector {
-                    LogicalOp::And => result && next_result,
-                    LogicalOp::Or => result || next_result,
-                };
+        // With the new expression tree structure, we should have a single condition
+        // containing the entire WHERE clause expression tree
+        if where_clause.conditions.len() == 1 {
+            // New structure: single expression tree
+            if row_index < 3 {
+                debug!(
+                    "RecursiveWhereEvaluator: evaluate() - evaluating expression tree for row {}",
+                    row_index
+                );
             }
-        }
+            self.evaluate_condition(&where_clause.conditions[0], row_index)
+        } else {
+            // Legacy structure: multiple conditions with connectors
+            // This path is kept for backward compatibility
+            if row_index < 3 {
+                debug!(
+                    "RecursiveWhereEvaluator: evaluate() - evaluating {} conditions with connectors for row {}",
+                    where_clause.conditions.len(),
+                    row_index
+                );
+            }
+            let mut result = self.evaluate_condition(&where_clause.conditions[0], row_index)?;
 
-        Ok(result)
+            // Apply connectors (AND/OR) with subsequent conditions
+            for i in 1..where_clause.conditions.len() {
+                let next_result =
+                    self.evaluate_condition(&where_clause.conditions[i], row_index)?;
+
+                // Use the connector from the previous condition
+                if let Some(connector) = &where_clause.conditions[i - 1].connector {
+                    result = match connector {
+                        LogicalOp::And => result && next_result,
+                        LogicalOp::Or => result || next_result,
+                    };
+                }
+            }
+
+            Ok(result)
+        }
     }
 
     fn evaluate_condition(&self, condition: &Condition, row_index: usize) -> Result<bool> {

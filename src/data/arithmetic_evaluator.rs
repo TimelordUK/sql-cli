@@ -230,6 +230,17 @@ impl<'a> ArithmeticEvaluator<'a> {
             // IS NULL / IS NOT NULL operators
             "IS NULL" => Ok(DataValue::Boolean(matches!(left_val, DataValue::Null))),
             "IS NOT NULL" => Ok(DataValue::Boolean(!matches!(left_val, DataValue::Null))),
+            // Logical operators
+            "AND" => {
+                let left_bool = self.to_bool(&left_val)?;
+                let right_bool = self.to_bool(&right_val)?;
+                Ok(DataValue::Boolean(left_bool && right_bool))
+            }
+            "OR" => {
+                let left_bool = self.to_bool(&left_val)?;
+                let right_bool = self.to_bool(&right_val)?;
+                Ok(DataValue::Boolean(left_bool || right_bool))
+            }
             _ => Err(anyhow!("Unsupported arithmetic operator: {}", op)),
         }
     }
@@ -323,6 +334,17 @@ impl<'a> ArithmeticEvaluator<'a> {
             DataValue::Float(f) => f.to_string(),
             DataValue::String(s) => format!("'{s}'"),
             _ => format!("{value:?}"),
+        }
+    }
+
+    /// Convert a DataValue to boolean for logical operations
+    fn to_bool(&self, value: &DataValue) -> Result<bool> {
+        match value {
+            DataValue::Boolean(b) => Ok(*b),
+            DataValue::Integer(i) => Ok(*i != 0),
+            DataValue::Float(f) => Ok(*f != 0.0),
+            DataValue::Null => Ok(false),
+            _ => Err(anyhow!("Cannot convert {:?} to boolean", value)),
         }
     }
 
