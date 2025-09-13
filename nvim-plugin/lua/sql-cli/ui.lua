@@ -238,18 +238,20 @@ function M.setup_output_highlighting(state, enable_nav)
     vim.cmd([[syntax match SqlCliCurrency /[$£€¥₹¤]\S*/]])
     vim.cmd([[syntax match SqlCliCurrency /\S*\s\+\(USD\|EUR\|GBP\|JPY\|CHF\|CNY\|INR\|AUD\|CAD\|SEK\|NOK\|DKK\)\>/]])
 
-    -- Compact numbers with suffix (must come before plain numbers)
-    vim.cmd([[syntax match SqlCliCompactNumber /\<\d\+\(\.\d\+\)\?[kMBT]\>/]])
+    -- Number patterns - order matters for precedence
+    -- Use 'contained' and 'contains=NONE' to prevent overlapping matches
 
-    -- Formatted numbers with thousand separators (1,234.56 or 1.234,56 or 1'234.56)
-    vim.cmd([[syntax match SqlCliFormattedNumber /\<\d\{1,3\}\([,.']\d\{3\}\)\+\(\.\d\+\)\?\>/]])
-    vim.cmd([[syntax match SqlCliFormattedNumber /\<\d\{1,3\}\([,.']\d\{3\}\)\+\(,\d\+\)\?\>/]])
+    -- Compact numbers (1.5k, 2M, etc) - highest priority
+    vim.cmd([[syntax match SqlCliCompactNumber /\v\d+\.?\d*[kMBT]/ contains=NONE]])
 
-    -- Plain decimal numbers (including simple decimals like 2.345)
-    vim.cmd([[syntax match SqlCliNumber /\<\d\+\.\d\+\>/]])
+    -- Numbers with thousand separators (1,234.56)
+    vim.cmd([[syntax match SqlCliFormattedNumber /\v\d{1,3}([,.']\d{3})+\.?\d*/ contains=NONE]])
 
-    -- Plain integers (lowest priority)
-    vim.cmd([[syntax match SqlCliNumber /\<\d\+\>/]])
+    -- Decimal numbers (must have decimal point)
+    vim.cmd([[syntax match SqlCliDecimalNumber /\v\d+\.\d+/ contains=NONE]])
+
+    -- Plain integers
+    vim.cmd([[syntax match SqlCliNumber /\v\d+/ contains=NONE]])
 
     -- Special values
     vim.cmd([[syntax match SqlCliNull /\<NULL\>/]])
@@ -267,6 +269,7 @@ function M.setup_output_highlighting(state, enable_nav)
 
     -- Numbers and currency with distinct colors
     vim.cmd([[highlight SqlCliNumber guifg=#bd93f9 ctermfg=141]])
+    vim.cmd([[highlight SqlCliDecimalNumber guifg=#bd93f9 ctermfg=141]])
     vim.cmd([[highlight SqlCliFormattedNumber guifg=#bd93f9 ctermfg=141]])
     vim.cmd([[highlight SqlCliCompactNumber guifg=#ff79c6 ctermfg=212]])
     vim.cmd([[highlight SqlCliCurrency guifg=#50fa7b ctermfg=84]])
