@@ -12,13 +12,45 @@ local function parse_table_structure(lines)
     data_end = nil,
     columns = {},
     column_positions = {},
-    style = nil -- "box" for ┌─┐ style, "pipe" for | style
+    style = nil -- "ascii" for +---+ style, "box" for ┌─┐ style, "pipe" for | style
   }
+
+  local found_table = false
 
   -- Detect table style and find header
   for i, line in ipairs(lines) do
+    -- Skip empty lines and header comments
+    if line:match("^%-%-") or line:match("^#") or line:match("^%s*$") then
+      -- Skip comments and empty lines
+    -- ASCII table style with +---+---+ borders (MOST COMMON)
+    elseif line:match("^%+%-") then
+      found_table = true
+      table_info.style = "ascii"
+
+      if not table_info.header_row then
+        -- First +--- line is the top border
+        -- Next line should be the header
+        if i < #lines and lines[i+1]:match("^|") then
+          table_info.header_row = i + 1
+          -- Look for separator after header
+          if i + 2 <= #lines and lines[i+2]:match("^%+%-") then
+            table_info.separator_row = i + 2
+            table_info.data_start = i + 3
+          end
+        end
+      elseif table_info.separator_row and i == table_info.separator_row then
+        -- This is the separator row, skip it
+      elseif table_info.data_start and not table_info.data_end then
+        -- This is the bottom border after we've started reading data
+        table_info.data_end = i - 1
+        break
+      end
+    -- Data rows in ASCII table
+    elseif table_info.data_start and line:match("^|") then
+      -- Keep tracking data rows (data_end will be set when we hit the bottom border)
     -- Box drawing style
-    if line:match("^┌") or line:match("^├") or line:match("^└") then
+    elseif line:match("^┌") or line:match("^├") or line:match("^└") then
+      found_table = true
       table_info.style = "box"
       if line:match("^├") and not table_info.separator_row then
         table_info.separator_row = i
@@ -28,25 +60,55 @@ local function parse_table_structure(lines)
         table_info.data_end = i - 1
         break
       end
-    -- Pipe style with separator
-    elseif line:match("^|%-") then
-      table_info.style = "pipe"
-      table_info.separator_row = i
-      table_info.header_row = i - 1
-      table_info.data_start = i + 1
-    -- Pipe style data rows
-    elseif line:match("^|") and table_info.style == "pipe" and not table_info.data_end then
-      -- Continue until we find a non-table line
-      if not lines[i + 1] or not lines[i + 1]:match("^|") then
-        table_info.data_end = i
+    -- Simple pipe style (most common from sql-cli)
+    elseif line:match("^%s*|") then
+      found_table = true
+      if not table_info.style then
+        table_info.style = "pipe"
+        -- Look for header separator line
+        if i < #lines and lines[i+1]:match("^%s*|%-") then
+          table_info.header_row = i
+          table_info.separator_row = i + 1
+          table_info.data_start = i + 2
+        elseif not table_info.header_row then
+          -- Assume first pipe line is header if no separator found yet
+          table_info.header_row = i
+        end
+      end
+      -- Track data rows
+      if table_info.data_start and i >= table_info.data_start then
+        -- Keep tracking until we find a non-table line
+        if i == #lines or (lines[i + 1] and not lines[i + 1]:match("^%s*|")) then
+          table_info.data_end = i
+        end
       end
     -- Regular pipe style (no separator)
-    elseif line:match("^│") and table_info.style == "box" then
+    elseif line:match("^│") then
+      found_table = true
+      if not table_info.style then
+        table_info.style = "box"
+      end
       if not table_info.header_row and i > 1 then
         -- This might be the header if previous line was ┌───┐
         if lines[i-1]:match("^┌") then
           table_info.header_row = i
         end
+      end
+    end
+  end
+
+  -- If we didn't find a proper data section, try to infer it
+  if found_table and table_info.header_row and not table_info.data_start then
+    table_info.data_start = table_info.separator_row and (table_info.separator_row + 1) or (table_info.header_row + 1)
+    -- Find data end
+    for i = table_info.data_start, #lines do
+      if table_info.style == "pipe" and lines[i]:match("^%s*|") then
+        table_info.data_end = i
+      elseif table_info.style == "box" and lines[i]:match("^│") then
+        table_info.data_end = i
+      elseif lines[i]:match("^└") or lines[i]:match("^%-%-") then
+        table_info.data_end = i - 1
+        break
       end
     end
   end
@@ -65,14 +127,19 @@ local function parse_table_structure(lines)
       if pos < #header_line then
         table.insert(table_info.column_positions, {start = pos, stop = #header_line})
       end
-    else
-      -- Pipe style - find columns by | separators
-      local pos = 1
-      for col_start, col_end in header_line:gmatch("()|()") do
-        if pos > 1 then -- Skip first pipe
-          table.insert(table_info.column_positions, {start = pos, stop = col_start - 1})
-        end
-        pos = col_end
+    elseif table_info.style == "ascii" or table_info.style == "pipe" then
+      -- ASCII/Pipe style - find columns by | separators
+      local positions = {}
+      for pos in header_line:gmatch("()|") do
+        table.insert(positions, pos)
+      end
+
+      -- Create column ranges from pipe positions
+      for i = 1, #positions - 1 do
+        table.insert(table_info.column_positions, {
+          start = positions[i] + 1,  -- Skip the | character
+          stop = positions[i + 1] - 1 -- Stop before next |
+        })
       end
     end
 
@@ -149,8 +216,20 @@ function M.init_navigation(bufnr)
     -- Debug output to see what we're parsing
     vim.notify("No table found in buffer. Buffer has " .. #lines .. " lines", vim.log.levels.WARN)
     if #lines > 0 then
-      vim.notify("First line: " .. lines[1]:sub(1, 50), vim.log.levels.INFO)
-      vim.notify("Looking for table patterns like ┌, ├, │, or |", vim.log.levels.INFO)
+      -- Show first few non-empty lines
+      local shown = 0
+      for i = 1, math.min(#lines, 20) do
+        if lines[i] and lines[i] ~= "" and not lines[i]:match("^%-%-") then
+          vim.notify("Line " .. i .. ": " .. lines[i]:sub(1, 60), vim.log.levels.INFO)
+          shown = shown + 1
+          if shown >= 5 then break end
+        end
+      end
+      vim.notify("Table info: header=" .. tostring(nav_state.table_info.header_row) ..
+                 ", data_start=" .. tostring(nav_state.table_info.data_start) ..
+                 ", data_end=" .. tostring(nav_state.table_info.data_end) ..
+                 ", style=" .. tostring(nav_state.table_info.style) ..
+                 ", columns=" .. #nav_state.table_info.columns, vim.log.levels.INFO)
     end
     return false
   end
@@ -194,9 +273,12 @@ function M.toggle_navigation(bufnr)
     M.disable_navigation()
     vim.notify("Table navigation disabled", vim.log.levels.INFO)
   else
+    vim.notify("Looking for table patterns like +---, ┌, ├, │, or |", vim.log.levels.INFO)
     if M.init_navigation(bufnr) then
       M.setup_keymaps(bufnr)
       vim.notify("Table navigation enabled - " .. M.get_status(), vim.log.levels.INFO)
+    else
+      vim.notify("Could not find a table in the buffer. Tables should have ASCII borders (+---+) or box drawing characters.", vim.log.levels.WARN)
     end
   end
 end
