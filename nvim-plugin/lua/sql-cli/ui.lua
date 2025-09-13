@@ -44,9 +44,10 @@ function M.create_output_window(config, state)
   vim.bo[output_buf].buftype = "nofile"
   vim.bo[output_buf].bufhidden = "hide"
   vim.bo[output_buf].swapfile = false
-  vim.bo[output_buf].filetype = "sql-cli-output"
+  vim.bo[output_buf].filetype = ""  -- No filetype to prevent unwanted syntax
+  vim.bo[output_buf].syntax = ""    -- Clear any syntax
 
-  -- Apply syntax highlighting
+  -- Apply our custom syntax highlighting
   M.setup_output_highlighting(state)
 
   -- Set window options
@@ -216,52 +217,68 @@ function M.setup_output_highlighting(state, enable_nav)
 
   -- Apply highlighting in the output buffer
   vim.api.nvim_buf_call(output_buf, function()
-    -- Header highlighting
+    -- Clear any existing syntax first
+    vim.cmd([[syntax clear]])
+
+    -- Header and metadata
     vim.cmd([[syntax match SqlCliHeader /^--.*$/]])
-    vim.cmd([[syntax match SqlCliSeparator /^-\+$/]])
-
-    -- Table borders and structure
-    vim.cmd([[syntax match SqlCliTableBorder /[│├┤┌┐└┘─┬┴┼]/]])
-    vim.cmd([[syntax match SqlCliTablePipe /|/]])
-
-    -- Numbers
-    vim.cmd([[syntax match SqlCliNumber /\<\d\+\(\.\d\+\)\?\>/]])
-
-    -- NULL values
-    vim.cmd([[syntax match SqlCliNull /\<NULL\>/]])
-
-    -- Booleans
-    vim.cmd([[syntax match SqlCliBoolean /\<\(true\|false\|TRUE\|FALSE\)\>/]])
-
-    -- Error messages
-    vim.cmd([[syntax match SqlCliError /^ERROR:.*$/]])
-    vim.cmd([[syntax match SqlCliError /Error:.*$/]])
-    vim.cmd([[syntax match SqlCliError /failed.*$/]])
-
-    -- Success messages (like "# Query completed: 10 rows in 906.909µs")
-    vim.cmd([[syntax match SqlCliSuccess /^#.*Query completed:.*$/]])
-    vim.cmd([[syntax match SqlCliSuccess /.*rows in.*µs$/]])
-    vim.cmd([[syntax match SqlCliSuccess /^#.*$/]])
-
-    -- Exit code line
+    vim.cmd([[syntax match SqlCliSeparator /^[-─═]\+$/]])
     vim.cmd([[syntax match SqlCliExitCode /^-- Exit code:.*$/]])
 
-    -- CSV values (quoted strings)
+    -- Table structure - must come before other patterns
+    vim.cmd([[syntax match SqlCliTableBorder /[│├┤┌┐└┘─┬┴┼═╪╫╬]/]])
+    vim.cmd([[syntax match SqlCliTablePipe /|/]])
+
+    -- Success/Error messages - high priority
+    vim.cmd([[syntax match SqlCliSuccess /^#.*Query completed:.*$/]])
+    vim.cmd([[syntax match SqlCliError /^ERROR:.*$/]])
+    vim.cmd([[syntax match SqlCliError /Error:.*$/]])
+
+    -- Currency symbols and formatted money (high priority, before numbers)
+    vim.cmd([[syntax match SqlCliCurrency /[$£€¥₹¤]\S*/]])
+    vim.cmd([[syntax match SqlCliCurrency /\S*\s\+\(USD\|EUR\|GBP\|JPY\|CHF\|CNY\|INR\|AUD\|CAD\|SEK\|NOK\|DKK\)/]])
+
+    -- Formatted numbers with separators (1,234.56 or 1.234,56 or 1'234.56)
+    vim.cmd([[syntax match SqlCliFormattedNumber /\d\{1,3\}\([,.']\d\{3\}\)*\(\.\d\+\)\?/]])
+    vim.cmd([[syntax match SqlCliFormattedNumber /\d\{1,3\}\([,.']\d\{3\}\)*\(,\d\+\)\?/]])
+
+    -- Compact numbers (1.5k, 2.3M, etc)
+    vim.cmd([[syntax match SqlCliCompactNumber /\d\+\(\.\d\+\)\?[kMBT]/]])
+
+    -- Plain numbers (lower priority)
+    vim.cmd([[syntax match SqlCliNumber /\<\d\+\(\.\d\+\)\?\>/]])
+
+    -- Special values
+    vim.cmd([[syntax match SqlCliNull /\<NULL\>/]])
+    vim.cmd([[syntax match SqlCliBoolean /\<\(true\|false\|TRUE\|FALSE\)\>/]])
+
+    -- Quoted strings (lowest priority)
     vim.cmd([[syntax match SqlCliString /"[^"]*"/]])
     vim.cmd([[syntax match SqlCliString /'[^']*'/]])
 
-    -- Set highlight colors
-    vim.cmd([[highlight SqlCliHeader guifg=#6272a4 ctermfg=8]])
-    vim.cmd([[highlight SqlCliSeparator guifg=#44475a ctermfg=8]])
-    vim.cmd([[highlight SqlCliTableBorder guifg=#8be9fd ctermfg=14]])
-    vim.cmd([[highlight SqlCliTablePipe guifg=#8be9fd ctermfg=14]])
-    vim.cmd([[highlight SqlCliNumber guifg=#bd93f9 ctermfg=13]])
-    vim.cmd([[highlight SqlCliNull guifg=#ff79c6 ctermfg=5]])
-    vim.cmd([[highlight SqlCliBoolean guifg=#50fa7b ctermfg=10]])
-    vim.cmd([[highlight SqlCliError guifg=#ff5555 ctermfg=9]])
-    vim.cmd([[highlight SqlCliSuccess guifg=#50fa7b ctermfg=10]])  -- Green for success
-    vim.cmd([[highlight SqlCliExitCode guifg=#f8f8f2 ctermfg=7]])
-    vim.cmd([[highlight SqlCliString guifg=#f1fa8c ctermfg=11]])
+    -- Define highlight colors with better contrast
+    vim.cmd([[highlight SqlCliHeader guifg=#6272a4 ctermfg=60]])
+    vim.cmd([[highlight SqlCliSeparator guifg=#44475a ctermfg=238]])
+    vim.cmd([[highlight SqlCliTableBorder guifg=#6272a4 ctermfg=61]])
+    vim.cmd([[highlight SqlCliTablePipe guifg=#6272a4 ctermfg=61]])
+
+    -- Numbers and currency with distinct colors
+    vim.cmd([[highlight SqlCliNumber guifg=#bd93f9 ctermfg=141]])
+    vim.cmd([[highlight SqlCliFormattedNumber guifg=#bd93f9 ctermfg=141]])
+    vim.cmd([[highlight SqlCliCompactNumber guifg=#ff79c6 ctermfg=212]])
+    vim.cmd([[highlight SqlCliCurrency guifg=#50fa7b ctermfg=84]])
+
+    -- Special values
+    vim.cmd([[highlight SqlCliNull guifg=#ff79c6 ctermfg=212 gui=italic cterm=italic]])
+    vim.cmd([[highlight SqlCliBoolean guifg=#8be9fd ctermfg=117]])
+
+    -- Status messages
+    vim.cmd([[highlight SqlCliError guifg=#ff5555 ctermfg=203 gui=bold cterm=bold]])
+    vim.cmd([[highlight SqlCliSuccess guifg=#50fa7b ctermfg=84]])
+    vim.cmd([[highlight SqlCliExitCode guifg=#6272a4 ctermfg=60]])
+
+    -- Strings with subdued color
+    vim.cmd([[highlight SqlCliString guifg=#f1fa8c ctermfg=228]])
   end)
 
   -- Note: Table navigation is now enabled in executor.lua after query completes
