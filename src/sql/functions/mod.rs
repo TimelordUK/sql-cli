@@ -12,6 +12,7 @@ pub mod constants;
 pub mod convert;
 pub mod date_time;
 pub mod format;
+pub mod format_number;
 pub mod geometry;
 pub mod group_num;
 pub mod hash;
@@ -579,12 +580,15 @@ impl FunctionRegistry {
         use format::{
             CenterFunction, FormatDateFunction, FormatNumberFunction, LPadFunction, RPadFunction,
         };
+        use format_number::{FormatCurrencyFunction, RenderNumberFunction};
 
         self.register(Box::new(FormatNumberFunction));
         self.register(Box::new(FormatDateFunction));
         self.register(Box::new(LPadFunction));
         self.register(Box::new(RPadFunction));
         self.register(Box::new(CenterFunction));
+        self.register(Box::new(RenderNumberFunction));
+        self.register(Box::new(FormatCurrencyFunction));
     }
 
     /// Register type checking functions
