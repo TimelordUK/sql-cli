@@ -1,4 +1,4 @@
--- #! .. data/international_sales.csv
+-- #! ../data/international_sales.csv
 -- RENDER_NUMBER Function Examples
 -- Demonstrates various number formatting options
 -- data: data/international_sales.csv
@@ -11,37 +11,37 @@ SELECT
 FROM international_sales
 WHERE region = 'North America'
 LIMIT 5;
+GO
 
--- Compact notation for large numbers
-SELECT
-    product,
-    amount * quantity as total_value,
-    RENDER_NUMBER(amount * quantity, 'compact') as compact_format
-FROM international_sales
-WHERE amount * quantity > 10000
-ORDER BY amount * quantity DESC
+WITH
+    valued_sales AS (
+        SELECT *, amount * quantity AS total_value
+        FROM international_sales
+    )
+SELECT product, total_value, RENDER_NUMBER(total_value, 'compact') AS compact_format
+FROM valued_sales
+WHERE total_value > 10000
+ORDER BY total_value DESC
 LIMIT 5;
+GO
 
--- European formatting (period for thousands, comma for decimal)
-SELECT
-    country,
-    amount,
-    RENDER_NUMBER(amount, 'eu') as european_format
+SELECT country, amount, RENDER_NUMBER(amount, 'eu') AS european_format
 FROM international_sales
 WHERE region = 'Europe'
 LIMIT 5;
+GO
 
--- Comparing different formats side by side
 SELECT
     amount,
-    RENDER_NUMBER(amount) as standard,
-    RENDER_NUMBER(amount, 'compact') as compact,
-    RENDER_NUMBER(amount, 'eu') as european,
-    RENDER_NUMBER(amount, 'ch') as swiss,
-    RENDER_NUMBER(amount, 'in') as indian
+    RENDER_NUMBER(amount) AS standard,
+    RENDER_NUMBER(amount, 'compact') AS compact,
+    RENDER_NUMBER(amount, 'eu') AS european,
+    RENDER_NUMBER(amount, 'ch') AS swiss,
+    RENDER_NUMBER(amount, 'in') AS indian
 FROM international_sales
 WHERE amount > 10000
 LIMIT 3;
+GO
 
 -- Aggregated data with compact formatting
 SELECT
@@ -51,6 +51,7 @@ SELECT
 FROM international_sales
 GROUP BY region
 ORDER BY total_sales DESC;
+GO
 
 -- Using different decimal precision
 SELECT
@@ -61,15 +62,22 @@ SELECT
     RENDER_NUMBER(AVG(amount), 'standard', 3) as three_decimals
 FROM international_sales
 GROUP BY product;
+GO
 
 -- Compact notation with custom precision
+WITH
+    valued_sales AS (
+        SELECT *, amount * quantity AS total_value
+        FROM international_sales
+    )
 SELECT
     country,
-    SUM(amount * quantity) as total,
-    RENDER_NUMBER(SUM(amount * quantity), 'compact', 0) as compact_no_dec,
-    RENDER_NUMBER(SUM(amount * quantity), 'compact', 1) as compact_one_dec,
-    RENDER_NUMBER(SUM(amount * quantity), 'compact', 2) as compact_two_dec
-FROM international_sales
+    SUM(total_value) as total,
+    RENDER_NUMBER(SUM(total_value), 'compact', 0) as compact_no_dec,
+    RENDER_NUMBER(SUM(total_value), 'compact', 1) as compact_one_dec,
+    RENDER_NUMBER(SUM(total_value), 'compact', 2) as compact_two_dec
+FROM valued_sales
 GROUP BY country
-HAVING SUM(amount * quantity) > 20000
+HAVING total > 20000  -- Note: Use alias 'total' instead of SUM(total_value)
 ORDER BY total DESC;
+GO

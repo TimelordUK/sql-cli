@@ -236,17 +236,20 @@ function M.setup_output_highlighting(state, enable_nav)
 
     -- Currency symbols and formatted money (high priority, before numbers)
     vim.cmd([[syntax match SqlCliCurrency /[$£€¥₹¤]\S*/]])
-    vim.cmd([[syntax match SqlCliCurrency /\S*\s\+\(USD\|EUR\|GBP\|JPY\|CHF\|CNY\|INR\|AUD\|CAD\|SEK\|NOK\|DKK\)/]])
+    vim.cmd([[syntax match SqlCliCurrency /\S*\s\+\(USD\|EUR\|GBP\|JPY\|CHF\|CNY\|INR\|AUD\|CAD\|SEK\|NOK\|DKK\)\>/]])
 
-    -- Formatted numbers with separators (1,234.56 or 1.234,56 or 1'234.56)
-    vim.cmd([[syntax match SqlCliFormattedNumber /\d\{1,3\}\([,.']\d\{3\}\)*\(\.\d\+\)\?/]])
-    vim.cmd([[syntax match SqlCliFormattedNumber /\d\{1,3\}\([,.']\d\{3\}\)*\(,\d\+\)\?/]])
+    -- Compact numbers with suffix (must come before plain numbers)
+    vim.cmd([[syntax match SqlCliCompactNumber /\<\d\+\(\.\d\+\)\?[kMBT]\>/]])
 
-    -- Compact numbers (1.5k, 2.3M, etc)
-    vim.cmd([[syntax match SqlCliCompactNumber /\d\+\(\.\d\+\)\?[kMBT]/]])
+    -- Formatted numbers with thousand separators (1,234.56 or 1.234,56 or 1'234.56)
+    vim.cmd([[syntax match SqlCliFormattedNumber /\<\d\{1,3\}\([,.']\d\{3\}\)\+\(\.\d\+\)\?\>/]])
+    vim.cmd([[syntax match SqlCliFormattedNumber /\<\d\{1,3\}\([,.']\d\{3\}\)\+\(,\d\+\)\?\>/]])
 
-    -- Plain numbers (lower priority)
-    vim.cmd([[syntax match SqlCliNumber /\<\d\+\(\.\d\+\)\?\>/]])
+    -- Plain decimal numbers (including simple decimals like 2.345)
+    vim.cmd([[syntax match SqlCliNumber /\<\d\+\.\d\+\>/]])
+
+    -- Plain integers (lowest priority)
+    vim.cmd([[syntax match SqlCliNumber /\<\d\+\>/]])
 
     -- Special values
     vim.cmd([[syntax match SqlCliNull /\<NULL\>/]])
