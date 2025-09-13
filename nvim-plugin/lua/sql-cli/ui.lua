@@ -264,16 +264,8 @@ function M.setup_output_highlighting(state, enable_nav)
     vim.cmd([[highlight SqlCliString guifg=#f1fa8c ctermfg=11]])
   end)
 
-  -- Enable table navigation if requested
-  if enable_nav ~= false then -- Default to true
-    -- Delay slightly to ensure buffer is populated
-    vim.defer_fn(function()
-      if table_nav.init_navigation(output_buf) then
-        table_nav.setup_keymaps(output_buf)
-        vim.notify("Table navigation enabled (h/j/k/l to move, yy to yank)", vim.log.levels.INFO)
-      end
-    end, 100)
-  end
+  -- Note: Table navigation is now enabled in executor.lua after query completes
+  -- This ensures the buffer is fully populated with results
 end
 
 return M

@@ -445,11 +445,27 @@ function M.run_command(query, show_plan, config, state)
           -- Enable table navigation for results
           if output_buf and vim.api.nvim_buf_is_valid(output_buf) then
             vim.defer_fn(function()
-              if table_nav.init_navigation(output_buf) then
-                table_nav.setup_keymaps(output_buf)
-                vim.notify("Table navigation enabled (h/j/k/l to move, yy to yank)", vim.log.levels.INFO)
+              -- Double-check buffer still exists and has content
+              if not vim.api.nvim_buf_is_valid(output_buf) then
+                return
               end
-            end, 200) -- Small delay to ensure buffer is fully populated
+
+              local lines = vim.api.nvim_buf_get_lines(output_buf, 0, -1, false)
+              if #lines > 5 then -- Make sure we have some content
+                if table_nav.init_navigation(output_buf) then
+                  table_nav.setup_keymaps(output_buf)
+                  vim.notify("Table navigation enabled (h/j/k/l to move, yy to yank)", vim.log.levels.INFO)
+                else
+                  -- Debug: show what we're seeing
+                  if config.debug then
+                    vim.notify("Table nav failed. First 10 lines:", vim.log.levels.WARN)
+                    for i = 1, math.min(10, #lines) do
+                      vim.notify("  Line " .. i .. ": " .. lines[i]:sub(1, 50), vim.log.levels.WARN)
+                    end
+                  end
+                end
+              end
+            end, 500) -- Increased delay to ensure buffer is fully populated
           end
         else
           vim.notify("Query failed with exit code: " .. exit_code, vim.log.levels.ERROR)
