@@ -57,16 +57,18 @@ src/sql/parser/
 
 **Result**: Reduced main parser from 4,598 to 3,933 lines (665 lines removed, 14.5% reduction)
 
-### 🔄 Phase 2: Extract Expression Parsing (Next Priority)
-- [ ] Create `expressions/` module structure
-- [ ] Extract `primary.rs` - literals, identifiers, function calls
+### 🔄 Phase 2: Extract Expression Parsing (In Progress)
+- [x] Create `expressions/` module structure
+- [x] Extract `primary.rs` - literals, identifiers, function calls (~280 lines)
+- [x] Add debug/trace logging infrastructure
+- [x] Create expression trait/interface for clean API (ParsePrimary trait)
 - [ ] Extract `arithmetic.rs` - additive, multiplicative expressions
 - [ ] Extract `comparison.rs` - comparison operators, BETWEEN, IN, LIKE
 - [ ] Extract `logical.rs` - AND, OR, NOT operations
 - [ ] Extract `case.rs` - CASE/WHEN expressions
-- [ ] Create expression trait/interface for clean API
 
-**Expected reduction**: ~800 lines
+**Progress**: Primary expressions extracted and tested
+**Reduction so far**: ~220 lines moved to modular structure
 
 ### 🔄 Phase 3: Extract Statement Components
 - [ ] Create `statements/` module structure
@@ -118,7 +120,8 @@ src/sql/parser/
 |-------|--------|------------|----------------|----------------|
 | Initial | ❌ | 0 | 4,598 | - |
 | Phase 1 | ✅ | 665 | 3,933 | Dec 12, 2024 |
-| Phase 2 | 🔄 | - | - | - |
+| Phase 2.1 | ✅ | 220 | 3,713 | Dec 13, 2024 |
+| Phase 2.2 | 🔄 | - | - | - |
 | Phase 3 | ⏳ | - | - | - |
 | Phase 4 | ⏳ | - | - | - |
 | Phase 5 | ⏳ | - | - | - |

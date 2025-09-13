@@ -11,6 +11,11 @@ pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, Sql
 pub use super::parser::lexer::{Lexer, Token};
 pub use super::parser::ParserConfig;
 
+// Import the new expression modules
+use super::parser::expressions::primary::{
+    parse_primary as parse_primary_expr, ParsePrimary, PrimaryExpressionContext,
+};
+
 pub struct Parser {
     lexer: Lexer,
     current_token: Token,
@@ -1066,225 +1071,18 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<SqlExpression, String> {
-        // Special case: check if a number literal could actually be a column name
-        // This handles cases where columns are named with pure numbers like "202204"
-        if let Token::NumberLiteral(num_str) = &self.current_token {
-            // Check if this number matches a known column name
-            if self.columns.iter().any(|col| col == num_str) {
-                let expr = SqlExpression::Column(num_str.clone());
-                self.advance();
-                return Ok(expr);
-            }
-        }
-
-        match &self.current_token {
-            Token::Case => {
-                // Parse CASE expression
-                self.parse_case_expression()
-            }
-            Token::DateTime => {
-                self.advance(); // consume DateTime
-                self.consume(Token::LeftParen)?;
-
-                // Check if empty parentheses for DateTime() - today's date
-                if matches!(&self.current_token, Token::RightParen) {
-                    self.advance(); // consume )
-                    return Ok(SqlExpression::DateTimeToday {
-                        hour: None,
-                        minute: None,
-                        second: None,
-                    });
-                }
-
-                // Parse year
-                let year = if let Token::NumberLiteral(n) = &self.current_token {
-                    n.parse::<i32>().map_err(|_| "Invalid year")?
-                } else {
-                    return Err("Expected year in DateTime constructor".to_string());
-                };
-                self.advance();
-                self.consume(Token::Comma)?;
-
-                // Parse month
-                let month = if let Token::NumberLiteral(n) = &self.current_token {
-                    n.parse::<u32>().map_err(|_| "Invalid month")?
-                } else {
-                    return Err("Expected month in DateTime constructor".to_string());
-                };
-                self.advance();
-                self.consume(Token::Comma)?;
-
-                // Parse day
-                let day = if let Token::NumberLiteral(n) = &self.current_token {
-                    n.parse::<u32>().map_err(|_| "Invalid day")?
-                } else {
-                    return Err("Expected day in DateTime constructor".to_string());
-                };
-                self.advance();
-
-                // Check for optional time components
-                let mut hour = None;
-                let mut minute = None;
-                let mut second = None;
-
-                if matches!(&self.current_token, Token::Comma) {
-                    self.advance(); // consume comma
-
-                    // Parse hour
-                    if let Token::NumberLiteral(n) = &self.current_token {
-                        hour = Some(n.parse::<u32>().map_err(|_| "Invalid hour")?);
-                        self.advance();
-
-                        // Check for minute
-                        if matches!(&self.current_token, Token::Comma) {
-                            self.advance(); // consume comma
-
-                            if let Token::NumberLiteral(n) = &self.current_token {
-                                minute = Some(n.parse::<u32>().map_err(|_| "Invalid minute")?);
-                                self.advance();
-
-                                // Check for second
-                                if matches!(&self.current_token, Token::Comma) {
-                                    self.advance(); // consume comma
-
-                                    if let Token::NumberLiteral(n) = &self.current_token {
-                                        second =
-                                            Some(n.parse::<u32>().map_err(|_| "Invalid second")?);
-                                        self.advance();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                self.consume(Token::RightParen)?;
-                Ok(SqlExpression::DateTimeConstructor {
-                    year,
-                    month,
-                    day,
-                    hour,
-                    minute,
-                    second,
-                })
-            }
-            Token::Identifier(id) => {
-                let id_upper = id.to_uppercase();
-                let id_clone = id.clone();
-
-                // Check for boolean literals first
-                if id_upper == "TRUE" {
-                    self.advance();
-                    return Ok(SqlExpression::BooleanLiteral(true));
-                } else if id_upper == "FALSE" {
-                    self.advance();
-                    return Ok(SqlExpression::BooleanLiteral(false));
-                }
-
-                self.advance();
-
-                // Check if this is a function call (identifier followed by parenthesis)
-                if matches!(self.current_token, Token::LeftParen) {
-                    // Treat any identifier followed by () as a potential function call
-                    // The evaluator will validate if it's a known function
-                    self.advance(); // consume (
-                    let (args, has_distinct) = self.parse_function_args()?;
-                    self.consume(Token::RightParen)?;
-
-                    // Check for OVER clause for window functions
-                    if matches!(self.current_token, Token::Over) {
-                        self.advance(); // consume OVER
-                        self.consume(Token::LeftParen)?;
-                        let window_spec = self.parse_window_spec()?;
-                        self.consume(Token::RightParen)?;
-                        return Ok(SqlExpression::WindowFunction {
-                            name: id_upper,
-                            args,
-                            window_spec,
-                        });
-                    }
-
-                    return Ok(SqlExpression::FunctionCall {
-                        name: id_upper,
-                        args,
-                        distinct: has_distinct,
-                    });
-                }
-
-                // Otherwise treat as column
-                Ok(SqlExpression::Column(id_clone))
-            }
-            Token::QuotedIdentifier(id) => {
-                // If we're in method arguments, treat quoted identifiers as string literals
-                // This handles cases like Country.Contains("Alb") where "Alb" should be a string
-                let expr = if self.in_method_args {
-                    SqlExpression::StringLiteral(id.clone())
-                } else {
-                    // Otherwise it's a column name like "Customer Id"
-                    SqlExpression::Column(id.clone())
-                };
-                self.advance();
-                Ok(expr)
-            }
-            Token::StringLiteral(s) => {
-                let expr = SqlExpression::StringLiteral(s.clone());
-                self.advance();
-                Ok(expr)
-            }
-            Token::NumberLiteral(n) => {
-                let expr = SqlExpression::NumberLiteral(n.clone());
-                self.advance();
-                Ok(expr)
-            }
-            Token::Null => {
-                self.advance();
-                Ok(SqlExpression::Null)
-            }
-            Token::LeftParen => {
-                self.advance();
-
-                // Parse a parenthesized expression which might contain logical operators
-                // We need to handle cases like (a OR b) as a single expression
-                let expr = self.parse_logical_or()?;
-
-                self.consume(Token::RightParen)?;
-                Ok(expr)
-            }
-            Token::Not => {
-                self.advance(); // consume NOT
-
-                // Check if this is a NOT IN expression
-                if let Ok(inner_expr) = self.parse_comparison() {
-                    // After parsing the inner expression, check if we're followed by IN
-                    if matches!(self.current_token, Token::In) {
-                        self.advance(); // consume IN
-                        self.consume(Token::LeftParen)?;
-                        let values = self.parse_expression_list()?;
-                        self.consume(Token::RightParen)?;
-
-                        Ok(SqlExpression::NotInList {
-                            expr: Box::new(inner_expr),
-                            values,
-                        })
-                    } else {
-                        // Regular NOT expression
-                        Ok(SqlExpression::Not {
-                            expr: Box::new(inner_expr),
-                        })
-                    }
-                } else {
-                    Err("Expected expression after NOT".to_string())
-                }
-            }
-            Token::Star => {
-                // Handle * as a literal (like in COUNT(*))
-                self.advance();
-                Ok(SqlExpression::StringLiteral("*".to_string()))
-            }
-            _ => Err(format!("Unexpected token: {:?}", self.current_token)),
-        }
+        // Use the new modular primary expression parser
+        // Clone the necessary data to avoid borrowing issues
+        let columns = self.columns.clone();
+        let in_method_args = self.in_method_args;
+        let ctx = PrimaryExpressionContext {
+            columns: &columns,
+            in_method_args,
+        };
+        parse_primary_expr(self, &ctx)
     }
 
+    // Keep the old implementation temporarily for reference (will be removed)
     fn parse_method_args(&mut self) -> Result<Vec<SqlExpression>, String> {
         let mut args = Vec::new();
 
@@ -3087,6 +2885,45 @@ fn extract_partial_at_end(query: &str) -> Option<String> {
         Some(last_word.to_string())
     } else {
         None
+    }
+}
+
+// Implement the ParsePrimary trait for Parser to use the modular expression parsing
+impl ParsePrimary for Parser {
+    fn current_token(&self) -> &Token {
+        &self.current_token
+    }
+
+    fn advance(&mut self) {
+        self.advance();
+    }
+
+    fn consume(&mut self, expected: Token) -> Result<(), String> {
+        self.consume(expected)
+    }
+
+    fn parse_case_expression(&mut self) -> Result<SqlExpression, String> {
+        self.parse_case_expression()
+    }
+
+    fn parse_function_args(&mut self) -> Result<(Vec<SqlExpression>, bool), String> {
+        self.parse_function_args()
+    }
+
+    fn parse_window_spec(&mut self) -> Result<WindowSpec, String> {
+        self.parse_window_spec()
+    }
+
+    fn parse_logical_or(&mut self) -> Result<SqlExpression, String> {
+        self.parse_logical_or()
+    }
+
+    fn parse_comparison(&mut self) -> Result<SqlExpression, String> {
+        self.parse_comparison()
+    }
+
+    fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String> {
+        self.parse_expression_list()
     }
 }
 
