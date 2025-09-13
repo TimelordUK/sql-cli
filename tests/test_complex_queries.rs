@@ -104,8 +104,8 @@ fn test_complex_trade_query_ast() {
     // Verify WHERE clause exists
     assert!(stmt.where_clause.is_some());
     let where_clause = stmt.where_clause.unwrap();
-    // Check that we have the expected number of conditions
-    assert_eq!(where_clause.conditions.len(), 3);
+    // After Phase 2.4 refactoring, WHERE clause is a single expression tree
+    assert_eq!(where_clause.conditions.len(), 1);
 
     // Verify ORDER BY
     assert!(stmt.order_by.is_some());
