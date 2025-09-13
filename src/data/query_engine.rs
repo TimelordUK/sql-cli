@@ -11,6 +11,7 @@ use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::hash_join::HashJoinExecutor;
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
+use crate::data::subquery_executor::SubqueryExecutor;
 use crate::data::virtual_table_generator::VirtualTableGenerator;
 use crate::execution_plan::{ExecutionPlan, ExecutionPlanBuilder, StepType};
 use crate::sql::aggregates::contains_aggregate;
@@ -20,6 +21,7 @@ use crate::sql::recursive_parser::{
 };
 
 /// Query engine that executes SQL directly on `DataTable`
+#[derive(Clone)]
 pub struct QueryEngine {
     case_insensitive: bool,
     date_notation: String,
@@ -143,6 +145,19 @@ impl QueryEngine {
         Ok(view)
     }
 
+    /// Execute a parsed SelectStatement on a `DataTable` and return a `DataView`
+    pub fn execute_statement(
+        &self,
+        table: Arc<DataTable>,
+        statement: SelectStatement,
+    ) -> Result<DataView> {
+        // Process subqueries first
+        let mut subquery_executor = SubqueryExecutor::new(self.clone(), table.clone());
+        let processed_statement = subquery_executor.execute_subqueries(&statement)?;
+
+        self.build_view(table, processed_statement)
+    }
+
     /// Execute a query and return both the result and the execution plan
     pub fn execute_with_plan(
         &self,
@@ -168,12 +183,19 @@ impl QueryEngine {
         }
         plan_builder.end_step();
 
+        // Process subqueries in the statement
+        plan_builder.begin_step(StepType::Filter, "Process subqueries".to_string());
+        let mut subquery_executor = SubqueryExecutor::new(self.clone(), table.clone());
+        let processed_statement = subquery_executor.execute_subqueries(&statement)?;
+        plan_builder.add_detail("Subqueries evaluated and replaced with values".to_string());
+        plan_builder.end_step();
+
         // Convert SelectStatement to DataView operations
         // Create an empty context for CTEs
         let mut cte_context = HashMap::new();
         let result = self.build_view_with_context_and_plan(
             table,
-            statement,
+            processed_statement,
             &mut cte_context,
             &mut plan_builder,
         )?;

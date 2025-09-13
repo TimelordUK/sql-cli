@@ -194,7 +194,7 @@ second_element AS (
     SELECT 
         Element as element2,
         Symbol as symbol2,
-        Year as year2,
+       Year as year2,
         AtomicNumber as atomic2
     FROM periodic_table
     WHERE Year = 2010 AND AtomicNumber = 117
@@ -209,6 +209,34 @@ FROM first_element
 INNER JOIN second_element ON first_element.year1 = second_element.year2;
 GO
 
+-- rather than cte directly use a sub query 
+
+SELECT
+    Element,
+    Year
+FROM periodic_table
+WHERE Year = (SELECT
+    MAX(Year)
+FROM periodic_table);
+GO
+
+
+-- another example of how we can use nested sub query
+
+SELECT
+    Element,
+    AtomicNumber,
+    AtomicMass,
+    NumberofProtons,
+    Type
+FROM periodic_table
+WHERE NumberofProtons in (SELECT
+    NumberofProtons
+FROM periodic_table
+WHERE Element in ('Hydrogen', 'Helium'));
+GO
+
+ 
 -- LEFT JOIN example: Show all noble gases with discovery year stats
 -- WITH all_noble_gases AS (
     -- SELECT 
