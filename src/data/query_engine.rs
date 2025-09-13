@@ -9,6 +9,7 @@ use crate::config::global::get_date_notation;
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
+use crate::data::group_by_expressions::GroupByExpressions;
 use crate::data::hash_join::HashJoinExecutor;
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use crate::data::subquery_executor::SubqueryExecutor;
@@ -496,12 +497,12 @@ impl QueryEngine {
         view = view.with_rows(visible_rows);
 
         // Handle GROUP BY if present
-        if let Some(group_by_columns) = &statement.group_by {
-            if !group_by_columns.is_empty() {
-                debug!("QueryEngine: Processing GROUP BY: {:?}", group_by_columns);
+        if let Some(group_by_exprs) = &statement.group_by {
+            if !group_by_exprs.is_empty() {
+                debug!("QueryEngine: Processing GROUP BY: {:?}", group_by_exprs);
                 view = self.apply_group_by(
                     view,
-                    group_by_columns,
+                    group_by_exprs,
                     &statement.select_items,
                     statement.having.as_ref(),
                 )?;
@@ -891,133 +892,19 @@ impl QueryEngine {
     fn apply_group_by(
         &self,
         view: DataView,
-        group_by_columns: &[String],
+        group_by_exprs: &[SqlExpression],
         select_items: &[SelectItem],
         having: Option<&SqlExpression>,
     ) -> Result<DataView> {
-        debug!(
-            "QueryEngine::apply_group_by - grouping by: {:?}",
-            group_by_columns
-        );
-
-        // Group the data using DataView's group_by method
-        let groups = view.group_by(group_by_columns)?;
-        debug!(
-            "QueryEngine::apply_group_by - created {} groups",
-            groups.len()
-        );
-
-        // Create a result table for the grouped data
-        let mut result_table = DataTable::new("grouped_result");
-
-        // Determine which columns to include in the result
-        // 1. GROUP BY columns always come first
-        // 2. Then aggregate functions
-
-        // Add GROUP BY columns to result
-        for col_name in group_by_columns {
-            result_table.add_column(DataColumn::new(col_name));
-        }
-
-        // Process SELECT items to find aggregates and their aliases
-        let mut aggregate_columns = Vec::new();
-        for item in select_items {
-            match item {
-                SelectItem::Expression { expr, alias } => {
-                    if contains_aggregate(expr) {
-                        // Expression always has an alias in the AST
-                        result_table.add_column(DataColumn::new(alias));
-                        aggregate_columns.push((expr.clone(), alias.clone()));
-                    }
-                }
-                SelectItem::Column(col_name) => {
-                    // Non-aggregate columns must be in GROUP BY
-                    if !group_by_columns.contains(col_name) {
-                        return Err(anyhow!(
-                            "Column '{}' must appear in GROUP BY clause or be used in an aggregate function",
-                            col_name
-                        ));
-                    }
-                }
-                SelectItem::Star => {
-                    // For GROUP BY queries, * is not really meaningful
-                    // We'll just include the GROUP BY columns which we already added
-                }
-            }
-        }
-
-        // Process each group
-        for (group_key, group_view) in groups {
-            let mut row_values = Vec::new();
-            let mut aggregate_values = std::collections::HashMap::new();
-
-            // Add GROUP BY column values from the key
-            for (i, value) in group_key.0.iter().enumerate() {
-                row_values.push(value.clone());
-                // Store GROUP BY columns for HAVING evaluation
-                if i < group_by_columns.len() {
-                    aggregate_values.insert(group_by_columns[i].clone(), value.clone());
-                }
-            }
-
-            // Calculate aggregate values for this group
-            for (expr, col_name) in &aggregate_columns {
-                // Set the visible rows for this group so aggregates work correctly
-                let group_rows = group_view.get_visible_rows();
-                let mut evaluator = ArithmeticEvaluator::new(group_view.source())
-                    .with_visible_rows(group_rows.clone());
-
-                // For aggregates, we need to evaluate across all rows in the group
-                let value = if group_view.row_count() > 0 && !group_rows.is_empty() {
-                    // Evaluate the aggregate expression
-                    // The arithmetic evaluator will handle the aggregate across visible rows
-                    evaluator
-                        .evaluate(expr, group_rows[0])
-                        .unwrap_or(DataValue::Null)
-                } else {
-                    DataValue::Null
-                };
-
-                // Store aggregate value for HAVING evaluation
-                aggregate_values.insert(col_name.clone(), value.clone());
-                row_values.push(value);
-            }
-
-            // Evaluate HAVING clause if present
-            if let Some(having_expr) = having {
-                // Create a temporary table with one row containing the aggregate values
-                let mut temp_table = DataTable::new("having_eval");
-                for col_name in aggregate_values.keys() {
-                    temp_table.add_column(DataColumn::new(col_name));
-                }
-
-                let temp_row_values: Vec<DataValue> = aggregate_values.values().cloned().collect();
-                temp_table
-                    .add_row(DataRow::new(temp_row_values))
-                    .map_err(|e| anyhow!("Failed to create temp table for HAVING: {}", e))?;
-
-                // Evaluate HAVING expression on the aggregate values
-                let mut evaluator = ArithmeticEvaluator::new(&temp_table);
-                let having_result = evaluator
-                    .evaluate(having_expr, 0)
-                    .unwrap_or(DataValue::Boolean(false));
-
-                // Skip this group if HAVING condition is not met
-                match having_result {
-                    DataValue::Boolean(false) => continue,
-                    DataValue::Null => continue,
-                    _ => {} // Include the row
-                }
-            }
-
-            // Add the row to the result table
-            result_table
-                .add_row(DataRow::new(row_values))
-                .map_err(|e| anyhow!("Failed to add row to result table: {}", e))?;
-        }
-
-        // Return a DataView of the grouped result
-        Ok(DataView::new(Arc::new(result_table)))
+        // Use the new expression-based GROUP BY implementation
+        self.apply_group_by_expressions(
+            view,
+            group_by_exprs,
+            select_items,
+            having,
+            self.case_insensitive,
+            self.date_notation.clone(),
+        )
     }
 }
 

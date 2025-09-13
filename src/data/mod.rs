@@ -33,6 +33,7 @@ pub mod direct_csv_loader;
 
 // Query execution
 pub mod arithmetic_evaluator;
+pub mod group_by_expressions;
 pub mod hash_join;
 pub mod query_engine;
 pub mod query_executor;

@@ -492,7 +492,9 @@ impl Parser {
 
         let group_by = if matches!(self.current_token, Token::GroupBy) {
             self.advance();
-            Some(self.parse_identifier_list()?)
+            // Parse expressions instead of just identifiers for GROUP BY
+            // This allows GROUP BY TIME_BUCKET(...), CASE ..., etc.
+            Some(self.parse_expression_list()?)
         } else {
             None
         };

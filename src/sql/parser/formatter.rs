@@ -78,8 +78,8 @@ fn format_select_statement(stmt: &SelectStatement, indent: usize) -> String {
             result.push_str("],\n");
         } else {
             result.push('\n');
-            for col in group_by {
-                result.push_str(&format!("{indent_str}    \"{col}\",\n"));
+            for expr in group_by {
+                result.push_str(&format!("{indent_str}    \"{:?}\",\n", expr));
             }
             result.push_str(&format!("{indent_str}  ],\n"));
         }

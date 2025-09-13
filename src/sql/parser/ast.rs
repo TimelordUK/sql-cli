@@ -161,8 +161,8 @@ pub struct SelectStatement {
     pub joins: Vec<JoinClause>,                      // JOIN clauses
     pub where_clause: Option<WhereClause>,
     pub order_by: Option<Vec<OrderByColumn>>,
-    pub group_by: Option<Vec<String>>,
-    pub having: Option<SqlExpression>, // HAVING clause for post-aggregation filtering
+    pub group_by: Option<Vec<SqlExpression>>, // Changed from Vec<String> to support expressions
+    pub having: Option<SqlExpression>,        // HAVING clause for post-aggregation filtering
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub ctes: Vec<CTE>, // Common Table Expressions (WITH clause)
