@@ -124,6 +124,22 @@ function M.create_commands()
   vim.api.nvim_create_user_command("SqlCliToggleTableNav", function()
     table_nav.toggle_navigation()
   end, { desc = "Toggle table navigation mode in current buffer" })
+
+  vim.api.nvim_create_user_command("SqlCliExportTable", function()
+    local export = require('sql-cli.export')
+    local bufnr = vim.api.nvim_get_current_buf()
+
+    -- Parse table structure
+    local table_nav_module = require('sql-cli.table_nav')
+    local success = table_nav_module.init_navigation(bufnr)
+    if success then
+      local table_info = table_nav_module.get_table_info()
+      export.show_export_menu(bufnr, table_info)
+      table_nav_module.disable_navigation()
+    else
+      vim.notify("No table found in buffer", vim.log.levels.WARN)
+    end
+  end, { desc = "Export table in various formats" })
 end
 
 -- Setup keymaps
@@ -239,11 +255,7 @@ function M.setup_keymaps()
 
   if keymaps.search_functions then
     vim.keymap.set("n", keymaps.search_functions, function()
-      vim.ui.input({ prompt = "Search functions: " }, function(query)
-        if query and query ~= "" then
-          functions.search_functions(query, M.config)
-        end
-      end)
+      functions.search_functions(M.config)
     end, { desc = "Search SQL functions", silent = true })
   end
 

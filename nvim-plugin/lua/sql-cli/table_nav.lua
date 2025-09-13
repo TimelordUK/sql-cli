@@ -1,6 +1,8 @@
 -- SQL CLI Table Navigation Module
 -- Excel-like navigation for query result tables
 
+local export = require('sql-cli.export')
+
 local M = {}
 
 -- Table parser to understand the structure
@@ -450,6 +452,11 @@ function M.is_active()
   return nav_state.buffer ~= nil and nav_state.table_info ~= nil
 end
 
+-- Get table info (for external use)
+function M.get_table_info()
+  return nav_state.table_info
+end
+
 -- Get navigation mode status
 function M.get_status()
   if not M.is_active() then
@@ -505,6 +512,23 @@ function M.setup_keymaps(bufnr)
   vim.keymap.set("n", "yy", M.yank_cell, opts)
   vim.keymap.set("n", "Y", M.yank_row, opts)
   vim.keymap.set("n", "yc", M.yank_column, opts)
+
+  -- Export operations
+  vim.keymap.set("n", "ye", function()
+    export.show_export_menu(bufnr, nav_state.table_info)
+  end, opts)
+
+  vim.keymap.set("n", "yh", function()
+    export.yank_as_html(bufnr, nav_state.table_info)
+  end, opts)
+
+  vim.keymap.set("n", "ym", function()
+    export.yank_as_markdown(bufnr, nav_state.table_info)
+  end, opts)
+
+  vim.keymap.set("n", "yt", function()
+    export.yank_as_tsv(bufnr, nav_state.table_info)
+  end, opts)
 
   -- Tab navigation
   vim.keymap.set("n", "<Tab>", function()
