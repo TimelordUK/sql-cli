@@ -61,16 +61,17 @@ src/sql/parser/
 - [x] Create `expressions/` module structure
 - [x] Extract `primary.rs` - literals, identifiers, function calls (~343 lines)
 - [x] Extract `arithmetic.rs` - additive, multiplicative expressions (~182 lines)
+- [x] Extract `comparison.rs` - comparison operators, BETWEEN, IN, LIKE (~193 lines)
 - [x] Add debug/trace logging infrastructure
-- [x] Create expression traits (ParsePrimary, ParseArithmetic)
+- [x] Create expression traits (ParsePrimary, ParseArithmetic, ParseComparison)
 - [x] Handle method calls within multiplicative precedence
-- [ ] Extract `comparison.rs` - comparison operators, BETWEEN, IN, LIKE (Phase 2.3)
 - [ ] Extract `logical.rs` - AND, OR, NOT operations (Phase 2.4)
 - [ ] Extract `case.rs` - CASE/WHEN expressions (Phase 2.5)
 
 **Phase 2.1**: Primary expressions extracted (~220 lines)
 **Phase 2.2**: Arithmetic expressions extracted (~95 lines)
-**Total reduction**: ~315 lines moved to modular structure
+**Phase 2.3**: Comparison expressions extracted (~80 lines)
+**Total reduction**: ~395 lines moved to modular structure
 
 ### 🔄 Phase 3: Extract Statement Components
 - [ ] Create `statements/` module structure
@@ -124,7 +125,8 @@ src/sql/parser/
 | Phase 1 | ✅ | 665 | 3,933 | Dec 12, 2024 |
 | Phase 2.1 | ✅ | 220 | 3,713 | Dec 13, 2024 |
 | Phase 2.2 | ✅ | 95 | 3,618 | Dec 13, 2024 |
-| Phase 2.3 | ⏳ | - | - | - |
+| Phase 2.3 | ✅ | 80 | 3,538 | Dec 13, 2024 |
+| Phase 2.4 | ⏳ | - | - | - |
 | Phase 3 | ⏳ | - | - | - |
 | Phase 4 | ⏳ | - | - | - |
 | Phase 5 | ⏳ | - | - | - |

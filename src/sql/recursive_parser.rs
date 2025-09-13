@@ -16,6 +16,9 @@ use super::parser::expressions::arithmetic::{
     parse_additive as parse_additive_expr, parse_multiplicative as parse_multiplicative_expr,
     ParseArithmetic,
 };
+use super::parser::expressions::comparison::{
+    parse_comparison as parse_comparison_expr, parse_in_operator, ParseComparison,
+};
 use super::parser::expressions::primary::{
     parse_primary as parse_primary_expr, ParsePrimary, PrimaryExpressionContext,
 };
@@ -804,97 +807,16 @@ impl Parser {
             };
         }
 
-        // Handle IN operator
-        if matches!(self.current_token, Token::In) {
-            self.advance();
-            self.consume(Token::LeftParen)?;
-            let values = self.parse_expression_list()?;
-            self.consume(Token::RightParen)?;
-
-            left = SqlExpression::InList {
-                expr: Box::new(left),
-                values,
-            };
-        }
-
-        // Handle NOT IN operator - this should be handled in parse_comparison instead
-        // since NOT is a prefix operator that should be parsed before the expression
+        // Handle IN operator (not preceded by NOT)
+        // This uses the modular comparison module
+        left = parse_in_operator(self, left)?;
 
         Ok(left)
     }
 
     fn parse_comparison(&mut self) -> Result<SqlExpression, String> {
-        let mut left = self.parse_additive()?;
-
-        // Handle BETWEEN operator
-        if matches!(self.current_token, Token::Between) {
-            self.advance(); // consume BETWEEN
-            let lower = self.parse_primary()?;
-            self.consume(Token::And)?; // BETWEEN requires AND
-            let upper = self.parse_primary()?;
-
-            return Ok(SqlExpression::Between {
-                expr: Box::new(left),
-                lower: Box::new(lower),
-                upper: Box::new(upper),
-            });
-        }
-
-        // Handle NOT IN operator
-        if matches!(self.current_token, Token::Not) {
-            self.advance(); // consume NOT
-            if matches!(self.current_token, Token::In) {
-                self.advance(); // consume IN
-                self.consume(Token::LeftParen)?;
-                let values = self.parse_expression_list()?;
-                self.consume(Token::RightParen)?;
-
-                return Ok(SqlExpression::NotInList {
-                    expr: Box::new(left),
-                    values,
-                });
-            }
-            return Err("Expected IN after NOT".to_string());
-        }
-
-        // Handle IS NULL / IS NOT NULL
-        if matches!(self.current_token, Token::Is) {
-            self.advance(); // consume IS
-            if matches!(self.current_token, Token::Not) {
-                self.advance(); // consume NOT
-                if matches!(self.current_token, Token::Null) {
-                    self.advance(); // consume NULL
-                    left = SqlExpression::BinaryOp {
-                        left: Box::new(left),
-                        op: "IS NOT NULL".to_string(),
-                        right: Box::new(SqlExpression::Null),
-                    };
-                } else {
-                    return Err("Expected NULL after IS NOT".to_string());
-                }
-            } else if matches!(self.current_token, Token::Null) {
-                self.advance(); // consume NULL
-                left = SqlExpression::BinaryOp {
-                    left: Box::new(left),
-                    op: "IS NULL".to_string(),
-                    right: Box::new(SqlExpression::Null),
-                };
-            } else {
-                return Err("Expected NULL or NOT after IS".to_string());
-            }
-        }
-        // Handle comparison operators
-        else if let Some(op) = self.get_binary_op() {
-            self.advance();
-            let right = self.parse_additive()?;
-            left = SqlExpression::BinaryOp {
-                left: Box::new(left),
-                op,
-                right: Box::new(right),
-            };
-        }
-
-        Ok(left)
+        // Use the new modular comparison expression parser
+        parse_comparison_expr(self)
     }
 
     fn parse_additive(&mut self) -> Result<SqlExpression, String> {
@@ -2871,6 +2793,33 @@ impl ParseArithmetic for Parser {
 
     fn parse_method_args(&mut self) -> Result<Vec<SqlExpression>, String> {
         self.parse_method_args()
+    }
+}
+
+// Implement the ParseComparison trait for Parser to use the modular comparison parsing
+impl ParseComparison for Parser {
+    fn current_token(&self) -> &Token {
+        &self.current_token
+    }
+
+    fn advance(&mut self) {
+        self.advance();
+    }
+
+    fn consume(&mut self, expected: Token) -> Result<(), String> {
+        self.consume(expected)
+    }
+
+    fn parse_primary(&mut self) -> Result<SqlExpression, String> {
+        self.parse_primary()
+    }
+
+    fn parse_additive(&mut self) -> Result<SqlExpression, String> {
+        self.parse_additive()
+    }
+
+    fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String> {
+        self.parse_expression_list()
     }
 }
 
