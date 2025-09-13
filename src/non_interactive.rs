@@ -193,34 +193,52 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
 
     // Show execution plan details if requested
     if config.execution_plan {
-        println!(
-            "3. QUERY_EXECUTION [{:.3}ms]",
-            exec_time.as_secs_f64() * 1000.0
-        );
+        // Try to get detailed execution plan
+        use crate::data::query_engine::QueryEngine;
 
-        // Parse query to understand what operations are being performed
-        use crate::sql::recursive_parser::Parser;
-        let mut parser = Parser::new(&config.query);
-        if let Ok(stmt) = parser.parse() {
-            if stmt.where_clause.is_some() {
-                println!("   • WHERE clause filtering applied");
-                println!("   • Rows after filter: {}", result.dataview.row_count());
+        let query_engine = QueryEngine::new();
+
+        match query_engine.execute_with_plan(
+            std::sync::Arc::new(dataview.source().clone()),
+            &config.query,
+        ) {
+            Ok((_view, plan)) => {
+                // Display the detailed execution plan tree
+                print!("{}", plan.format_tree());
             }
+            Err(e) => {
+                // Fall back to simple execution plan display
+                eprintln!("Could not generate detailed execution plan: {}", e);
+                println!(
+                    "3. QUERY_EXECUTION [{:.3}ms]",
+                    exec_time.as_secs_f64() * 1000.0
+                );
 
-            if let Some(ref order_by) = stmt.order_by {
-                println!("   • ORDER BY: {} column(s)", order_by.len());
-            }
+                // Parse query to understand what operations are being performed
+                use crate::sql::recursive_parser::Parser;
+                let mut parser = Parser::new(&config.query);
+                if let Ok(stmt) = parser.parse() {
+                    if stmt.where_clause.is_some() {
+                        println!("   • WHERE clause filtering applied");
+                        println!("   • Rows after filter: {}", result.dataview.row_count());
+                    }
 
-            if let Some(ref group_by) = stmt.group_by {
-                println!("   • GROUP BY: {} column(s)", group_by.len());
-            }
+                    if let Some(ref order_by) = stmt.order_by {
+                        println!("   • ORDER BY: {} column(s)", order_by.len());
+                    }
 
-            if let Some(limit) = stmt.limit {
-                println!("   • LIMIT: {} rows", limit);
-            }
+                    if let Some(ref group_by) = stmt.group_by {
+                        println!("   • GROUP BY: {} column(s)", group_by.len());
+                    }
 
-            if stmt.distinct {
-                println!("   • DISTINCT applied");
+                    if let Some(limit) = stmt.limit {
+                        println!("   • LIMIT: {} rows", limit);
+                    }
+
+                    if stmt.distinct {
+                        println!("   • DISTINCT applied");
+                    }
+                }
             }
         }
 

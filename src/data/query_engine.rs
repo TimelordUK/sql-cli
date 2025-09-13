@@ -229,28 +229,81 @@ impl QueryEngine {
         plan_builder.end_step();
 
         // First process CTEs to build context
-        plan_builder.begin_step(StepType::Filter, "Process CTEs".to_string());
         let mut cte_context = HashMap::new();
-        for cte in &statement.ctes {
-            plan_builder.add_detail(format!("Processing CTE '{}'", cte.name));
-            let cte_result =
-                self.build_view_with_context(table.clone(), cte.query.clone(), &mut cte_context)?;
-            cte_context.insert(cte.name.clone(), Arc::new(cte_result));
-        }
+
         if !statement.ctes.is_empty() {
+            plan_builder.begin_step(
+                StepType::CTE,
+                format!("Process {} CTEs", statement.ctes.len()),
+            );
+
+            for cte in &statement.ctes {
+                let cte_start = Instant::now();
+                plan_builder.begin_step(StepType::CTE, format!("CTE '{}'", cte.name));
+
+                // Add CTE query details
+                if let Some(from) = &cte.query.from_table {
+                    plan_builder.add_detail(format!("Source: {}", from));
+                }
+                if cte.query.where_clause.is_some() {
+                    plan_builder.add_detail("Has WHERE clause".to_string());
+                }
+                if cte.query.group_by.is_some() {
+                    plan_builder.add_detail("Has GROUP BY".to_string());
+                }
+
+                let cte_result = self.build_view_with_context(
+                    table.clone(),
+                    cte.query.clone(),
+                    &mut cte_context,
+                )?;
+
+                // Record CTE statistics
+                plan_builder.set_rows_out(cte_result.row_count());
+                plan_builder.add_detail(format!(
+                    "Result: {} rows, {} columns",
+                    cte_result.row_count(),
+                    cte_result.column_count()
+                ));
+                plan_builder.add_detail(format!(
+                    "Execution time: {:.3}ms",
+                    cte_start.elapsed().as_secs_f64() * 1000.0
+                ));
+
+                cte_context.insert(cte.name.clone(), Arc::new(cte_result));
+                plan_builder.end_step();
+            }
+
             plan_builder.add_detail(format!(
-                "{} CTEs processed and cached",
+                "All {} CTEs cached in context",
                 statement.ctes.len()
             ));
+            plan_builder.end_step();
         }
-        plan_builder.end_step();
 
         // Process subqueries in the statement with CTE context
-        plan_builder.begin_step(StepType::Filter, "Process subqueries".to_string());
+        plan_builder.begin_step(StepType::Subquery, "Process subqueries".to_string());
         let mut subquery_executor =
             SubqueryExecutor::with_cte_context(self.clone(), table.clone(), cte_context.clone());
+
+        // Check if there are subqueries to process
+        let has_subqueries = statement.where_clause.as_ref().map_or(false, |w| {
+            // This is a simplified check - in reality we'd need to walk the AST
+            format!("{:?}", w).contains("Subquery")
+        });
+
+        if has_subqueries {
+            plan_builder.add_detail("Evaluating subqueries in WHERE clause".to_string());
+        }
+
         let processed_statement = subquery_executor.execute_subqueries(&statement)?;
-        plan_builder.add_detail("Subqueries evaluated and replaced with values".to_string());
+
+        if has_subqueries {
+            plan_builder.add_detail("Subqueries replaced with materialized values".to_string());
+        } else {
+            plan_builder.add_detail("No subqueries to process".to_string());
+        }
+
         plan_builder.end_step();
         let result = self.build_view_with_context_and_plan(
             table,
@@ -386,16 +439,20 @@ impl QueryEngine {
 
         // Process JOINs if present
         let final_table = if !statement.joins.is_empty() {
-            plan.begin_step(StepType::Filter, "Process JOINs".to_string());
-            plan.add_detail(format!(
-                "{} JOIN clause(s) to process",
-                statement.joins.len()
-            ));
+            plan.begin_step(
+                StepType::Join,
+                format!("Process {} JOINs", statement.joins.len()),
+            );
+            plan.set_rows_in(source_table.row_count());
 
             let join_executor = HashJoinExecutor::new(self.case_insensitive);
             let mut current_table = source_table;
 
-            for join_clause in &statement.joins {
+            for (idx, join_clause) in statement.joins.iter().enumerate() {
+                let join_start = Instant::now();
+                plan.begin_step(StepType::Join, format!("JOIN #{}", idx + 1));
+                plan.add_detail(format!("Type: {:?}", join_clause.join_type));
+                plan.add_detail(format!("Left table: {} rows", current_table.row_count()));
                 plan.add_detail(format!(
                     "Executing {:?} JOIN on {}",
                     join_clause.join_type, join_clause.condition.left_column
@@ -427,13 +484,29 @@ impl QueryEngine {
                 };
 
                 // Execute the join
-                let joined =
-                    join_executor.execute_join(current_table.clone(), join_clause, right_table)?;
+                let joined = join_executor.execute_join(
+                    current_table.clone(),
+                    join_clause,
+                    right_table.clone(),
+                )?;
 
-                plan.add_detail(format!("JOIN produced {} rows", joined.row_count()));
+                plan.add_detail(format!("Right table: {} rows", right_table.row_count()));
+                plan.set_rows_out(joined.row_count());
+                plan.add_detail(format!("Result: {} rows", joined.row_count()));
+                plan.add_detail(format!(
+                    "Join time: {:.3}ms",
+                    join_start.elapsed().as_secs_f64() * 1000.0
+                ));
+                plan.end_step();
+
                 current_table = Arc::new(joined);
             }
 
+            plan.set_rows_out(current_table.row_count());
+            plan.add_detail(format!(
+                "Final result after all joins: {} rows",
+                current_table.row_count()
+            ));
             plan.end_step();
             current_table
         } else {
@@ -441,7 +514,7 @@ impl QueryEngine {
         };
 
         // Continue with the existing build_view logic but using final_table
-        self.build_view_internal(final_table, statement)
+        self.build_view_internal_with_plan(final_table, statement, plan)
     }
 
     /// Materialize a DataView into a new DataTable
@@ -486,6 +559,16 @@ impl QueryEngine {
         table: Arc<DataTable>,
         statement: SelectStatement,
     ) -> Result<DataView> {
+        let mut dummy_plan = ExecutionPlanBuilder::new();
+        self.build_view_internal_with_plan(table, statement, &mut dummy_plan)
+    }
+
+    fn build_view_internal_with_plan(
+        &self,
+        table: Arc<DataTable>,
+        statement: SelectStatement,
+        plan: &mut ExecutionPlanBuilder,
+    ) -> Result<DataView> {
         debug!(
             "QueryEngine::build_view - select_items: {:?}",
             statement.select_items
@@ -503,6 +586,15 @@ impl QueryEngine {
             let total_rows = table.row_count();
             debug!("QueryEngine: Applying WHERE clause to {} rows", total_rows);
             debug!("QueryEngine: WHERE clause = {:?}", where_clause);
+
+            plan.begin_step(StepType::Filter, "WHERE clause filtering".to_string());
+            plan.set_rows_in(total_rows);
+            plan.add_detail(format!("Input: {} rows", total_rows));
+
+            // Add details about WHERE conditions
+            for condition in &where_clause.conditions {
+                plan.add_detail(format!("Condition: {:?}", condition.expr));
+            }
 
             let filter_start = Instant::now();
             // Filter visible rows based on WHERE clause
@@ -547,7 +639,13 @@ impl QueryEngine {
                 filter_duration
             );
 
-            // Debug log moved to info level above with timing
+            plan.set_rows_out(visible_rows.len());
+            plan.add_detail(format!("Output: {} rows", visible_rows.len()));
+            plan.add_detail(format!(
+                "Filter time: {:.3}ms",
+                filter_duration.as_secs_f64() * 1000.0
+            ));
+            plan.end_step();
         }
 
         // Create initial DataView with filtered rows
@@ -558,12 +656,32 @@ impl QueryEngine {
         if let Some(group_by_exprs) = &statement.group_by {
             if !group_by_exprs.is_empty() {
                 debug!("QueryEngine: Processing GROUP BY: {:?}", group_by_exprs);
+
+                plan.begin_step(
+                    StepType::GroupBy,
+                    format!("GROUP BY {} expressions", group_by_exprs.len()),
+                );
+                plan.set_rows_in(view.row_count());
+                plan.add_detail(format!("Input: {} rows", view.row_count()));
+                for expr in group_by_exprs {
+                    plan.add_detail(format!("Group by: {:?}", expr));
+                }
+
+                let group_start = Instant::now();
                 view = self.apply_group_by(
                     view,
                     group_by_exprs,
                     &statement.select_items,
                     statement.having.as_ref(),
                 )?;
+
+                plan.set_rows_out(view.row_count());
+                plan.add_detail(format!("Output: {} groups", view.row_count()));
+                plan.add_detail(format!(
+                    "Group time: {:.3}ms",
+                    group_start.elapsed().as_secs_f64() * 1000.0
+                ));
+                plan.end_step();
             }
         } else {
             // Apply column projection or computed expressions (SELECT clause) - do this AFTER filtering
@@ -590,20 +708,57 @@ impl QueryEngine {
 
         // Apply DISTINCT if specified
         if statement.distinct {
+            plan.begin_step(StepType::Distinct, "Remove duplicate rows".to_string());
+            plan.set_rows_in(view.row_count());
+            plan.add_detail(format!("Input: {} rows", view.row_count()));
+
+            let distinct_start = Instant::now();
             view = self.apply_distinct(view)?;
+
+            plan.set_rows_out(view.row_count());
+            plan.add_detail(format!("Output: {} unique rows", view.row_count()));
+            plan.add_detail(format!(
+                "Distinct time: {:.3}ms",
+                distinct_start.elapsed().as_secs_f64() * 1000.0
+            ));
+            plan.end_step();
         }
 
         // Apply ORDER BY sorting
         if let Some(order_by_columns) = &statement.order_by {
             if !order_by_columns.is_empty() {
+                plan.begin_step(
+                    StepType::Sort,
+                    format!("ORDER BY {} columns", order_by_columns.len()),
+                );
+                plan.set_rows_in(view.row_count());
+                for col in order_by_columns {
+                    plan.add_detail(format!("{} {:?}", col.column, col.direction));
+                }
+
+                let sort_start = Instant::now();
                 view = self.apply_multi_order_by(view, order_by_columns)?;
+
+                plan.add_detail(format!(
+                    "Sort time: {:.3}ms",
+                    sort_start.elapsed().as_secs_f64() * 1000.0
+                ));
+                plan.end_step();
             }
         }
 
         // Apply LIMIT/OFFSET
         if let Some(limit) = statement.limit {
             let offset = statement.offset.unwrap_or(0);
+            plan.begin_step(StepType::Limit, format!("LIMIT {}", limit));
+            plan.set_rows_in(view.row_count());
+            if offset > 0 {
+                plan.add_detail(format!("OFFSET: {}", offset));
+            }
             view = view.with_limit(limit, offset);
+            plan.set_rows_out(view.row_count());
+            plan.add_detail(format!("Output: {} rows", view.row_count()));
+            plan.end_step();
         }
 
         Ok(view)

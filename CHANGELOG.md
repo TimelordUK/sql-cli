@@ -5,6 +5,61 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.45.0] - 2025-09-13
+
+### 🚀 Enhanced CTE Support & Detailed Execution Plans
+
+This release brings major improvements to CTE (Common Table Expression) handling and introduces comprehensive execution plan analysis for better query performance insights.
+
+### ✨ New Features
+
+#### **Advanced CTE Context Propagation**
+- **Nested CTE support** - CTEs can now reference other CTEs within the same WITH clause
+- **Subquery CTE access** - Subqueries can access CTEs defined in parent query scope
+- **Complex analytical queries** - Enables sophisticated multi-level data transformations
+- **Proper scope resolution** - CTE context correctly propagated through entire query tree
+
+#### **Comprehensive Execution Plan Analysis**
+- **Detailed step breakdown** with hierarchical tree visualization
+- **CTE execution statistics**:
+  - Processing time for each CTE
+  - Result set size (rows and columns)
+  - Source table and filter information
+- **JOIN execution details**:
+  - Join type and condition details
+  - Left/right table row counts
+  - Result set size and timing
+- **Subquery tracking**:
+  - Identifies and tracks subquery evaluation
+  - Shows materialization of subquery results
+- **Operation-level metrics**:
+  - WHERE clause filtering (input → output rows)
+  - GROUP BY aggregation statistics
+  - ORDER BY sort timing
+  - DISTINCT deduplication metrics
+  - LIMIT/OFFSET row reduction
+- **Visual execution tree** - Beautiful ASCII art visualization of query execution flow
+
+#### **AST Formatter Enhancements**
+- **Method call support** - Properly formats `Column.Method()` syntax (e.g., `Type.Contains('Noble')`)
+- **Chained method calls** - Handles `column.Method1().Method2()` patterns
+- **Preserves original syntax** - No more debug output for method expressions
+
+### 🐛 Bug Fixes
+- Fixed AST formatter outputting debug representations for MethodCall and ChainedMethodCall expressions
+- Resolved CTE reference errors in complex nested queries
+- Fixed subquery execution within CTE contexts
+
+### 📚 Documentation
+- Added `docs/CTE_LIMITATIONS.md` - Current CTE implementation limitations
+- Added `docs/GROUP_BY_LIMITATIONS.md` - GROUP BY expression support status
+
+### 🔧 Technical Improvements
+- Refactored QueryEngine to support CTE context threading
+- Enhanced SubqueryExecutor with CTE context awareness
+- Improved execution plan builder with new step types (CTE, Subquery, Aggregate, Distinct)
+- Better timing instrumentation throughout query execution pipeline
+
 ## [1.44.0] - 2025-09-13
 
 ### 🚀 SQL Parser Modularization & Enhanced Nvim Plugin

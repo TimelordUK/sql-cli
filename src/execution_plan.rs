@@ -33,6 +33,10 @@ pub enum StepType {
     Join,
     WindowFunction,
     Expression,
+    CTE,
+    Subquery,
+    Aggregate,
+    Distinct,
 }
 
 impl fmt::Display for StepType {
@@ -51,6 +55,10 @@ impl fmt::Display for StepType {
             StepType::Join => write!(f, "JOIN"),
             StepType::WindowFunction => write!(f, "WINDOW"),
             StepType::Expression => write!(f, "EXPR"),
+            StepType::CTE => write!(f, "CTE"),
+            StepType::Subquery => write!(f, "SUBQUERY"),
+            StepType::Aggregate => write!(f, "AGGREGATE"),
+            StepType::Distinct => write!(f, "DISTINCT"),
         }
     }
 }

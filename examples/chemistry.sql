@@ -248,8 +248,7 @@ WITH
         FROM periodic_table
     )
 SELECT MAX(number_discoveries) AS most_discoveries
-FROM discoveries
-
+FROM discoveries;
 GO
 
 WITH
@@ -263,10 +262,15 @@ WITH
         SELECT *
         FROM periodic_table
     )
-SELECT *
+SELECT Element, Symbol, Year, number_discoveries
 FROM elements
-WHERE Year = (SELECT MAX(number_discoveries from discoveries));
-
+INNER JOIN discoveries ON elements.Year = discoveries.Year
+WHERE Year IN (
+    SELECT Year
+    FROM discoveries
+    WHERE number_discoveries > 3
+)
+ORDER BY Year DESC
 GO
  
 -- LEFT JOIN example: Show all noble gases with discovery year stats
