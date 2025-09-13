@@ -21,6 +21,10 @@ pub use lexer::{Lexer, Token};
 // Re-export legacy types for backward compatibility
 pub use legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
 
+// Test module
+#[cfg(test)]
+mod tests;
+
 // Parser configuration
 #[derive(Default)]
 pub struct ParserConfig {
