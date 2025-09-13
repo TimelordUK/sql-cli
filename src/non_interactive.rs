@@ -46,6 +46,7 @@ pub struct NonInteractiveConfig {
     pub auto_hide_empty: bool,
     pub limit: Option<usize>,
     pub query_plan: bool,
+    pub execution_plan: bool,
     pub script_file: Option<String>, // Path to the script file for relative path resolution
 }
 
@@ -121,6 +122,20 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     // 3. Execute the query
     info!("Executing query: {}", config.query);
 
+    // If execution_plan is requested, show detailed execution information
+    if config.execution_plan {
+        println!("\n=== EXECUTION PLAN ===");
+        println!("Query: {}", config.query);
+        println!("\nExecution Steps:");
+        println!("1. PARSE - Parse SQL query");
+        println!("2. LOAD_DATA - Load data from {}", &config.data_file);
+        println!(
+            "   • Loaded {} rows, {} columns",
+            dataview.row_count(),
+            dataview.column_count()
+        );
+    }
+
     // If query_plan is requested, parse and display the AST
     if config.query_plan {
         use crate::sql::recursive_parser::Parser;
@@ -163,7 +178,10 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     }
 
     let query_service = QueryExecutionService::with_behavior_config(behavior_config);
+
+    let exec_start = Instant::now();
     let result = query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))?;
+    let exec_time = exec_start.elapsed();
 
     let query_time = query_start.elapsed();
     info!("Query executed in {:?}", query_time);
@@ -172,6 +190,58 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         result.dataview.row_count(),
         result.dataview.column_count()
     );
+
+    // Show execution plan details if requested
+    if config.execution_plan {
+        println!(
+            "3. QUERY_EXECUTION [{:.3}ms]",
+            exec_time.as_secs_f64() * 1000.0
+        );
+
+        // Parse query to understand what operations are being performed
+        use crate::sql::recursive_parser::Parser;
+        let mut parser = Parser::new(&config.query);
+        if let Ok(stmt) = parser.parse() {
+            if stmt.where_clause.is_some() {
+                println!("   • WHERE clause filtering applied");
+                println!("   • Rows after filter: {}", result.dataview.row_count());
+            }
+
+            if let Some(ref order_by) = stmt.order_by {
+                println!("   • ORDER BY: {} column(s)", order_by.len());
+            }
+
+            if let Some(ref group_by) = stmt.group_by {
+                println!("   • GROUP BY: {} column(s)", group_by.len());
+            }
+
+            if let Some(limit) = stmt.limit {
+                println!("   • LIMIT: {} rows", limit);
+            }
+
+            if stmt.distinct {
+                println!("   • DISTINCT applied");
+            }
+        }
+
+        println!("\nExecution Statistics:");
+        println!(
+            "  Preparation:    {:.3}ms",
+            (exec_start - start_time).as_secs_f64() * 1000.0
+        );
+        println!(
+            "  Query time:     {:.3}ms",
+            exec_time.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  Total time:     {:.3}ms",
+            query_time.as_secs_f64() * 1000.0
+        );
+        println!("  Rows returned:  {}", result.dataview.row_count());
+        println!("  Columns:        {}", result.dataview.column_count());
+        println!("\n=== END EXECUTION PLAN ===");
+        println!();
+    }
 
     // 4. Apply limit if specified
     let final_view = if let Some(limit) = config.limit {

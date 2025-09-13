@@ -11,6 +11,7 @@ use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use crate::data::virtual_table_generator::VirtualTableGenerator;
+use crate::execution_plan::{ExecutionPlan, ExecutionPlanBuilder, StepType};
 use crate::sql::aggregates::contains_aggregate;
 use crate::sql::recursive_parser::{
     OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression, TableFunction,
@@ -136,33 +137,54 @@ impl QueryEngine {
 
     /// Execute a SQL query on a `DataTable` and return a `DataView` (for backward compatibility)
     pub fn execute(&self, table: Arc<DataTable>, sql: &str) -> Result<DataView> {
+        let (view, _plan) = self.execute_with_plan(table, sql)?;
+        Ok(view)
+    }
+
+    /// Execute a query and return both the result and the execution plan
+    pub fn execute_with_plan(
+        &self,
+        table: Arc<DataTable>,
+        sql: &str,
+    ) -> Result<(DataView, ExecutionPlan)> {
+        let mut plan_builder = ExecutionPlanBuilder::new();
         let start_time = Instant::now();
 
         // Parse the SQL query
-        let parse_start = Instant::now();
+        plan_builder.begin_step(StepType::Parse, "Parse SQL query".to_string());
+        plan_builder.add_detail(format!("Query: {}", sql));
         let mut parser = Parser::new(sql);
         let statement = parser
             .parse()
             .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
-        let parse_duration = parse_start.elapsed();
+        plan_builder.add_detail(format!("Parsed successfully"));
+        if let Some(from) = &statement.from_table {
+            plan_builder.add_detail(format!("FROM: {}", from));
+        }
+        if statement.where_clause.is_some() {
+            plan_builder.add_detail("WHERE clause present".to_string());
+        }
+        plan_builder.end_step();
 
         // Convert SelectStatement to DataView operations
-        let build_start = Instant::now();
         // Create an empty context for CTEs
         let mut cte_context = HashMap::new();
-        let result = self.build_view_with_context(table, statement, &mut cte_context)?;
-        let build_duration = build_start.elapsed();
+        let result = self.build_view_with_context_and_plan(
+            table,
+            statement,
+            &mut cte_context,
+            &mut plan_builder,
+        )?;
 
         let total_duration = start_time.elapsed();
         info!(
-            "Query execution complete: parse={:?}, build={:?}, total={:?}, rows={}",
-            parse_duration,
-            build_duration,
+            "Query execution complete: total={:?}, rows={}",
             total_duration,
             result.row_count()
         );
 
-        Ok(result)
+        let plan = plan_builder.build();
+        Ok((result, plan))
     }
 
     /// Build a `DataView` from a parsed SQL statement
@@ -177,6 +199,18 @@ impl QueryEngine {
         table: Arc<DataTable>,
         statement: SelectStatement,
         cte_context: &mut HashMap<String, Arc<DataView>>,
+    ) -> Result<DataView> {
+        let mut dummy_plan = ExecutionPlanBuilder::new();
+        self.build_view_with_context_and_plan(table, statement, cte_context, &mut dummy_plan)
+    }
+
+    /// Build a DataView from a SelectStatement with CTE context and execution plan tracking
+    fn build_view_with_context_and_plan(
+        &self,
+        table: Arc<DataTable>,
+        statement: SelectStatement,
+        cte_context: &mut HashMap<String, Arc<DataView>>,
+        plan: &mut ExecutionPlanBuilder,
     ) -> Result<DataView> {
         // First, process any CTEs
         for cte in &statement.ctes {

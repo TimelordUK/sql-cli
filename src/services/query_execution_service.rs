@@ -1,6 +1,7 @@
 use crate::config::config::BehaviorConfig;
 use crate::data::data_view::DataView;
 use crate::data::query_engine::QueryEngine;
+use crate::execution_plan::ExecutionPlan;
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,6 +20,9 @@ pub struct QueryExecutionResult {
 
     /// The query that was executed
     pub query: String,
+
+    /// The execution plan (if tracked)
+    pub execution_plan: Option<ExecutionPlan>,
 }
 
 /// Statistics about query execution
@@ -170,6 +174,7 @@ impl QueryExecutionService {
             stats,
             hidden_columns,
             query: query.to_string(),
+            execution_plan: None,
         })
     }
 
