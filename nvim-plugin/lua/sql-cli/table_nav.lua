@@ -198,9 +198,24 @@ local nav_state = {
 }
 
 -- Initialize navigation for a buffer
-function M.init_navigation(bufnr)
+function M.init_navigation(bufnr, window)
   nav_state.buffer = bufnr
-  nav_state.window = vim.api.nvim_get_current_win()
+  -- Use provided window or find the window containing the buffer
+  if window then
+    nav_state.window = window
+  else
+    -- Find the window that contains this buffer
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_get_buf(win) == bufnr then
+        nav_state.window = win
+        break
+      end
+    end
+    -- Fallback to current window if no window found
+    if not nav_state.window then
+      nav_state.window = vim.api.nvim_get_current_win()
+    end
+  end
 
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   nav_state.table_info = parse_table_structure(lines)
@@ -308,7 +323,7 @@ function M.highlight_current_cell()
       col_pos.stop
     )
 
-    -- Move cursor to the cell
+    -- Move cursor to the cell in the output window
     if nav_state.window and vim.api.nvim_win_is_valid(nav_state.window) then
       vim.api.nvim_win_set_cursor(nav_state.window, {line_num, col_pos.start})
     end

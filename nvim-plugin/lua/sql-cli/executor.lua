@@ -100,6 +100,10 @@ end
 
 -- Execute visual selection
 function M.execute_selection(config, state)
+  -- Save current window and cursor position to restore later
+  local original_win = vim.api.nvim_get_current_win()
+  local original_cursor = vim.api.nvim_win_get_cursor(original_win)
+
   -- Get the current visual selection properly
   -- Save the current register content
   local save_reg = vim.fn.getreg('"')
@@ -117,11 +121,19 @@ function M.execute_selection(config, state)
     return
   end
 
+  -- Store the original window and cursor to restore after execution
+  state.original_win = original_win
+  state.original_cursor = original_cursor
+
   M.execute_query(query, config, state)
 end
 
 -- Execute query at cursor
 function M.execute_at_cursor(config, state)
+  -- Save current window and cursor position to restore later
+  local original_win = vim.api.nvim_get_current_win()
+  local original_cursor = vim.api.nvim_win_get_cursor(original_win)
+
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.fn.line('.')
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -191,6 +203,10 @@ function M.execute_at_cursor(config, state)
       end
     end
   end
+
+  -- Store the original window and cursor to restore after execution
+  state.original_win = original_win
+  state.original_cursor = original_cursor
 
   M.execute_query(query, config, state)
 end
@@ -267,6 +283,10 @@ function M.execute_at_cursor_with_plan(config, state)
     end
   end
 
+  -- Store the original window and cursor to restore after execution
+  state.original_win = original_win
+  state.original_cursor = original_cursor
+
   M.execute_query_with_plan(query, config, state)
 end
 
@@ -338,6 +358,9 @@ function M.run_command(query, show_plan, config, state)
   -- Clear output if configured
   local output_buf = state:get_output_buf()
   if config.output.clear_on_run and output_buf then
+    -- Make buffer modifiable to clear it (table_nav may have made it readonly)
+    vim.bo[output_buf].modifiable = true
+    vim.bo[output_buf].readonly = false
     vim.api.nvim_buf_set_lines(output_buf, 0, -1, false, {})
   end
 
@@ -356,6 +379,9 @@ function M.run_command(query, show_plan, config, state)
     "",
   }
   if output_buf then
+    -- Ensure buffer is modifiable before writing
+    vim.bo[output_buf].modifiable = true
+    vim.bo[output_buf].readonly = false
     vim.api.nvim_buf_set_lines(output_buf, 0, 0, false, header)
   end
 
@@ -409,6 +435,9 @@ function M.run_command(query, show_plan, config, state)
       vim.schedule(function()
         -- Append output
         if output_buf then
+          -- Ensure buffer is modifiable before writing
+          vim.bo[output_buf].modifiable = true
+          vim.bo[output_buf].readonly = false
           vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, output_lines)
         end
 
@@ -426,6 +455,9 @@ function M.run_command(query, show_plan, config, state)
           "-- Exit code: " .. exit_code,
         }
         if output_buf then
+          -- Ensure buffer is modifiable before writing footer
+          vim.bo[output_buf].modifiable = true
+          vim.bo[output_buf].readonly = false
           vim.api.nvim_buf_set_lines(output_buf, -1, -1, false, footer)
         end
 
@@ -436,6 +468,19 @@ function M.run_command(query, show_plan, config, state)
           -- Move cursor to end
           local line_count = vim.api.nvim_buf_line_count(output_buf)
           vim.api.nvim_win_set_cursor(output_win, {line_count, 0})
+
+          -- Restore original window and cursor position if saved
+          if state.original_win and vim.api.nvim_win_is_valid(state.original_win) then
+            vim.defer_fn(function()
+              vim.api.nvim_set_current_win(state.original_win)
+              if state.original_cursor then
+                vim.api.nvim_win_set_cursor(state.original_win, state.original_cursor)
+              end
+              -- Clear the saved position
+              state.original_win = nil
+              state.original_cursor = nil
+            end, 100) -- Small delay to ensure output window is properly set up first
+          end
         end
 
         -- Notify completion
@@ -452,7 +497,9 @@ function M.run_command(query, show_plan, config, state)
 
               local lines = vim.api.nvim_buf_get_lines(output_buf, 0, -1, false)
               if #lines > 5 then -- Make sure we have some content
-                if table_nav.init_navigation(output_buf) then
+                -- Pass the output window to init_navigation
+                local output_win = state:get_output_win()
+                if table_nav.init_navigation(output_buf, output_win) then
                   table_nav.setup_keymaps(output_buf)
                   vim.notify("Table navigation enabled (h/j/k/l to move, yy to yank)", vim.log.levels.INFO)
                 else
