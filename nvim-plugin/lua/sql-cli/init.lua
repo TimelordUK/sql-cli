@@ -265,16 +265,27 @@ end
 function M.setup_autocmds()
   local group = vim.api.nvim_create_augroup("SqlCli", { clear = true })
 
+  -- Debug logging
+  local debug = M.config.debug or false
+
   -- Auto-detect CSV files
   if M.config.auto_detect.csv_files then
     vim.api.nvim_create_autocmd("BufEnter", {
       group = group,
       pattern = "*.csv",
       callback = function(ev)
+        if debug then
+          vim.notify("[SQL-CLI Debug] CSV autocmd triggered, M.state = " .. tostring(M.state), vim.log.levels.DEBUG)
+        end
+
         -- Check if plugin is initialized
         if not M.state then
+          if debug then
+            vim.notify("[SQL-CLI Debug] State not initialized, skipping CSV detection", vim.log.levels.DEBUG)
+          end
           return
         end
+
         if not M.state:get_data_file() then
           M.state:set_data_file(ev.file)
           vim.notify("Data file set to: " .. ev.file, vim.log.levels.INFO)
@@ -291,10 +302,34 @@ function M.setup_autocmds()
       group = group,
       pattern = "*.sql",
       callback = function(ev)
+        if debug then
+          vim.notify("[SQL-CLI Debug] SQL autocmd triggered for " .. ev.file .. ", M.state = " .. tostring(M.state), vim.log.levels.DEBUG)
+        end
+
         -- Check if plugin is initialized
         if not M.state then
+          if debug then
+            vim.notify("[SQL-CLI Debug] State not initialized, skipping data hint detection", vim.log.levels.DEBUG)
+          end
           return
         end
+
+        -- Check state methods are accessible
+        if not M.state.get_data_file then
+          if debug then
+            vim.notify("[SQL-CLI Debug] State exists but get_data_file method missing!", vim.log.levels.ERROR)
+            vim.notify("[SQL-CLI Debug] State type: " .. type(M.state), vim.log.levels.ERROR)
+            if type(M.state) == "table" then
+              local methods = {}
+              for k, v in pairs(M.state) do
+                table.insert(methods, k .. "=" .. type(v))
+              end
+              vim.notify("[SQL-CLI Debug] State contents: " .. table.concat(methods, ", "), vim.log.levels.ERROR)
+            end
+          end
+          return
+        end
+
         if not M.state:get_data_file() then
           local lines = vim.api.nvim_buf_get_lines(ev.buf, 0, 5, false)
           local dir = vim.fn.fnamemodify(ev.file, ":h")

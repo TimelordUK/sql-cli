@@ -70,6 +70,7 @@ M.defaults = {
   },
 
   -- Debug settings (usually false)
+  debug = false,           -- Enable debug logging for the plugin
   debug_format = false,    -- Show debug messages for formatting
 }
 

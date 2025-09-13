@@ -3,9 +3,13 @@
 
 local M = {}
 
+-- State metatable for method access
+local State = {}
+State.__index = State
+
 -- Create new state object
 function M.new()
-  return {
+  local state = {
     data_file = nil,
     output_buf = nil,
     output_win = nil,
@@ -13,83 +17,87 @@ function M.new()
     last_results = nil,  -- Store last query results for saving
     query_markers = {},  -- Track query positions in output
   }
+  return setmetatable(state, State)
 end
 
--- Global state instance
-M.state = M.new()
-
--- State accessors and mutators
-function M.get_data_file()
-  return M.state.data_file
+-- State methods
+function State:get_data_file()
+  return self.data_file
 end
 
-function M.set_data_file(file)
-  M.state.data_file = file
+function State:set_data_file(file)
+  self.data_file = file
 end
 
-function M.clear_data_file()
-  M.state.data_file = nil
+function State:clear_data_file()
+  self.data_file = nil
 end
 
-function M.get_output_buf()
-  return M.state.output_buf
+function State:get_output_buf()
+  return self.output_buf
 end
 
-function M.set_output_buf(buf)
-  M.state.output_buf = buf
+function State:set_output_buf(buf)
+  self.output_buf = buf
 end
 
-function M.get_output_win()
-  return M.state.output_win
+function State:get_output_win()
+  return self.output_win
 end
 
-function M.set_output_win(win)
-  M.state.output_win = win
+function State:set_output_win(win)
+  self.output_win = win
 end
 
-function M.get_last_query()
-  return M.state.last_query
+function State:get_last_query()
+  return self.last_query
 end
 
-function M.set_last_query(query)
-  M.state.last_query = query
+function State:set_last_query(query)
+  self.last_query = query
 end
 
-function M.get_last_results()
-  return M.state.last_results
+function State:get_last_results()
+  return self.last_results
 end
 
-function M.set_last_results(results)
-  M.state.last_results = results
+function State:set_last_results(results)
+  self.last_results = results
 end
 
-function M.get_query_markers()
-  return M.state.query_markers
+function State:get_query_markers()
+  return self.query_markers
 end
 
-function M.set_query_markers(markers)
-  M.state.query_markers = markers
+function State:set_query_markers(markers)
+  self.query_markers = markers
 end
 
-function M.add_query_marker(marker)
-  table.insert(M.state.query_markers, marker)
+function State:add_query_marker(marker)
+  table.insert(self.query_markers, marker)
 end
 
-function M.clear_query_markers()
-  M.state.query_markers = {}
+function State:clear_query_markers()
+  self.query_markers = {}
 end
 
 -- Cleanup function
-function M.cleanup()
-  if M.state.output_buf and vim.api.nvim_buf_is_valid(M.state.output_buf) then
-    vim.api.nvim_buf_delete(M.state.output_buf, { force = true })
+function State:cleanup()
+  if self.output_buf and vim.api.nvim_buf_is_valid(self.output_buf) then
+    vim.api.nvim_buf_delete(self.output_buf, { force = true })
   end
 
-  if M.state.output_win and vim.api.nvim_win_is_valid(M.state.output_win) then
-    vim.api.nvim_win_close(M.state.output_win, true)
+  if self.output_win and vim.api.nvim_win_is_valid(self.output_win) then
+    vim.api.nvim_win_close(self.output_win, true)
   end
 
-  M.state = M.new()
+  -- Reset state
+  self.data_file = nil
+  self.output_buf = nil
+  self.output_win = nil
+  self.last_query = nil
+  self.last_results = nil
+  self.query_markers = {}
 end
 
 return M
