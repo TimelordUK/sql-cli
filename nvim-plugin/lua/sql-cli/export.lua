@@ -101,7 +101,16 @@ function M.yank_as_html(bufnr, table_info, open_browser)
     table.insert(full_html, '</html>')
 
     -- Write to temp file and open in browser
-    local temp_file = os.tmpname() .. '.html'
+    -- Use a more predictable location for WSL
+    local temp_file
+    if vim.fn.has('wsl') == 1 then
+      -- Save to Windows temp directory for easy access
+      temp_file = '/mnt/c/temp/sql_export_' .. os.date('%Y%m%d_%H%M%S') .. '.html'
+      -- Ensure directory exists
+      vim.fn.system('mkdir -p /mnt/c/temp')
+    else
+      temp_file = os.tmpname() .. '.html'
+    end
     local file = io.open(temp_file, 'w')
     if file then
       file:write(table.concat(full_html, '\n'))
@@ -119,7 +128,19 @@ function M.yank_as_html(bufnr, table_info, open_browser)
 
       if open_cmd then
         vim.fn.system(string.format('%s "%s"', open_cmd, temp_file))
-        vim.notify(string.format("Opened HTML table in browser - copy from there to paste into Gmail", #data.rows), vim.log.levels.INFO)
+
+        -- For WSL users, provide Windows path
+        if vim.fn.has('wsl') == 1 then
+          -- File is saved at C:\temp\sql_export_*.html
+          local win_path = temp_file:gsub('/mnt/c/', 'C:\\'):gsub('/', '\\')
+          vim.notify(string.format("HTML saved to: %s", win_path), vim.log.levels.INFO)
+          vim.notify("Open this file in Windows browser, then copy table to Gmail", vim.log.levels.INFO)
+
+          -- Copy the Windows path to clipboard for easy access
+          vim.fn.setreg('+', win_path)
+        else
+          vim.notify(string.format("Opened HTML table in browser - copy from there to paste into Gmail", #data.rows), vim.log.levels.INFO)
+        end
       end
     end
   else
