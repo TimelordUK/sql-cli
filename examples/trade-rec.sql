@@ -1,8 +1,7 @@
 -- #! ../data/trade_reconciliation.csv
 
 
-SELECT
-    *
+SELECT PlatformOrderId, FieldName, "Prod-Value", "Test-Value", Difference
 FROM trade_reconciliation;;
 
 
@@ -20,12 +19,33 @@ ORDER BY PlatformOrderId;
 GO
 
 SELECT
-    *,
+    PlatformOrderId,
+    FieldName,
+    "Prod-Value",
+    "Test-Value",
+    Difference,
     DateDiff('day',
     "Prod-Value",
     "Test-Value") as delta_days
 FROM trade_reconciliation
 WHERE IS_DATE("Prod-Value") = true;
+GO
+
+with x as (
+SELECT 
+    PlatformOrderId, 
+    FieldName, 
+    "Prod-Value", 
+    "Test-Value", 
+    Difference,
+    DateDiff('day', "Prod-Value", "Test-Value") as delta_days
+FROM trade_reconciliation
+WHERE IS_DATE("Prod-Value") = true
+) 
+select
+    PlatformOrderId,
+    (Difference-delta_days) as as_expected
+FROM x;;
 
 SELECT
     PlatformOrderId,
