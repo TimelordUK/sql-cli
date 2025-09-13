@@ -35,7 +35,7 @@ GO
 
 SELECT Element, Symbol, Group, Type
 FROM periodic_table
-WHERE MethodCall { object: "Type", method: "Contains", args: [StringLiteral("Noble")] }
+WHERE Type.Contains("Noble")
 GO
 
 SELECT MAX(Year) AS latest_year_discovery, MIN(Year) AS earliest_year_discovery
@@ -265,8 +265,7 @@ WITH
     )
 SELECT *
 FROM elements
-WHERE Year = (SELECT MAX(number_discoveries) AS Year
-FROM discoveries)
+WHERE Year = (SELECT MAX(number_discoveries from discoveries));
 
 GO
  

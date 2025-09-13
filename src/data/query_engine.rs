@@ -152,11 +152,55 @@ impl QueryEngine {
         table: Arc<DataTable>,
         statement: SelectStatement,
     ) -> Result<DataView> {
-        // Process subqueries first
-        let mut subquery_executor = SubqueryExecutor::new(self.clone(), table.clone());
+        // First process CTEs to build context
+        let mut cte_context = HashMap::new();
+        for cte in &statement.ctes {
+            debug!("QueryEngine: Pre-processing CTE '{}'...", cte.name);
+            // Execute the CTE query (it might reference earlier CTEs)
+            let cte_result =
+                self.build_view_with_context(table.clone(), cte.query.clone(), &mut cte_context)?;
+            // Store the result in the context for later use
+            cte_context.insert(cte.name.clone(), Arc::new(cte_result));
+            debug!(
+                "QueryEngine: CTE '{}' pre-processed, stored in context",
+                cte.name
+            );
+        }
+
+        // Now process subqueries with CTE context available
+        let mut subquery_executor =
+            SubqueryExecutor::with_cte_context(self.clone(), table.clone(), cte_context.clone());
         let processed_statement = subquery_executor.execute_subqueries(&statement)?;
 
-        self.build_view(table, processed_statement)
+        // Build the view with the same CTE context
+        self.build_view_with_context(table, processed_statement, &mut cte_context)
+    }
+
+    /// Execute a statement with provided CTE context (for subqueries)
+    pub fn execute_statement_with_cte_context(
+        &self,
+        table: Arc<DataTable>,
+        statement: SelectStatement,
+        cte_context: &HashMap<String, Arc<DataView>>,
+    ) -> Result<DataView> {
+        // Clone the context so we can add any CTEs from this statement
+        let mut local_context = cte_context.clone();
+
+        // Process any CTEs in this statement (they might be nested)
+        for cte in &statement.ctes {
+            debug!("QueryEngine: Processing nested CTE '{}'...", cte.name);
+            let cte_result =
+                self.build_view_with_context(table.clone(), cte.query.clone(), &mut local_context)?;
+            local_context.insert(cte.name.clone(), Arc::new(cte_result));
+        }
+
+        // Process subqueries with the complete context
+        let mut subquery_executor =
+            SubqueryExecutor::with_cte_context(self.clone(), table.clone(), local_context.clone());
+        let processed_statement = subquery_executor.execute_subqueries(&statement)?;
+
+        // Build the view
+        self.build_view_with_context(table, processed_statement, &mut local_context)
     }
 
     /// Execute a query and return both the result and the execution plan
@@ -184,16 +228,30 @@ impl QueryEngine {
         }
         plan_builder.end_step();
 
-        // Process subqueries in the statement
+        // First process CTEs to build context
+        plan_builder.begin_step(StepType::Filter, "Process CTEs".to_string());
+        let mut cte_context = HashMap::new();
+        for cte in &statement.ctes {
+            plan_builder.add_detail(format!("Processing CTE '{}'", cte.name));
+            let cte_result =
+                self.build_view_with_context(table.clone(), cte.query.clone(), &mut cte_context)?;
+            cte_context.insert(cte.name.clone(), Arc::new(cte_result));
+        }
+        if !statement.ctes.is_empty() {
+            plan_builder.add_detail(format!(
+                "{} CTEs processed and cached",
+                statement.ctes.len()
+            ));
+        }
+        plan_builder.end_step();
+
+        // Process subqueries in the statement with CTE context
         plan_builder.begin_step(StepType::Filter, "Process subqueries".to_string());
-        let mut subquery_executor = SubqueryExecutor::new(self.clone(), table.clone());
+        let mut subquery_executor =
+            SubqueryExecutor::with_cte_context(self.clone(), table.clone(), cte_context.clone());
         let processed_statement = subquery_executor.execute_subqueries(&statement)?;
         plan_builder.add_detail("Subqueries evaluated and replaced with values".to_string());
         plan_builder.end_step();
-
-        // Convert SelectStatement to DataView operations
-        // Create an empty context for CTEs
-        let mut cte_context = HashMap::new();
         let result = self.build_view_with_context_and_plan(
             table,
             processed_statement,

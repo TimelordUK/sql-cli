@@ -27,6 +27,8 @@ pub struct SubqueryExecutor {
     source_table: Arc<DataTable>,
     /// Cache of executed subqueries to avoid re-execution
     cache: HashMap<String, SubqueryResult>,
+    /// CTE context for resolving CTE references in subqueries
+    cte_context: HashMap<String, Arc<DataView>>,
 }
 
 impl SubqueryExecutor {
@@ -36,6 +38,21 @@ impl SubqueryExecutor {
             query_engine,
             source_table,
             cache: HashMap::new(),
+            cte_context: HashMap::new(),
+        }
+    }
+
+    /// Create a new subquery executor with CTE context
+    pub fn with_cte_context(
+        query_engine: QueryEngine,
+        source_table: Arc<DataTable>,
+        cte_context: HashMap<String, Arc<DataView>>,
+    ) -> Self {
+        Self {
+            query_engine,
+            source_table,
+            cache: HashMap::new(),
+            cte_context,
         }
     }
 
@@ -213,10 +230,12 @@ impl SubqueryExecutor {
 
         info!("SubqueryExecutor: Executing scalar subquery");
 
-        // Execute the subquery using execute_statement
-        let result_view = self
-            .query_engine
-            .execute_statement(self.source_table.clone(), query.clone())?;
+        // Execute the subquery using execute_statement_with_cte_context
+        let result_view = self.query_engine.execute_statement_with_cte_context(
+            self.source_table.clone(),
+            query.clone(),
+            &self.cte_context,
+        )?;
 
         // Scalar subquery must return exactly one row and one column
         if result_view.row_count() != 1 {
@@ -261,10 +280,12 @@ impl SubqueryExecutor {
 
         info!("SubqueryExecutor: Executing IN subquery");
 
-        // Execute the subquery using execute_statement
-        let result_view = self
-            .query_engine
-            .execute_statement(self.source_table.clone(), query.clone())?;
+        // Execute the subquery using execute_statement_with_cte_context
+        let result_view = self.query_engine.execute_statement_with_cte_context(
+            self.source_table.clone(),
+            query.clone(),
+            &self.cte_context,
+        )?;
 
         // IN subquery must return exactly one column
         if result_view.column_count() != 1 {
