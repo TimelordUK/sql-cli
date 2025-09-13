@@ -251,8 +251,6 @@ SELECT MAX(number_discoveries) AS most_discoveries
 FROM discoveries;
 GO
 
--- all elements within years where > 3 discoveries happen in that year
-
 WITH
     discoveries AS (
         SELECT Year, COUNT('*') AS number_discoveries
@@ -261,11 +259,16 @@ WITH
         GROUP BY Year
     ),
     elements AS (
-        SELECT *,
-        ROW_NUMBER() OVER (PARTITION BY Year ORDER by Year) as grp_member
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY Year ORDER BY Year ASC) AS grp_member
         FROM periodic_table
     )
-SELECT Element, Symbol, Year, number_discoveries, grp_member, GROUP_NUM(Year) as year_grp
+SELECT
+    Element,
+    Symbol,
+    Year,
+    number_discoveries,
+    grp_member,
+    GROUP_NUM(Year) AS year_grp
 FROM elements
 INNER JOIN discoveries ON elements.Year = discoveries.Year
 WHERE Year IN (
@@ -274,7 +277,6 @@ WHERE Year IN (
     WHERE number_discoveries > 3
 )
 ORDER BY Year DESC
-GO
  
 -- LEFT JOIN example: Show all noble gases with discovery year stats
 -- WITH all_noble_gases AS (

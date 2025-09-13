@@ -271,6 +271,10 @@ function M.setup_autocmds()
       group = group,
       pattern = "*.csv",
       callback = function(ev)
+        -- Check if plugin is initialized
+        if not M.state then
+          return
+        end
         if not M.state:get_data_file() then
           M.state:set_data_file(ev.file)
           vim.notify("Data file set to: " .. ev.file, vim.log.levels.INFO)
@@ -287,6 +291,10 @@ function M.setup_autocmds()
       group = group,
       pattern = "*.sql",
       callback = function(ev)
+        -- Check if plugin is initialized
+        if not M.state then
+          return
+        end
         if not M.state:get_data_file() then
           local lines = vim.api.nvim_buf_get_lines(ev.buf, 0, 5, false)
           local dir = vim.fn.fnamemodify(ev.file, ":h")
@@ -305,6 +313,11 @@ end
 
 -- Set data file
 function M.set_data_file(file)
+  if not M.state then
+    vim.notify("SQL CLI plugin not initialized. Run :lua require('sql-cli').setup()", vim.log.levels.ERROR)
+    return
+  end
+
   if not file or file == "" then
     -- Use file picker
     vim.ui.input({
@@ -329,17 +342,29 @@ end
 
 -- Clear data file
 function M.clear_data_file()
+  if not M.state then
+    vim.notify("SQL CLI plugin not initialized. Run :lua require('sql-cli').setup()", vim.log.levels.ERROR)
+    return
+  end
   M.state:set_data_file(nil)
   vim.notify("Data file cleared", vim.log.levels.INFO)
 end
 
 -- Show query plan
 function M.show_query_plan()
+  if not M.state then
+    vim.notify("SQL CLI plugin not initialized. Run :lua require('sql-cli').setup()", vim.log.levels.ERROR)
+    return
+  end
   executor.execute_at_cursor_with_plan(M.config, M.state)
 end
 
 -- Open data file
 function M.open_data_file()
+  if not M.state then
+    vim.notify("SQL CLI plugin not initialized. Run :lua require('sql-cli').setup()", vim.log.levels.ERROR)
+    return
+  end
   local data_file = M.state:get_data_file()
   if data_file then
     vim.cmd("edit " .. vim.fn.fnameescape(data_file))
@@ -363,6 +388,10 @@ end
 
 -- Test formatter (for debugging)
 function M.test_formatter()
+  if not M.config then
+    vim.notify("SQL CLI plugin not initialized. Run :lua require('sql-cli').setup()", vim.log.levels.ERROR)
+    return
+  end
   formatter.test_formatter(M.config)
 end
 
