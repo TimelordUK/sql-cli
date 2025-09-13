@@ -301,12 +301,17 @@ impl<'a> AstFormatter<'a> {
             SqlExpression::BooleanLiteral(b) => b.to_string().to_uppercase(),
             SqlExpression::Null => self.keyword("NULL"),
             SqlExpression::BinaryOp { left, op, right } => {
-                format!(
-                    "{} {} {}",
-                    self.format_expression(left),
-                    op,
-                    self.format_expression(right)
-                )
+                // Special handling for IS NULL / IS NOT NULL operators
+                if op == "IS NULL" || op == "IS NOT NULL" {
+                    format!("{} {}", self.format_expression(left), op)
+                } else {
+                    format!(
+                        "{} {} {}",
+                        self.format_expression(left),
+                        op,
+                        self.format_expression(right)
+                    )
+                }
             }
             SqlExpression::FunctionCall {
                 name,
@@ -471,6 +476,64 @@ impl<'a> AstFormatter<'a> {
                     }
                     result.push_str(&self.format_expression(arg));
                 }
+                result.push(')');
+                result
+            }
+            SqlExpression::WindowFunction {
+                name,
+                args,
+                window_spec,
+            } => {
+                let mut result = format!("{}(", name);
+
+                // Add function arguments
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        result.push_str(", ");
+                    }
+                    result.push_str(&self.format_expression(arg));
+                }
+                result.push_str(") ");
+                result.push_str(&self.keyword("OVER"));
+                result.push_str(" (");
+
+                // Add PARTITION BY clause if present
+                if !window_spec.partition_by.is_empty() {
+                    result.push_str(&self.keyword("PARTITION BY"));
+                    result.push(' ');
+                    for (i, col) in window_spec.partition_by.iter().enumerate() {
+                        if i > 0 {
+                            result.push_str(", ");
+                        }
+                        result.push_str(col);
+                    }
+                }
+
+                // Add ORDER BY clause if present
+                if !window_spec.order_by.is_empty() {
+                    if !window_spec.partition_by.is_empty() {
+                        result.push(' ');
+                    }
+                    result.push_str(&self.keyword("ORDER BY"));
+                    result.push(' ');
+                    for (i, col) in window_spec.order_by.iter().enumerate() {
+                        if i > 0 {
+                            result.push_str(", ");
+                        }
+                        result.push_str(&col.column);
+                        match col.direction {
+                            SortDirection::Asc => {
+                                result.push(' ');
+                                result.push_str(&self.keyword("ASC"));
+                            }
+                            SortDirection::Desc => {
+                                result.push(' ');
+                                result.push_str(&self.keyword("DESC"));
+                            }
+                        }
+                    }
+                }
+
                 result.push(')');
                 result
             }
