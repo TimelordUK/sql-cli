@@ -255,6 +255,64 @@ fn main() -> io::Result<()> {
         return Ok(());
     }
 
+    // Check for SQL formatting mode
+    if args.contains(&"--format".to_string()) || args.contains(&"-F".to_string()) {
+        use sql_cli::sql::recursive_parser::{format_sql_ast, FormatConfig};
+        use std::io::Read;
+
+        // Check if query is provided via stdin or file
+        let query = if let Some(pos) = args.iter().position(|arg| arg == "--format" || arg == "-F")
+        {
+            if let Some(file_path) = args.get(pos + 1).filter(|arg| !arg.starts_with('-')) {
+                // Read from file
+                std::fs::read_to_string(file_path)?
+            } else {
+                // Read from stdin
+                let mut buffer = String::new();
+                std::io::stdin().read_to_string(&mut buffer)?;
+                buffer
+            }
+        } else {
+            // Read from stdin
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            buffer
+        };
+
+        // Check for configuration options
+        let config = if args.contains(&"--compact".to_string()) {
+            FormatConfig {
+                indent: "  ".to_string(),
+                items_per_line: 10,
+                uppercase_keywords: !args.contains(&"--lowercase".to_string()),
+                compact: true,
+            }
+        } else {
+            FormatConfig {
+                indent: if args.contains(&"--tabs".to_string()) {
+                    "\t"
+                } else {
+                    "    "
+                }
+                .to_string(),
+                items_per_line: 5,
+                uppercase_keywords: !args.contains(&"--lowercase".to_string()),
+                compact: false,
+            }
+        };
+
+        match sql_cli::sql::recursive_parser::format_sql_ast_with_config(&query.trim(), &config) {
+            Ok(formatted) => {
+                println!("{}", formatted);
+            }
+            Err(e) => {
+                eprintln!("Error formatting SQL: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+
     // Check for function documentation flags
     if args.contains(&"--list-functions".to_string()) {
         let registry = sql_cli::sql::functions::FunctionRegistry::new();

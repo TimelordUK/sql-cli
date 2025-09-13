@@ -88,6 +88,8 @@ use {
 ```lua
 require('sql-cli').setup({
   -- Path to sql-cli executable
+  -- If formatting doesn't work, try setting the full path:
+  -- command = "/home/user/sql-cli/target/release/sql-cli",
   command = "sql-cli",
   
   -- Split configuration
@@ -97,7 +99,14 @@ require('sql-cli').setup({
   },
   
   -- Default output format
-  output_format = "table", -- "table", "csv", "json", "tsv"
+  output_format = "table",
+  
+  -- SQL Formatting preferences (NEW!)
+  format = {
+    lowercase = false,     -- Use lowercase keywords
+    compact = false,       -- Compact formatting
+    tabs = false,         -- Use tabs instead of spaces
+  }, -- "table", "csv", "json", "tsv"
   
   -- Auto-detect features
   auto_detect = {
@@ -148,7 +157,7 @@ require('sql-cli').setup({
 - `<leader>sx` - Execute query at cursor (from SELECT to GO/semicolon)
 - `<leader>sp` - Show query plan
 - `<leader>sy` - Copy query at cursor to clipboard
-- `<leader>s=` - Format/prettify query at cursor
+- `<leader>sf` - Format/prettify query at cursor (uses AST-based formatter)
 
 #### Navigation
 - `]q` - Jump to next query
@@ -168,7 +177,7 @@ require('sql-cli').setup({
 
 #### Function Help (LSP-like features)
 - `K` - Show help for SQL function under cursor
-- `<leader>sf` - List all available SQL functions
+- `<leader>sL` - List all available SQL functions
 - `<leader>sF` - Search SQL functions interactively
 
 #### Schema & Column Information

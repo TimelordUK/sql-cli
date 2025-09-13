@@ -4,6 +4,7 @@
 //! breaking down the monolithic parser into focused components.
 
 pub mod ast;
+pub mod ast_formatter;
 pub mod expressions;
 pub mod formatter;
 pub mod legacy;

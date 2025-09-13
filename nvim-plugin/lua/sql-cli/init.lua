@@ -18,6 +18,8 @@ end
 -- Default configuration
 M.config = {
   -- Path to sql-cli executable
+  -- Set this to the full path if sql-cli is not in PATH
+  -- e.g., command = "/home/user/sql-cli/target/release/sql-cli"
   command = "sql-cli",
   
   -- Split configuration
@@ -28,6 +30,13 @@ M.config = {
   
   -- Default output format
   output_format = "table",
+  
+  -- Formatting preferences
+  format = {
+    lowercase = false,     -- Use lowercase keywords
+    compact = false,       -- Compact formatting
+    tabs = false,         -- Use tabs instead of spaces
+  },
   
   -- Auto-detect features
   auto_detect = {
@@ -48,6 +57,7 @@ M.config = {
     set_data_file = "<leader>sd",   -- Set data file
     clear_data_file = "<leader>sc", -- Clear data file
     show_plan = "<leader>sp",       -- Show query plan
+    format_query = "<leader>sf",    -- Format query at cursor (primary mapping)
     open_data_file = "<leader>sV",  -- View data file (capital V to avoid conflict)
     next_query = "]q",              -- Jump to next query
     prev_query = "[q",              -- Jump to previous query
@@ -55,13 +65,12 @@ M.config = {
     save_results_csv = "<leader>sw", -- Write results to CSV file
     results_to_buffer = "<leader>sb", -- Results to new buffer
     function_help = "K",            -- Show function help at cursor
-    list_functions = "<leader>sf",  -- List all SQL functions
+    list_functions = "<leader>sL",  -- List all SQL functions (capital L)
     search_functions = "<leader>sF", -- Search SQL functions
     show_schema = "<leader>sh",     -- Show table schema
     column_help = "<leader>sk",     -- Smart column/function detection at cursor
     expand_star = "<leader>se",     -- Expand SELECT * to column names
     copy_query = "<leader>sy",       -- Copy query at cursor to clipboard (y for yank)
-    format_query = "<leader>s=",     -- Format/prettify query at cursor
   },
   
   -- Output window settings
@@ -139,6 +148,19 @@ local function find_query_at_cursor(lines, cursor_line)
   end
   
   return start_line, end_line
+end
+
+-- Test the formatter directly (for debugging)
+function M.test_formatter()
+  local test_query = "SELECT a, b FROM table WHERE x = 1"
+  vim.notify("Testing formatter with: " .. test_query, vim.log.levels.INFO)
+  
+  local result = M.format_sql(test_query)
+  if result then
+    vim.notify("Result: " .. result, vim.log.levels.INFO)
+  else
+    vim.notify("Formatter returned nil", vim.log.levels.ERROR)
+  end
 end
 
 -- Setup function
@@ -922,10 +944,14 @@ function M.preview_query_at_cursor()
     return
   end
   
-  -- Extract the query lines
+  -- Extract the query lines, skipping comments
   local query_lines = {}
   for i = start_line, end_line do
-    table.insert(query_lines, lines[i])
+    local line = lines[i]
+    -- Skip SQL comment lines
+    if not line:match("^%s*%-%-") then
+      table.insert(query_lines, line)
+    end
   end
   
   -- Create floating window for preview
@@ -1029,12 +1055,13 @@ function M.execute_at_cursor()
     vim.fn.setpos('.', save_cursor)
   end
   
-  -- Extract the query
+  -- Extract the query, skipping comments and terminators
   local query_lines = {}
   for i = start_line, end_line do
-    -- Skip GO terminators
-    if not lines[i]:match("^%s*GO%s*$") then
-      table.insert(query_lines, lines[i])
+    local line = lines[i]
+    -- Skip GO terminators and comment lines
+    if not line:match("^%s*GO%s*$") and not line:match("^%s*%-%-") then
+      table.insert(query_lines, line)
     end
   end
   
@@ -1087,12 +1114,13 @@ function M.execute_at_cursor_with_plan()
     vim.fn.setpos('.', save_cursor)
   end
   
-  -- Extract the query
+  -- Extract the query, skipping comments and terminators
   local query_lines = {}
   for i = start_line, end_line do
-    -- Skip GO terminators
-    if not lines[i]:match("^%s*GO%s*$") then
-      table.insert(query_lines, lines[i])
+    local line = lines[i]
+    -- Skip GO terminators and comment lines
+    if not line:match("^%s*GO%s*$") and not line:match("^%s*%-%-") then
+      table.insert(query_lines, line)
     end
   end
   
@@ -1126,12 +1154,13 @@ function M.copy_query_at_cursor()
     return
   end
   
-  -- Extract the query
+  -- Extract the query, skipping comments and terminators
   local query_lines = {}
   for i = start_line, end_line do
-    -- Skip GO terminators
-    if not lines[i]:match("^%s*GO%s*$") then
-      table.insert(query_lines, lines[i])
+    local line = lines[i]
+    -- Skip GO terminators and comment lines
+    if not line:match("^%s*GO%s*$") and not line:match("^%s*%-%-") then
+      table.insert(query_lines, line)
     end
   end
   
@@ -1159,19 +1188,50 @@ function M.format_query_at_cursor()
     return
   end
   
-  -- Extract the query
+  -- Extract the query, skipping comment lines
   local query_lines = {}
   for i = start_line, end_line do
-    table.insert(query_lines, lines[i])
+    local line = lines[i]
+    -- Skip SQL comment lines (-- comments)
+    if not line:match("^%s*%-%-") then
+      table.insert(query_lines, line)
+    end
+  end
+  
+  -- If no non-comment lines found, include everything
+  if #query_lines == 0 then
+    for i = start_line, end_line do
+      table.insert(query_lines, lines[i])
+    end
   end
   
   local query = table.concat(query_lines, " ")
   
+  -- Debug mode (can be enabled via config)
+  if M.config.debug_format then
+    vim.notify("Original query: " .. query:sub(1, 100), vim.log.levels.INFO)
+  end
+  
   -- Format the query
   local formatted = M.format_sql(query)
   
-  -- Split formatted query into lines
-  local formatted_lines = vim.split(formatted, "\n")
+  -- Handle empty or nil result
+  if not formatted or formatted == "" then
+    vim.notify("Formatting failed - no result", vim.log.levels.WARN)
+    return
+  end
+  
+  -- Debug formatted result
+  if M.config.debug_format then
+    vim.notify("Formatted result length: " .. #formatted, vim.log.levels.INFO)
+    local first_line = formatted:match("^[^\n]+")
+    if first_line then
+      vim.notify("First line: " .. first_line, vim.log.levels.INFO)
+    end
+  end
+  
+  -- Split formatted query into lines, preserving all lines
+  local formatted_lines = vim.split(formatted, "\n", { plain = true, trimempty = false })
   
   -- Replace the original query with formatted version
   vim.api.nvim_buf_set_lines(bufnr, start_line - 1, end_line, false, formatted_lines)
@@ -1179,33 +1239,71 @@ function M.format_query_at_cursor()
   vim.notify("Query formatted", vim.log.levels.INFO)
 end
 
--- SQL Formatter function
+-- SQL Formatter function using AST-based formatter
 function M.format_sql(query)
+  -- Use the sql-cli AST formatter for accurate formatting
+  local command = M.config.command or "sql-cli"
+  
+  -- Try to find the full path if not absolute
+  if not command:match("^/") then
+    local which_cmd = vim.fn.exepath(command)
+    if which_cmd and which_cmd ~= "" then
+      command = which_cmd
+    end
+  end
+  
+  -- Debug: Check if command exists
+  if vim.fn.executable(command) == 0 then
+    vim.notify("sql-cli not found at " .. command .. ", using fallback formatter", vim.log.levels.WARN)
+    return M.format_sql_simple(query)
+  end
+  
+  -- Build format command with options
+  local format_cmd = {command, "--format"}
+  
+  -- Add user preferences
+  if M.config.format and M.config.format.lowercase then
+    table.insert(format_cmd, "--lowercase")
+  end
+  if M.config.format and M.config.format.compact then
+    table.insert(format_cmd, "--compact")
+  end
+  if M.config.format and M.config.format.tabs then
+    table.insert(format_cmd, "--tabs")
+  end
+  
+  -- Execute formatter using vim.fn.systemlist for better handling
+  local cmd_str = table.concat(format_cmd, " ")
+  local result = vim.fn.system(cmd_str, query)
+  
+  -- Check for errors or empty result
+  if vim.v.shell_error ~= 0 or not result or result == "" or result:match("^%s*$") then
+    -- Check what went wrong
+    if vim.v.shell_error ~= 0 then
+      vim.notify("Formatter error (code " .. vim.v.shell_error .. "), using fallback", vim.log.levels.WARN)
+    elseif not result or result == "" then
+      vim.notify("Formatter returned empty result, using fallback", vim.log.levels.WARN)
+    end
+    -- Fall back to simple formatting if AST formatter fails
+    return M.format_sql_simple(query)
+  end
+  
+  -- Trim trailing newlines but preserve the formatted content
+  result = result:gsub("%s+$", "")
+  
+  -- Final check - make sure we have content
+  if not result or result == "" then
+    vim.notify("Formatter result was empty after trimming, using fallback", vim.log.levels.WARN)
+    return M.format_sql_simple(query)
+  end
+  
+  return result
+end
+
+-- Simple fallback formatter (original regex-based)
+function M.format_sql_simple(query)
   -- Remove extra whitespace and normalize
   query = query:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-  
-  -- SQL keywords that should be on new lines
-  local keywords = {
-    "SELECT", "FROM", "WHERE", "GROUP BY", "HAVING", "ORDER BY", 
-    "LIMIT", "OFFSET", "JOIN", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN",
-    "OUTER JOIN", "CROSS JOIN", "ON", "AND", "OR", "CASE", "WHEN", 
-    "THEN", "ELSE", "END", "WITH", "AS", "UNION", "UNION ALL", "EXCEPT", 
-    "INTERSECT"
-  }
-  
-  -- Create a pattern for keywords (case-insensitive)
-  local function make_keyword_pattern(keyword)
-    local pattern = ""
-    for i = 1, #keyword do
-      local char = keyword:sub(i, i)
-      if char == " " then
-        pattern = pattern .. "%s+"
-      else
-        pattern = pattern .. "[" .. char:upper() .. char:lower() .. "]"
-      end
-    end
-    return pattern
-  end
   
   -- First, handle SELECT clause - put columns on separate lines
   query = query:gsub("([Ss][Ee][Ll][Ee][Cc][Tt])%s+", "%1\n    ")
@@ -1255,10 +1353,10 @@ function M.format_sql(query)
   
   -- Remove trailing semicolon or GO for reformatting
   query = query:gsub(";%s*$", "")
-  query = query:gsub("%s*GO%s*$", "")
+  query = query:gsub("%s+[Gg][Oo]%s*$", "")
   
-  -- Add semicolon at the end
-  query = query .. ";"
+  -- Trim final whitespace
+  query = query:gsub("^%s+", ""):gsub("%s+$", "")
   
   return query
 end

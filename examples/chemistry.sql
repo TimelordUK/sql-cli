@@ -33,29 +33,17 @@ FROM
   periodic_table;
 GO
 
-SELECT 
-  Element, 
-  Symbol, 
-  Group, 
-  Type  
-FROM 
-  periodic_table
-WHERE 
-  Type.Contains('Noble');
+SELECT Element, Symbol, Group, Type
+FROM periodic_table
+WHERE MethodCall { object: "Type", method: "Contains", args: [StringLiteral("Noble")] }
 GO
 
-select 
-  max(Year) as latest_year_discovery,
-  min(Year) as earliest_year_discovery
-from periodic_table;
+SELECT MAX(Year) AS latest_year_discovery, MIN(Year) AS earliest_year_discovery
+FROM periodic_table;
 GO
 
-SELECT 
-  count (distinct(Type)) as number_types,
-  max(Year) as latest_year_discovery,
-  min(Year) as earliest_year_discovery
-  FROM 
-    periodic_table;
+SELECT COUNT(DISTINCT Type) AS number_types, MAX(Year) AS latest_year_discovery, MIN(Year) AS earliest_year_discovery
+FROM periodic_table
 GO
 
 SELECT 
@@ -236,6 +224,51 @@ FROM periodic_table
 WHERE Element in ('Hydrogen', 'Helium'));
 GO
 
+-- years in which the most discoveries were made
+
+SELECT
+  Year, count(*) as number_discoveries
+from
+  periodic_table
+where Year > 0
+  GROUP BY Year
+  ORDER by number_discoveries desc
+  limit 4;
+GO
+
+WITH
+    discoveries AS (
+        SELECT Year, COUNT('*') AS number_discoveries
+        FROM periodic_table
+        WHERE Year > 0
+        GROUP BY Year
+    ),
+    elements AS (
+        SELECT *
+        FROM periodic_table
+    )
+SELECT MAX(number_discoveries) AS most_discoveries
+FROM discoveries
+
+GO
+
+WITH
+    discoveries AS (
+        SELECT Year, COUNT('*') AS number_discoveries
+        FROM periodic_table
+        WHERE Year > 0
+        GROUP BY Year
+    ),
+    elements AS (
+        SELECT *
+        FROM periodic_table
+    )
+SELECT *
+FROM elements
+WHERE Year = (SELECT MAX(number_discoveries) AS Year
+FROM discoveries)
+
+GO
  
 -- LEFT JOIN example: Show all noble gases with discovery year stats
 -- WITH all_noble_gases AS (

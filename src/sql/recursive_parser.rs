@@ -13,6 +13,9 @@ pub use super::parser::ParserConfig;
 // Re-export formatting functions for backward compatibility
 pub use super::parser::formatter::{format_ast_tree, format_sql_pretty, format_sql_pretty_compact};
 
+// New AST-based formatter
+pub use super::parser::ast_formatter::{format_sql_ast, format_sql_ast_with_config, FormatConfig};
+
 // Import the new expression modules
 use super::parser::expressions::arithmetic::{
     parse_additive as parse_additive_expr, parse_multiplicative as parse_multiplicative_expr,
