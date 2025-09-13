@@ -278,6 +278,21 @@ pub fn format_expression_ast(expr: &SqlExpression) -> String {
             result.push_str(" }");
             result
         }
+        SqlExpression::ScalarSubquery { query: _ } => {
+            format!("ScalarSubquery {{ query: <SelectStatement> }}")
+        }
+        SqlExpression::InSubquery { expr, subquery: _ } => {
+            format!(
+                "InSubquery {{ expr: {}, subquery: <SelectStatement> }}",
+                format_expression_ast(expr)
+            )
+        }
+        SqlExpression::NotInSubquery { expr, subquery: _ } => {
+            format!(
+                "NotInSubquery {{ expr: {}, subquery: <SelectStatement> }}",
+                format_expression_ast(expr)
+            )
+        }
     }
 }
 
@@ -760,6 +775,16 @@ pub fn format_expression(expr: &SqlExpression) -> String {
             }
             result.push_str(" END");
             result
+        }
+        SqlExpression::ScalarSubquery { query: _ } => {
+            // For now, just format as a placeholder - proper SQL formatting would need the full query
+            "(SELECT ...)".to_string()
+        }
+        SqlExpression::InSubquery { expr, subquery: _ } => {
+            format!("{} IN (SELECT ...)", format_expression(expr))
+        }
+        SqlExpression::NotInSubquery { expr, subquery: _ } => {
+            format!("{} NOT IN (SELECT ...)", format_expression(expr))
         }
     }
 }

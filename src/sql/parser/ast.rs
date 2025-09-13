@@ -70,6 +70,23 @@ pub enum SqlExpression {
         when_branches: Vec<WhenBranch>,
         else_branch: Option<Box<SqlExpression>>,
     },
+    /// Scalar subquery that returns a single value
+    /// Used in expressions like: WHERE col = (SELECT MAX(id) FROM table)
+    ScalarSubquery {
+        query: Box<SelectStatement>,
+    },
+    /// IN subquery that returns multiple values  
+    /// Used in expressions like: WHERE col IN (SELECT id FROM table WHERE ...)
+    InSubquery {
+        expr: Box<SqlExpression>,
+        subquery: Box<SelectStatement>,
+    },
+    /// NOT IN subquery
+    /// Used in expressions like: WHERE col NOT IN (SELECT id FROM table WHERE ...)
+    NotInSubquery {
+        expr: Box<SqlExpression>,
+        subquery: Box<SelectStatement>,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -166,12 +166,24 @@ where
         }
 
         Token::LeftParen => {
-            debug!("Parsing parenthesized expression");
-            parser.advance();
-            // Parse a parenthesized expression which might contain logical operators
-            let expr = parser.parse_logical_or()?;
-            parser.consume(Token::RightParen)?;
-            Ok(expr)
+            debug!("Parsing parenthesized expression or subquery");
+            parser.advance(); // consume (
+
+            // Check if this is a subquery (starts with SELECT)
+            if matches!(parser.current_token(), Token::Select) {
+                debug!("Detected subquery - parsing SELECT statement");
+                let subquery = parser.parse_subquery()?;
+                parser.consume(Token::RightParen)?;
+                Ok(SqlExpression::ScalarSubquery {
+                    query: Box::new(subquery),
+                })
+            } else {
+                // Regular parenthesized expression
+                debug!("Regular parenthesized expression");
+                let expr = parser.parse_logical_or()?;
+                parser.consume(Token::RightParen)?;
+                Ok(expr)
+            }
         }
 
         Token::Not => {
@@ -340,4 +352,7 @@ pub trait ParsePrimary {
     fn parse_logical_or(&mut self) -> Result<SqlExpression, String>;
     fn parse_comparison(&mut self) -> Result<SqlExpression, String>;
     fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String>;
+
+    // For subquery parsing (without parenthesis balance validation)
+    fn parse_subquery(&mut self) -> Result<crate::sql::parser::ast::SelectStatement, String>;
 }

@@ -197,6 +197,62 @@ impl Parser {
         Ok(main_query)
     }
 
+    fn parse_with_clause_inner(&mut self) -> Result<SelectStatement, String> {
+        self.consume(Token::With)?;
+
+        let mut ctes = Vec::new();
+
+        // Parse CTEs
+        loop {
+            // Parse CTE name
+            let name = match &self.current_token {
+                Token::Identifier(name) => name.clone(),
+                _ => return Err("Expected CTE name after WITH".to_string()),
+            };
+            self.advance();
+
+            // Optional column list: WITH t(col1, col2) AS ...
+            let column_list = if matches!(self.current_token, Token::LeftParen) {
+                self.advance();
+                let cols = self.parse_identifier_list()?;
+                self.consume(Token::RightParen)?;
+                Some(cols)
+            } else {
+                None
+            };
+
+            // Expect AS
+            self.consume(Token::As)?;
+
+            // Expect opening parenthesis
+            self.consume(Token::LeftParen)?;
+
+            // Parse the CTE query (inner version that doesn't check parentheses)
+            let query = self.parse_select_statement_inner()?;
+
+            // Expect closing parenthesis
+            self.consume(Token::RightParen)?;
+
+            ctes.push(CTE {
+                name,
+                column_list,
+                query,
+            });
+
+            // Check for more CTEs
+            if !matches!(self.current_token, Token::Comma) {
+                break;
+            }
+            self.advance();
+        }
+
+        // Parse the main SELECT statement (without parenthesis checking for subqueries)
+        let mut main_query = self.parse_select_statement_inner()?;
+        main_query.ctes = ctes;
+
+        Ok(main_query)
+    }
+
     fn parse_select_statement(&mut self) -> Result<SelectStatement, String> {
         let result = self.parse_select_statement_inner()?;
 
@@ -1732,6 +1788,15 @@ impl ParsePrimary for Parser {
     fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String> {
         self.parse_expression_list()
     }
+
+    fn parse_subquery(&mut self) -> Result<SelectStatement, String> {
+        // Parse subquery without parenthesis balance validation
+        if matches!(self.current_token, Token::With) {
+            self.parse_with_clause_inner()
+        } else {
+            self.parse_select_statement_inner()
+        }
+    }
 }
 
 // Implement the ParseArithmetic trait for Parser to use the modular arithmetic parsing
@@ -1785,6 +1850,15 @@ impl ParseComparison for Parser {
 
     fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String> {
         self.parse_expression_list()
+    }
+
+    fn parse_subquery(&mut self) -> Result<SelectStatement, String> {
+        // Parse subquery without parenthesis balance validation
+        if matches!(self.current_token, Token::With) {
+            self.parse_with_clause_inner()
+        } else {
+            self.parse_select_statement_inner()
+        }
     }
 }
 

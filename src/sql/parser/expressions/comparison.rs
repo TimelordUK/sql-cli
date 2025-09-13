@@ -54,17 +54,34 @@ where
 
             parser.advance(); // consume IN
             parser.consume(Token::LeftParen)?;
-            let values = parser.parse_expression_list()?;
-            parser.consume(Token::RightParen)?;
 
-            let result = Ok(SqlExpression::NotInList {
-                expr: Box::new(left),
-                values,
-            });
-            trace_parse_exit("parse_comparison", &result);
-            return result;
+            // Check if this is a subquery (starts with SELECT)
+            if matches!(parser.current_token(), Token::Select) {
+                debug!("Detected NOT IN subquery");
+                let subquery = parser.parse_subquery()?;
+                parser.consume(Token::RightParen)?;
+
+                let result = Ok(SqlExpression::NotInSubquery {
+                    expr: Box::new(left),
+                    subquery: Box::new(subquery),
+                });
+                trace_parse_exit("parse_comparison", &result);
+                return result;
+            } else {
+                // Regular NOT IN with value list
+                let values = parser.parse_expression_list()?;
+                parser.consume(Token::RightParen)?;
+
+                let result = Ok(SqlExpression::NotInList {
+                    expr: Box::new(left),
+                    values,
+                });
+                trace_parse_exit("parse_comparison", &result);
+                return result;
+            }
+        } else {
+            return Err("Expected IN after NOT".to_string());
         }
-        return Err("Expected IN after NOT".to_string());
     }
 
     // Handle IS NULL / IS NOT NULL
@@ -148,17 +165,33 @@ where
             "IN operator - parsing value list",
         );
 
-        parser.advance();
+        parser.advance(); // consume IN
         parser.consume(Token::LeftParen)?;
-        let values = parser.parse_expression_list()?;
-        parser.consume(Token::RightParen)?;
 
-        let result = Ok(SqlExpression::InList {
-            expr: Box::new(expr),
-            values,
-        });
-        trace_parse_exit("parse_in_operator", &result);
-        result
+        // Check if this is a subquery (starts with SELECT)
+        if matches!(parser.current_token(), Token::Select) {
+            debug!("Detected IN subquery");
+            let subquery = parser.parse_subquery()?;
+            parser.consume(Token::RightParen)?;
+
+            let result = Ok(SqlExpression::InSubquery {
+                expr: Box::new(expr),
+                subquery: Box::new(subquery),
+            });
+            trace_parse_exit("parse_in_operator", &result);
+            return result;
+        } else {
+            // Regular IN with value list
+            let values = parser.parse_expression_list()?;
+            parser.consume(Token::RightParen)?;
+
+            let result = Ok(SqlExpression::InList {
+                expr: Box::new(expr),
+                values,
+            });
+            trace_parse_exit("parse_in_operator", &result);
+            return result;
+        }
     } else {
         Ok(expr)
     }
@@ -188,4 +221,7 @@ pub trait ParseComparison {
     fn parse_primary(&mut self) -> Result<SqlExpression, String>;
     fn parse_additive(&mut self) -> Result<SqlExpression, String>;
     fn parse_expression_list(&mut self) -> Result<Vec<SqlExpression>, String>;
+
+    // For subquery parsing (without parenthesis balance validation)
+    fn parse_subquery(&mut self) -> Result<crate::sql::parser::ast::SelectStatement, String>;
 }
