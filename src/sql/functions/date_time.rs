@@ -392,10 +392,153 @@ impl SqlFunction for DateAddFunction {
     }
 }
 
+/// UNIX_TIMESTAMP - Convert datetime to Unix epoch timestamp
+pub struct UnixTimestamp;
+
+impl SqlFunction for UnixTimestamp {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "UNIX_TIMESTAMP",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description:
+                "Convert datetime to Unix epoch timestamp (seconds since 1970-01-01 00:00:00 UTC)",
+            returns: "INTEGER (seconds since epoch)",
+            examples: vec![
+                "SELECT UNIX_TIMESTAMP('2024-01-01 00:00:00')",
+                "SELECT UNIX_TIMESTAMP('2024-01-01T12:30:45')",
+                "SELECT UNIX_TIMESTAMP(trade_time) FROM trades",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("UNIX_TIMESTAMP expects exactly 1 argument"));
+        }
+
+        match &args[0] {
+            DataValue::DateTime(dt_str) | DataValue::String(dt_str) => {
+                let dt = parse_datetime(dt_str)?;
+                Ok(DataValue::Integer(dt.timestamp()))
+            }
+            DataValue::InternedString(dt_str) => {
+                let dt = parse_datetime(dt_str)?;
+                Ok(DataValue::Integer(dt.timestamp()))
+            }
+            DataValue::Null => Ok(DataValue::Null),
+            _ => Err(anyhow!(
+                "UNIX_TIMESTAMP expects a datetime or string argument"
+            )),
+        }
+    }
+}
+
+/// FROM_UNIXTIME - Convert Unix epoch timestamp to datetime
+pub struct FromUnixTime;
+
+impl SqlFunction for FromUnixTime {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "FROM_UNIXTIME",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Convert Unix epoch timestamp to datetime string",
+            returns: "DATETIME string in ISO format",
+            examples: vec![
+                "SELECT FROM_UNIXTIME(1704067200)",
+                "SELECT FROM_UNIXTIME(timestamp_col) FROM data",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("FROM_UNIXTIME expects exactly 1 argument"));
+        }
+
+        match &args[0] {
+            DataValue::Integer(timestamp) => {
+                let dt = DateTime::<Utc>::from_timestamp(*timestamp, 0)
+                    .ok_or_else(|| anyhow!("Invalid timestamp: {}", timestamp))?;
+                Ok(DataValue::DateTime(
+                    dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+                ))
+            }
+            DataValue::Float(timestamp) => {
+                let secs = timestamp.floor() as i64;
+                let nanos = ((timestamp - timestamp.floor()) * 1_000_000_000.0) as u32;
+                let dt = DateTime::<Utc>::from_timestamp(secs, nanos)
+                    .ok_or_else(|| anyhow!("Invalid timestamp: {}", timestamp))?;
+                Ok(DataValue::DateTime(
+                    dt.format("%Y-%m-%d %H:%M:%S%.f").to_string(),
+                ))
+            }
+            DataValue::Null => Ok(DataValue::Null),
+            _ => Err(anyhow!("FROM_UNIXTIME expects a numeric timestamp")),
+        }
+    }
+}
+
+/// TIME_BUCKET - Round timestamps down to bucket boundaries
+pub struct TimeBucket;
+
+impl SqlFunction for TimeBucket {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "TIME_BUCKET",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(2),
+            description: "Round timestamp down to bucket boundary (for time-based grouping)",
+            returns: "INTEGER (bucket timestamp)",
+            examples: vec![
+                "SELECT TIME_BUCKET(300, UNIX_TIMESTAMP(trade_time)) as bucket FROM trades -- 5 minute buckets",
+                "SELECT TIME_BUCKET(3600, UNIX_TIMESTAMP(trade_time)) as hour FROM trades -- 1 hour buckets",
+                "SELECT TIME_BUCKET(60, timestamp_col) as minute FROM data -- 1 minute buckets",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 2 {
+            return Err(anyhow!(
+                "TIME_BUCKET expects exactly 2 arguments: bucket_size, timestamp"
+            ));
+        }
+
+        let bucket_size = match &args[0] {
+            DataValue::Integer(size) => *size,
+            DataValue::Float(size) => *size as i64,
+            _ => return Err(anyhow!("TIME_BUCKET bucket_size must be numeric")),
+        };
+
+        if bucket_size <= 0 {
+            return Err(anyhow!("TIME_BUCKET bucket_size must be positive"));
+        }
+
+        match &args[1] {
+            DataValue::Integer(timestamp) => {
+                let bucket = (timestamp / bucket_size) * bucket_size;
+                Ok(DataValue::Integer(bucket))
+            }
+            DataValue::Float(timestamp) => {
+                let ts = *timestamp as i64;
+                let bucket = (ts / bucket_size) * bucket_size;
+                Ok(DataValue::Integer(bucket))
+            }
+            DataValue::Null => Ok(DataValue::Null),
+            _ => Err(anyhow!("TIME_BUCKET timestamp must be numeric")),
+        }
+    }
+}
+
 /// Register all date/time functions
 pub fn register_date_time_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(NowFunction));
     registry.register(Box::new(TodayFunction));
     registry.register(Box::new(DateDiffFunction));
     registry.register(Box::new(DateAddFunction));
+    registry.register(Box::new(UnixTimestamp));
+    registry.register(Box::new(FromUnixTime));
+    registry.register(Box::new(TimeBucket));
 }
