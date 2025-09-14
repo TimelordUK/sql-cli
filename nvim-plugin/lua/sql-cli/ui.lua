@@ -199,13 +199,43 @@ end
 
 -- Get statusline information
 function M.statusline(state)
+  local current_buf = vim.api.nvim_get_current_buf()
+  local output_buf = state:get_output_buf()
+
+  local status_parts = {}
+
+  -- Show data file info
   local data_file = state:get_data_file()
   if data_file then
     local filename = vim.fn.fnamemodify(data_file, ":t")
-    return string.format("SQL[📄%s]", filename)
+    table.insert(status_parts, string.format("📄%s", filename))
   else
-    return "SQL[∅]"
+    table.insert(status_parts, "∅")
   end
+
+  -- If we're in the output buffer, show table navigation info
+  if output_buf and current_buf == output_buf then
+    local multi_table_nav = require('sql-cli.multi_table_nav')
+    local tables = multi_table_nav.find_all_tables(output_buf)
+
+    if #tables > 1 then
+      -- Find current table
+      local win = vim.api.nvim_get_current_win()
+      local cursor = vim.api.nvim_win_get_cursor(win)
+      local current_line = cursor[1]
+      local current_idx, _ = multi_table_nav.get_table_at_line(tables, current_line)
+
+      if current_idx then
+        table.insert(status_parts, string.format("📊%d/%d", current_idx, #tables))
+      else
+        table.insert(status_parts, string.format("📊-/%d", #tables))
+      end
+    elseif #tables == 1 then
+      table.insert(status_parts, "📊1/1")
+    end
+  end
+
+  return string.format("SQL[%s]", table.concat(status_parts, " "))
 end
 
 -- Setup output buffer syntax highlighting

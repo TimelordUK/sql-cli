@@ -5,6 +5,90 @@ local export = require('sql-cli.export')
 
 local M = {}
 
+-- Parse table structure within specific line boundaries
+local function parse_table_at_position(lines, start_line, end_line)
+  local table_info = {
+    header_row = nil,
+    separator_row = nil,
+    data_start = nil,
+    data_end = nil,
+    columns = {},
+    column_positions = {},
+    style = nil
+  }
+
+  -- Look only within the specified range
+  for i = start_line, end_line do
+    local line = lines[i]
+    if not line then break end
+
+    -- ASCII table style
+    if line:match("^%+%-") then
+      table_info.style = "ascii"
+
+      if not table_info.header_row and i < end_line then
+        -- Check if next line is a header
+        local next_line = lines[i + 1]
+        if next_line and next_line:match("^|") then
+          table_info.header_row = i + 1  -- Absolute line number
+          -- Look for separator
+          if i + 2 <= end_line and lines[i + 2] and lines[i + 2]:match("^%+%-") then
+            table_info.separator_row = i + 2  -- Absolute line number
+            table_info.data_start = i + 3     -- Absolute line number
+          end
+        end
+      elseif table_info.data_start and not table_info.data_end and line:match("^%+%-") then
+        -- This might be the end border
+        table_info.data_end = i - 1  -- Absolute line number
+      end
+    -- Data rows
+    elseif line:match("^|") and table_info.data_start and not table_info.data_end then
+      -- Continue counting data rows
+    end
+  end
+
+  -- Set data_end if not found (scan forward from data_start to find last data row)
+  if table_info.data_start and not table_info.data_end then
+    -- Find the last data row (before the end border)
+    for i = table_info.data_start, end_line do
+      local line = lines[i]
+      if line and line:match("^%+%-") then
+        -- Found end border
+        table_info.data_end = i - 1
+        break
+      elseif i == end_line then
+        -- Reached end of table range
+        table_info.data_end = end_line
+      end
+    end
+  end
+
+  -- Parse column positions from header
+  if table_info.header_row and lines[table_info.header_row] then
+    local header_line = lines[table_info.header_row]
+    local col_start = 1
+
+    for pos = 1, #header_line do
+      if header_line:sub(pos, pos) == "|" and pos > 1 then
+        table.insert(table_info.column_positions, {start = col_start, stop = pos - 1})
+        col_start = pos + 1
+      end
+    end
+    -- Add the last column
+    if col_start <= #header_line then
+      table.insert(table_info.column_positions, {start = col_start, stop = #header_line})
+    end
+
+    -- Extract column names
+    for _, col_pos in ipairs(table_info.column_positions) do
+      local col_text = header_line:sub(col_pos.start, col_pos.stop):match("^%s*(.-)%s*$") or ""
+      table.insert(table_info.columns, col_text)
+    end
+  end
+
+  return table_info
+end
+
 -- Table parser to understand the structure
 local function parse_table_structure(lines)
   local table_info = {
@@ -217,8 +301,41 @@ function M.init_navigation(bufnr, window)
     end
   end
 
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-  nav_state.table_info = parse_table_structure(lines)
+  -- Use the lookup registry to find table at cursor position
+  local multi_table_nav = require('sql-cli.multi_table_nav')
+  local registry = multi_table_nav.get_table_registry(bufnr)
+
+  local cursor_line = 1
+  if nav_state.window and vim.api.nvim_win_is_valid(nav_state.window) then
+    local cursor = vim.api.nvim_win_get_cursor(nav_state.window)
+    cursor_line = cursor[1]
+  end
+
+  -- Find the table containing the cursor
+  local current_registry_table = nil
+  for _, tbl in ipairs(registry.tables) do
+    if cursor_line >= tbl.start_line and cursor_line <= tbl.end_line then
+      current_registry_table = tbl
+      break
+    end
+  end
+
+  if current_registry_table then
+    -- Convert registry format to nav_state format
+    nav_state.table_info = {
+      header_row = current_registry_table.header_line,
+      separator_row = current_registry_table.separator_line,
+      data_start = current_registry_table.data_start,
+      data_end = current_registry_table.data_end,
+      columns = current_registry_table.column_names,
+      column_positions = current_registry_table.column_positions,
+      style = current_registry_table.style or "ascii"
+    }
+  else
+    -- Fallback to old behavior if no table found at cursor
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    nav_state.table_info = parse_table_structure(lines)
+  end
 
   if nav_state.table_info.data_start then
     nav_state.current_row = 1
@@ -282,6 +399,25 @@ function M.disable_navigation()
   nav_state.current_col = 1
 end
 
+-- Clear navigation state (for multi-table navigation)
+function M.clear_navigation()
+  -- Don't remove keymaps, just clear the state data
+  nav_state.current_row = 1
+  nav_state.current_col = 1
+  nav_state.table_info = nil
+  nav_state.buffer = nil
+  nav_state.window = nil
+
+  -- Clear any existing highlights
+  if nav_state.highlight_ns then
+    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_valid(bufnr) then
+        vim.api.nvim_buf_clear_namespace(bufnr, nav_state.highlight_ns, 0, -1)
+      end
+    end
+  end
+end
+
 -- Toggle navigation mode
 function M.toggle_navigation(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
@@ -325,6 +461,13 @@ function M.highlight_current_cell()
 
     -- Move cursor to the cell in the output window
     if nav_state.window and vim.api.nvim_win_is_valid(nav_state.window) then
+      -- DEBUG: Show what we're trying to do
+      local debug_msg = string.format("Moving cursor to line %d, col %d (row %d/%d, col %d/%d)",
+        line_num, col_pos.start, nav_state.current_row,
+        nav_state.table_info.data_end - nav_state.table_info.data_start + 1,
+        nav_state.current_col, #nav_state.table_info.column_positions)
+      vim.notify(debug_msg, vim.log.levels.INFO)
+
       vim.api.nvim_win_set_cursor(nav_state.window, {line_num, col_pos.start})
     end
   end
@@ -332,6 +475,13 @@ end
 
 -- Navigation functions
 function M.move_left()
+  -- Auto-initialize if table_info is nil (after multi-table navigation)
+  if not nav_state.table_info then
+    local bufnr = vim.api.nvim_get_current_buf()
+    local win = vim.api.nvim_get_current_win()
+    M.init_navigation(bufnr, win)
+  end
+
   if nav_state.current_col > 1 then
     nav_state.current_col = nav_state.current_col - 1
     M.highlight_current_cell()
@@ -339,13 +489,27 @@ function M.move_left()
 end
 
 function M.move_right()
-  if nav_state.current_col < #nav_state.table_info.column_positions then
+  -- Auto-initialize if table_info is nil (after multi-table navigation)
+  if not nav_state.table_info then
+    local bufnr = vim.api.nvim_get_current_buf()
+    local win = vim.api.nvim_get_current_win()
+    M.init_navigation(bufnr, win)
+  end
+
+  if nav_state.table_info and nav_state.current_col < #nav_state.table_info.column_positions then
     nav_state.current_col = nav_state.current_col + 1
     M.highlight_current_cell()
   end
 end
 
 function M.move_up()
+  -- Auto-initialize if table_info is nil (after multi-table navigation)
+  if not nav_state.table_info then
+    local bufnr = vim.api.nvim_get_current_buf()
+    local win = vim.api.nvim_get_current_win()
+    M.init_navigation(bufnr, win)
+  end
+
   if nav_state.current_row > 1 then
     nav_state.current_row = nav_state.current_row - 1
     M.highlight_current_cell()
@@ -353,10 +517,19 @@ function M.move_up()
 end
 
 function M.move_down()
-  local max_row = nav_state.table_info.data_end - nav_state.table_info.data_start + 1
-  if nav_state.current_row < max_row then
-    nav_state.current_row = nav_state.current_row + 1
-    M.highlight_current_cell()
+  -- Auto-initialize if table_info is nil (after multi-table navigation)
+  if not nav_state.table_info then
+    local bufnr = vim.api.nvim_get_current_buf()
+    local win = vim.api.nvim_get_current_win()
+    M.init_navigation(bufnr, win)
+  end
+
+  if nav_state.table_info then
+    local max_row = nav_state.table_info.data_end - nav_state.table_info.data_start + 1
+    if nav_state.current_row < max_row then
+      nav_state.current_row = nav_state.current_row + 1
+      M.highlight_current_cell()
+    end
   end
 end
 

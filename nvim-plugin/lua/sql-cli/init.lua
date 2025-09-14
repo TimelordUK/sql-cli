@@ -14,6 +14,7 @@ local navigation = require('sql-cli.navigation')
 local functions = require('sql-cli.functions')
 local results = require('sql-cli.results')
 local table_nav = require('sql-cli.table_nav')
+local multi_table_nav = require('sql-cli.multi_table_nav')
 
 -- Plugin configuration
 M.config = {}
@@ -296,6 +297,45 @@ function M.setup_keymaps()
     vim.keymap.set("n", keymaps.toggle_table_nav, function()
       table_nav.toggle_navigation()
     end, { desc = "Toggle table navigation mode", silent = true })
+  end
+
+  -- Multi-table navigation keymaps
+  if keymaps.next_table then
+    vim.keymap.set("n", keymaps.next_table, function()
+      multi_table_nav.goto_next_table(M.state)
+    end, { desc = "Next result table", silent = true })
+  end
+
+  if keymaps.prev_table then
+    vim.keymap.set("n", keymaps.prev_table, function()
+      multi_table_nav.goto_prev_table(M.state)
+    end, { desc = "Previous result table", silent = true })
+  end
+
+  if keymaps.goto_table_1 then
+    vim.keymap.set("n", keymaps.goto_table_1, function()
+      multi_table_nav.goto_table(M.state, 1)
+    end, { desc = "Go to table 1", silent = true })
+  end
+
+  if keymaps.goto_table_2 then
+    vim.keymap.set("n", keymaps.goto_table_2, function()
+      multi_table_nav.goto_table(M.state, 2)
+    end, { desc = "Go to table 2", silent = true })
+  end
+
+  if keymaps.goto_table_3 then
+    vim.keymap.set("n", keymaps.goto_table_3, function()
+      multi_table_nav.goto_table(M.state, 3)
+    end, { desc = "Go to table 3", silent = true })
+  end
+
+  if keymaps.table_info then
+    vim.keymap.set("n", keymaps.table_info, function()
+      -- Call debug function temporarily to see what tables are detected
+      multi_table_nav.debug_tables(M.state)
+      -- multi_table_nav.show_table_info(M.state)
+    end, { desc = "Debug table detection", silent = true })
   end
 
   -- Export keymaps (auto-enable table nav if needed)

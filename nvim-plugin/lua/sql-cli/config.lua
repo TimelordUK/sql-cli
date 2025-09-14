@@ -60,6 +60,13 @@ M.defaults = {
     expand_star = "<leader>sE",     -- Expand SELECT * to column names (capital E)
     copy_query = "<leader>sy",       -- Copy query at cursor to clipboard (y for yank)
     toggle_table_nav = "<leader>sn", -- Toggle table navigation mode (n for nav)
+    -- Multi-table navigation (for scripts with GO statements)
+    next_table = "]t",              -- Jump to next result table
+    prev_table = "[t",              -- Jump to previous result table
+    goto_table_1 = "<leader>s1",    -- Jump to first table
+    goto_table_2 = "<leader>s2",    -- Jump to second table
+    goto_table_3 = "<leader>s3",    -- Jump to third table
+    table_info = "<leader>sI",      -- Show current table info (capital I to avoid conflict)
     -- Export keymaps (when in table navigation mode)
     export_menu = "<leader>se",     -- Export menu (all formats)
     export_browser = "<leader>sb",  -- Open in Browser for Gmail/Teams

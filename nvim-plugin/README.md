@@ -184,6 +184,14 @@ require('sql-cli').setup({
 - `<leader>sh` - Show table schema (columns and types)
 - `<leader>sk` - Smart detection at cursor (shows column info or function help)
 
+#### Multi-Table Navigation
+- `]t` - Jump to next result table
+- `[t` - Jump to previous result table
+- `<leader>s1` - Jump to first result table
+- `<leader>s2` - Jump to second result table
+- `<leader>s3` - Jump to third result table
+- `<leader>sI` - Show current table info (debug modal)
+
 #### Autocompletion
 - `<C-Space>` - Trigger SQL autocompletion (in INSERT mode)
   - Completes column names from current data file
@@ -220,6 +228,29 @@ GO
 ### Working with CSV Files
 
 When you open a CSV file, it's automatically set as the data source. You can then write queries in another buffer and execute them against this CSV.
+
+## Multi-Table Navigation
+
+When executing SQL scripts with multiple queries separated by `GO` statements, the plugin now supports navigation between result tables:
+
+### Navigation Keys
+- `]t` - Jump to next result table
+- `[t` - Jump to previous result table
+- `<leader>s1` - Jump directly to first table
+- `<leader>s2` - Jump directly to second table
+- `<leader>s3` - Jump directly to third table
+- `<leader>sI` - Show current table info (debug modal) (e.g., "Table 2/4 (10 rows)")
+
+### Example Workflow
+
+1. Open a multi-query SQL file: `:e examples/chemistry.sql`
+2. Execute with `<leader>sx` to run all queries
+3. Use `]t` to navigate forward through result tables
+4. Use `[t` to navigate backward through result tables
+5. Use `<leader>s1` to jump back to the first table
+6. Use `<leader>sI` to see which table you're currently viewing
+
+The navigation wraps around - pressing `]t` on the last table takes you to the first, and `[t` on the first table takes you to the last.
 
 ## Examples
 
