@@ -15,7 +15,6 @@ FROM posts
 GROUP BY userId
 ORDER BY post_count DESC, userId
 LIMIT 10;
-
 GO
 
 -- Example 2: Fetching and filtering JSON data
@@ -31,7 +30,6 @@ SELECT
 FROM users
 WHERE email LIKE '%@%.biz'
 ORDER BY name;
-
 GO
 
 WITH
@@ -71,5 +69,4 @@ FROM posts
 INNER JOIN users ON userId = id
 WHERE email LIKE '%@april.biz'
 LIMIT 5;
-
 GO

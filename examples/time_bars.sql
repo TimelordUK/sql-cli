@@ -1,5 +1,5 @@
+-- #! ../data/trades.csv
 -- Time-based bar aggregation examples for financial data
--- Data file: data/trades.csv
 
 -- ============================================
 -- Basic Time Functions
@@ -12,6 +12,7 @@ SELECT
 FROM trades
 LIMIT 5;
 
+GO
 -- Round timestamps to 1-minute boundaries
 SELECT 
     trade_time,
@@ -19,6 +20,7 @@ SELECT
     FROM_UNIXTIME(TIME_BUCKET(60, UNIX_TIMESTAMP(trade_time))) as minute_start
 FROM trades
 LIMIT 10;
+GO
 
 -- Round timestamps to 5-minute boundaries
 SELECT 
@@ -27,6 +29,7 @@ SELECT
     FROM_UNIXTIME(TIME_BUCKET(300, UNIX_TIMESTAMP(trade_time))) as bar_start
 FROM trades
 LIMIT 10;
+GO
 
 -- ============================================
 -- 1-Minute OHLCV Bars (Manual Bucketing)
@@ -43,6 +46,7 @@ SELECT
 FROM trades
 WHERE trade_time >= '2024-01-15 09:30:00' 
   AND trade_time < '2024-01-15 09:31:00';
+GO
 
 -- Second minute bar (9:31:00 - 9:31:59)
 SELECT 
@@ -55,6 +59,7 @@ SELECT
 FROM trades
 WHERE trade_time >= '2024-01-15 09:31:00' 
   AND trade_time < '2024-01-15 09:32:00';
+GO
 
 -- ============================================
 -- 5-Minute OHLCV Bars
@@ -74,6 +79,7 @@ SELECT
 FROM trades
 WHERE trade_time >= '2024-01-15 09:30:00' 
   AND trade_time < '2024-01-15 09:35:00';
+GO
 
 -- ============================================
 -- Statistical Metrics
@@ -93,19 +99,36 @@ SELECT
     AVG(volume) as avg_trade_size
 FROM trades
 GROUP BY symbol;
+GO
 
--- Trade size distribution
 SELECT 
+    *,
     CASE 
         WHEN volume < 1000 THEN '< 1K'
         WHEN volume < 2000 THEN '1K-2K'
         ELSE '2K+'
-    END as size_bucket,
+    END as size_bucket
+FROM trades;
+GO
+
+-- Trade size distribution
+with compute as
+(
+SELECT 
+    *,
+    CASE 
+        WHEN volume < 1000 THEN '< 1K'
+        WHEN volume < 2000 THEN '1K-2K'
+        ELSE '2K+'
+    END as size_bucket
+FROM trades
+) select size_bucket,
     COUNT(*) as count,
     AVG(price) as avg_price
-FROM trades
+    from compute
 GROUP BY size_bucket
 ORDER BY size_bucket;
+GO
 
 -- ============================================
 -- Price Movement Analysis
@@ -120,29 +143,30 @@ SELECT
 FROM trades
 WHERE volume > 2000
 ORDER BY trade_time;
+GO
 
 -- Find high volume minutes (requires manual bucketing for now)
-SELECT 
-    '09:30' as minute,
-    SUM(volume) as volume,
-    SUM(price * volume) as notional
-FROM trades
-WHERE trade_time >= '2024-01-15 09:30:00' 
-  AND trade_time < '2024-01-15 09:31:00'
-UNION ALL
-SELECT 
-    '09:31' as minute,
-    SUM(volume) as volume,
-    SUM(price * volume) as notional
-FROM trades
-WHERE trade_time >= '2024-01-15 09:31:00' 
-  AND trade_time < '2024-01-15 09:32:00'
-UNION ALL
-SELECT 
-    '09:32' as minute,
-    SUM(volume) as volume,
-    SUM(price * volume) as notional
-FROM trades
-WHERE trade_time >= '2024-01-15 09:32:00' 
-  AND trade_time < '2024-01-15 09:33:00'
-ORDER BY volume DESC;
+-- SELECT 
+    -- '09:30' as minute,
+    -- SUM(volume) as volume,
+    -- SUM(price * volume) as notional
+-- FROM trades
+-- WHERE trade_time >= '2024-01-15 09:30:00' 
+  -- AND trade_time < '2024-01-15 09:31:00'
+-- UNION ALL
+-- SELECT 
+    -- '09:31' as minute,
+    -- SUM(volume) as volume,
+    -- SUM(price * volume) as notional
+-- FROM trades
+-- WHERE trade_time >= '2024-01-15 09:31:00' 
+  -- AND trade_time < '2024-01-15 09:32:00'
+-- UNION ALL
+-- SELECT 
+    -- '09:32' as minute,
+    -- SUM(volume) as volume,
+    -- SUM(price * volume) as notional
+-- FROM trades
+-- WHERE trade_time >= '2024-01-15 09:32:00' 
+  -- AND trade_time < '2024-01-15 09:33:00'
+-- ORDER BY volume DESC;

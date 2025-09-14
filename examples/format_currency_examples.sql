@@ -69,31 +69,28 @@ GROUP BY currency
 ORDER BY total_sales DESC;
 GO
 
--- Custom decimal places for different currencies
 SELECT
     currency,
     amount,
-    FORMAT_CURRENCY(amount, currency) as default_decimals,
-    FORMAT_CURRENCY(amount, currency, 'symbol', 0) as no_decimals,
-    FORMAT_CURRENCY(amount, currency, 'symbol', 3) as three_decimals
+    FORMAT_CURRENCY(amount, currency) AS default_decimals,
+    FORMAT_CURRENCY(amount, currency, 'symbol', 0) AS no_decimals,
+    FORMAT_CURRENCY(amount, currency, 'symbol', 3) AS three_decimals
 FROM international_sales
 WHERE currency IN ('JPY', 'USD', 'EUR')
 LIMIT 6;
 GO
 
--- Mixed currency report with appropriate formatting
 SELECT
     region,
     country,
-    FORMAT_CURRENCY(amount, currency) as item_price,
+    FORMAT_CURRENCY(amount, currency) AS item_price,
     quantity,
-    FORMAT_CURRENCY(amount * quantity, currency, 'compact') as total_compact
+    FORMAT_CURRENCY(amount * quantity, currency, 'compact') AS total_compact
 FROM international_sales
-ORDER BY region, country
+ORDER BY region ASC, country ASC
 LIMIT 15;
 GO
 
--- Top products by revenue with currency formatting
 WITH
     values AS (
         SELECT *, amount * quantity AS total_sale
@@ -101,10 +98,10 @@ WITH
     )
 SELECT
     product,
-    COUNT(DISTINCT currency) as num_currencies,
-    SUM(total_sale) as global_revenue,
-    RENDER_NUMBER(SUM(total_sale), 'compact') as revenue_compact,
-    STRING_AGG(DISTINCT currency, ', ') as currencies_usd
+    COUNT(DISTINCT currency) AS num_currencies,
+    SUM(total_sale) AS global_revenue,
+    RENDER_NUMBER(SUM(total_sale), 'compact') AS revenue_compact,
+    STRING_AGG(DISTINCT currency, ', ') AS currencies_usd
 FROM values
 GROUP BY product
 ORDER BY global_revenue DESC;

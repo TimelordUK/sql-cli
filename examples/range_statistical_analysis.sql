@@ -45,15 +45,21 @@ bucketed AS (
         value,
         FLOOR(value / 10) AS bucket
     FROM data_points
-)
-SELECT 
+),
+grouped as 
+(
+    select
+    value,
     bucket,
     bucket * 10 AS bucket_start,
-    (bucket * 10) + 9 AS bucket_end,
+    (bucket * 10) + 9 AS bucket_end
+    from bucketed
+)
+select bucket, bucket_start, bucket_end, 
     COUNT(*) AS frequency,
     SUM(value) AS bucket_sum
-FROM bucketed
-GROUP BY bucket
+FROM grouped
+GROUP BY bucket,bucket_start,bucket_end
 ORDER BY bucket;
 GO
 

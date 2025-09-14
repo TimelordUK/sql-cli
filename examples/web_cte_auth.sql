@@ -7,23 +7,23 @@
 
 -- Example 1: Using Bearer token authentication
 -- The ${API_TOKEN} will be replaced with the value from environment
-WITH WEB api_data AS (
-    URL 'https://api.github.com/user/repos'
-    FORMAT JSON
-    HEADERS (
-        'Authorization': 'Bearer ${GITHUB_TOKEN}',
-        'Accept': 'application/vnd.github.v3+json'
-    )
-)
-SELECT
-    name as repo_name,
-    private,
-    created_at,
-    updated_at,
-    stargazers_count as stars
-FROM api_data
-ORDER BY stargazers_count DESC
-LIMIT 10;
+-- WITH WEB api_data AS (
+    -- URL 'https://api.github.com/user/repos'
+    -- FORMAT JSON
+    -- HEADERS (
+        -- 'Authorization': 'Bearer ${GITHUB_TOKEN}',
+        -- 'Accept': 'application/vnd.github.v3+json'
+    -- )
+-- )
+-- SELECT
+    -- name as repo_name,
+    -- private,
+    -- created_at,
+    -- updated_at,
+    -- stargazers_count as stars
+-- FROM api_data
+-- ORDER BY stargazers_count DESC
+-- LIMIT 10;
 
 GO
 
@@ -77,3 +77,4 @@ FROM posts
 GROUP BY userId
 ORDER BY post_count DESC
 LIMIT 5;
+GO

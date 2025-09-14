@@ -168,29 +168,29 @@ GO
 -- Example 8: Calculate cumulative returns
 -- Shows total return from the start of the period
 -- ============================================
-WITH daily_returns AS (
-    SELECT
-        date,
-        close,
-        RETURNS(close, LAG(close) OVER (ORDER BY date)) as daily_return
-    FROM AAPL_data
-),
-indexed_prices AS (
-    SELECT
-        date,
-        close,
-        daily_return,
-        EXP(SUM(LN(1 + COALESCE(daily_return, 0))) OVER (ORDER BY date)) - 1 as cumulative_return
-    FROM daily_returns
-)
-SELECT
-    date,
-    close,
-    RENDER_NUMBER(daily_return * 100, 'standard', 2) || '%' as daily_ret_pct,
-    RENDER_NUMBER(cumulative_return * 100, 'standard', 2) || '%' as cumul_ret_pct
-FROM indexed_prices
-ORDER BY date
-LIMIT 20;
+-- WITH daily_returns AS (
+    -- SELECT
+        -- date,
+        -- close,
+        -- RETURNS(close, LAG(close) OVER (ORDER BY date)) as daily_return
+    -- FROM AAPL_data
+-- ),
+-- indexed_prices AS (
+    -- SELECT
+        -- date,
+        -- close,
+        -- daily_return,
+        -- EXP(SUM(LN(1 + COALESCE(daily_return, 0))) OVER (ORDER BY date)) - 1 as cumulative_return
+    -- FROM daily_returns
+-- )
+-- SELECT
+    -- date,
+    -- close,
+    -- RENDER_NUMBER(daily_return * 100, 'standard', 2) || '%' as daily_ret_pct,
+    -- RENDER_NUMBER(cumulative_return * 100, 'standard', 2) || '%' as cumul_ret_pct
+-- FROM indexed_prices
+-- ORDER BY date
+-- LIMIT 20;
 GO
 
 -- ============================================
