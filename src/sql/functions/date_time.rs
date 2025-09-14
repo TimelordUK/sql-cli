@@ -532,6 +532,285 @@ impl SqlFunction for TimeBucket {
     }
 }
 
+/// DAYOFWEEK function - returns day of week as number (0=Sunday, 6=Saturday)
+pub struct DayOfWeekFunction;
+
+impl SqlFunction for DayOfWeekFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DAYOFWEEK",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns day of week as number (0=Sunday, 6=Saturday)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT DAYOFWEEK('2024-01-01')", // Returns 1 (Monday)
+                "SELECT DAYOFWEEK(NOW())",
+                "SELECT DAYOFWEEK(date_column) FROM table",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("DAYOFWEEK expects exactly 1 argument"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("DAYOFWEEK expects a date/datetime string")),
+        };
+
+        let dt = parse_datetime(date_str)?;
+        // chrono weekday: Mon=0, Tue=1, ..., Sun=6
+        // We want: Sun=0, Mon=1, ..., Sat=6
+        let chrono_weekday = dt.weekday().num_days_from_monday(); // 0=Mon, 6=Sun
+        let our_weekday = (chrono_weekday + 1) % 7; // Convert to 0=Sun, 6=Sat
+
+        Ok(DataValue::Integer(our_weekday as i64))
+    }
+}
+
+/// DAYNAME function - returns full day name (Monday, Tuesday, etc.)
+pub struct DayNameFunction;
+
+impl SqlFunction for DayNameFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DAYNAME",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Range(1, 2),
+            description: "Returns day name. Optional second arg: 'full' (default) or 'short'",
+            returns: "STRING",
+            examples: vec![
+                "SELECT DAYNAME('2024-01-01')",          // Returns 'Monday'
+                "SELECT DAYNAME('2024-01-01', 'short')", // Returns 'Mon'
+                "SELECT DAYNAME(NOW(), 'full')",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(anyhow!("DAYNAME expects 1 or 2 arguments"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("DAYNAME expects a date/datetime string")),
+        };
+
+        let format = if args.len() == 2 {
+            match &args[1] {
+                DataValue::String(s) => s.as_str(),
+                DataValue::InternedString(s) => s.as_str(),
+                DataValue::Null => "full",
+                _ => return Err(anyhow!("DAYNAME format must be 'full' or 'short'")),
+            }
+        } else {
+            "full"
+        };
+
+        let dt = parse_datetime(date_str)?;
+
+        let day_name = match format {
+            "short" => dt.format("%a").to_string(), // Mon, Tue, Wed, etc.
+            "full" | _ => dt.format("%A").to_string(), // Monday, Tuesday, etc.
+        };
+
+        Ok(DataValue::String(day_name))
+    }
+}
+
+/// ISLEAPYEAR function - returns true if the year is a leap year
+pub struct IsLeapYearFunction;
+
+impl SqlFunction for IsLeapYearFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "ISLEAPYEAR",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns true if the year is a leap year",
+            returns: "BOOLEAN",
+            examples: vec![
+                "SELECT ISLEAPYEAR('2024-01-01')", // Returns true
+                "SELECT ISLEAPYEAR(2024)",         // Returns true
+                "SELECT ISLEAPYEAR(2023)",         // Returns false
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("ISLEAPYEAR expects exactly 1 argument"));
+        }
+
+        let year = match &args[0] {
+            DataValue::Integer(y) => *y as i32,
+            DataValue::Float(f) => *f as i32,
+            DataValue::String(s) | DataValue::DateTime(s) => {
+                // Try to parse as a year number first
+                if let Ok(y) = s.parse::<i32>() {
+                    y
+                } else {
+                    // Try to parse as a date
+                    let dt = parse_datetime(s.as_str())?;
+                    dt.year()
+                }
+            }
+            DataValue::InternedString(s) => {
+                // Try to parse as a year number first
+                if let Ok(y) = s.parse::<i32>() {
+                    y
+                } else {
+                    // Try to parse as a date
+                    let dt = parse_datetime(s.as_str())?;
+                    dt.year()
+                }
+            }
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("ISLEAPYEAR expects a year number or date")),
+        };
+
+        // Leap year calculation
+        let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+
+        Ok(DataValue::Boolean(is_leap))
+    }
+}
+
+/// WEEKOFYEAR function - returns the ISO week number (1-53)
+pub struct WeekOfYearFunction;
+
+impl SqlFunction for WeekOfYearFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "WEEKOFYEAR",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the ISO week number of the year (1-53)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT WEEKOFYEAR('2024-01-01')", // Returns week number
+                "SELECT WEEKOFYEAR(NOW())",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("WEEKOFYEAR expects exactly 1 argument"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("WEEKOFYEAR expects a date/datetime string")),
+        };
+
+        let dt = parse_datetime(date_str)?;
+        let week = dt.iso_week().week();
+
+        Ok(DataValue::Integer(week as i64))
+    }
+}
+
+/// QUARTER function - returns the quarter of the year (1-4)
+pub struct QuarterFunction;
+
+impl SqlFunction for QuarterFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "QUARTER",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the quarter of the year (1-4)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT QUARTER('2024-01-15')", // Returns 1
+                "SELECT QUARTER('2024-07-01')", // Returns 3
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("QUARTER expects exactly 1 argument"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("QUARTER expects a date/datetime string")),
+        };
+
+        let dt = parse_datetime(date_str)?;
+        let month = dt.month();
+        let quarter = (month - 1) / 3 + 1;
+
+        Ok(DataValue::Integer(quarter as i64))
+    }
+}
+
+/// MONTHNAME function - returns the month name
+pub struct MonthNameFunction;
+
+impl SqlFunction for MonthNameFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "MONTHNAME",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Range(1, 2),
+            description: "Returns month name. Optional second arg: 'full' (default) or 'short'",
+            returns: "STRING",
+            examples: vec![
+                "SELECT MONTHNAME('2024-01-15')",          // Returns 'January'
+                "SELECT MONTHNAME('2024-01-15', 'short')", // Returns 'Jan'
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(anyhow!("MONTHNAME expects 1 or 2 arguments"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("MONTHNAME expects a date/datetime string")),
+        };
+
+        let format = if args.len() == 2 {
+            match &args[1] {
+                DataValue::String(s) => s.as_str(),
+                DataValue::InternedString(s) => s.as_str(),
+                DataValue::Null => "full",
+                _ => return Err(anyhow!("MONTHNAME format must be 'full' or 'short'")),
+            }
+        } else {
+            "full"
+        };
+
+        let dt = parse_datetime(date_str)?;
+
+        let month_name = match format {
+            "short" => dt.format("%b").to_string(), // Jan, Feb, Mar, etc.
+            "full" | _ => dt.format("%B").to_string(), // January, February, etc.
+        };
+
+        Ok(DataValue::String(month_name))
+    }
+}
+
 /// Register all date/time functions
 pub fn register_date_time_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(NowFunction));
@@ -541,4 +820,12 @@ pub fn register_date_time_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(UnixTimestamp));
     registry.register(Box::new(FromUnixTime));
     registry.register(Box::new(TimeBucket));
+
+    // New date utility functions
+    registry.register(Box::new(DayOfWeekFunction));
+    registry.register(Box::new(DayNameFunction));
+    registry.register(Box::new(IsLeapYearFunction));
+    registry.register(Box::new(WeekOfYearFunction));
+    registry.register(Box::new(QuarterFunction));
+    registry.register(Box::new(MonthNameFunction));
 }
