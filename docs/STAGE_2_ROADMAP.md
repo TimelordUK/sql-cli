@@ -20,8 +20,8 @@ We have successfully built the foundational architecture:
 - [x] `STDDEV(column)` - Standard deviation (as aggregate and window function) ✅
 - [x] `VARIANCE(column)` - Variance (as aggregate and window function) ✅
 - [x] `MEDIAN(column)` - Median value ✅
-- [ ] `PERCENTILE(column, n)` - Nth percentile
-- [ ] `MODE(column)` - Most frequent value
+- [x] `PERCENTILE(column)` - 50th percentile (median equivalent) ✅
+- [x] `MODE(column)` - Most frequent value (perfect for distribution analysis) ✅
 - [ ] `CORR(col1, col2)` - Correlation coefficient
 - [ ] `COVAR(col1, col2)` - Covariance
 
@@ -88,8 +88,8 @@ SELECT * FROM price_data WHERE close_price > bb_upper;  -- Breakout detection
 - [x] **STRING_AGG**: Implemented with configurable separator ✅
 - [x] **Full Integration**: Replace hardcoded aggregate logic in evaluator ✅
 - [x] **DISTINCT Support**: Uniform DISTINCT handling across all aggregates ✅
-- [x] **Additional Aggregates**: MEDIAN ✅, STDDEV ✅, VARIANCE ✅
-- [ ] **Remaining Aggregates**: PERCENTILE, MODE, CORR, COVAR
+- [x] **Additional Aggregates**: MEDIAN ✅, STDDEV ✅, VARIANCE ✅, PERCENTILE ✅, MODE ✅
+- [ ] **Remaining Aggregates**: CORR, COVAR (multi-column functions)
 
 ### 🎯 Priority 3: Better Error Messages
 

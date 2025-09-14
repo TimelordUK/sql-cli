@@ -19,6 +19,8 @@ pub enum AggregateState {
     MinMax(MinMaxState),
     Variance(VarianceState),
     CollectList(Vec<DataValue>),
+    Percentile(PercentileState),
+    Mode(ModeState),
     Analytics(analytics::AnalyticsState),
     StringAgg(StringAggState),
 }
@@ -259,6 +261,165 @@ impl VarianceState {
     }
 }
 
+/// State for PERCENTILE aggregation
+#[derive(Debug, Clone)]
+pub struct PercentileState {
+    pub values: Vec<DataValue>,
+    pub percentile: f64,
+}
+
+impl Default for PercentileState {
+    fn default() -> Self {
+        Self::new(50.0) // Default to median
+    }
+}
+
+impl PercentileState {
+    #[must_use]
+    pub fn new(percentile: f64) -> Self {
+        Self {
+            values: Vec::new(),
+            percentile: percentile.clamp(0.0, 100.0),
+        }
+    }
+
+    pub fn add(&mut self, value: &DataValue) -> Result<()> {
+        if !matches!(value, DataValue::Null) {
+            self.values.push(value.clone());
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn finalize(mut self) -> DataValue {
+        if self.values.is_empty() {
+            return DataValue::Null;
+        }
+
+        // Sort values for percentile calculation
+        self.values.sort_by(|a, b| {
+            use std::cmp::Ordering;
+            match (a, b) {
+                (DataValue::Integer(a), DataValue::Integer(b)) => a.cmp(b),
+                (DataValue::Float(a), DataValue::Float(b)) => {
+                    a.partial_cmp(b).unwrap_or(Ordering::Equal)
+                }
+                (DataValue::Integer(a), DataValue::Float(b)) => {
+                    (*a as f64).partial_cmp(b).unwrap_or(Ordering::Equal)
+                }
+                (DataValue::Float(a), DataValue::Integer(b)) => {
+                    a.partial_cmp(&(*b as f64)).unwrap_or(Ordering::Equal)
+                }
+                _ => Ordering::Equal,
+            }
+        });
+
+        let n = self.values.len();
+        if self.percentile == 0.0 {
+            return self.values[0].clone();
+        }
+        if self.percentile == 100.0 {
+            return self.values[n - 1].clone();
+        }
+
+        // Calculate percentile using linear interpolation
+        let pos = (self.percentile / 100.0) * ((n - 1) as f64);
+        let lower_idx = pos.floor() as usize;
+        let upper_idx = pos.ceil() as usize;
+
+        if lower_idx == upper_idx {
+            // Exact position
+            self.values[lower_idx].clone()
+        } else {
+            // Interpolate between two values
+            let fraction = pos - lower_idx as f64;
+            let lower_val = &self.values[lower_idx];
+            let upper_val = &self.values[upper_idx];
+
+            match (lower_val, upper_val) {
+                (DataValue::Integer(a), DataValue::Integer(b)) => {
+                    let result = *a as f64 + fraction * (*b - *a) as f64;
+                    if result.fract() == 0.0 {
+                        DataValue::Integer(result as i64)
+                    } else {
+                        DataValue::Float(result)
+                    }
+                }
+                (DataValue::Float(a), DataValue::Float(b)) => {
+                    DataValue::Float(a + fraction * (b - a))
+                }
+                (DataValue::Integer(a), DataValue::Float(b)) => {
+                    DataValue::Float(*a as f64 + fraction * (b - *a as f64))
+                }
+                (DataValue::Float(a), DataValue::Integer(b)) => {
+                    DataValue::Float(a + fraction * (*b as f64 - a))
+                }
+                // For non-numeric, return the lower value
+                _ => lower_val.clone(),
+            }
+        }
+    }
+}
+
+/// State for MODE aggregation (most frequent value)
+#[derive(Debug, Clone)]
+pub struct ModeState {
+    pub counts: std::collections::HashMap<String, (DataValue, i64)>,
+}
+
+impl Default for ModeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ModeState {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            counts: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, value: &DataValue) -> Result<()> {
+        if matches!(value, DataValue::Null) {
+            return Ok(());
+        }
+
+        // Convert value to string for hashing, but keep original value for result
+        let key = match value {
+            DataValue::String(s) => s.clone(),
+            DataValue::InternedString(s) => s.to_string(),
+            DataValue::Integer(i) => i.to_string(),
+            DataValue::Float(f) => f.to_string(),
+            DataValue::Boolean(b) => b.to_string(),
+            DataValue::DateTime(dt) => dt.to_string(),
+            DataValue::Null => return Ok(()),
+        };
+
+        // Update count and store the original value
+        let entry = self.counts.entry(key).or_insert((value.clone(), 0));
+        entry.1 += 1;
+
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn finalize(self) -> DataValue {
+        if self.counts.is_empty() {
+            return DataValue::Null;
+        }
+
+        // Find the value with the highest count
+        let max_entry = self.counts.iter().max_by_key(|(_, (_, count))| count);
+
+        match max_entry {
+            Some((_, (value, _count))) => value.clone(),
+            None => DataValue::Null,
+        }
+    }
+}
+
 /// Trait for all aggregate functions
 pub trait AggregateFunction: Send + Sync {
     /// Name of the function (e.g., "SUM", "AVG")
@@ -355,7 +516,8 @@ impl AggregateRegistry {
         };
         use functions::{
             AvgFunction, CountFunction, CountStarFunction, MaxFunction, MedianFunction,
-            MinFunction, StdDevFunction, StringAggFunction, SumFunction, VarianceFunction,
+            MinFunction, ModeFunction, PercentileFunction, StdDevFunction, StringAggFunction,
+            SumFunction, VarianceFunction,
         };
 
         let functions: Vec<Box<dyn AggregateFunction>> = vec![
@@ -368,6 +530,8 @@ impl AggregateRegistry {
             Box::new(StdDevFunction),
             Box::new(VarianceFunction),
             Box::new(MedianFunction),
+            Box::new(ModeFunction),
+            Box::new(PercentileFunction),
             Box::new(StringAggFunction),
             // Analytics functions
             Box::new(DeltasFunction),

@@ -3,8 +3,8 @@
 use anyhow::Result;
 
 use super::{
-    AggregateFunction, AggregateState, AvgState, MinMaxState, StringAggState, SumState,
-    VarianceState,
+    AggregateFunction, AggregateState, AvgState, MinMaxState, ModeState, PercentileState,
+    StringAggState, SumState, VarianceState,
 };
 use crate::data::datatable::DataValue;
 
@@ -365,6 +365,70 @@ impl AggregateFunction for MedianFunction {
 
     fn requires_numeric(&self) -> bool {
         false // MEDIAN works on any sortable type
+    }
+}
+
+/// PERCENTILE(column, percentile) - finds the nth percentile value
+pub struct PercentileFunction;
+
+impl AggregateFunction for PercentileFunction {
+    fn name(&self) -> &'static str {
+        "PERCENTILE"
+    }
+
+    fn init(&self) -> AggregateState {
+        AggregateState::Percentile(PercentileState::new(50.0))
+    }
+
+    fn accumulate(&self, state: &mut AggregateState, value: &DataValue) -> Result<()> {
+        if let AggregateState::Percentile(ref mut percentile_state) = state {
+            percentile_state.add(value)?;
+        }
+        Ok(())
+    }
+
+    fn finalize(&self, state: AggregateState) -> DataValue {
+        if let AggregateState::Percentile(percentile_state) = state {
+            percentile_state.finalize()
+        } else {
+            DataValue::Null
+        }
+    }
+
+    fn requires_numeric(&self) -> bool {
+        true // PERCENTILE typically works on numeric data
+    }
+}
+
+/// MODE(column) - finds the most frequently occurring value
+pub struct ModeFunction;
+
+impl AggregateFunction for ModeFunction {
+    fn name(&self) -> &'static str {
+        "MODE"
+    }
+
+    fn init(&self) -> AggregateState {
+        AggregateState::Mode(ModeState::new())
+    }
+
+    fn accumulate(&self, state: &mut AggregateState, value: &DataValue) -> Result<()> {
+        if let AggregateState::Mode(ref mut mode_state) = state {
+            mode_state.add(value)?;
+        }
+        Ok(())
+    }
+
+    fn finalize(&self, state: AggregateState) -> DataValue {
+        if let AggregateState::Mode(mode_state) = state {
+            mode_state.finalize()
+        } else {
+            DataValue::Null
+        }
+    }
+
+    fn requires_numeric(&self) -> bool {
+        false // MODE works on any data type
     }
 }
 
