@@ -13,6 +13,7 @@ pub mod sql;
 pub mod state;
 pub mod ui;
 pub mod utils;
+pub mod web;
 pub mod widgets;
 
 // Existing flat structure (to be gradually moved to modules above)

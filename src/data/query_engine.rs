@@ -163,9 +163,15 @@ impl QueryEngine {
                     // Execute the CTE query (it might reference earlier CTEs)
                     self.build_view_with_context(table.clone(), query.clone(), &mut cte_context)?
                 }
-                CTEType::Web(_web_spec) => {
-                    // TODO: Implement WEB CTE fetching
-                    return Err(anyhow::anyhow!("WEB CTEs are not yet implemented"));
+                CTEType::Web(web_spec) => {
+                    // Fetch data from URL
+                    use crate::web::http_fetcher::WebDataFetcher;
+
+                    let fetcher = WebDataFetcher::new()?;
+                    let data_table = fetcher.fetch(web_spec, &cte.name)?;
+
+                    // Convert DataTable to DataView
+                    DataView::new(Arc::new(data_table))
                 }
             };
             // Store the result in the context for later use
@@ -202,9 +208,15 @@ impl QueryEngine {
                 CTEType::Standard(query) => {
                     self.build_view_with_context(table.clone(), query.clone(), &mut local_context)?
                 }
-                CTEType::Web(_web_spec) => {
-                    // TODO: Implement WEB CTE fetching
-                    return Err(anyhow::anyhow!("WEB CTEs are not yet implemented"));
+                CTEType::Web(web_spec) => {
+                    // Fetch data from URL
+                    use crate::web::http_fetcher::WebDataFetcher;
+
+                    let fetcher = WebDataFetcher::new()?;
+                    let data_table = fetcher.fetch(web_spec, &cte.name)?;
+
+                    // Convert DataTable to DataView
+                    DataView::new(Arc::new(data_table))
                 }
             };
             local_context.insert(cte.name.clone(), Arc::new(cte_result));
@@ -284,7 +296,15 @@ impl QueryEngine {
                         if let Some(cache) = web_spec.cache_seconds {
                             plan_builder.add_detail(format!("Cache: {} seconds", cache));
                         }
-                        return Err(anyhow::anyhow!("WEB CTEs are not yet implemented"));
+
+                        // Fetch data from URL
+                        use crate::web::http_fetcher::WebDataFetcher;
+
+                        let fetcher = WebDataFetcher::new()?;
+                        let data_table = fetcher.fetch(web_spec, &cte.name)?;
+
+                        // Convert DataTable to DataView
+                        DataView::new(Arc::new(data_table))
                     }
                 };
 
@@ -378,8 +398,17 @@ impl QueryEngine {
         cte_context: &mut HashMap<String, Arc<DataView>>,
         plan: &mut ExecutionPlanBuilder,
     ) -> Result<DataView> {
-        // First, process any CTEs
+        // First, process any CTEs that aren't already in the context
         for cte in &statement.ctes {
+            // Skip if already processed (e.g., by execute_select for WEB CTEs)
+            if cte_context.contains_key(&cte.name) {
+                debug!(
+                    "QueryEngine: CTE '{}' already in context, skipping",
+                    cte.name
+                );
+                continue;
+            }
+
             debug!("QueryEngine: Processing CTE '{}'...", cte.name);
             // Execute the CTE query (it might reference earlier CTEs)
             let cte_result = match &cte.cte_type {
@@ -387,9 +416,9 @@ impl QueryEngine {
                     self.build_view_with_context(table.clone(), query.clone(), cte_context)?
                 }
                 CTEType::Web(_web_spec) => {
-                    // Web CTEs should have been processed earlier in the pipeline
+                    // Web CTEs should have been processed earlier in execute_select
                     return Err(anyhow!(
-                        "Web CTEs should be processed before reaching QueryEngine"
+                        "Web CTEs should be processed in execute_select method"
                     ));
                 }
             };

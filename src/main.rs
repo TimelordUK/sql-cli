@@ -611,142 +611,35 @@ fn main() -> io::Result<()> {
             .lines()
             .any(|line| line.trim().eq_ignore_ascii_case("go"));
 
-        // Check if query uses DUAL, RANGE, or has no FROM clause
-        let uses_dual_or_no_from = {
-            use sql_cli::sql::recursive_parser::{CTEType, Parser, SelectStatement};
-
-            fn check_statement_for_range(stmt: &SelectStatement) -> bool {
-                // Check main query
-                if stmt.from_function.is_some() {
-                    return true;
-                }
-
-                // Check if it's DUAL or no FROM
-                if stmt
-                    .from_table
-                    .as_ref()
-                    .is_some_and(|t| t.to_uppercase() == "DUAL")
-                {
-                    return true;
-                }
-
-                if stmt.from_table.is_none()
-                    && stmt.from_subquery.is_none()
-                    && stmt.from_function.is_none()
-                {
-                    return true;
-                }
-
-                // Recursively check CTEs
-                for cte in &stmt.ctes {
-                    match &cte.cte_type {
-                        CTEType::Standard(query) => {
-                            if check_statement_for_range(query) {
-                                return true;
-                            }
-                        }
-                        CTEType::Web(_web_spec) => {
-                            // Web CTEs don't contain SQL queries that need range checking
-                        }
-                    }
-                }
-
-                // Check subqueries
-                if let Some(ref subquery) = stmt.from_subquery {
-                    if check_statement_for_range(subquery) {
-                        return true;
-                    }
-                }
-
-                false
-            }
-
-            if let Ok(statement) = Parser::new(&query).parse() {
-                check_statement_for_range(&statement)
-            } else {
-                false
-            }
-        };
-
-        // Find the data file (optional if using DUAL)
+        // Find the data file if provided
         let data_file = args
             .iter()
             .filter(|arg| !arg.starts_with('-'))
             .find(|arg| arg.ends_with(".csv") || arg.ends_with(".json"))
-            .cloned();
+            .cloned()
+            .unwrap_or_default(); // Use empty string if no data file
 
-        if let Some(data_file) = data_file {
-            let config = sql_cli::non_interactive::NonInteractiveConfig {
-                data_file,
-                query,
-                output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
-                    .map_err(io::Error::other)?,
-                output_file: output_file_arg,
-                case_insensitive: args.contains(&"--case-insensitive".to_string()),
-                auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
-                limit: limit_arg,
-                query_plan: query_plan_arg,
-                execution_plan: execution_plan_arg,
-                script_file: query_file_arg.clone(),
-            };
+        let config = sql_cli::non_interactive::NonInteractiveConfig {
+            data_file,
+            query,
+            output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
+                .map_err(io::Error::other)?,
+            output_file: output_file_arg,
+            case_insensitive: args.contains(&"--case-insensitive".to_string()),
+            auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
+            limit: limit_arg,
+            query_plan: query_plan_arg,
+            execution_plan: execution_plan_arg,
+            script_file: query_file_arg.clone(),
+        };
 
-            // Use script executor if GO separator is detected
-            if is_script {
-                return sql_cli::non_interactive::execute_script(config).map_err(io::Error::other);
-            } else {
-                return sql_cli::non_interactive::execute_non_interactive(config)
-                    .map_err(io::Error::other);
-            }
-        } else if uses_dual_or_no_from {
-            // Use empty string for data_file when using DUAL
-            let config = sql_cli::non_interactive::NonInteractiveConfig {
-                data_file: String::new(),
-                query,
-                output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
-                    .map_err(io::Error::other)?,
-                output_file: output_file_arg,
-                case_insensitive: args.contains(&"--case-insensitive".to_string()),
-                auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
-                limit: limit_arg,
-                query_plan: query_plan_arg,
-                execution_plan: execution_plan_arg,
-                script_file: query_file_arg.clone(),
-            };
-
-            // Use script executor if GO separator is detected
-            if is_script {
-                return sql_cli::non_interactive::execute_script(config).map_err(io::Error::other);
-            } else {
-                return sql_cli::non_interactive::execute_non_interactive(config)
-                    .map_err(io::Error::other);
-            }
-        }
-
-        // Check if it's a script with a data file hint
+        // Use script executor if GO separator is detected, otherwise normal execution
         if is_script {
-            // Try to execute as a script - it might have a data file hint
-            let config = sql_cli::non_interactive::NonInteractiveConfig {
-                data_file: String::new(),
-                query,
-                output_format: sql_cli::non_interactive::OutputFormat::from_str(&output_format_arg)
-                    .map_err(io::Error::other)?,
-                output_file: output_file_arg,
-                case_insensitive: args.contains(&"--case-insensitive".to_string()),
-                auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
-                limit: limit_arg,
-                query_plan: query_plan_arg,
-                execution_plan: execution_plan_arg,
-                script_file: query_file_arg.clone(),
-            };
-
-            // The script executor will check for data file hints
             return sql_cli::non_interactive::execute_script(config).map_err(io::Error::other);
+        } else {
+            return sql_cli::non_interactive::execute_non_interactive(config)
+                .map_err(io::Error::other);
         }
-
-        eprintln!("Error: Data file (CSV or JSON) required for non-interactive query mode");
-        eprintln!("Usage: sql-cli <data.csv> -q \"SELECT * FROM table\"");
-        eprintln!("       sql-cli -q \"SELECT expression FROM DUAL\"");
-        std::process::exit(1);
     }
 
     // Check for config initialization

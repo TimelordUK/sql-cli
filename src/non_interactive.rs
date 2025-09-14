@@ -55,72 +55,20 @@ pub struct NonInteractiveConfig {
 pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     let start_time = Instant::now();
 
-    // Check if query uses DUAL or has no FROM clause
-
-    fn check_statement_for_range(stmt: &SelectStatement) -> bool {
-        // Check main query
-        if stmt.from_function.is_some() {
-            return true;
-        }
-
-        // Check if it's DUAL or no FROM
-        if stmt
-            .from_table
-            .as_ref()
-            .is_some_and(|t| t.to_uppercase() == "DUAL")
-        {
-            return true;
-        }
-
-        if stmt.from_table.is_none() && stmt.from_subquery.is_none() && stmt.from_function.is_none()
-        {
-            return true;
-        }
-
-        // Recursively check CTEs
-        for cte in &stmt.ctes {
-            match &cte.cte_type {
-                CTEType::Standard(query) => {
-                    if check_statement_for_range(query) {
-                        return true;
-                    }
-                }
-                CTEType::Web(_web_spec) => {
-                    // Web CTEs don't contain SQL queries that need range checking
-                }
-            }
-        }
-
-        // Check subqueries
-        if let Some(ref subquery) = stmt.from_subquery {
-            if check_statement_for_range(subquery) {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    let mut parser = Parser::new(&config.query);
-    let statement = parser
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
-
     // 1. Load the data file or create DUAL table
-    let (data_table, _is_dual) =
-        if check_statement_for_range(&statement) || config.data_file.is_empty() {
-            info!("Using DUAL table for expression evaluation");
-            (crate::data::datatable::DataTable::dual(), true)
-        } else {
-            info!("Loading data from: {}", config.data_file);
-            let table = load_data_file(&config.data_file)?;
-            info!(
-                "Loaded {} rows with {} columns",
-                table.row_count(),
-                table.column_count()
-            );
-            (table, false)
-        };
+    let (data_table, _is_dual) = if config.data_file.is_empty() {
+        info!("No data file provided, using DUAL table");
+        (crate::data::datatable::DataTable::dual(), true)
+    } else {
+        info!("Loading data from: {}", config.data_file);
+        let table = load_data_file(&config.data_file)?;
+        info!(
+            "Loaded {} rows with {} columns",
+            table.row_count(),
+            table.column_count()
+        );
+        (table, false)
+    };
     let _table_name = data_table.name.clone();
 
     // 2. Create a DataView from the table
@@ -340,71 +288,11 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
         String::new()
     };
 
-    // Check if script needs a data file
-    let needs_data_file = if data_file.is_empty() {
-        // Parse statements to check if they use DUAL or RANGE
-        use crate::sql::recursive_parser::Parser;
-
-        let mut needs_file = false;
-        for statement_sql in &statements {
-            let mut parser = Parser::new(statement_sql);
-            match parser.parse() {
-                Ok(stmt) => {
-                    // Check if statement uses DUAL, RANGE, or has no FROM clause
-                    let uses_dual = stmt
-                        .from_table
-                        .as_ref()
-                        .map_or(false, |t| t.eq_ignore_ascii_case("dual"));
-                    let uses_range = stmt.from_function.is_some();
-                    let no_from = stmt.from_table.is_none()
-                        && stmt.from_subquery.is_none()
-                        && stmt.from_function.is_none();
-
-                    // Check CTEs for RANGE usage
-                    let cte_has_range = stmt.ctes.iter().any(|cte| {
-                        match &cte.cte_type {
-                            CTEType::Standard(query) => {
-                                query.from_function.is_some()
-                                    || query
-                                        .from_table
-                                        .as_ref()
-                                        .map_or(false, |t| t.eq_ignore_ascii_case("dual"))
-                            }
-                            CTEType::Web(_web_spec) => false, // Web CTEs don't use RANGE functions
-                        }
-                    });
-
-                    if !uses_dual && !uses_range && !no_from && !cte_has_range {
-                        needs_file = true;
-                        break;
-                    }
-                }
-                Err(_) => {
-                    // If we can't parse, assume it needs a data file
-                    needs_file = true;
-                    break;
-                }
-            }
-        }
-        needs_file
-    } else {
-        // Data file was specified, so we'll use it
-        false
-    };
-
-    // Load the data file once (or use DUAL)
+    // Load the data file if provided, otherwise use DUAL
     let (data_table, _is_dual) = if data_file.is_empty() {
-        if needs_data_file {
-            anyhow::bail!(
-                "Script requires a data file. Either:\n\
-                1. Provide a data file: sql-cli data.csv -f script.sql\n\
-                2. Add a data hint to your script: -- #!data: path/to/data.csv"
-            );
-        } else {
-            // Script doesn't need a data file, use DUAL
-            info!("Using DUAL table for script execution");
-            (DataTable::dual(), true)
-        }
+        // No data file provided, use DUAL table
+        info!("No data file provided, using DUAL table");
+        (DataTable::dual(), true)
     } else {
         // Check if file exists before trying to load
         if !std::path::Path::new(&data_file).exists() {
