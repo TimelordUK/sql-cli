@@ -1,7 +1,7 @@
 // Window Function Registry
 // Provides a clean API for window computations with syntactic sugar
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -94,12 +94,17 @@ impl WindowFunctionRegistry {
 
     /// Register built-in syntactic sugar functions
     fn register_builtin_functions(&mut self) {
-        // Moving average
+        // Moving average and statistics
         self.register(Box::new(MovingAvgFunction));
         self.register(Box::new(RollingStddevFunction));
         self.register(Box::new(CumulativeSumFunction));
         self.register(Box::new(CumulativeAvgFunction));
         self.register(Box::new(ZScoreFunction));
+
+        // Bollinger Bands
+        self.register(Box::new(BollingerUpperFunction));
+        self.register(Box::new(BollingerLowerFunction));
+
         // Add more as we implement them
     }
 }
@@ -472,9 +477,175 @@ impl WindowFunction for ZScoreFunction {
     }
 }
 
+/// BOLLINGER_UPPER(column, window_size, num_std)
+/// Calculates upper Bollinger Band: MA + (num_std * STDDEV)
+struct BollingerUpperFunction;
+
+impl WindowFunction for BollingerUpperFunction {
+    fn name(&self) -> &str {
+        "BOLLINGER_UPPER"
+    }
+
+    fn description(&self) -> &str {
+        "Calculate upper Bollinger Band (MA + n*STDDEV)"
+    }
+
+    fn signature(&self) -> &str {
+        "BOLLINGER_UPPER(column, window_size, num_std)"
+    }
+
+    fn compute(
+        &self,
+        context: &WindowContext,
+        row_index: usize,
+        args: &[SqlExpression],
+        _evaluator: &mut dyn ExpressionEvaluator,
+    ) -> Result<DataValue> {
+        let column = match &args[0] {
+            SqlExpression::Column(col) => col,
+            _ => return Err(anyhow!("BOLLINGER_UPPER first argument must be a column")),
+        };
+
+        // Get num_std from third argument (default 2)
+        let num_std = match args.get(2) {
+            Some(SqlExpression::NumberLiteral(n)) => n
+                .parse::<f64>()
+                .map_err(|_| anyhow!("Invalid num_std value"))?,
+            _ => 2.0, // Default to 2 standard deviations
+        };
+
+        // Get mean and stddev over the window
+        let mean = context
+            .get_frame_avg(row_index, column)
+            .unwrap_or(DataValue::Null);
+        let stddev = context
+            .get_frame_stddev(row_index, column)
+            .unwrap_or(DataValue::Null);
+
+        // Calculate upper band: mean + (num_std * stddev)
+        match (mean, stddev) {
+            (DataValue::Float(m), DataValue::Float(s)) => Ok(DataValue::Float(m + (num_std * s))),
+            _ => Ok(DataValue::Null),
+        }
+    }
+
+    fn transform_window_spec(
+        &self,
+        base_spec: &WindowSpec,
+        args: &[SqlExpression],
+    ) -> Result<WindowSpec> {
+        use crate::sql::parser::ast::{FrameBound, FrameUnit, WindowFrame};
+
+        let window_size = match args.get(1) {
+            Some(SqlExpression::NumberLiteral(n)) => n
+                .parse::<i64>()
+                .map_err(|_| anyhow!("Invalid window size"))?,
+            _ => return Err(anyhow!("BOLLINGER_UPPER requires numeric window_size")),
+        };
+
+        let mut spec = base_spec.clone();
+        spec.frame = Some(WindowFrame {
+            unit: FrameUnit::Rows,
+            start: FrameBound::Preceding(window_size - 1),
+            end: None,
+        });
+
+        Ok(spec)
+    }
+
+    fn validate_args(&self, args: &[SqlExpression]) -> Result<()> {
+        if args.len() < 2 || args.len() > 3 {
+            return Err(anyhow!("BOLLINGER_UPPER requires 2 or 3 arguments"));
+        }
+        Ok(())
+    }
+}
+
+/// BOLLINGER_LOWER(column, window_size, num_std)
+/// Calculates lower Bollinger Band: MA - (num_std * STDDEV)
+struct BollingerLowerFunction;
+
+impl WindowFunction for BollingerLowerFunction {
+    fn name(&self) -> &str {
+        "BOLLINGER_LOWER"
+    }
+
+    fn description(&self) -> &str {
+        "Calculate lower Bollinger Band (MA - n*STDDEV)"
+    }
+
+    fn signature(&self) -> &str {
+        "BOLLINGER_LOWER(column, window_size, num_std)"
+    }
+
+    fn compute(
+        &self,
+        context: &WindowContext,
+        row_index: usize,
+        args: &[SqlExpression],
+        _evaluator: &mut dyn ExpressionEvaluator,
+    ) -> Result<DataValue> {
+        let column = match &args[0] {
+            SqlExpression::Column(col) => col,
+            _ => return Err(anyhow!("BOLLINGER_LOWER first argument must be a column")),
+        };
+
+        // Get num_std from third argument (default 2)
+        let num_std = match args.get(2) {
+            Some(SqlExpression::NumberLiteral(n)) => n
+                .parse::<f64>()
+                .map_err(|_| anyhow!("Invalid num_std value"))?,
+            _ => 2.0, // Default to 2 standard deviations
+        };
+
+        // Get mean and stddev over the window
+        let mean = context
+            .get_frame_avg(row_index, column)
+            .unwrap_or(DataValue::Null);
+        let stddev = context
+            .get_frame_stddev(row_index, column)
+            .unwrap_or(DataValue::Null);
+
+        // Calculate lower band: mean - (num_std * stddev)
+        match (mean, stddev) {
+            (DataValue::Float(m), DataValue::Float(s)) => Ok(DataValue::Float(m - (num_std * s))),
+            _ => Ok(DataValue::Null),
+        }
+    }
+
+    fn transform_window_spec(
+        &self,
+        base_spec: &WindowSpec,
+        args: &[SqlExpression],
+    ) -> Result<WindowSpec> {
+        use crate::sql::parser::ast::{FrameBound, FrameUnit, WindowFrame};
+
+        let window_size = match args.get(1) {
+            Some(SqlExpression::NumberLiteral(n)) => n
+                .parse::<i64>()
+                .map_err(|_| anyhow!("Invalid window size"))?,
+            _ => return Err(anyhow!("BOLLINGER_LOWER requires numeric window_size")),
+        };
+
+        let mut spec = base_spec.clone();
+        spec.frame = Some(WindowFrame {
+            unit: FrameUnit::Rows,
+            start: FrameBound::Preceding(window_size - 1),
+            end: None,
+        });
+
+        Ok(spec)
+    }
+
+    fn validate_args(&self, args: &[SqlExpression]) -> Result<()> {
+        if args.len() < 2 || args.len() > 3 {
+            return Err(anyhow!("BOLLINGER_LOWER requires 2 or 3 arguments"));
+        }
+        Ok(())
+    }
+}
+
 // TODO: Add more functions like:
-// - BOLLINGER_UPPER(column, window, num_std)
-// - BOLLINGER_LOWER(column, window, num_std)
 // - EXPONENTIAL_AVG(column, alpha)
 // - PERCENT_RANK_IN_WINDOW(column, window)
 // - MEDIAN_IN_WINDOW(column, window)

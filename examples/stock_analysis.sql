@@ -293,6 +293,27 @@ LIMIT 20;
 GO
 
 -- ============================================
+-- Example 11d: Bollinger Bands using dedicated functions (SIMPLEST!)
+-- BOLLINGER_UPPER and BOLLINGER_LOWER handle everything!
+-- ============================================
+SELECT
+    date,
+    RENDER_NUMBER(close, 'standard', 2) as price,
+    RENDER_NUMBER(MOVING_AVG(close, 20) OVER (ORDER BY date), 'standard', 2) as middle_band,
+    RENDER_NUMBER(BOLLINGER_LOWER(close, 20, 2) OVER (ORDER BY date), 'standard', 2) as lower_band,
+    RENDER_NUMBER(BOLLINGER_UPPER(close, 20, 2) OVER (ORDER BY date), 'standard', 2) as upper_band,
+    CASE
+        WHEN close < BOLLINGER_LOWER(close, 20, 2) OVER (ORDER BY date) THEN 'OVERSOLD'
+        WHEN close > BOLLINGER_UPPER(close, 20, 2) OVER (ORDER BY date) THEN 'OVERBOUGHT'
+        ELSE 'NEUTRAL'
+    END as signal
+FROM AAPL_data
+WHERE date >= '2013-04-01'
+ORDER BY date
+LIMIT 20;
+GO
+
+-- ============================================
 -- Example 11b: Z-Score calculation
 -- How many standard deviations from the mean
 -- ============================================
