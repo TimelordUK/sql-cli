@@ -4,26 +4,14 @@
 -- ==============================================
 -- EXAMPLE 1: Financial Report with Right-Aligned Numbers
 -- ==============================================
-WITH financial_data AS (
-    SELECT
-        'Q1 2024' as period,
-        1234567.89 as revenue,
-        987654.32 as expenses,
-        1234567.89 - 987654.32 as profit
-    UNION ALL
-    SELECT 'Q2 2024', 1456789.12, 1123456.78, 1456789.12 - 1123456.78
-    UNION ALL
-    SELECT 'Q3 2024', 1678901.34, 1567890.12, 1678901.34 - 1567890.12
-    UNION ALL
-    SELECT 'Q4 2024', 1890123.56, 1234567.89, 1890123.56 - 1234567.89
-)
+-- Note: Using RANGE to generate sample data since UNION ALL is not yet supported
 SELECT
-    period,
-    LPAD(FORMAT_CURRENCY(revenue, 'USD'), 15, ' ') as revenue,
-    LPAD(FORMAT_CURRENCY(expenses, 'USD'), 15, ' ') as expenses,
-    LPAD(FORMAT_CURRENCY(profit, 'USD', 'accounting'), 15, ' ') as profit,
-    LPAD(RENDER_NUMBER(profit / revenue * 100, 'standard', 1) || '%', 8, ' ') as margin
-FROM financial_data
+    'Q' || value || ' 2024' as period,
+    LPAD(FORMAT_CURRENCY(1234567.89 + (value - 1) * 222222.22, 'USD'), 15, ' ') as revenue,
+    LPAD(FORMAT_CURRENCY(987654.32 + (value - 1) * 135802.46, 'USD'), 15, ' ') as expenses,
+    LPAD(FORMAT_CURRENCY((1234567.89 + (value - 1) * 222222.22) - (987654.32 + (value - 1) * 135802.46), 'USD', 'accounting'), 15, ' ') as profit,
+    LPAD(RENDER_NUMBER(((1234567.89 + (value - 1) * 222222.22) - (987654.32 + (value - 1) * 135802.46)) / (1234567.89 + (value - 1) * 222222.22) * 100, 'standard', 1) || '%', 8, ' ') as margin
+FROM RANGE(1, 4)
 ORDER BY period;
 GO
 
@@ -47,45 +35,40 @@ GO
 -- ==============================================
 -- EXAMPLE 3: Percentage Formatting with Alignment
 -- ==============================================
-WITH performance_data AS (
-    SELECT
-        'Product A' as product,
-        0.9234 as success_rate,
-        0.0523 as error_rate,
-        0.0243 as retry_rate
-    UNION ALL
-    SELECT 'Product B', 0.8567, 0.1233, 0.0200
-    UNION ALL
-    SELECT 'Product C', 0.9801, 0.0099, 0.0100
-)
+-- Note: Using RANGE with CASE to generate sample data
 SELECT
-    RPAD(product, 12, ' ') as product,
-    LPAD(RENDER_NUMBER(success_rate * 100, 'standard', 2) || '%', 8, ' ') as success,
-    LPAD(RENDER_NUMBER(error_rate * 100, 'standard', 2) || '%', 8, ' ') as errors,
-    LPAD(RENDER_NUMBER(retry_rate * 100, 'standard', 2) || '%', 8, ' ') as retries
-FROM performance_data;
+    RPAD('Product ' || CHR(64 + value), 12, ' ') as product,
+    LPAD(RENDER_NUMBER(
+        CASE value
+            WHEN 1 THEN 92.34
+            WHEN 2 THEN 85.67
+            WHEN 3 THEN 98.01
+        END, 'standard', 2) || '%', 8, ' ') as success,
+    LPAD(RENDER_NUMBER(
+        CASE value
+            WHEN 1 THEN 5.23
+            WHEN 2 THEN 12.33
+            WHEN 3 THEN 0.99
+        END, 'standard', 2) || '%', 8, ' ') as errors,
+    LPAD(RENDER_NUMBER(
+        CASE value
+            WHEN 1 THEN 2.43
+            WHEN 2 THEN 2.00
+            WHEN 3 THEN 1.00
+        END, 'standard', 2) || '%', 8, ' ') as retries
+FROM RANGE(1, 3);
 GO
 
 -- ==============================================
 -- EXAMPLE 4: Compact Large Numbers (K, M, B notation)
 -- ==============================================
-WITH sales_data AS (
-    SELECT
-        'Store 001' as store_id,
-        1234 as daily_sales,
-        1234 * 30 as monthly_sales,
-        1234 * 365 as annual_sales
-    UNION ALL
-    SELECT 'Store 002', 45678, 45678 * 30, 45678 * 365
-    UNION ALL
-    SELECT 'Store 003', 234567, 234567 * 30, 234567 * 365
-)
+-- Note: Using RANGE with calculated values
 SELECT
-    store_id,
-    LPAD(RENDER_NUMBER(daily_sales, 'compact', 1), 8, ' ') as daily,
-    LPAD(RENDER_NUMBER(monthly_sales, 'compact', 1), 8, ' ') as monthly,
-    LPAD(RENDER_NUMBER(annual_sales, 'compact', 1), 8, ' ') as annual
-FROM sales_data;
+    'Store ' || LPAD(value, 3, '0') as store_id,
+    LPAD(RENDER_NUMBER(1234 * POWER(value, 2), 'compact', 1), 8, ' ') as daily,
+    LPAD(RENDER_NUMBER(1234 * POWER(value, 2) * 30, 'compact', 1), 8, ' ') as monthly,
+    LPAD(RENDER_NUMBER(1234 * POWER(value, 2) * 365, 'compact', 1), 8, ' ') as annual
+FROM RANGE(1, 5);
 GO
 
 -- ==============================================
