@@ -15,6 +15,7 @@ local functions = require('sql-cli.functions')
 local results = require('sql-cli.results')
 local table_nav = require('sql-cli.table_nav')
 local multi_table_nav = require('sql-cli.multi_table_nav')
+local visualize = require('sql-cli.visualize')
 
 -- Plugin configuration
 M.config = {}
@@ -58,6 +59,9 @@ function M.setup(opts)
   if M.config.auto_detect.csv_files then
     functions.load_schema_for_completion(M.config, M.state)
   end
+
+  -- Setup visualization commands
+  visualize.setup()
 end
 
 -- Create user commands

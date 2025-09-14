@@ -1,4 +1,4 @@
-kkk# SQL CLI - Stage 2 Roadmap
+kkk:q!# SQL CLI - Stage 2 Roadmap
 
 ## Current State (Stage 1 Complete ✅)
 
