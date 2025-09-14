@@ -165,6 +165,37 @@ where
             Ok(SqlExpression::Null)
         }
 
+        // Handle LEFT and RIGHT as function names when followed by parentheses
+        Token::Left | Token::Right => {
+            let func_name = match parser.current_token() {
+                Token::Left => "LEFT".to_string(),
+                Token::Right => "RIGHT".to_string(),
+                _ => unreachable!(),
+            };
+
+            parser.advance();
+
+            // Check if this is a function call
+            if matches!(parser.current_token(), Token::LeftParen) {
+                debug!(function = %func_name, "Parsing LEFT/RIGHT function call");
+                parser.advance(); // consume (
+                let (args, _has_distinct) = parser.parse_function_args()?;
+                parser.consume(Token::RightParen)?;
+
+                Ok(SqlExpression::FunctionCall {
+                    name: func_name,
+                    args,
+                    distinct: false,
+                })
+            } else {
+                // If not followed by parenthesis, this is likely a JOIN keyword - error
+                Err(format!(
+                    "{} keyword unexpected in expression context",
+                    func_name
+                ))
+            }
+        }
+
         Token::LeftParen => {
             debug!("Parsing parenthesized expression or subquery");
             parser.advance(); // consume (

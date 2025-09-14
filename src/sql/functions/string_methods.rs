@@ -902,6 +902,301 @@ impl SqlFunction for InstrFunction {
     }
 }
 
+/// LEFT function - extracts leftmost n characters or up to a delimiter
+pub struct LeftFunction;
+
+impl SqlFunction for LeftFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "LEFT",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(2),
+            description: "Returns leftmost n characters from string",
+            returns: "STRING",
+            examples: vec![
+                "SELECT LEFT(email, 5) FROM users",
+                "SELECT LEFT('hello@world', INSTR('hello@world', '@') - 1)",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let string = match &args[0] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("LEFT expects a string as first argument")),
+        };
+
+        let length = match &args[1] {
+            DataValue::Integer(n) => *n as usize,
+            DataValue::Float(f) => *f as usize,
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("LEFT expects a number as second argument")),
+        };
+
+        let result = if length >= string.len() {
+            string.to_string()
+        } else {
+            string.chars().take(length).collect()
+        };
+
+        Ok(DataValue::String(result))
+    }
+}
+
+/// RIGHT function - extracts rightmost n characters
+pub struct RightFunction;
+
+impl SqlFunction for RightFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "RIGHT",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(2),
+            description: "Returns rightmost n characters from string",
+            returns: "STRING",
+            examples: vec![
+                "SELECT RIGHT(filename, 4) FROM files", // Get file extension
+                "SELECT RIGHT(email, LENGTH(email) - INSTR(email, '@'))", // Get domain
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let string = match &args[0] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("RIGHT expects a string as first argument")),
+        };
+
+        let length = match &args[1] {
+            DataValue::Integer(n) => *n as usize,
+            DataValue::Float(f) => *f as usize,
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("RIGHT expects a number as second argument")),
+        };
+
+        let chars: Vec<char> = string.chars().collect();
+        let start = if length >= chars.len() {
+            0
+        } else {
+            chars.len() - length
+        };
+
+        let result: String = chars[start..].iter().collect();
+        Ok(DataValue::String(result))
+    }
+}
+
+/// SUBSTRING_BEFORE - returns substring before first/nth occurrence of delimiter
+pub struct SubstringBeforeFunction;
+
+impl SqlFunction for SubstringBeforeFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "SUBSTRING_BEFORE",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Range(2, 3),
+            description: "Returns substring before the first (or nth) occurrence of delimiter",
+            returns: "STRING",
+            examples: vec![
+                "SELECT SUBSTRING_BEFORE(email, '@') FROM users", // Get username
+                "SELECT SUBSTRING_BEFORE('a.b.c.d', '.', 2)",     // Get 'a.b' (before 2nd dot)
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() < 2 || args.len() > 3 {
+            return Err(anyhow!("SUBSTRING_BEFORE expects 2 or 3 arguments"));
+        }
+
+        let string = match &args[0] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => {
+                return Err(anyhow!(
+                    "SUBSTRING_BEFORE expects a string as first argument"
+                ))
+            }
+        };
+
+        let delimiter = match &args[1] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("SUBSTRING_BEFORE expects a string delimiter")),
+        };
+
+        let occurrence = if args.len() == 3 {
+            match &args[2] {
+                DataValue::Integer(n) => *n as usize,
+                DataValue::Float(f) => *f as usize,
+                DataValue::Null => 1,
+                _ => return Err(anyhow!("SUBSTRING_BEFORE expects a number for occurrence")),
+            }
+        } else {
+            1
+        };
+
+        if occurrence == 0 {
+            return Ok(DataValue::String(String::new()));
+        }
+
+        // Find the nth occurrence
+        let mut count = 0;
+        let mut last_pos = 0;
+        for (i, _) in string.match_indices(delimiter) {
+            count += 1;
+            if count == occurrence {
+                return Ok(DataValue::String(string[..i].to_string()));
+            }
+            last_pos = i;
+        }
+
+        // If we didn't find enough occurrences, return empty string
+        Ok(DataValue::String(String::new()))
+    }
+}
+
+/// SUBSTRING_AFTER - returns substring after first/nth occurrence of delimiter
+pub struct SubstringAfterFunction;
+
+impl SqlFunction for SubstringAfterFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "SUBSTRING_AFTER",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Range(2, 3),
+            description: "Returns substring after the first (or nth) occurrence of delimiter",
+            returns: "STRING",
+            examples: vec![
+                "SELECT SUBSTRING_AFTER(email, '@') FROM users", // Get domain
+                "SELECT SUBSTRING_AFTER('a.b.c.d', '.', 2)",     // Get 'c.d' (after 2nd dot)
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() < 2 || args.len() > 3 {
+            return Err(anyhow!("SUBSTRING_AFTER expects 2 or 3 arguments"));
+        }
+
+        let string = match &args[0] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => {
+                return Err(anyhow!(
+                    "SUBSTRING_AFTER expects a string as first argument"
+                ))
+            }
+        };
+
+        let delimiter = match &args[1] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("SUBSTRING_AFTER expects a string delimiter")),
+        };
+
+        let occurrence = if args.len() == 3 {
+            match &args[2] {
+                DataValue::Integer(n) => *n as usize,
+                DataValue::Float(f) => *f as usize,
+                DataValue::Null => 1,
+                _ => return Err(anyhow!("SUBSTRING_AFTER expects a number for occurrence")),
+            }
+        } else {
+            1
+        };
+
+        if occurrence == 0 {
+            return Ok(DataValue::String(string.to_string()));
+        }
+
+        // Find the nth occurrence
+        let mut count = 0;
+        for (i, _) in string.match_indices(delimiter) {
+            count += 1;
+            if count == occurrence {
+                let start = i + delimiter.len();
+                if start < string.len() {
+                    return Ok(DataValue::String(string[start..].to_string()));
+                } else {
+                    return Ok(DataValue::String(String::new()));
+                }
+            }
+        }
+
+        // If we didn't find enough occurrences, return empty string
+        Ok(DataValue::String(String::new()))
+    }
+}
+
+/// SPLIT_PART - returns the nth part of a string split by delimiter (1-based)
+pub struct SplitPartFunction;
+
+impl SqlFunction for SplitPartFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "SPLIT_PART",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(3),
+            description: "Returns the nth part of a string split by delimiter (1-based index)",
+            returns: "STRING",
+            examples: vec![
+                "SELECT SPLIT_PART('a.b.c.d', '.', 2)",        // Returns 'b'
+                "SELECT SPLIT_PART(email, '@', 1) FROM users", // Get username
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let string = match &args[0] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("SPLIT_PART expects a string as first argument")),
+        };
+
+        let delimiter = match &args[1] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("SPLIT_PART expects a string delimiter")),
+        };
+
+        let part_num = match &args[2] {
+            DataValue::Integer(n) => *n as usize,
+            DataValue::Float(f) => *f as usize,
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("SPLIT_PART expects a number for part index")),
+        };
+
+        if part_num == 0 {
+            return Err(anyhow!("SPLIT_PART part index must be >= 1"));
+        }
+
+        let parts: Vec<&str> = string.split(delimiter).collect();
+
+        if part_num <= parts.len() {
+            Ok(DataValue::String(parts[part_num - 1].to_string()))
+        } else {
+            Ok(DataValue::String(String::new()))
+        }
+    }
+}
+
 /// Register all string method functions
 pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     use std::sync::Arc;
@@ -914,6 +1209,13 @@ pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(TextJoinFunction));
     registry.register(Box::new(EditDistanceFunction));
     registry.register(Box::new(FrequencyFunction));
+
+    // Register new convenient string extraction functions
+    registry.register(Box::new(LeftFunction));
+    registry.register(Box::new(RightFunction));
+    registry.register(Box::new(SubstringBeforeFunction));
+    registry.register(Box::new(SubstringAfterFunction));
+    registry.register(Box::new(SplitPartFunction));
 
     // Register ToUpper
     let to_upper = Arc::new(ToUpperMethod);
