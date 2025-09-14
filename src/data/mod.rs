@@ -30,6 +30,7 @@ pub mod data_exporter;
 pub mod datasource_adapter;
 pub mod datasource_trait;
 pub mod direct_csv_loader;
+pub mod stream_loader;
 
 // Query execution
 pub mod arithmetic_evaluator;

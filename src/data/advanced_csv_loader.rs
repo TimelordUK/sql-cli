@@ -4,7 +4,7 @@ use anyhow::Result;
 use csv;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -259,8 +259,39 @@ impl AdvancedCsvLoader {
         cardinality < 100 && avg_length < 50
     }
 
+    /// Load CSV from a reader with advanced optimizations
+    pub fn load_csv_from_reader<R: Read>(
+        &mut self,
+        reader: R,
+        table_name: &str,
+        source_path: &str,
+    ) -> Result<DataTable> {
+        use crate::data::stream_loader::StreamCsvLoader;
+
+        // Use the stream-based loader with string interning
+        let mut stream_loader = StreamCsvLoader::new();
+        stream_loader.load_csv_from_reader(reader, table_name, "file", source_path)
+    }
+
     /// Load CSV with advanced optimizations
     pub fn load_csv_optimized<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        table_name: &str,
+    ) -> Result<DataTable> {
+        let path = path.as_ref();
+        info!(
+            "Advanced CSV load: Loading {} with optimizations",
+            path.display()
+        );
+
+        // Use stream-based approach for consistency
+        let file = File::open(path)?;
+        self.load_csv_from_reader(file, table_name, &path.display().to_string())
+    }
+
+    /// Original file-based implementation (kept for backward compatibility)
+    pub fn load_csv_optimized_legacy<P: AsRef<Path>>(
         &mut self,
         path: P,
         table_name: &str,
