@@ -291,11 +291,13 @@ WHERE name.Contains('manager')
 
 *Method Style (in WHERE clauses):*
 - `column.Contains('text')` - Case-insensitive substring search
-- `column.StartsWith('prefix')` - Case-insensitive prefix check  
+- `column.StartsWith('prefix')` - Case-insensitive prefix check
 - `column.EndsWith('suffix')` - Case-insensitive suffix check
 - `column.Length()` - Character count
 - `column.IndexOf('substring')` - Find position (0-based, -1 if not found)
 - `column.Trim()` - Remove leading/trailing spaces
+- `column.TrimStart()` - Remove leading whitespace only
+- `column.TrimEnd()` - Remove trailing whitespace only
 
 *Function Style (anywhere):*
 - `TOUPPER(text)`, `TOLOWER(text)` - Case conversion
@@ -444,10 +446,10 @@ LIMIT 100
 #### **Common Table Expressions (CTEs)**
 ```sql
 -- CTEs enable powerful multi-stage queries with labeled intermediate results
-WITH 
+WITH
     high_value_orders AS (
         SELECT customer_id, SUM(amount) as total_spent
-        FROM orders 
+        FROM orders
         WHERE amount > 100
         GROUP BY customer_id
     ),
@@ -462,7 +464,7 @@ WHERE total_spent BETWEEN 5000 AND 10000;
 
 -- Window functions in CTEs for "top N per group" patterns
 WITH ranked_products AS (
-    SELECT 
+    SELECT
         category,
         product_name,
         sales,
@@ -473,6 +475,74 @@ SELECT * FROM ranked_products WHERE rank <= 3;
 ```
 
 > 📚 **See `examples/*.sql` for comprehensive CTE patterns including cascading CTEs, time series analysis, and performance tier calculations!**
+
+#### **🌐 Web Data Integration & Environment Variables**
+Fetch data directly from REST APIs and integrate with local CSV/JSON files using WEB CTEs:
+
+```sql
+-- Fetch data from REST APIs with custom headers for authentication
+WITH
+    api_data AS (
+        SELECT * FROM WEB('https://api.example.com/users', 'Authorization: Bearer ${API_TOKEN}')
+    ),
+    enriched_data AS (
+        SELECT
+            api_data.user_id,
+            api_data.name,
+            local_data.department,
+            local_data.salary
+        FROM api_data
+        LEFT JOIN local_employees AS local_data ON api_data.user_id = local_data.employee_id
+    )
+SELECT * FROM enriched_data
+WHERE salary > 50000
+ORDER BY name;
+
+-- Environment variable injection - use ${VAR_NAME} syntax
+WITH
+    current_rates AS (
+        SELECT * FROM WEB('https://api.exchangerate.com/rates', 'X-API-Key: ${EXCHANGE_API_KEY}')
+    ),
+    currency_conversion AS (
+        SELECT
+            orders.amount,
+            orders.currency,
+            current_rates.rate,
+            ROUND(orders.amount * current_rates.rate, 2) as usd_amount
+        FROM orders
+        LEFT JOIN current_rates ON orders.currency = current_rates.code
+    )
+SELECT * FROM currency_conversion;
+
+-- Multiple API endpoints in one query
+WITH
+    users AS (
+        SELECT * FROM WEB('${BASE_URL}/users', 'Authorization: Bearer ${TOKEN}')
+    ),
+    orders AS (
+        SELECT * FROM WEB('${BASE_URL}/orders', 'Authorization: Bearer ${TOKEN}')
+    )
+SELECT
+    users.name,
+    COUNT(orders.id) as order_count,
+    SUM(orders.amount) as total_spent
+FROM users
+LEFT JOIN orders ON users.id = orders.user_id
+GROUP BY users.id, users.name
+ORDER BY total_spent DESC;
+```
+
+**Environment Variable Support:**
+- Use `${VARIABLE_NAME}` syntax anywhere in your SQL queries
+- Perfect for API keys, base URLs, and dynamic configuration
+- Set variables before running: `export API_TOKEN="your-token-here"`
+- Variables are replaced before query execution
+
+**WEB CTE Features:**
+- **Custom Headers**: `'Header-Name: ${VALUE}'` format for authentication
+- **Multiple APIs**: Use multiple WEB CTEs in the same query
+- **JOIN with Local Data**: Seamlessly combine API data with CSV/JSON files
+- **Caching**: API responses cached for the session to avoid repeated calls
 
 ### 🧠 **Smart Type Handling**
 - **Automatic Coercion**: String methods work on numbers (`quantity.Contains('5')`)
@@ -1019,11 +1089,85 @@ While SQL CLI provides extensive SQL functionality, some standard SQL features a
 - `STDDEV()`, `VARIANCE()` - Statistical functions
 - `HAVING` clause - Filtering groups after GROUP BY
 
-### **Joins & Subqueries**
-- `JOIN`, `LEFT JOIN`, `RIGHT JOIN` - Table joins
-- `UNION`, `INTERSECT`, `EXCEPT` - Set operations
-- Subqueries and correlated queries
-- Common Table Expressions (CTEs)
+### **🔗 Joins & Subqueries**
+
+#### **JOIN Operations**
+```sql
+-- Inner JOIN - only matching records
+SELECT
+    orders.id,
+    orders.amount,
+    customers.name,
+    customers.email
+FROM orders
+JOIN customers ON orders.customer_id = customers.id
+WHERE orders.amount > 100;
+
+-- LEFT JOIN - all records from left table
+SELECT
+    employees.name,
+    employees.department,
+    projects.project_name,
+    projects.deadline
+FROM employees
+LEFT JOIN projects ON employees.id = projects.assigned_to
+ORDER BY employees.name;
+
+-- Multiple JOINs with qualified column names
+SELECT
+    orders.id,
+    customers.name as customer_name,
+    products.name as product_name,
+    products.price * order_items.quantity as total
+FROM orders
+JOIN customers ON orders.customer_id = customers.id
+JOIN order_items ON orders.id = order_items.order_id
+JOIN products ON order_items.product_id = products.id
+WHERE orders.order_date > '2024-01-01'
+ORDER BY total DESC;
+```
+
+**JOIN Features & Limitations:**
+- **Supported**: `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`
+- **Qualified Columns**: Use `table.column` syntax to avoid ambiguity
+- **Complex Conditions**: Multiple JOIN conditions with AND/OR
+- **⚠️ Limitation**: Table aliases not supported (use full table names)
+- **⚠️ Limitation**: FULL OUTER JOIN not yet implemented
+
+#### **Subqueries & CTEs**
+```sql
+-- Scalar subquery in SELECT
+SELECT
+    name,
+    salary,
+    (SELECT AVG(salary) FROM employees) as avg_salary,
+    salary - (SELECT AVG(salary) FROM employees) as salary_diff
+FROM employees
+WHERE department = 'Engineering';
+
+-- Subquery with IN operator
+SELECT * FROM products
+WHERE category_id IN (
+    SELECT id FROM categories
+    WHERE name.Contains('Electronics')
+);
+
+-- Correlated subquery
+SELECT
+    customer_id,
+    order_date,
+    amount
+FROM orders o1
+WHERE amount > (
+    SELECT AVG(amount)
+    FROM orders o2
+    WHERE o2.customer_id = o1.customer_id
+);
+```
+
+- **Set Operations**: `UNION`, `INTERSECT`, `EXCEPT` - Combine query results
+- **Subquery Types**: Scalar, IN/EXISTS, correlated subqueries supported
+- **Common Table Expressions (CTEs)**: Complex multi-stage queries with labeled results
 
 ### **Data Modification**
 - `INSERT`, `UPDATE`, `DELETE` - Data modification

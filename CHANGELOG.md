@@ -5,6 +5,54 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.0] - 2025-09-14
+
+### 🚀 Multi-Table Navigation & Web Data Integration
+
+This release introduces powerful multi-table navigation in the Neovim plugin and comprehensive web data fetching capabilities, making it easier than ever to work with complex SQL scripts and remote data sources.
+
+### ✨ New Features
+
+#### **Enhanced Neovim Plugin - Multi-Table Navigation**
+- **Multi-table result navigation** - Navigate between multiple query results from scripts with GO separators
+- **Intuitive keybindings**:
+  - `]t` and `[t` - Navigate to next/previous table
+  - `<leader>s1`, `<leader>s2`, `<leader>s3` - Jump directly to specific tables
+  - `<leader>sI` - Show current table info with position and row count
+- **Smart table detection** - Automatically detects ASCII, box, and pipe table formats
+- **Viewport centering** - Tables are automatically centered in view with context
+- **Status line integration** - Shows current table position (e.g., "📊2/16")
+- **Comprehensive debug tools** - `<leader>sI` provides detailed table registry with clipboard export
+
+#### **Web Data Integration & Environment Variables**
+- **WEB CTE with custom headers** - Fetch data from REST APIs with authentication
+- **Environment variable injection** - Use `${VAR_NAME}` syntax in queries for dynamic values
+- **Flexible header configuration** - Set custom HTTP headers for API authentication
+- **Seamless data integration** - Web data treated as first-class tables in SQL queries
+
+#### **JOIN & Query Enhancements**
+- **Qualified column names** - Support for `table.column` syntax in SELECT and WHERE clauses
+- **Multiple WEB CTE support** - Fetch from multiple endpoints in single query
+- **Enhanced column resolution** - Intelligent handling of ambiguous column references
+- **Improved parser robustness** - Better handling of complex JOIN conditions
+
+#### **String Method Extensions**
+- **TrimStart()** and **TrimEnd()** methods - Remove leading/trailing whitespace
+- **Enhanced method chaining** - Support for `column.Method1().Method2()` patterns
+- **Consistent string operations** - Unified string manipulation across all data types
+
+### 🔧 Internal Improvements
+- **Centralized navigation logic** - Eliminated code duplication in table navigation
+- **Registry-based table detection** - Pre-processed table lookup for improved performance
+- **State conflict resolution** - Fixed navigation jumping between single/multi-table modes
+- **Enhanced AST formatting** - Better representation of complex query structures
+
+### 🐛 Bug Fixes
+- Fixed state conflicts between single-table and multi-table navigation modes
+- Resolved cursor positioning issues when jumping between tables
+- Fixed viewport scrolling to keep navigated tables visible
+- Corrected column name resolution in complex JOIN scenarios
+
 ## [1.45.0] - 2025-09-13
 
 ### 🚀 Enhanced CTE Support & Detailed Execution Plans
