@@ -379,3 +379,28 @@ WHERE date >= '2013-04-01'
 ORDER BY date
 LIMIT 20;
 GO
+
+-- ============================================
+-- Example 12b: Momentum using PERCENT_CHANGE syntactic sugar
+-- Much cleaner for calculating period returns!
+-- ============================================
+SELECT
+    date,
+    close,
+    -- Daily, weekly, and monthly percent changes
+    RENDER_NUMBER(PERCENT_CHANGE(close, 1) OVER (ORDER BY date), 'standard', 2) || '%' as daily_return,
+    RENDER_NUMBER(PERCENT_CHANGE(close, 5) OVER (ORDER BY date), 'standard', 2) || '%' as weekly_return,
+    RENDER_NUMBER(PERCENT_CHANGE(close, 20) OVER (ORDER BY date), 'standard', 2) || '%' as monthly_return,
+    -- Momentum signal based on returns
+    CASE
+        WHEN PERCENT_CHANGE(close, 5) OVER (ORDER BY date) > 5 THEN 'STRONG UP'
+        WHEN PERCENT_CHANGE(close, 5) OVER (ORDER BY date) > 0 THEN 'UP'
+        WHEN PERCENT_CHANGE(close, 5) OVER (ORDER BY date) < -5 THEN 'STRONG DOWN'
+        WHEN PERCENT_CHANGE(close, 5) OVER (ORDER BY date) < 0 THEN 'DOWN'
+        ELSE 'FLAT'
+    END as momentum_signal
+FROM AAPL_data
+WHERE date >= '2013-04-01'
+ORDER BY date
+LIMIT 20;
+GO

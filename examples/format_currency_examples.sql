@@ -1,6 +1,7 @@
+-- #! ../data/international_sales.csv
+
 -- FORMAT_CURRENCY Function Examples
 -- Demonstrates currency formatting with symbols, codes, and various styles
--- data: data/international_sales.csv
 
 -- Basic currency formatting using column values
 SELECT

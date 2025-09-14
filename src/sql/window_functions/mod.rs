@@ -105,6 +105,9 @@ impl WindowFunctionRegistry {
         self.register(Box::new(BollingerUpperFunction));
         self.register(Box::new(BollingerLowerFunction));
 
+        // Financial calculations
+        self.register(Box::new(PercentChangeFunction));
+
         // Add more as we implement them
     }
 }
@@ -640,6 +643,96 @@ impl WindowFunction for BollingerLowerFunction {
     fn validate_args(&self, args: &[SqlExpression]) -> Result<()> {
         if args.len() < 2 || args.len() > 3 {
             return Err(anyhow!("BOLLINGER_LOWER requires 2 or 3 arguments"));
+        }
+        Ok(())
+    }
+}
+
+/// PERCENT_CHANGE(column, periods)
+/// Calculates percentage change from N periods ago
+/// Formula: ((current - previous) / previous) * 100
+struct PercentChangeFunction;
+
+impl WindowFunction for PercentChangeFunction {
+    fn name(&self) -> &str {
+        "PERCENT_CHANGE"
+    }
+
+    fn description(&self) -> &str {
+        "Calculate percentage change from N periods ago"
+    }
+
+    fn signature(&self) -> &str {
+        "PERCENT_CHANGE(column, periods)"
+    }
+
+    fn compute(
+        &self,
+        context: &WindowContext,
+        row_index: usize,
+        args: &[SqlExpression],
+        _evaluator: &mut dyn ExpressionEvaluator,
+    ) -> Result<DataValue> {
+        let column = match &args[0] {
+            SqlExpression::Column(col) => col,
+            _ => return Err(anyhow!("PERCENT_CHANGE first argument must be a column")),
+        };
+
+        // Get periods from second argument (default 1)
+        let periods = match args.get(1) {
+            Some(SqlExpression::NumberLiteral(n)) => n
+                .parse::<i32>()
+                .map_err(|_| anyhow!("Invalid periods value"))?,
+            _ => 1, // Default to 1 period
+        };
+
+        // Get current value
+        let current_value = {
+            let source = context.source();
+            let col_idx = source
+                .get_column_index(column)
+                .ok_or_else(|| anyhow!("Column {} not found", column))?;
+            source.get_value(row_index, col_idx).cloned()
+        };
+
+        // Get previous value using offset
+        let previous_value = context.get_offset_value(row_index, -periods, column);
+
+        // Calculate percent change: ((current - previous) / previous) * 100
+        match (current_value, previous_value) {
+            (Some(DataValue::Float(curr)), Some(DataValue::Float(prev))) if prev != 0.0 => {
+                Ok(DataValue::Float(((curr - prev) / prev) * 100.0))
+            }
+            (Some(DataValue::Integer(curr)), Some(DataValue::Integer(prev))) if prev != 0 => {
+                let curr_f = curr as f64;
+                let prev_f = prev as f64;
+                Ok(DataValue::Float(((curr_f - prev_f) / prev_f) * 100.0))
+            }
+            (Some(DataValue::Float(curr)), Some(DataValue::Integer(prev))) if prev != 0 => {
+                let prev_f = prev as f64;
+                Ok(DataValue::Float(((curr - prev_f) / prev_f) * 100.0))
+            }
+            (Some(DataValue::Integer(curr)), Some(DataValue::Float(prev))) if prev != 0.0 => {
+                let curr_f = curr as f64;
+                Ok(DataValue::Float(((curr_f - prev) / prev) * 100.0))
+            }
+            _ => Ok(DataValue::Null), // Return NULL for invalid comparisons or division by zero
+        }
+    }
+
+    fn transform_window_spec(
+        &self,
+        base_spec: &WindowSpec,
+        _args: &[SqlExpression],
+    ) -> Result<WindowSpec> {
+        // PERCENT_CHANGE doesn't need to modify the window frame
+        // It uses LAG internally which works within the partition
+        Ok(base_spec.clone())
+    }
+
+    fn validate_args(&self, args: &[SqlExpression]) -> Result<()> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(anyhow!("PERCENT_CHANGE requires 1 or 2 arguments"));
         }
         Ok(())
     }
