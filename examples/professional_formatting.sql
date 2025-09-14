@@ -35,26 +35,26 @@ GO
 -- ==============================================
 -- EXAMPLE 3: Percentage Formatting with Alignment
 -- ==============================================
--- Note: Using RANGE with CASE to generate sample data
+-- Note: Using RANGE with CHR for dynamic product names
 SELECT
     RPAD('Product ' || CHR(64 + value), 12, ' ') as product,
     LPAD(RENDER_NUMBER(
-        CASE value
-            WHEN 1 THEN 92.34
-            WHEN 2 THEN 85.67
-            WHEN 3 THEN 98.01
+        CASE
+            WHEN value = 1 THEN 92.34
+            WHEN value = 2 THEN 85.67
+            WHEN value = 3 THEN 98.01
         END, 'standard', 2) || '%', 8, ' ') as success,
     LPAD(RENDER_NUMBER(
-        CASE value
-            WHEN 1 THEN 5.23
-            WHEN 2 THEN 12.33
-            WHEN 3 THEN 0.99
+        CASE
+            WHEN value = 1 THEN 5.23
+            WHEN value = 2 THEN 12.33
+            WHEN value = 3 THEN 0.99
         END, 'standard', 2) || '%', 8, ' ') as errors,
     LPAD(RENDER_NUMBER(
-        CASE value
-            WHEN 1 THEN 2.43
-            WHEN 2 THEN 2.00
-            WHEN 3 THEN 1.00
+        CASE
+            WHEN value = 1 THEN 2.43
+            WHEN value = 2 THEN 2.00
+            WHEN value = 3 THEN 1.00
         END, 'standard', 2) || '%', 8, ' ') as retries
 FROM RANGE(1, 3);
 GO

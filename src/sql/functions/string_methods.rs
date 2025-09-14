@@ -1277,6 +1277,56 @@ impl SqlFunction for SplitPartFunction {
     }
 }
 
+/// CHR function - Convert ASCII code to character
+pub struct ChrFunction;
+
+impl SqlFunction for ChrFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "CHR",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(1),
+            description: "Convert ASCII code to character",
+            returns: "STRING",
+            examples: vec![
+                "SELECT CHR(65)", // Returns 'A'
+                "SELECT CHR(97)", // Returns 'a'
+                "SELECT CHR(48)", // Returns '0'
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("CHR expects exactly 1 argument"));
+        }
+
+        let ascii_code = match &args[0] {
+            DataValue::Integer(n) => *n,
+            DataValue::Float(f) => *f as i64,
+            DataValue::String(s) => s
+                .parse::<i64>()
+                .map_err(|_| anyhow!("Invalid number for CHR: {}", s))?,
+            DataValue::InternedString(s) => s
+                .parse::<i64>()
+                .map_err(|_| anyhow!("Invalid number for CHR: {}", s))?,
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("CHR expects a numeric argument")),
+        };
+
+        // ASCII printable range is 32-126, but we'll allow 0-255
+        if ascii_code < 0 || ascii_code > 255 {
+            return Err(anyhow!(
+                "CHR argument must be between 0 and 255, got {}",
+                ascii_code
+            ));
+        }
+
+        let ch = ascii_code as u8 as char;
+        Ok(DataValue::String(ch.to_string()))
+    }
+}
+
 /// Register all string method functions
 pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     use std::sync::Arc;
@@ -1358,4 +1408,7 @@ pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     registry.register_method(indexof.clone());
     // Also register as INSTR for SQL compatibility
     registry.register(Box::new(InstrFunction));
+
+    // Register CHR function
+    registry.register(Box::new(ChrFunction));
 }
