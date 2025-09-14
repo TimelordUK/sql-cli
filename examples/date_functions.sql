@@ -67,3 +67,23 @@ FROM date_range
 ORDER BY date
 LIMIT 10;
 GO
+
+SELECT
+    UNIX_TIMESTAMP(NOW()) AS unix_timestamp;
+GO
+
+SELECT
+    DAYOFWEEK(NOW()) AS day_of_week,
+    MONTH(NOW()) AS month,
+    YEAR(NOW()) AS year,
+    WEEKOFYEAR(NOW()) AS week_of_year,
+    TODAY() as today,
+    ISLEAPYEAR(NOW()) as is_leap_year,
+    DAYNAME(NOW()) as day_name,
+    MONTHNAME(NOW()) as month_name,
+    QUARTER(NOW()) as quarter
+FROM dual;
+GO
+
+
+
