@@ -282,9 +282,24 @@ impl QueryEngine {
                             plan_builder.add_detail("Has GROUP BY".to_string());
                         }
 
+                        debug!(
+                            "QueryEngine: Processing CTE '{}' with existing context: {:?}",
+                            cte.name,
+                            cte_context.keys().collect::<Vec<_>>()
+                        );
+
+                        // Process subqueries in the CTE's query FIRST
+                        // This allows the subqueries to see all previously defined CTEs
+                        let mut subquery_executor = SubqueryExecutor::with_cte_context(
+                            self.clone(),
+                            table.clone(),
+                            cte_context.clone(),
+                        );
+                        let processed_query = subquery_executor.execute_subqueries(query)?;
+
                         self.build_view_with_context(
                             table.clone(),
-                            query.clone(),
+                            processed_query,
                             &mut cte_context,
                         )?
                     }
@@ -320,6 +335,11 @@ impl QueryEngine {
                     cte_start.elapsed().as_secs_f64() * 1000.0
                 ));
 
+                debug!(
+                    "QueryEngine: Storing CTE '{}' in context with {} rows",
+                    cte.name,
+                    cte_result.row_count()
+                );
                 cte_context.insert(cte.name.clone(), Arc::new(cte_result));
                 plan_builder.end_step();
             }
@@ -410,6 +430,12 @@ impl QueryEngine {
             }
 
             debug!("QueryEngine: Processing CTE '{}'...", cte.name);
+            debug!(
+                "QueryEngine: Available CTEs for '{}': {:?}",
+                cte.name,
+                cte_context.keys().collect::<Vec<_>>()
+            );
+
             // Execute the CTE query (it might reference earlier CTEs)
             let cte_result = match &cte.cte_type {
                 CTEType::Standard(query) => {

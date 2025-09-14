@@ -59,7 +59,11 @@ impl SubqueryExecutor {
     /// Execute all subqueries in a statement and return a modified statement
     /// with subqueries replaced by their results
     pub fn execute_subqueries(&mut self, statement: &SelectStatement) -> Result<SelectStatement> {
-        debug!("SubqueryExecutor: Starting subquery execution pass");
+        info!("SubqueryExecutor: Starting subquery execution pass");
+        info!(
+            "SubqueryExecutor: Available CTEs: {:?}",
+            self.cte_context.keys().collect::<Vec<_>>()
+        );
 
         // Clone the statement to modify
         let mut modified_statement = statement.clone();
@@ -279,6 +283,11 @@ impl SubqueryExecutor {
         }
 
         info!("SubqueryExecutor: Executing IN subquery");
+        debug!(
+            "SubqueryExecutor: Available CTEs in context: {:?}",
+            self.cte_context.keys().collect::<Vec<_>>()
+        );
+        debug!("SubqueryExecutor: Subquery: {:?}", query);
 
         // Execute the subquery using execute_statement_with_cte_context
         let result_view = self.query_engine.execute_statement_with_cte_context(
@@ -286,6 +295,11 @@ impl SubqueryExecutor {
             query.clone(),
             &self.cte_context,
         )?;
+
+        debug!(
+            "SubqueryExecutor: IN subquery returned {} rows",
+            result_view.row_count()
+        );
 
         // IN subquery must return exactly one column
         if result_view.column_count() != 1 {
