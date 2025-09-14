@@ -132,16 +132,18 @@ SELECT
     FREQUENCY('aaa bbb aaa ccc aaa', 'aaa') AS count_aaa;
 GO
 
--- === STRING ANALYSIS ===
-
--- LENGTH - get string length
-SELECT
-    product,
-    LENGTH(product) AS product_length,
-    country,
-    LENGTH(country) AS country_length
-FROM international_sales
-ORDER BY LENGTH(product) DESC
+WITH
+    lengths AS (
+        SELECT
+            product,
+            LENGTH(product) AS product_length,
+            country,
+            LENGTH(country) AS country_length
+        FROM international_sales
+    )
+SELECT *
+FROM lengths
+ORDER BY product_length DESC
 LIMIT 5;
 GO
 
@@ -172,17 +174,15 @@ SELECT
     SUBSTRING_AFTER('/home/user/documents/report.pdf', '/documents/') AS filename;
 GO
 
+
+SELECT * from SPLIT('123','45.67','abc','2024-01-15','true','NULL');
+GO
+
 -- === TYPE CHECKING ===
 
 -- IS_* functions for data validation
 WITH test_values AS (
-    SELECT '123' AS val UNION ALL
-    SELECT '45.67' UNION ALL
-    SELECT 'abc' UNION ALL
-    SELECT '2024-01-15' UNION ALL
-    SELECT 'true' UNION ALL
-    SELECT 'NULL' UNION ALL
-    SELECT ''
+    SELECT value as val from SPLIT('123 45.67 abc 2024-01-15 true NULL') AS val 
 )
 SELECT
     val,
@@ -253,40 +253,38 @@ SELECT
 FROM test_records;
 GO
 
--- Create varied content with different seeds
 SELECT
-    'Review ' || value AS review_id,
+    TEXTJOIN('', 1, 'Review ', value) AS review_id,
     LOREM_IPSUM(20, 0, value * 7) AS review_text,
     LOREM_IPSUM(5, 0, value * 13) AS summary
 FROM RANGE(1, 3);
 GO
 
--- === SPLIT TABLE FUNCTION ===
-
--- SPLIT function - iterate over split string values
--- Similar to RANGE but for strings
-SELECT * FROM SPLIT('apple,banana,orange', ',');
+SELECT *
+FROM SPLIT('apple,banana,orange', ',');
 GO
 
--- Split with default space delimiter
-SELECT * FROM SPLIT('hello world sql cli');
+SELECT *
+FROM SPLIT('hello world sql cli');
 GO
 
--- Split Lorem Ipsum into individual words
-SELECT value AS word, LENGTH(value) AS word_length
+SELECT
+    value AS word,
+    LENGTH(value) AS word_length
 FROM SPLIT(LOREM_IPSUM(10))
 ORDER BY word_length DESC;
 GO
 
--- Split email addresses
-WITH emails AS (
-    SELECT 'john@example.com,jane@test.org,bob@company.net' AS email_list
-)
+WITH
+    emails AS (
+        SELECT *
+        FROM SPLIT('john@example.com,jane@test.org,bob@company.net', ',')
+    )
 SELECT
     value AS email,
     SUBSTRING_BEFORE(value, '@') AS username,
     SUBSTRING_AFTER(value, '@') AS domain
-FROM SPLIT((SELECT email_list FROM emails), ',');
+FROM emails;
 GO
 
 -- Character-by-character split (empty delimiter)
@@ -294,7 +292,6 @@ SELECT value AS char, index AS position
 FROM SPLIT('SQL', '');
 GO
 
--- Parse CSV-like data
 SELECT
     value,
     SPLIT_PART(value, ':', 1) AS key,
@@ -302,12 +299,15 @@ SELECT
 FROM SPLIT('name:John,age:30,city:NYC', ',');
 GO
 
--- Count word frequencies
-WITH words AS (
-    SELECT LOWER(REPLACE(REPLACE(value, '.', ''), ',', '')) AS word
-    FROM SPLIT('The quick brown fox jumps over the lazy dog. The fox is quick.')
-)
-SELECT word, COUNT(*) AS frequency
+WITH
+    words AS (
+        SELECT
+            LOWER(REPLACE(REPLACE(value, '.', ''), ',', '')) AS word
+        FROM SPLIT('The quick brown fox jumps over the lazy dog. The fox is quick.')
+    )
+SELECT
+    word,
+    COUNT('*') AS frequency
 FROM words
 WHERE LENGTH(word) > 0
 GROUP BY word
@@ -358,12 +358,23 @@ GO
 -- === PRACTICAL EXAMPLES ===
 
 -- Build formatted messages using concatenation
+-- Window functions need to be in CTE or separate column
+WITH numbered_orders AS (
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY date) AS order_num,
+        country,
+        quantity,
+        product,
+        amount,
+        currency
+    FROM international_sales
+)
 SELECT
-    'Order #' || LPAD(CAST(ROW_NUMBER() OVER (ORDER BY date) AS STRING), 5, '0') ||
+    'Order #' || LPAD(order_num, 5, '0') ||
     ' from ' || country || ': ' ||
-    CAST(quantity AS STRING) || ' x ' || product ||
+    quantity || ' x ' || product ||
     ' = ' || FORMAT_CURRENCY(amount * quantity, currency) AS order_summary
-FROM international_sales
+FROM numbered_orders
 LIMIT 5;
 GO
 
@@ -379,10 +390,7 @@ GO
 
 -- Extract and validate email parts
 WITH emails AS (
-    SELECT 'john.doe@example.com' AS email UNION ALL
-    SELECT 'jane@company.co.uk' UNION ALL
-    SELECT 'admin@localhost' UNION ALL
-    SELECT 'invalid-email'
+  select value as email from SPLIT('john.doe@example.com jane@company.co.uk admin@localhost invalid-email')
 )
 SELECT
     email,
@@ -401,24 +409,32 @@ FROM emails;
 GO
 
 -- Find similar products using edit distance
-SELECT
-    p1.product AS product1,
-    p2.product AS product2,
-    EDIT_DISTANCE(UPPER(p1.product), UPPER(p2.product)) AS distance
-FROM (SELECT DISTINCT product FROM international_sales LIMIT 5) p1
-CROSS JOIN (SELECT DISTINCT product FROM international_sales LIMIT 5) p2
-WHERE p1.product != p2.product
-  AND EDIT_DISTANCE(UPPER(p1.product), UPPER(p2.product)) <= 5
-ORDER BY distance;
+-- SELECT
+    -- p1.product AS product1,
+    -- p2.product AS product2,
+    -- EDIT_DISTANCE(UPPER(p1.product), UPPER(p2.product)) AS distance
+-- FROM (SELECT DISTINCT product FROM international_sales LIMIT 5) p1
+-- CROSS JOIN (SELECT DISTINCT product FROM international_sales LIMIT 5) p2
+-- WHERE p1.product != p2.product
+  -- AND EDIT_DISTANCE(UPPER(p1.product), UPPER(p2.product)) <= 5
+-- ORDER BY distance;
 GO
 
 -- Generate product codes
+-- Window function in CTE for proper evaluation
+WITH numbered_products AS (
+    SELECT
+        product,
+        currency,
+        ROW_NUMBER() OVER (ORDER BY product) AS row_num
+    FROM international_sales
+)
 SELECT
     product,
     UPPER(LEFT(product, 3)) || '-' ||
-    LPAD(CAST(ROW_NUMBER() OVER (ORDER BY product) AS STRING), 4, '0') || '-' ||
+    LPAD(row_num, 4, '0') || '-' ||
     LEFT(MD5(product), 6) AS product_code,
     LEFT(SHA256(product || currency), 8) AS sku_hash
-FROM international_sales
+FROM numbered_products
 LIMIT 10;
 GO
