@@ -125,16 +125,16 @@ GO
 WITH time_series AS (
     SELECT
         DATEADD('day', value, '2024-01-01') as date,
-        value * 1000 + MOD(value * 17, 100) as visitors,
-        (value * 1000 + MOD(value * 17, 100)) * 0.023 as conversion_rate
+        (value + 1) * 1000 + MOD(value * 17, 100) as visitors,
+        ((value + 1) * 1000 + MOD(value * 17, 100)) * 0.023 as conversions
     FROM RANGE(0, 7)
 )
 SELECT
     FORMAT_DATE(date, '%Y-%m-%d') as date,
     FORMAT_DATE(date, '%a') as day,
     LPAD(RENDER_NUMBER(visitors, 'standard'), 8, ' ') as visitors,
-    LPAD(RENDER_NUMBER(conversion_rate, 'standard', 2), 8, ' ') as conversions,
-    LPAD(RENDER_NUMBER(conversion_rate / visitors * 100, 'standard', 3) || '%', 8, ' ') as rate
+    LPAD(RENDER_NUMBER(conversions, 'standard', 2), 8, ' ') as conversions,
+    LPAD(RENDER_NUMBER(conversions / visitors * 100, 'standard', 3) || '%', 8, ' ') as rate
 FROM time_series
 ORDER BY date;
 GO
