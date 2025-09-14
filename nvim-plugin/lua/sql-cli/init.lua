@@ -403,6 +403,39 @@ function M.setup_keymaps()
     vim.keymap.set("n", keymaps.export_tsv, try_export("tsv"),
       { desc = "Export as TSV (Excel)", silent = true })
   end
+
+  -- Chart visualization keymaps
+  local visualize = require('sql-cli.visualize')
+
+  if keymaps.bar_chart_at_cursor then
+    vim.keymap.set("n", keymaps.bar_chart_at_cursor, function()
+      visualize.bar_chart_at_cursor()
+    end, { desc = "Bar chart from query at cursor", silent = true })
+  end
+
+  if keymaps.pie_chart_at_cursor then
+    vim.keymap.set("n", keymaps.pie_chart_at_cursor, function()
+      visualize.pie_chart_at_cursor()
+    end, { desc = "Pie chart from query at cursor", silent = true })
+  end
+
+  if keymaps.histogram_at_cursor then
+    vim.keymap.set("n", keymaps.histogram_at_cursor, function()
+      visualize.histogram_at_cursor()
+    end, { desc = "Histogram from query at cursor", silent = true })
+  end
+
+  if keymaps.scatter_at_cursor then
+    vim.keymap.set("n", keymaps.scatter_at_cursor, function()
+      visualize.scatter_plot_at_cursor()
+    end, { desc = "Scatter plot from query at cursor", silent = true })
+  end
+
+  if keymaps.sparkline_at_cursor then
+    vim.keymap.set("n", keymaps.sparkline_at_cursor, function()
+      visualize.sparkline_at_cursor()
+    end, { desc = "Sparkline from query at cursor", silent = true })
+  end
 end
 
 -- Setup autocommands

@@ -3,6 +3,7 @@
 
 local M = {}
 local charts = require('sql-cli.charts')
+local utils = require('sql-cli.utils')
 
 -- Parse CSV output from sql-cli
 local function parse_csv(output)
@@ -288,6 +289,300 @@ function M.scatter_plot(query, options)
   vim.cmd('split')
   vim.api.nvim_win_set_buf(0, bufnr)
   vim.api.nvim_win_set_height(0, math.min(#lines + 5, 30))
+end
+
+-- ============================================================================
+-- AT CURSOR FUNCTIONS - Execute query at cursor and visualize
+-- ============================================================================
+
+-- Get query at cursor and data file
+local function get_query_at_cursor()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local cursor_line = vim.fn.line('.')
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  -- Find query boundaries
+  local start_line, end_line = utils.find_query_at_cursor(lines, cursor_line)
+
+  if not start_line then
+    return nil, nil
+  end
+
+  -- Extract the query, skipping comments and terminators
+  local query_lines = {}
+  for i = start_line, end_line do
+    local line = lines[i]
+    -- Skip GO terminators and comment lines
+    if not line:match("^%s*GO%s*$") and not line:match("^%s*%-%-") then
+      table.insert(query_lines, line)
+    end
+  end
+
+  local query = table.concat(query_lines, "\n")
+
+  -- Auto-detect data file from hints
+  local buf_path = vim.api.nvim_buf_get_name(bufnr)
+  local buf_dir = nil
+  if buf_path and buf_path ~= "" then
+    buf_dir = vim.fn.fnamemodify(buf_path, ":h")
+  end
+  local data_file = utils.detect_data_hint(lines, buf_dir)
+
+  -- If no hint found, check if current buffer is a CSV
+  if not data_file then
+    local filename = vim.api.nvim_buf_get_name(bufnr)
+    if filename:match("%.csv$") then
+      data_file = filename
+    end
+  end
+
+  return query, data_file
+end
+
+-- Execute query with data file if needed
+local function execute_query_with_file(query, data_file)
+  local cmd
+  if data_file then
+    cmd = string.format('sql-cli "%s" -q "%s" -o csv 2>/dev/null',
+      data_file, query:gsub('"', '\\"'))
+  else
+    cmd = string.format('sql-cli -q "%s" -o csv 2>/dev/null',
+      query:gsub('"', '\\"'))
+  end
+
+  local handle = io.popen(cmd)
+  local result = handle:read("*a")
+  handle:close()
+  return result
+end
+
+-- Bar chart at cursor
+function M.bar_chart_at_cursor(options)
+  options = options or {}
+
+  local query, data_file = get_query_at_cursor()
+  if not query then
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    return
+  end
+
+  local output = execute_query_with_file(query, data_file)
+  local headers, data = parse_csv(output)
+
+  if #headers < 2 then
+    vim.notify("Bar chart requires at least 2 columns (label, value)", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Transform data for chart
+  local chart_data = {}
+  for _, row in ipairs(data) do
+    table.insert(chart_data, {
+      label = tostring(row[headers[1]]),
+      value = tonumber(row[headers[2]]) or 0
+    })
+  end
+
+  -- Generate chart
+  local lines = charts.horizontal_bar_chart(chart_data, options)
+
+  -- Create buffer with chart
+  local title = "Bar Chart: Query at line " .. vim.fn.line('.')
+  local bufnr = charts.create_chart_buffer(lines, title)
+
+  -- Open in split
+  vim.cmd('split')
+  vim.api.nvim_win_set_buf(0, bufnr)
+  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 30))
+end
+
+-- Pie chart at cursor
+function M.pie_chart_at_cursor(options)
+  options = options or {}
+
+  local query, data_file = get_query_at_cursor()
+  if not query then
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    return
+  end
+
+  local output = execute_query_with_file(query, data_file)
+  local headers, data = parse_csv(output)
+
+  if #headers < 2 then
+    vim.notify("Pie chart requires at least 2 columns (label, value)", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Transform data for chart
+  local chart_data = {}
+  for _, row in ipairs(data) do
+    table.insert(chart_data, {
+      label = tostring(row[headers[1]]),
+      value = tonumber(row[headers[2]]) or 0
+    })
+  end
+
+  -- Generate chart
+  local lines = charts.pie_chart(chart_data, options)
+
+  -- Create buffer with chart
+  local title = "Pie Chart: Query at line " .. vim.fn.line('.')
+  local bufnr = charts.create_chart_buffer(lines, title)
+
+  -- Open in split
+  vim.cmd('split')
+  vim.api.nvim_win_set_buf(0, bufnr)
+  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 35))
+end
+
+-- Histogram at cursor
+function M.histogram_at_cursor(options)
+  options = options or {}
+
+  local query, data_file = get_query_at_cursor()
+  if not query then
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    return
+  end
+
+  local output = execute_query_with_file(query, data_file)
+  local headers, data = parse_csv(output)
+
+  if #headers < 1 then
+    vim.notify("Histogram requires at least 1 numeric column", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Extract numeric values
+  local values = {}
+  for _, row in ipairs(data) do
+    local val = tonumber(row[headers[1]])
+    if val then
+      table.insert(values, val)
+    end
+  end
+
+  if #values == 0 then
+    vim.notify("No numeric values found for histogram", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Generate chart
+  local lines = charts.histogram(values, options)
+
+  -- Create buffer with chart
+  local title = "Histogram: " .. headers[1]
+  local bufnr = charts.create_chart_buffer(lines, title)
+
+  -- Open in split
+  vim.cmd('split')
+  vim.api.nvim_win_set_buf(0, bufnr)
+  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 25))
+end
+
+-- Scatter plot at cursor
+function M.scatter_plot_at_cursor(options)
+  options = options or {}
+
+  local query, data_file = get_query_at_cursor()
+  if not query then
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    return
+  end
+
+  local output = execute_query_with_file(query, data_file)
+  local headers, data = parse_csv(output)
+
+  if #headers < 2 then
+    vim.notify("Scatter plot requires at least 2 numeric columns (x, y)", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Transform data for chart
+  local chart_data = {}
+  for _, row in ipairs(data) do
+    local x = tonumber(row[headers[1]])
+    local y = tonumber(row[headers[2]])
+    if x and y then
+      table.insert(chart_data, {x = x, y = y})
+    end
+  end
+
+  if #chart_data == 0 then
+    vim.notify("No valid numeric pairs found for scatter plot", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Generate chart
+  local lines = charts.scatter_plot(chart_data, options)
+
+  -- Create buffer with chart
+  local title = string.format("Scatter Plot: %s vs %s", headers[1], headers[2])
+  local bufnr = charts.create_chart_buffer(lines, title)
+
+  -- Open in split
+  vim.cmd('split')
+  vim.api.nvim_win_set_buf(0, bufnr)
+  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 30))
+end
+
+-- Sparkline at cursor (inline display)
+function M.sparkline_at_cursor(options)
+  options = options or {}
+
+  local query, data_file = get_query_at_cursor()
+  if not query then
+    vim.notify("No SQL statement found at cursor", vim.log.levels.WARN)
+    return
+  end
+
+  local output = execute_query_with_file(query, data_file)
+  local headers, data = parse_csv(output)
+
+  if #headers < 1 then
+    vim.notify("Sparkline requires at least 1 numeric column", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Extract values (assume last column is the value)
+  local values = {}
+  local value_col = headers[#headers]
+
+  for _, row in ipairs(data) do
+    local val = tonumber(row[value_col])
+    if val then
+      table.insert(values, val)
+    end
+  end
+
+  if #values == 0 then
+    vim.notify("No numeric values found for sparkline", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Generate sparkline
+  local lines = charts.sparkline(values, options)
+
+  -- Add context
+  local min_val = math.min(table.unpack(values))
+  local max_val = math.max(table.unpack(values))
+  local latest_val = values[#values]
+
+  table.insert(lines, 1, string.format("Sparkline for %s (%d points):", value_col, #values))
+  table.insert(lines, 2, "")
+  table.insert(lines, "")
+  table.insert(lines, string.format("Min: %.2f  Max: %.2f  Latest: %.2f",
+    min_val, max_val, latest_val))
+
+  -- Create small buffer with sparkline
+  local title = "Sparkline: " .. value_col
+  local bufnr = charts.create_chart_buffer(lines, title)
+
+  -- Open in smaller split
+  vim.cmd('split')
+  vim.api.nvim_win_set_buf(0, bufnr)
+  vim.api.nvim_win_set_height(0, 8)
 end
 
 -- ============================================================================

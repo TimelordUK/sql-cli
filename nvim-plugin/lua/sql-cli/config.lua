@@ -72,6 +72,12 @@ M.defaults = {
     export_browser = "<leader>sb",  -- Open in Browser for Gmail/Teams
     export_markdown = "<leader>sm", -- Export as Markdown
     export_tsv = "<leader>st",      -- Export as Tab-separated (Excel)
+    -- Chart visualizations (execute query at cursor and visualize)
+    bar_chart_at_cursor = "<leader>sB",     -- Bar chart from query at cursor (capital B)
+    pie_chart_at_cursor = "<leader>sP",     -- Pie chart from query at cursor (capital P)
+    histogram_at_cursor = "<leader>sH",     -- Histogram from query at cursor (capital H)
+    scatter_at_cursor = "<leader>sS",       -- Scatter plot from query at cursor (capital S)
+    sparkline_at_cursor = "<leader>sl",     -- Sparkline from query at cursor (lowercase l for line)
   },
 
   -- Output window settings
