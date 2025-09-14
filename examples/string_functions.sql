@@ -219,6 +219,48 @@ SELECT
     CHR(72) || CHR(105) || CHR(33) AS greeting;
 GO
 
+-- === LOREM IPSUM GENERATOR ===
+
+-- LOREM_IPSUM - Generate placeholder text
+SELECT
+    LOREM_IPSUM(10) AS ten_words,
+    LENGTH(LOREM_IPSUM(10)) AS text_length;
+GO
+
+-- Generate traditional Lorem Ipsum starting text
+SELECT
+    LOREM_IPSUM(20, 1) AS traditional_start,
+    LOREM_IPSUM(20, 0) AS random_start;
+GO
+
+-- Generate various lengths of Lorem Ipsum
+SELECT
+    LOREM_IPSUM(5) AS short_text,
+    LOREM_IPSUM(50) AS medium_text,
+    LENGTH(LOREM_IPSUM(100)) AS hundred_words_length;
+GO
+
+-- Practical use: Generate test data with Lorem Ipsum
+-- Using id as seed ensures each row gets different text
+WITH test_records AS (
+    SELECT value AS id FROM RANGE(1, 6)
+)
+SELECT
+    id,
+    'Product ' || id AS product_name,
+    LOREM_IPSUM(10 + (id * 2), 0, id) AS description,
+    ROUND(RANDOM() * 100, 2) AS price
+FROM test_records;
+GO
+
+-- Create varied content with different seeds
+SELECT
+    'Review ' || value AS review_id,
+    LOREM_IPSUM(20, 0, value * 7) AS review_text,
+    LOREM_IPSUM(5, 0, value * 13) AS summary
+FROM RANGE(1, 3);
+GO
+
 -- === FORMATTING FUNCTIONS ===
 
 -- FORMAT_NUMBER - thousand separators and decimals

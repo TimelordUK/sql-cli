@@ -1327,6 +1327,180 @@ impl SqlFunction for ChrFunction {
     }
 }
 
+/// LOREM_IPSUM function - generates Lorem Ipsum placeholder text
+pub struct LoremIpsumFunction;
+
+impl SqlFunction for LoremIpsumFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "LOREM_IPSUM",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Range(1, 3),
+            description: "Generate Lorem Ipsum placeholder text with specified number of words",
+            returns: "STRING",
+            examples: vec![
+                "SELECT LOREM_IPSUM(10)",              // 10 random Lorem Ipsum words
+                "SELECT LOREM_IPSUM(50)",              // 50 words
+                "SELECT LOREM_IPSUM(20, 1)",           // 20 words, starting with 'Lorem ipsum...'
+                "SELECT LOREM_IPSUM(15, 0, id)",       // 15 words, use id as seed for variation
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let num_words = match &args[0] {
+            DataValue::Integer(n) if *n > 0 => *n as usize,
+            DataValue::Float(f) if *f > 0.0 => *f as usize,
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("LOREM_IPSUM requires a positive number of words")),
+        };
+
+        // Check if we should start with traditional "Lorem ipsum..." opening
+        let start_traditional = if args.len() > 1 {
+            match &args[1] {
+                DataValue::Integer(n) => *n != 0,
+                DataValue::Boolean(b) => *b,
+                _ => false,
+            }
+        } else {
+            false
+        };
+
+        // Get optional seed for reproducible but varied results
+        let seed_value = if args.len() > 2 {
+            match &args[2] {
+                DataValue::Integer(n) => *n as u64,
+                DataValue::Float(f) => *f as u64,
+                DataValue::String(s) => {
+                    // Hash the string to get a numeric seed
+                    let mut hash = 0u64;
+                    for byte in s.bytes() {
+                        hash = hash.wrapping_mul(31).wrapping_add(byte as u64);
+                    }
+                    hash
+                }
+                DataValue::Null => 0,
+                _ => 0,
+            }
+        } else {
+            0
+        };
+
+        // Lorem Ipsum word bank - traditional Latin placeholder text words
+        const LOREM_WORDS: &[&str] = &[
+            "lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit",
+            "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore",
+            "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud",
+            "exercitation", "ullamco", "laboris", "nisi", "aliquip", "ex", "ea", "commodo",
+            "consequat", "duis", "aute", "irure", "in", "reprehenderit", "voluptate",
+            "velit", "esse", "cillum", "fugiat", "nulla", "pariatur", "excepteur", "sint",
+            "occaecat", "cupidatat", "non", "proident", "sunt", "culpa", "qui", "officia",
+            "deserunt", "mollit", "anim", "id", "est", "laborum", "perspiciatis", "unde",
+            "omnis", "iste", "natus", "error", "voluptatem", "accusantium", "doloremque",
+            "laudantium", "totam", "rem", "aperiam", "eaque", "ipsa", "quae", "ab", "illo",
+            "inventore", "veritatis", "quasi", "architecto", "beatae", "vitae", "dicta",
+            "explicabo", "nemo", "enim", "ipsam", "quia", "voluptas", "aspernatur", "aut",
+            "odit", "fugit", "consequuntur", "magni", "dolores", "eos", "ratione", "sequi",
+            "nesciunt", "neque", "porro", "quisquam", "dolorem", "adipisci", "numquam",
+            "eius", "modi", "tempora", "incidunt", "magnam", "quaerat", "etiam", "minus",
+            "soluta", "nobis", "eligendi", "optio", "cumque", "nihil", "impedit", "quo",
+            "possimus", "suscipit", "laboriosam", "aliquid", "fuga", "distinctio", "libero",
+            "tempore", "cum", "assumenda", "est", "omnis", "dolor", "repellendus",
+            "temporibus", "autem", "quibusdam", "officiis", "debitis", "rerum",
+            "necessitatibus", "saepe", "eveniet", "voluptates", "repudiandae", "molestiae",
+            "recusandae", "itaque", "earum", "hic", "tenetur", "sapiente", "delectus",
+            "reiciendis", "voluptatibus", "maiores", "alias", "consequatur", "perferendis",
+            "doloribus", "asperiores", "repellat", "iusto", "odio", "dignissimos", "ducimus",
+            "blanditiis", "praesentium", "voluptatum", "deleniti", "atque", "corrupti",
+            "quos", "quas", "molestias", "excepturi", "occaecati", "provident", "similique",
+            "mollitia", "animi", "illum", "dolorum", "fuga", "harum", "quidem", "rerum",
+            "facilis", "expedita", "distinctio", "nam", "libero", "tempore", "cum", "soluta",
+            "nobis", "eligendi", "optio", "cumque", "nihil", "impedit", "minus", "quod",
+            "maxime", "placeat", "facere", "possimus", "omnis", "voluptas", "assumenda",
+        ];
+
+        let mut result = Vec::with_capacity(num_words);
+
+        if start_traditional && num_words > 0 {
+            // Start with traditional "Lorem ipsum dolor sit amet..."
+            let traditional_start = ["lorem", "ipsum", "dolor", "sit", "amet"];
+            let take_count = num_words.min(traditional_start.len());
+            for i in 0..take_count {
+                result.push(traditional_start[i]);
+            }
+
+            // Fill remaining with random words
+            let seed = if seed_value != 0 {
+                seed_value
+            } else {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64
+            };
+
+            let mut rng = seed.wrapping_mul(num_words as u64); // Combine seed with word count
+            for i in take_count..num_words {
+                // Simple pseudo-random selection
+                rng = (rng.wrapping_mul(1664525).wrapping_add(1013904223)) ^ (i as u64);
+                let idx = (rng as usize) % LOREM_WORDS.len();
+                result.push(LOREM_WORDS[idx]);
+            }
+        } else {
+            // Generate random Lorem words
+            let seed = if seed_value != 0 {
+                seed_value
+            } else {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64
+            };
+
+            let mut rng = seed.wrapping_mul(num_words as u64).wrapping_add(12345); // Combine seed with word count
+            for i in 0..num_words {
+                // Simple pseudo-random selection with better entropy
+                rng = (rng.wrapping_mul(1664525).wrapping_add(1013904223)) ^ (i as u64);
+                let idx = (rng as usize) % LOREM_WORDS.len();
+                result.push(LOREM_WORDS[idx]);
+            }
+        }
+
+        // Capitalize first word and add periods for readability
+        let mut text = String::new();
+        for (i, word) in result.iter().enumerate() {
+            if i == 0 {
+                // Capitalize first word
+                text.push_str(&word.chars().next().unwrap().to_uppercase().to_string());
+                text.push_str(&word[1..]);
+            } else {
+                text.push(' ');
+                // Occasionally start a new sentence (roughly every 10-15 words)
+                if i > 0 && ((i * 7) % 13 == 0) && i < num_words - 1 {
+                    text.pop(); // Remove the space
+                    text.push_str(". ");
+                    // Capitalize next word
+                    text.push_str(&word.chars().next().unwrap().to_uppercase().to_string());
+                    text.push_str(&word[1..]);
+                } else {
+                    text.push_str(word);
+                }
+            }
+        }
+
+        // Add final period if we generated text
+        if !text.is_empty() {
+            text.push('.');
+        }
+
+        Ok(DataValue::String(text))
+    }
+}
+
 /// Register all string method functions
 pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     use std::sync::Arc;
@@ -1411,4 +1585,7 @@ pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
 
     // Register CHR function
     registry.register(Box::new(ChrFunction));
+
+    // Register LOREM_IPSUM function
+    registry.register(Box::new(LoremIpsumFunction));
 }
