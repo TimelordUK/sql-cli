@@ -807,6 +807,101 @@ impl SqlFunction for FrequencyFunction {
     }
 }
 
+/// IndexOf method function - finds the position of a substring
+pub struct IndexOfMethod;
+
+impl SqlFunction for IndexOfMethod {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "INDEXOF",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(2),
+            description: "Returns the position of the first occurrence of a substring (0-based)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT email.IndexOf('@') FROM users",
+                "SELECT INDEXOF(email, '@') FROM users",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let string = match &args[0] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("IndexOf expects string arguments")),
+        };
+
+        let substring = match &args[1] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("IndexOf expects string arguments")),
+        };
+
+        match string.find(substring) {
+            Some(pos) => Ok(DataValue::Integer(pos as i64)),
+            None => Ok(DataValue::Integer(-1)), // Return -1 if not found
+        }
+    }
+}
+
+impl MethodFunction for IndexOfMethod {
+    fn handles_method(&self, method_name: &str) -> bool {
+        method_name.eq_ignore_ascii_case("IndexOf")
+    }
+
+    fn method_name(&self) -> &'static str {
+        "IndexOf"
+    }
+}
+
+/// INSTR function - SQL standard function for finding substring position
+/// Returns 1-based position for SQL compatibility
+pub struct InstrFunction;
+
+impl SqlFunction for InstrFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "INSTR",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(2),
+            description: "Returns the position of the first occurrence of a substring (1-based, SQL standard)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT INSTR(email, '@') FROM users",
+                "SELECT SUBSTRING(email, INSTR(email, '@') + 1) FROM users",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        let string = match &args[0] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("INSTR expects string arguments")),
+        };
+
+        let substring = match &args[1] {
+            DataValue::String(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("INSTR expects string arguments")),
+        };
+
+        match string.find(substring) {
+            Some(pos) => Ok(DataValue::Integer((pos + 1) as i64)), // 1-based for SQL
+            None => Ok(DataValue::Integer(0)), // Return 0 if not found (SQL standard)
+        }
+    }
+}
+
 /// Register all string method functions
 pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     use std::sync::Arc;
@@ -864,4 +959,11 @@ pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     let replace = Arc::new(ReplaceMethod);
     registry.register(Box::new(ReplaceMethod));
     registry.register_method(replace);
+
+    // Register IndexOf/INSTR
+    let indexof = Arc::new(IndexOfMethod);
+    registry.register(Box::new(IndexOfMethod));
+    registry.register_method(indexof.clone());
+    // Also register as INSTR for SQL compatibility
+    registry.register(Box::new(InstrFunction));
 }

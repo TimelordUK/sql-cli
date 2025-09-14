@@ -193,7 +193,14 @@ impl<'a> AstFormatter<'a> {
 
     fn format_cte(&self, result: &mut String, cte: &CTE, indent_level: usize, is_last: bool) {
         let indent = self.indent(indent_level);
-        write!(result, "{}{}", indent, cte.name).unwrap();
+
+        // Add WEB keyword for Web CTEs
+        let is_web = matches!(&cte.cte_type, crate::sql::parser::ast::CTEType::Web(_));
+        if is_web {
+            write!(result, "{}{} {}", indent, self.keyword("WEB"), cte.name).unwrap();
+        } else {
+            write!(result, "{}{}", indent, cte.name).unwrap();
+        }
 
         if let Some(ref columns) = cte.column_list {
             write!(result, "(").unwrap();
@@ -213,12 +220,17 @@ impl<'a> AstFormatter<'a> {
             }
             crate::sql::parser::ast::CTEType::Web(web_spec) => {
                 // Format WEB CTE
-                let mut web_str =
-                    format!("{}URL '{}'", "    ".repeat(indent_level + 1), web_spec.url);
+                let mut web_str = format!(
+                    "{}{} '{}'",
+                    "    ".repeat(indent_level + 1),
+                    self.keyword("URL"),
+                    web_spec.url
+                );
 
                 if let Some(format) = &web_spec.format {
                     web_str.push_str(&format!(
-                        " FORMAT {}",
+                        " {} {}",
+                        self.keyword("FORMAT"),
                         match format {
                             crate::sql::parser::ast::DataFormat::CSV => "CSV",
                             crate::sql::parser::ast::DataFormat::JSON => "JSON",
@@ -228,11 +240,11 @@ impl<'a> AstFormatter<'a> {
                 }
 
                 if let Some(cache) = web_spec.cache_seconds {
-                    web_str.push_str(&format!(" CACHE {}", cache));
+                    web_str.push_str(&format!(" {} {}", self.keyword("CACHE"), cache));
                 }
 
                 if !web_spec.headers.is_empty() {
-                    web_str.push_str(" HEADERS (");
+                    web_str.push_str(&format!(" {} (", self.keyword("HEADERS")));
                     for (i, (key, value)) in web_spec.headers.iter().enumerate() {
                         if i > 0 {
                             web_str.push_str(", ");
