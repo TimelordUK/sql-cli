@@ -5,26 +5,79 @@ local M = {}
 local charts = require('sql-cli.charts')
 local utils = require('sql-cli.utils')
 
+-- Parse CSV line handling quoted values
+local function parse_csv_line(line)
+  local values = {}
+  local current = ""
+  local in_quotes = false
+
+  for i = 1, #line do
+    local char = line:sub(i, i)
+    if char == '"' then
+      in_quotes = not in_quotes
+    elseif char == ',' and not in_quotes then
+      table.insert(values, current)
+      current = ""
+    else
+      current = current .. char
+    end
+  end
+  table.insert(values, current)
+
+  return values
+end
+
 -- Parse CSV output from sql-cli
 local function parse_csv(output)
-  local lines = vim.split(output, '\n')
+  local lines = vim.split(output, '\n', {plain=true})
   local headers = {}
   local data = {}
 
+  -- Skip any non-CSV lines (like error messages or comments that start with #)
+  local csv_start = 1
+  for i, line in ipairs(lines) do
+    -- Skip comment lines that start with # and empty lines
+    if line:match("^#") or line == "" then
+      -- skip
+    else
+      csv_start = i
+      break
+    end
+  end
+
   -- Parse headers
-  if #lines > 0 then
-    headers = vim.split(lines[1], ',')
+  if csv_start <= #lines and lines[csv_start] then
+    headers = parse_csv_line(lines[csv_start])
+    -- Trim whitespace from headers
+    for i, h in ipairs(headers) do
+      headers[i] = h:match("^%s*(.-)%s*$")
+    end
   end
 
   -- Parse data rows
-  for i = 2, #lines do
-    if lines[i] and lines[i] ~= "" then
-      local row = vim.split(lines[i], ',')
+  for i = csv_start + 1, #lines do
+    local line = lines[i]
+    if line and line ~= "" and not line:match("^#") then
+      local row = parse_csv_line(line)
       local row_data = {}
       for j, header in ipairs(headers) do
-        row_data[header] = tonumber(row[j]) or row[j]
+        -- Store both by header name and by index for reliability
+        local value = row[j]
+        if value then
+          -- Trim whitespace
+          value = value:match("^%s*(.-)%s*$")
+          -- Try to parse as number for numeric columns, but keep as string otherwise
+          -- Only convert to number if it's purely numeric
+          if value:match("^%-?%d+%.?%d*$") then
+            row_data[header] = tonumber(value)
+          else
+            row_data[header] = value
+          end
+        end
       end
-      table.insert(data, row_data)
+      if next(row_data) then  -- Only add non-empty rows
+        table.insert(data, row_data)
+      end
     end
   end
 
@@ -32,11 +85,17 @@ local function parse_csv(output)
 end
 
 -- Execute SQL query and get results
-local function execute_query(query)
+local function execute_query(query, debug)
   local cmd = string.format('sql-cli -q "%s" -o csv 2>/dev/null', query:gsub('"', '\\"'))
+  if debug then
+    vim.notify("Executing: " .. cmd, vim.log.levels.INFO)
+  end
   local handle = io.popen(cmd)
   local result = handle:read("*a")
   handle:close()
+  if debug then
+    vim.notify("Raw output (first 200 chars): " .. result:sub(1, 200), vim.log.levels.INFO)
+  end
   return result
 end
 
@@ -48,8 +107,31 @@ end
 -- Expected format: SELECT label, value FROM ...
 function M.bar_chart(query, options)
   options = options or {}
+  local debug = options.debug
+  local debug_info = {}
 
-  local output = execute_query(query)
+  if debug then
+    table.insert(debug_info, "=== QUERY ===")
+    table.insert(debug_info, query)
+    table.insert(debug_info, "")
+  end
+
+  local output = execute_query(query, false)
+
+  if debug then
+    table.insert(debug_info, "=== RAW CSV OUTPUT ===")
+    local lines = vim.split(output, '\n', {plain=true})
+    for i = 1, math.min(10, #lines) do
+      if lines[i] and lines[i] ~= "" then
+        table.insert(debug_info, string.format("Line %d: [%s]", i, lines[i]))
+      end
+    end
+    if #lines > 10 then
+      table.insert(debug_info, string.format("... (%d more lines)", #lines - 10))
+    end
+    table.insert(debug_info, "")
+  end
+
   local headers, data = parse_csv(output)
 
   if #headers < 2 then
@@ -57,17 +139,75 @@ function M.bar_chart(query, options)
     return
   end
 
+  -- Debug: Show parsed data
+  if debug then
+    table.insert(debug_info, "=== PARSED DATA ===")
+    table.insert(debug_info, string.format("Headers: [%s]", table.concat(headers, ", ")))
+    table.insert(debug_info, string.format("Total rows: %d", #data))
+    table.insert(debug_info, "")
+    table.insert(debug_info, "First 5 rows:")
+    for i = 1, math.min(5, #data) do
+      local row = data[i]
+      local label_val = row[headers[1]]
+      local num_val = row[headers[2]]
+      table.insert(debug_info, string.format("  Row %d: [%s]='%s' (type: %s), [%s]=%s (type: %s)",
+        i,
+        headers[1], tostring(label_val), type(label_val),
+        headers[2], tostring(num_val), type(num_val)))
+    end
+    table.insert(debug_info, "")
+  end
+
   -- Transform data for chart
   local chart_data = {}
-  for _, row in ipairs(data) do
-    table.insert(chart_data, {
-      label = tostring(row[headers[1]]),
-      value = tonumber(row[headers[2]]) or 0
-    })
+  for i, row in ipairs(data) do
+    local label_val = row[headers[1]]
+    local num_val = row[headers[2]]
+
+    -- Ensure we have valid data
+    if label_val ~= nil and num_val ~= nil then
+      local label_str = tostring(label_val)
+      local value_num = tonumber(num_val) or 0
+
+      if debug and i <= 5 then
+        table.insert(debug_info, string.format("Transform row %d: '%s' -> '%s', %s -> %.2f",
+          i, tostring(label_val), label_str, tostring(num_val), value_num))
+      end
+
+      table.insert(chart_data, {
+        label = label_str,
+        value = value_num
+      })
+    end
+  end
+
+  if debug then
+    table.insert(debug_info, "")
+    table.insert(debug_info, "=== FINAL CHART DATA ===")
+    table.insert(debug_info, string.format("Total items: %d", #chart_data))
+    for i = 1, math.min(5, #chart_data) do
+      table.insert(debug_info, string.format("  Item %d: label='%s', value=%.2f",
+        i, chart_data[i].label, chart_data[i].value))
+    end
+  end
+
+  if #chart_data == 0 then
+    vim.notify("No valid data for bar chart", vim.log.levels.ERROR)
+    return
   end
 
   -- Generate chart
   local lines = charts.horizontal_bar_chart(chart_data, options)
+
+  -- If debug, append debug info below the chart
+  if debug and #debug_info > 0 then
+    table.insert(lines, "")
+    table.insert(lines, "")
+    table.insert(lines, "━━━━━━━━━━━━━━━━━━━━ DEBUG INFO ━━━━━━━━━━━━━━━━━━━━")
+    for _, line in ipairs(debug_info) do
+      table.insert(lines, line)
+    end
+  end
 
   -- Create buffer with chart
   local title = "Bar Chart: " .. (options.title or query:sub(1, 50))
@@ -76,7 +216,7 @@ function M.bar_chart(query, options)
   -- Open in split
   vim.cmd('split')
   vim.api.nvim_win_set_buf(0, bufnr)
-  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 30))
+  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 40))
 end
 
 -- ============================================================================
@@ -104,17 +244,18 @@ function M.pie_chart(query, options)
     })
   end
 
-  -- Generate chart
+  -- Generate chart with configurable radius (can be set via vim.g.sql_cli_pie_radius)
+  options.radius = options.radius or vim.g.sql_cli_pie_radius or 15  -- Default to larger radius
   local lines = charts.pie_chart(chart_data, options)
 
   -- Create buffer with chart
   local title = "Pie Chart: " .. (options.title or query:sub(1, 50))
   local bufnr = charts.create_chart_buffer(lines, title)
 
-  -- Open in split
+  -- Open in split with more height for larger chart
   vim.cmd('split')
   vim.api.nvim_win_set_buf(0, bufnr)
-  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 35))
+  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 45))  -- Increased from 35 to 45
 end
 
 -- ============================================================================
@@ -340,7 +481,7 @@ local function get_query_at_cursor()
 end
 
 -- Execute query with data file if needed
-local function execute_query_with_file(query, data_file)
+local function execute_query_with_file(query, data_file, debug)
   local cmd
   if data_file then
     cmd = string.format('sql-cli "%s" -q "%s" -o csv 2>/dev/null',
@@ -350,15 +491,29 @@ local function execute_query_with_file(query, data_file)
       query:gsub('"', '\\"'))
   end
 
+  if debug then
+    vim.notify("Executing command: " .. cmd, vim.log.levels.INFO)
+  end
+
   local handle = io.popen(cmd)
   local result = handle:read("*a")
   handle:close()
+
+  if debug then
+    vim.notify("Output length: " .. #result .. " chars", vim.log.levels.INFO)
+    if #result > 0 then
+      vim.notify("First 300 chars: " .. result:sub(1, 300), vim.log.levels.INFO)
+    end
+  end
+
   return result
 end
 
 -- Bar chart at cursor
 function M.bar_chart_at_cursor(options)
   options = options or {}
+  local debug = options.debug or vim.g.sql_cli_debug_charts
+  local debug_info = {}
 
   local query, data_file = get_query_at_cursor()
   if not query then
@@ -366,7 +521,29 @@ function M.bar_chart_at_cursor(options)
     return
   end
 
-  local output = execute_query_with_file(query, data_file)
+  if debug then
+    table.insert(debug_info, "=== QUERY DETECTION ===")
+    table.insert(debug_info, "Query: " .. query)
+    table.insert(debug_info, "Data file: " .. (data_file or "none"))
+    table.insert(debug_info, "")
+  end
+
+  local output = execute_query_with_file(query, data_file, false)
+
+  if debug then
+    table.insert(debug_info, "=== RAW CSV OUTPUT ===")
+    local lines = vim.split(output, '\n', {plain=true})
+    for i = 1, math.min(10, #lines) do
+      if lines[i] and lines[i] ~= "" then
+        table.insert(debug_info, string.format("Line %d: [%s]", i, lines[i]))
+      end
+    end
+    if #lines > 10 then
+      table.insert(debug_info, string.format("... (%d more lines)", #lines - 10))
+    end
+    table.insert(debug_info, "")
+  end
+
   local headers, data = parse_csv(output)
 
   if #headers < 2 then
@@ -374,17 +551,77 @@ function M.bar_chart_at_cursor(options)
     return
   end
 
+  -- Debug: Show parsed data
+  if debug then
+    table.insert(debug_info, "=== PARSED DATA ===")
+    table.insert(debug_info, string.format("Headers: [%s]", table.concat(headers, ", ")))
+    table.insert(debug_info, string.format("Total rows: %d", #data))
+    table.insert(debug_info, "")
+    table.insert(debug_info, "First 5 rows:")
+    for i = 1, math.min(5, #data) do
+      local row = data[i]
+      local label_val = row[headers[1]]
+      local num_val = row[headers[2]]
+      table.insert(debug_info, string.format("  Row %d: [%s]='%s' (type: %s), [%s]=%s (type: %s)",
+        i,
+        headers[1], tostring(label_val), type(label_val),
+        headers[2], tostring(num_val), type(num_val)))
+    end
+    table.insert(debug_info, "")
+  end
+
   -- Transform data for chart
   local chart_data = {}
-  for _, row in ipairs(data) do
-    table.insert(chart_data, {
-      label = tostring(row[headers[1]]),
-      value = tonumber(row[headers[2]]) or 0
-    })
+  for i, row in ipairs(data) do
+    -- Ensure we're using the right columns
+    local label_val = row[headers[1]]
+    local numeric_val = row[headers[2]]
+
+    -- Skip if no valid data
+    if label_val and numeric_val then
+      local label_str = tostring(label_val)
+      local value_num = tonumber(numeric_val) or 0
+
+      if debug and i <= 5 then
+        table.insert(debug_info, string.format("Transform row %d: '%s' -> '%s', %s -> %.2f",
+          i, tostring(label_val), label_str, tostring(numeric_val), value_num))
+      end
+
+      table.insert(chart_data, {
+        label = label_str,
+        value = value_num
+      })
+    end
+  end
+
+  if debug then
+    table.insert(debug_info, "")
+    table.insert(debug_info, "=== FINAL CHART DATA ===")
+    table.insert(debug_info, string.format("Total items: %d", #chart_data))
+    for i = 1, math.min(5, #chart_data) do
+      table.insert(debug_info, string.format("  Item %d: label='%s', value=%.2f",
+        i, chart_data[i].label, chart_data[i].value))
+    end
+  end
+
+  -- Check if we have any data
+  if #chart_data == 0 then
+    vim.notify("No valid data found for bar chart", vim.log.levels.ERROR)
+    return
   end
 
   -- Generate chart
   local lines = charts.horizontal_bar_chart(chart_data, options)
+
+  -- If debug, append debug info below the chart
+  if debug and #debug_info > 0 then
+    table.insert(lines, "")
+    table.insert(lines, "")
+    table.insert(lines, "━━━━━━━━━━━━━━━━━━━━ DEBUG INFO ━━━━━━━━━━━━━━━━━━━━")
+    for _, line in ipairs(debug_info) do
+      table.insert(lines, line)
+    end
+  end
 
   -- Create buffer with chart
   local title = "Bar Chart: Query at line " .. vim.fn.line('.')
@@ -393,7 +630,7 @@ function M.bar_chart_at_cursor(options)
   -- Open in split
   vim.cmd('split')
   vim.api.nvim_win_set_buf(0, bufnr)
-  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 30))
+  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 40))
 end
 
 -- Pie chart at cursor
@@ -406,7 +643,7 @@ function M.pie_chart_at_cursor(options)
     return
   end
 
-  local output = execute_query_with_file(query, data_file)
+  local output = execute_query_with_file(query, data_file, false)
   local headers, data = parse_csv(output)
 
   if #headers < 2 then
@@ -423,17 +660,18 @@ function M.pie_chart_at_cursor(options)
     })
   end
 
-  -- Generate chart
+  -- Generate chart with configurable radius (can be set via vim.g.sql_cli_pie_radius)
+  options.radius = options.radius or vim.g.sql_cli_pie_radius or 15  -- Default to larger radius
   local lines = charts.pie_chart(chart_data, options)
 
   -- Create buffer with chart
   local title = "Pie Chart: Query at line " .. vim.fn.line('.')
   local bufnr = charts.create_chart_buffer(lines, title)
 
-  -- Open in split
+  -- Open in split with more height for larger chart
   vim.cmd('split')
   vim.api.nvim_win_set_buf(0, bufnr)
-  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 35))
+  vim.api.nvim_win_set_height(0, math.min(#lines + 5, 45))  -- Increased from 35 to 45
 end
 
 -- Histogram at cursor
@@ -446,7 +684,7 @@ function M.histogram_at_cursor(options)
     return
   end
 
-  local output = execute_query_with_file(query, data_file)
+  local output = execute_query_with_file(query, data_file, false)
   local headers, data = parse_csv(output)
 
   if #headers < 1 then
@@ -491,7 +729,7 @@ function M.scatter_plot_at_cursor(options)
     return
   end
 
-  local output = execute_query_with_file(query, data_file)
+  local output = execute_query_with_file(query, data_file, false)
   local headers, data = parse_csv(output)
 
   if #headers < 2 then
@@ -537,7 +775,7 @@ function M.sparkline_at_cursor(options)
     return
   end
 
-  local output = execute_query_with_file(query, data_file)
+  local output = execute_query_with_file(query, data_file, false)
   local headers, data = parse_csv(output)
 
   if #headers < 1 then
@@ -596,6 +834,14 @@ function M.setup()
   end, {
     nargs = 1,
     desc = 'Create bar chart from SQL query'
+  })
+
+  -- Bar Chart with Debug
+  vim.api.nvim_create_user_command('SqlBarChartDebug', function(opts)
+    M.bar_chart(opts.args, {debug = true})
+  end, {
+    nargs = 1,
+    desc = 'Create bar chart from SQL query with debug output'
   })
 
   -- Pie Chart
@@ -666,6 +912,38 @@ function M.setup()
   end, {
     nargs = '+',
     desc = 'Show statistical summary and distribution'
+  })
+
+  -- Enable/disable chart debugging
+  vim.api.nvim_create_user_command('SqlChartDebug', function(opts)
+    local enable = opts.args == "on" or opts.args == "true" or opts.args == "1"
+    vim.g.sql_cli_debug_charts = enable
+    vim.notify("SQL chart debugging " .. (enable and "enabled" or "disabled"), vim.log.levels.INFO)
+  end, {
+    nargs = '?',
+    desc = 'Enable/disable SQL chart debugging (on/off)'
+  })
+
+  -- Test bar chart with simple data
+  vim.api.nvim_create_user_command('SqlTestBarChart', function()
+    local test_query = [[SELECT 'Category A' as label, 100 as value UNION SELECT 'Category B', 200 UNION SELECT 'Category C', 150]]
+    M.bar_chart(test_query, {debug = vim.g.sql_cli_debug_charts})
+  end, {
+    desc = 'Test bar chart with simple data'
+  })
+
+  -- Set pie chart radius
+  vim.api.nvim_create_user_command('SqlPieRadius', function(opts)
+    local radius = tonumber(opts.args)
+    if radius and radius >= 5 and radius <= 30 then
+      vim.g.sql_cli_pie_radius = radius
+      vim.notify(string.format("Pie chart radius set to %d", radius), vim.log.levels.INFO)
+    else
+      vim.notify("Pie chart radius must be between 5 and 30", vim.log.levels.ERROR)
+    end
+  end, {
+    nargs = 1,
+    desc = 'Set pie chart radius (5-30)'
   })
 end
 

@@ -1,117 +1,79 @@
 -- #! ../data/AAPL_data.csv
 
--- Bar Chart Examples for SQL CLI Visualization
--- ==============================================
--- Bar charts expect 2 columns: label (text) and value (numeric)
--- Format: SELECT label_column, numeric_column FROM ...
-
--- ==================================================
--- 1. PRICE DISTRIBUTION - Frequency by Price Buckets
--- ==================================================
--- This creates categories and counts how many days fell into each range
-
-WITH price_buckets AS (
-    SELECT
-        CASE
-            WHEN close < 70 THEN 'Under $70'
-            WHEN close < 80 THEN '$70-80'
-            WHEN close < 90 THEN '$80-90'
-            WHEN close < 100 THEN '$90-100'
-            WHEN close < 110 THEN '$100-110'
-            WHEN close < 120 THEN '$110-120'
-            WHEN close < 130 THEN '$120-130'
-            WHEN close < 140 THEN '$130-140'
-            WHEN close < 150 THEN '$140-150'
-            ELSE 'Over $150'
-        END as price_range_label,
-        CASE
-            WHEN close < 70 THEN 1
-            WHEN close < 80 THEN 2
-            WHEN close < 90 THEN 3
-            WHEN close < 100 THEN 4
-            WHEN close < 110 THEN 5
-            WHEN close < 120 THEN 6
-            WHEN close < 130 THEN 7
-            WHEN close < 140 THEN 8
-            WHEN close < 150 THEN 9
-            ELSE 10
-        END as price_range,
-        close
-    FROM AAPL_data
-)
+WITH
+    price_buckets AS (
+        SELECT
+            CASE
+        WHEN close < 70 THEN 'Under \$70'
+        WHEN close < 80 THEN '\$70-80'
+        WHEN close < 90 THEN '\$80-90'
+        WHEN close < 100 THEN '\$90-100'
+        WHEN close < 110 THEN '\$100-110'
+        WHEN close < 120 THEN '\$110-120'
+        WHEN close < 130 THEN '\$120-130'
+        WHEN close < 140 THEN '\$130-140'
+        WHEN close < 150 THEN '\$140-150'
+        ELSE 'Over \$150'
+    END AS price_range_label,
+            CASE
+        WHEN close < 70 THEN 1
+        WHEN close < 80 THEN 2
+        WHEN close < 90 THEN 3
+        WHEN close < 100 THEN 4
+        WHEN close < 110 THEN 5
+        WHEN close < 120 THEN 6
+        WHEN close < 130 THEN 7
+        WHEN close < 140 THEN 8
+        WHEN close < 150 THEN 9
+        ELSE 10
+    END AS price_range,
+            close
+        FROM AAPL_data
+    )
 SELECT
-    price_range_label,          -- First column: category label (Y-axis)
-    COUNT(*) as frequency       -- Second column: numeric value (X-axis bar length)
+    price_range,
+    COUNT('*') AS frequency
 FROM price_buckets
-GROUP BY price_range, price_range_label
-ORDER BY price_range;
+GROUP BY price_range
+ORDER BY price_range ASC;
 GO
 
--- To visualize in nvim:
--- :SqlBarChart WITH price_buckets AS (SELECT CASE WHEN close < 70 THEN 'Under $70' WHEN close < 80 THEN '$70-80' WHEN close < 90 THEN '$80-90' WHEN close < 100 THEN '$90-100' WHEN close < 110 THEN '$100-110' ELSE 'Over $110' END as price_range, close FROM AAPL_data) SELECT price_range, COUNT(*) FROM price_buckets GROUP BY price_range
-
--- ==================================================
--- 2. VOLUME ANALYSIS - Trading Volume by Day of Week
--- ==================================================
--- Shows average trading volumes by day of week using DAYOFWEEK()
-
-WITH daily_volume AS (
-    SELECT
-        DAYOFWEEK(date) as dow_num,
-        CASE
-            WHEN DAYOFWEEK(date) = 0 THEN 'Sunday'
-            WHEN DAYOFWEEK(date) = 1 THEN 'Monday'
-            WHEN DAYOFWEEK(date) = 2 THEN 'Tuesday'
-            WHEN DAYOFWEEK(date) = 3 THEN 'Wednesday'
-            WHEN DAYOFWEEK(date) = 4 THEN 'Thursday'
-            WHEN DAYOFWEEK(date) = 5 THEN 'Friday'
-            WHEN DAYOFWEEK(date) = 6 THEN 'Saturday'
-            ELSE 'Unknown'
-        END as day_name,
-        volume
-    FROM AAPL_data
-)
+WITH
+    daily_volume AS (
+        SELECT
+            DAYOFWEEK(date) AS dow_num,
+            DAYNAME(date) AS day_name,
+            volume
+        FROM AAPL_data
+    )
 SELECT
-    day_name as trading_day,           -- Label column
-    AVG(volume) as avg_volume          -- Value column
+    day_name AS trading_day,
+    AVG(volume) AS avg_volume
 FROM daily_volume
-WHERE dow_num >= 1 AND dow_num <= 5   -- Weekdays only
+WHERE dow_num >= 1 AND dow_num <= 5
 GROUP BY day_name, dow_num
-ORDER BY dow_num;
+ORDER BY dow_num ASC;
 GO
 
--- ==================================================
--- 3. MONTHLY PERFORMANCE - Average Close by Month
--- ==================================================
--- Compare average closing prices across months using MONTHNAME()
-
-WITH monthly_data AS (
-    SELECT
-        MONTHNAME(date) as month_name,
-        close
-    FROM AAPL_data
-)
-SELECT
-    month_name,                 -- Label (Y-axis)
-    AVG(close) as avg_close     -- Value (X-axis bar)
-FROM monthly_data
-GROUP BY month_name
-ORDER BY
-    CASE month_name
-        WHEN 'January' THEN 1
-        WHEN 'February' THEN 2
-        WHEN 'March' THEN 3
-        WHEN 'April' THEN 4
-        WHEN 'May' THEN 5
-        WHEN 'June' THEN 6
-        WHEN 'July' THEN 7
-        WHEN 'August' THEN 8
-        WHEN 'September' THEN 9
-        WHEN 'October' THEN 10
-        WHEN 'November' THEN 11
-        WHEN 'December' THEN 12
-        ELSE 13
-    END;
+WITH
+    monthly_data AS (
+        SELECT
+            MONTHNAME(date) AS month_name,
+            MONTH(date) AS month,
+            close
+        FROM AAPL_data
+    ),
+    ordered AS (
+        SELECT
+            month,
+            month_name,
+            AVG(close) AS avg_close
+        FROM monthly_data
+        GROUP BY month, month_name
+        ORDER BY month ASC
+    )
+SELECT month_name, avg_close
+FROM ordered;
 GO
 
 -- ==================================================
@@ -119,32 +81,32 @@ GO
 -- ==================================================
 -- Categorize days by volatility (price change percentage)
 
-WITH daily_changes AS (
-    SELECT
-        ABS((close - open) / open * 100) as pct_change
-    FROM AAPL_data
-)
-SELECT
-    CASE
-        WHEN pct_change < 0.5 THEN 'Very Low (<0.5%)'
-        WHEN pct_change < 1.0 THEN 'Low (0.5-1%)'
-        WHEN pct_change < 2.0 THEN 'Medium (1-2%)'
-        WHEN pct_change < 3.0 THEN 'High (2-3%)'
-        WHEN pct_change < 5.0 THEN 'Very High (3-5%)'
-        ELSE 'Extreme (>5%)'
-    END as volatility_level,    -- Label
-    COUNT(*) as days            -- Value
-FROM daily_changes
-GROUP BY volatility_level
-ORDER BY
-    CASE volatility_level
-        WHEN 'Very Low (<0.5%)' THEN 1
-        WHEN 'Low (0.5-1%)' THEN 2
-        WHEN 'Medium (1-2%)' THEN 3
-        WHEN 'High (2-3%)' THEN 4
-        WHEN 'Very High (3-5%)' THEN 5
-        ELSE 6
-    END;
+-- WITH daily_changes AS (
+    -- SELECT
+        -- ABS((close - open) / open * 100) as pct_change
+    -- FROM AAPL_data
+-- )
+-- SELECT
+    -- CASE
+        -- WHEN pct_change < 0.5 THEN 'Very Low (<0.5%)'
+        -- WHEN pct_change < 1.0 THEN 'Low (0.5-1%)'
+        -- WHEN pct_change < 2.0 THEN 'Medium (1-2%)'
+        -- WHEN pct_change < 3.0 THEN 'High (2-3%)'
+        -- WHEN pct_change < 5.0 THEN 'Very High (3-5%)'
+        -- ELSE 'Extreme (>5%)'
+    -- END as volatility_level,    -- Label
+    -- COUNT(*) as days            -- Value
+-- FROM daily_changes
+-- GROUP BY volatility_level
+-- ORDER BY
+    -- CASE volatility_level
+        -- WHEN 'Very Low (<0.5%)' THEN 1
+        -- WHEN 'Low (0.5-1%)' THEN 2
+        -- WHEN 'Medium (1-2%)' THEN 3
+        -- WHEN 'High (2-3%)' THEN 4
+        -- WHEN 'Very High (3-5%)' THEN 5
+        -- ELSE 6
+    -- END;
 GO
 
 -- ==================================================

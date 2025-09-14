@@ -759,6 +759,111 @@ impl SqlFunction for QuarterFunction {
     }
 }
 
+/// YEAR function - extracts year from date
+pub struct YearFunction;
+
+impl SqlFunction for YearFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "YEAR",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the year from a date",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT YEAR('2024-03-15')", // Returns 2024
+                "SELECT YEAR(NOW())",        // Returns current year
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("YEAR expects exactly 1 argument"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("YEAR expects a date/datetime string")),
+        };
+
+        let dt = parse_datetime(date_str)?;
+        Ok(DataValue::Float(dt.year() as f64))
+    }
+}
+
+/// MONTH function - extracts month from date (1-12)
+pub struct MonthFunction;
+
+impl SqlFunction for MonthFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "MONTH",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the month from a date (1-12)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT MONTH('2024-03-15')", // Returns 3
+                "SELECT MONTH(NOW())",        // Returns current month
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("MONTH expects exactly 1 argument"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("MONTH expects a date/datetime string")),
+        };
+
+        let dt = parse_datetime(date_str)?;
+        Ok(DataValue::Float(dt.month() as f64))
+    }
+}
+
+/// DAY function - extracts day of month from date (1-31)
+pub struct DayFunction;
+
+impl SqlFunction for DayFunction {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "DAY",
+            category: FunctionCategory::Date,
+            arg_count: ArgCount::Fixed(1),
+            description: "Returns the day of month from a date (1-31)",
+            returns: "INTEGER",
+            examples: vec![
+                "SELECT DAY('2024-03-15')", // Returns 15
+                "SELECT DAY(NOW())",        // Returns current day
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        if args.len() != 1 {
+            return Err(anyhow!("DAY expects exactly 1 argument"));
+        }
+
+        let date_str = match &args[0] {
+            DataValue::String(s) | DataValue::DateTime(s) => s.as_str(),
+            DataValue::InternedString(s) => s.as_str(),
+            DataValue::Null => return Ok(DataValue::Null),
+            _ => return Err(anyhow!("DAY expects a date/datetime string")),
+        };
+
+        let dt = parse_datetime(date_str)?;
+        Ok(DataValue::Float(dt.day() as f64))
+    }
+}
+
 /// MONTHNAME function - returns the month name
 pub struct MonthNameFunction;
 
@@ -821,11 +926,16 @@ pub fn register_date_time_functions(registry: &mut super::FunctionRegistry) {
     registry.register(Box::new(FromUnixTime));
     registry.register(Box::new(TimeBucket));
 
-    // New date utility functions
+    // Date extraction functions
+    registry.register(Box::new(YearFunction));
+    registry.register(Box::new(MonthFunction));
+    registry.register(Box::new(DayFunction));
     registry.register(Box::new(DayOfWeekFunction));
     registry.register(Box::new(DayNameFunction));
+    registry.register(Box::new(MonthNameFunction));
+
+    // Date utility functions
     registry.register(Box::new(IsLeapYearFunction));
     registry.register(Box::new(WeekOfYearFunction));
     registry.register(Box::new(QuarterFunction));
-    registry.register(Box::new(MonthNameFunction));
 }

@@ -50,10 +50,10 @@ end
 
 -- Create an ASCII pie chart using box drawing characters
 -- @param data: table of {label, value} pairs
--- @param options: {radius=10, show_legend=true}
+-- @param options: {radius=15, show_legend=true}
 function M.pie_chart(data, options)
   options = options or {}
-  local radius = options.radius or 10
+  local radius = options.radius or 15  -- Increased default from 10 to 15
   local show_legend = options.show_legend ~= false
 
   local lines = {}

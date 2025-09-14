@@ -5,6 +5,56 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.47.0] - 2025-09-14
+
+### 🎨 ASCII Chart Visualizations & Date Functions
+
+This release brings powerful ASCII chart visualizations to the Neovim plugin and essential date extraction functions, making data analysis more visual and date handling much simpler.
+
+### ✨ New Features
+
+#### **ASCII Chart Visualizations for Neovim**
+- **Bar charts** - Horizontal bar charts with customizable width and character styles
+- **Pie charts** - ASCII pie charts with configurable radius (5-30, default 15)
+- **Histograms** - Frequency distribution visualizations with binning support
+- **Scatter plots** - 2D point plotting with density indicators
+- **Sparklines** - Compact trend visualizations
+- **Box plots** - Statistical summaries with quartiles and outliers
+
+#### **Chart Integration & Commands**
+- **Query-at-cursor visualization** - Instant charts with keybindings:
+  - `<leader>sB` - Bar chart from query at cursor
+  - `<leader>sP` - Pie chart from query at cursor
+  - `<leader>sH` - Histogram from query at cursor
+  - `<leader>sS` - Scatter plot from query at cursor
+  - `<leader>sl` - Sparkline from query at cursor
+- **Debug mode** - `:SqlChartDebug on/off` shows detailed parsing info
+- **Configurable sizing** - `:SqlPieRadius <size>` to adjust pie chart size
+- **Smart CSV parsing** - Handles quoted values and preserves text labels
+
+#### **Essential Date Functions**
+- **YEAR(date)** - Extract year as number (e.g., 2024)
+- **MONTH(date)** - Extract month as number (1-12)
+- **DAY(date)** - Extract day of month (1-31)
+- These complement existing DAYOFWEEK(), DAYNAME(), MONTHNAME() functions
+
+### 🔧 Improvements
+- **Simplified date queries** - Replaced verbose CASE statements with clean function calls
+- **Dollar sign handling** - Fixed parameter substitution issue (use `\$` to escape)
+- **Enhanced debug output** - Debug info appears directly below charts for easy analysis
+- **Better error messages** - Clear feedback when chart data requirements aren't met
+
+### 🐛 Bug Fixes
+- Fixed dollar signs in string literals being interpreted as parameters
+- Resolved buffer modifiable errors when creating chart buffers
+- Fixed CSV parsing to correctly preserve text labels vs numeric values
+- Corrected DataValue type usage in new date functions
+
+### 📚 Documentation
+- Added comprehensive bar chart examples with escaped dollar signs
+- Documented available date functions in examples
+- Added debug workflow documentation for chart troubleshooting
+
 ## [1.46.0] - 2025-09-14
 
 ### 🚀 Multi-Table Navigation & Web Data Integration
