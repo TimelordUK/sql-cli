@@ -154,6 +154,19 @@ fn print_help() {
         "  {}  - Launch action system logger (console)",
         "--keys-simple".green()
     );
+
+    println!();
+    println!("{}", "SQL Formatting:".yellow());
+    println!(
+        "  {}, {} [file|-]   - Format SQL query (stdin if - or no file)",
+        "-F".green(),
+        "--format".green()
+    );
+    println!(
+        "  {}       - Format SQL from file",
+        "--format-sql <file>".green()
+    );
+
     println!();
     println!("{}", "Data Inspection:".yellow());
     println!(
@@ -161,7 +174,7 @@ fn print_help() {
         "--schema".green()
     );
     println!(
-        "  {}          - Show table schema as JSON (no colors)",
+        "  {}          - Show table schema as JSON (nvim plugin)",
         "--schema-json".green()
     );
 

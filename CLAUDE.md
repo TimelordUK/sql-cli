@@ -271,10 +271,78 @@ python tests/python_tests/test_unit_conversions.py
 ## 📚 Test Data Files
 
 - `data/test_simple_strings.csv` - String operations testing
-- `data/test_simple_math.csv` - Math operations testing  
+- `data/test_simple_math.csv` - Math operations testing
 - `data/sales_data.csv` - Window functions, aggregates
 - `data/solar_system.csv` - Astronomical calculations
 - `data/trades.json` - JSON data source testing
+
+## ✍️ Writing SQL Examples
+
+When creating SQL examples in `examples/*.sql`, follow these conventions:
+
+### File Structure
+Use `examples/accounting_format.sql` as a template:
+
+1. **Data file hint at top** - Use shebang-style comment to specify data file:
+   ```sql
+   -- #! ../data/international_sales.csv
+   ```
+   This allows the CLI to find the data file relative to the SQL file.
+
+2. **Statement termination** - EVERY SQL statement must end with:
+   - Semicolon (`;`) - Marks end of SQL statement
+   - `GO` on its own line - Tells the script parser to execute the batch
+
+   ```sql
+   SELECT * FROM table
+   WHERE condition = true;
+   GO
+   ```
+
+3. **Multiple statements** - Each statement needs its own `;` and `GO`:
+   ```sql
+   -- First query
+   SELECT COUNT(*) FROM sales;
+   GO
+
+   -- Second query with CTE
+   WITH summary AS (
+       SELECT region, SUM(amount) as total
+       FROM sales
+       GROUP BY region
+   )
+   SELECT * FROM summary
+   ORDER BY total DESC;
+   GO
+   ```
+
+### Example Template
+```sql
+-- #! ../data/your_data.csv
+
+-- Description of what this example demonstrates
+SELECT
+    column1,
+    column2
+FROM your_data
+WHERE some_condition;
+GO
+
+-- Another example query
+WITH cte_name AS (
+    SELECT * FROM your_data
+)
+SELECT * FROM cte_name;
+GO
+```
+
+### Testing Examples
+Examples are automatically tested by:
+```bash
+./scripts/test_all_examples.sh
+```
+
+The script parser is basic - it chunks on `GO` statements, so proper formatting is essential.
 
 ## 🚨 Important Notes
 
