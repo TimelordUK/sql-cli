@@ -56,21 +56,24 @@ LIMIT 10;
 GO
 
 -- ============================================
--- Example 5: Calculate 5-day and 20-day moving averages
+-- Example 5: Calculate cumulative average (since we don't support ROWS PRECEDING yet)
+-- Note: Window frames (ROWS n PRECEDING) are not yet implemented
 -- ============================================
 SELECT
     date,
     close,
-    AVG(close) OVER (ORDER BY date ROWS 4 PRECEDING) as ma_5day,
-    AVG(close) OVER (ORDER BY date ROWS 19 PRECEDING) as ma_20day
+    AVG(close) OVER (ORDER BY date) as cumulative_avg,
+    MIN(close) OVER (ORDER BY date) as min_to_date,
+    MAX(close) OVER (ORDER BY date) as max_to_date
 FROM AAPL_data
 ORDER BY date
 LIMIT 30;
 GO
 
 -- ============================================
--- Example 6: Calculate rolling volatility (20-day)
--- This requires calculating returns first, then standard deviation
+-- Example 6: Calculate cumulative statistics
+-- Note: Rolling windows (ROWS n PRECEDING) not yet supported
+-- This shows cumulative stats instead
 -- ============================================
 WITH returns_data AS (
     SELECT
@@ -82,8 +85,9 @@ WITH returns_data AS (
 SELECT
     date,
     close,
-    returns,
-    STDDEV(returns) OVER (ORDER BY date ROWS 19 PRECEDING) as volatility_20day
+    RENDER_NUMBER(returns * 100, 'standard', 2) || '%' as returns_pct,
+    COUNT(returns) OVER (ORDER BY date) as days_count,
+    RENDER_NUMBER(AVG(returns) OVER (ORDER BY date) * 100, 'standard', 4) || '%' as avg_return_to_date
 FROM returns_data
 WHERE returns IS NOT NULL
 ORDER BY date
@@ -146,6 +150,7 @@ GO
 
 -- ============================================
 -- Example 9: Basic statistics for the full period
+-- Note: STDDEV as aggregate not yet implemented, showing other stats
 -- ============================================
 WITH returns_data AS (
     SELECT
@@ -157,8 +162,7 @@ SELECT
     RENDER_NUMBER(AVG(returns) * 100, 'standard', 4) || '%' as avg_daily_return,
     RENDER_NUMBER(MIN(returns) * 100, 'standard', 2) || '%' as worst_day,
     RENDER_NUMBER(MAX(returns) * 100, 'standard', 2) || '%' as best_day,
-    RENDER_NUMBER(STDDEV(returns) * 100, 'standard', 4) || '%' as daily_volatility,
-    RENDER_NUMBER(STDDEV(returns) * SQRT(252) * 100, 'standard', 2) || '%' as annual_volatility
+    RENDER_NUMBER(AVG(returns) * 252 * 100, 'standard', 2) || '%' as annualized_return
 FROM returns_data
 WHERE returns IS NOT NULL;
 GO
