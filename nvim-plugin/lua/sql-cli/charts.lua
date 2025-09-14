@@ -419,7 +419,9 @@ function M.create_chart_buffer(lines, title)
   local bufnr = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_option(bufnr, 'buftype', 'nofile')
   vim.api.nvim_buf_set_option(bufnr, 'bufhidden', 'wipe')
-  vim.api.nvim_buf_set_option(bufnr, 'modifiable', false)
+
+  -- Keep buffer modifiable while we write to it
+  vim.api.nvim_buf_set_option(bufnr, 'modifiable', true)
 
   if title then
     table.insert(lines, 1, title)
@@ -428,6 +430,9 @@ function M.create_chart_buffer(lines, title)
   end
 
   M.render_to_buffer(bufnr, lines, 0)
+
+  -- Now make it read-only after content is written
+  vim.api.nvim_buf_set_option(bufnr, 'modifiable', false)
 
   return bufnr
 end

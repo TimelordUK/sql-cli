@@ -23,28 +23,28 @@ WITH price_buckets AS (
             WHEN close < 140 THEN '$130-140'
             WHEN close < 150 THEN '$140-150'
             ELSE 'Over $150'
+        END as price_range_label,
+        CASE
+            WHEN close < 70 THEN 1
+            WHEN close < 80 THEN 2
+            WHEN close < 90 THEN 3
+            WHEN close < 100 THEN 4
+            WHEN close < 110 THEN 5
+            WHEN close < 120 THEN 6
+            WHEN close < 130 THEN 7
+            WHEN close < 140 THEN 8
+            WHEN close < 150 THEN 9
+            ELSE 10
         END as price_range,
         close
     FROM AAPL_data
 )
 SELECT
-    price_range as label,      -- First column: category label (Y-axis)
+    price_range_label,          -- First column: category label (Y-axis)
     COUNT(*) as frequency       -- Second column: numeric value (X-axis bar length)
 FROM price_buckets
-GROUP BY price_range
-ORDER BY
-    CASE price_range
-        WHEN 'Under $70' THEN 1
-        WHEN '$70-80' THEN 2
-        WHEN '$80-90' THEN 3
-        WHEN '$90-100' THEN 4
-        WHEN '$100-110' THEN 5
-        WHEN '$110-120' THEN 6
-        WHEN '$120-130' THEN 7
-        WHEN '$130-140' THEN 8
-        WHEN '$140-150' THEN 9
-        ELSE 10
-    END;
+GROUP BY price_range, price_range_label
+ORDER BY price_range;
 GO
 
 -- To visualize in nvim:
