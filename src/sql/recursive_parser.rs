@@ -2,9 +2,9 @@
 
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
-    Condition, JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp, OrderByColumn,
-    SelectItem, SelectStatement, SortDirection, SqlExpression, TableFunction, TableSource,
-    WhenBranch, WhereClause, WindowSpec, CTE,
+    CTEType, Condition, DataFormat, JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp,
+    OrderByColumn, SelectItem, SelectStatement, SortDirection, SqlExpression, TableFunction,
+    TableSource, WebCTESpec, WhenBranch, WhereClause, WindowSpec, CTE,
 };
 pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
 pub use super::parser::lexer::{Lexer, Token};
@@ -147,6 +147,18 @@ impl Parser {
     fn parse_with_clause(&mut self) -> Result<SelectStatement, String> {
         self.consume(Token::With)?;
 
+        // Check for WEB keyword
+        let is_web = if let Token::Identifier(id) = &self.current_token {
+            if id.to_uppercase() == "WEB" {
+                self.advance();
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
         let mut ctes = Vec::new();
 
         // Parse CTEs
@@ -154,7 +166,12 @@ impl Parser {
             // Parse CTE name
             let name = match &self.current_token {
                 Token::Identifier(name) => name.clone(),
-                _ => return Err("Expected CTE name after WITH".to_string()),
+                _ => {
+                    return Err(format!(
+                        "Expected CTE name after WITH{}",
+                        if is_web { " WEB" } else { "" }
+                    ))
+                }
             };
             self.advance();
 
@@ -174,8 +191,15 @@ impl Parser {
             // Expect opening parenthesis
             self.consume(Token::LeftParen)?;
 
-            // Parse the CTE query (inner version that doesn't check parentheses)
-            let query = self.parse_select_statement_inner()?;
+            let cte_type = if is_web {
+                // Parse WEB CTE specification
+                let web_spec = self.parse_web_cte_spec()?;
+                CTEType::Web(web_spec)
+            } else {
+                // Parse the CTE query (inner version that doesn't check parentheses)
+                let query = self.parse_select_statement_inner()?;
+                CTEType::Standard(query)
+            };
 
             // Expect closing parenthesis
             self.consume(Token::RightParen)?;
@@ -183,7 +207,7 @@ impl Parser {
             ctes.push(CTE {
                 name,
                 column_list,
-                query,
+                cte_type,
             });
 
             // Check for more CTEs
@@ -200,8 +224,146 @@ impl Parser {
         Ok(main_query)
     }
 
+    fn parse_web_cte_spec(&mut self) -> Result<WebCTESpec, String> {
+        // Expect URL keyword
+        if let Token::Identifier(id) = &self.current_token {
+            if id.to_uppercase() != "URL" {
+                return Err("Expected URL keyword in WEB CTE".to_string());
+            }
+        } else {
+            return Err("Expected URL keyword in WEB CTE".to_string());
+        }
+        self.advance();
+
+        // Parse URL string
+        let url = match &self.current_token {
+            Token::StringLiteral(url) => url.clone(),
+            _ => return Err("Expected URL string after URL keyword".to_string()),
+        };
+        self.advance();
+
+        // Parse optional clauses
+        let mut format = None;
+        let mut headers = Vec::new();
+        let mut cache_seconds = None;
+
+        // Parse optional clauses until we hit the closing parenthesis
+        while !matches!(self.current_token, Token::RightParen)
+            && !matches!(self.current_token, Token::Eof)
+        {
+            if let Token::Identifier(id) = &self.current_token {
+                match id.to_uppercase().as_str() {
+                    "FORMAT" => {
+                        self.advance();
+                        format = Some(self.parse_data_format()?);
+                    }
+                    "CACHE" => {
+                        self.advance();
+                        cache_seconds = Some(self.parse_cache_duration()?);
+                    }
+                    "HEADERS" => {
+                        self.advance();
+                        headers = self.parse_headers()?;
+                    }
+                    _ => {
+                        return Err(format!(
+                            "Unexpected keyword '{}' in WEB CTE specification",
+                            id
+                        ));
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(WebCTESpec {
+            url,
+            format,
+            headers,
+            cache_seconds,
+        })
+    }
+
+    fn parse_data_format(&mut self) -> Result<DataFormat, String> {
+        if let Token::Identifier(id) = &self.current_token {
+            let format = match id.to_uppercase().as_str() {
+                "CSV" => DataFormat::CSV,
+                "JSON" => DataFormat::JSON,
+                "AUTO" => DataFormat::Auto,
+                _ => return Err(format!("Unknown data format: {}", id)),
+            };
+            self.advance();
+            Ok(format)
+        } else {
+            Err("Expected data format (CSV, JSON, or AUTO)".to_string())
+        }
+    }
+
+    fn parse_cache_duration(&mut self) -> Result<u64, String> {
+        match &self.current_token {
+            Token::NumberLiteral(n) => {
+                let duration = n
+                    .parse::<u64>()
+                    .map_err(|_| format!("Invalid cache duration: {}", n))?;
+                self.advance();
+                Ok(duration)
+            }
+            _ => Err("Expected number for cache duration".to_string()),
+        }
+    }
+
+    fn parse_headers(&mut self) -> Result<Vec<(String, String)>, String> {
+        self.consume(Token::LeftParen)?;
+
+        let mut headers = Vec::new();
+
+        loop {
+            // Parse header name
+            let key = match &self.current_token {
+                Token::Identifier(id) => id.clone(),
+                Token::StringLiteral(s) => s.clone(),
+                _ => return Err("Expected header name".to_string()),
+            };
+            self.advance();
+
+            // Expect =
+            self.consume(Token::Equal)?;
+
+            // Parse header value
+            let value = match &self.current_token {
+                Token::StringLiteral(s) => s.clone(),
+                _ => return Err("Expected header value as string".to_string()),
+            };
+            self.advance();
+
+            headers.push((key, value));
+
+            // Check for more headers
+            if !matches!(self.current_token, Token::Comma) {
+                break;
+            }
+            self.advance();
+        }
+
+        self.consume(Token::RightParen)?;
+        Ok(headers)
+    }
+
     fn parse_with_clause_inner(&mut self) -> Result<SelectStatement, String> {
         self.consume(Token::With)?;
+
+        // Check for WEB keyword
+        let is_web = if let Token::Identifier(id) = &self.current_token {
+            if id.to_uppercase() == "WEB" {
+                self.advance();
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
 
         let mut ctes = Vec::new();
 
@@ -230,8 +392,15 @@ impl Parser {
             // Expect opening parenthesis
             self.consume(Token::LeftParen)?;
 
-            // Parse the CTE query (inner version that doesn't check parentheses)
-            let query = self.parse_select_statement_inner()?;
+            let cte_type = if is_web {
+                // Parse WEB CTE specification
+                let web_spec = self.parse_web_cte_spec()?;
+                CTEType::Web(web_spec)
+            } else {
+                // Parse the CTE query (inner version that doesn't check parentheses)
+                let query = self.parse_select_statement_inner()?;
+                CTEType::Standard(query)
+            };
 
             // Expect closing parenthesis
             self.consume(Token::RightParen)?;
@@ -239,7 +408,7 @@ impl Parser {
             ctes.push(CTE {
                 name,
                 column_list,
-                query,
+                cte_type,
             });
 
             // Check for more CTEs

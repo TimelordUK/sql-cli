@@ -10,6 +10,7 @@ use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable};
 use crate::services::query_execution_service::QueryExecutionService;
+use crate::sql::recursive_parser::{CTEType, Parser, SelectStatement};
 use crate::sql::script_parser::{ScriptParser, ScriptResult};
 
 /// Output format for query results
@@ -55,7 +56,6 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     let start_time = Instant::now();
 
     // Check if query uses DUAL or has no FROM clause
-    use crate::sql::recursive_parser::{Parser, SelectStatement};
 
     fn check_statement_for_range(stmt: &SelectStatement) -> bool {
         // Check main query
@@ -79,8 +79,15 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
 
         // Recursively check CTEs
         for cte in &stmt.ctes {
-            if check_statement_for_range(&cte.query) {
-                return true;
+            match &cte.cte_type {
+                CTEType::Standard(query) => {
+                    if check_statement_for_range(query) {
+                        return true;
+                    }
+                }
+                CTEType::Web(_web_spec) => {
+                    // Web CTEs don't contain SQL queries that need range checking
+                }
             }
         }
 
@@ -355,12 +362,16 @@ pub fn execute_script(config: NonInteractiveConfig) -> Result<()> {
 
                     // Check CTEs for RANGE usage
                     let cte_has_range = stmt.ctes.iter().any(|cte| {
-                        cte.query.from_function.is_some()
-                            || cte
-                                .query
-                                .from_table
-                                .as_ref()
-                                .map_or(false, |t| t.eq_ignore_ascii_case("dual"))
+                        match &cte.cte_type {
+                            CTEType::Standard(query) => {
+                                query.from_function.is_some()
+                                    || query
+                                        .from_table
+                                        .as_ref()
+                                        .map_or(false, |t| t.eq_ignore_ascii_case("dual"))
+                            }
+                            CTEType::Web(_web_spec) => false, // Web CTEs don't use RANGE functions
+                        }
                     });
 
                     if !uses_dual && !uses_range && !no_from && !cte_has_range {

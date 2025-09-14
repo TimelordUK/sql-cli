@@ -18,7 +18,8 @@ use crate::execution_plan::{ExecutionPlan, ExecutionPlanBuilder, StepType};
 use crate::sql::aggregates::contains_aggregate;
 use crate::sql::parser::ast::TableSource;
 use crate::sql::recursive_parser::{
-    OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression, TableFunction,
+    CTEType, OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression,
+    TableFunction,
 };
 
 /// Query engine that executes SQL directly on `DataTable`
@@ -156,9 +157,17 @@ impl QueryEngine {
         let mut cte_context = HashMap::new();
         for cte in &statement.ctes {
             debug!("QueryEngine: Pre-processing CTE '{}'...", cte.name);
-            // Execute the CTE query (it might reference earlier CTEs)
-            let cte_result =
-                self.build_view_with_context(table.clone(), cte.query.clone(), &mut cte_context)?;
+            // Execute the CTE based on its type
+            let cte_result = match &cte.cte_type {
+                CTEType::Standard(query) => {
+                    // Execute the CTE query (it might reference earlier CTEs)
+                    self.build_view_with_context(table.clone(), query.clone(), &mut cte_context)?
+                }
+                CTEType::Web(_web_spec) => {
+                    // TODO: Implement WEB CTE fetching
+                    return Err(anyhow::anyhow!("WEB CTEs are not yet implemented"));
+                }
+            };
             // Store the result in the context for later use
             cte_context.insert(cte.name.clone(), Arc::new(cte_result));
             debug!(
@@ -189,8 +198,15 @@ impl QueryEngine {
         // Process any CTEs in this statement (they might be nested)
         for cte in &statement.ctes {
             debug!("QueryEngine: Processing nested CTE '{}'...", cte.name);
-            let cte_result =
-                self.build_view_with_context(table.clone(), cte.query.clone(), &mut local_context)?;
+            let cte_result = match &cte.cte_type {
+                CTEType::Standard(query) => {
+                    self.build_view_with_context(table.clone(), query.clone(), &mut local_context)?
+                }
+                CTEType::Web(_web_spec) => {
+                    // TODO: Implement WEB CTE fetching
+                    return Err(anyhow::anyhow!("WEB CTEs are not yet implemented"));
+                }
+            };
             local_context.insert(cte.name.clone(), Arc::new(cte_result));
         }
 
@@ -241,22 +257,36 @@ impl QueryEngine {
                 let cte_start = Instant::now();
                 plan_builder.begin_step(StepType::CTE, format!("CTE '{}'", cte.name));
 
-                // Add CTE query details
-                if let Some(from) = &cte.query.from_table {
-                    plan_builder.add_detail(format!("Source: {}", from));
-                }
-                if cte.query.where_clause.is_some() {
-                    plan_builder.add_detail("Has WHERE clause".to_string());
-                }
-                if cte.query.group_by.is_some() {
-                    plan_builder.add_detail("Has GROUP BY".to_string());
-                }
+                let cte_result = match &cte.cte_type {
+                    CTEType::Standard(query) => {
+                        // Add CTE query details
+                        if let Some(from) = &query.from_table {
+                            plan_builder.add_detail(format!("Source: {}", from));
+                        }
+                        if query.where_clause.is_some() {
+                            plan_builder.add_detail("Has WHERE clause".to_string());
+                        }
+                        if query.group_by.is_some() {
+                            plan_builder.add_detail("Has GROUP BY".to_string());
+                        }
 
-                let cte_result = self.build_view_with_context(
-                    table.clone(),
-                    cte.query.clone(),
-                    &mut cte_context,
-                )?;
+                        self.build_view_with_context(
+                            table.clone(),
+                            query.clone(),
+                            &mut cte_context,
+                        )?
+                    }
+                    CTEType::Web(web_spec) => {
+                        plan_builder.add_detail(format!("URL: {}", web_spec.url));
+                        if let Some(format) = &web_spec.format {
+                            plan_builder.add_detail(format!("Format: {:?}", format));
+                        }
+                        if let Some(cache) = web_spec.cache_seconds {
+                            plan_builder.add_detail(format!("Cache: {} seconds", cache));
+                        }
+                        return Err(anyhow::anyhow!("WEB CTEs are not yet implemented"));
+                    }
+                };
 
                 // Record CTE statistics
                 plan_builder.set_rows_out(cte_result.row_count());
@@ -352,8 +382,17 @@ impl QueryEngine {
         for cte in &statement.ctes {
             debug!("QueryEngine: Processing CTE '{}'...", cte.name);
             // Execute the CTE query (it might reference earlier CTEs)
-            let cte_result =
-                self.build_view_with_context(table.clone(), cte.query.clone(), cte_context)?;
+            let cte_result = match &cte.cte_type {
+                CTEType::Standard(query) => {
+                    self.build_view_with_context(table.clone(), query.clone(), cte_context)?
+                }
+                CTEType::Web(_web_spec) => {
+                    // Web CTEs should have been processed earlier in the pipeline
+                    return Err(anyhow!(
+                        "Web CTEs should be processed before reaching QueryEngine"
+                    ));
+                }
+            };
 
             // Store the result in the context for later use
             cte_context.insert(cte.name.clone(), Arc::new(cte_result));

@@ -207,7 +207,44 @@ impl<'a> AstFormatter<'a> {
         }
 
         writeln!(result, " {} (", self.keyword("AS")).unwrap();
-        let cte_sql = self.format_select(&cte.query, indent_level + 1);
+        let cte_sql = match &cte.cte_type {
+            crate::sql::parser::ast::CTEType::Standard(query) => {
+                self.format_select(query, indent_level + 1)
+            }
+            crate::sql::parser::ast::CTEType::Web(web_spec) => {
+                // Format WEB CTE
+                let mut web_str =
+                    format!("{}URL '{}'", "    ".repeat(indent_level + 1), web_spec.url);
+
+                if let Some(format) = &web_spec.format {
+                    web_str.push_str(&format!(
+                        " FORMAT {}",
+                        match format {
+                            crate::sql::parser::ast::DataFormat::CSV => "CSV",
+                            crate::sql::parser::ast::DataFormat::JSON => "JSON",
+                            crate::sql::parser::ast::DataFormat::Auto => "AUTO",
+                        }
+                    ));
+                }
+
+                if let Some(cache) = web_spec.cache_seconds {
+                    web_str.push_str(&format!(" CACHE {}", cache));
+                }
+
+                if !web_spec.headers.is_empty() {
+                    web_str.push_str(" HEADERS (");
+                    for (i, (key, value)) in web_spec.headers.iter().enumerate() {
+                        if i > 0 {
+                            web_str.push_str(", ");
+                        }
+                        web_str.push_str(&format!("{} = '{}'", key, value));
+                    }
+                    web_str.push(')');
+                }
+
+                web_str
+            }
+        };
         write!(result, "{}", cte_sql).unwrap();
         writeln!(result).unwrap();
         write!(result, "{}", indent).unwrap();

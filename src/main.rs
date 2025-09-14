@@ -600,7 +600,7 @@ fn main() -> io::Result<()> {
 
         // Check if query uses DUAL, RANGE, or has no FROM clause
         let uses_dual_or_no_from = {
-            use sql_cli::sql::recursive_parser::{Parser, SelectStatement};
+            use sql_cli::sql::recursive_parser::{CTEType, Parser, SelectStatement};
 
             fn check_statement_for_range(stmt: &SelectStatement) -> bool {
                 // Check main query
@@ -626,8 +626,15 @@ fn main() -> io::Result<()> {
 
                 // Recursively check CTEs
                 for cte in &stmt.ctes {
-                    if check_statement_for_range(&cte.query) {
-                        return true;
+                    match &cte.cte_type {
+                        CTEType::Standard(query) => {
+                            if check_statement_for_range(query) {
+                                return true;
+                            }
+                        }
+                        CTEType::Web(_web_spec) => {
+                            // Web CTEs don't contain SQL queries that need range checking
+                        }
                     }
                 }
 

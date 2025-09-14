@@ -185,7 +185,31 @@ pub enum TableFunction {
 pub struct CTE {
     pub name: String,
     pub column_list: Option<Vec<String>>, // Optional column list: WITH t(col1, col2) AS ...
-    pub query: SelectStatement,
+    pub cte_type: CTEType,
+}
+
+/// Type of CTE - standard SQL or WEB fetch
+#[derive(Debug, Clone)]
+pub enum CTEType {
+    Standard(SelectStatement),
+    Web(WebCTESpec),
+}
+
+/// Specification for WEB CTEs
+#[derive(Debug, Clone)]
+pub struct WebCTESpec {
+    pub url: String,
+    pub format: Option<DataFormat>,     // CSV, JSON, or auto-detect
+    pub headers: Vec<(String, String)>, // HTTP headers
+    pub cache_seconds: Option<u64>,     // Cache duration
+}
+
+/// Data format for WEB CTEs
+#[derive(Debug, Clone)]
+pub enum DataFormat {
+    CSV,
+    JSON,
+    Auto, // Auto-detect from Content-Type or extension
 }
 
 /// Table source - either a file/table name or a derived table (subquery/CTE)
