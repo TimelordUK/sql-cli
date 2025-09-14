@@ -481,68 +481,81 @@ Fetch data directly from REST APIs and integrate with local CSV/JSON files using
 
 ```sql
 -- Fetch data from REST APIs with custom headers for authentication
-WITH
-    api_data AS (
-        SELECT * FROM WEB('https://api.example.com/users', 'Authorization: Bearer ${API_TOKEN}')
-    ),
-    enriched_data AS (
-        SELECT
-            api_data.user_id,
-            api_data.name,
-            local_data.department,
-            local_data.salary
-        FROM api_data
-        LEFT JOIN local_employees AS local_data ON api_data.user_id = local_data.employee_id
+WITH WEB api_data AS (
+    URL 'https://api.example.com/users'
+    FORMAT JSON
+    HEADERS (
+        'Authorization': 'Bearer ${API_TOKEN}',
+        'Accept': 'application/json'
     )
-SELECT * FROM enriched_data
-WHERE salary > 50000
-ORDER BY name;
+)
+SELECT
+    user_id,
+    name,
+    email,
+    created_at
+FROM api_data
+WHERE active = true
+ORDER BY created_at DESC;
 
--- Environment variable injection - use ${VAR_NAME} syntax
+-- Join web data with local CSV files
 WITH
-    current_rates AS (
-        SELECT * FROM WEB('https://api.exchangerate.com/rates', 'X-API-Key: ${EXCHANGE_API_KEY}')
+    WEB api_users AS (
+        URL 'https://api.example.com/users'
+        FORMAT JSON
+        HEADERS (
+            'Authorization': 'Bearer ${API_TOKEN}'
+        )
     ),
-    currency_conversion AS (
-        SELECT
-            orders.amount,
-            orders.currency,
-            current_rates.rate,
-            ROUND(orders.amount * current_rates.rate, 2) as usd_amount
-        FROM orders
-        LEFT JOIN current_rates ON orders.currency = current_rates.code
+    local_employees AS (
+        SELECT * FROM employees  -- Local CSV file
     )
-SELECT * FROM currency_conversion;
+SELECT
+    api_users.user_id,
+    api_users.name,
+    local_employees.department,
+    local_employees.salary
+FROM api_users
+LEFT JOIN local_employees ON api_users.user_id = local_employees.employee_id
+WHERE local_employees.salary > 50000
+ORDER BY api_users.name;
 
 -- Multiple API endpoints in one query
 WITH
-    users AS (
-        SELECT * FROM WEB('${BASE_URL}/users', 'Authorization: Bearer ${TOKEN}')
+    WEB posts AS (
+        URL 'https://jsonplaceholder.typicode.com/posts'
+        FORMAT JSON
     ),
-    orders AS (
-        SELECT * FROM WEB('${BASE_URL}/orders', 'Authorization: Bearer ${TOKEN}')
+    WEB users AS (
+        URL 'https://jsonplaceholder.typicode.com/users'
+        FORMAT JSON
     )
 SELECT
-    users.name,
-    COUNT(orders.id) as order_count,
-    SUM(orders.amount) as total_spent
-FROM users
-LEFT JOIN orders ON users.id = orders.user_id
-GROUP BY users.id, users.name
-ORDER BY total_spent DESC;
+    users.name AS author_name,
+    users.email,
+    COUNT(posts.id) as post_count,
+    AVG(LENGTH(posts.body)) as avg_post_length
+FROM posts
+INNER JOIN users ON posts.userId = users.id
+GROUP BY users.id, users.name, users.email
+ORDER BY post_count DESC
+LIMIT 10;
 ```
 
 **Environment Variable Support:**
-- Use `${VARIABLE_NAME}` syntax anywhere in your SQL queries
-- Perfect for API keys, base URLs, and dynamic configuration
+- Use `${VARIABLE_NAME}` syntax in HEADERS for authentication
+- Perfect for API keys and sensitive tokens
 - Set variables before running: `export API_TOKEN="your-token-here"`
-- Variables are replaced before query execution
+- Variables are replaced securely before query execution
 
 **WEB CTE Features:**
-- **Custom Headers**: `'Header-Name: ${VALUE}'` format for authentication
-- **Multiple APIs**: Use multiple WEB CTEs in the same query
+- **Syntax**: `WITH WEB table_name AS (URL 'url' FORMAT JSON HEADERS (...))`
+- **Custom Headers**: Use HEADERS block with key-value pairs
+- **Authentication**: `'Authorization': 'Bearer ${TOKEN}'` pattern
+- **Multiple APIs**: Multiple WEB CTEs in the same query
 - **JOIN with Local Data**: Seamlessly combine API data with CSV/JSON files
-- **Caching**: API responses cached for the session to avoid repeated calls
+- **Format Support**: JSON (CSV support coming soon)
+- **Examples**: See `examples/web_cte.sql` and `examples/web_cte_auth.sql`
 
 ### 🧠 **Smart Type Handling**
 - **Automatic Coercion**: String methods work on numbers (`quantity.Contains('5')`)
