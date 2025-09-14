@@ -1,3 +1,5 @@
+-- #! ../data/periodic_table.csv
+
 -- Demo: Multiple Tables with GO statement separator
 -- This demonstrates navigating between multiple result tables
 -- Use ]t and [t to navigate between tables after execution
@@ -32,6 +34,8 @@ SELECT Element, Symbol, AtomicNumber, Year
 FROM periodic_table
 WHERE Type = 'Noble Gas'
 ORDER BY AtomicNumber;
+
+GO
 
 -- After running this script with <leader>sx:
 -- Use ]t to go to next table

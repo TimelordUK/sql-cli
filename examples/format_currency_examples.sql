@@ -12,18 +12,24 @@ SELECT
     FORMAT_CURRENCY(amount, currency) as formatted_price
 FROM international_sales
 LIMIT 10;
+GO
 
--- Using compact notation for large values
+WITH
+    values AS (
+        SELECT *, amount * quantity AS total_sale
+        FROM international_sales
+    )
 SELECT
     country,
-    amount * quantity as total_sale,
+    total_sale,
     currency,
-    FORMAT_CURRENCY(amount * quantity, currency, 'compact') as compact_symbol,
-    FORMAT_CURRENCY(amount * quantity, currency, 'compact_code') as compact_code
-FROM international_sales
-WHERE amount * quantity > 10000
-ORDER BY amount * quantity DESC
+    FORMAT_CURRENCY(total_sale, currency, 'compact') AS compact_symbol,
+    FORMAT_CURRENCY(total_sale, currency, 'compact_code') AS compact_code
+FROM values
+WHERE total_sale > 10000
+ORDER BY total_sale DESC
 LIMIT 8;
+GO
 
 -- Different currency display formats
 SELECT
@@ -36,6 +42,7 @@ SELECT
 FROM international_sales
 WHERE currency IN ('USD', 'EUR', 'GBP')
 LIMIT 5;
+GO
 
 -- Regional formatting styles
 SELECT
@@ -48,6 +55,7 @@ SELECT
 FROM international_sales
 WHERE region = 'Europe'
 LIMIT 6;
+GO
 
 -- Aggregated sales by currency with formatting
 SELECT
@@ -59,6 +67,7 @@ SELECT
 FROM international_sales
 GROUP BY currency
 ORDER BY total_sales DESC;
+GO
 
 -- Custom decimal places for different currencies
 SELECT
@@ -70,6 +79,7 @@ SELECT
 FROM international_sales
 WHERE currency IN ('JPY', 'USD', 'EUR')
 LIMIT 6;
+GO
 
 -- Mixed currency report with appropriate formatting
 SELECT
@@ -81,14 +91,21 @@ SELECT
 FROM international_sales
 ORDER BY region, country
 LIMIT 15;
+GO
 
 -- Top products by revenue with currency formatting
+WITH
+    values AS (
+        SELECT *, amount * quantity AS total_sale
+        FROM international_sales
+    )
 SELECT
     product,
     COUNT(DISTINCT currency) as num_currencies,
-    SUM(amount * quantity) as global_revenue,
-    RENDER_NUMBER(SUM(amount * quantity), 'compact') as revenue_compact,
-    STRING_AGG(DISTINCT currency, ', ') as currencies_used
-FROM international_sales
+    SUM(total_sale) as global_revenue,
+    RENDER_NUMBER(SUM(total_sale), 'compact') as revenue_compact,
+    STRING_AGG(DISTINCT currency, ', ') as currencies_usd
+FROM values
 GROUP BY product
 ORDER BY global_revenue DESC;
+GO
