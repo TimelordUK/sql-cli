@@ -57,6 +57,7 @@ pub enum Token {
     // Operators
     Dot,
     Comma,
+    Colon,
     LeftParen,
     RightParen,
     Equal,
@@ -265,6 +266,10 @@ impl Lexer {
             Some(',') => {
                 self.advance();
                 Token::Comma
+            }
+            Some(':') => {
+                self.advance();
+                Token::Colon
             }
             Some('(') => {
                 self.advance();

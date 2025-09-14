@@ -327,8 +327,17 @@ impl Parser {
             };
             self.advance();
 
-            // Expect =
-            self.consume(Token::Equal)?;
+            // Expect : (colon) for header key-value separator
+            if !matches!(self.current_token, Token::Colon) {
+                // For backwards compatibility, also accept =
+                if matches!(self.current_token, Token::Equal) {
+                    self.advance();
+                } else {
+                    return Err("Expected ':' or '=' after header name".to_string());
+                }
+            } else {
+                self.advance(); // consume the colon
+            }
 
             // Parse header value
             let value = match &self.current_token {

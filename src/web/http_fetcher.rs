@@ -1,5 +1,6 @@
 // HTTP fetcher for WEB CTEs
 use anyhow::{Context, Result};
+use regex::Regex;
 use std::io::Cursor;
 use std::time::Duration;
 use tracing::{debug, info};
@@ -120,15 +121,39 @@ impl WebDataFetcher {
         }
     }
 
-    /// Resolve environment variables in values (${VAR_NAME} syntax)
+    /// Resolve environment variables in values (${VAR_NAME} or $VAR_NAME syntax)
     fn resolve_env_var(&self, value: &str) -> Result<String> {
-        if value.starts_with("${") && value.ends_with("}") {
-            let var_name = &value[2..value.len() - 1];
-            std::env::var(var_name)
-                .with_context(|| format!("Environment variable {} not set", var_name))
-        } else {
-            Ok(value.to_string())
+        let mut result = value.to_string();
+
+        // Handle ${VAR} syntax - can be embedded in strings
+        // Use lazy_static for better performance, but for now just compile inline
+        let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
+        for cap in re.captures_iter(value) {
+            let var_name = &cap[1];
+            match std::env::var(var_name) {
+                Ok(var_value) => {
+                    result = result.replace(&cap[0], &var_value);
+                }
+                Err(_) => {
+                    // For security, don't expose which env vars exist
+                    // Just log a debug message and keep the placeholder
+                    debug!(
+                        "Environment variable {} not found, keeping placeholder",
+                        var_name
+                    );
+                }
+            }
         }
+
+        // Also handle simple $VAR syntax at the start of the string
+        if result.starts_with('$') && !result.starts_with("${") {
+            let var_name = &result[1..];
+            if let Ok(var_value) = std::env::var(var_name) {
+                return Ok(var_value);
+            }
+        }
+
+        Ok(result)
     }
 }
 
