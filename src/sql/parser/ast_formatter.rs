@@ -253,16 +253,37 @@ impl<'a> AstFormatter<'a> {
             .filter(|i| !matches!(i, SelectItem::Star))
             .count();
 
-        if non_star_count <= self.config.items_per_line {
-            // Single line
-            write!(result, " ").unwrap();
-            for (i, item) in items.iter().enumerate() {
-                if i > 0 {
-                    write!(result, ", ").unwrap();
+        // Check if any item is complex (function calls, CASE expressions, etc.)
+        let has_complex_items = items.iter().any(|item| match item {
+            SelectItem::Expression { expr, .. } => self.is_complex_expression(expr),
+            _ => false,
+        });
+
+        // Calculate total approximate length if on single line
+        let single_line_length: usize = items
+            .iter()
+            .map(|item| {
+                match item {
+                    SelectItem::Star => 1,
+                    SelectItem::Column(col) => col.len(),
+                    SelectItem::Expression { expr, alias } => {
+                        self.format_expression(expr).len() + 4 + alias.len() // " AS " = 4
+                    }
                 }
-                self.format_select_item(result, item);
-            }
-        } else {
+            })
+            .sum::<usize>()
+            + (items.len() - 1) * 2; // ", " between items
+
+        // Use multi-line formatting by default unless:
+        // - It's a single simple column or star
+        // - It's 2-3 simple columns with total length < 40 chars
+        let use_single_line = match items.len() {
+            1 => !has_complex_items, // Single item: only if simple
+            2..=3 => !has_complex_items && single_line_length < 40, // 2-3 items: only if very short
+            _ => false,              // 4+ items: always multi-line
+        };
+
+        if !use_single_line {
             // Multi-line
             writeln!(result).unwrap();
             let indent = self.indent(indent_level + 1);
@@ -273,6 +294,30 @@ impl<'a> AstFormatter<'a> {
                     writeln!(result, ",").unwrap();
                 }
             }
+        } else {
+            // Single line
+            write!(result, " ").unwrap();
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    write!(result, ", ").unwrap();
+                }
+                self.format_select_item(result, item);
+            }
+        }
+    }
+
+    fn is_complex_expression(&self, expr: &SqlExpression) -> bool {
+        match expr {
+            SqlExpression::CaseExpression { .. } => true,
+            SqlExpression::FunctionCall { .. } => true,
+            SqlExpression::WindowFunction { .. } => true,
+            SqlExpression::ScalarSubquery { .. } => true,
+            SqlExpression::InSubquery { .. } => true,
+            SqlExpression::NotInSubquery { .. } => true,
+            SqlExpression::BinaryOp { left, right, .. } => {
+                self.is_complex_expression(left) || self.is_complex_expression(right)
+            }
+            _ => false,
         }
     }
 
@@ -337,24 +382,37 @@ impl<'a> AstFormatter<'a> {
                 when_branches,
                 else_branch,
             } => {
-                let mut result = self.keyword("CASE");
+                // Format CASE expressions on multiple lines for readability
+                let mut result = String::new();
+                result.push_str(&self.keyword("CASE"));
+                result.push('\n');
+
+                // Format each WHEN branch on its own line with indentation
                 for branch in when_branches {
+                    result.push_str("        "); // 8 spaces for WHEN indent
                     result.push_str(&format!(
-                        " {} {} {} {}",
+                        "{} {} {} {}",
                         self.keyword("WHEN"),
                         self.format_expression(&branch.condition),
                         self.keyword("THEN"),
                         self.format_expression(&branch.result)
                     ));
+                    result.push('\n');
                 }
+
+                // Format ELSE clause if present
                 if let Some(else_expr) = else_branch {
+                    result.push_str("        "); // 8 spaces for ELSE indent
                     result.push_str(&format!(
-                        " {} {}",
+                        "{} {}",
                         self.keyword("ELSE"),
                         self.format_expression(else_expr)
                     ));
+                    result.push('\n');
                 }
-                result.push_str(&format!(" {}", self.keyword("END")));
+
+                result.push_str("    "); // 4 spaces for END
+                result.push_str(&self.keyword("END"));
                 result
             }
             SqlExpression::Between { expr, lower, upper } => {

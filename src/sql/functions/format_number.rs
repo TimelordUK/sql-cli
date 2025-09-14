@@ -14,11 +14,11 @@ impl SqlFunction for RenderNumberFunction {
             description: "Format numbers with separators, abbreviations, or regional formats",
             returns: "STRING",
             examples: vec![
-                "SELECT RENDER_NUMBER(1234567.89)",            // "1,234,567.89"
-                "SELECT RENDER_NUMBER(1234567.89, 'compact')", // "1.2M"
-                "SELECT RENDER_NUMBER(1234.56, 'eu')",         // "1.234,56"
+                "SELECT RENDER_NUMBER(1234567.89)",             // "1,234,567.89"
+                "SELECT RENDER_NUMBER(1234567.89, 'compact')",  // "1.2M"
+                "SELECT RENDER_NUMBER(1234.56, 'eu')",          // "1.234,56"
                 "SELECT RENDER_NUMBER(-1234.56, 'accounting')", // "(1,234.56)"
-                "SELECT RENDER_NUMBER(1500000, 'compact', 1)", // "1.5M"
+                "SELECT RENDER_NUMBER(1500000, 'compact', 1)",  // "1.5M"
             ],
         }
     }
