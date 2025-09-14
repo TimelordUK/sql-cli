@@ -204,6 +204,10 @@ pub enum TableFunction {
         end: SqlExpression,
         step: Option<SqlExpression>,
     },
+    Split {
+        text: SqlExpression,
+        delimiter: Option<SqlExpression>,
+    },
 }
 
 /// Common Table Expression (CTE) structure

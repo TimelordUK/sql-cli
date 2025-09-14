@@ -531,8 +531,49 @@ impl Parser {
                             Some(TableFunction::Range { start, end, step }),
                             alias,
                         )
+                    } else if name.to_uppercase() == "SPLIT" {
+                        // Parse SPLIT(text[, delimiter])
+                        self.advance(); // Skip "SPLIT"
+                        self.consume(Token::LeftParen)?;
+
+                        let text = self.parse_expression()?;
+
+                        let delimiter = if matches!(self.current_token, Token::Comma) {
+                            self.advance();
+                            Some(self.parse_expression()?)
+                        } else {
+                            None
+                        };
+
+                        self.consume(Token::RightParen)?;
+
+                        // Optional alias
+                        let alias = if matches!(self.current_token, Token::As) {
+                            self.advance();
+                            match &self.current_token {
+                                Token::Identifier(name) => {
+                                    let alias = name.clone();
+                                    self.advance();
+                                    Some(alias)
+                                }
+                                _ => return Err("Expected alias name after AS".to_string()),
+                            }
+                        } else if let Token::Identifier(name) = &self.current_token {
+                            let alias = name.clone();
+                            self.advance();
+                            Some(alias)
+                        } else {
+                            None
+                        };
+
+                        (
+                            None,
+                            None,
+                            Some(TableFunction::Split { text, delimiter }),
+                            alias,
+                        )
                     } else {
-                        // Not a RANGE function, so it's a regular table name
+                        // Not a RANGE or SPLIT function, so it's a regular table name
                         let table_name = name.clone();
                         self.advance();
 

@@ -504,6 +504,45 @@ impl QueryEngine {
                     // Generate the virtual table
                     VirtualTableGenerator::generate_range(start_int, end_int, step_int, None)?
                 }
+                TableFunction::Split { text, delimiter } => {
+                    // Evaluate expressions to get string values
+                    let mut evaluator =
+                        ArithmeticEvaluator::with_date_notation(&table, self.date_notation.clone());
+
+                    // Create a dummy row for evaluating constant expressions
+                    let dummy_row = 0;
+
+                    let text_val = evaluator.evaluate(text, dummy_row)?;
+                    let delimiter_val = if let Some(delim_expr) = delimiter {
+                        Some(evaluator.evaluate(delim_expr, dummy_row)?)
+                    } else {
+                        None
+                    };
+
+                    // Convert DataValues to strings
+                    let text_str = match text_val {
+                        DataValue::String(s) => s,
+                        DataValue::Null => return Err(anyhow!("SPLIT text cannot be NULL")),
+                        _ => text_val.to_string(),
+                    };
+
+                    let delimiter_str = if let Some(delim) = delimiter_val {
+                        match delim {
+                            DataValue::String(s) => Some(s),
+                            DataValue::Null => None,
+                            _ => Some(delim.to_string()),
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Generate the virtual table from split string
+                    VirtualTableGenerator::generate_split(
+                        &text_str,
+                        delimiter_str.as_deref(),
+                        None,
+                    )?
+                }
             }
         } else if let Some(ref subquery) = statement.from_subquery {
             // Execute the subquery and use its result as the source

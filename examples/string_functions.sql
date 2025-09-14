@@ -261,6 +261,59 @@ SELECT
 FROM RANGE(1, 3);
 GO
 
+-- === SPLIT TABLE FUNCTION ===
+
+-- SPLIT function - iterate over split string values
+-- Similar to RANGE but for strings
+SELECT * FROM SPLIT('apple,banana,orange', ',');
+GO
+
+-- Split with default space delimiter
+SELECT * FROM SPLIT('hello world sql cli');
+GO
+
+-- Split Lorem Ipsum into individual words
+SELECT value AS word, LENGTH(value) AS word_length
+FROM SPLIT(LOREM_IPSUM(10))
+ORDER BY word_length DESC;
+GO
+
+-- Split email addresses
+WITH emails AS (
+    SELECT 'john@example.com,jane@test.org,bob@company.net' AS email_list
+)
+SELECT
+    value AS email,
+    SUBSTRING_BEFORE(value, '@') AS username,
+    SUBSTRING_AFTER(value, '@') AS domain
+FROM SPLIT((SELECT email_list FROM emails), ',');
+GO
+
+-- Character-by-character split (empty delimiter)
+SELECT value AS char, index AS position
+FROM SPLIT('SQL', '');
+GO
+
+-- Parse CSV-like data
+SELECT
+    value,
+    SPLIT_PART(value, ':', 1) AS key,
+    SPLIT_PART(value, ':', 2) AS val
+FROM SPLIT('name:John,age:30,city:NYC', ',');
+GO
+
+-- Count word frequencies
+WITH words AS (
+    SELECT LOWER(REPLACE(REPLACE(value, '.', ''), ',', '')) AS word
+    FROM SPLIT('The quick brown fox jumps over the lazy dog. The fox is quick.')
+)
+SELECT word, COUNT(*) AS frequency
+FROM words
+WHERE LENGTH(word) > 0
+GROUP BY word
+ORDER BY frequency DESC;
+GO
+
 -- === FORMATTING FUNCTIONS ===
 
 -- FORMAT_NUMBER - thousand separators and decimals

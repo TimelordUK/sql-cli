@@ -745,6 +745,14 @@ impl<'a> AstFormatter<'a> {
                 }
                 write!(result, ")").unwrap();
             }
+            TableFunction::Split { text, delimiter } => {
+                write!(result, "{}(", self.keyword("SPLIT")).unwrap();
+                write!(result, "{}", self.format_expression(text)).unwrap();
+                if let Some(delim) = delimiter {
+                    write!(result, ", {}", self.format_expression(delim)).unwrap();
+                }
+                write!(result, ")").unwrap();
+            }
         }
     }
 }

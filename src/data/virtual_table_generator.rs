@@ -57,4 +57,62 @@ impl VirtualTableGenerator {
         let start = start.unwrap_or(1);
         Self::generate_range(start, start + count - 1, Some(1), Some("index".to_string()))
     }
+
+    /// Generate a virtual table from a split string
+    pub fn generate_split(
+        text: &str,
+        delimiter: Option<&str>,
+        column_name: Option<String>,
+    ) -> Result<Arc<DataTable>> {
+        let delimiter = delimiter.unwrap_or(" ");
+        let column_name = column_name.unwrap_or_else(|| "value".to_string());
+
+        let mut table = DataTable::new("split_table");
+
+        let column = DataColumn {
+            name: column_name,
+            data_type: DataType::String,
+            nullable: false,
+            unique_values: Some(0),
+            null_count: 0,
+            metadata: HashMap::new(),
+        };
+        table.add_column(column);
+
+        // Add index column for position tracking
+        let index_column = DataColumn {
+            name: "index".to_string(),
+            data_type: DataType::Integer,
+            nullable: false,
+            unique_values: Some(0),
+            null_count: 0,
+            metadata: HashMap::new(),
+        };
+        table.add_column(index_column);
+
+        // Split the string and create rows
+        let parts: Vec<String> = if delimiter.is_empty() {
+            // If delimiter is empty, split into individual characters
+            text.chars().map(|c| c.to_string()).collect()
+        } else {
+            text.split(delimiter).map(|s| s.to_string()).collect()
+        };
+
+        for (i, part) in parts.iter().enumerate() {
+            // Skip empty parts unless they're meaningful
+            if part.is_empty() && delimiter != "" {
+                continue;
+            }
+
+            let row = DataRow {
+                values: vec![
+                    DataValue::String(part.clone()),
+                    DataValue::Integer((i + 1) as i64),
+                ],
+            };
+            table.add_row(row);
+        }
+
+        Ok(Arc::new(table))
+    }
 }
