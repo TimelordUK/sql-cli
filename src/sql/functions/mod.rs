@@ -11,6 +11,7 @@ pub mod comparison;
 pub mod constants;
 pub mod convert;
 pub mod date_time;
+pub mod financial;
 pub mod format;
 pub mod format_number;
 pub mod geometry;
@@ -149,6 +150,7 @@ impl FunctionRegistry {
         registry.register_physics_functions();
         registry.register_date_time_functions();
         registry.register_string_methods();
+        registry.register_financial_functions();
         registry.register_conversion_functions();
         registry.register_hash_functions();
         registry.register_comparison_functions();
@@ -548,6 +550,11 @@ impl FunctionRegistry {
     /// Register date/time functions
     fn register_date_time_functions(&mut self) {
         date_time::register_date_time_functions(self);
+    }
+
+    /// Register financial functions
+    fn register_financial_functions(&mut self) {
+        financial::register_financial_functions(self);
     }
 
     /// Register conversion functions
