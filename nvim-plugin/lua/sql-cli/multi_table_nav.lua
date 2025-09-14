@@ -127,6 +127,47 @@ function M.get_table_registry(bufnr)
   return table_registry
 end
 
+-- Centralized function to navigate to a specific table with proper positioning and state clearing
+local function navigate_to_table(state, table_idx, registry)
+  local bufnr = state:get_output_buf()
+  local win = state:get_output_win()
+
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) or not win or not vim.api.nvim_win_is_valid(win) then
+    return false
+  end
+
+  local target_table = registry.tables[table_idx]
+  if not target_table then
+    return false
+  end
+
+  -- Position cursor at first data cell
+  local target_line = target_table.first_data_cell.line
+  local target_col = target_table.first_data_cell.col
+
+  if target_line and target_col then
+    vim.api.nvim_win_set_cursor(win, {target_line, target_col - 1})  -- Vim uses 0-based column indexing
+  else
+    -- Fallback to start of first data line
+    vim.api.nvim_win_set_cursor(win, {target_table.data_start or target_table.start_line + 2, 0})
+  end
+
+  -- Center the table in the viewport for better visibility
+  vim.api.nvim_win_call(win, function()
+    -- Scroll so table header is visible near top with some context
+    local scroll_target = math.max(1, target_table.start_line - 3)
+    vim.fn.winrestview({topline = scroll_target})
+  end)
+
+  -- Clear any existing single-table navigation state to prevent jumping back
+  local table_nav = require('sql-cli.table_nav')
+  if table_nav.clear_navigation then
+    table_nav.clear_navigation()
+  end
+
+  return true
+end
+
 -- Find all table boundaries in the buffer
 function M.find_all_tables(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
@@ -303,39 +344,12 @@ function M.goto_next_table(state)
     vim.notify(string.format("Wrapped to table 1/%d", #registry.tables), vim.log.levels.INFO)
   end
 
-  -- Use registry data to position cursor precisely
-  local target_table = registry.tables[next_idx]
-  local target_line = target_table.first_data_cell.line
-  local target_col = target_table.first_data_cell.col
-
-  if target_line and target_col then
-    vim.api.nvim_win_set_cursor(win, {target_line, target_col - 1})  -- Vim uses 0-based column indexing
-  else
-    -- Fallback to start of first data line
-    vim.api.nvim_win_set_cursor(win, {target_table.data_start or target_table.start_line + 2, 0})
-  end
-
-  -- Center the table in the viewport for better visibility
-  vim.api.nvim_win_call(win, function()
-    -- Calculate middle of table for centering
-    local table_middle = math.floor((target_table.start_line + target_table.end_line) / 2)
-    -- Use zz to center the view on the table
-    vim.cmd('normal! zz')
-
-    -- Alternatively, scroll so table header is visible near top
-    local scroll_target = math.max(1, target_table.start_line - 3)  -- Show table with some context above
-    vim.fn.winrestview({topline = scroll_target})
-  end)
-
-  -- Clear any existing single-table navigation state to prevent jumping back
-  local table_nav = require('sql-cli.table_nav')
-  if table_nav.clear_navigation then
-    table_nav.clear_navigation()
-  end
-
-  -- Show notification
-  if current_idx ~= next_idx then
-    vim.notify(string.format("Table %d/%d", next_idx, #registry.tables), vim.log.levels.INFO)
+  -- Use centralized navigation function
+  if navigate_to_table(state, next_idx, registry) then
+    -- Show notification
+    if current_idx ~= next_idx then
+      vim.notify(string.format("Table %d/%d", next_idx, #registry.tables), vim.log.levels.INFO)
+    end
   end
 end
 
@@ -353,9 +367,9 @@ function M.goto_prev_table(state)
     return
   end
 
-  -- Find all tables
-  local tables = M.find_all_tables(bufnr)
-  if #tables == 0 then
+  -- Get table registry
+  local registry = M.get_table_registry(bufnr)
+  if #registry.tables == 0 then
     vim.notify("No tables found", vim.log.levels.INFO)
     return
   end
@@ -364,76 +378,35 @@ function M.goto_prev_table(state)
   local cursor = vim.api.nvim_win_get_cursor(win)
   local current_line = cursor[1]
 
-  -- Find current table
-  local current_idx, _ = M.get_table_at_line(tables, current_line)
+  -- Find current table in registry
+  local current_idx = nil
+  for i, tbl in ipairs(registry.tables) do
+    if current_line >= tbl.start_line and current_line <= tbl.end_line then
+      current_idx = i
+      break
+    end
+  end
 
   -- Determine previous table
   local prev_idx
   if not current_idx then
     -- Not in a table, go to last table
-    prev_idx = #tables
+    prev_idx = #registry.tables
   elseif current_idx > 1 then
     -- Go to previous table
     prev_idx = current_idx - 1
   else
     -- Wrap to last table
-    prev_idx = #tables
-    vim.notify(string.format("Wrapped to table %d/%d", #tables, #tables), vim.log.levels.INFO)
+    prev_idx = #registry.tables
+    vim.notify(string.format("Wrapped to table %d/%d", #registry.tables, #registry.tables), vim.log.levels.INFO)
   end
 
-  -- Move cursor to first data row of previous table (same logic as next_table)
-  local prev_table = tables[prev_idx]
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-
-  -- Find the first actual data row in this table
-  local data_line_num = nil
-  for line_num = prev_table.start_line + 1, prev_table.end_line - 1 do
-    if lines[line_num] and lines[line_num]:match("^|") and not lines[line_num]:match("^|%-") then
-      local line_content = lines[line_num]
-      if not line_content:match("^|%s*[A-Za-z_]+%s*|") or line_content:match("^|%s*%d") then
-        data_line_num = line_num
-        break
-      end
+  -- Use centralized navigation function
+  if navigate_to_table(state, prev_idx, registry) then
+    -- Show notification
+    if current_idx ~= prev_idx then
+      vim.notify(string.format("Table %d/%d", prev_idx, #registry.tables), vim.log.levels.INFO)
     end
-  end
-
-  if not data_line_num then
-    data_line_num = prev_table.header_line
-  end
-
-  if not data_line_num or data_line_num > #lines then
-    data_line_num = prev_table.start_line + 2
-  end
-
-  -- Use registry data to position cursor precisely (same as goto_next_table)
-  local registry = M.get_table_registry(bufnr)
-  local target_table = registry.tables[prev_idx]
-  local target_line = target_table.first_data_cell.line
-  local target_col = target_table.first_data_cell.col
-
-  if target_line and target_col then
-    vim.api.nvim_win_set_cursor(win, {target_line, target_col - 1})  -- Vim uses 0-based column indexing
-  else
-    -- Fallback to start of first data line
-    vim.api.nvim_win_set_cursor(win, {target_table.data_start or target_table.start_line + 2, 0})
-  end
-
-  -- Center the table in the viewport for better visibility
-  vim.api.nvim_win_call(win, function()
-    -- Scroll so table header is visible near top with some context
-    local scroll_target = math.max(1, target_table.start_line - 3)
-    vim.fn.winrestview({topline = scroll_target})
-  end)
-
-  -- Clear any existing single-table navigation state to prevent jumping back
-  local table_nav = require('sql-cli.table_nav')
-  if table_nav.clear_navigation then
-    table_nav.clear_navigation()
-  end
-
-  -- Show notification
-  if current_idx ~= prev_idx then
-    vim.notify(string.format("Table %d/%d", prev_idx, #tables), vim.log.levels.INFO)
   end
 end
 
@@ -451,25 +424,23 @@ function M.goto_table(state, table_num)
     return
   end
 
-  -- Find all tables
-  local tables = M.find_all_tables(bufnr)
-  if #tables == 0 then
+  -- Get table registry
+  local registry = M.get_table_registry(bufnr)
+  if #registry.tables == 0 then
     vim.notify("No tables found", vim.log.levels.INFO)
     return
   end
 
   -- Validate table number
-  if table_num < 1 or table_num > #tables then
-    vim.notify(string.format("Invalid table number. Available: 1-%d", #tables), vim.log.levels.WARN)
+  if table_num < 1 or table_num > #registry.tables then
+    vim.notify(string.format("Invalid table number. Available: 1-%d", #registry.tables), vim.log.levels.WARN)
     return
   end
 
-  -- Move to the requested table
-  local target_table = tables[table_num]
-  local target_line = target_table.header_line or target_table.start_line
-  vim.api.nvim_win_set_cursor(win, {target_line, 0})
-
-  vim.notify(string.format("Table %d/%d", table_num, #tables), vim.log.levels.INFO)
+  -- Use centralized navigation function
+  if navigate_to_table(state, table_num, registry) then
+    vim.notify(string.format("Table %d/%d", table_num, #registry.tables), vim.log.levels.INFO)
+  end
 end
 
 -- Comprehensive debug function with modal dialog
