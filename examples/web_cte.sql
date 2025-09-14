@@ -34,39 +34,42 @@ ORDER BY name;
 
 GO
 
--- Example 3: Joining data from multiple web sources
-WITH WEB posts AS (
-    URL 'https://jsonplaceholder.typicode.com/posts'
-    FORMAT JSON
-),
-WEB users AS (
-    URL 'https://jsonplaceholder.typicode.com/users'
-    FORMAT JSON
-)
+WITH
+    WEB posts AS (
+        URL 'https://jsonplaceholder.typicode.com/posts' FORMAT JSON
+    ),
+    WEB users AS (
+        URL 'https://jsonplaceholder.typicode.com/users' FORMAT JSON
+    )
 SELECT
-    u.name as author,
-    COUNT(p.id) as total_posts,
-    AVG(LENGTH(p.body)) as avg_post_length
-FROM posts p
-INNER JOIN users u ON p.userId = u.id
-GROUP BY u.name
-ORDER BY total_posts DESC
-LIMIT 5;
-
+    name AS author_name,
+    username,
+    COUNT('*') AS post_count,
+    MIN(LENGTH(title)) AS shortest_title_len,
+    MAX(LENGTH(title)) AS longest_title_len,
+    AVG(LENGTH(body)) AS avg_body_length
+FROM posts
+INNER JOIN users ON users.userId = posts.id
+GROUP BY name, username
+ORDER BY post_count DESC, author_name ASC
+LIMIT 10;
 GO
 
--- Example 4: Auto-format detection (no FORMAT specified)
-WITH WEB todos AS (
-    URL 'https://jsonplaceholder.typicode.com/todos'
-)
+WITH
+    WEB posts AS (
+        URL 'https://jsonplaceholder.typicode.com/posts' FORMAT JSON
+    ),
+    WEB users AS (
+        URL 'https://jsonplaceholder.typicode.com/users' FORMAT JSON
+    )
 SELECT
-    userId,
-    COUNT(*) as total_todos,
-    SUM(CASE WHEN completed = 'true' THEN 1 ELSE 0 END) as completed_todos,
-    SUM(CASE WHEN completed = 'false' THEN 1 ELSE 0 END) as pending_todos
-FROM todos
-GROUP BY userId
-ORDER BY userId
-LIMIT 10;
+    SUBSTRING(title, 1, 40) AS post_title_preview,
+    name AS author,
+    email,
+    website
+FROM posts
+INNER JOIN users ON userId = id
+WHERE email LIKE '%@april.biz'
+LIMIT 5;
 
 GO

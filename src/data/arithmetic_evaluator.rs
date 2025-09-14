@@ -20,6 +20,7 @@ pub struct ArithmeticEvaluator<'a> {
     aggregate_registry: Arc<AggregateRegistry>,
     visible_rows: Option<Vec<usize>>, // For aggregate functions on filtered views
     window_contexts: HashMap<String, Arc<WindowContext>>, // Cache window contexts by spec
+    table_aliases: HashMap<String, String>, // Map alias -> table name for qualified columns
 }
 
 impl<'a> ArithmeticEvaluator<'a> {
@@ -32,6 +33,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             aggregate_registry: Arc::new(AggregateRegistry::new()),
             visible_rows: None,
             window_contexts: HashMap::new(),
+            table_aliases: HashMap::new(),
         }
     }
 
@@ -44,6 +46,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             aggregate_registry: Arc::new(AggregateRegistry::new()),
             visible_rows: None,
             window_contexts: HashMap::new(),
+            table_aliases: HashMap::new(),
         }
     }
 
@@ -51,6 +54,13 @@ impl<'a> ArithmeticEvaluator<'a> {
     #[must_use]
     pub fn with_visible_rows(mut self, rows: Vec<usize>) -> Self {
         self.visible_rows = Some(rows);
+        self
+    }
+
+    /// Set table aliases for qualified column resolution
+    #[must_use]
+    pub fn with_table_aliases(mut self, aliases: HashMap<String, String>) -> Self {
+        self.table_aliases = aliases;
         self
     }
 
@@ -67,6 +77,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             aggregate_registry: Arc::new(AggregateRegistry::new()),
             visible_rows: None,
             window_contexts: HashMap::new(),
+            table_aliases: HashMap::new(),
         }
     }
 
@@ -149,17 +160,55 @@ impl<'a> ArithmeticEvaluator<'a> {
 
     /// Evaluate a column reference
     fn evaluate_column(&self, column_name: &str, row_index: usize) -> Result<DataValue> {
-        let col_index = self.table.get_column_index(column_name).ok_or_else(|| {
-            let suggestion = self.find_similar_column(column_name);
-            match suggestion {
+        // First try to resolve qualified column names (table.column or alias.column)
+        let resolved_column = if column_name.contains('.') {
+            // Split on last dot to handle cases like "schema.table.column"
+            if let Some(dot_pos) = column_name.rfind('.') {
+                let _table_or_alias = &column_name[..dot_pos];
+                let col_name = &column_name[dot_pos + 1..];
+
+                // For now, just use the column name part
+                // In the future, we could validate the table/alias part
+                debug!(
+                    "Resolving qualified column: {} -> {}",
+                    column_name, col_name
+                );
+                col_name.to_string()
+            } else {
+                column_name.to_string()
+            }
+        } else {
+            column_name.to_string()
+        };
+
+        let col_index = if let Some(idx) = self.table.get_column_index(&resolved_column) {
+            idx
+        } else if resolved_column != column_name {
+            // If not found, try the original name
+            if let Some(idx) = self.table.get_column_index(column_name) {
+                idx
+            } else {
+                let suggestion = self.find_similar_column(&resolved_column);
+                return Err(match suggestion {
+                    Some(similar) => anyhow!(
+                        "Column '{}' not found. Did you mean '{}'?",
+                        column_name,
+                        similar
+                    ),
+                    None => anyhow!("Column '{}' not found", column_name),
+                });
+            }
+        } else {
+            let suggestion = self.find_similar_column(&resolved_column);
+            return Err(match suggestion {
                 Some(similar) => anyhow!(
                     "Column '{}' not found. Did you mean '{}'?",
                     column_name,
                     similar
                 ),
                 None => anyhow!("Column '{}' not found", column_name),
-            }
-        })?;
+            });
+        };
 
         if row_index >= self.table.row_count() {
             return Err(anyhow!("Row index {} out of bounds", row_index));

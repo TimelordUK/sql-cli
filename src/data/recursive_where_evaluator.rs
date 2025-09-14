@@ -120,15 +120,42 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         object: &str,
         row_index: usize,
     ) -> Result<(Option<DataValue>, String)> {
-        let col_index = self.table.get_column_index(object).ok_or_else(|| {
-            let suggestion = self.find_similar_column(object);
-            match suggestion {
+        // Handle qualified column names (table.column or alias.column)
+        let resolved_column = if object.contains('.') {
+            if let Some(dot_pos) = object.rfind('.') {
+                let col_name = &object[dot_pos + 1..];
+                col_name
+            } else {
+                object
+            }
+        } else {
+            object
+        };
+
+        let col_index = if let Some(idx) = self.table.get_column_index(resolved_column) {
+            idx
+        } else if resolved_column != object {
+            // If not found, try the original name
+            if let Some(idx) = self.table.get_column_index(object) {
+                idx
+            } else {
+                let suggestion = self.find_similar_column(resolved_column);
+                return Err(match suggestion {
+                    Some(similar) => {
+                        anyhow!("Column '{}' not found. Did you mean '{}'?", object, similar)
+                    }
+                    None => anyhow!("Column '{}' not found", object),
+                });
+            }
+        } else {
+            let suggestion = self.find_similar_column(resolved_column);
+            return Err(match suggestion {
                 Some(similar) => {
                     anyhow!("Column '{}' not found. Did you mean '{}'?", object, similar)
                 }
                 None => anyhow!("Column '{}' not found", object),
-            }
-        })?;
+            });
+        };
 
         let value = self.table.get_value(row_index, col_index);
         let length_value = match value {
@@ -148,15 +175,42 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         search_str: &str,
         row_index: usize,
     ) -> Result<(Option<DataValue>, String)> {
-        let col_index = self.table.get_column_index(object).ok_or_else(|| {
-            let suggestion = self.find_similar_column(object);
-            match suggestion {
+        // Handle qualified column names (table.column or alias.column)
+        let resolved_column = if object.contains('.') {
+            if let Some(dot_pos) = object.rfind('.') {
+                let col_name = &object[dot_pos + 1..];
+                col_name
+            } else {
+                object
+            }
+        } else {
+            object
+        };
+
+        let col_index = if let Some(idx) = self.table.get_column_index(resolved_column) {
+            idx
+        } else if resolved_column != object {
+            // If not found, try the original name
+            if let Some(idx) = self.table.get_column_index(object) {
+                idx
+            } else {
+                let suggestion = self.find_similar_column(resolved_column);
+                return Err(match suggestion {
+                    Some(similar) => {
+                        anyhow!("Column '{}' not found. Did you mean '{}'?", object, similar)
+                    }
+                    None => anyhow!("Column '{}' not found", object),
+                });
+            }
+        } else {
+            let suggestion = self.find_similar_column(resolved_column);
+            return Err(match suggestion {
                 Some(similar) => {
                     anyhow!("Column '{}' not found. Did you mean '{}'?", object, similar)
                 }
                 None => anyhow!("Column '{}' not found", object),
-            }
-        })?;
+            });
+        };
 
         let value = self.table.get_value(row_index, col_index);
         let index_value = match value {
@@ -214,15 +268,42 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         row_index: usize,
         trim_type: &str,
     ) -> Result<(Option<DataValue>, String)> {
-        let col_index = self.table.get_column_index(object).ok_or_else(|| {
-            let suggestion = self.find_similar_column(object);
-            match suggestion {
+        // Handle qualified column names (table.column or alias.column)
+        let resolved_column = if object.contains('.') {
+            if let Some(dot_pos) = object.rfind('.') {
+                let col_name = &object[dot_pos + 1..];
+                col_name
+            } else {
+                object
+            }
+        } else {
+            object
+        };
+
+        let col_index = if let Some(idx) = self.table.get_column_index(resolved_column) {
+            idx
+        } else if resolved_column != object {
+            // If not found, try the original name
+            if let Some(idx) = self.table.get_column_index(object) {
+                idx
+            } else {
+                let suggestion = self.find_similar_column(resolved_column);
+                return Err(match suggestion {
+                    Some(similar) => {
+                        anyhow!("Column '{}' not found. Did you mean '{}'?", object, similar)
+                    }
+                    None => anyhow!("Column '{}' not found", object),
+                });
+            }
+        } else {
+            let suggestion = self.find_similar_column(resolved_column);
+            return Err(match suggestion {
                 Some(similar) => {
                     anyhow!("Column '{}' not found. Did you mean '{}'?", object, similar)
                 }
                 None => anyhow!("Column '{}' not found", object),
-            }
-        })?;
+            });
+        };
 
         let value = self.table.get_value(row_index, col_index);
         let trimmed_value = match value {
@@ -804,7 +885,18 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
     fn extract_column_name(&self, expr: &SqlExpression) -> Result<String> {
         match expr {
-            SqlExpression::Column(name) => Ok(name.clone()),
+            SqlExpression::Column(name) => {
+                // Handle qualified column names
+                if name.contains('.') {
+                    if let Some(dot_pos) = name.rfind('.') {
+                        Ok(name[dot_pos + 1..].to_string())
+                    } else {
+                        Ok(name.clone())
+                    }
+                } else {
+                    Ok(name.clone())
+                }
+            }
             _ => Err(anyhow::anyhow!("Expected column name, got: {:?}", expr)),
         }
     }
