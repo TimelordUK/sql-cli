@@ -595,3 +595,48 @@ pub fn contains_aggregate(expr: &crate::recursive_parser::SqlExpression) -> bool
         _ => false,
     }
 }
+
+/// Check if an expression is a constant (string literal, number literal, boolean, null)
+/// Constants are compatible with aggregate queries and should produce a single row
+pub fn is_constant_expression(expr: &crate::recursive_parser::SqlExpression) -> bool {
+    use crate::recursive_parser::SqlExpression;
+
+    match expr {
+        SqlExpression::StringLiteral(_) => true,
+        SqlExpression::NumberLiteral(_) => true,
+        SqlExpression::BooleanLiteral(_) => true,
+        SqlExpression::Null => true,
+        SqlExpression::DateTimeConstructor { .. } => true,
+        SqlExpression::DateTimeToday { .. } => true,
+        // Binary operations between constants are also constant
+        SqlExpression::BinaryOp { left, right, .. } => {
+            is_constant_expression(left) && is_constant_expression(right)
+        }
+        // NOT of a constant is still constant
+        SqlExpression::Not { expr } => is_constant_expression(expr),
+        // Case expressions with constant conditions and results are constant
+        SqlExpression::CaseExpression {
+            when_branches,
+            else_branch,
+        } => {
+            when_branches.iter().all(|branch| {
+                is_constant_expression(&branch.condition) && is_constant_expression(&branch.result)
+            }) && else_branch
+                .as_ref()
+                .map_or(true, |e| is_constant_expression(e))
+        }
+        // Function calls that don't reference columns or aggregates are constant
+        // (like CONVERT(100, 'km', 'miles') or mathematical constants)
+        SqlExpression::FunctionCall { args, .. } => {
+            // Only if all arguments are constants and it's not an aggregate
+            !contains_aggregate(expr) && args.iter().all(is_constant_expression)
+        }
+        _ => false,
+    }
+}
+
+/// Check if an expression is aggregate-compatible (either an aggregate or a constant)
+/// This is used to determine if a SELECT list should produce a single row
+pub fn is_aggregate_compatible(expr: &crate::recursive_parser::SqlExpression) -> bool {
+    contains_aggregate(expr) || is_constant_expression(expr)
+}

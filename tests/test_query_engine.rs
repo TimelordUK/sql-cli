@@ -298,3 +298,114 @@ fn test_complex_where_and_or() {
     // Should match Eve (32, New York) and Charlie (35, Paris)
     assert_eq!(view.row_count(), 2);
 }
+
+#[test]
+fn test_string_literal_with_aggregates_single_row() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test: string literal + aggregate should return single row (not Cartesian product)
+    let view = engine
+        .execute(
+            table.clone(),
+            "SELECT 'User Count', COUNT(id), 'Average Age', AVG(age) FROM users",
+        )
+        .unwrap();
+
+    // Should return exactly 1 row, not 5 rows (one per input row)
+    assert_eq!(view.row_count(), 1);
+
+    let row = view.get_row(0).unwrap();
+    assert_eq!(row.values[0], DataValue::String("User Count".to_string()));
+    assert_eq!(row.values[1], DataValue::Integer(5)); // COUNT(id)
+    assert_eq!(row.values[2], DataValue::String("Average Age".to_string()));
+    // AVG(age) = (30 + 25 + 35 + 28 + 32) / 5 = 30.0
+    if let DataValue::Float(avg) = &row.values[3] {
+        assert!((avg - 30.0).abs() < 0.001);
+    } else {
+        panic!("Expected float for AVG(age), got {:?}", row.values[3]);
+    }
+}
+
+#[test]
+fn test_number_literal_with_aggregates_single_row() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test: number literals + aggregates should return single row
+    let view = engine
+        .execute(
+            table.clone(),
+            "SELECT 42, COUNT(id), 3.14, MIN(age) FROM users",
+        )
+        .unwrap();
+
+    assert_eq!(view.row_count(), 1);
+
+    let row = view.get_row(0).unwrap();
+    assert_eq!(row.values[0], DataValue::Integer(42));
+    assert_eq!(row.values[1], DataValue::Integer(5));
+    assert_eq!(row.values[2], DataValue::Float(3.14));
+    assert_eq!(row.values[3], DataValue::Integer(25)); // MIN(age)
+}
+
+#[test]
+fn test_boolean_null_literal_with_aggregates_single_row() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test: boolean and null literals + aggregates should return single row
+    let view = engine
+        .execute(
+            table.clone(),
+            "SELECT TRUE, COUNT(id), NULL, MAX(age) FROM users",
+        )
+        .unwrap();
+
+    assert_eq!(view.row_count(), 1);
+
+    let row = view.get_row(0).unwrap();
+    assert_eq!(row.values[0], DataValue::Boolean(true));
+    assert_eq!(row.values[1], DataValue::Integer(5));
+    assert_eq!(row.values[2], DataValue::Null);
+    assert_eq!(row.values[3], DataValue::Integer(35)); // MAX(age)
+}
+
+#[test]
+fn test_column_with_aggregates_multiple_rows() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test: column reference + aggregates should return multiple rows (Cartesian product)
+    // This is the existing behavior that should remain unchanged
+    let view = engine
+        .execute(table.clone(), "SELECT name, COUNT(id) FROM users")
+        .unwrap();
+
+    // Should return 5 rows (Cartesian product), not 1 row
+    assert_eq!(view.row_count(), 5);
+
+    // All rows should have COUNT(id) = 5
+    for i in 0..5 {
+        let row = view.get_row(i).unwrap();
+        assert_eq!(row.values[1], DataValue::Integer(5));
+    }
+}
+
+#[test]
+fn test_constant_arithmetic_with_aggregates_single_row() {
+    let table = create_test_table();
+    let engine = QueryEngine::new();
+
+    // Test: constant arithmetic expressions + aggregates should return single row
+    let view = engine
+        .execute(table.clone(), "SELECT 1 + 2, COUNT(id), 10 * 5 FROM users")
+        .unwrap();
+
+    assert_eq!(view.row_count(), 1);
+
+    let row = view.get_row(0).unwrap();
+    assert_eq!(row.values[0], DataValue::Integer(3)); // 1 + 2
+    assert_eq!(row.values[1], DataValue::Integer(5)); // COUNT(id)
+    assert_eq!(row.values[2], DataValue::Integer(50)); // 10 * 5
+}

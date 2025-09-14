@@ -99,7 +99,7 @@ WITH
 SELECT
     product,
     COUNT(DISTINCT currency) AS num_currencies,
-    SUM(total_sale) AS global_revenue,
+    FORMAT_CURRENCY(SUM(total_sale), currency) AS global_revenue,
     RENDER_NUMBER(SUM(total_sale), 'compact') AS revenue_compact,
     STRING_AGG(DISTINCT currency, ', ') AS currencies_usd
 FROM values

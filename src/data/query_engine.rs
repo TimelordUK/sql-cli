@@ -15,7 +15,7 @@ use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
 use crate::data::subquery_executor::SubqueryExecutor;
 use crate::data::virtual_table_generator::VirtualTableGenerator;
 use crate::execution_plan::{ExecutionPlan, ExecutionPlanBuilder, StepType};
-use crate::sql::aggregates::contains_aggregate;
+use crate::sql::aggregates::{contains_aggregate, is_aggregate_compatible};
 use crate::sql::parser::ast::TableSource;
 use crate::sql::recursive_parser::{
     CTEType, OrderByColumn, Parser, SelectItem, SelectStatement, SortDirection, SqlExpression,
@@ -895,16 +895,25 @@ impl QueryEngine {
             view.row_count()
         );
 
-        // Check if ALL select items are aggregate functions (no GROUP BY)
-        let all_aggregates = select_items.iter().all(|item| match item {
+        // Check if this is an aggregate query:
+        // 1. At least one aggregate function exists
+        // 2. All other items are either aggregates or constants (aggregate-compatible)
+        let has_aggregates = select_items.iter().any(|item| match item {
             SelectItem::Expression { expr, .. } => contains_aggregate(expr),
             SelectItem::Column(_) => false,
             SelectItem::Star => false,
         });
 
-        if all_aggregates && view.row_count() > 0 {
-            // Special handling for aggregate-only queries (no GROUP BY)
+        let all_aggregate_compatible = select_items.iter().all(|item| match item {
+            SelectItem::Expression { expr, .. } => is_aggregate_compatible(expr),
+            SelectItem::Column(_) => false, // Columns are not aggregate-compatible
+            SelectItem::Star => false,      // Star is not aggregate-compatible
+        });
+
+        if has_aggregates && all_aggregate_compatible && view.row_count() > 0 {
+            // Special handling for aggregate queries with constants (no GROUP BY)
             // These should produce exactly one row
+            debug!("QueryEngine::apply_select_items - detected aggregate query with constants");
             return self.apply_aggregate_select(view, select_items);
         }
 
@@ -2050,6 +2059,104 @@ mod tests {
         println!("\n=== Mixed data types test complete! ===");
     }
 
+    /// Test that aggregate-only queries return exactly one row (regression test)
+    #[test]
+    fn test_aggregate_only_single_row() {
+        let table = create_test_stock_data();
+        let engine = QueryEngine::new();
+
+        // Test query with multiple aggregates - should return exactly 1 row
+        let result = engine
+            .execute(
+                table.clone(),
+                "SELECT COUNT(*), MIN(close), MAX(close), AVG(close) FROM stock",
+            )
+            .expect("Query should succeed");
+
+        assert_eq!(
+            result.row_count(),
+            1,
+            "Aggregate-only query should return exactly 1 row"
+        );
+        assert_eq!(result.column_count(), 4, "Should have 4 aggregate columns");
+
+        // Verify the actual values are correct
+        let source = result.source();
+        let row = source.get_row(0).expect("Should have first row");
+
+        // COUNT(*) should be 5 (total rows)
+        assert_eq!(row.values[0], DataValue::Integer(5));
+
+        // MIN should be 99.5
+        assert_eq!(row.values[1], DataValue::Float(99.5));
+
+        // MAX should be 105.0
+        assert_eq!(row.values[2], DataValue::Float(105.0));
+
+        // AVG should be approximately 102.4
+        if let DataValue::Float(avg) = &row.values[3] {
+            assert!(
+                (avg - 102.4).abs() < 0.01,
+                "Average should be approximately 102.4, got {}",
+                avg
+            );
+        } else {
+            panic!("AVG should return a Float value");
+        }
+    }
+
+    /// Test single aggregate function returns single row
+    #[test]
+    fn test_single_aggregate_single_row() {
+        let table = create_test_stock_data();
+        let engine = QueryEngine::new();
+
+        let result = engine
+            .execute(table.clone(), "SELECT COUNT(*) FROM stock")
+            .expect("Query should succeed");
+
+        assert_eq!(
+            result.row_count(),
+            1,
+            "Single aggregate query should return exactly 1 row"
+        );
+        assert_eq!(result.column_count(), 1, "Should have 1 column");
+
+        let source = result.source();
+        let row = source.get_row(0).expect("Should have first row");
+        assert_eq!(row.values[0], DataValue::Integer(5));
+    }
+
+    /// Test aggregate with WHERE clause filtering
+    #[test]
+    fn test_aggregate_with_where_single_row() {
+        let table = create_test_stock_data();
+        let engine = QueryEngine::new();
+
+        // Filter to only high-value stocks (>= 103.0) and aggregate
+        let result = engine
+            .execute(
+                table.clone(),
+                "SELECT COUNT(*), MIN(close), MAX(close) FROM stock WHERE close >= 103.0",
+            )
+            .expect("Query should succeed");
+
+        assert_eq!(
+            result.row_count(),
+            1,
+            "Filtered aggregate query should return exactly 1 row"
+        );
+        assert_eq!(result.column_count(), 3, "Should have 3 aggregate columns");
+
+        let source = result.source();
+        let row = source.get_row(0).expect("Should have first row");
+
+        // Should find 2 rows (103.5 and 105.0)
+        assert_eq!(row.values[0], DataValue::Integer(2));
+        assert_eq!(row.values[1], DataValue::Float(103.5)); // MIN
+        assert_eq!(row.values[2], DataValue::Float(105.0)); // MAX
+    }
+
     #[test]
     fn test_not_in_parsing() {
         use crate::sql::recursive_parser::Parser;
@@ -2073,6 +2180,36 @@ mod tests {
                 panic!("Parse error: {e}");
             }
         }
+    }
+
+    /// Create test stock data for aggregate testing
+    fn create_test_stock_data() -> Arc<DataTable> {
+        let mut table = DataTable::new("stock");
+
+        table.add_column(DataColumn::new("symbol"));
+        table.add_column(DataColumn::new("close"));
+        table.add_column(DataColumn::new("volume"));
+
+        // Add 5 rows of test data
+        let test_data = vec![
+            ("AAPL", 99.5, 1000),
+            ("AAPL", 101.2, 1500),
+            ("AAPL", 103.5, 2000),
+            ("AAPL", 105.0, 1200),
+            ("AAPL", 102.8, 1800),
+        ];
+
+        for (symbol, close, volume) in test_data {
+            table
+                .add_row(DataRow::new(vec![
+                    DataValue::String(symbol.to_string()),
+                    DataValue::Float(close),
+                    DataValue::Integer(volume),
+                ]))
+                .expect("Should add row successfully");
+        }
+
+        Arc::new(table)
     }
 }
 
