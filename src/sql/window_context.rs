@@ -10,7 +10,9 @@ use anyhow::{anyhow, Result};
 
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
-use crate::sql::recursive_parser::{OrderByColumn, SortDirection};
+use crate::sql::parser::ast::{
+    FrameBound, FrameUnit, OrderByColumn, SortDirection, WindowFrame, WindowSpec,
+};
 
 /// Key for identifying a partition (combination of partition column values)
 /// We use String representation for now since DataValue doesn't impl Ord
@@ -92,13 +94,6 @@ impl OrderedPartition {
     }
 }
 
-/// Window specification defining partitioning and ordering
-#[derive(Debug, Clone)]
-pub struct WindowSpec {
-    pub partition_by: Vec<String>,
-    pub order_by: Vec<OrderByColumn>,
-}
-
 /// Context for evaluating window functions
 pub struct WindowContext {
     /// Source data view
@@ -121,10 +116,20 @@ impl WindowContext {
         partition_by: Vec<String>,
         order_by: Vec<OrderByColumn>,
     ) -> Result<Self> {
-        let spec = WindowSpec {
-            partition_by: partition_by.clone(),
-            order_by: order_by.clone(),
-        };
+        Self::new_with_spec(
+            view,
+            WindowSpec {
+                partition_by,
+                order_by,
+                frame: None,
+            },
+        )
+    }
+
+    /// Create a new window context with a full window specification
+    pub fn new_with_spec(view: Arc<DataView>, spec: WindowSpec) -> Result<Self> {
+        let partition_by = spec.partition_by.clone();
+        let order_by = spec.order_by.clone();
 
         // If no partition columns, treat entire view as single partition
         if partition_by.is_empty() {
@@ -301,6 +306,36 @@ impl WindowContext {
         0 // Should not happen for valid row
     }
 
+    /// Get first value in frame
+    pub fn get_frame_first_value(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let frame_rows = self.get_frame_rows(row_index);
+        if frame_rows.is_empty() {
+            return Some(DataValue::Null);
+        }
+
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        // Get the first row in the frame
+        let first_row = frame_rows[0];
+        source_table.get_value(first_row, col_idx).cloned()
+    }
+
+    /// Get last value in frame
+    pub fn get_frame_last_value(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let frame_rows = self.get_frame_rows(row_index);
+        if frame_rows.is_empty() {
+            return Some(DataValue::Null);
+        }
+
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        // Get the last row in the frame
+        let last_row = frame_rows[frame_rows.len() - 1];
+        source_table.get_value(last_row, col_idx).cloned()
+    }
+
     /// Get first value in partition
     pub fn get_first_value(&self, row_index: usize, column: &str) -> Option<DataValue> {
         let partition_key = self.row_to_partition.get(&row_index)?;
@@ -331,6 +366,215 @@ impl WindowContext {
     /// Check if context has partitions (vs single window)
     pub fn has_partitions(&self) -> bool {
         !self.spec.partition_by.is_empty()
+    }
+
+    /// Check if context has a window frame specification
+    pub fn has_frame(&self) -> bool {
+        self.spec.frame.is_some()
+    }
+
+    /// Get the source DataView
+    pub fn source(&self) -> &DataTable {
+        self.source.source()
+    }
+
+    /// Get row indices within the window frame for a given row
+    pub fn get_frame_rows(&self, row_index: usize) -> Vec<usize> {
+        // Find which partition this row belongs to
+        let partition_key = match self.row_to_partition.get(&row_index) {
+            Some(key) => key,
+            None => return vec![],
+        };
+
+        let partition = match self.partitions.get(partition_key) {
+            Some(p) => p,
+            None => return vec![],
+        };
+
+        // Get current row's position in partition
+        let current_pos = match partition.get_position(row_index) {
+            Some(pos) => pos as i64,
+            None => return vec![],
+        };
+
+        // If no frame specified, return entire partition (default behavior)
+        let frame = match &self.spec.frame {
+            Some(f) => f,
+            None => return partition.rows.clone(),
+        };
+
+        // Calculate frame bounds
+        let (start_pos, end_pos) = match frame.unit {
+            FrameUnit::Rows => {
+                // ROWS frame - based on physical row positions
+                let start =
+                    self.calculate_frame_position(&frame.start, current_pos, partition.rows.len());
+                let end = match &frame.end {
+                    Some(bound) => {
+                        self.calculate_frame_position(bound, current_pos, partition.rows.len())
+                    }
+                    None => current_pos, // Default to CURRENT ROW
+                };
+                (start, end)
+            }
+            FrameUnit::Range => {
+                // RANGE frame - based on ORDER BY values (not yet fully implemented)
+                // For now, treat like ROWS
+                let start =
+                    self.calculate_frame_position(&frame.start, current_pos, partition.rows.len());
+                let end = match &frame.end {
+                    Some(bound) => {
+                        self.calculate_frame_position(bound, current_pos, partition.rows.len())
+                    }
+                    None => current_pos,
+                };
+                (start, end)
+            }
+        };
+
+        // Collect rows within frame bounds
+        let mut frame_rows = Vec::new();
+        for i in start_pos..=end_pos {
+            if i >= 0 && (i as usize) < partition.rows.len() {
+                frame_rows.push(partition.rows[i as usize]);
+            }
+        }
+
+        frame_rows
+    }
+
+    /// Calculate absolute position from frame bound
+    fn calculate_frame_position(
+        &self,
+        bound: &FrameBound,
+        current_pos: i64,
+        partition_size: usize,
+    ) -> i64 {
+        match bound {
+            FrameBound::UnboundedPreceding => 0,
+            FrameBound::UnboundedFollowing => partition_size as i64 - 1,
+            FrameBound::CurrentRow => current_pos,
+            FrameBound::Preceding(n) => current_pos - n,
+            FrameBound::Following(n) => current_pos + n,
+        }
+    }
+
+    /// Calculate sum of a column within the window frame for the given row
+    pub fn get_frame_sum(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let frame_rows = self.get_frame_rows(row_index);
+        if frame_rows.is_empty() {
+            return Some(DataValue::Null);
+        }
+
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        let mut sum = 0.0;
+        let mut has_float = false;
+        let mut has_value = false;
+
+        // Sum all values in the frame
+        for &row_idx in &frame_rows {
+            if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                match value {
+                    DataValue::Integer(i) => {
+                        sum += *i as f64;
+                        has_value = true;
+                    }
+                    DataValue::Float(f) => {
+                        sum += f;
+                        has_float = true;
+                        has_value = true;
+                    }
+                    DataValue::Null => {
+                        // Skip NULL values
+                    }
+                    _ => {
+                        // Non-numeric values - return NULL
+                        return Some(DataValue::Null);
+                    }
+                }
+            }
+        }
+
+        if !has_value {
+            return Some(DataValue::Null);
+        }
+
+        // Return as integer if all values were integers and sum is whole
+        if !has_float && sum.fract() == 0.0 && sum >= i64::MIN as f64 && sum <= i64::MAX as f64 {
+            Some(DataValue::Integer(sum as i64))
+        } else {
+            Some(DataValue::Float(sum))
+        }
+    }
+
+    /// Calculate count within the window frame
+    pub fn get_frame_count(&self, row_index: usize, column: Option<&str>) -> Option<DataValue> {
+        let frame_rows = self.get_frame_rows(row_index);
+        if frame_rows.is_empty() {
+            return Some(DataValue::Integer(0));
+        }
+
+        if let Some(col_name) = column {
+            // COUNT(column) - count non-null values in frame
+            let source_table = self.source.source();
+            let col_idx = source_table.get_column_index(col_name)?;
+
+            let count = frame_rows
+                .iter()
+                .filter_map(|&row_idx| source_table.get_value(row_idx, col_idx))
+                .filter(|v| !matches!(v, DataValue::Null))
+                .count();
+
+            Some(DataValue::Integer(count as i64))
+        } else {
+            // COUNT(*) - count all rows in frame
+            Some(DataValue::Integer(frame_rows.len() as i64))
+        }
+    }
+
+    /// Calculate average of a column within the window frame
+    pub fn get_frame_avg(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let frame_rows = self.get_frame_rows(row_index);
+        if frame_rows.is_empty() {
+            return Some(DataValue::Null);
+        }
+
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        let mut sum = 0.0;
+        let mut count = 0;
+
+        // Sum all non-null values in the frame
+        for &row_idx in &frame_rows {
+            if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                match value {
+                    DataValue::Integer(i) => {
+                        sum += *i as f64;
+                        count += 1;
+                    }
+                    DataValue::Float(f) => {
+                        sum += f;
+                        count += 1;
+                    }
+                    DataValue::Null => {
+                        // Skip NULL values
+                    }
+                    _ => {
+                        // Non-numeric values - return NULL
+                        return Some(DataValue::Null);
+                    }
+                }
+            }
+        }
+
+        if count == 0 {
+            return Some(DataValue::Null);
+        }
+
+        Some(DataValue::Float(sum / count as f64))
     }
 
     /// Calculate sum of a column over the partition containing the given row

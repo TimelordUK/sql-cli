@@ -2,9 +2,9 @@
 
 // Re-exports for backward compatibility - these serve as both imports and re-exports
 pub use super::parser::ast::{
-    CTEType, Condition, DataFormat, JoinClause, JoinCondition, JoinOperator, JoinType, LogicalOp,
-    OrderByColumn, SelectItem, SelectStatement, SortDirection, SqlExpression, TableFunction,
-    TableSource, WebCTESpec, WhenBranch, WhereClause, WindowSpec, CTE,
+    CTEType, Condition, DataFormat, FrameBound, FrameUnit, JoinClause, JoinCondition, JoinOperator,
+    JoinType, LogicalOp, OrderByColumn, SelectItem, SelectStatement, SortDirection, SqlExpression,
+    TableFunction, TableSource, WebCTESpec, WhenBranch, WhereClause, WindowFrame, WindowSpec, CTE,
 };
 pub use super::parser::legacy::{ParseContext, ParseState, Schema, SqlParser, SqlToken, TableInfo};
 pub use super::parser::lexer::{Lexer, Token};
@@ -944,9 +944,13 @@ impl Parser {
             }
         }
 
+        // Parse optional window frame (ROWS/RANGE BETWEEN ... AND ...)
+        let frame = self.parse_window_frame()?;
+
         Ok(WindowSpec {
             partition_by,
             order_by,
+            frame,
         })
     }
 
@@ -997,6 +1001,91 @@ impl Parser {
         }
 
         Ok(order_columns)
+    }
+
+    fn parse_window_frame(&mut self) -> Result<Option<WindowFrame>, String> {
+        // Check for ROWS or RANGE keyword
+        let unit = match &self.current_token {
+            Token::Identifier(id) if id.to_uppercase() == "ROWS" => {
+                self.advance();
+                FrameUnit::Rows
+            }
+            Token::Identifier(id) if id.to_uppercase() == "RANGE" => {
+                self.advance();
+                FrameUnit::Range
+            }
+            _ => return Ok(None), // No window frame specified
+        };
+
+        // Check for BETWEEN or just a single bound
+        let (start, end) = if let Token::Between = &self.current_token {
+            self.advance(); // consume BETWEEN
+                            // Parse start bound
+            let start = self.parse_frame_bound()?;
+
+            // Expect AND
+            if !matches!(&self.current_token, Token::And) {
+                return Err("Expected AND after window frame start bound".to_string());
+            }
+            self.advance();
+
+            // Parse end bound
+            let end = self.parse_frame_bound()?;
+            (start, Some(end))
+        } else {
+            // Single bound (e.g., "ROWS 5 PRECEDING")
+            let bound = self.parse_frame_bound()?;
+            (bound, None)
+        };
+
+        Ok(Some(WindowFrame { unit, start, end }))
+    }
+
+    fn parse_frame_bound(&mut self) -> Result<FrameBound, String> {
+        match &self.current_token {
+            Token::Identifier(id) if id.to_uppercase() == "UNBOUNDED" => {
+                self.advance();
+                match &self.current_token {
+                    Token::Identifier(id) if id.to_uppercase() == "PRECEDING" => {
+                        self.advance();
+                        Ok(FrameBound::UnboundedPreceding)
+                    }
+                    Token::Identifier(id) if id.to_uppercase() == "FOLLOWING" => {
+                        self.advance();
+                        Ok(FrameBound::UnboundedFollowing)
+                    }
+                    _ => Err("Expected PRECEDING or FOLLOWING after UNBOUNDED".to_string()),
+                }
+            }
+            Token::Identifier(id) if id.to_uppercase() == "CURRENT" => {
+                self.advance();
+                if let Token::Identifier(id) = &self.current_token {
+                    if id.to_uppercase() == "ROW" {
+                        self.advance();
+                        return Ok(FrameBound::CurrentRow);
+                    }
+                }
+                Err("Expected ROW after CURRENT".to_string())
+            }
+            Token::NumberLiteral(num) => {
+                let n: i64 = num
+                    .parse()
+                    .map_err(|_| "Invalid number in window frame".to_string())?;
+                self.advance();
+                match &self.current_token {
+                    Token::Identifier(id) if id.to_uppercase() == "PRECEDING" => {
+                        self.advance();
+                        Ok(FrameBound::Preceding(n))
+                    }
+                    Token::Identifier(id) if id.to_uppercase() == "FOLLOWING" => {
+                        self.advance();
+                        Ok(FrameBound::Following(n))
+                    }
+                    _ => Err("Expected PRECEDING or FOLLOWING after number".to_string()),
+                }
+            }
+            _ => Err("Invalid window frame bound".to_string()),
+        }
     }
 
     fn parse_where_clause(&mut self) -> Result<WhereClause, String> {

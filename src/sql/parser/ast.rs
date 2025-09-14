@@ -130,10 +130,36 @@ pub struct OrderByColumn {
 
 // ===== Window Function Types =====
 
+/// Window frame bounds
+#[derive(Debug, Clone, PartialEq)]
+pub enum FrameBound {
+    UnboundedPreceding,
+    CurrentRow,
+    Preceding(i64),
+    Following(i64),
+    UnboundedFollowing,
+}
+
+/// Window frame unit (ROWS or RANGE)
+#[derive(Debug, Clone, PartialEq)]
+pub enum FrameUnit {
+    Rows,
+    Range,
+}
+
+/// Window frame specification
+#[derive(Debug, Clone)]
+pub struct WindowFrame {
+    pub unit: FrameUnit,
+    pub start: FrameBound,
+    pub end: Option<FrameBound>, // None means CURRENT ROW
+}
+
 #[derive(Debug, Clone)]
 pub struct WindowSpec {
     pub partition_by: Vec<String>,
     pub order_by: Vec<OrderByColumn>,
+    pub frame: Option<WindowFrame>, // Optional window frame
 }
 
 // ===== SELECT Statement Types =====

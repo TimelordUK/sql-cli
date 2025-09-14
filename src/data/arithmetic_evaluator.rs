@@ -4,7 +4,8 @@ use crate::data::datatable::{DataTable, DataValue};
 use crate::data::value_comparisons::compare_with_op;
 use crate::sql::aggregates::AggregateRegistry;
 use crate::sql::functions::FunctionRegistry;
-use crate::sql::recursive_parser::{SqlExpression, WindowSpec};
+use crate::sql::parser::ast::WindowSpec;
+use crate::sql::recursive_parser::SqlExpression;
 use crate::sql::window_context::WindowContext;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
@@ -652,12 +653,8 @@ impl<'a> ArithmeticEvaluator<'a> {
             DataView::new(Arc::new(self.table.clone()))
         };
 
-        // Create the WindowContext
-        let context = WindowContext::new(
-            Arc::new(data_view),
-            spec.partition_by.clone(),
-            spec.order_by.clone(),
-        )?;
+        // Create the WindowContext with the full spec (including frame)
+        let context = WindowContext::new_with_spec(Arc::new(data_view), spec.clone())?;
 
         let context = Arc::new(context);
         self.window_contexts.insert(key, Arc::clone(&context));
@@ -735,7 +732,7 @@ impl<'a> ArithmeticEvaluator<'a> {
                 Ok(DataValue::Integer(context.get_row_number(row_index) as i64))
             }
             "FIRST_VALUE" => {
-                // FIRST_VALUE(column)
+                // FIRST_VALUE(column) OVER (... ROWS ...)
                 if args.is_empty() {
                     return Err(anyhow!("FIRST_VALUE requires 1 argument"));
                 }
@@ -745,12 +742,19 @@ impl<'a> ArithmeticEvaluator<'a> {
                     _ => return Err(anyhow!("FIRST_VALUE argument must be a column")),
                 };
 
-                Ok(context
-                    .get_first_value(row_index, &column)
-                    .unwrap_or(DataValue::Null))
+                // Use frame-aware version if frame is specified
+                if context.has_frame() {
+                    Ok(context
+                        .get_frame_first_value(row_index, &column)
+                        .unwrap_or(DataValue::Null))
+                } else {
+                    Ok(context
+                        .get_first_value(row_index, &column)
+                        .unwrap_or(DataValue::Null))
+                }
             }
             "LAST_VALUE" => {
-                // LAST_VALUE(column)
+                // LAST_VALUE(column) OVER (... ROWS ...)
                 if args.is_empty() {
                     return Err(anyhow!("LAST_VALUE requires 1 argument"));
                 }
@@ -760,12 +764,19 @@ impl<'a> ArithmeticEvaluator<'a> {
                     _ => return Err(anyhow!("LAST_VALUE argument must be a column")),
                 };
 
-                Ok(context
-                    .get_last_value(row_index, &column)
-                    .unwrap_or(DataValue::Null))
+                // Use frame-aware version if frame is specified
+                if context.has_frame() {
+                    Ok(context
+                        .get_frame_last_value(row_index, &column)
+                        .unwrap_or(DataValue::Null))
+                } else {
+                    Ok(context
+                        .get_last_value(row_index, &column)
+                        .unwrap_or(DataValue::Null))
+                }
             }
             "SUM" => {
-                // SUM(column) OVER (PARTITION BY ...)
+                // SUM(column) OVER (PARTITION BY ... ROWS n PRECEDING)
                 if args.is_empty() {
                     return Err(anyhow!("SUM requires 1 argument"));
                 }
@@ -775,43 +786,168 @@ impl<'a> ArithmeticEvaluator<'a> {
                     _ => return Err(anyhow!("SUM argument must be a column")),
                 };
 
+                // Use frame-aware sum if frame is specified, otherwise use partition sum
+                if context.has_frame() {
+                    Ok(context
+                        .get_frame_sum(row_index, &column)
+                        .unwrap_or(DataValue::Null))
+                } else {
+                    Ok(context
+                        .get_partition_sum(row_index, &column)
+                        .unwrap_or(DataValue::Null))
+                }
+            }
+            "AVG" => {
+                // AVG(column) OVER (PARTITION BY ... ROWS n PRECEDING)
+                if args.is_empty() {
+                    return Err(anyhow!("AVG requires 1 argument"));
+                }
+
+                let column = match &args[0] {
+                    SqlExpression::Column(col) => col.clone(),
+                    _ => return Err(anyhow!("AVG argument must be a column")),
+                };
+
                 Ok(context
-                    .get_partition_sum(row_index, &column)
+                    .get_frame_avg(row_index, &column)
                     .unwrap_or(DataValue::Null))
             }
-            "COUNT" => {
-                // COUNT(*) or COUNT(column) OVER (PARTITION BY ...)
-                // Note: In window functions, COUNT(*) seems to come with no args
+            "MIN" => {
+                // MIN(column) OVER (PARTITION BY ... ROWS n PRECEDING)
                 if args.is_empty() {
-                    // COUNT(*) OVER (...) - count all rows in partition
-                    Ok(context
-                        .get_partition_count(row_index, None)
-                        .unwrap_or(DataValue::Null))
+                    return Err(anyhow!("MIN requires 1 argument"));
+                }
+
+                let column = match &args[0] {
+                    SqlExpression::Column(col) => col.clone(),
+                    _ => return Err(anyhow!("MIN argument must be a column")),
+                };
+
+                let frame_rows = context.get_frame_rows(row_index);
+                if frame_rows.is_empty() {
+                    return Ok(DataValue::Null);
+                }
+
+                let source_table = context.source();
+                let col_idx = source_table
+                    .get_column_index(&column)
+                    .ok_or_else(|| anyhow!("Column '{}' not found", column))?;
+
+                let mut min_value: Option<DataValue> = None;
+                for &row_idx in &frame_rows {
+                    if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                        if !matches!(value, DataValue::Null) {
+                            match &min_value {
+                                None => min_value = Some(value.clone()),
+                                Some(current_min) => {
+                                    if value < current_min {
+                                        min_value = Some(value.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Ok(min_value.unwrap_or(DataValue::Null))
+            }
+            "MAX" => {
+                // MAX(column) OVER (PARTITION BY ... ROWS n PRECEDING)
+                if args.is_empty() {
+                    return Err(anyhow!("MAX requires 1 argument"));
+                }
+
+                let column = match &args[0] {
+                    SqlExpression::Column(col) => col.clone(),
+                    _ => return Err(anyhow!("MAX argument must be a column")),
+                };
+
+                let frame_rows = context.get_frame_rows(row_index);
+                if frame_rows.is_empty() {
+                    return Ok(DataValue::Null);
+                }
+
+                let source_table = context.source();
+                let col_idx = source_table
+                    .get_column_index(&column)
+                    .ok_or_else(|| anyhow!("Column '{}' not found", column))?;
+
+                let mut max_value: Option<DataValue> = None;
+                for &row_idx in &frame_rows {
+                    if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                        if !matches!(value, DataValue::Null) {
+                            match &max_value {
+                                None => max_value = Some(value.clone()),
+                                Some(current_max) => {
+                                    if value > current_max {
+                                        max_value = Some(value.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Ok(max_value.unwrap_or(DataValue::Null))
+            }
+            "COUNT" => {
+                // COUNT(*) or COUNT(column) OVER (PARTITION BY ... ROWS n PRECEDING)
+                // Use frame-aware count if frame is specified, otherwise use partition count
+
+                if args.is_empty() {
+                    // COUNT(*) OVER (...)
+                    if context.has_frame() {
+                        Ok(context
+                            .get_frame_count(row_index, None)
+                            .unwrap_or(DataValue::Null))
+                    } else {
+                        Ok(context
+                            .get_partition_count(row_index, None)
+                            .unwrap_or(DataValue::Null))
+                    }
                 } else {
                     // Check for COUNT(*)
                     let column = match &args[0] {
                         SqlExpression::Column(col) => {
                             if col == "*" {
-                                // COUNT(*) - count all rows in partition
-                                return Ok(context
-                                    .get_partition_count(row_index, None)
-                                    .unwrap_or(DataValue::Null));
+                                // COUNT(*) - count all rows
+                                if context.has_frame() {
+                                    return Ok(context
+                                        .get_frame_count(row_index, None)
+                                        .unwrap_or(DataValue::Null));
+                                } else {
+                                    return Ok(context
+                                        .get_partition_count(row_index, None)
+                                        .unwrap_or(DataValue::Null));
+                                }
                             }
                             col.clone()
                         }
                         SqlExpression::StringLiteral(s) if s == "*" => {
-                            // COUNT(*) as StringLiteral (how parser sends it)
-                            return Ok(context
-                                .get_partition_count(row_index, None)
-                                .unwrap_or(DataValue::Null));
+                            // COUNT(*) as StringLiteral
+                            if context.has_frame() {
+                                return Ok(context
+                                    .get_frame_count(row_index, None)
+                                    .unwrap_or(DataValue::Null));
+                            } else {
+                                return Ok(context
+                                    .get_partition_count(row_index, None)
+                                    .unwrap_or(DataValue::Null));
+                            }
                         }
                         _ => return Err(anyhow!("COUNT argument must be a column or *")),
                     };
 
                     // COUNT(column) - count non-null values
-                    Ok(context
-                        .get_partition_count(row_index, Some(&column))
-                        .unwrap_or(DataValue::Null))
+                    if context.has_frame() {
+                        Ok(context
+                            .get_frame_count(row_index, Some(&column))
+                            .unwrap_or(DataValue::Null))
+                    } else {
+                        Ok(context
+                            .get_partition_count(row_index, Some(&column))
+                            .unwrap_or(DataValue::Null))
+                    }
                 }
             }
             _ => Err(anyhow!("Unknown window function: {}", name)),
