@@ -1,4 +1,4 @@
-# SQL CLI - Stage 2 Roadmap
+kkk# SQL CLI - Stage 2 Roadmap
 
 ## Current State (Stage 1 Complete ✅)
 
@@ -17,9 +17,9 @@ We have successfully built the foundational architecture:
 ### 🎯 Priority 1: Statistical & Financial Functions
 
 #### Basic Statistics
-- [ ] `STDDEV(column)` - Standard deviation (as aggregate and window function)
-- [ ] `VARIANCE(column)` - Variance (as aggregate and window function)
-- [ ] `MEDIAN(column)` - Median value
+- [x] `STDDEV(column)` - Standard deviation (as aggregate and window function) ✅
+- [x] `VARIANCE(column)` - Variance (as aggregate and window function) ✅
+- [x] `MEDIAN(column)` - Median value ✅
 - [ ] `PERCENTILE(column, n)` - Nth percentile
 - [ ] `MODE(column)` - Most frequent value
 - [ ] `CORR(col1, col2)` - Correlation coefficient
@@ -69,15 +69,27 @@ SELECT * FROM price_data WHERE close_price > bb_upper;  -- Breakout detection
 - [ ] `CUME_DIST()` - Cumulative distribution
 - [ ] `NTILE(n)` - Divide into n buckets
 
-#### Window Function Registry Architecture
-- [ ] **Decouple from engine**: Move all window logic to specialized registry
-- [ ] **Syntactic sugar functions**: Simplify complex patterns
-  - `MOVING_AVG(col, 20)` → `AVG(col) OVER (ORDER BY date ROWS 19 PRECEDING)`
-  - `CUMULATIVE_SUM(col)` → `SUM(col) OVER (ORDER BY date ROWS UNBOUNDED PRECEDING)`
-  - `ROLLING_STDDEV(col, 30)` → `STDDEV(col) OVER (ORDER BY date ROWS 29 PRECEDING)`
+#### Window Function Registry Architecture (Completed ✅)
+- [x] **Decouple from engine**: Move all window logic to specialized registry ✅
+- [x] **Syntactic sugar functions**: Simplify complex patterns ✅
+  - `MOVING_AVG(col, 20)` → `AVG(col) OVER (ORDER BY date ROWS 19 PRECEDING)` ✅
+  - `CUMULATIVE_SUM(col)` → `SUM(col) OVER (ORDER BY date ROWS UNBOUNDED PRECEDING)` ✅
+  - `ROLLING_STDDEV(col, 30)` → `STDDEV(col) OVER (ORDER BY date ROWS 29 PRECEDING)` ✅
+  - `BOLLINGER_UPPER/LOWER(col, window, std)` - Bollinger Bands ✅
+  - `Z_SCORE(col, window)` - Statistical Z-score ✅
+  - `PERCENT_CHANGE(col, periods)` - Period-over-period changes ✅
 - [ ] **GPU offloading**: Parallel computation for large windows
 - [ ] **Multi-threading**: Process partitions in parallel
 - [ ] **Lazy evaluation**: Compute only requested rows
+
+#### Aggregate Function Registry Architecture (Completed ✅)
+- [x] **Registry Pattern**: Created AggregateFunction and AggregateState traits ✅
+- [x] **Basic Aggregates**: COUNT, SUM, AVG, MIN, MAX moved to registry ✅
+- [x] **STRING_AGG**: Implemented with configurable separator ✅
+- [x] **Full Integration**: Replace hardcoded aggregate logic in evaluator ✅
+- [x] **DISTINCT Support**: Uniform DISTINCT handling across all aggregates ✅
+- [x] **Additional Aggregates**: MEDIAN ✅, STDDEV ✅, VARIANCE ✅
+- [ ] **Remaining Aggregates**: PERCENTILE, MODE, CORR, COVAR
 
 ### 🎯 Priority 3: Better Error Messages
 

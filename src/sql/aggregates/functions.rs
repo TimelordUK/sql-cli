@@ -278,6 +278,96 @@ impl AggregateFunction for StringAggFunction {
     }
 }
 
+/// MEDIAN(column) - finds the median value
+pub struct MedianFunction;
+
+impl AggregateFunction for MedianFunction {
+    fn name(&self) -> &'static str {
+        "MEDIAN"
+    }
+
+    fn init(&self) -> AggregateState {
+        AggregateState::CollectList(Vec::new())
+    }
+
+    fn accumulate(&self, state: &mut AggregateState, value: &DataValue) -> Result<()> {
+        if let AggregateState::CollectList(ref mut values) = state {
+            // Skip null values
+            if !matches!(value, DataValue::Null) {
+                values.push(value.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn finalize(&self, state: AggregateState) -> DataValue {
+        if let AggregateState::CollectList(mut values) = state {
+            if values.is_empty() {
+                return DataValue::Null;
+            }
+
+            // Sort values for median calculation
+            values.sort_by(|a, b| {
+                use std::cmp::Ordering;
+                match (a, b) {
+                    (DataValue::Integer(a), DataValue::Integer(b)) => a.cmp(b),
+                    (DataValue::Float(a), DataValue::Float(b)) => {
+                        a.partial_cmp(b).unwrap_or(Ordering::Equal)
+                    }
+                    (DataValue::Integer(a), DataValue::Float(b)) => {
+                        (*a as f64).partial_cmp(b).unwrap_or(Ordering::Equal)
+                    }
+                    (DataValue::Float(a), DataValue::Integer(b)) => {
+                        a.partial_cmp(&(*b as f64)).unwrap_or(Ordering::Equal)
+                    }
+                    (DataValue::String(a), DataValue::String(b)) => a.cmp(b),
+                    (DataValue::InternedString(a), DataValue::InternedString(b)) => a.cmp(b),
+                    (DataValue::String(a), DataValue::InternedString(b)) => a.cmp(&**b),
+                    (DataValue::InternedString(a), DataValue::String(b)) => (**a).cmp(b),
+                    _ => Ordering::Equal,
+                }
+            });
+
+            let len = values.len();
+            if len % 2 == 1 {
+                // Odd number of elements - return middle element
+                values[len / 2].clone()
+            } else {
+                // Even number of elements - return average of two middle elements
+                let mid1 = &values[len / 2 - 1];
+                let mid2 = &values[len / 2];
+
+                // For numeric values, calculate average
+                match (mid1, mid2) {
+                    (DataValue::Integer(a), DataValue::Integer(b)) => {
+                        let avg = (*a + *b) as f64 / 2.0;
+                        if avg.fract() == 0.0 {
+                            DataValue::Integer(avg as i64)
+                        } else {
+                            DataValue::Float(avg)
+                        }
+                    }
+                    (DataValue::Float(a), DataValue::Float(b)) => DataValue::Float((a + b) / 2.0),
+                    (DataValue::Integer(a), DataValue::Float(b)) => {
+                        DataValue::Float((*a as f64 + b) / 2.0)
+                    }
+                    (DataValue::Float(a), DataValue::Integer(b)) => {
+                        DataValue::Float((a + *b as f64) / 2.0)
+                    }
+                    // For non-numeric, return the first middle element
+                    _ => mid1.clone(),
+                }
+            }
+        } else {
+            DataValue::Null
+        }
+    }
+
+    fn requires_numeric(&self) -> bool {
+        false // MEDIAN works on any sortable type
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
