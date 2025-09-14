@@ -30,8 +30,9 @@ We have successfully built the foundational architecture:
 - [x] `LOG_RETURNS(current, previous)` - Logarithmic returns ✅
 - [x] `VOLATILITY(...)` - Volatility calculation ✅
 - [x] `SHARPE_RATIO(mean, rf, vol)` - Sharpe ratio ✅
-- [ ] `BOLLINGER_UPPER(price, window, num_std)` - Upper Bollinger Band
-- [ ] `BOLLINGER_LOWER(price, window, num_std)` - Lower Bollinger Band
+- [x] `BOLLINGER_UPPER(price, window, num_std)` - Upper Bollinger Band ✅
+- [x] `BOLLINGER_LOWER(price, window, num_std)` - Lower Bollinger Band ✅
+- [x] `PERCENT_CHANGE(col, periods)` - Period-over-period changes ✅
 - [ ] `EMA(column, window)` - Exponential Moving Average
 - [ ] `RSI(price, period)` - Relative Strength Index
 - [ ] `BETA(returns, market_returns)` - Beta coefficient
@@ -99,16 +100,22 @@ SELECT * FROM price_data WHERE close_price > bb_upper;  -- Breakout detection
 - [ ] Add line/column numbers to parse errors
 - [ ] "Did you mean?" suggestions for typos
 
-### 📊 ASCII Visualizations (via Neovim/Lua)
+### 📊 ASCII Visualizations (via Neovim/Lua) ✅
 
 Since Lua is more flexible for this, implement in nvim plugin:
-- [ ] Scatter plots - `:SqlScatter x_col y_col`
-- [ ] Histograms - `:SqlHist column bins`
-- [ ] Line charts - `:SqlLine x_col y_col`
-- [ ] Bar charts - `:SqlBar category value`
-- [ ] Box plots - `:SqlBox column`
-- [ ] Pie charts - `:SqlPie category value`
+- [x] Scatter plots - `:SqlScatter x_col y_col` ✅
+- [x] Histograms - `:SqlHist column bins` ✅
+- [x] Line charts - Sparklines `:SqlSparkline` ✅
+- [x] Bar charts - `:SqlBar category value` ✅
+- [x] Box plots - `:SqlBox column` ✅
+- [x] Pie charts - `:SqlPie category value` ✅
 - [ ] Correlation matrix heatmap - `:SqlCorr`
+
+**Additional Visualization Features Added:**
+- [x] Query-at-cursor keybindings (<leader>sB, sP, sH, sS, sl) ✅
+- [x] Debug mode with `:SqlChartDebug on/off` ✅
+- [x] Configurable pie chart radius `:SqlPieRadius <size>` ✅
+- [x] Smart CSV parsing preserving text labels ✅
 
 ### 🚀 Performance Optimizations
 
