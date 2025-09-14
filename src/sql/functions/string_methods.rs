@@ -143,6 +143,86 @@ impl MethodFunction for TrimMethod {
     }
 }
 
+/// TrimStart method function
+pub struct TrimStartMethod;
+
+impl SqlFunction for TrimStartMethod {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "TRIMSTART",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(1),
+            description: "Removes leading whitespace",
+            returns: "STRING",
+            examples: vec![
+                "SELECT name.TrimStart() FROM users",
+                "SELECT TRIMSTART(name) FROM users",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        match &args[0] {
+            DataValue::String(s) => Ok(DataValue::String(s.trim_start().to_string())),
+            DataValue::InternedString(s) => Ok(DataValue::String(s.trim_start().to_string())),
+            DataValue::Null => Ok(DataValue::Null),
+            _ => Err(anyhow!("TrimStart expects a string argument")),
+        }
+    }
+}
+
+impl MethodFunction for TrimStartMethod {
+    fn handles_method(&self, method_name: &str) -> bool {
+        method_name.eq_ignore_ascii_case("TrimStart")
+    }
+
+    fn method_name(&self) -> &'static str {
+        "TrimStart"
+    }
+}
+
+/// TrimEnd method function
+pub struct TrimEndMethod;
+
+impl SqlFunction for TrimEndMethod {
+    fn signature(&self) -> FunctionSignature {
+        FunctionSignature {
+            name: "TRIMEND",
+            category: FunctionCategory::String,
+            arg_count: ArgCount::Fixed(1),
+            description: "Removes trailing whitespace",
+            returns: "STRING",
+            examples: vec![
+                "SELECT name.TrimEnd() FROM users",
+                "SELECT TRIMEND(name) FROM users",
+            ],
+        }
+    }
+
+    fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
+        self.validate_args(args)?;
+
+        match &args[0] {
+            DataValue::String(s) => Ok(DataValue::String(s.trim_end().to_string())),
+            DataValue::InternedString(s) => Ok(DataValue::String(s.trim_end().to_string())),
+            DataValue::Null => Ok(DataValue::Null),
+            _ => Err(anyhow!("TrimEnd expects a string argument")),
+        }
+    }
+}
+
+impl MethodFunction for TrimEndMethod {
+    fn handles_method(&self, method_name: &str) -> bool {
+        method_name.eq_ignore_ascii_case("TrimEnd")
+    }
+
+    fn method_name(&self) -> &'static str {
+        "TrimEnd"
+    }
+}
+
 /// Length method function (returns integer)
 pub struct LengthMethod;
 
@@ -1231,6 +1311,16 @@ pub fn register_string_methods(registry: &mut super::FunctionRegistry) {
     let trim = Arc::new(TrimMethod);
     registry.register(Box::new(TrimMethod));
     registry.register_method(trim);
+
+    // Register TrimStart
+    let trim_start = Arc::new(TrimStartMethod);
+    registry.register(Box::new(TrimStartMethod));
+    registry.register_method(trim_start);
+
+    // Register TrimEnd
+    let trim_end = Arc::new(TrimEndMethod);
+    registry.register(Box::new(TrimEndMethod));
+    registry.register_method(trim_end);
 
     // Register Length
     let length = Arc::new(LengthMethod);
