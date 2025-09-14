@@ -2,7 +2,10 @@
 
 use anyhow::Result;
 
-use super::{AggregateFunction, AggregateState, AvgState, MinMaxState, SumState, VarianceState};
+use super::{
+    AggregateFunction, AggregateState, AvgState, MinMaxState, StringAggState, SumState,
+    VarianceState,
+};
 use crate::data::datatable::DataValue;
 
 /// COUNT(*) - counts all rows including nulls
@@ -247,6 +250,34 @@ impl AggregateFunction for StdDevFunction {
     }
 }
 
+/// STRING_AGG(column, separator) - concatenates strings with separator
+pub struct StringAggFunction;
+
+impl AggregateFunction for StringAggFunction {
+    fn name(&self) -> &'static str {
+        "STRING_AGG"
+    }
+
+    fn init(&self) -> AggregateState {
+        AggregateState::StringAgg(StringAggState::new(","))
+    }
+
+    fn accumulate(&self, state: &mut AggregateState, value: &DataValue) -> Result<()> {
+        if let AggregateState::StringAgg(ref mut agg_state) = state {
+            agg_state.add(value)?;
+        }
+        Ok(())
+    }
+
+    fn finalize(&self, state: AggregateState) -> DataValue {
+        if let AggregateState::StringAgg(agg_state) = state {
+            agg_state.finalize()
+        } else {
+            DataValue::Null
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -451,5 +482,22 @@ mod tests {
             }
             _ => panic!("Expected Float result"),
         }
+    }
+
+    #[test]
+    fn test_string_agg() {
+        let func = StringAggFunction;
+        let mut state = func.init();
+
+        func.accumulate(&mut state, &DataValue::String("apple".to_string()))
+            .unwrap();
+        func.accumulate(&mut state, &DataValue::String("banana".to_string()))
+            .unwrap();
+        func.accumulate(&mut state, &DataValue::Null).unwrap(); // Should be ignored
+        func.accumulate(&mut state, &DataValue::String("cherry".to_string()))
+            .unwrap();
+
+        let result = func.finalize(state);
+        assert_eq!(result, DataValue::String("apple,banana,cherry".to_string()));
     }
 }

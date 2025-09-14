@@ -20,6 +20,7 @@ pub enum AggregateState {
     Variance(VarianceState),
     CollectList(Vec<DataValue>),
     Analytics(analytics::AnalyticsState),
+    StringAgg(StringAggState),
 }
 
 /// State for SUM aggregation
@@ -278,6 +279,68 @@ pub trait AggregateFunction: Send + Sync {
     }
 }
 
+/// State for STRING_AGG aggregation
+#[derive(Debug, Clone)]
+pub struct StringAggState {
+    pub values: Vec<String>,
+    pub separator: String,
+}
+
+impl Default for StringAggState {
+    fn default() -> Self {
+        Self::new(",")
+    }
+}
+
+impl StringAggState {
+    #[must_use]
+    pub fn new(separator: &str) -> Self {
+        Self {
+            values: Vec::new(),
+            separator: separator.to_string(),
+        }
+    }
+
+    pub fn add(&mut self, value: &DataValue) -> Result<()> {
+        match value {
+            DataValue::Null => Ok(()), // Skip nulls
+            DataValue::String(s) => {
+                self.values.push(s.clone());
+                Ok(())
+            }
+            DataValue::InternedString(s) => {
+                self.values.push(s.to_string());
+                Ok(())
+            }
+            DataValue::Integer(n) => {
+                self.values.push(n.to_string());
+                Ok(())
+            }
+            DataValue::Float(f) => {
+                self.values.push(f.to_string());
+                Ok(())
+            }
+            DataValue::Boolean(b) => {
+                self.values.push(b.to_string());
+                Ok(())
+            }
+            DataValue::DateTime(dt) => {
+                self.values.push(dt.to_string());
+                Ok(())
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn finalize(self) -> DataValue {
+        if self.values.is_empty() {
+            DataValue::Null
+        } else {
+            DataValue::String(self.values.join(&self.separator))
+        }
+    }
+}
+
 /// Registry of aggregate functions
 pub struct AggregateRegistry {
     functions: Vec<Box<dyn AggregateFunction>>,
@@ -292,7 +355,7 @@ impl AggregateRegistry {
         };
         use functions::{
             AvgFunction, CountFunction, CountStarFunction, MaxFunction, MinFunction,
-            StdDevFunction, SumFunction, VarianceFunction,
+            StdDevFunction, StringAggFunction, SumFunction, VarianceFunction,
         };
 
         let functions: Vec<Box<dyn AggregateFunction>> = vec![
@@ -304,6 +367,7 @@ impl AggregateRegistry {
             Box::new(MaxFunction),
             Box::new(StdDevFunction),
             Box::new(VarianceFunction),
+            Box::new(StringAggFunction),
             // Analytics functions
             Box::new(DeltasFunction),
             Box::new(SumsFunction),

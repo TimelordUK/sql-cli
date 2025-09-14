@@ -9,7 +9,7 @@ use crate::sql::recursive_parser::SqlExpression;
 use crate::sql::window_context::WindowContext;
 use crate::sql::window_functions::{ExpressionEvaluator, WindowFunctionRegistry};
 use anyhow::{anyhow, Result};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::debug;
 
@@ -414,14 +414,9 @@ impl<'a> ArithmeticEvaluator<'a> {
         if distinct {
             let name_upper = name.to_uppercase();
 
-            // DISTINCT is only valid for aggregate functions
-            if name_upper == "COUNT"
-                || name_upper == "SUM"
-                || name_upper == "AVG"
-                || name_upper == "MIN"
-                || name_upper == "MAX"
-            {
-                return self.evaluate_aggregate_distinct(&name_upper, args, row_index);
+            // Check if it's an aggregate function in the registry
+            if self.aggregate_registry.is_aggregate(&name_upper) {
+                return self.evaluate_aggregate_with_distinct(&name_upper, args, row_index);
             } else {
                 return Err(anyhow!(
                     "DISTINCT can only be used with aggregate functions"
@@ -433,113 +428,96 @@ impl<'a> ArithmeticEvaluator<'a> {
         self.evaluate_function(name, args, row_index)
     }
 
-    fn evaluate_aggregate_distinct(
+    fn evaluate_aggregate_with_distinct(
         &mut self,
         name: &str,
         args: &[SqlExpression],
         _row_index: usize,
     ) -> Result<DataValue> {
-        use std::collections::HashSet;
+        let name_upper = name.to_uppercase();
 
-        if args.is_empty() {
-            return Err(anyhow!("{} DISTINCT requires at least one argument", name));
-        }
-
-        // Determine which rows to process
-        let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
-            visible.clone()
-        } else {
-            (0..self.table.rows.len()).collect()
-        };
-
-        // Collect unique values
-        let mut unique_values = HashSet::new();
-        let mut numeric_values = Vec::new();
-
-        for row_idx in &rows_to_process {
-            // Evaluate the expression for this row
-            let value = self.evaluate(&args[0], *row_idx)?;
-
-            // Skip NULL values
-            if matches!(value, DataValue::Null) {
-                continue;
-            }
-
-            // Convert to string for uniqueness check
-            let value_str = match &value {
-                DataValue::String(s) => s.clone(),
-                DataValue::InternedString(s) => s.to_string(),
-                DataValue::Integer(i) => i.to_string(),
-                DataValue::Float(f) => f.to_string(),
-                DataValue::Boolean(b) => b.to_string(),
-                DataValue::DateTime(dt) => dt.to_string(),
-                DataValue::Null => continue,
+        // Check aggregate registry (DISTINCT handling)
+        if self.aggregate_registry.get(&name_upper).is_some() {
+            // Determine which rows to process first
+            let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
+                visible.clone()
+            } else {
+                (0..self.table.rows.len()).collect()
             };
 
-            // Only process if we haven't seen this value before
-            if unique_values.insert(value_str) {
-                // For numeric aggregates, collect the numeric value
-                if name != "COUNT" {
-                    match value {
-                        DataValue::Integer(i) => numeric_values.push(i as f64),
-                        DataValue::Float(f) => numeric_values.push(f),
-                        _ => {} // Skip non-numeric for SUM/AVG
+            // Special handling for STRING_AGG with separator parameter
+            if name_upper == "STRING_AGG" && args.len() >= 2 {
+                // STRING_AGG(DISTINCT column, separator)
+                let mut state = crate::sql::aggregates::AggregateState::StringAgg(
+                    // Evaluate the separator (second argument) once
+                    if args.len() >= 2 {
+                        let separator = self.evaluate(&args[1], 0)?; // Separator doesn't depend on row
+                        match separator {
+                            DataValue::String(s) => crate::sql::aggregates::StringAggState::new(&s),
+                            DataValue::InternedString(s) => {
+                                crate::sql::aggregates::StringAggState::new(&s)
+                            }
+                            _ => crate::sql::aggregates::StringAggState::new(","), // Default separator
+                        }
+                    } else {
+                        crate::sql::aggregates::StringAggState::new(",")
+                    },
+                );
+
+                // Evaluate the first argument (column) for each row and accumulate
+                // Handle DISTINCT - use a HashSet to track seen values
+                let mut seen_values = HashSet::new();
+
+                for &row_idx in &rows_to_process {
+                    let value = self.evaluate(&args[0], row_idx)?;
+
+                    // Skip if we've seen this value
+                    if !seen_values.insert(value.clone()) {
+                        continue; // Skip duplicate values
                     }
+
+                    // Now get the aggregate function and accumulate
+                    let agg_func = self.aggregate_registry.get(&name_upper).unwrap();
+                    agg_func.accumulate(&mut state, &value)?;
+                }
+
+                // Finalize the aggregate
+                let agg_func = self.aggregate_registry.get(&name_upper).unwrap();
+                return Ok(agg_func.finalize(state));
+            }
+
+            // For other aggregates with DISTINCT
+            // Evaluate the argument expression for each row
+            let mut vals = Vec::new();
+            for &row_idx in &rows_to_process {
+                if !args.is_empty() {
+                    let value = self.evaluate(&args[0], row_idx)?;
+                    vals.push(value);
                 }
             }
+
+            // Deduplicate values for DISTINCT
+            let mut seen = HashSet::new();
+            let mut unique_values = Vec::new();
+            for value in vals {
+                if seen.insert(value.clone()) {
+                    unique_values.push(value);
+                }
+            }
+
+            // Now get the aggregate function and process
+            let agg_func = self.aggregate_registry.get(&name_upper).unwrap();
+            let mut state = agg_func.init();
+
+            // Use unique values
+            for value in &unique_values {
+                agg_func.accumulate(&mut state, value)?;
+            }
+
+            return Ok(agg_func.finalize(state));
         }
 
-        // Calculate the result based on the aggregate function
-        match name {
-            "COUNT" => Ok(DataValue::Integer(unique_values.len() as i64)),
-            "SUM" => {
-                if numeric_values.is_empty() {
-                    Ok(DataValue::Null)
-                } else {
-                    let sum: f64 = numeric_values.iter().sum();
-                    if sum.fract() == 0.0 && sum.abs() < 1e10 {
-                        Ok(DataValue::Integer(sum as i64))
-                    } else {
-                        Ok(DataValue::Float(sum))
-                    }
-                }
-            }
-            "AVG" => {
-                if numeric_values.is_empty() {
-                    Ok(DataValue::Null)
-                } else {
-                    let sum: f64 = numeric_values.iter().sum();
-                    Ok(DataValue::Float(sum / numeric_values.len() as f64))
-                }
-            }
-            "MIN" => {
-                if numeric_values.is_empty() {
-                    Ok(DataValue::Null)
-                } else {
-                    let min = numeric_values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-                    if min.fract() == 0.0 && min.abs() < 1e10 {
-                        Ok(DataValue::Integer(min as i64))
-                    } else {
-                        Ok(DataValue::Float(min))
-                    }
-                }
-            }
-            "MAX" => {
-                if numeric_values.is_empty() {
-                    Ok(DataValue::Null)
-                } else {
-                    let max = numeric_values
-                        .iter()
-                        .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-                    if max.fract() == 0.0 && max.abs() < 1e10 {
-                        Ok(DataValue::Integer(max as i64))
-                    } else {
-                        Ok(DataValue::Float(max))
-                    }
-                }
-            }
-            _ => Err(anyhow!("Unsupported DISTINCT aggregate: {}", name)),
-        }
+        Err(anyhow!("Unknown aggregate function: {}", name))
     }
 
     fn evaluate_function(
@@ -587,6 +565,38 @@ impl<'a> ArithmeticEvaluator<'a> {
                 (0..self.table.rows.len()).collect()
             };
 
+            // Special handling for STRING_AGG with separator parameter
+            if name_upper == "STRING_AGG" && args.len() >= 2 {
+                // STRING_AGG(column, separator) - without DISTINCT (handled separately)
+                let mut state = crate::sql::aggregates::AggregateState::StringAgg(
+                    // Evaluate the separator (second argument) once
+                    if args.len() >= 2 {
+                        let separator = self.evaluate(&args[1], 0)?; // Separator doesn't depend on row
+                        match separator {
+                            DataValue::String(s) => crate::sql::aggregates::StringAggState::new(&s),
+                            DataValue::InternedString(s) => {
+                                crate::sql::aggregates::StringAggState::new(&s)
+                            }
+                            _ => crate::sql::aggregates::StringAggState::new(","), // Default separator
+                        }
+                    } else {
+                        crate::sql::aggregates::StringAggState::new(",")
+                    },
+                );
+
+                // Evaluate the first argument (column) for each row and accumulate
+                for &row_idx in &rows_to_process {
+                    let value = self.evaluate(&args[0], row_idx)?;
+                    // Now get the aggregate function and accumulate
+                    let agg_func = self.aggregate_registry.get(&name_upper).unwrap();
+                    agg_func.accumulate(&mut state, &value)?;
+                }
+
+                // Finalize the aggregate
+                let agg_func = self.aggregate_registry.get(&name_upper).unwrap();
+                return Ok(agg_func.finalize(state));
+            }
+
             // Evaluate arguments first if needed (to avoid borrow issues)
             let values = if !args.is_empty()
                 && !(args.len() == 1 && matches!(&args[0], SqlExpression::Column(c) if c == "*"))
@@ -607,7 +617,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             let mut state = agg_func.init();
 
             if let Some(values) = values {
-                // Use evaluated values
+                // Use evaluated values (DISTINCT is handled in evaluate_aggregate_with_distinct)
                 for value in &values {
                     agg_func.accumulate(&mut state, value)?;
                 }
