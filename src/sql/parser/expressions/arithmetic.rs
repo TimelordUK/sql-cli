@@ -8,7 +8,7 @@ use tracing::debug;
 
 use super::{log_parse_decision, trace_parse_entry, trace_parse_exit};
 
-/// Parse an additive expression (+ and - operators)
+/// Parse an additive expression (+ and - operators, and || for string concatenation)
 /// This handles left-associative binary operators at the additive precedence level
 pub fn parse_additive<P>(parser: &mut P) -> Result<SqlExpression, String>
 where
@@ -18,10 +18,38 @@ where
 
     let mut left = parser.parse_multiplicative()?;
 
-    while matches!(parser.current_token(), Token::Plus | Token::Minus) {
+    while matches!(
+        parser.current_token(),
+        Token::Plus | Token::Minus | Token::Concat
+    ) {
         let op = match parser.current_token() {
             Token::Plus => "+",
             Token::Minus => "-",
+            Token::Concat => {
+                // Handle || as syntactic sugar for TEXTJOIN
+                log_parse_decision(
+                    "parse_additive",
+                    parser.current_token(),
+                    "String concatenation '||' found, converting to TEXTJOIN",
+                );
+
+                parser.advance();
+                let right = parser.parse_multiplicative()?;
+
+                // Convert left || right to TEXTJOIN('', 1, left, right)
+                // TEXTJOIN needs: delimiter, ignore_empty flag, then values
+                left = SqlExpression::FunctionCall {
+                    name: "TEXTJOIN".to_string(),
+                    args: vec![
+                        SqlExpression::StringLiteral("".to_string()), // Empty separator
+                        SqlExpression::NumberLiteral("1".to_string()), // ignore_empty = true
+                        left,
+                        right,
+                    ],
+                    distinct: false,
+                };
+                continue; // Process next operator if any
+            }
             _ => unreachable!(),
         };
 

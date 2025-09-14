@@ -18,7 +18,10 @@ WITH
         SELECT *, amount * quantity AS total_value
         FROM international_sales
     )
-SELECT product, total_value, RENDER_NUMBER(total_value, 'compact') AS compact_format
+SELECT
+    product,
+    total_value,
+    RENDER_NUMBER(total_value, 'compact') AS compact_format
 FROM valued_sales
 WHERE total_value > 10000
 ORDER BY total_value DESC
@@ -51,6 +54,10 @@ SELECT
 FROM international_sales
 GROUP BY region
 ORDER BY total_sales DESC;
+GO
+
+SELECT LPAD(value, 10, '.') AS pad_n
+FROM RANGE(1, 20);
 GO
 
 -- Using different decimal precision

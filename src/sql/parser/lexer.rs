@@ -73,6 +73,9 @@ pub enum Token {
     Divide,
     Modulo,
 
+    // String operators
+    Concat, // || for string concatenation
+
     // Special
     Eof,
 }
@@ -308,6 +311,11 @@ impl Lexer {
                 self.advance();
                 self.advance();
                 Token::NotEqual
+            }
+            Some('|') if self.peek(1) == Some('|') => {
+                self.advance();
+                self.advance();
+                Token::Concat
             }
             Some('"') => {
                 // Double quotes = identifier

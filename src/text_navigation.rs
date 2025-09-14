@@ -218,6 +218,7 @@ impl TextNavigator {
             Token::Minus => "-",
             Token::Divide => "/",
             Token::Modulo => "%",
+            Token::Concat => "||",
             Token::Join => "JOIN",
             Token::Inner => "INNER",
             Token::Left => "LEFT",
