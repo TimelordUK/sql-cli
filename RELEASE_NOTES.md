@@ -1,10 +1,10 @@
-# SQL CLI v1.46.1
+# SQL CLI v1.47.0
 
 **Release Date:** September 14, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 39
-- **Files updated:** 52
+- **Commits in this release:** 28
+- **Files updated:** 53
 
 ## ✨ Highlights
 
@@ -13,54 +13,42 @@
 ### 🔍 Enhanced Debugging
 - **Better Diagnostics**: Improved error messages and state dumps
 
-### 💾 Data Protection
-- **History Recovery**: Automatic recovery from corrupted files
-- **Atomic Writes**: Safer file operations to prevent data loss
-
 ## 📝 Changes by Category
+
+### 🚀 New Features
+- Add ASCII chart visualizations and date extraction functions (v1.47.0)
 
 <details>
 <summary>📋 View all commits</summary>
 
-- Release v1.46.0: Multi-table navigation and web data integration (TimelordUK)
-- Centralize multi-table navigation logic to fix state conflicts (TimelordUK)
-- Add comprehensive multi-table navigation system for SQL results (TimelordUK)
-- Add environment variable support for WEB CTE headers (TimelordUK)
-- Add TrimStart and TrimEnd string methods (TimelordUK)
-- Add qualified column name resolution for JOINs (TimelordUK)
-- Fix parser to handle qualified column names and multiple WEB CTEs (TimelordUK)
-- Add convenient string extraction functions (TimelordUK)
-- Add INSTR/IndexOf string functions and improve function registry (TimelordUK)
-- Add WEB CTE support for fetching data from HTTP/HTTPS endpoints (TimelordUK)
-- Refactor CSV/JSON loading to use stream-based approach (TimelordUK)
-- Add missing CLI help options and example writing guide (TimelordUK)
-- Add WEB CTE parser support for fetching data from URLs (TimelordUK)
-- Improve SQL formatter readability with better line breaking (TimelordUK)
-- Add accounting format for negative numbers in parentheses (TimelordUK)
-- Fix decimal number splitting in nvim output highlighting (TimelordUK)
-- Fix decimal number highlighting in nvim output buffer (TimelordUK)
-- Improve nvim plugin output buffer styling (TimelordUK)
-- Add demo data and examples for formatting functions (TimelordUK)
-- Add flexible RENDER_NUMBER and FORMAT_CURRENCY functions (TimelordUK)
-- Fix nvim plugin cursor and readonly buffer issues (TimelordUK)
-- Improve browser export for WSL users (TimelordUK)
-- Add global export keymaps with descriptions for which-key (TimelordUK)
-- Change export keymaps to use \s prefix to avoid conflicts (TimelordUK)
-- Add browser export option for Gmail/Teams compatibility (TimelordUK)
-- Add multiple export formats for query results (TimelordUK)
-- Fix table navigation parser for ASCII table format (TimelordUK)
-- Improve table navigation with status display and toggle command (TimelordUK)
-- Fix table navigation initialization and add features roadmap (TimelordUK)
-- Add Excel-like table navigation for query results (TimelordUK)
-- Fix open_data_file to use split instead of replacing buffer (TimelordUK)
-- Fix output window not showing when executing queries (TimelordUK)
-- Fix state parameter passing in all plugin modules (TimelordUK)
-- Fix state module to use proper object-oriented pattern (TimelordUK)
-- Fix nil state errors in Neovim plugin autocommands (TimelordUK)
-- Refactor Neovim plugin into modular architecture (TimelordUK)
-- Add window function formatting support to AST formatter (TimelordUK)
-- chemistry examples (TimelordUK)
-- Add recursive CTE implementation plan (TimelordUK)
+- feat: Add ASCII chart visualizations and date extraction functions (v1.47.0) (TimelordUK)
+- Fix chart buffer modifiable error (TimelordUK)
+- Add keybindings for instant chart visualization (TimelordUK)
+- Fix bar chart examples to use supported SQL functions (TimelordUK)
+- Add ASCII chart visualizations to nvim plugin (TimelordUK)
+- Fix critical aggregate query bug with string literals (TimelordUK)
+- Add comprehensive statistical analysis examples (TimelordUK)
+- Add PERCENTILE and MODE statistical functions (TimelordUK)
+- fix breaking queries (TimelordUK)
+- Implement MEDIAN, STDDEV, and VARIANCE statistical functions (TimelordUK)
+- Complete Aggregate Function Registry implementation (TimelordUK)
+- Create Aggregate Function Registry architecture (TimelordUK)
+- Add PERCENT_CHANGE window function (TimelordUK)
+- Add BOLLINGER_UPPER and BOLLINGER_LOWER window functions (TimelordUK)
+- Integrate Window Function Registry with parser and nvim (TimelordUK)
+- Design Window Function Registry architecture (TimelordUK)
+- Add STDDEV/VARIANCE window functions and update roadmap (TimelordUK)
+- Add window frame support (ROWS PRECEDING/FOLLOWING) (TimelordUK)
+- Fix stock_analysis.sql - remove unsupported window frame syntax (TimelordUK)
+- Add financial analysis functions and stock analysis examples (TimelordUK)
+- Add Stage 2 roadmap documentation (TimelordUK)
+- Add comprehensive date utility functions (TimelordUK)
+- Fix division by zero in professional_formatting.sql Example 7 (TimelordUK)
+- Add CHR function and fix professional_formatting.sql (TimelordUK)
+- Fix professional_formatting.sql to work without UNION ALL (TimelordUK)
+- Add || string concatenation operator as syntactic sugar for TEXTJOIN (TimelordUK)
+- Fix WEB CTE syntax documentation in README (TimelordUK)
+- Fix CTE subquery resolution to enable true pipeline composability (TimelordUK)
 
 </details>
 
