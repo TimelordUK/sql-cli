@@ -94,13 +94,22 @@ GO
 -- === SEARCH & REPLACE ===
 
 -- CONTAINS, STARTSWITH, ENDSWITH
+-- Expressions in WHERE need to be computed in CTE first
+WITH product_checks AS (
+    SELECT
+        product,
+        CONTAINS(product, 'Phone') AS has_phone,
+        STARTSWITH(product, 'Tab') AS starts_tab,
+        ENDSWITH(product, 'et') AS ends_et
+    FROM international_sales
+)
 SELECT
     product,
-    CONTAINS(product, 'Phone') AS has_phone,
-    STARTSWITH(product, 'Smart') AS starts_smart,
-    ENDSWITH(product, 'Pro') AS ends_pro
-FROM international_sales
-WHERE CONTAINS(UPPER(product), 'PHONE')
+    has_phone,
+    starts_tab,
+    ends_et
+FROM product_checks
+WHERE has_phone = true
 LIMIT 5;
 GO
 
