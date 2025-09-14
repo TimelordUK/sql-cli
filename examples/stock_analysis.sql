@@ -71,6 +71,21 @@ LIMIT 30;
 GO
 
 -- ============================================
+-- Example 5b: Same moving averages using syntactic sugar (MOVING_AVG)
+-- This is much cleaner and easier to read!
+-- ============================================
+SELECT
+    date,
+    close,
+    RENDER_NUMBER(MOVING_AVG(close, 5) OVER (ORDER BY date), 'standard', 2) as ma_5day,
+    RENDER_NUMBER(MOVING_AVG(close, 10) OVER (ORDER BY date), 'standard', 2) as ma_10day,
+    RENDER_NUMBER(MOVING_AVG(close, 20) OVER (ORDER BY date), 'standard', 2) as ma_20day
+FROM AAPL_data
+ORDER BY date
+LIMIT 30;
+GO
+
+-- ============================================
 -- Example 6: Calculate rolling min/max (support and resistance levels)
 -- Using window frames to find local highs and lows
 -- ============================================
@@ -106,6 +121,20 @@ SELECT
     RENDER_NUMBER(AVG(returns) OVER (ORDER BY date) * 100, 'standard', 4) || '%' as avg_return_to_date
 FROM returns_data
 WHERE returns IS NOT NULL
+ORDER BY date
+LIMIT 30;
+GO
+
+-- ============================================
+-- Example 7b: Cumulative statistics using syntactic sugar
+-- CUMULATIVE_SUM and CUMULATIVE_AVG simplify running totals
+-- ============================================
+SELECT
+    date,
+    volume,
+    CUMULATIVE_SUM(volume) OVER (ORDER BY date) as cumul_volume,
+    RENDER_NUMBER(CUMULATIVE_AVG(close) OVER (ORDER BY date), 'standard', 2) as avg_price_to_date
+FROM AAPL_data
 ORDER BY date
 LIMIT 30;
 GO
@@ -234,6 +263,36 @@ LIMIT 20;
 GO
 
 -- ============================================
+-- Example 11c: Bollinger Bands using syntactic sugar
+-- Much cleaner with MOVING_AVG and ROLLING_STDDEV!
+-- ============================================
+WITH price_stats AS (
+    SELECT
+        date,
+        close,
+        MOVING_AVG(close, 20) OVER (ORDER BY date) as ma_20,
+        ROLLING_STDDEV(close, 20) OVER (ORDER BY date) as stddev_20
+    FROM AAPL_data
+)
+SELECT
+    date,
+    RENDER_NUMBER(close, 'standard', 2) as price,
+    RENDER_NUMBER(ma_20, 'standard', 2) as middle_band,
+    RENDER_NUMBER(ma_20 - 2 * stddev_20, 'standard', 2) as lower_band,
+    RENDER_NUMBER(ma_20 + 2 * stddev_20, 'standard', 2) as upper_band,
+    RENDER_NUMBER(stddev_20, 'standard', 4) as volatility,
+    CASE
+        WHEN close < ma_20 - 2 * stddev_20 THEN 'OVERSOLD'
+        WHEN close > ma_20 + 2 * stddev_20 THEN 'OVERBOUGHT'
+        ELSE 'NEUTRAL'
+    END as signal
+FROM price_stats
+WHERE date >= '2013-04-01'
+ORDER BY date
+LIMIT 20;
+GO
+
+-- ============================================
 -- Example 11b: Z-Score calculation
 -- How many standard deviations from the mean
 -- ============================================
@@ -257,6 +316,26 @@ SELECT
     END as deviation_level
 FROM stats
 WHERE date >= '2013-04-01' AND stddev_20 > 0
+ORDER BY date
+LIMIT 20;
+GO
+
+-- ============================================
+-- Example 11d: Z-Score using syntactic sugar (Z_SCORE function)
+-- Much simpler than calculating manually!
+-- ============================================
+SELECT
+    date,
+    close,
+    RENDER_NUMBER(Z_SCORE(close, 20) OVER (ORDER BY date), 'standard', 2) as z_score,
+    CASE
+        WHEN ABS(Z_SCORE(close, 20) OVER (ORDER BY date)) > 3 THEN 'EXTREME'
+        WHEN ABS(Z_SCORE(close, 20) OVER (ORDER BY date)) > 2 THEN 'SIGNIFICANT'
+        WHEN ABS(Z_SCORE(close, 20) OVER (ORDER BY date)) > 1 THEN 'NOTABLE'
+        ELSE 'NORMAL'
+    END as deviation_level
+FROM AAPL_data
+WHERE date >= '2013-04-01'
 ORDER BY date
 LIMIT 20;
 GO

@@ -7,6 +7,7 @@ use crate::sql::functions::FunctionRegistry;
 use crate::sql::parser::ast::WindowSpec;
 use crate::sql::recursive_parser::SqlExpression;
 use crate::sql::window_context::WindowContext;
+use crate::sql::window_functions::{ExpressionEvaluator, WindowFunctionRegistry};
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,6 +20,7 @@ pub struct ArithmeticEvaluator<'a> {
     date_notation: String,
     function_registry: Arc<FunctionRegistry>,
     aggregate_registry: Arc<AggregateRegistry>,
+    window_function_registry: Arc<WindowFunctionRegistry>,
     visible_rows: Option<Vec<usize>>, // For aggregate functions on filtered views
     window_contexts: HashMap<String, Arc<WindowContext>>, // Cache window contexts by spec
     table_aliases: HashMap<String, String>, // Map alias -> table name for qualified columns
@@ -32,6 +34,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             date_notation: get_date_notation(),
             function_registry: Arc::new(FunctionRegistry::new()),
             aggregate_registry: Arc::new(AggregateRegistry::new()),
+            window_function_registry: Arc::new(WindowFunctionRegistry::new()),
             visible_rows: None,
             window_contexts: HashMap::new(),
             table_aliases: HashMap::new(),
@@ -45,6 +48,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             date_notation,
             function_registry: Arc::new(FunctionRegistry::new()),
             aggregate_registry: Arc::new(AggregateRegistry::new()),
+            window_function_registry: Arc::new(WindowFunctionRegistry::new()),
             visible_rows: None,
             window_contexts: HashMap::new(),
             table_aliases: HashMap::new(),
@@ -76,6 +80,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             date_notation,
             function_registry,
             aggregate_registry: Arc::new(AggregateRegistry::new()),
+            window_function_registry: Arc::new(WindowFunctionRegistry::new()),
             visible_rows: None,
             window_contexts: HashMap::new(),
             table_aliases: HashMap::new(),
@@ -669,8 +674,52 @@ impl<'a> ArithmeticEvaluator<'a> {
         spec: &WindowSpec,
         row_index: usize,
     ) -> Result<DataValue> {
-        let context = self.get_or_create_window_context(spec)?;
         let name_upper = name.to_uppercase();
+
+        // First check if this is a syntactic sugar function in the registry
+        debug!("Looking for window function {} in registry", name_upper);
+        if let Some(window_fn_arc) = self.window_function_registry.get(&name_upper) {
+            debug!("Found window function {} in registry", name_upper);
+
+            // Dereference to get the actual window function
+            let window_fn = window_fn_arc.as_ref();
+
+            // Validate arguments
+            window_fn.validate_args(args)?;
+
+            // Transform the window spec based on the function's requirements
+            let transformed_spec = window_fn.transform_window_spec(spec, args)?;
+
+            // Get or create the window context with the transformed spec
+            let context = self.get_or_create_window_context(&transformed_spec)?;
+
+            // Create an expression evaluator adapter
+            struct EvaluatorAdapter<'a, 'b> {
+                evaluator: &'a mut ArithmeticEvaluator<'b>,
+                row_index: usize,
+            }
+
+            impl<'a, 'b> ExpressionEvaluator for EvaluatorAdapter<'a, 'b> {
+                fn evaluate(
+                    &mut self,
+                    expr: &SqlExpression,
+                    _row_index: usize,
+                ) -> Result<DataValue> {
+                    self.evaluator.evaluate(expr, self.row_index)
+                }
+            }
+
+            let mut adapter = EvaluatorAdapter {
+                evaluator: self,
+                row_index,
+            };
+
+            // Call the window function's compute method
+            return window_fn.compute(&context, row_index, args, &mut adapter);
+        }
+
+        // Fall back to built-in window functions
+        let context = self.get_or_create_window_context(spec)?;
 
         match name_upper.as_str() {
             "LAG" => {

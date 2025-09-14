@@ -329,7 +329,24 @@ fn main() -> io::Result<()> {
     // Check for function documentation flags
     if args.contains(&"--list-functions".to_string()) {
         let registry = sql_cli::sql::functions::FunctionRegistry::new();
+        let window_registry = sql_cli::sql::window_functions::WindowFunctionRegistry::new();
+
         println!("{}", registry.list_functions());
+
+        // Add window functions to the listing
+        println!("Window Functions (Syntactic Sugar):");
+        for func_name in window_registry.list_functions() {
+            if let Some(func) = window_registry.get(&func_name) {
+                println!(
+                    "  {:20} - {}",
+                    format!("{}() OVER", func.name()),
+                    func.description()
+                );
+            }
+        }
+        println!("\nNote: Window functions require an OVER clause with ORDER BY");
+        println!("Example: MOVING_AVG(column, 20) OVER (ORDER BY date)");
+
         return Ok(());
     }
 
@@ -339,8 +356,22 @@ fn main() -> io::Result<()> {
             if let Some(help) = registry.generate_function_help(func_name) {
                 println!("{help}");
             } else {
-                eprintln!("Function '{func_name}' not found");
-                eprintln!("\nUse --list-functions to see all available functions");
+                // Check window function registry
+                let window_registry = sql_cli::sql::window_functions::WindowFunctionRegistry::new();
+                let func_name_upper = func_name.to_uppercase();
+                if let Some(func) = window_registry.get(&func_name_upper) {
+                    println!("Window Function: {}\n", func.name());
+                    println!("Description: {}\n", func.description());
+                    println!("Signature: {}\n", func.signature());
+                    println!("Usage: Requires OVER clause with ORDER BY");
+                    println!("\nExample:");
+                    println!("  SELECT date, close,");
+                    println!("    {} OVER (ORDER BY date) as result", func.signature());
+                    println!("  FROM table_name");
+                } else {
+                    eprintln!("Function '{func_name}' not found");
+                    eprintln!("\nUse --list-functions to see all available functions");
+                }
             }
         } else {
             eprintln!("Error: --function-help requires a function name");
