@@ -184,7 +184,8 @@ SELECT
 GO
 
 
-SELECT * from SPLIT('123','45.67','abc','2024-01-15','true','NULL');
+SELECT *
+FROM SPLIT('123 45.67 abc 2024-01-15 true NULL');
 GO
 
 -- === TYPE CHECKING ===
@@ -397,10 +398,11 @@ FROM international_sales
 LIMIT 10;
 GO
 
--- Extract and validate email parts
-WITH emails AS (
-  select value as email from SPLIT('john.doe@example.com jane@company.co.uk admin@localhost invalid-email')
-)
+WITH
+    emails AS (
+        SELECT value AS email
+        FROM SPLIT('john.doe@example.com jane@company.co.uk admin@localhost invalid-email')
+    )
 SELECT
     email,
     CONTAINS(email, '@') AS is_valid,
@@ -429,21 +431,18 @@ GO
 -- ORDER BY distance;
 GO
 
--- Generate product codes
--- Window function in CTE for proper evaluation
-WITH numbered_products AS (
-    SELECT
-        product,
-        currency,
-        ROW_NUMBER() OVER (ORDER BY product) AS row_num
-    FROM international_sales
-)
+WITH
+    numbered_products AS (
+        SELECT
+            product,
+            currency,
+            ROW_NUMBER() OVER (ORDER BY product ASC) AS row_num
+        FROM international_sales
+    )
 SELECT
     product,
-    UPPER(LEFT(product, 3)) || '-' ||
-    LPAD(row_num, 4, '0') || '-' ||
-    LEFT(MD5(product), 6) AS product_code,
-    LEFT(SHA256(product || currency), 8) AS sku_hash
+    TEXTJOIN('', 1, TEXTJOIN('', 1, TEXTJOIN('', 1, TEXTJOIN('', 1, UPPER(LEFT(product, 3)), '-'), LPAD(row_num, 4, '0')), '-'), LEFT(MD5(product), 6)) AS product_code,
+    LEFT(SHA256(TEXTJOIN('', 1, product, currency)), 8) AS sku_hash
 FROM numbered_products
 LIMIT 10;
 GO
