@@ -147,29 +147,29 @@ impl Parser {
     fn parse_with_clause(&mut self) -> Result<SelectStatement, String> {
         self.consume(Token::With)?;
 
-        // Check for WEB keyword
-        let is_web = if let Token::Identifier(id) = &self.current_token {
-            if id.to_uppercase() == "WEB" {
-                self.advance();
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
         let mut ctes = Vec::new();
 
         // Parse CTEs
         loop {
+            // Check for WEB keyword for each CTE (can be different for each one)
+            let is_web = if let Token::Identifier(id) = &self.current_token {
+                if id.to_uppercase() == "WEB" {
+                    self.advance();
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
             // Parse CTE name
             let name = match &self.current_token {
                 Token::Identifier(name) => name.clone(),
                 _ => {
                     return Err(format!(
-                        "Expected CTE name after WITH{}",
-                        if is_web { " WEB" } else { "" }
+                        "Expected CTE name after {}",
+                        if is_web { "WEB" } else { "WITH or comma" }
                     ))
                 }
             };
@@ -353,26 +353,26 @@ impl Parser {
     fn parse_with_clause_inner(&mut self) -> Result<SelectStatement, String> {
         self.consume(Token::With)?;
 
-        // Check for WEB keyword
-        let is_web = if let Token::Identifier(id) = &self.current_token {
-            if id.to_uppercase() == "WEB" {
-                self.advance();
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
         let mut ctes = Vec::new();
 
         // Parse CTEs
         loop {
+            // Check for WEB keyword for each CTE (can be different for each one)
+            let is_web = if let Token::Identifier(id) = &self.current_token {
+                if id.to_uppercase() == "WEB" {
+                    self.advance();
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
             // Parse CTE name
             let name = match &self.current_token {
                 Token::Identifier(name) => name.clone(),
-                _ => return Err("Expected CTE name after WITH".to_string()),
+                _ => return Err("Expected CTE name after WITH or comma".to_string()),
             };
             self.advance();
 

@@ -59,21 +59,22 @@ where
 
     let mut left = parser.parse_primary()?;
 
-    // Handle method calls on the primary expression
+    // Handle method calls and qualified column names
     // Method calls have the same precedence as multiplication
     while matches!(parser.current_token(), Token::Dot) {
-        debug!("Found dot operator, parsing method call");
+        debug!("Found dot operator");
         parser.advance();
 
-        if let Token::Identifier(method) = parser.current_token() {
-            let method_name = method.clone();
+        if let Token::Identifier(name) = parser.current_token() {
+            let name_str = name.clone();
             parser.advance();
 
             if matches!(parser.current_token(), Token::LeftParen) {
+                // This is a method call
                 log_parse_decision(
                     "parse_multiplicative",
                     parser.current_token(),
-                    &format!("Method call '{}' detected", method_name),
+                    &format!("Method call '{}' detected", name_str),
                 );
 
                 parser.advance();
@@ -86,45 +87,62 @@ where
                         // First method call on a column
                         debug!(
                             column = %obj,
-                            method = %method_name,
+                            method = %name_str,
                             "Creating method call on column"
                         );
                         SqlExpression::MethodCall {
                             object: obj,
-                            method: method_name,
+                            method: name_str,
                             args,
                         }
                     }
                     SqlExpression::MethodCall { .. } | SqlExpression::ChainedMethodCall { .. } => {
                         // Chained method call on a previous method call
                         debug!(
-                            method = %method_name,
+                            method = %name_str,
                             "Creating chained method call"
                         );
                         SqlExpression::ChainedMethodCall {
                             base: Box::new(left),
-                            method: method_name,
+                            method: name_str,
                             args,
                         }
                     }
                     _ => {
                         // Method call on any other expression
                         debug!(
-                            method = %method_name,
+                            method = %name_str,
                             "Creating method call on expression"
                         );
                         SqlExpression::ChainedMethodCall {
                             base: Box::new(left),
-                            method: method_name,
+                            method: name_str,
                             args,
                         }
                     }
                 };
             } else {
-                return Err(format!("Expected '(' after method name '{method_name}'"));
+                // This is a qualified column name (table.column or alias.column)
+                // Combine the left expression with the column name
+                left = match left {
+                    SqlExpression::Column(table_or_alias) => {
+                        debug!(
+                            table = %table_or_alias,
+                            column = %name_str,
+                            "Creating qualified column reference"
+                        );
+                        SqlExpression::Column(format!("{}.{}", table_or_alias, name_str))
+                    }
+                    _ => {
+                        // If left is not a simple column, this is an error
+                        return Err(format!(
+                            "Invalid qualified column reference with expression"
+                        ));
+                    }
+                };
             }
         } else {
-            return Err("Expected method name after '.'".to_string());
+            return Err("Expected identifier after '.'".to_string());
         }
     }
 
