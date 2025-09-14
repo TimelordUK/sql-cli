@@ -577,6 +577,64 @@ impl WindowContext {
         Some(DataValue::Float(sum / count as f64))
     }
 
+    /// Calculate standard deviation within the window frame (sample stddev)
+    pub fn get_frame_stddev(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let variance = self.get_frame_variance(row_index, column)?;
+        match variance {
+            DataValue::Float(v) => Some(DataValue::Float(v.sqrt())),
+            DataValue::Null => Some(DataValue::Null),
+            _ => Some(DataValue::Null),
+        }
+    }
+
+    /// Calculate variance within the window frame (sample variance with n-1)
+    pub fn get_frame_variance(&self, row_index: usize, column: &str) -> Option<DataValue> {
+        let frame_rows = self.get_frame_rows(row_index);
+        if frame_rows.is_empty() {
+            return Some(DataValue::Null);
+        }
+
+        let source_table = self.source.source();
+        let col_idx = source_table.get_column_index(column)?;
+
+        let mut values = Vec::new();
+
+        // Collect all non-null values in the frame
+        for &row_idx in &frame_rows {
+            if let Some(value) = source_table.get_value(row_idx, col_idx) {
+                match value {
+                    DataValue::Integer(i) => values.push(*i as f64),
+                    DataValue::Float(f) => values.push(*f),
+                    DataValue::Null => {
+                        // Skip NULL values
+                    }
+                    _ => {
+                        // Non-numeric values - return NULL
+                        return Some(DataValue::Null);
+                    }
+                }
+            }
+        }
+
+        if values.is_empty() {
+            return Some(DataValue::Null);
+        }
+
+        if values.len() == 1 {
+            // Variance of single value is 0
+            return Some(DataValue::Float(0.0));
+        }
+
+        // Calculate mean
+        let mean = values.iter().sum::<f64>() / values.len() as f64;
+
+        // Calculate sample variance (n-1 denominator)
+        let variance =
+            values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (values.len() - 1) as f64;
+
+        Some(DataValue::Float(variance))
+    }
+
     /// Calculate sum of a column over the partition containing the given row
     pub fn get_partition_sum(&self, row_index: usize, column: &str) -> Option<DataValue> {
         let partition_key = self.row_to_partition.get(&row_index)?;

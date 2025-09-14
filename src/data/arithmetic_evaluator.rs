@@ -812,6 +812,36 @@ impl<'a> ArithmeticEvaluator<'a> {
                     .get_frame_avg(row_index, &column)
                     .unwrap_or(DataValue::Null))
             }
+            "STDDEV" | "STDEV" => {
+                // STDDEV(column) OVER (PARTITION BY ... ROWS n PRECEDING)
+                if args.is_empty() {
+                    return Err(anyhow!("STDDEV requires 1 argument"));
+                }
+
+                let column = match &args[0] {
+                    SqlExpression::Column(col) => col.clone(),
+                    _ => return Err(anyhow!("STDDEV argument must be a column")),
+                };
+
+                Ok(context
+                    .get_frame_stddev(row_index, &column)
+                    .unwrap_or(DataValue::Null))
+            }
+            "VARIANCE" | "VAR" => {
+                // VARIANCE(column) OVER (PARTITION BY ... ROWS n PRECEDING)
+                if args.is_empty() {
+                    return Err(anyhow!("VARIANCE requires 1 argument"));
+                }
+
+                let column = match &args[0] {
+                    SqlExpression::Column(col) => col.clone(),
+                    _ => return Err(anyhow!("VARIANCE argument must be a column")),
+                };
+
+                Ok(context
+                    .get_frame_variance(row_index, &column)
+                    .unwrap_or(DataValue::Null))
+            }
             "MIN" => {
                 // MIN(column) OVER (PARTITION BY ... ROWS n PRECEDING)
                 if args.is_empty() {

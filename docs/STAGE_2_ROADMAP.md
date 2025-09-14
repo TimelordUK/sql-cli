@@ -9,14 +9,16 @@ We have successfully built the foundational architecture:
 - **TUI**: Vim-like interface with advanced navigation
 - **Neovim Integration**: Full plugin with function help, formatting
 - **Professional Output**: Formatting functions for reports
+- **Window Frame Support**: Full ROWS/RANGE PRECEDING/FOLLOWING with BETWEEN syntax
+- **Window Aggregates**: MIN/MAX/AVG/SUM/COUNT with frame awareness
 
 ## Stage 2: Data Analysis Power Tools
 
 ### 🎯 Priority 1: Statistical & Financial Functions
 
 #### Basic Statistics
-- [ ] `STDDEV(column)` - Standard deviation
-- [ ] `VARIANCE(column)` - Variance
+- [ ] `STDDEV(column)` - Standard deviation (as aggregate and window function)
+- [ ] `VARIANCE(column)` - Variance (as aggregate and window function)
 - [ ] `MEDIAN(column)` - Median value
 - [ ] `PERCENTILE(column, n)` - Nth percentile
 - [ ] `MODE(column)` - Most frequent value
@@ -24,15 +26,15 @@ We have successfully built the foundational architecture:
 - [ ] `COVAR(col1, col2)` - Covariance
 
 #### Financial/Trading Analytics
-- [ ] `RETURNS(price_column)` - Calculate returns from prices
-- [ ] `NORM_RETURNS(price_column)` - Normalized returns from initial value
-- [ ] `VOLATILITY(returns, window)` - Rolling volatility (standard deviation)
+- [x] `RETURNS(current, previous)` - Calculate simple returns ✅
+- [x] `LOG_RETURNS(current, previous)` - Logarithmic returns ✅
+- [x] `VOLATILITY(...)` - Volatility calculation ✅
+- [x] `SHARPE_RATIO(mean, rf, vol)` - Sharpe ratio ✅
 - [ ] `BOLLINGER_UPPER(price, window, num_std)` - Upper Bollinger Band
 - [ ] `BOLLINGER_LOWER(price, window, num_std)` - Lower Bollinger Band
-- [ ] `SMA(column, window)` - Simple Moving Average (already have?)
 - [ ] `EMA(column, window)` - Exponential Moving Average
 - [ ] `RSI(price, period)` - Relative Strength Index
-- [ ] `SHARPE(returns, risk_free_rate)` - Sharpe ratio
+- [ ] `BETA(returns, market_returns)` - Beta coefficient
 
 Example usage:
 ```sql
@@ -47,15 +49,35 @@ WITH price_data AS (
 SELECT * FROM price_data WHERE close_price > bb_upper;  -- Breakout detection
 ```
 
-### 🎯 Priority 2: Enhanced Window Functions
+### 🎯 Priority 2: Window Function Registry & Syntactic Sugar
 
-- [ ] `LEAD(column, n)` - Access next row's value
-- [ ] `LAG(column, n)` - Access previous row's value
-- [ ] `FIRST_VALUE(column)` - First value in window
-- [ ] `LAST_VALUE(column)` - Last value in window
+#### Core Window Functions (Completed ✅)
+- [x] `LAG(column, n)` - Access previous row's value ✅
+- [x] `LEAD(column, n)` - Access next row's value ✅
+- [x] `FIRST_VALUE(column)` - First value in window ✅
+- [x] `LAST_VALUE(column)` - Last value in window ✅
+- [x] `ROW_NUMBER()` - Row number in partition ✅
+- [x] Window frames: `ROWS n PRECEDING/FOLLOWING` ✅
+- [x] `BETWEEN...AND` syntax ✅
+- [x] `UNBOUNDED PRECEDING/FOLLOWING` ✅
+
+#### Planned Window Functions
+- [ ] `RANK()` - Ranking with gaps
+- [ ] `DENSE_RANK()` - Ranking without gaps
 - [ ] `NTH_VALUE(column, n)` - Nth value in window
 - [ ] `PERCENT_RANK()` - Percentile ranking
 - [ ] `CUME_DIST()` - Cumulative distribution
+- [ ] `NTILE(n)` - Divide into n buckets
+
+#### Window Function Registry Architecture
+- [ ] **Decouple from engine**: Move all window logic to specialized registry
+- [ ] **Syntactic sugar functions**: Simplify complex patterns
+  - `MOVING_AVG(col, 20)` → `AVG(col) OVER (ORDER BY date ROWS 19 PRECEDING)`
+  - `CUMULATIVE_SUM(col)` → `SUM(col) OVER (ORDER BY date ROWS UNBOUNDED PRECEDING)`
+  - `ROLLING_STDDEV(col, 30)` → `STDDEV(col) OVER (ORDER BY date ROWS 29 PRECEDING)`
+- [ ] **GPU offloading**: Parallel computation for large windows
+- [ ] **Multi-threading**: Process partitions in parallel
+- [ ] **Lazy evaluation**: Compute only requested rows
 
 ### 🎯 Priority 3: Better Error Messages
 
@@ -134,8 +156,11 @@ Since Lua is more flexible for this, implement in nvim plugin:
 ## Design Principles
 
 - **Maintain extensibility**: All new functions through registry
+- **Window Function Registry**: Separate registry for window-specific logic
+- **Syntactic Sugar**: Make complex patterns accessible via helper functions
 - **Keep core simple**: Complex features via plugins/extensions
 - **Prioritize composability**: Functions should work together
+- **Performance at Scale**: GPU/multi-threading for heavy computations
 - **Fast iteration**: Use Lua for prototyping when possible
 - **User-driven**: Build what traders/analysts actually need
 
