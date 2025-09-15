@@ -278,6 +278,31 @@ pub fn format_expression_ast(expr: &SqlExpression) -> String {
             result.push_str(" }");
             result
         }
+        SqlExpression::SimpleCaseExpression {
+            expr,
+            when_branches,
+            else_branch,
+        } => {
+            let mut result = format!(
+                "SimpleCaseExpression {{ expr: {}, when_branches: [",
+                format_expression_ast(expr)
+            );
+            for branch in when_branches {
+                result.push_str(&format!(
+                    " {{ value: {}, result: {} }},",
+                    format_expression_ast(&branch.value),
+                    format_expression_ast(&branch.result)
+                ));
+            }
+            result.push_str("], else_branch: ");
+            if let Some(else_expr) = else_branch {
+                result.push_str(&format_expression_ast(else_expr));
+            } else {
+                result.push_str("None");
+            }
+            result.push_str(" }");
+            result
+        }
         SqlExpression::ScalarSubquery { query: _ } => {
             format!("ScalarSubquery {{ query: <SelectStatement> }}")
         }
@@ -762,6 +787,11 @@ pub fn format_expression(expr: &SqlExpression) -> String {
             when_branches,
             else_branch,
         } => format_case_expression(when_branches, else_branch.as_ref().map(|v| &**v)),
+        SqlExpression::SimpleCaseExpression {
+            expr,
+            when_branches,
+            else_branch,
+        } => format_simple_case_expression(expr, when_branches, else_branch.as_ref().map(|v| &**v)),
         SqlExpression::ScalarSubquery { query: _ } => {
             // For now, just format as a placeholder - proper SQL formatting would need the full query
             "(SELECT ...)".to_string()
@@ -840,6 +870,53 @@ fn format_case_expression(
             result.push_str(&format!(
                 "\n        WHEN {} THEN {}",
                 format_expression(&branch.condition),
+                format_expression(&branch.result)
+            ));
+        }
+        if let Some(else_expr) = else_branch {
+            result.push_str(&format!("\n        ELSE {}", format_expression(else_expr)));
+        }
+        result.push_str("\n    END");
+        result
+    }
+}
+
+// Format simple CASE expressions (CASE expr WHEN val1 THEN result1 ...)
+fn format_simple_case_expression(
+    expr: &SqlExpression,
+    when_branches: &[crate::sql::parser::ast::SimpleWhenBranch],
+    else_branch: Option<&SqlExpression>,
+) -> String {
+    // Check if the CASE expression is simple enough for single line
+    let is_simple = when_branches.len() <= 2
+        && expr_is_simple(expr)
+        && when_branches
+            .iter()
+            .all(|b| expr_is_simple(&b.value) && expr_is_simple(&b.result))
+        && else_branch.map_or(true, expr_is_simple);
+
+    if is_simple {
+        // Single line format for simple cases
+        let mut result = format!("CASE {}", format_expression(expr));
+        for branch in when_branches {
+            result.push_str(&format!(
+                " WHEN {} THEN {}",
+                format_expression(&branch.value),
+                format_expression(&branch.result)
+            ));
+        }
+        if let Some(else_expr) = else_branch {
+            result.push_str(&format!(" ELSE {}", format_expression(else_expr)));
+        }
+        result.push_str(" END");
+        result
+    } else {
+        // Multi-line format for complex cases
+        let mut result = format!("CASE {}", format_expression(expr));
+        for branch in when_branches {
+            result.push_str(&format!(
+                "\n        WHEN {} THEN {}",
+                format_expression(&branch.value),
                 format_expression(&branch.result)
             ));
         }

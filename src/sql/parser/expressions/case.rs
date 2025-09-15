@@ -1,7 +1,7 @@
 // CASE expression parsing
 // Handles CASE/WHEN/THEN/ELSE/END expressions for conditional logic
 
-use crate::sql::parser::ast::{SqlExpression, WhenBranch};
+use crate::sql::parser::ast::{SimpleWhenBranch, SqlExpression, WhenBranch};
 use crate::sql::parser::lexer::Token;
 use tracing::debug;
 
@@ -22,11 +22,16 @@ where
 
     // Check for simple CASE (CASE expr WHEN value1 THEN ...)
     // vs searched CASE (CASE WHEN condition1 THEN ...)
-    // For now, we only support searched CASE
+
+    // If the next token is not WHEN, we have a simple CASE
+    if !matches!(parser.current_token(), Token::When) {
+        debug!("Detected simple CASE syntax");
+        return parse_simple_case_expression(parser);
+    }
 
     let mut when_branches = Vec::new();
 
-    // Parse WHEN clauses
+    // Parse WHEN clauses for searched CASE
     while matches!(parser.current_token(), Token::When) {
         log_parse_decision(
             "parse_case_expression",
@@ -95,6 +100,93 @@ where
     });
 
     trace_parse_exit("parse_case_expression", &result);
+    result
+}
+
+/// Parse a simple CASE expression
+/// CASE expr WHEN value1 THEN result1 [WHEN value2 THEN result2 ...] [ELSE result] END
+fn parse_simple_case_expression<P>(parser: &mut P) -> Result<SqlExpression, String>
+where
+    P: ParseCase + ?Sized,
+{
+    trace_parse_entry("parse_simple_case_expression", parser.current_token());
+
+    // Parse the expression that will be compared
+    debug!("Parsing CASE expression value");
+    let expr = parser.parse_expression()?;
+
+    let mut when_branches = Vec::new();
+
+    // Parse WHEN clauses
+    while matches!(parser.current_token(), Token::When) {
+        log_parse_decision(
+            "parse_simple_case_expression",
+            parser.current_token(),
+            "WHEN clause found, parsing value and result",
+        );
+
+        parser.advance(); // consume WHEN
+
+        // Parse the value to compare against
+        debug!("Parsing WHEN value");
+        let value = parser.parse_expression()?;
+
+        // Expect THEN
+        parser.consume(Token::Then)?;
+
+        // Parse the result expression
+        debug!("Parsing THEN result");
+        let result = parser.parse_expression()?;
+
+        when_branches.push(SimpleWhenBranch {
+            value: Box::new(value),
+            result: Box::new(result),
+        });
+
+        debug!("Added simple WHEN branch #{}", when_branches.len());
+    }
+
+    // Check for at least one WHEN clause
+    if when_branches.is_empty() {
+        return Err("Simple CASE expression must have at least one WHEN clause".to_string());
+    }
+
+    // Parse optional ELSE clause
+    let else_branch = if matches!(parser.current_token(), Token::Else) {
+        log_parse_decision(
+            "parse_simple_case_expression",
+            parser.current_token(),
+            "ELSE clause found, parsing default result",
+        );
+
+        parser.advance(); // consume ELSE
+        debug!("Parsing ELSE branch");
+        Some(Box::new(parser.parse_expression()?))
+    } else {
+        debug!("No ELSE branch");
+        None
+    };
+
+    // Expect END keyword
+    parser.consume(Token::End)?;
+
+    debug!(
+        "Completed simple CASE expression with {} WHEN branches{}",
+        when_branches.len(),
+        if else_branch.is_some() {
+            " and ELSE"
+        } else {
+            ""
+        }
+    );
+
+    let result = Ok(SqlExpression::SimpleCaseExpression {
+        expr: Box::new(expr),
+        when_branches,
+        else_branch,
+    });
+
+    trace_parse_exit("parse_simple_case_expression", &result);
     result
 }
 

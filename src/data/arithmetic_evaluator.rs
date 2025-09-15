@@ -157,6 +157,11 @@ impl<'a> ArithmeticEvaluator<'a> {
                 when_branches,
                 else_branch,
             } => self.evaluate_case_expression(when_branches, else_branch, row_index),
+            SqlExpression::SimpleCaseExpression {
+                expr,
+                when_branches,
+                else_branch,
+            } => self.evaluate_simple_case_expression(expr, when_branches, else_branch, row_index),
             _ => Err(anyhow!(
                 "Unsupported expression type for arithmetic evaluation: {:?}",
                 expr
@@ -1154,6 +1159,66 @@ impl<'a> ArithmeticEvaluator<'a> {
         } else {
             debug!("CASE: No WHEN matched and no ELSE, returning NULL");
             Ok(DataValue::Null)
+        }
+    }
+
+    /// Evaluate a simple CASE expression
+    fn evaluate_simple_case_expression(
+        &mut self,
+        expr: &Box<SqlExpression>,
+        when_branches: &[crate::sql::parser::ast::SimpleWhenBranch],
+        else_branch: &Option<Box<SqlExpression>>,
+        row_index: usize,
+    ) -> Result<DataValue> {
+        debug!(
+            "ArithmeticEvaluator: evaluating simple CASE expression for row {}",
+            row_index
+        );
+
+        // Evaluate the main expression once
+        let case_value = self.evaluate(expr, row_index)?;
+        debug!("Simple CASE: evaluated expression to {:?}", case_value);
+
+        // Compare against each WHEN value in order
+        for branch in when_branches {
+            // Evaluate the WHEN value
+            let when_value = self.evaluate(&branch.value, row_index)?;
+
+            // Check for equality
+            if self.values_equal(&case_value, &when_value)? {
+                debug!("Simple CASE: WHEN value matched, evaluating result expression");
+                return self.evaluate(&branch.result, row_index);
+            }
+        }
+
+        // If no WHEN value matched, evaluate ELSE clause (or return NULL)
+        if let Some(else_expr) = else_branch {
+            debug!("Simple CASE: No WHEN matched, evaluating ELSE expression");
+            self.evaluate(else_expr, row_index)
+        } else {
+            debug!("Simple CASE: No WHEN matched and no ELSE, returning NULL");
+            Ok(DataValue::Null)
+        }
+    }
+
+    /// Check if two DataValues are equal
+    fn values_equal(&self, left: &DataValue, right: &DataValue) -> Result<bool> {
+        match (left, right) {
+            (DataValue::Null, DataValue::Null) => Ok(true),
+            (DataValue::Null, _) | (_, DataValue::Null) => Ok(false),
+            (DataValue::Integer(a), DataValue::Integer(b)) => Ok(a == b),
+            (DataValue::Float(a), DataValue::Float(b)) => Ok((a - b).abs() < f64::EPSILON),
+            (DataValue::String(a), DataValue::String(b)) => Ok(a == b),
+            (DataValue::Boolean(a), DataValue::Boolean(b)) => Ok(a == b),
+            (DataValue::DateTime(a), DataValue::DateTime(b)) => Ok(a == b),
+            // Type coercion for numeric comparisons
+            (DataValue::Integer(a), DataValue::Float(b)) => {
+                Ok((*a as f64 - b).abs() < f64::EPSILON)
+            }
+            (DataValue::Float(a), DataValue::Integer(b)) => {
+                Ok((a - *b as f64).abs() < f64::EPSILON)
+            }
+            _ => Ok(false),
         }
     }
 

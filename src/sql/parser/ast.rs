@@ -70,6 +70,11 @@ pub enum SqlExpression {
         when_branches: Vec<WhenBranch>,
         else_branch: Option<Box<SqlExpression>>,
     },
+    SimpleCaseExpression {
+        expr: Box<SqlExpression>,
+        when_branches: Vec<SimpleWhenBranch>,
+        else_branch: Option<Box<SqlExpression>>,
+    },
     /// Scalar subquery that returns a single value
     /// Used in expressions like: WHERE col = (SELECT MAX(id) FROM table)
     ScalarSubquery {
@@ -92,6 +97,12 @@ pub enum SqlExpression {
 #[derive(Debug, Clone)]
 pub struct WhenBranch {
     pub condition: Box<SqlExpression>,
+    pub result: Box<SqlExpression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SimpleWhenBranch {
+    pub value: Box<SqlExpression>,
     pub result: Box<SqlExpression>,
 }
 
