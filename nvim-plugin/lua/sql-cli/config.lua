@@ -32,6 +32,12 @@ M.defaults = {
     data_hints = true,     -- Auto-detect -- #!data: hints in SQL files
   },
 
+  -- Table navigation settings
+  table_navigation = {
+    enabled_by_default = false,  -- Don't auto-enable table navigation (requires manual toggle)
+    hijack_hjkl = true,          -- When enabled, use hjkl for table navigation (set false for normal vim movement)
+  },
+
   -- Keymaps (set to false to disable)
   keymaps = {
     execute = "<leader>sq",         -- Execute query

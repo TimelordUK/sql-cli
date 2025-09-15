@@ -761,21 +761,7 @@ pub fn format_expression(expr: &SqlExpression) -> String {
         SqlExpression::CaseExpression {
             when_branches,
             else_branch,
-        } => {
-            let mut result = String::from("CASE");
-            for branch in when_branches {
-                result.push_str(&format!(
-                    " WHEN {} THEN {}",
-                    format_expression(&branch.condition),
-                    format_expression(&branch.result)
-                ));
-            }
-            if let Some(else_expr) = else_branch {
-                result.push_str(&format!(" ELSE {}", format_expression(else_expr)));
-            }
-            result.push_str(" END");
-            result
-        }
+        } => format_case_expression(when_branches, else_branch.as_ref().map(|v| &**v)),
         SqlExpression::ScalarSubquery { query: _ } => {
             // For now, just format as a placeholder - proper SQL formatting would need the full query
             "(SELECT ...)".to_string()
@@ -817,5 +803,68 @@ fn format_token(token: &Token) -> String {
         Token::GreaterThanOrEqual => ">=".to_string(),
         Token::In => "IN".to_string(),
         _ => format!("{token:?}").to_uppercase(),
+    }
+}
+
+// Format CASE expressions with proper indentation
+fn format_case_expression(
+    when_branches: &[crate::sql::recursive_parser::WhenBranch],
+    else_branch: Option<&SqlExpression>,
+) -> String {
+    // Check if the CASE expression is simple enough for single line
+    let is_simple = when_branches.len() <= 1
+        && when_branches
+            .iter()
+            .all(|b| expr_is_simple(&b.condition) && expr_is_simple(&b.result))
+        && else_branch.map_or(true, expr_is_simple);
+
+    if is_simple {
+        // Single line format for simple cases
+        let mut result = String::from("CASE");
+        for branch in when_branches {
+            result.push_str(&format!(
+                " WHEN {} THEN {}",
+                format_expression(&branch.condition),
+                format_expression(&branch.result)
+            ));
+        }
+        if let Some(else_expr) = else_branch {
+            result.push_str(&format!(" ELSE {}", format_expression(else_expr)));
+        }
+        result.push_str(" END");
+        result
+    } else {
+        // Multi-line format for complex cases
+        let mut result = String::from("CASE");
+        for branch in when_branches {
+            result.push_str(&format!(
+                "\n        WHEN {} THEN {}",
+                format_expression(&branch.condition),
+                format_expression(&branch.result)
+            ));
+        }
+        if let Some(else_expr) = else_branch {
+            result.push_str(&format!("\n        ELSE {}", format_expression(else_expr)));
+        }
+        result.push_str("\n    END");
+        result
+    }
+}
+
+// Check if an expression is simple enough for single-line formatting
+fn expr_is_simple(expr: &SqlExpression) -> bool {
+    match expr {
+        SqlExpression::Column(_)
+        | SqlExpression::StringLiteral(_)
+        | SqlExpression::NumberLiteral(_)
+        | SqlExpression::BooleanLiteral(_)
+        | SqlExpression::Null => true,
+        SqlExpression::BinaryOp { left, right, .. } => {
+            expr_is_simple(left) && expr_is_simple(right)
+        }
+        SqlExpression::FunctionCall { args, .. } => {
+            args.len() <= 2 && args.iter().all(expr_is_simple)
+        }
+        _ => false,
     }
 }

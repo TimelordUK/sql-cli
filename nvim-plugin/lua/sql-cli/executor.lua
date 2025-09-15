@@ -495,22 +495,29 @@ function M.run_command(query, show_plan, config, state)
                 return
               end
 
-              local lines = vim.api.nvim_buf_get_lines(output_buf, 0, -1, false)
-              if #lines > 5 then -- Make sure we have some content
-                -- Pass the output window to init_navigation
-                local output_win = state:get_output_win()
-                if table_nav.init_navigation(output_buf, output_win) then
-                  table_nav.setup_keymaps(output_buf)
-                  vim.notify("Table navigation enabled (h/j/k/l to move, yy to yank)", vim.log.levels.INFO)
-                else
-                  -- Debug: show what we're seeing
-                  if config.debug then
-                    vim.notify("Table nav failed. First 10 lines:", vim.log.levels.WARN)
-                    for i = 1, math.min(10, #lines) do
-                      vim.notify("  Line " .. i .. ": " .. lines[i]:sub(1, 50), vim.log.levels.WARN)
+              -- Only enable table navigation if configured to do so
+              if config.table_navigation and config.table_navigation.enabled_by_default then
+                local lines = vim.api.nvim_buf_get_lines(output_buf, 0, -1, false)
+                if #lines > 5 then -- Make sure we have some content
+                  -- Pass the output window to init_navigation
+                  local output_win = state:get_output_win()
+                  if table_nav.init_navigation(output_buf, output_win) then
+                    table_nav.setup_keymaps(output_buf, config)
+                    local nav_keys = config.table_navigation and config.table_navigation.hijack_hjkl == false and "arrow keys" or "h/j/k/l"
+                    vim.notify("Table navigation enabled (" .. nav_keys .. " to move, yy to yank, <leader>sn to toggle)", vim.log.levels.INFO)
+                  else
+                    -- Debug: show what we're seeing
+                    if config.debug then
+                      vim.notify("Table nav failed. First 10 lines:", vim.log.levels.WARN)
+                      for i = 1, math.min(10, #lines) do
+                        vim.notify("  Line " .. i .. ": " .. lines[i]:sub(1, 50), vim.log.levels.WARN)
+                      end
                     end
                   end
                 end
+              else
+                -- Table navigation disabled by default, remind user how to enable
+                vim.notify("Use <leader>sn to enable table navigation", vim.log.levels.INFO)
               end
             end, 500) -- Increased delay to ensure buffer is fully populated
           end

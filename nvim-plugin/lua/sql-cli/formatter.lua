@@ -18,6 +18,23 @@ function M.format_query_at_cursor(config, state)
     return
   end
 
+  -- Preserve leading comments (like data hints)
+  local preserved_comments = {}
+  local actual_query_start = start_line
+
+  -- Scan for leading comment lines to preserve
+  for i = start_line, end_line do
+    local line = lines[i]
+    if line and line:match("^%s*%-%-") then
+      -- This is a comment line
+      table.insert(preserved_comments, line)
+      actual_query_start = i + 1
+    else
+      -- Found first non-comment line, stop
+      break
+    end
+  end
+
   -- Handle terminators (semicolon or GO)
   local terminator = ""
   local last_line = lines[end_line]
@@ -31,8 +48,8 @@ function M.format_query_at_cursor(config, state)
     end
   end
 
-  -- Extract the query
-  local query_lines = vim.list_slice(lines, start_line, end_line)
+  -- Extract the query (from the first non-comment line)
+  local query_lines = vim.list_slice(lines, actual_query_start, end_line)
   local query = table.concat(query_lines, "\n")
 
   -- Debug output
@@ -63,6 +80,14 @@ function M.format_query_at_cursor(config, state)
     new_lines[#new_lines] = new_lines[#new_lines] .. ";"
   elseif terminator == "GO" then
     table.insert(new_lines, "GO")
+  end
+
+  -- Prepend preserved comments back to the formatted query
+  if #preserved_comments > 0 then
+    -- Add preserved comments at the beginning
+    for i = #preserved_comments, 1, -1 do
+      table.insert(new_lines, 1, preserved_comments[i])
+    end
   end
 
   -- Replace the lines in the buffer

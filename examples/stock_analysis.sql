@@ -5,14 +5,15 @@
 -- ============================================
 -- Example 1: Basic LAG function to get previous values
 -- ============================================
+GO
 SELECT
     date,
     close,
-    LAG(close) OVER (ORDER BY date) as prev_close,
-    LAG(close, 2) OVER (ORDER BY date) as prev_close_2days,
-    LAG(close, 5) OVER (ORDER BY date) as prev_close_week
+    LAG(close) OVER (ORDER BY date ASC) AS prev_close,
+    LAG(close, 2) OVER (ORDER BY date ASC) AS prev_close_2days,
+    LAG(close, 5) OVER (ORDER BY date ASC) AS prev_close_week
 FROM AAPL_data
-ORDER BY date
+ORDER BY date ASC
 LIMIT 10;
 GO
 
@@ -236,29 +237,30 @@ GO
 -- Example 11: Bollinger Bands calculation (with real STDDEV!)
 -- Moving average +/- 2 standard deviations
 -- ============================================
-WITH price_stats AS (
-    SELECT
-        date,
-        close,
-        AVG(close) OVER (ORDER BY date ROWS 19 PRECEDING) as ma_20,
-        STDDEV(close) OVER (ORDER BY date ROWS 19 PRECEDING) as stddev_20
-    FROM AAPL_data
-)
+WITH
+    price_stats AS (
+        SELECT
+            date,
+            close,
+            AVG(close) OVER (ORDER BY date ASC) AS ma_20,
+            STDDEV(close) OVER (ORDER BY date ASC) AS stddev_20
+        FROM AAPL_data
+    )
 SELECT
     date,
-    RENDER_NUMBER(close, 'standard', 2) as price,
-    RENDER_NUMBER(ma_20, 'standard', 2) as middle_band,
-    RENDER_NUMBER(ma_20 - 2 * stddev_20, 'standard', 2) as lower_band,
-    RENDER_NUMBER(ma_20 + 2 * stddev_20, 'standard', 2) as upper_band,
-    RENDER_NUMBER(stddev_20, 'standard', 4) as volatility,
+    RENDER_NUMBER(close, 'standard', 2) AS price,
+    RENDER_NUMBER(ma_20, 'standard', 2) AS middle_band,
+    RENDER_NUMBER(ma_20 - 2 * stddev_20, 'standard', 2) AS lower_band,
+    RENDER_NUMBER(ma_20 + 2 * stddev_20, 'standard', 2) AS upper_band,
+    RENDER_NUMBER(stddev_20, 'standard', 4) AS volatility,
     CASE
         WHEN close < ma_20 - 2 * stddev_20 THEN 'OVERSOLD'
         WHEN close > ma_20 + 2 * stddev_20 THEN 'OVERBOUGHT'
         ELSE 'NEUTRAL'
-    END as signal
+    END AS signal
 FROM price_stats
 WHERE date >= '2013-04-01'
-ORDER BY date
+ORDER BY date ASC
 LIMIT 20;
 GO
 
@@ -266,29 +268,30 @@ GO
 -- Example 11c: Bollinger Bands using syntactic sugar
 -- Much cleaner with MOVING_AVG and ROLLING_STDDEV!
 -- ============================================
-WITH price_stats AS (
-    SELECT
-        date,
-        close,
-        MOVING_AVG(close, 20) OVER (ORDER BY date) as ma_20,
-        ROLLING_STDDEV(close, 20) OVER (ORDER BY date) as stddev_20
-    FROM AAPL_data
-)
+WITH
+    price_stats AS (
+        SELECT
+            date,
+            close,
+            MOVING_AVG(close, 20) OVER (ORDER BY date ASC) AS ma_20,
+            ROLLING_STDDEV(close, 20) OVER (ORDER BY date ASC) AS stddev_20
+        FROM AAPL_data
+    )
 SELECT
     date,
-    RENDER_NUMBER(close, 'standard', 2) as price,
-    RENDER_NUMBER(ma_20, 'standard', 2) as middle_band,
-    RENDER_NUMBER(ma_20 - 2 * stddev_20, 'standard', 2) as lower_band,
-    RENDER_NUMBER(ma_20 + 2 * stddev_20, 'standard', 2) as upper_band,
-    RENDER_NUMBER(stddev_20, 'standard', 4) as volatility,
+    RENDER_NUMBER(close, 'standard', 2) AS price,
+    RENDER_NUMBER(ma_20, 'standard', 2) AS middle_band,
+    RENDER_NUMBER(ma_20 - 2 * stddev_20, 'standard', 2) AS lower_band,
+    RENDER_NUMBER(ma_20 + 2 * stddev_20, 'standard', 2) AS upper_band,
+    RENDER_NUMBER(stddev_20, 'standard', 4) AS volatility,
     CASE
         WHEN close < ma_20 - 2 * stddev_20 THEN 'OVERSOLD'
         WHEN close > ma_20 + 2 * stddev_20 THEN 'OVERBOUGHT'
         ELSE 'NEUTRAL'
-    END as signal
+    END AS signal
 FROM price_stats
 WHERE date >= '2013-04-01'
-ORDER BY date
+ORDER BY date ASC
 LIMIT 20;
 GO
 
@@ -298,18 +301,18 @@ GO
 -- ============================================
 SELECT
     date,
-    RENDER_NUMBER(close, 'standard', 2) as price,
-    RENDER_NUMBER(MOVING_AVG(close, 20) OVER (ORDER BY date), 'standard', 2) as middle_band,
-    RENDER_NUMBER(BOLLINGER_LOWER(close, 20, 2) OVER (ORDER BY date), 'standard', 2) as lower_band,
-    RENDER_NUMBER(BOLLINGER_UPPER(close, 20, 2) OVER (ORDER BY date), 'standard', 2) as upper_band,
+    RENDER_NUMBER(close, 'standard', 2) AS price,
+    RENDER_NUMBER(MOVING_AVG(close, 20) OVER (ORDER BY date ASC), 'standard', 2) AS middle_band,
+    RENDER_NUMBER(BOLLINGER_LOWER(close, 20, 2) OVER (ORDER BY date ASC), 'standard', 2) AS lower_band,
+    RENDER_NUMBER(BOLLINGER_UPPER(close, 20, 2) OVER (ORDER BY date ASC), 'standard', 2) AS upper_band,
     CASE
-        WHEN close < BOLLINGER_LOWER(close, 20, 2) OVER (ORDER BY date) THEN 'OVERSOLD'
-        WHEN close > BOLLINGER_UPPER(close, 20, 2) OVER (ORDER BY date) THEN 'OVERBOUGHT'
+        WHEN close < BOLLINGER_LOWER(close, 20, 2) OVER (ORDER BY date ASC) THEN 'OVERSOLD'
+        WHEN close > BOLLINGER_UPPER(close, 20, 2) OVER (ORDER BY date ASC) THEN 'OVERBOUGHT'
         ELSE 'NEUTRAL'
-    END as signal
+    END AS signal
 FROM AAPL_data
 WHERE date >= '2013-04-01'
-ORDER BY date
+ORDER BY date ASC
 LIMIT 20;
 GO
 
@@ -317,27 +320,28 @@ GO
 -- Example 11b: Z-Score calculation
 -- How many standard deviations from the mean
 -- ============================================
-WITH stats AS (
-    SELECT
-        date,
-        close,
-        AVG(close) OVER (ORDER BY date ROWS 19 PRECEDING) as ma_20,
-        STDDEV(close) OVER (ORDER BY date ROWS 19 PRECEDING) as stddev_20
-    FROM AAPL_data
-)
+WITH
+    stats AS (
+        SELECT
+            date,
+            close,
+            AVG(close) OVER (ORDER BY date ASC) AS ma_20,
+            STDDEV(close) OVER (ORDER BY date ASC) AS stddev_20
+        FROM AAPL_data
+    )
 SELECT
     date,
     close,
-    RENDER_NUMBER((close - ma_20) / stddev_20, 'standard', 2) as z_score,
+    RENDER_NUMBER(close - ma_20 / stddev_20, 'standard', 2) AS z_score,
     CASE
-        WHEN ABS((close - ma_20) / stddev_20) > 3 THEN 'EXTREME'
-        WHEN ABS((close - ma_20) / stddev_20) > 2 THEN 'SIGNIFICANT'
-        WHEN ABS((close - ma_20) / stddev_20) > 1 THEN 'NOTABLE'
+        WHEN ABS(close - ma_20 / stddev_20) > 3 THEN 'EXTREME'
+        WHEN ABS(close - ma_20 / stddev_20) > 2 THEN 'SIGNIFICANT'
+        WHEN ABS(close - ma_20 / stddev_20) > 1 THEN 'NOTABLE'
         ELSE 'NORMAL'
-    END as deviation_level
+    END AS deviation_level
 FROM stats
 WHERE date >= '2013-04-01' AND stddev_20 > 0
-ORDER BY date
+ORDER BY date ASC
 LIMIT 20;
 GO
 

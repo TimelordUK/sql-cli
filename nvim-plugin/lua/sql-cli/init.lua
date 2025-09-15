@@ -127,7 +127,7 @@ function M.create_commands()
   end, { desc = "Expand SELECT * to column names" })
 
   vim.api.nvim_create_user_command("SqlCliToggleTableNav", function()
-    table_nav.toggle_navigation()
+    table_nav.toggle_navigation(nil, M.config)
   end, { desc = "Toggle table navigation mode in current buffer" })
 
   vim.api.nvim_create_user_command("SqlCliExportTable", function()
@@ -299,7 +299,7 @@ function M.setup_keymaps()
 
   if keymaps.toggle_table_nav then
     vim.keymap.set("n", keymaps.toggle_table_nav, function()
-      table_nav.toggle_navigation()
+      table_nav.toggle_navigation(nil, M.config)
     end, { desc = "Toggle table navigation mode", silent = true })
   end
 

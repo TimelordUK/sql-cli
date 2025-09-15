@@ -372,7 +372,7 @@ function M.init_navigation(bufnr, window)
 end
 
 -- Disable navigation
-function M.disable_navigation()
+function M.disable_navigation(config)
   if nav_state.buffer and vim.api.nvim_buf_is_valid(nav_state.buffer) then
     -- Clear highlights
     vim.api.nvim_buf_clear_namespace(nav_state.buffer, nav_state.highlight_ns, 0, -1)
@@ -382,10 +382,24 @@ function M.disable_navigation()
 
     -- Clear keymaps
     local opts = { buffer = nav_state.buffer }
-    pcall(vim.keymap.del, "n", "h", opts)
-    pcall(vim.keymap.del, "n", "j", opts)
-    pcall(vim.keymap.del, "n", "k", opts)
-    pcall(vim.keymap.del, "n", "l", opts)
+
+    -- Get configuration or use defaults
+    config = config or {}
+    local table_config = config.table_navigation or {}
+    local hijack_hjkl = table_config.hijack_hjkl ~= false
+
+    if hijack_hjkl then
+      pcall(vim.keymap.del, "n", "h", opts)
+      pcall(vim.keymap.del, "n", "j", opts)
+      pcall(vim.keymap.del, "n", "k", opts)
+      pcall(vim.keymap.del, "n", "l", opts)
+    else
+      pcall(vim.keymap.del, "n", "<Left>", opts)
+      pcall(vim.keymap.del, "n", "<Down>", opts)
+      pcall(vim.keymap.del, "n", "<Up>", opts)
+      pcall(vim.keymap.del, "n", "<Right>", opts)
+    end
+
     pcall(vim.keymap.del, "n", "yy", opts)
     pcall(vim.keymap.del, "n", "Y", opts)
     pcall(vim.keymap.del, "n", "yc", opts)
@@ -419,17 +433,19 @@ function M.clear_navigation()
 end
 
 -- Toggle navigation mode
-function M.toggle_navigation(bufnr)
+function M.toggle_navigation(bufnr, config)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
+  config = config or {}
 
   if nav_state.buffer == bufnr and M.is_active() then
-    M.disable_navigation()
+    M.disable_navigation(config)
     vim.notify("Table navigation disabled", vim.log.levels.INFO)
   else
     vim.notify("Looking for table patterns like +---, ┌, ├, │, or |", vim.log.levels.INFO)
     if M.init_navigation(bufnr) then
-      M.setup_keymaps(bufnr)
-      vim.notify("Table navigation enabled - " .. M.get_status(), vim.log.levels.INFO)
+      M.setup_keymaps(bufnr, config)
+      local nav_keys = config.table_navigation and config.table_navigation.hijack_hjkl == false and "arrow keys" or "h/j/k/l"
+      vim.notify("Table navigation enabled (" .. nav_keys .. " to move) - " .. M.get_status(), vim.log.levels.INFO)
     else
       vim.notify("Could not find a table in the buffer. Tables should have ASCII borders (+---+) or box drawing characters.", vim.log.levels.WARN)
     end
@@ -663,32 +679,61 @@ function M.get_status()
 end
 
 -- Setup keymaps for navigation
-function M.setup_keymaps(bufnr)
+function M.setup_keymaps(bufnr, config)
   local opts = { noremap = true, silent = true, buffer = bufnr }
 
   -- Store that we're in table nav mode
   vim.b[bufnr].sql_cli_table_nav_active = true
 
+  -- Get configuration or use defaults
+  config = config or {}
+  local table_config = config.table_navigation or {}
+  local hijack_hjkl = table_config.hijack_hjkl ~= false  -- Default to true for backward compatibility
+
   -- Navigation with visual feedback
-  vim.keymap.set("n", "h", function()
-    M.move_left()
-    vim.notify(M.get_status(), vim.log.levels.INFO)
-  end, opts)
+  if hijack_hjkl then
+    -- Traditional hjkl navigation
+    vim.keymap.set("n", "h", function()
+      M.move_left()
+      vim.notify(M.get_status(), vim.log.levels.INFO)
+    end, opts)
 
-  vim.keymap.set("n", "j", function()
-    M.move_down()
-    vim.notify(M.get_status(), vim.log.levels.INFO)
-  end, opts)
+    vim.keymap.set("n", "j", function()
+      M.move_down()
+      vim.notify(M.get_status(), vim.log.levels.INFO)
+    end, opts)
 
-  vim.keymap.set("n", "k", function()
-    M.move_up()
-    vim.notify(M.get_status(), vim.log.levels.INFO)
-  end, opts)
+    vim.keymap.set("n", "k", function()
+      M.move_up()
+      vim.notify(M.get_status(), vim.log.levels.INFO)
+    end, opts)
 
-  vim.keymap.set("n", "l", function()
-    M.move_right()
-    vim.notify(M.get_status(), vim.log.levels.INFO)
-  end, opts)
+    vim.keymap.set("n", "l", function()
+      M.move_right()
+      vim.notify(M.get_status(), vim.log.levels.INFO)
+    end, opts)
+  else
+    -- Alternative arrow-key style navigation (preserves hjkl for normal vim movement)
+    vim.keymap.set("n", "<Left>", function()
+      M.move_left()
+      vim.notify(M.get_status(), vim.log.levels.INFO)
+    end, opts)
+
+    vim.keymap.set("n", "<Down>", function()
+      M.move_down()
+      vim.notify(M.get_status(), vim.log.levels.INFO)
+    end, opts)
+
+    vim.keymap.set("n", "<Up>", function()
+      M.move_up()
+      vim.notify(M.get_status(), vim.log.levels.INFO)
+    end, opts)
+
+    vim.keymap.set("n", "<Right>", function()
+      M.move_right()
+      vim.notify(M.get_status(), vim.log.levels.INFO)
+    end, opts)
+  end
 
   -- Jump to boundaries
   vim.keymap.set("n", "0", M.go_to_first_column, opts)
