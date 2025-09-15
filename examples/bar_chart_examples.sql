@@ -1,3 +1,5 @@
+-- #! ../data/AAPL_data.csv
+
 SELECT
     UNIX_TIMESTAMP(NOW()) AS unix_timestamp
 FROM dual;
