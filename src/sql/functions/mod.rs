@@ -19,9 +19,11 @@ pub mod group_num;
 pub mod hash;
 pub mod math;
 pub mod mathematics;
+pub mod number_words;
 pub mod particle_charges;
 pub mod physics;
 pub mod random;
+pub mod roman;
 pub mod solar_system;
 pub mod string_methods;
 pub mod type_checking;
@@ -471,7 +473,14 @@ impl FunctionRegistry {
 
     /// Register string method functions
     fn register_string_methods(&mut self) {
+        use number_words::{ToWords, ToOrdinal, ToOrdinalWords};
+
         string_methods::register_string_methods(self);
+
+        // Number to words functions
+        self.register(Box::new(ToWords));
+        self.register(Box::new(ToOrdinal));
+        self.register(Box::new(ToOrdinalWords));
     }
 
     /// Register geometry functions
@@ -560,8 +569,11 @@ impl FunctionRegistry {
     /// Register conversion functions
     fn register_conversion_functions(&mut self) {
         use convert::ConvertFunction;
+        use roman::{ToRoman, FromRoman};
 
         self.register(Box::new(ConvertFunction));
+        self.register(Box::new(ToRoman));
+        self.register(Box::new(FromRoman));
     }
 
     /// Register aggregate and analytic functions
