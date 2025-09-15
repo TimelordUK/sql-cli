@@ -411,10 +411,16 @@ pub fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Ve
                     // Process columns with proper indentation
                     for (idx, col) in stmt.columns.iter().enumerate() {
                         let is_last = idx == stmt.columns.len() - 1;
-                        let col_text = if is_last {
-                            format!("    {col}")
+                        // Check if column needs quotes
+                        let formatted_col = if needs_quotes(col) {
+                            format!("\"{}\"", col)
                         } else {
-                            format!("    {col},")
+                            col.clone()
+                        };
+                        let col_text = if is_last {
+                            format!("    {}", formatted_col)
+                        } else {
+                            format!("    {},", formatted_col)
                         };
                         all_select_lines.push(col_text);
                     }
@@ -430,7 +436,12 @@ pub fn format_sql_with_preserved_parens(query: &str, cols_per_line: usize) -> Ve
                         if idx > 0 {
                             select_line.push_str(", ");
                         }
-                        select_line.push_str(col);
+                        // Check if column needs quotes
+                        if needs_quotes(col) {
+                            select_line.push_str(&format!("\"{}\"", col));
+                        } else {
+                            select_line.push_str(col);
+                        }
                     }
                     all_select_lines.push(select_line);
                 }
@@ -628,7 +639,14 @@ pub fn format_sql_pretty_compact(query: &str, cols_per_line: usize) -> Vec<Strin
 
 pub fn format_expression(expr: &SqlExpression) -> String {
     match expr {
-        SqlExpression::Column(name) => name.clone(),
+        SqlExpression::Column(name) => {
+            // Check if column name needs quotes (contains special characters)
+            if needs_quotes(name) {
+                format!("\"{}\"", name)
+            } else {
+                name.clone()
+            }
+        }
         SqlExpression::StringLiteral(value) => format!("'{value}'"),
         SqlExpression::NumberLiteral(value) => value.clone(),
         SqlExpression::BinaryOp { left, op, right } => {
@@ -834,6 +852,38 @@ fn format_token(token: &Token) -> String {
         Token::In => "IN".to_string(),
         _ => format!("{token:?}").to_uppercase(),
     }
+}
+
+// Check if a column name needs quotes (contains special characters or is a reserved word)
+fn needs_quotes(name: &str) -> bool {
+    // Check for special characters that require quoting
+    if name.contains('-') || name.contains(' ') || name.contains('.') || name.contains('/') {
+        return true;
+    }
+
+    // Check if it starts with a number
+    if name.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+        return true;
+    }
+
+    // Check if it's a SQL reserved word (common ones)
+    let reserved_words = [
+        "SELECT", "FROM", "WHERE", "ORDER", "GROUP", "BY", "HAVING",
+        "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
+        "TABLE", "INDEX", "VIEW", "AND", "OR", "NOT", "IN", "EXISTS",
+        "BETWEEN", "LIKE", "CASE", "WHEN", "THEN", "ELSE", "END",
+        "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "ON", "AS",
+        "DISTINCT", "ALL", "TOP", "LIMIT", "OFFSET", "ASC", "DESC",
+    ];
+
+    let upper_name = name.to_uppercase();
+    if reserved_words.contains(&upper_name.as_str()) {
+        return true;
+    }
+
+    // Check if all characters are valid for unquoted identifiers
+    // Valid: letters, numbers, underscore (but not starting with number)
+    !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 // Format CASE expressions with proper indentation
