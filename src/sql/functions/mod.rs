@@ -26,6 +26,7 @@ pub mod random;
 pub mod roman;
 pub mod solar_system;
 pub mod string_methods;
+pub mod text_processing;
 pub mod type_checking;
 
 // Re-export MethodFunction trait
@@ -474,6 +475,9 @@ impl FunctionRegistry {
     /// Register string method functions
     fn register_string_methods(&mut self) {
         use number_words::{ToWords, ToOrdinal, ToOrdinalWords};
+        use text_processing::{
+            StripPunctuation, Tokenize, CleanText, ExtractWords, WordCount
+        };
 
         string_methods::register_string_methods(self);
 
@@ -481,6 +485,13 @@ impl FunctionRegistry {
         self.register(Box::new(ToWords));
         self.register(Box::new(ToOrdinal));
         self.register(Box::new(ToOrdinalWords));
+
+        // Text processing functions
+        self.register(Box::new(StripPunctuation));
+        self.register(Box::new(Tokenize));
+        self.register(Box::new(CleanText));
+        self.register(Box::new(ExtractWords));
+        self.register(Box::new(WordCount));
     }
 
     /// Register geometry functions
