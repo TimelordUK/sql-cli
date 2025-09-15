@@ -1,5 +1,5 @@
 use crate::sql::parser::ast::{
-    SelectStatement, SqlExpression, WhereClause, Condition, LogicalOp, CTE, CTEType, SelectItem
+    CTEType, Condition, LogicalOp, SelectItem, SelectStatement, SqlExpression, WhereClause, CTE,
 };
 use std::collections::HashMap;
 
@@ -11,9 +11,7 @@ pub struct InOperatorLifter {
 
 impl InOperatorLifter {
     pub fn new() -> Self {
-        InOperatorLifter {
-            column_counter: 0,
-        }
+        InOperatorLifter { column_counter: 0 }
     }
 
     /// Generate a unique column name for lifted expressions
@@ -66,7 +64,9 @@ impl InOperatorLifter {
                             connector: condition.connector.clone(),
                         });
                     }
-                    SqlExpression::NotInList { expr, values } if Self::is_complex_expression(expr) => {
+                    SqlExpression::NotInList { expr, values }
+                        if Self::is_complex_expression(expr) =>
+                    {
                         let column_alias = self.next_column_name();
 
                         // Record what we're lifting
@@ -101,7 +101,11 @@ impl InOperatorLifter {
     }
 
     /// Apply lifted expressions to SELECT items
-    pub fn apply_lifted_to_select(&self, stmt: &mut SelectStatement, lifted: &[LiftedInExpression]) {
+    pub fn apply_lifted_to_select(
+        &self,
+        stmt: &mut SelectStatement,
+        lifted: &[LiftedInExpression],
+    ) {
         // Add the computed expressions to the SELECT list
         for lift in lifted {
             stmt.select_items.push(SelectItem::Expression {
@@ -157,7 +161,10 @@ impl InOperatorLifter {
     pub fn rewrite_query(&mut self, stmt: &mut SelectStatement) -> bool {
         // Check if we have any IN expressions to lift
         let has_in_to_lift = if let Some(ref where_clause) = stmt.where_clause {
-            where_clause.conditions.iter().any(|c| Self::needs_in_lifting(&c.expr))
+            where_clause
+                .conditions
+                .iter()
+                .any(|c| Self::needs_in_lifting(&c.expr))
         } else {
             false
         };

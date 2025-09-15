@@ -179,9 +179,9 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     // Parse and potentially rewrite the query
     let exec_start = Instant::now();
     let result = if config.lift_in_expressions {
+        use crate::data::query_engine::QueryEngine;
         use crate::query_plan::InOperatorLifter;
         use crate::sql::recursive_parser::Parser;
-        use crate::data::query_engine::QueryEngine;
 
         let mut parser = Parser::new(&config.query);
         match parser.parse() {
@@ -197,24 +197,27 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
                     match engine.execute_statement(dataview.source_arc(), stmt) {
                         Ok(result_view) => {
                             // Create a QueryExecutionResult to match the expected type
-                            Ok(crate::services::query_execution_service::QueryExecutionResult {
-                                dataview: result_view,
-                                stats: crate::services::query_execution_service::QueryStats {
-                                    row_count: 0, // Will be filled by result_view
-                                    column_count: 0,
-                                    execution_time: exec_start.elapsed(),
-                                    query_engine_time: exec_start.elapsed(),
+                            Ok(
+                                crate::services::query_execution_service::QueryExecutionResult {
+                                    dataview: result_view,
+                                    stats: crate::services::query_execution_service::QueryStats {
+                                        row_count: 0, // Will be filled by result_view
+                                        column_count: 0,
+                                        execution_time: exec_start.elapsed(),
+                                        query_engine_time: exec_start.elapsed(),
+                                    },
+                                    hidden_columns: Vec::new(),
+                                    query: config.query.clone(),
+                                    execution_plan: None,
                                 },
-                                hidden_columns: Vec::new(),
-                                query: config.query.clone(),
-                                execution_plan: None,
-                            })
+                            )
                         }
-                        Err(e) => Err(e)
+                        Err(e) => Err(e),
                     }
                 } else {
                     // No lifting needed, execute normally
-                    let query_service = QueryExecutionService::with_behavior_config(behavior_config);
+                    let query_service =
+                        QueryExecutionService::with_behavior_config(behavior_config);
                     query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
                 }
             }
