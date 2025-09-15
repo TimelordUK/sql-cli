@@ -47,6 +47,7 @@ pub struct NonInteractiveConfig {
     pub auto_hide_empty: bool,
     pub limit: Option<usize>,
     pub query_plan: bool,
+    pub show_work_units: bool,
     pub execution_plan: bool,
     pub script_file: Option<String>, // Path to the script file for relative path resolution
 }
@@ -89,6 +90,48 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
             dataview.row_count(),
             dataview.column_count()
         );
+    }
+
+    // If show_work_units is requested, analyze and display work units
+    if config.show_work_units {
+        use crate::sql::recursive_parser::Parser;
+        use crate::query_plan::{QueryAnalyzer, ExpressionLifter};
+
+        let mut parser = Parser::new(&config.query);
+        match parser.parse() {
+            Ok(stmt) => {
+                let mut analyzer = QueryAnalyzer::new();
+                let mut lifter = ExpressionLifter::new();
+
+                // Check if the query has liftable expressions
+                let mut stmt_copy = stmt.clone();
+                let lifted = lifter.lift_expressions(&mut stmt_copy);
+
+                // Build the query plan
+                match analyzer.analyze(&stmt_copy, config.query.clone()) {
+                    Ok(plan) => {
+                        println!("\n{}", plan.explain());
+
+                        if !lifted.is_empty() {
+                            println!("\nLifted CTEs:");
+                            for cte in &lifted {
+                                println!("  - {}", cte.name);
+                            }
+                        }
+
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        eprintln!("Error analyzing query: {}", e);
+                        return Err(anyhow::anyhow!("Query analysis failed: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error parsing query: {}", e);
+                return Err(anyhow::anyhow!("Parse error: {}", e));
+            }
+        }
     }
 
     // If query_plan is requested, parse and display the AST

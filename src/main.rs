@@ -147,6 +147,10 @@ fn print_help() {
         "--query-plan".green()
     );
     println!(
+        "  {}    - Show query execution work units",
+        "--show-work-units".green()
+    );
+    println!(
         "  {}    - Show detailed execution plan with timings",
         "--execution-plan".green()
     );
@@ -597,6 +601,10 @@ fn main() -> io::Result<()> {
         .iter()
         .any(|arg| arg == "--query-plan" || arg == "--query_plan");
 
+    let show_work_units_arg = args
+        .iter()
+        .any(|arg| arg == "--show-work-units" || arg == "--show_work_units");
+
     let execution_plan_arg = args
         .iter()
         .any(|arg| arg == "--execution-plan" || arg == "--execution_plan");
@@ -660,6 +668,7 @@ fn main() -> io::Result<()> {
             auto_hide_empty: args.contains(&"--auto-hide-empty".to_string()),
             limit: limit_arg,
             query_plan: query_plan_arg,
+            show_work_units: show_work_units_arg,
             execution_plan: execution_plan_arg,
             script_file: query_file_arg.clone(),
         };

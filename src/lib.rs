@@ -7,6 +7,7 @@ pub mod data;
 pub mod debug;
 pub mod execution_plan;
 pub mod handlers;
+pub mod query_plan;
 pub mod non_interactive;
 pub mod services;
 pub mod sql;
