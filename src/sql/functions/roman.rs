@@ -182,22 +182,26 @@ mod tests {
         let func = FromRoman;
 
         assert_eq!(
-            func.evaluate(&[DataValue::String("I".to_string())]).unwrap(),
+            func.evaluate(&[DataValue::String("I".to_string())])
+                .unwrap(),
             DataValue::Float(1.0)
         );
 
         assert_eq!(
-            func.evaluate(&[DataValue::String("XLIX".to_string())]).unwrap(),
+            func.evaluate(&[DataValue::String("XLIX".to_string())])
+                .unwrap(),
             DataValue::Float(49.0)
         );
 
         assert_eq!(
-            func.evaluate(&[DataValue::String("MMXXIV".to_string())]).unwrap(),
+            func.evaluate(&[DataValue::String("MMXXIV".to_string())])
+                .unwrap(),
             DataValue::Float(2024.0)
         );
 
         assert_eq!(
-            func.evaluate(&[DataValue::String("mcmlxxxiv".to_string())]).unwrap(),
+            func.evaluate(&[DataValue::String("mcmlxxxiv".to_string())])
+                .unwrap(),
             DataValue::Float(1984.0)
         );
     }

@@ -6,9 +6,8 @@ pub mod expression_lifter;
 
 // Re-export main types
 pub use query_plan::{
-    WorkUnit, WorkUnitType, WorkUnitExpression,
-    QueryPlan, PlanMetadata, DependencyGraph,
-    QueryAnalyzer
+    DependencyGraph, PlanMetadata, QueryAnalyzer, QueryPlan, WorkUnit, WorkUnitExpression,
+    WorkUnitType,
 };
 
 // Re-export commonly used items

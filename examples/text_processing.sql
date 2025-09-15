@@ -33,8 +33,8 @@ GO
 
 -- Extract only longer words
 SELECT
-    EXTRACT_WORDS('The quick brown fox jumps over the lazy dog', 4, 'upper') as long_words_upper,
-    EXTRACT_WORDS('The quick brown fox jumps over the lazy dog', 5, 'lower') as longer_words_lower;
+    EXTRACT_WORDS('The quick brown fox jumps over the lazy dog', 4, 'upper') AS long_words_upper,
+    EXTRACT_WORDS('The quick brown fox jumps over the lazy dog', 5, 'lower') AS longer_words_lower;
 GO
 
 -- Analyze text statistics
@@ -47,23 +47,21 @@ GO
 
 -- Process file names and identifiers
 SELECT
-    'my-file_v2.0.txt' as filename,
-    STRIP_PUNCTUATION('my-file_v2.0.txt', '') as clean_id,
-    TOKENIZE('my-file_v2.0.txt') as tokens,
-    EXTRACT_WORDS('my-file_v2.0.txt', 2) as words;
+    'my-file_v2.0.txt' AS filename,
+    STRIP_PUNCTUATION('my-file_v2.0.txt', '') AS clean_id,
+    TOKENIZE('my-file_v2.0.txt') AS tokens,
+    EXTRACT_WORDS('my-file_v2.0.txt', 2) AS words;
 GO
 
 -- Tokenize and count unique words
 WITH
     tokens AS (
-        SELECT value as word
-        FROM SPLIT(
-            TOKENIZE('To be or not to be, that is the question', 'lower')
-        )
+        SELECT value AS word
+        FROM SPLIT(TOKENIZE('To be or not to be, that is the question', 'lower'))
     )
 SELECT
-    COUNT(DISTINCT word) as unique_words,
-    COUNT('*') as total_words
+    COUNT(DISTINCT word) AS unique_words,
+    COUNT('*') AS total_words
 FROM tokens
 WHERE LENGTH(word) > 0;
 GO

@@ -35,7 +35,10 @@ impl SqlFunction for ToWords {
         };
 
         if num < 0 {
-            Ok(DataValue::String(format!("negative {}", number_to_words(-num))))
+            Ok(DataValue::String(format!(
+                "negative {}",
+                number_to_words(-num)
+            )))
         } else {
             Ok(DataValue::String(number_to_words(num)))
         }
@@ -120,17 +123,39 @@ fn number_to_words(n: i64) -> String {
     }
 
     let units = [
-        "", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
-        "seventeen", "eighteen", "nineteen"
+        "",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen",
     ];
 
     let tens = [
-        "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"
+        "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
     ];
 
     let thousands = [
-        "", "thousand", "million", "billion", "trillion", "quadrillion"
+        "",
+        "thousand",
+        "million",
+        "billion",
+        "trillion",
+        "quadrillion",
     ];
 
     fn convert_hundreds(n: i64, units: &[&str], tens: &[&str]) -> String {
@@ -247,11 +272,29 @@ fn number_to_ordinal_words(n: i64) -> String {
 
     // Handle special endings
     if words.ends_with("one") {
-        format!("{}st", words.trim_end_matches("one").trim_end_matches('-').trim_end_matches(' '))
+        format!(
+            "{}st",
+            words
+                .trim_end_matches("one")
+                .trim_end_matches('-')
+                .trim_end_matches(' ')
+        )
     } else if words.ends_with("two") {
-        format!("{}second", words.trim_end_matches("two").trim_end_matches('-').trim_end_matches(' '))
+        format!(
+            "{}second",
+            words
+                .trim_end_matches("two")
+                .trim_end_matches('-')
+                .trim_end_matches(' ')
+        )
     } else if words.ends_with("three") {
-        format!("{}third", words.trim_end_matches("three").trim_end_matches('-').trim_end_matches(' '))
+        format!(
+            "{}third",
+            words
+                .trim_end_matches("three")
+                .trim_end_matches('-')
+                .trim_end_matches(' ')
+        )
     } else if words.ends_with("y") {
         format!("{}ieth", words.trim_end_matches('y'))
     } else {

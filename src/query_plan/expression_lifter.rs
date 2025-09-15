@@ -1,7 +1,7 @@
+use crate::query_plan::{QueryPlan, WorkUnit, WorkUnitExpression, WorkUnitType};
 use crate::sql::parser::ast::{
-    SelectStatement, SqlExpression, WhereClause, CTE, CTEType, SelectItem
+    CTEType, SelectItem, SelectStatement, SqlExpression, WhereClause, CTE,
 };
-use crate::query_plan::{WorkUnit, WorkUnitType, WorkUnitExpression, QueryPlan};
 use std::collections::HashSet;
 
 /// Expression lifter that identifies and lifts non-supported WHERE expressions to CTEs
@@ -71,17 +71,29 @@ impl ExpressionLifter {
                 self.needs_lifting(expr) || self.needs_lifting(lower) || self.needs_lifting(upper)
             }
 
-            SqlExpression::CaseExpression { when_branches, else_branch } => {
+            SqlExpression::CaseExpression {
+                when_branches,
+                else_branch,
+            } => {
                 when_branches.iter().any(|branch| {
                     self.needs_lifting(&branch.condition) || self.needs_lifting(&branch.result)
-                }) || else_branch.as_ref().map_or(false, |e| self.needs_lifting(e))
+                }) || else_branch
+                    .as_ref()
+                    .map_or(false, |e| self.needs_lifting(e))
             }
 
-            SqlExpression::SimpleCaseExpression { expr, when_branches, else_branch } => {
-                self.needs_lifting(expr) ||
-                when_branches.iter().any(|branch| {
-                    self.needs_lifting(&branch.value) || self.needs_lifting(&branch.result)
-                }) || else_branch.as_ref().map_or(false, |e| self.needs_lifting(e))
+            SqlExpression::SimpleCaseExpression {
+                expr,
+                when_branches,
+                else_branch,
+            } => {
+                self.needs_lifting(expr)
+                    || when_branches.iter().any(|branch| {
+                        self.needs_lifting(&branch.value) || self.needs_lifting(&branch.result)
+                    })
+                    || else_branch
+                        .as_ref()
+                        .map_or(false, |e| self.needs_lifting(e))
             }
 
             _ => false,
@@ -124,7 +136,7 @@ impl ExpressionLifter {
                         SelectItem::Expression {
                             expr: lift_expr.expression.clone(),
                             alias: "lifted_value".to_string(),
-                        }
+                        },
                     ],
                     from_table: stmt.from_table.clone(),
                     from_subquery: stmt.from_subquery.clone(),
@@ -183,12 +195,8 @@ impl ExpressionLifter {
                 id: unit_id.clone(),
                 work_type: WorkUnitType::CTE,
                 expression: match &cte.cte_type {
-                    CTEType::Standard(select) => {
-                        WorkUnitExpression::Select(select.clone())
-                    }
-                    CTEType::Web(_) => {
-                        WorkUnitExpression::Custom("WEB CTE".to_string())
-                    }
+                    CTEType::Standard(select) => WorkUnitExpression::Select(select.clone()),
+                    CTEType::Web(_) => WorkUnitExpression::Custom("WEB CTE".to_string()),
                 },
                 dependencies: Vec::new(), // CTEs typically don't depend on each other initially
                 parallelizable: true,     // CTEs can often be computed in parallel
@@ -231,7 +239,9 @@ pub fn analyze_dependencies(expr: &SqlExpression) -> HashSet<String> {
             }
         }
 
-        SqlExpression::WindowFunction { args, window_spec, .. } => {
+        SqlExpression::WindowFunction {
+            args, window_spec, ..
+        } => {
             for arg in args {
                 deps.extend(analyze_dependencies(arg));
             }
@@ -251,7 +261,10 @@ pub fn analyze_dependencies(expr: &SqlExpression) -> HashSet<String> {
             deps.extend(analyze_dependencies(right));
         }
 
-        SqlExpression::CaseExpression { when_branches, else_branch } => {
+        SqlExpression::CaseExpression {
+            when_branches,
+            else_branch,
+        } => {
             for branch in when_branches {
                 deps.extend(analyze_dependencies(&branch.condition));
                 deps.extend(analyze_dependencies(&branch.result));
@@ -262,7 +275,11 @@ pub fn analyze_dependencies(expr: &SqlExpression) -> HashSet<String> {
             }
         }
 
-        SqlExpression::SimpleCaseExpression { expr, when_branches, else_branch } => {
+        SqlExpression::SimpleCaseExpression {
+            expr,
+            when_branches,
+            else_branch,
+        } => {
             deps.extend(analyze_dependencies(expr));
 
             for branch in when_branches {

@@ -474,10 +474,8 @@ impl FunctionRegistry {
 
     /// Register string method functions
     fn register_string_methods(&mut self) {
-        use number_words::{ToWords, ToOrdinal, ToOrdinalWords};
-        use text_processing::{
-            StripPunctuation, Tokenize, CleanText, ExtractWords, WordCount
-        };
+        use number_words::{ToOrdinal, ToOrdinalWords, ToWords};
+        use text_processing::{CleanText, ExtractWords, StripPunctuation, Tokenize, WordCount};
 
         string_methods::register_string_methods(self);
 
@@ -580,7 +578,7 @@ impl FunctionRegistry {
     /// Register conversion functions
     fn register_conversion_functions(&mut self) {
         use convert::ConvertFunction;
-        use roman::{ToRoman, FromRoman};
+        use roman::{FromRoman, ToRoman};
 
         self.register(Box::new(ConvertFunction));
         self.register(Box::new(ToRoman));

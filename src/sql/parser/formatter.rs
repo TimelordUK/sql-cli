@@ -868,12 +868,10 @@ fn needs_quotes(name: &str) -> bool {
 
     // Check if it's a SQL reserved word (common ones)
     let reserved_words = [
-        "SELECT", "FROM", "WHERE", "ORDER", "GROUP", "BY", "HAVING",
-        "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
-        "TABLE", "INDEX", "VIEW", "AND", "OR", "NOT", "IN", "EXISTS",
-        "BETWEEN", "LIKE", "CASE", "WHEN", "THEN", "ELSE", "END",
-        "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "ON", "AS",
-        "DISTINCT", "ALL", "TOP", "LIMIT", "OFFSET", "ASC", "DESC",
+        "SELECT", "FROM", "WHERE", "ORDER", "GROUP", "BY", "HAVING", "INSERT", "UPDATE", "DELETE",
+        "CREATE", "DROP", "ALTER", "TABLE", "INDEX", "VIEW", "AND", "OR", "NOT", "IN", "EXISTS",
+        "BETWEEN", "LIKE", "CASE", "WHEN", "THEN", "ELSE", "END", "JOIN", "LEFT", "RIGHT", "INNER",
+        "OUTER", "ON", "AS", "DISTINCT", "ALL", "TOP", "LIMIT", "OFFSET", "ASC", "DESC",
     ];
 
     let upper_name = name.to_uppercase();

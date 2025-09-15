@@ -94,8 +94,8 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
 
     // If show_work_units is requested, analyze and display work units
     if config.show_work_units {
+        use crate::query_plan::{ExpressionLifter, QueryAnalyzer};
         use crate::sql::recursive_parser::Parser;
-        use crate::query_plan::{QueryAnalyzer, ExpressionLifter};
 
         let mut parser = Parser::new(&config.query);
         match parser.parse() {

@@ -162,10 +162,7 @@ impl SqlFunction for CleanText {
             .collect();
 
         // Collapse multiple spaces and trim
-        let result = cleaned
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
+        let result = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
 
         Ok(DataValue::String(result))
     }

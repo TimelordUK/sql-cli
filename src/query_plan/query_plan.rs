@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
-use crate::sql::parser::ast::{SelectStatement, SqlExpression, WhereClause};
 use crate::data::datatable::DataValue;
+use crate::sql::parser::ast::{SelectStatement, SqlExpression, WhereClause};
+use std::collections::{HashMap, HashSet};
 
 /// Represents a unit of work in the query execution pipeline
 #[derive(Debug, Clone)]
@@ -147,12 +147,18 @@ impl QueryPlan {
                 output.push_str("Execution Order:\n");
                 for (i, unit_id) in order.iter().enumerate() {
                     if let Some(unit) = self.units.iter().find(|u| u.id == *unit_id) {
-                        output.push_str(&format!("  {}. {} ({:?})\n",
-                            i + 1, unit.id, unit.work_type));
+                        output.push_str(&format!(
+                            "  {}. {} ({:?})\n",
+                            i + 1,
+                            unit.id,
+                            unit.work_type
+                        ));
 
                         if !unit.dependencies.is_empty() {
-                            output.push_str(&format!("     Dependencies: {}\n",
-                                unit.dependencies.join(", ")));
+                            output.push_str(&format!(
+                                "     Dependencies: {}\n",
+                                unit.dependencies.join(", ")
+                            ));
                         }
 
                         if unit.parallelizable {
@@ -282,7 +288,8 @@ impl DependencyGraph {
 
             // Find all nodes whose dependencies are satisfied
             for node in &remaining {
-                let deps_satisfied = self.edges
+                let deps_satisfied = self
+                    .edges
                     .iter()
                     .filter(|(_, targets)| targets.contains(node))
                     .all(|(source, _)| completed.contains(source));
@@ -327,9 +334,7 @@ pub struct QueryAnalyzer {
 impl QueryAnalyzer {
     /// Create a new query analyzer
     pub fn new() -> Self {
-        QueryAnalyzer {
-            unit_counter: 0,
-        }
+        QueryAnalyzer { unit_counter: 0 }
     }
 
     /// Generate a unique ID for a work unit
@@ -347,7 +352,9 @@ impl QueryAnalyzer {
             id: self.next_unit_id("scan"),
             work_type: WorkUnitType::TableScan,
             expression: WorkUnitExpression::TableName(
-                stmt.from_table.clone().unwrap_or_else(|| "unknown".to_string())
+                stmt.from_table
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
             ),
             dependencies: Vec::new(),
             parallelizable: false,
@@ -392,11 +399,10 @@ impl QueryAnalyzer {
         // Phase 4: Handle ORDER BY
         let mut sort_id = None;
         if stmt.order_by.as_ref().map_or(false, |o| !o.is_empty()) {
-            let dependencies = vec![
-                group_id.clone()
-                    .or(filter_id.clone())
-                    .unwrap_or(table_id.clone())
-            ];
+            let dependencies = vec![group_id
+                .clone()
+                .or(filter_id.clone())
+                .unwrap_or(table_id.clone())];
             let sort_unit = WorkUnit {
                 id: self.next_unit_id("sort"),
                 work_type: WorkUnitType::Sort,
@@ -410,12 +416,7 @@ impl QueryAnalyzer {
         }
 
         // Phase 5: Final projection
-        let dependencies = vec![
-            sort_id
-                .or(group_id)
-                .or(filter_id)
-                .unwrap_or(table_id)
-        ];
+        let dependencies = vec![sort_id.or(group_id).or(filter_id).unwrap_or(table_id)];
         let projection_unit = WorkUnit {
             id: self.next_unit_id("project"),
             work_type: WorkUnitType::Projection,
