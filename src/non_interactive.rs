@@ -49,6 +49,7 @@ pub struct NonInteractiveConfig {
     pub query_plan: bool,
     pub show_work_units: bool,
     pub execution_plan: bool,
+    pub lift_in_expressions: bool,
     pub script_file: Option<String>, // Path to the script file for relative path resolution
 }
 
@@ -175,10 +176,39 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         behavior_config.hide_empty_columns = true;
     }
 
+    // Check if query needs IN expression lifting
+    if config.lift_in_expressions {
+        use crate::query_plan::InOperatorLifter;
+        use crate::sql::recursive_parser::Parser;
+
+        let mut parser = Parser::new(&config.query);
+        if let Ok(stmt) = parser.parse() {
+            // Check if any IN expressions need lifting
+            let needs_lifting = if let Some(ref where_clause) = stmt.where_clause {
+                where_clause.conditions.iter().any(|c| InOperatorLifter::needs_in_lifting(&c.expr))
+            } else {
+                false
+            };
+
+            if needs_lifting {
+                eprintln!("\n⚠️  This query contains function calls with IN operator which are not yet supported.");
+                eprintln!("    Example: WHERE LOWER(column) IN (...)");
+                eprintln!("\n    Workaround: Create a CTE with the computed expression:");
+                eprintln!("    WITH computed AS (");
+                eprintln!("        SELECT *, LOWER(column) as column_lower FROM table");
+                eprintln!("    )");
+                eprintln!("    SELECT * FROM computed WHERE column_lower IN (...)");
+                eprintln!();
+            }
+        }
+    }
+
+    let query_to_execute = config.query.clone();
+
     let query_service = QueryExecutionService::with_behavior_config(behavior_config);
 
     let exec_start = Instant::now();
-    let result = query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))?;
+    let result = query_service.execute(&query_to_execute, Some(&dataview), Some(dataview.source()))?;
     let exec_time = exec_start.elapsed();
 
     let query_time = query_start.elapsed();

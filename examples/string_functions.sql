@@ -446,3 +446,13 @@ SELECT
 FROM numbered_products
 LIMIT 10;
 GO
+
+WITH
+    words AS (
+        SELECT value AS tok
+        FROM SPLIT('hello all the world')
+    )
+SELECT tok
+FROM words
+WHERE tok IN ('hello', 'world');
+GO
