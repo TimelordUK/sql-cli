@@ -176,39 +176,59 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         behavior_config.hide_empty_columns = true;
     }
 
-    // Check if query needs IN expression lifting
-    if config.lift_in_expressions {
+    // Parse and potentially rewrite the query
+    let exec_start = Instant::now();
+    let result = if config.lift_in_expressions {
         use crate::query_plan::InOperatorLifter;
         use crate::sql::recursive_parser::Parser;
+        use crate::data::query_engine::QueryEngine;
 
         let mut parser = Parser::new(&config.query);
-        if let Ok(stmt) = parser.parse() {
-            // Check if any IN expressions need lifting
-            let needs_lifting = if let Some(ref where_clause) = stmt.where_clause {
-                where_clause.conditions.iter().any(|c| InOperatorLifter::needs_in_lifting(&c.expr))
-            } else {
-                false
-            };
+        match parser.parse() {
+            Ok(mut stmt) => {
+                // Try to rewrite the query with IN lifting
+                let mut lifter = InOperatorLifter::new();
+                if lifter.rewrite_query(&mut stmt) {
+                    info!("Applied IN expression lifting - query rewritten with CTEs");
 
-            if needs_lifting {
-                eprintln!("\n⚠️  This query contains function calls with IN operator which are not yet supported.");
-                eprintln!("    Example: WHERE LOWER(column) IN (...)");
-                eprintln!("\n    Workaround: Create a CTE with the computed expression:");
-                eprintln!("    WITH computed AS (");
-                eprintln!("        SELECT *, LOWER(column) as column_lower FROM table");
-                eprintln!("    )");
-                eprintln!("    SELECT * FROM computed WHERE column_lower IN (...)");
-                eprintln!();
+                    // Execute the rewritten AST directly
+                    let engine = QueryEngine::with_case_insensitive(config.case_insensitive);
+
+                    match engine.execute_statement(dataview.source_arc(), stmt) {
+                        Ok(result_view) => {
+                            // Create a QueryExecutionResult to match the expected type
+                            Ok(crate::services::query_execution_service::QueryExecutionResult {
+                                dataview: result_view,
+                                stats: crate::services::query_execution_service::QueryStats {
+                                    row_count: 0, // Will be filled by result_view
+                                    column_count: 0,
+                                    execution_time: exec_start.elapsed(),
+                                    query_engine_time: exec_start.elapsed(),
+                                },
+                                hidden_columns: Vec::new(),
+                                query: config.query.clone(),
+                                execution_plan: None,
+                            })
+                        }
+                        Err(e) => Err(e)
+                    }
+                } else {
+                    // No lifting needed, execute normally
+                    let query_service = QueryExecutionService::with_behavior_config(behavior_config);
+                    query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
+                }
+            }
+            Err(_) => {
+                // Parse failed, execute normally and let it fail with proper error
+                let query_service = QueryExecutionService::with_behavior_config(behavior_config);
+                query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
             }
         }
-    }
-
-    let query_to_execute = config.query.clone();
-
-    let query_service = QueryExecutionService::with_behavior_config(behavior_config);
-
-    let exec_start = Instant::now();
-    let result = query_service.execute(&query_to_execute, Some(&dataview), Some(dataview.source()))?;
+    } else {
+        // Normal execution without lifting
+        let query_service = QueryExecutionService::with_behavior_config(behavior_config);
+        query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
+    }?;
     let exec_time = exec_start.elapsed();
 
     let query_time = query_start.elapsed();
