@@ -50,6 +50,7 @@ pub struct NonInteractiveConfig {
     pub execution_plan: bool,
     pub lift_in_expressions: bool,
     pub script_file: Option<String>, // Path to the script file for relative path resolution
+    pub debug_trace: bool,
 }
 
 /// Execute a query in non-interactive mode
@@ -222,6 +223,7 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
                                     hidden_columns: Vec::new(),
                                     query: config.query.clone(),
                                     execution_plan: None,
+                                    debug_trace: None,
                                 },
                             )
                         }
@@ -231,19 +233,60 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
                     // No lifting needed, execute normally
                     let query_service =
                         QueryExecutionService::with_behavior_config(behavior_config);
-                    query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
+                    if config.debug_trace {
+                        let debug_ctx = crate::debug_trace::DebugContext::new(
+                            crate::debug_trace::DebugLevel::Debug,
+                        );
+                        query_service.execute_with_debug(
+                            &config.query,
+                            Some(&dataview),
+                            Some(dataview.source()),
+                            Some(debug_ctx),
+                        )
+                    } else {
+                        query_service.execute(
+                            &config.query,
+                            Some(&dataview),
+                            Some(dataview.source()),
+                        )
+                    }
                 }
             }
             Err(_) => {
                 // Parse failed, execute normally and let it fail with proper error
                 let query_service = QueryExecutionService::with_behavior_config(behavior_config);
-                query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
+                if config.debug_trace {
+                    let debug_ctx = crate::debug_trace::DebugContext::new(
+                        crate::debug_trace::DebugLevel::Debug,
+                    );
+                    query_service.execute_with_debug(
+                        &config.query,
+                        Some(&dataview),
+                        Some(dataview.source()),
+                        Some(debug_ctx),
+                    )
+                } else {
+                    query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
+                }
             }
         }
     } else {
         // Normal execution without lifting
         let query_service = QueryExecutionService::with_behavior_config(behavior_config);
-        query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
+
+        // Create debug context if debug trace is enabled
+        if config.debug_trace {
+            let debug_ctx =
+                crate::debug_trace::DebugContext::new(crate::debug_trace::DebugLevel::Debug);
+            query_service.execute_with_debug(
+                &config.query,
+                Some(&dataview),
+                Some(dataview.source()),
+                Some(debug_ctx),
+            )
+        } else {
+            query_service.execute(&config.query, Some(&dataview), Some(dataview.source()))
+        }
     }?;
     let exec_time = exec_start.elapsed();
 
@@ -333,7 +376,12 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
         result.dataview
     };
 
-    // 5. Output the results
+    // 5. Output debug trace if enabled
+    if let Some(ref trace_output) = result.debug_trace {
+        eprintln!("{}", trace_output);
+    }
+
+    // 6. Output the results
     let output_result = if let Some(ref path) = config.output_file {
         let mut file = fs::File::create(path)
             .with_context(|| format!("Failed to create output file: {path}"))?;

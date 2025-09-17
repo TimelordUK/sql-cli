@@ -138,6 +138,11 @@ fn print_help() {
         "--case-insensitive".green()
     );
     println!(
+        "  {}, {} - Enable debug tracing for query execution",
+        "--debug".green(),
+        "--debug-trace".green()
+    );
+    println!(
         "  {}  - Auto-hide empty columns",
         "--auto-hide-empty".green()
     );
@@ -612,6 +617,10 @@ fn main() -> io::Result<()> {
         .iter()
         .any(|arg| arg == "--execution-plan" || arg == "--execution_plan");
 
+    let debug_arg = args
+        .iter()
+        .any(|arg| arg == "--debug" || arg == "--debug-trace");
+
     let limit_arg = args
         .iter()
         .position(|arg| arg == "-l" || arg == "--limit")
@@ -675,6 +684,7 @@ fn main() -> io::Result<()> {
             execution_plan: execution_plan_arg,
             lift_in_expressions: lift_in_arg,
             script_file: query_file_arg.clone(),
+            debug_trace: debug_arg,
         };
 
         // Use script executor if GO separator is detected, otherwise normal execution

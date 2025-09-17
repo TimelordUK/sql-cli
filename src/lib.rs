@@ -5,6 +5,7 @@ pub mod config;
 pub mod core;
 pub mod data;
 pub mod debug;
+pub mod debug_trace;
 pub mod execution_plan;
 pub mod handlers;
 pub mod non_interactive;

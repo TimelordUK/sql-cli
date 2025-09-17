@@ -1,6 +1,7 @@
 use crate::config::config::BehaviorConfig;
 use crate::data::data_view::DataView;
 use crate::data::query_engine::QueryEngine;
+use crate::debug_trace::{DebugContext, DebugLevel, QueryTrace, ScopedTimer};
 use crate::execution_plan::ExecutionPlan;
 use anyhow::Result;
 use std::sync::Arc;
@@ -23,6 +24,9 @@ pub struct QueryExecutionResult {
 
     /// The execution plan (if tracked)
     pub execution_plan: Option<ExecutionPlan>,
+
+    /// Debug trace output (if debug was enabled)
+    pub debug_trace: Option<String>,
 }
 
 /// Statistics about query execution
@@ -87,16 +91,49 @@ impl QueryExecutionService {
         current_dataview: Option<&DataView>,
         original_source: Option<&crate::data::datatable::DataTable>,
     ) -> Result<QueryExecutionResult> {
+        self.execute_with_debug(query, current_dataview, original_source, None)
+    }
+
+    /// Execute a query with optional debug tracing
+    pub fn execute_with_debug(
+        &self,
+        query: &str,
+        current_dataview: Option<&DataView>,
+        original_source: Option<&crate::data::datatable::DataTable>,
+        debug_context: Option<DebugContext>,
+    ) -> Result<QueryExecutionResult> {
+        let mut trace = if let Some(ctx) = debug_context {
+            QueryTrace::new(ctx)
+        } else {
+            QueryTrace::new(DebugContext::new(DebugLevel::Off))
+        };
         // Check if query is using DUAL table or has no FROM clause
         use crate::query_plan::{CTEHoister, ExpressionLifter};
         use crate::sql::recursive_parser::Parser;
+
+        let parse_timer = ScopedTimer::new();
+        trace.log("PARSER", "START", format!("Parsing query: {}", query));
 
         let mut parser = Parser::new(query);
         let mut statement = parser
             .parse()
             .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
 
+        trace.log_timed(
+            "PARSER",
+            "COMPLETE",
+            format!(
+                "Parsed {} CTEs, FROM: {:?}",
+                statement.ctes.len(),
+                statement.from_table
+            ),
+            parse_timer.elapsed_us(),
+        );
+
         // Apply expression lifting for column alias dependencies
+        let lift_timer = ScopedTimer::new();
+        trace.log("OPTIMIZER", "LIFT_START", "Starting expression lifting");
+
         let mut expr_lifter = ExpressionLifter::new();
         let lifted = expr_lifter.lift_expressions(&mut statement);
         if !lifted.is_empty() {
@@ -104,10 +141,38 @@ impl QueryExecutionService {
                 "Applied expression lifting - {} CTEs generated",
                 lifted.len()
             );
+            trace.log_timed(
+                "OPTIMIZER",
+                "LIFT_COMPLETE",
+                format!("Generated {} lifted CTEs", lifted.len()),
+                lift_timer.elapsed_us(),
+            );
+        } else {
+            trace.log_timed(
+                "OPTIMIZER",
+                "LIFT_COMPLETE",
+                "No expressions needed lifting",
+                lift_timer.elapsed_us(),
+            );
         }
 
         // Apply CTE hoisting to handle nested CTEs
+        let hoist_timer = ScopedTimer::new();
+        trace.log("OPTIMIZER", "HOIST_START", "Starting CTE hoisting");
+
+        let original_cte_count = statement.ctes.len();
         statement = CTEHoister::hoist_ctes(statement);
+
+        trace.log_timed(
+            "OPTIMIZER",
+            "HOIST_COMPLETE",
+            format!(
+                "CTEs after hoisting: {} (was {})",
+                statement.ctes.len(),
+                original_cte_count
+            ),
+            hoist_timer.elapsed_us(),
+        );
 
         let uses_dual = statement
             .from_table
@@ -153,6 +218,15 @@ impl QueryExecutionService {
 
         // 2. Execute the query
         let query_start = std::time::Instant::now();
+        trace.log(
+            "EXECUTOR",
+            "START",
+            format!(
+                "Executing with {} rows, {} columns",
+                table_arc.row_count(),
+                table_arc.column_count()
+            ),
+        );
         let engine = if let Some(ref config) = self.behavior_config {
             QueryEngine::with_behavior_config(config.clone())
         } else {
@@ -163,6 +237,13 @@ impl QueryExecutionService {
         };
         let mut new_dataview = engine.execute(table_arc, query)?;
         let query_engine_time = query_start.elapsed();
+
+        trace.log_timed(
+            "EXECUTOR",
+            "COMPLETE",
+            format!("Query returned {} rows", new_dataview.row_count()),
+            query_engine_time.as_micros() as u64,
+        );
 
         // 3. Auto-hide empty columns if configured
         let mut hidden_columns = Vec::new();
@@ -184,12 +265,19 @@ impl QueryExecutionService {
             query_engine_time,
         };
 
+        let debug_output = if trace.is_enabled() {
+            Some(trace.format_output())
+        } else {
+            None
+        };
+
         Ok(QueryExecutionResult {
             dataview: new_dataview,
             stats,
             hidden_columns,
             query: query.to_string(),
             execution_plan: None,
+            debug_trace: debug_output,
         })
     }
 
