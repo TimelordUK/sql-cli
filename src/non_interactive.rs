@@ -10,7 +10,6 @@ use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::datatable_loaders::{load_csv_to_datatable, load_json_to_datatable};
 use crate::services::query_execution_service::QueryExecutionService;
-use crate::sql::recursive_parser::{CTEType, Parser, SelectStatement};
 use crate::sql::script_parser::{ScriptParser, ScriptResult};
 
 /// Output format for query results
@@ -180,12 +179,26 @@ pub fn execute_non_interactive(config: NonInteractiveConfig) -> Result<()> {
     let exec_start = Instant::now();
     let result = if config.lift_in_expressions {
         use crate::data::query_engine::QueryEngine;
-        use crate::query_plan::InOperatorLifter;
+        use crate::query_plan::{CTEHoister, InOperatorLifter};
         use crate::sql::recursive_parser::Parser;
 
         let mut parser = Parser::new(&config.query);
         match parser.parse() {
             Ok(mut stmt) => {
+                // Apply expression lifting for column alias dependencies
+                use crate::query_plan::ExpressionLifter;
+                let mut expr_lifter = ExpressionLifter::new();
+                let lifted = expr_lifter.lift_expressions(&mut stmt);
+                if !lifted.is_empty() {
+                    info!(
+                        "Applied expression lifting - {} CTEs generated",
+                        lifted.len()
+                    );
+                }
+
+                // Apply CTE hoisting to handle nested CTEs
+                stmt = CTEHoister::hoist_ctes(stmt);
+
                 // Try to rewrite the query with IN lifting
                 let mut lifter = InOperatorLifter::new();
                 if lifter.rewrite_query(&mut stmt) {

@@ -1,5 +1,4 @@
 use crossterm::style::Stylize;
-use crossterm::{cursor, event, execute, terminal};
 use reedline::{
     default_emacs_keybindings, ColumnarMenu, Emacs, FileBackedHistory, KeyCode, KeyModifiers,
     MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline,
@@ -274,7 +273,7 @@ fn main() -> io::Result<()> {
 
     // Check for SQL formatting mode
     if args.contains(&"--format".to_string()) || args.contains(&"-F".to_string()) {
-        use sql_cli::sql::recursive_parser::{format_sql_ast, FormatConfig};
+        use sql_cli::sql::recursive_parser::FormatConfig;
         use std::io::Read;
 
         // Check if query is provided via stdin or file

@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use std::collections::VecDeque;
 
 use super::{ArgCount, FunctionCategory, FunctionSignature, SqlFunction};
 use crate::data::datatable::DataValue;

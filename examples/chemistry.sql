@@ -210,7 +210,6 @@ GO
 
 
 -- another example of how we can use nested sub query
-
 SELECT
     Element,
     AtomicNumber,
@@ -218,22 +217,22 @@ SELECT
     NumberofProtons,
     Type
 FROM periodic_table
-WHERE NumberofProtons in (SELECT
-    NumberofProtons
-FROM periodic_table
-WHERE Element in ('Hydrogen', 'Helium'));
+WHERE NumberofProtons IN (
+    SELECT NumberofProtons
+    FROM periodic_table
+    WHERE Element IN ('Hydrogen', 'Helium')
+);
 GO
 
 -- years in which the most discoveries were made
-
 SELECT
-  Year, count(*) as number_discoveries
-from
-  periodic_table
-where Year > 0
-  GROUP BY Year
-  ORDER by number_discoveries desc
-  limit 4;
+    Year,
+    COUNT('*') AS number_discoveries
+FROM periodic_table
+WHERE Year > 0
+GROUP BY Year
+ORDER BY number_discoveries DESC
+LIMIT 4;
 GO
 
 WITH
@@ -253,13 +252,17 @@ GO
 
 WITH
     discoveries AS (
-        SELECT Year, COUNT('*') AS number_discoveries
+        SELECT
+            Year,
+            COUNT('*') AS number_discoveries
         FROM periodic_table
         WHERE Year > 0
         GROUP BY Year
     ),
     elements AS (
-        SELECT *, ROW_NUMBER() OVER (PARTITION BY Year ORDER BY Year ASC) AS grp_member
+        SELECT
+            *,
+            ROW_NUMBER() OVER (PARTITION BY Year ORDER BY Year ASC) AS grp_member
         FROM periodic_table
     )
 SELECT
@@ -276,35 +279,7 @@ WHERE Year IN (
     FROM discoveries
     WHERE number_discoveries > 3
 )
-ORDER BY Year DESC
- 
--- LEFT JOIN example: Show all noble gases with discovery year stats
--- WITH all_noble_gases AS (
-    -- SELECT 
-        -- Element,
-        -- Symbol,
-        -- Year,
-        -- AtomicMass
-    -- FROM periodic_table
-    -- WHERE Type = 'Noble Gas'
--- ),
--- year_stats AS (
-    -- SELECT 
-        -- MAX(Year) as max_year,
-        -- MIN(Year) as min_year
-    -- FROM periodic_table  
-    -- WHERE Type = 'Noble Gas' AND Year IS NOT NULL
--- )
--- SELECT 
-    -- Element,
-    -- Symbol,
-    -- Year,
-    -- AtomicMass,
-    -- max_year,
-    -- min_year
--- FROM all_noble_gases
--- LEFT JOIN year_stats ON 1 = 1
--- ORDER BY AtomicMass;
+ORDER BY Year DESC;
 GO
 
 -- ============================================

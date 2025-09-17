@@ -10,9 +10,7 @@ use anyhow::{anyhow, Result};
 
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
-use crate::sql::parser::ast::{
-    FrameBound, FrameUnit, OrderByColumn, SortDirection, WindowFrame, WindowSpec,
-};
+use crate::sql::parser::ast::{FrameBound, FrameUnit, OrderByColumn, SortDirection, WindowSpec};
 
 /// Key for identifying a partition (combination of partition column values)
 /// We use String representation for now since DataValue doesn't impl Ord

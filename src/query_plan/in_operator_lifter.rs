@@ -1,7 +1,6 @@
 use crate::sql::parser::ast::{
-    CTEType, Condition, LogicalOp, SelectItem, SelectStatement, SqlExpression, WhereClause, CTE,
+    CTEType, Condition, SelectItem, SelectStatement, SqlExpression, CTE,
 };
-use std::collections::HashMap;
 
 /// Specialized lifter for IN operator expressions with function calls
 pub struct InOperatorLifter {

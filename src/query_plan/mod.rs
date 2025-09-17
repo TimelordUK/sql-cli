@@ -2,6 +2,7 @@
 mod query_plan;
 
 // Sub-modules
+pub mod cte_hoister;
 pub mod expression_lifter;
 pub mod in_operator_lifter;
 
@@ -12,5 +13,6 @@ pub use query_plan::{
 };
 
 // Re-export commonly used items
+pub use cte_hoister::CTEHoister;
 pub use expression_lifter::{ExpressionLifter, LiftableExpression};
 pub use in_operator_lifter::{InOperatorLifter, LiftedInExpression};

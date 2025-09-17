@@ -1,4 +1,3 @@
-use crate::data::datatable::DataValue;
 use crate::sql::parser::ast::{SelectStatement, SqlExpression, WhereClause};
 use std::collections::{HashMap, HashSet};
 

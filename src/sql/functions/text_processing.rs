@@ -1,7 +1,6 @@
 use crate::data::datatable::DataValue;
 use crate::sql::functions::{ArgCount, FunctionCategory, FunctionSignature, SqlFunction};
 use anyhow::Result;
-use regex::Regex;
 
 /// Strip all punctuation from text
 pub struct StripPunctuation;

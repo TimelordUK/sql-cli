@@ -600,11 +600,15 @@ impl Parser {
                         (Some(table_name), None, None, alias)
                     }
                 } else if matches!(self.current_token, Token::LeftParen) {
-                    // Check for subquery: FROM (SELECT ...)
+                    // Check for subquery: FROM (SELECT ...) or FROM (WITH ... SELECT ...)
                     self.advance();
 
-                    // Parse the subquery (inner version that doesn't check parentheses)
-                    let subquery = self.parse_select_statement_inner()?;
+                    // Parse the subquery - it might start with WITH
+                    let subquery = if matches!(self.current_token, Token::With) {
+                        self.parse_with_clause_inner()?
+                    } else {
+                        self.parse_select_statement_inner()?
+                    };
 
                     self.consume(Token::RightParen)?;
 

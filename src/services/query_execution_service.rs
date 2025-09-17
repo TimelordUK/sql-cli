@@ -88,11 +88,26 @@ impl QueryExecutionService {
         original_source: Option<&crate::data::datatable::DataTable>,
     ) -> Result<QueryExecutionResult> {
         // Check if query is using DUAL table or has no FROM clause
+        use crate::query_plan::{CTEHoister, ExpressionLifter};
         use crate::sql::recursive_parser::Parser;
+
         let mut parser = Parser::new(query);
-        let statement = parser
+        let mut statement = parser
             .parse()
             .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+
+        // Apply expression lifting for column alias dependencies
+        let mut expr_lifter = ExpressionLifter::new();
+        let lifted = expr_lifter.lift_expressions(&mut statement);
+        if !lifted.is_empty() {
+            info!(
+                "Applied expression lifting - {} CTEs generated",
+                lifted.len()
+            );
+        }
+
+        // Apply CTE hoisting to handle nested CTEs
+        statement = CTEHoister::hoist_ctes(statement);
 
         let uses_dual = statement
             .from_table

@@ -122,6 +122,13 @@ impl ExpressionLifter {
     pub fn lift_expressions(&mut self, stmt: &mut SelectStatement) -> Vec<CTE> {
         let mut lifted_ctes = Vec::new();
 
+        // First, check for column alias dependencies (e.g., using alias in PARTITION BY)
+        let alias_deps = self.analyze_column_alias_dependencies(stmt);
+        if !alias_deps.is_empty() {
+            let cte = self.lift_column_aliases(stmt, &alias_deps);
+            lifted_ctes.push(cte);
+        }
+
         // Check WHERE clause for liftable expressions
         if let Some(ref where_clause) = stmt.where_clause {
             let liftable = self.analyze_where_clause(where_clause);
@@ -164,7 +171,7 @@ impl ExpressionLifter {
                 stmt.from_table = Some(lift_expr.suggested_name);
 
                 // Replace the complex WHERE expression with a simple column reference
-                use crate::sql::parser::ast::{Condition, LogicalOp};
+                use crate::sql::parser::ast::Condition;
                 stmt.where_clause = Some(WhereClause {
                     conditions: vec![Condition {
                         expr: SqlExpression::Column("lifted_value".to_string()),
@@ -178,6 +185,120 @@ impl ExpressionLifter {
         stmt.ctes.extend(lifted_ctes.clone());
 
         lifted_ctes
+    }
+
+    /// Analyze column alias dependencies (e.g., alias used in PARTITION BY)
+    fn analyze_column_alias_dependencies(
+        &self,
+        stmt: &SelectStatement,
+    ) -> Vec<(String, SqlExpression)> {
+        let mut dependencies = Vec::new();
+
+        // Extract all aliases defined in SELECT
+        let mut aliases = std::collections::HashMap::new();
+        for item in &stmt.select_items {
+            if let SelectItem::Expression { expr, alias } = item {
+                aliases.insert(alias.clone(), expr.clone());
+                tracing::debug!("Found alias: {} -> {:?}", alias, expr);
+            }
+        }
+
+        // Check if any aliases are used in window functions
+        for item in &stmt.select_items {
+            if let SelectItem::Expression { expr, .. } = item {
+                if let SqlExpression::WindowFunction { window_spec, .. } = expr {
+                    // Check PARTITION BY
+                    for col in &window_spec.partition_by {
+                        tracing::debug!("Checking PARTITION BY column: {}", col);
+                        if aliases.contains_key(col) {
+                            tracing::debug!(
+                                "Found dependency: {} depends on {:?}",
+                                col,
+                                aliases[col]
+                            );
+                            dependencies.push((col.clone(), aliases[col].clone()));
+                        }
+                    }
+
+                    // Check ORDER BY
+                    for order_col in &window_spec.order_by {
+                        let col = &order_col.column;
+                        if aliases.contains_key(col) {
+                            dependencies.push((col.clone(), aliases[col].clone()));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove duplicates
+        dependencies.sort_by(|a, b| a.0.cmp(&b.0));
+        dependencies.dedup_by(|a, b| a.0 == b.0);
+
+        dependencies
+    }
+
+    /// Lift column aliases to a CTE when they're used in the same SELECT
+    fn lift_column_aliases(
+        &mut self,
+        stmt: &mut SelectStatement,
+        deps: &[(String, SqlExpression)],
+    ) -> CTE {
+        let cte_name = self.next_cte_name();
+
+        // Build CTE that computes the aliased columns
+        let mut cte_select_items = vec![SelectItem::Star];
+        for (alias, expr) in deps {
+            cte_select_items.push(SelectItem::Expression {
+                expr: expr.clone(),
+                alias: alias.clone(),
+            });
+        }
+
+        let cte_select = SelectStatement {
+            distinct: false,
+            columns: vec!["*".to_string()],
+            select_items: cte_select_items,
+            from_table: stmt.from_table.clone(),
+            from_subquery: stmt.from_subquery.clone(),
+            from_function: stmt.from_function.clone(),
+            from_alias: stmt.from_alias.clone(),
+            joins: stmt.joins.clone(),
+            where_clause: stmt.where_clause.clone(),
+            order_by: None,
+            group_by: None,
+            having: None,
+            limit: None,
+            offset: None,
+            ctes: Vec::new(),
+        };
+
+        // Update the main query to use simple column references
+        let mut new_select_items = Vec::new();
+        for item in &stmt.select_items {
+            match item {
+                SelectItem::Expression { expr: _, alias }
+                    if deps.iter().any(|(a, _)| a == alias) =>
+                {
+                    // Replace with simple column reference
+                    new_select_items.push(SelectItem::Column(alias.clone()));
+                }
+                _ => {
+                    new_select_items.push(item.clone());
+                }
+            }
+        }
+
+        stmt.select_items = new_select_items;
+        stmt.from_table = Some(cte_name.clone());
+        stmt.from_subquery = None;
+        stmt.where_clause = None; // Already in the CTE
+
+        CTE {
+            name: cte_name,
+            column_list: None,
+            cte_type: CTEType::Standard(cte_select),
+        }
     }
 
     /// Create work units for lifted expressions
