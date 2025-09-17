@@ -56,16 +56,24 @@ SELECT * FROM FIBONACCI(15);
 GO
 
 -- Fibonacci numbers with ratio to previous (approaching golden ratio)
+-- Note: We use a CTE to avoid repeating the LAG window function
+WITH fib_with_lag AS (
+    SELECT
+        n,
+        value,
+        LAG(value) OVER (ORDER BY n) AS prev_value
+    FROM FIBONACCI(15)
+)
 SELECT
     n,
     value,
-    LAG(value) OVER (ORDER BY n) AS prev_value,
+    prev_value,
     CASE
-        WHEN LAG(value) OVER (ORDER BY n) > 0
-        THEN ROUND(CAST(value AS FLOAT) / CAST(LAG(value) OVER (ORDER BY n) AS FLOAT), 4)
+        WHEN prev_value > 0
+        THEN ROUND(value * 1.0 / prev_value, 4)  -- Multiply by 1.0 for float division
         ELSE NULL
     END AS ratio
-FROM FIBONACCI(15)
+FROM fib_with_lag
 WHERE n > 0;
 GO
 
