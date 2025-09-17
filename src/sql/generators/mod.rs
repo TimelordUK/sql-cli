@@ -2,7 +2,9 @@ use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
 use anyhow::Result;
 use std::sync::Arc;
 
+pub mod math_generators;
 pub mod prime_generators;
+pub mod random_generators;
 
 /// Trait for table-generating functions that produce rows dynamically
 pub trait TableGenerator: Send + Sync {
@@ -38,11 +40,26 @@ impl GeneratorRegistry {
     }
 
     fn register_default_generators(&mut self) {
+        use math_generators::{Collatz, Factorials, PascalTriangle, Squares, TriangularNumbers};
         use prime_generators::{Fibonacci, GeneratePrimes, PrimeFactors};
+        use random_generators::{GenerateUUIDs, RandomFloats, RandomIntegers};
 
+        // Prime and number theory generators
         self.register(Box::new(GeneratePrimes));
         self.register(Box::new(PrimeFactors));
         self.register(Box::new(Fibonacci));
+
+        // Mathematical sequence generators
+        self.register(Box::new(Collatz));
+        self.register(Box::new(PascalTriangle));
+        self.register(Box::new(TriangularNumbers));
+        self.register(Box::new(Squares));
+        self.register(Box::new(Factorials));
+
+        // Random generators
+        self.register(Box::new(RandomIntegers));
+        self.register(Box::new(RandomFloats));
+        self.register(Box::new(GenerateUUIDs));
     }
 
     pub fn register(&mut self, generator: Box<dyn TableGenerator>) {

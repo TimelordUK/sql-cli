@@ -573,8 +573,14 @@ impl Parser {
                             alias,
                         )
                     } else if name.to_uppercase().starts_with("GENERATE_")
+                        || name.to_uppercase().starts_with("RANDOM_")
                         || name.to_uppercase() == "FIBONACCI"
                         || name.to_uppercase() == "PRIME_FACTORS"
+                        || name.to_uppercase() == "COLLATZ"
+                        || name.to_uppercase() == "PASCAL_TRIANGLE"
+                        || name.to_uppercase() == "TRIANGULAR"
+                        || name.to_uppercase() == "SQUARES"
+                        || name.to_uppercase() == "FACTORIALS"
                     {
                         // Parse generator function
                         let generator_name = name.clone();
