@@ -140,6 +140,103 @@ function M.list_functions(config)
   end, { buffer = buf, desc = "Show function help" })
 end
 
+-- List all available generator functions
+function M.list_generators(config)
+  -- Build command
+  local command_path, err = utils.get_command_path(config.command)
+  if not command_path then
+    vim.notify(err, vim.log.levels.ERROR)
+    return
+  end
+
+  local cmd = command_path .. " --list-generators"
+
+  -- Execute command
+  local result = vim.fn.system(cmd)
+  local exit_code = vim.v.shell_error
+
+  if exit_code ~= 0 then
+    vim.notify("Failed to list generators", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Parse generators into categories
+  local categories = {}
+  local current_category = nil
+
+  for line in result:gmatch("[^\n]+") do
+    if line:match("^%s*$") then
+      -- Skip empty lines
+    elseif line:match("^=== Available Generator Functions ===") then
+      -- Skip header
+    elseif line:match("^[A-Z].*Generators:$") then
+      -- Category header (e.g., "Mathematical Generators:")
+      current_category = line:gsub(":$", "")
+      categories[current_category] = {}
+    elseif line:match("^Use:") or line:match("^Example:") then
+      -- Skip usage lines
+      break
+    elseif current_category and line:match("^%s+") then
+      -- Generator in current category (indented lines)
+      table.insert(categories[current_category], line)
+    end
+  end
+
+  -- Create a buffer to show generators
+  vim.cmd("new")
+  local buf = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_name(buf, "[SQL Generators]")
+
+  -- Build content
+  local lines = {"# SQL CLI Generator Functions", "", "Press <CR> on any generator to see detailed help", ""}
+
+  -- Keep categories in order
+  local category_order = {"Mathematical Generators", "Random Generators", "Utility Generators"}
+
+  -- Add categories to content
+  for _, category in ipairs(category_order) do
+    if categories[category] then
+      table.insert(lines, "## " .. category)
+      table.insert(lines, "")
+      for _, gen_line in ipairs(categories[category]) do
+        table.insert(lines, gen_line)
+      end
+      table.insert(lines, "")
+    end
+  end
+
+  table.insert(lines, "## Usage")
+  table.insert(lines, "")
+  table.insert(lines, "  SELECT * FROM <generator>(<args>)")
+  table.insert(lines, "  Example: SELECT * FROM GENERATE_PRIMES(100)")
+
+  -- Set content
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+
+  -- Set buffer options
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "delete"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].filetype = "markdown"
+
+  -- Add keymap for showing help on Enter
+  vim.keymap.set("n", "<CR>", function()
+    local line = vim.api.nvim_get_current_line()
+    -- Extract generator name (e.g., "  GENERATE_PRIMES - Generate all prime numbers...")
+    local generator = line:match("^%s+([A-Z_]+)%s+-")
+    if generator then
+      local cmd = command_path .. " --generator-help " .. generator
+      local help_result = vim.fn.system(cmd)
+      if vim.v.shell_error == 0 then
+        M.show_help_in_float(generator, help_result)
+      else
+        vim.notify("Failed to get help for " .. generator, vim.log.levels.ERROR)
+      end
+    end
+  end, { buffer = buf, desc = "Show generator help" })
+end
+
 -- Search for functions matching query
 function M.search_functions(config)
   vim.ui.input({ prompt = "Search functions: " }, function(query)

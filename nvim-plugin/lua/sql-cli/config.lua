@@ -60,6 +60,7 @@ M.defaults = {
     results_to_buffer = "<leader>sb", -- Results to new buffer
     function_help = "K",            -- Show function help at cursor
     list_functions = "<leader>sL",  -- List all SQL functions (capital L)
+    list_generators = "<leader>sG",  -- List all generator functions (capital G)
     search_functions = "<leader>sF", -- Search SQL functions
     show_schema = "<leader>sh",     -- Show table schema
     column_help = "<leader>sk",     -- Smart column/function detection at cursor

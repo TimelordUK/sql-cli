@@ -110,6 +110,10 @@ function M.create_commands()
     functions.list_functions(M.config)
   end, { desc = "List all SQL functions" })
 
+  vim.api.nvim_create_user_command("SqlCliListGenerators", function()
+    functions.list_generators(M.config)
+  end, { desc = "List all SQL generators" })
+
   vim.api.nvim_create_user_command("SqlCliSearchFunctions", function(opts)
     functions.search_functions(opts.args, M.config)
   end, { nargs = 1, desc = "Search SQL functions" })
@@ -256,6 +260,12 @@ function M.setup_keymaps()
     vim.keymap.set("n", keymaps.list_functions, function()
       functions.list_functions(M.config)
     end, { desc = "List SQL functions", silent = true })
+  end
+
+  if keymaps.list_generators then
+    vim.keymap.set("n", keymaps.list_generators, function()
+      functions.list_generators(M.config)
+    end, { desc = "List SQL generators", silent = true })
   end
 
   if keymaps.search_functions then
