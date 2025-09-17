@@ -26,6 +26,7 @@ pub mod random;
 pub mod roman;
 pub mod solar_system;
 pub mod string_methods;
+pub mod string_utils;
 pub mod text_processing;
 pub mod type_checking;
 
@@ -475,9 +476,15 @@ impl FunctionRegistry {
     /// Register string method functions
     fn register_string_methods(&mut self) {
         use number_words::{ToOrdinal, ToOrdinalWords, ToWords};
+        use string_utils::{LPadFunction, RPadFunction, RepeatFunction};
         use text_processing::{CleanText, ExtractWords, StripPunctuation, Tokenize, WordCount};
 
         string_methods::register_string_methods(self);
+
+        // String utility functions
+        self.register(Box::new(RepeatFunction));
+        self.register(Box::new(LPadFunction));
+        self.register(Box::new(RPadFunction));
 
         // Number to words functions
         self.register(Box::new(ToWords));

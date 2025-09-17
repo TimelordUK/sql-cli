@@ -1,26 +1,16 @@
 -- #!
 -- New Generator Functions Examples
 -- Demonstrates the extended set of table generators
-
--- ============================================================================
--- COLLATZ SEQUENCE (3n+1 problem)
--- ============================================================================
-
--- Generate Collatz sequence starting from 7
-SELECT * FROM COLLATZ(7);
+SELECT *
+FROM COLLATZ(7);
 GO
 
--- Find the length of Collatz sequences for different starting values
+  
+-- Find the length of Collatz sequences for given starting position
 WITH sequences AS (
-    SELECT 5 AS start_value, COUNT(*) AS steps FROM COLLATZ(5)
-    UNION ALL
-    SELECT 7, COUNT(*) FROM COLLATZ(7)
-    UNION ALL
-    SELECT 11, COUNT(*) FROM COLLATZ(11)
-    UNION ALL
     SELECT 27, COUNT(*) FROM COLLATZ(27)
 )
-SELECT * FROM sequences ORDER BY steps DESC;
+SELECT * FROM sequences;
 GO
 
 -- ============================================================================
@@ -49,7 +39,7 @@ GO
 -- ============================================================================
 
 -- Generate triangular numbers (1, 3, 6, 10, 15...)
-SELECT * FROM TRIANGULAR(10);
+SELECT n as t_n, value as t_value FROM TRIANGULAR(10);
 GO
 
 -- Generate perfect squares
@@ -57,15 +47,22 @@ SELECT * FROM SQUARES(10);
 GO
 
 -- Compare triangular numbers with squares
-WITH tri AS (SELECT * FROM TRIANGULAR(20)),
-     sq AS (SELECT * FROM SQUARES(20))
+WITH
+    tri AS (
+        SELECT n AS t_n, value AS t_val
+        FROM TRIANGULAR(20)
+    ),
+    sq AS (
+        SELECT n AS s_n, square
+        FROM SQUARES(20)
+    )
 SELECT
-    tri.n,
-    tri.value AS triangular,
-    sq.square,
-    sq.square - tri.value AS difference
-FROM tri, sq
-WHERE tri.n = sq.n;
+    s_n as n,
+    t_val AS triangular,
+    square,
+    square - t_val AS difference
+FROM tri
+INNER JOIN sq ON tri.t_n = sq.s_n;
 GO
 
 -- ============================================================================
@@ -98,29 +95,49 @@ SELECT * FROM RANDOM_FLOAT(5, 0, 1, 123);  -- seed=123
 GO
 
 -- Simulate dice rolls (d6)
+WITH
+    rolls AS (
+        SELECT id AS roll_number, value AS dice_result
+        FROM RANDOM_INT(20, 1, 6, 999)
+    )
 SELECT
-    id + 1 AS roll_number,
-    value AS dice_result
-FROM RANDOM_INT(20, 1, 6, 999)
-ORDER BY id;
+    roll_number + 1 AS roll_number,
+    dice_result
+FROM rolls;
+GO
+
+WITH
+    random AS (
+        SELECT id AS num, value AS result
+        FROM RANDOM_INT(1000, 1, 10, 42)
+    )
+SELECT *
+FROM random;
 GO
 
 -- Generate histogram of random distribution
-WITH random_data AS (
-    SELECT value FROM RANDOM_INT(1000, 1, 10, 42)
-)
+WITH
+    random AS (
+        SELECT value
+        FROM RANDOM_INT(1000, 1, 10, 42)
+    ),
+    counts AS (
+        SELECT
+            value,
+            COUNT('*') AS frequency
+        FROM random
+        GROUP BY value
+    )
 SELECT
-    value,
-    COUNT(*) AS frequency,
-    REPEAT('*', COUNT(*) / 10) AS histogram
-FROM random_data
-GROUP BY value
-ORDER BY value;
+    *,
+    REPEAT('*', frequency / 10) AS histogram
+FROM counts;
 GO
+
 
 -- ============================================================================
 -- UUID GENERATION
--- ============================================================================
+-- ===========================================================================
 
 -- Generate 5 UUIDs
 SELECT * FROM GENERATE_UUID(5);
@@ -150,17 +167,17 @@ WHERE tri.value IN (SELECT square FROM sq);
 GO
 
 -- Generate a multiplication table for primes
-WITH small_primes AS (
-    SELECT prime FROM GENERATE_PRIMES(20)
-)
-SELECT
-    p1.prime AS prime1,
-    p2.prime AS prime2,
-    p1.prime * p2.prime AS product
-FROM small_primes p1, small_primes p2
-WHERE p1.prime <= 10 AND p2.prime <= 10
-ORDER BY p1.prime, p2.prime;
-GO
+-- WITH small_primes AS (
+   -- SELECT prime FROM GENERATE_PRIMES(20)
+-- )
+-- SELECT
+    -- p1.prime AS prime1,
+    -- p2.prime AS prime2,
+    -- p1.prime * p2.prime AS product
+-- FROM small_primes p1, small_primes p2
+-- WHERE p1.prime <= 10 AND p2.prime <= 10
+-- ORDER BY p1.prime, p2.prime;
+-- GO
 
 -- Pascal's triangle and combinations
 -- The values in Pascal's triangle are C(n,k) - combinations
@@ -178,19 +195,19 @@ GO
 
 -- Monte Carlo estimation of Pi
 -- Generate random points and check if inside unit circle
-WITH points AS (
-    SELECT
-        x.value AS x,
-        y.value AS y,
-        x.value * x.value + y.value * y.value AS distance_squared
-    FROM
-        RANDOM_FLOAT(10000, -1, 1, 1) x,
-        RANDOM_FLOAT(10000, -1, 1, 2) y
-    WHERE x.id = y.id
-)
-SELECT
-    4.0 * COUNT(CASE WHEN distance_squared <= 1 THEN 1 END) / COUNT(*) AS pi_estimate
-FROM points;
+-- WITH points AS (
+    -- SELECT
+        -- x.value AS x,
+        -- y.value AS y,
+        -- x.value * x.value + y.value * y.value AS distance_squared
+    -- FROM
+        -- RANDOM_FLOAT(10000, -1, 1, 1) x,
+        -- RANDOM_FLOAT(10000, -1, 1, 2) y
+    -- WHERE x.id = y.id
+-- )
+-- SELECT
+    -- 4.0 * COUNT(CASE WHEN distance_squared <= 1 THEN 1 END) / COUNT(*) AS pi_estimate
+-- FROM points;
 GO
 
 -- ============================================================================
