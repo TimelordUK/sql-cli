@@ -543,6 +543,32 @@ impl QueryEngine {
                         None,
                     )?
                 }
+                TableFunction::Generator { name, args } => {
+                    // Use the generator registry to create the table
+                    use crate::sql::generators::GeneratorRegistry;
+
+                    // Create generator registry (could be cached in QueryEngine)
+                    let registry = GeneratorRegistry::new();
+
+                    if let Some(generator) = registry.get(name) {
+                        // Evaluate arguments
+                        let mut evaluator = ArithmeticEvaluator::with_date_notation(
+                            &table,
+                            self.date_notation.clone(),
+                        );
+                        let dummy_row = 0;
+
+                        let mut evaluated_args = Vec::new();
+                        for arg in args {
+                            evaluated_args.push(evaluator.evaluate(arg, dummy_row)?);
+                        }
+
+                        // Generate the table
+                        generator.generate(evaluated_args)?
+                    } else {
+                        return Err(anyhow!("Unknown generator function: {}", name));
+                    }
+                }
             }
         } else if let Some(ref subquery) = statement.from_subquery {
             // Execute the subquery and use its result as the source

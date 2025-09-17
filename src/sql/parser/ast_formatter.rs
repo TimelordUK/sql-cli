@@ -753,6 +753,16 @@ impl<'a> AstFormatter<'a> {
                 }
                 write!(result, ")").unwrap();
             }
+            TableFunction::Generator { name, args } => {
+                write!(result, "{}(", self.keyword(&name.to_uppercase())).unwrap();
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(result, ", ").unwrap();
+                    }
+                    write!(result, "{}", self.format_expression(arg)).unwrap();
+                }
+                write!(result, ")").unwrap();
+            }
         }
     }
 }

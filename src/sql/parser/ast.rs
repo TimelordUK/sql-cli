@@ -219,6 +219,10 @@ pub enum TableFunction {
         text: SqlExpression,
         delimiter: Option<SqlExpression>,
     },
+    Generator {
+        name: String,
+        args: Vec<SqlExpression>,
+    },
 }
 
 /// Common Table Expression (CTE) structure

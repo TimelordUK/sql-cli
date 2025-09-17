@@ -572,8 +572,62 @@ impl Parser {
                             Some(TableFunction::Split { text, delimiter }),
                             alias,
                         )
+                    } else if name.to_uppercase().starts_with("GENERATE_")
+                        || name.to_uppercase() == "FIBONACCI"
+                        || name.to_uppercase() == "PRIME_FACTORS"
+                    {
+                        // Parse generator function
+                        let generator_name = name.clone();
+                        self.advance(); // Skip generator name
+
+                        // Parse arguments
+                        self.consume(Token::LeftParen)?;
+                        let mut args = Vec::new();
+
+                        if !matches!(self.current_token, Token::RightParen) {
+                            loop {
+                                args.push(self.parse_expression()?);
+
+                                if matches!(self.current_token, Token::Comma) {
+                                    self.advance();
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+
+                        self.consume(Token::RightParen)?;
+
+                        // Optional alias
+                        let alias = if matches!(self.current_token, Token::As) {
+                            self.advance();
+                            match &self.current_token {
+                                Token::Identifier(name) => {
+                                    let alias = name.clone();
+                                    self.advance();
+                                    Some(alias)
+                                }
+                                _ => return Err("Expected alias name after AS".to_string()),
+                            }
+                        } else if let Token::Identifier(name) = &self.current_token {
+                            let alias = name.clone();
+                            self.advance();
+                            Some(alias)
+                        } else {
+                            None
+                        };
+
+                        (
+                            None,
+                            None,
+                            Some(TableFunction::Generator {
+                                name: generator_name,
+                                args,
+                            }),
+                            alias,
+                        )
                     } else {
-                        // Not a RANGE or SPLIT function, so it's a regular table name
+                        // Not a RANGE, SPLIT, or generator function, so it's a regular table name
                         let table_name = name.clone();
                         self.advance();
 
