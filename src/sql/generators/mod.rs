@@ -135,7 +135,10 @@ impl GeneratorRegistry {
             let mut help = String::new();
             help.push_str(&format!("=== {} ===\n\n", name.to_uppercase()));
             help.push_str(&format!("Description: {}\n", gen.description()));
-            help.push_str(&format!("Arguments: {} argument(s) expected\n", gen.arg_count()));
+            help.push_str(&format!(
+                "Arguments: {} argument(s) expected\n",
+                gen.arg_count()
+            ));
             help.push_str("\nColumns:\n");
             for col in gen.columns() {
                 help.push_str(&format!("  - {}\n", col.name));
