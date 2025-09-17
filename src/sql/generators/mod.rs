@@ -72,7 +72,93 @@ impl GeneratorRegistry {
     }
 
     pub fn list(&self) -> Vec<&str> {
-        self.generators.keys().map(|s| s.as_str()).collect()
+        let mut names: Vec<&str> = self.generators.keys().map(|s| s.as_str()).collect();
+        names.sort();
+        names
+    }
+
+    pub fn list_generators_formatted(&self) -> String {
+        let mut output = String::new();
+        output.push_str("=== Available Generator Functions ===\n\n");
+
+        // Group generators by category
+        let mut math_gens = Vec::new();
+        let mut random_gens = Vec::new();
+        let mut utility_gens = Vec::new();
+
+        for (name, gen) in &self.generators {
+            let entry = format!("  {} - {}", name, gen.description());
+
+            if name.starts_with("RANDOM_") {
+                random_gens.push(entry);
+            } else if name == "GENERATE_UUID" {
+                utility_gens.push(entry);
+            } else {
+                math_gens.push(entry);
+            }
+        }
+
+        if !math_gens.is_empty() {
+            math_gens.sort();
+            output.push_str("Mathematical Generators:\n");
+            for entry in math_gens {
+                output.push_str(&format!("{}\n", entry));
+            }
+            output.push('\n');
+        }
+
+        if !random_gens.is_empty() {
+            random_gens.sort();
+            output.push_str("Random Generators:\n");
+            for entry in random_gens {
+                output.push_str(&format!("{}\n", entry));
+            }
+            output.push('\n');
+        }
+
+        if !utility_gens.is_empty() {
+            utility_gens.sort();
+            output.push_str("Utility Generators:\n");
+            for entry in utility_gens {
+                output.push_str(&format!("{}\n", entry));
+            }
+            output.push('\n');
+        }
+
+        output.push_str("Use: SELECT * FROM <generator>(<args>)\n");
+        output.push_str("Example: SELECT * FROM GENERATE_PRIMES(100)\n");
+        output
+    }
+
+    pub fn get_generator_help(&self, name: &str) -> Option<String> {
+        self.generators.get(&name.to_uppercase()).map(|gen| {
+            let mut help = String::new();
+            help.push_str(&format!("=== {} ===\n\n", name.to_uppercase()));
+            help.push_str(&format!("Description: {}\n", gen.description()));
+            help.push_str(&format!("Arguments: {} argument(s) expected\n", gen.arg_count()));
+            help.push_str("\nColumns:\n");
+            for col in gen.columns() {
+                help.push_str(&format!("  - {}\n", col.name));
+            }
+            help.push_str("\nExample:\n");
+            help.push_str(&format!("  SELECT * FROM {}(", name.to_uppercase()));
+
+            // Add example arguments based on the generator
+            match name.to_uppercase().as_str() {
+                "GENERATE_PRIMES" => help.push_str("100"),
+                "FIBONACCI" => help.push_str("20"),
+                "PRIME_FACTORS" => help.push_str("1260"),
+                "COLLATZ" => help.push_str("7"),
+                "PASCAL_TRIANGLE" => help.push_str("5"),
+                "TRIANGULAR" | "SQUARES" | "FACTORIALS" => help.push_str("10"),
+                "RANDOM_INT" => help.push_str("10, 1, 100, 42"),
+                "RANDOM_FLOAT" => help.push_str("10, 0, 1, 42"),
+                "GENERATE_UUID" => help.push_str("5"),
+                _ => help.push_str("..."),
+            }
+            help.push_str(");\n");
+            help
+        })
     }
 }
 

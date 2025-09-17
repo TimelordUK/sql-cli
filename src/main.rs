@@ -200,6 +200,14 @@ fn print_help() {
         "  {}    - Generate markdown documentation for all functions",
         "--generate-docs".green()
     );
+    println!(
+        "  {}       - List all available generator functions",
+        "--list-generators".green()
+    );
+    println!(
+        "  {} <name> - Show help for a specific generator",
+        "--generator-help".green()
+    );
 
     println!();
     println!("{}", "Examples:".yellow());
@@ -394,6 +402,29 @@ fn main() -> io::Result<()> {
         let doc_path = "docs/FUNCTION_REFERENCE.md";
         std::fs::write(doc_path, docs)?;
         println!("Generated function reference documentation at: {doc_path}");
+        return Ok(());
+    }
+
+    // Check for generator documentation flags
+    if args.contains(&"--list-generators".to_string()) {
+        let registry = sql_cli::sql::generators::GeneratorRegistry::new();
+        println!("{}", registry.list_generators_formatted());
+        return Ok(());
+    }
+
+    if let Some(pos) = args.iter().position(|arg| arg == "--generator-help") {
+        if let Some(gen_name) = args.get(pos + 1) {
+            let registry = sql_cli::sql::generators::GeneratorRegistry::new();
+            if let Some(help) = registry.get_generator_help(gen_name) {
+                println!("{help}");
+            } else {
+                eprintln!("Generator '{}' not found", gen_name);
+                eprintln!("\nUse --list-generators to see all available generators");
+            }
+        } else {
+            eprintln!("Error: --generator-help requires a generator name");
+            eprintln!("Usage: sql-cli --generator-help <generator_name>");
+        }
         return Ok(());
     }
 
