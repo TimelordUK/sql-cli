@@ -18,6 +18,7 @@ A Neovim plugin for the SQL CLI tool that provides seamless integration for exec
 - 📚 Built-in function help system (LSP-like documentation)
 - 🔎 Function search and discovery
 - 🔤 Intelligent autocompletion for column names, SQL functions, and keywords
+- ⚡ Generator function discovery and help (FIBONACCI, GENERATE_PRIMES, etc.)
 
 ## Installation
 
@@ -125,6 +126,9 @@ require('sql-cli').setup({
     clear_data_file = "<leader>sc", -- Clear data file
     show_plan = "<leader>sp",       -- Show query plan
     open_data_file = "<leader>sv",  -- View data file in buffer
+    function_help = "K",            -- Show function/generator help at cursor (Shift+K)
+    list_functions = "<leader>sL",  -- List all SQL functions
+    list_generators = "<leader>sG", -- List all generator functions
   },
   
   -- Output window settings
@@ -138,6 +142,24 @@ require('sql-cli').setup({
 ```
 
 ## Usage
+
+### Function and Generator Help
+
+The plugin provides intelligent help for both SQL functions and generator functions:
+
+- **Shift+K** on any function or generator name shows detailed help in a floating window
+- Works with both regular functions (MEDIAN, SQRT, etc.) and generators (FIBONACCI, GENERATE_PRIMES, etc.)
+- Provides signature, description, examples, and argument information
+- If the word under cursor isn't found, suggests similar functions/generators
+
+Example:
+```sql
+-- Place cursor on FIBONACCI and press Shift+K to see help
+SELECT * FROM FIBONACCI(20);
+
+-- Place cursor on MEDIAN and press Shift+K to see help
+SELECT MEDIAN(salary) FROM employees;
+```
 
 ### Basic Commands
 

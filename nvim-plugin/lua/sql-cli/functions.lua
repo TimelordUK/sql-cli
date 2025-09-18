@@ -5,7 +5,7 @@ local utils = require('sql-cli.utils')
 
 local M = {}
 
--- Show function help for word under cursor
+-- Show function or generator help for word under cursor
 function M.function_help_at_cursor(config)
   -- Get word under cursor
   local word = vim.fn.expand("<cword>"):upper()
@@ -22,6 +22,7 @@ function M.function_help_at_cursor(config)
     return
   end
 
+  -- First try as a function
   local cmd = command_path .. " --function-help " .. vim.fn.shellescape(word)
 
   -- Execute command
@@ -29,22 +30,62 @@ function M.function_help_at_cursor(config)
   local exit_code = vim.v.shell_error
 
   if exit_code ~= 0 then
-    -- Try searching for functions containing this word
+    -- Try as a generator
+    local gen_cmd = command_path .. " --generator-help " .. vim.fn.shellescape(word)
+    local gen_result = vim.fn.system(gen_cmd)
+    local gen_exit_code = vim.v.shell_error
+
+    if gen_exit_code == 0 then
+      -- It's a generator, show generator help
+      M.show_help_in_float(word .. " (Generator)", gen_result)
+      return
+    end
+
+    -- Neither function nor generator found, try searching
     local search_cmd = command_path .. " --list-functions"
     local all_functions = vim.fn.system(search_cmd)
 
-    -- Check if any function contains this word
+    -- Also search in generators
+    local gen_list_cmd = command_path .. " --list-generators"
+    local all_generators = vim.fn.system(gen_list_cmd)
+
+    -- Check if any function or generator contains this word
     local matches = {}
+    local gen_matches = {}
+
     for line in all_functions:gmatch("[^\n]+") do
       if line:upper():find(word) then
         table.insert(matches, line)
       end
     end
 
+    for line in all_generators:gmatch("[^\n]+") do
+      if line:upper():find(word) then
+        table.insert(gen_matches, line)
+      end
+    end
+
+    local suggestions = {}
     if #matches > 0 then
-      vim.notify("Function '" .. word .. "' not found. Similar functions:\n" .. table.concat(matches, "\n"), vim.log.levels.WARN)
+      table.insert(suggestions, "Functions:")
+      for _, m in ipairs(matches) do
+        table.insert(suggestions, "  " .. m)
+      end
+    end
+    if #gen_matches > 0 then
+      if #suggestions > 0 then
+        table.insert(suggestions, "")
+      end
+      table.insert(suggestions, "Generators:")
+      for _, m in ipairs(gen_matches) do
+        table.insert(suggestions, "  " .. m)
+      end
+    end
+
+    if #suggestions > 0 then
+      vim.notify("'" .. word .. "' not found. Similar items:\n" .. table.concat(suggestions, "\n"), vim.log.levels.WARN)
     else
-      vim.notify("Function '" .. word .. "' not found", vim.log.levels.WARN)
+      vim.notify("'" .. word .. "' not found in functions or generators", vim.log.levels.WARN)
     end
     return
   end

@@ -25,6 +25,7 @@ pub mod physics;
 pub mod random;
 pub mod roman;
 pub mod solar_system;
+pub mod statistics;
 pub mod string_methods;
 pub mod string_utils;
 pub mod text_processing;
@@ -38,6 +39,7 @@ pub use string_methods::MethodFunction;
 pub enum FunctionCategory {
     Constant,     // Mathematical and physical constants
     Mathematical, // Mathematical operations
+    Statistical,  // Statistical functions
     Astronomical, // Astronomical constants and calculations
     Chemical,     // Chemical elements and properties
     Date,         // Date/time operations
@@ -51,6 +53,7 @@ impl fmt::Display for FunctionCategory {
         match self {
             FunctionCategory::Constant => write!(f, "Constant"),
             FunctionCategory::Mathematical => write!(f, "Mathematical"),
+            FunctionCategory::Statistical => write!(f, "Statistical"),
             FunctionCategory::Astronomical => write!(f, "Astronomical"),
             FunctionCategory::Chemical => write!(f, "Chemical"),
             FunctionCategory::Date => write!(f, "Date"),
@@ -150,6 +153,7 @@ impl FunctionRegistry {
         registry.register_astronomical_functions();
         registry.register_chemical_functions();
         registry.register_mathematical_functions();
+        registry.register_statistical_functions();
         registry.register_geometry_functions();
         registry.register_physics_functions();
         registry.register_date_time_functions();
@@ -590,6 +594,24 @@ impl FunctionRegistry {
         self.register(Box::new(ConvertFunction));
         self.register(Box::new(ToRoman));
         self.register(Box::new(FromRoman));
+    }
+
+    /// Register statistical functions
+    fn register_statistical_functions(&mut self) {
+        use statistics::{
+            CorrelationFunction, KurtosisFunction, MedianFunction, ModeFunction,
+            PercentileFunction, SkewFunction, VarPopFunction, VarSampFunction, VarianceFunction,
+        };
+
+        self.register(Box::new(MedianFunction));
+        self.register(Box::new(PercentileFunction));
+        self.register(Box::new(ModeFunction));
+        self.register(Box::new(VarianceFunction));
+        self.register(Box::new(VarSampFunction));
+        self.register(Box::new(VarPopFunction));
+        self.register(Box::new(CorrelationFunction));
+        self.register(Box::new(SkewFunction));
+        self.register(Box::new(KurtosisFunction));
     }
 
     /// Register aggregate and analytic functions
