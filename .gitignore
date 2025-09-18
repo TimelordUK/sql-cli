@@ -28,6 +28,14 @@ TradeApi*/**/[Rr]elease/
 .idea/
 *.swp
 *.swo
+
+# Benchmark outputs
+*_benchmark.csv
+*_benchmark.md
+benchmark_*.csv
+benchmark_*.md
+like_*.csv
+OPTIMIZED_PERFORMANCE.md
 *~
 
 # OS
