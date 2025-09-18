@@ -76,7 +76,7 @@ fn extract_where_clause(query: &str) -> WhereClause {
 #[test]
 fn test_contains_method() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test case-insensitive contains
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.Contains('get')");
@@ -92,7 +92,7 @@ fn test_contains_method() {
 #[test]
 fn test_startswith_method() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.StartsWith('G')");
 
@@ -107,7 +107,7 @@ fn test_startswith_method() {
 #[test]
 fn test_endswith_method() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.EndsWith('et')");
 
@@ -122,7 +122,7 @@ fn test_endswith_method() {
 #[test]
 fn test_length_method() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.Length() > 5");
 
@@ -137,7 +137,7 @@ fn test_length_method() {
 #[test]
 fn test_indexof_method_found() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test IndexOf when substring is found
     let where_clause =
@@ -159,7 +159,7 @@ fn test_indexof_method_found() {
 #[test]
 fn test_indexof_method_not_found() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test IndexOf when substring is not found (returns -1)
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.IndexOf('xyz') = -1");
@@ -175,7 +175,7 @@ fn test_indexof_method_not_found() {
 #[test]
 fn test_indexof_at_beginning() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test IndexOf when substring is at the beginning (returns 0)
     let where_clause = extract_where_clause("SELECT * FROM test WHERE name.IndexOf('Wid') = 0");
@@ -190,7 +190,7 @@ fn test_indexof_at_beginning() {
 #[test]
 fn test_numeric_column_with_string_methods() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test string methods on numeric columns (should convert to string)
     let where_clause = extract_where_clause("SELECT * FROM test WHERE price.Contains('9.99')");
@@ -206,7 +206,7 @@ fn test_numeric_column_with_string_methods() {
 #[test]
 fn test_complex_expressions_with_methods() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test complex expression with multiple conditions
     let where_clause = extract_where_clause(
@@ -226,7 +226,7 @@ fn test_complex_expressions_with_methods() {
 #[test]
 fn test_indexof_with_greater_than() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test the specific case from the user's debug output
     let where_clause =
@@ -248,7 +248,7 @@ fn test_indexof_with_greater_than() {
 #[test]
 fn test_case_sensitivity() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test that methods are case-insensitive for search strings
     let where_clause1 = extract_where_clause("SELECT * FROM test WHERE name.Contains('WIDGET')");

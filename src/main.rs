@@ -210,6 +210,38 @@ fn print_help() {
     );
 
     println!();
+    println!("{}", "Performance Benchmarking:".yellow());
+    println!(
+        "  {}            - Run performance benchmarks",
+        "--benchmark".green()
+    );
+    println!(
+        "  {}  - Benchmark sizes (default: 100,1000,10000,50000,100000)",
+        "--sizes <n1,n2,n3>".green()
+    );
+    println!(
+        "  {} <cat>  - Run specific category (basic|aggregation|sorting|window|complex)",
+        "--category".green()
+    );
+    println!(
+        "  {}        - Run progressive benchmarks (10k increments)",
+        "--progressive".green()
+    );
+    println!(
+        "  {}  - Set increment for progressive (default: 10000)",
+        "--increment <n>".green()
+    );
+    println!(
+        "  {}  - Set max rows for progressive (default: 100000)",
+        "--max-rows <n>".green()
+    );
+    println!("  {}  - Save results as CSV", "--csv <output.csv>".green());
+    println!(
+        "  {}  - Generate markdown report",
+        "--report <file.md>".green()
+    );
+
+    println!();
     println!("{}", "Examples:".yellow());
     println!("  # Interactive TUI mode");
     println!("  sql-cli data.csv");
@@ -425,6 +457,98 @@ fn main() -> io::Result<()> {
             eprintln!("Error: --generator-help requires a generator name");
             eprintln!("Usage: sql-cli --generator-help <generator_name>");
         }
+        return Ok(());
+    }
+
+    // Check for benchmark mode
+    if args.contains(&"--benchmark".to_string()) {
+        use sql_cli::benchmarks::{BenchmarkRunner, QueryCategory};
+
+        // Parse benchmark-specific arguments
+        let sizes = if let Some(pos) = args.iter().position(|arg| arg == "--sizes") {
+            args.get(pos + 1)
+                .and_then(|s| {
+                    let parts: Result<Vec<usize>, _> =
+                        s.split(',').map(|n| n.trim().parse::<usize>()).collect();
+                    parts.ok()
+                })
+                .unwrap_or_else(|| vec![100, 1000, 10000, 50000, 100000])
+        } else {
+            vec![100, 1000, 10000, 50000, 100000]
+        };
+
+        let category = args
+            .iter()
+            .position(|arg| arg == "--category")
+            .and_then(|pos| args.get(pos + 1))
+            .and_then(|s| match s.as_str() {
+                "basic" => Some(QueryCategory::BasicOperations),
+                "aggregation" => Some(QueryCategory::Aggregations),
+                "sorting" => Some(QueryCategory::SortingAndLimits),
+                "window" => Some(QueryCategory::WindowFunctions),
+                "complex" => Some(QueryCategory::ComplexQueries),
+                _ => None,
+            });
+
+        let progressive = args.contains(&"--progressive".to_string());
+        let report_file = args
+            .iter()
+            .position(|arg| arg == "--report")
+            .and_then(|pos| args.get(pos + 1));
+        let csv_file = args
+            .iter()
+            .position(|arg| arg == "--csv")
+            .and_then(|pos| args.get(pos + 1));
+
+        println!("=== SQL CLI Performance Benchmark Tool ===\n");
+
+        let mut runner = BenchmarkRunner::new();
+
+        if progressive {
+            // Progressive benchmark mode (10k increments)
+            let increment = args
+                .iter()
+                .position(|arg| arg == "--increment")
+                .and_then(|pos| args.get(pos + 1))
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(10000);
+
+            let max_rows = args
+                .iter()
+                .position(|arg| arg == "--max-rows")
+                .and_then(|pos| args.get(pos + 1))
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(100000);
+
+            runner.run_progressive_benchmarks(increment, max_rows);
+        } else if let Some(cat) = category {
+            // Category-specific benchmarks
+            runner.run_category_benchmarks(cat, &sizes);
+        } else {
+            // Full comprehensive benchmarks
+            runner.run_comprehensive_benchmarks(&sizes);
+        }
+
+        // Print summary
+        runner.print_summary();
+
+        // Save CSV results if requested
+        if let Some(csv_path) = csv_file {
+            match runner.save_results_csv(csv_path) {
+                Ok(()) => println!("\nBenchmark results saved to: {}", csv_path),
+                Err(e) => eprintln!("Error saving CSV results: {}", e),
+            }
+        }
+
+        // Generate and save report if requested
+        if let Some(report_path) = report_file {
+            let report = runner.generate_report();
+            match std::fs::write(report_path, report) {
+                Ok(()) => println!("Benchmark report saved to: {}", report_path),
+                Err(e) => eprintln!("Error saving report: {}", e),
+            }
+        }
+
         return Ok(());
     }
 

@@ -55,7 +55,7 @@ fn create_test_table() -> DataTable {
 #[test]
 fn test_trim_method() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test Trim() = 'derivatives' - should match row 0 after trimming
     let mut parser = Parser::new("SELECT * FROM test WHERE book.Trim() = 'derivatives'");
@@ -72,7 +72,7 @@ fn test_trim_method() {
 #[test]
 fn test_trimstart_method() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test TrimStart() = 'equity trading' - should match row 1 after trimming start
     let mut parser = Parser::new("SELECT * FROM test WHERE book.TrimStart() = 'equity trading'");
@@ -89,7 +89,7 @@ fn test_trimstart_method() {
 #[test]
 fn test_trimend_method() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test TrimEnd() = 'FX' - should match row 2 after trimming end
     let mut parser = Parser::new("SELECT * FROM test WHERE book.TrimEnd() = 'FX'");
@@ -106,7 +106,7 @@ fn test_trimend_method() {
 #[test]
 fn test_trim_empty_string() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test Trim() = '' - should match row 4 which has only spaces
     let mut parser = Parser::new("SELECT * FROM test WHERE book.Trim() = ''");
@@ -123,7 +123,7 @@ fn test_trim_empty_string() {
 #[test]
 fn test_trim_with_startswith() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test combining Trim() with StartsWith
     let mut parser = Parser::new("SELECT * FROM test WHERE book.Trim().StartsWith('equity')");
@@ -139,7 +139,7 @@ fn test_trim_with_startswith() {
 #[test]
 fn test_trim_preserves_internal_spaces() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Verify that Trim only removes leading/trailing spaces, not internal ones
     let mut parser = Parser::new("SELECT * FROM test WHERE book.TrimStart() = 'equity trading'");

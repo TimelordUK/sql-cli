@@ -9,6 +9,7 @@ use crate::config::global::get_date_notation;
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataColumn, DataRow, DataTable, DataValue};
+use crate::data::evaluation_context::EvaluationContext;
 use crate::data::group_by_expressions::GroupByExpressions;
 use crate::data::hash_join::HashJoinExecutor;
 use crate::data::recursive_where_evaluator::RecursiveWhereEvaluator;
@@ -756,6 +757,9 @@ impl QueryEngine {
             }
 
             let filter_start = Instant::now();
+            // Create an evaluation context for caching compiled regexes
+            let mut eval_context = EvaluationContext::new(self.case_insensitive);
+
             // Filter visible rows based on WHERE clause
             let mut filtered_rows = Vec::new();
             for row_idx in visible_rows {
@@ -763,11 +767,8 @@ impl QueryEngine {
                 if row_idx < 3 {
                     debug!("QueryEngine: Evaluating WHERE clause for row {}", row_idx);
                 }
-                let evaluator = RecursiveWhereEvaluator::with_config(
-                    &table,
-                    self.case_insensitive,
-                    self.date_notation.clone(),
-                );
+                let mut evaluator =
+                    RecursiveWhereEvaluator::with_context(&table, &mut eval_context);
                 match evaluator.evaluate(where_clause, row_idx) {
                     Ok(result) => {
                         if row_idx < 3 {
@@ -788,6 +789,15 @@ impl QueryEngine {
                         return Err(e);
                     }
                 }
+            }
+
+            // Log regex cache statistics
+            let (compilations, cache_hits) = eval_context.get_stats();
+            if compilations > 0 || cache_hits > 0 {
+                debug!(
+                    "LIKE pattern cache: {} compilations, {} cache hits",
+                    compilations, cache_hits
+                );
             }
             visible_rows = filtered_rows;
             let filter_duration = filter_start.elapsed();

@@ -1,5 +1,6 @@
 use crate::data::arithmetic_evaluator::ArithmeticEvaluator;
 use crate::data::datatable::{DataTable, DataValue};
+use crate::data::evaluation_context::EvaluationContext;
 use crate::data::value_comparisons::compare_with_op;
 use crate::sql::recursive_parser::{Condition, LogicalOp, SqlExpression, WhereClause};
 use anyhow::{anyhow, Result};
@@ -7,17 +8,29 @@ use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc
 use tracing::debug;
 
 /// Evaluates WHERE clauses from `recursive_parser` directly against `DataTable`
-pub struct RecursiveWhereEvaluator<'a> {
+pub struct RecursiveWhereEvaluator<'a, 'ctx> {
     table: &'a DataTable,
     case_insensitive: bool,
+    context: Option<&'ctx mut EvaluationContext>,
 }
 
-impl<'a> RecursiveWhereEvaluator<'a> {
+impl<'a, 'ctx> RecursiveWhereEvaluator<'a, 'ctx> {
     #[must_use]
-    pub fn new(table: &'a DataTable) -> Self {
-        Self {
+    pub fn new(table: &'a DataTable) -> RecursiveWhereEvaluator<'a, 'static> {
+        RecursiveWhereEvaluator {
             table,
             case_insensitive: false,
+            context: None,
+        }
+    }
+
+    /// Create evaluator with an evaluation context for caching
+    pub fn with_context(table: &'a DataTable, context: &'ctx mut EvaluationContext) -> Self {
+        let case_insensitive = context.is_case_insensitive();
+        Self {
+            table,
+            case_insensitive,
+            context: Some(context),
         }
     }
 
@@ -75,10 +88,14 @@ impl<'a> RecursiveWhereEvaluator<'a> {
     }
 
     #[must_use]
-    pub fn with_case_insensitive(table: &'a DataTable, case_insensitive: bool) -> Self {
-        Self {
+    pub fn with_case_insensitive(
+        table: &'a DataTable,
+        case_insensitive: bool,
+    ) -> RecursiveWhereEvaluator<'a, 'static> {
+        RecursiveWhereEvaluator {
             table,
             case_insensitive,
+            context: None,
         }
     }
 
@@ -87,10 +104,11 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         table: &'a DataTable,
         case_insensitive: bool,
         _date_notation: String, // No longer needed since we use centralized parse_datetime
-    ) -> Self {
-        Self {
+    ) -> RecursiveWhereEvaluator<'a, 'static> {
+        RecursiveWhereEvaluator {
             table,
             case_insensitive,
+            context: None,
         }
     }
 
@@ -338,7 +356,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
     }
 
     /// Evaluate a WHERE clause for a specific row
-    pub fn evaluate(&self, where_clause: &WhereClause, row_index: usize) -> Result<bool> {
+    pub fn evaluate(&mut self, where_clause: &WhereClause, row_index: usize) -> Result<bool> {
         // Only log for first few rows to avoid performance impact
         if row_index < 3 {
             debug!(
@@ -397,7 +415,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         }
     }
 
-    fn evaluate_condition(&self, condition: &Condition, row_index: usize) -> Result<bool> {
+    fn evaluate_condition(&mut self, condition: &Condition, row_index: usize) -> Result<bool> {
         // Only log first few rows to avoid performance impact
         if row_index < 3 {
             debug!(
@@ -415,7 +433,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
         result
     }
 
-    fn evaluate_expression(&self, expr: &SqlExpression, row_index: usize) -> Result<bool> {
+    fn evaluate_expression(&mut self, expr: &SqlExpression, row_index: usize) -> Result<bool> {
         // Only log first few rows to avoid performance impact
         if row_index < 3 {
             debug!(
@@ -479,7 +497,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
     }
 
     fn evaluate_binary_op(
-        &self,
+        &mut self,
         left: &SqlExpression,
         op: &str,
         right: &SqlExpression,
@@ -631,12 +649,21 @@ impl<'a> RecursiveWhereEvaluator<'a> {
                     _ => return Ok(false),
                 };
 
-                let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
-                let regex = regex::RegexBuilder::new(&format!("^{regex_pattern}$"))
-                    .case_insensitive(true)
-                    .build()
-                    .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
-                Ok(regex.is_match(text))
+                // Use cached regex if context is available, otherwise compile fresh
+                if let Some(ctx) = &mut self.context {
+                    let regex = ctx
+                        .get_or_compile_like_regex(&pattern)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+                    Ok(regex.is_match(text))
+                } else {
+                    // Fallback to compiling regex each time (old behavior)
+                    let regex_pattern = pattern.replace('%', ".*").replace('_', ".");
+                    let regex = regex::RegexBuilder::new(&format!("^{regex_pattern}$"))
+                        .case_insensitive(self.case_insensitive)
+                        .build()
+                        .map_err(|e| anyhow::anyhow!("Invalid LIKE pattern: {}", e))?;
+                    Ok(regex.is_match(text))
+                }
             }
 
             // IS NULL / IS NOT NULL
@@ -963,7 +990,7 @@ impl<'a> RecursiveWhereEvaluator<'a> {
 
     /// Evaluate a CASE expression as a boolean (for WHERE clauses)
     fn evaluate_case_expression_as_bool(
-        &self,
+        &mut self,
         when_branches: &[crate::sql::recursive_parser::WhenBranch],
         else_branch: &Option<Box<SqlExpression>>,
         row_index: usize,
@@ -996,7 +1023,11 @@ impl<'a> RecursiveWhereEvaluator<'a> {
     }
 
     /// Helper method to evaluate any expression as a boolean
-    fn evaluate_expression_as_bool(&self, expr: &SqlExpression, row_index: usize) -> Result<bool> {
+    fn evaluate_expression_as_bool(
+        &mut self,
+        expr: &SqlExpression,
+        row_index: usize,
+    ) -> Result<bool> {
         match expr {
             // For expressions that naturally return booleans, use the existing evaluator
             SqlExpression::BinaryOp { .. }

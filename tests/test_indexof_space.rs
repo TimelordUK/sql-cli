@@ -54,7 +54,7 @@ fn create_test_table() -> DataTable {
 #[test]
 fn test_indexof_space_at_zero() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test IndexOf(' ') = 0 - should only match strings with space at position 0
     let mut parser = Parser::new("SELECT * FROM test WHERE book.IndexOf(' ') = 0");
@@ -71,7 +71,7 @@ fn test_indexof_space_at_zero() {
 #[test]
 fn test_indexof_space_not_found() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test IndexOf(' ') = -1 - should only match strings without spaces
     let mut parser = Parser::new("SELECT * FROM test WHERE book.IndexOf(' ') = -1");
@@ -88,7 +88,7 @@ fn test_indexof_space_not_found() {
 #[test]
 fn test_indexof_space_greater_than_zero() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test IndexOf(' ') > 0 - should match strings with space not at beginning
     let mut parser = Parser::new("SELECT * FROM test WHERE book.IndexOf(' ') > 0");
@@ -105,7 +105,7 @@ fn test_indexof_space_greater_than_zero() {
 #[test]
 fn test_indexof_greater_or_equal_zero() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test IndexOf(' ') >= 0 - should match all strings WITH spaces
     let mut parser = Parser::new("SELECT * FROM test WHERE book.IndexOf(' ') >= 0");
@@ -122,7 +122,7 @@ fn test_indexof_greater_or_equal_zero() {
 #[test]
 fn test_indexof_specific_positions() {
     let table = create_test_table();
-    let evaluator = RecursiveWhereEvaluator::new(&table);
+    let mut evaluator = RecursiveWhereEvaluator::new(&table);
 
     // Test specific positions
     // "equity trading" has space at position 6

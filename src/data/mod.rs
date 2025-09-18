@@ -34,6 +34,7 @@ pub mod stream_loader;
 
 // Query execution
 pub mod arithmetic_evaluator;
+pub mod evaluation_context;
 pub mod group_by_expressions;
 pub mod hash_join;
 pub mod query_engine;

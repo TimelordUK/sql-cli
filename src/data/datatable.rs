@@ -487,6 +487,46 @@ impl DataTable {
         size
     }
 
+    /// Convert DataTable to CSV format
+    pub fn to_csv(&self) -> String {
+        let mut csv_output = String::new();
+
+        // Write headers
+        let headers: Vec<String> = self
+            .columns
+            .iter()
+            .map(|col| {
+                if col.name.contains(',') || col.name.contains('"') || col.name.contains('\n') {
+                    format!("\"{}\"", col.name.replace('"', "\"\""))
+                } else {
+                    col.name.clone()
+                }
+            })
+            .collect();
+        csv_output.push_str(&headers.join(","));
+        csv_output.push('\n');
+
+        // Write data rows
+        for row in &self.rows {
+            let row_values: Vec<String> = row
+                .values
+                .iter()
+                .map(|value| {
+                    let str_val = value.to_string();
+                    if str_val.contains(',') || str_val.contains('"') || str_val.contains('\n') {
+                        format!("\"{}\"", str_val.replace('"', "\"\""))
+                    } else {
+                        str_val
+                    }
+                })
+                .collect();
+            csv_output.push_str(&row_values.join(","));
+            csv_output.push('\n');
+        }
+
+        csv_output
+    }
+
     /// V46: Create `DataTable` from `QueryResponse`
     /// This is the key conversion function that bridges old and new systems
     pub fn from_query_response(response: &QueryResponse, table_name: &str) -> Result<Self, String> {
