@@ -1,10 +1,10 @@
-# SQL CLI v1.47.0
+# SQL CLI v1.48.0
 
-**Release Date:** September 14, 2025
+**Release Date:** September 18, 2025
 
 ## 📊 Release Overview
-- **Commits in this release:** 28
-- **Files updated:** 53
+- **Commits in this release:** 34
+- **Files updated:** 82
 
 ## ✨ Highlights
 
@@ -15,40 +15,49 @@
 
 ## 📝 Changes by Category
 
-### 🚀 New Features
-- Add ASCII chart visualizations and date extraction functions (v1.47.0)
+### 🐛 Bug Fixes
+- Update bar chart examples with test query
+
+### 📚 Documentation
+- Update Stage 2 roadmap with completed visualizations and date functions
 
 <details>
 <summary>📋 View all commits</summary>
 
-- feat: Add ASCII chart visualizations and date extraction functions (v1.47.0) (TimelordUK)
-- Fix chart buffer modifiable error (TimelordUK)
-- Add keybindings for instant chart visualization (TimelordUK)
-- Fix bar chart examples to use supported SQL functions (TimelordUK)
-- Add ASCII chart visualizations to nvim plugin (TimelordUK)
-- Fix critical aggregate query bug with string literals (TimelordUK)
-- Add comprehensive statistical analysis examples (TimelordUK)
-- Add PERCENTILE and MODE statistical functions (TimelordUK)
-- fix breaking queries (TimelordUK)
-- Implement MEDIAN, STDDEV, and VARIANCE statistical functions (TimelordUK)
-- Complete Aggregate Function Registry implementation (TimelordUK)
-- Create Aggregate Function Registry architecture (TimelordUK)
-- Add PERCENT_CHANGE window function (TimelordUK)
-- Add BOLLINGER_UPPER and BOLLINGER_LOWER window functions (TimelordUK)
-- Integrate Window Function Registry with parser and nvim (TimelordUK)
-- Design Window Function Registry architecture (TimelordUK)
-- Add STDDEV/VARIANCE window functions and update roadmap (TimelordUK)
-- Add window frame support (ROWS PRECEDING/FOLLOWING) (TimelordUK)
-- Fix stock_analysis.sql - remove unsupported window frame syntax (TimelordUK)
-- Add financial analysis functions and stock analysis examples (TimelordUK)
-- Add Stage 2 roadmap documentation (TimelordUK)
-- Add comprehensive date utility functions (TimelordUK)
-- Fix division by zero in professional_formatting.sql Example 7 (TimelordUK)
-- Add CHR function and fix professional_formatting.sql (TimelordUK)
-- Fix professional_formatting.sql to work without UNION ALL (TimelordUK)
-- Add || string concatenation operator as syntactic sugar for TEXTJOIN (TimelordUK)
-- Fix WEB CTE syntax documentation in README (TimelordUK)
-- Fix CTE subquery resolution to enable true pipeline composability (TimelordUK)
+- Release v1.48.0: Major LIKE operator optimization and benchmarking system (TimelordUK)
+- Add REPEAT, LPAD, and RPAD string utility functions (TimelordUK)
+- fix formating (TimelordUK)
+- Add comprehensive performance benchmarking and optimization roadmap (TimelordUK)
+- Add generator support to Neovim plugin (TimelordUK)
+- Add generator discovery and help system (TimelordUK)
+- Add 8 new mathematical and utility generators (TimelordUK)
+- Fix Fibonacci ratio example to work without CAST (TimelordUK)
+- Add comprehensive generator function examples (TimelordUK)
+- Implement generator functions for SQL table generation (TimelordUK)
+- Implement zero-cost debug tracing system for query execution (TimelordUK)
+- Implement expression lifting and CTE hoisting for query optimization (TimelordUK)
+- reformat (TimelordUK)
+- Implement automatic IN operator lifting with AST rewriting (TimelordUK)
+- Add IN operator lifting detection and workaround guidance (TimelordUK)
+- ignore unsupported test features (TimelordUK)
+- reformat code (TimelordUK)
+- Add text processing functions for easier word analysis (TimelordUK)
+- Add fun_conversions.sql example showcasing Roman numerals and number-to-words functions (TimelordUK)
+- Add fun conversion functions: Roman numerals and number-to-words (TimelordUK)
+- Implement query preprocessor foundation with work units and expression lifting (TimelordUK)
+- Partial fix for preserving quotes in column names during formatting (TimelordUK)
+- Add comprehensive Python tests for IN and BETWEEN operators (TimelordUK)
+- Add simple CASE syntax support (TimelordUK)
+- Improve nvim plugin: preserve comments on format, better CASE formatting, opt-in table nav (TimelordUK)
+- add string function examples (TimelordUK)
+- Add comprehensive query preprocessor design document (TimelordUK)
+- Fix string examples: boolean WHERE needs explicit = true (TimelordUK)
+- Fix string function examples to use CTEs for window functions (TimelordUK)
+- Add SPLIT table function for iterating over split strings (TimelordUK)
+- Add LOREM_IPSUM function for generating placeholder text (TimelordUK)
+- Add comprehensive string function examples (TimelordUK)
+- fix: Update bar chart examples with test query (TimelordUK)
+- docs: Update Stage 2 roadmap with completed visualizations and date functions (TimelordUK)
 
 </details>
 
