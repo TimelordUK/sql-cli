@@ -17,7 +17,8 @@ impl SqlFunction for MedianFunction {
             name: "MEDIAN",
             category: FunctionCategory::Statistical,
             arg_count: ArgCount::Fixed(1),
-            description: "Returns the median (middle value) of a numeric column (aggregate function)",
+            description:
+                "Returns the median (middle value) of a numeric column (aggregate function)",
             returns: "Numeric value representing the median",
             examples: vec![
                 "SELECT MEDIAN(salary) FROM employees",
@@ -52,16 +53,18 @@ impl SqlFunction for PercentileFunction {
             description: "Returns the nth percentile of values (0-100) (aggregate function)",
             returns: "Numeric value at the specified percentile",
             examples: vec![
-                "SELECT PERCENTILE(score, 75) FROM tests",  // 75th percentile
-                "SELECT PERCENTILE(income, 50) FROM users",  // 50th percentile (median)
-                "SELECT PERCENTILE(response_time, 95) FROM requests",  // 95th percentile
+                "SELECT PERCENTILE(score, 75) FROM tests", // 75th percentile
+                "SELECT PERCENTILE(income, 50) FROM users", // 50th percentile (median)
+                "SELECT PERCENTILE(response_time, 95) FROM requests", // 95th percentile
             ],
         }
     }
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         if args.len() != 2 {
-            return Err(anyhow!("PERCENTILE requires exactly 2 arguments: (value, percentile)"));
+            return Err(anyhow!(
+                "PERCENTILE requires exactly 2 arguments: (value, percentile)"
+            ));
         }
 
         // Extract the percentile value (0-100)
@@ -122,7 +125,8 @@ impl SqlFunction for VarianceFunction {
             name: "VARIANCE",
             category: FunctionCategory::Statistical,
             arg_count: ArgCount::Fixed(1),
-            description: "Calculates the population variance of numeric values (aggregate function)",
+            description:
+                "Calculates the population variance of numeric values (aggregate function)",
             returns: "Numeric value representing the variance",
             examples: vec![
                 "SELECT VARIANCE(price) FROM products",
@@ -184,7 +188,8 @@ impl SqlFunction for VarPopFunction {
             name: "VAR_POP",
             category: FunctionCategory::Statistical,
             arg_count: ArgCount::Fixed(1),
-            description: "Calculates the population variance (same as VARIANCE) (aggregate function)",
+            description:
+                "Calculates the population variance (same as VARIANCE) (aggregate function)",
             returns: "Numeric value representing the population variance",
             examples: vec!["SELECT VAR_POP(amount) FROM transactions"],
         }
@@ -303,7 +308,9 @@ impl SqlFunction for KurtosisFunction {
 
     fn evaluate(&self, args: &[DataValue]) -> Result<DataValue> {
         if args.len() != 3 {
-            return Err(anyhow!("KURTOSIS requires 3 arguments: value, mean, stddev"));
+            return Err(anyhow!(
+                "KURTOSIS requires 3 arguments: value, mean, stddev"
+            ));
         }
 
         let value = match &args[0] {
