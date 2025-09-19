@@ -2,7 +2,8 @@ use crate::config::global::get_date_notation;
 use crate::data::data_view::DataView;
 use crate::data::datatable::{DataTable, DataValue};
 use crate::data::value_comparisons::compare_with_op;
-use crate::sql::aggregates::AggregateRegistry;
+use crate::sql::aggregate_functions::AggregateFunctionRegistry; // New registry
+use crate::sql::aggregates::AggregateRegistry; // Old registry (for migration)
 use crate::sql::functions::FunctionRegistry;
 use crate::sql::parser::ast::WindowSpec;
 use crate::sql::recursive_parser::SqlExpression;
@@ -19,7 +20,8 @@ pub struct ArithmeticEvaluator<'a> {
     table: &'a DataTable,
     date_notation: String,
     function_registry: Arc<FunctionRegistry>,
-    aggregate_registry: Arc<AggregateRegistry>,
+    aggregate_registry: Arc<AggregateRegistry>, // Old registry (being phased out)
+    new_aggregate_registry: Arc<AggregateFunctionRegistry>, // New registry
     window_function_registry: Arc<WindowFunctionRegistry>,
     visible_rows: Option<Vec<usize>>, // For aggregate functions on filtered views
     window_contexts: HashMap<String, Arc<WindowContext>>, // Cache window contexts by spec
@@ -34,6 +36,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             date_notation: get_date_notation(),
             function_registry: Arc::new(FunctionRegistry::new()),
             aggregate_registry: Arc::new(AggregateRegistry::new()),
+            new_aggregate_registry: Arc::new(AggregateFunctionRegistry::new()),
             window_function_registry: Arc::new(WindowFunctionRegistry::new()),
             visible_rows: None,
             window_contexts: HashMap::new(),
@@ -48,6 +51,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             date_notation,
             function_registry: Arc::new(FunctionRegistry::new()),
             aggregate_registry: Arc::new(AggregateRegistry::new()),
+            new_aggregate_registry: Arc::new(AggregateFunctionRegistry::new()),
             window_function_registry: Arc::new(WindowFunctionRegistry::new()),
             visible_rows: None,
             window_contexts: HashMap::new(),
@@ -80,6 +84,7 @@ impl<'a> ArithmeticEvaluator<'a> {
             date_notation,
             function_registry,
             aggregate_registry: Arc::new(AggregateRegistry::new()),
+            new_aggregate_registry: Arc::new(AggregateFunctionRegistry::new()),
             window_function_registry: Arc::new(WindowFunctionRegistry::new()),
             visible_rows: None,
             window_contexts: HashMap::new(),
@@ -419,8 +424,10 @@ impl<'a> ArithmeticEvaluator<'a> {
         if distinct {
             let name_upper = name.to_uppercase();
 
-            // Check if it's an aggregate function in the registry
-            if self.aggregate_registry.is_aggregate(&name_upper) {
+            // Check if it's an aggregate function in either registry
+            if self.aggregate_registry.is_aggregate(&name_upper)
+                || (name_upper == "SUM" && self.new_aggregate_registry.contains(&name_upper))
+            {
                 return self.evaluate_aggregate_with_distinct(&name_upper, args, row_index);
             } else {
                 return Err(anyhow!(
@@ -441,7 +448,46 @@ impl<'a> ArithmeticEvaluator<'a> {
     ) -> Result<DataValue> {
         let name_upper = name.to_uppercase();
 
-        // Check aggregate registry (DISTINCT handling)
+        // Check new aggregate registry first for migrated functions (SUM)
+        if name_upper == "SUM" && self.new_aggregate_registry.get(&name_upper).is_some() {
+            let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
+                visible.clone()
+            } else {
+                (0..self.table.rows.len()).collect()
+            };
+
+            // Collect and deduplicate values for DISTINCT
+            let mut vals = Vec::new();
+            for &row_idx in &rows_to_process {
+                if !args.is_empty() {
+                    let value = self.evaluate(&args[0], row_idx)?;
+                    vals.push(value);
+                }
+            }
+
+            // Deduplicate values
+            let mut seen = HashSet::new();
+            let unique_values: Vec<_> = vals
+                .into_iter()
+                .filter(|v| {
+                    let key = format!("{:?}", v);
+                    seen.insert(key)
+                })
+                .collect();
+
+            // Get the aggregate function from the new registry
+            let agg_func = self.new_aggregate_registry.get(&name_upper).unwrap();
+            let mut state = agg_func.create_state();
+
+            // Use unique values
+            for value in &unique_values {
+                state.accumulate(value)?;
+            }
+
+            return Ok(state.finalize());
+        }
+
+        // Check old aggregate registry (DISTINCT handling)
         if self.aggregate_registry.get(&name_upper).is_some() {
             // Determine which rows to process first
             let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
@@ -561,7 +607,31 @@ impl<'a> ArithmeticEvaluator<'a> {
             }
         }
 
-        // Check aggregate registry
+        // Check new aggregate registry first (for migrated functions)
+        if name_upper == "SUM" && self.new_aggregate_registry.get(&name_upper).is_some() {
+            // Use new registry for SUM
+            let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {
+                visible.clone()
+            } else {
+                (0..self.table.rows.len()).collect()
+            };
+
+            // Get the aggregate function from the new registry
+            let agg_func = self.new_aggregate_registry.get(&name_upper).unwrap();
+            let mut state = agg_func.create_state();
+
+            // Evaluate arguments and accumulate
+            if !args.is_empty() {
+                for &row_idx in &rows_to_process {
+                    let value = self.evaluate(&args[0], row_idx)?;
+                    state.accumulate(&value)?;
+                }
+            }
+
+            return Ok(state.finalize());
+        }
+
+        // Check old aggregate registry (for non-migrated functions)
         if self.aggregate_registry.get(&name_upper).is_some() {
             // Determine which rows to process first
             let rows_to_process: Vec<usize> = if let Some(ref visible) = self.visible_rows {

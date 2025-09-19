@@ -109,9 +109,14 @@ impl AggregateFunctionRegistry {
         // String aggregates
         self.register(Box::new(StringAggFunction::new()));
 
-        // Statistical aggregates (to be implemented)
-        // self.register(Box::new(StdDevFunction));
-        // self.register(Box::new(VarianceFunction));
+        // Statistical aggregates
+        self.register(Box::new(MedianFunction));
+        self.register(Box::new(ModeFunction));
+        self.register(Box::new(StdDevFunction));
+        self.register(Box::new(StdDevPFunction));
+        self.register(Box::new(VarianceFunction));
+        self.register(Box::new(VariancePFunction));
+        self.register(Box::new(PercentileFunction));
     }
 }
 
@@ -503,6 +508,369 @@ impl AggregateState for StringAggState {
         Box::new(StringAggState {
             values: self.values.clone(),
             separator: self.separator.clone(),
+        })
+    }
+
+    fn reset(&mut self) {
+        self.values.clear();
+    }
+}
+
+// ============= MEDIAN Implementation =============
+
+struct MedianFunction;
+
+impl AggregateFunction for MedianFunction {
+    fn name(&self) -> &str {
+        "MEDIAN"
+    }
+
+    fn description(&self) -> &str {
+        "Calculate the median (middle value) of numeric values"
+    }
+
+    fn create_state(&self) -> Box<dyn AggregateState> {
+        Box::new(CollectorState {
+            values: Vec::new(),
+            function_type: CollectorFunction::Median,
+        })
+    }
+}
+
+// ============= MODE Implementation =============
+
+struct ModeFunction;
+
+impl AggregateFunction for ModeFunction {
+    fn name(&self) -> &str {
+        "MODE"
+    }
+
+    fn description(&self) -> &str {
+        "Find the most frequently occurring value"
+    }
+
+    fn create_state(&self) -> Box<dyn AggregateState> {
+        Box::new(CollectorState {
+            values: Vec::new(),
+            function_type: CollectorFunction::Mode,
+        })
+    }
+}
+
+// ============= STDDEV Implementation =============
+
+struct StdDevFunction;
+
+impl AggregateFunction for StdDevFunction {
+    fn name(&self) -> &str {
+        "STDDEV"
+    }
+
+    fn description(&self) -> &str {
+        "Calculate the sample standard deviation"
+    }
+
+    fn create_state(&self) -> Box<dyn AggregateState> {
+        Box::new(CollectorState {
+            values: Vec::new(),
+            function_type: CollectorFunction::StdDev,
+        })
+    }
+}
+
+// ============= STDDEV_POP Implementation =============
+
+struct StdDevPFunction;
+
+impl AggregateFunction for StdDevPFunction {
+    fn name(&self) -> &str {
+        "STDDEV_POP"
+    }
+
+    fn description(&self) -> &str {
+        "Calculate the population standard deviation"
+    }
+
+    fn create_state(&self) -> Box<dyn AggregateState> {
+        Box::new(CollectorState {
+            values: Vec::new(),
+            function_type: CollectorFunction::StdDevP,
+        })
+    }
+}
+
+// ============= VARIANCE Implementation =============
+
+struct VarianceFunction;
+
+impl AggregateFunction for VarianceFunction {
+    fn name(&self) -> &str {
+        "VARIANCE"
+    }
+
+    fn description(&self) -> &str {
+        "Calculate the sample variance"
+    }
+
+    fn create_state(&self) -> Box<dyn AggregateState> {
+        Box::new(CollectorState {
+            values: Vec::new(),
+            function_type: CollectorFunction::Variance,
+        })
+    }
+}
+
+// ============= VARIANCE_POP Implementation =============
+
+struct VariancePFunction;
+
+impl AggregateFunction for VariancePFunction {
+    fn name(&self) -> &str {
+        "VARIANCE_POP"
+    }
+
+    fn description(&self) -> &str {
+        "Calculate the population variance"
+    }
+
+    fn create_state(&self) -> Box<dyn AggregateState> {
+        Box::new(CollectorState {
+            values: Vec::new(),
+            function_type: CollectorFunction::VarianceP,
+        })
+    }
+}
+
+// ============= PERCENTILE Implementation =============
+
+struct PercentileFunction;
+
+impl AggregateFunction for PercentileFunction {
+    fn name(&self) -> &str {
+        "PERCENTILE"
+    }
+
+    fn description(&self) -> &str {
+        "Calculate the nth percentile of values"
+    }
+
+    fn create_state(&self) -> Box<dyn AggregateState> {
+        Box::new(PercentileState {
+            values: Vec::new(),
+            percentile: 50.0, // Default to median
+        })
+    }
+
+    fn set_parameters(&self, params: &[DataValue]) -> Result<Box<dyn AggregateFunction>> {
+        // PERCENTILE takes the percentile value as a parameter
+        if params.is_empty() {
+            return Ok(Box::new(PercentileFunction));
+        }
+
+        let percentile = match &params[0] {
+            DataValue::Integer(i) => *i as f64,
+            DataValue::Float(f) => *f,
+            _ => {
+                return Err(anyhow!(
+                    "PERCENTILE parameter must be a number between 0 and 100"
+                ))
+            }
+        };
+
+        if percentile < 0.0 || percentile > 100.0 {
+            return Err(anyhow!("PERCENTILE must be between 0 and 100"));
+        }
+
+        Ok(Box::new(PercentileWithParam { percentile }))
+    }
+}
+
+struct PercentileWithParam {
+    percentile: f64,
+}
+
+impl AggregateFunction for PercentileWithParam {
+    fn name(&self) -> &str {
+        "PERCENTILE"
+    }
+
+    fn description(&self) -> &str {
+        "Calculate the nth percentile of values"
+    }
+
+    fn create_state(&self) -> Box<dyn AggregateState> {
+        Box::new(PercentileState {
+            values: Vec::new(),
+            percentile: self.percentile,
+        })
+    }
+}
+
+// ============= Collector State for functions that need all values =============
+
+enum CollectorFunction {
+    Median,
+    Mode,
+    StdDev,    // Sample standard deviation
+    StdDevP,   // Population standard deviation
+    Variance,  // Sample variance
+    VarianceP, // Population variance
+}
+
+struct CollectorState {
+    values: Vec<f64>,
+    function_type: CollectorFunction,
+}
+
+impl AggregateState for CollectorState {
+    fn accumulate(&mut self, value: &DataValue) -> Result<()> {
+        match value {
+            DataValue::Null => Ok(()), // Skip nulls
+            DataValue::Integer(n) => {
+                self.values.push(*n as f64);
+                Ok(())
+            }
+            DataValue::Float(f) => {
+                self.values.push(*f);
+                Ok(())
+            }
+            _ => match self.function_type {
+                CollectorFunction::Mode => {
+                    // Mode can work with non-numeric types, but we'll handle that separately
+                    Err(anyhow!("MODE currently only supports numeric values"))
+                }
+                _ => Err(anyhow!("Statistical functions require numeric values")),
+            },
+        }
+    }
+
+    fn finalize(self: Box<Self>) -> DataValue {
+        if self.values.is_empty() {
+            return DataValue::Null;
+        }
+
+        match self.function_type {
+            CollectorFunction::Median => {
+                let mut sorted = self.values.clone();
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let len = sorted.len();
+                if len % 2 == 0 {
+                    DataValue::Float((sorted[len / 2 - 1] + sorted[len / 2]) / 2.0)
+                } else {
+                    DataValue::Float(sorted[len / 2])
+                }
+            }
+            CollectorFunction::Mode => {
+                use std::collections::HashMap;
+                let mut counts = HashMap::new();
+                for value in &self.values {
+                    *counts.entry(value.to_bits()).or_insert(0) += 1;
+                }
+                if let Some((bits, _)) = counts.iter().max_by_key(|&(_, count)| count) {
+                    DataValue::Float(f64::from_bits(*bits))
+                } else {
+                    DataValue::Null
+                }
+            }
+            CollectorFunction::StdDev | CollectorFunction::Variance => {
+                // Sample standard deviation and variance
+                if self.values.len() < 2 {
+                    return DataValue::Null;
+                }
+                let mean = self.values.iter().sum::<f64>() / self.values.len() as f64;
+                let variance = self.values.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
+                    / (self.values.len() - 1) as f64; // N-1 for sample
+
+                match self.function_type {
+                    CollectorFunction::StdDev => DataValue::Float(variance.sqrt()),
+                    CollectorFunction::Variance => DataValue::Float(variance),
+                    _ => unreachable!(),
+                }
+            }
+            CollectorFunction::StdDevP | CollectorFunction::VarianceP => {
+                // Population standard deviation and variance
+                let mean = self.values.iter().sum::<f64>() / self.values.len() as f64;
+                let variance = self.values.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
+                    / self.values.len() as f64; // N for population
+
+                match self.function_type {
+                    CollectorFunction::StdDevP => DataValue::Float(variance.sqrt()),
+                    CollectorFunction::VarianceP => DataValue::Float(variance),
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
+    fn clone_box(&self) -> Box<dyn AggregateState> {
+        Box::new(CollectorState {
+            values: self.values.clone(),
+            function_type: match self.function_type {
+                CollectorFunction::Median => CollectorFunction::Median,
+                CollectorFunction::Mode => CollectorFunction::Mode,
+                CollectorFunction::StdDev => CollectorFunction::StdDev,
+                CollectorFunction::StdDevP => CollectorFunction::StdDevP,
+                CollectorFunction::Variance => CollectorFunction::Variance,
+                CollectorFunction::VarianceP => CollectorFunction::VarianceP,
+            },
+        })
+    }
+
+    fn reset(&mut self) {
+        self.values.clear();
+    }
+}
+
+// ============= Percentile State =============
+
+struct PercentileState {
+    values: Vec<f64>,
+    percentile: f64,
+}
+
+impl AggregateState for PercentileState {
+    fn accumulate(&mut self, value: &DataValue) -> Result<()> {
+        match value {
+            DataValue::Null => Ok(()), // Skip nulls
+            DataValue::Integer(n) => {
+                self.values.push(*n as f64);
+                Ok(())
+            }
+            DataValue::Float(f) => {
+                self.values.push(*f);
+                Ok(())
+            }
+            _ => Err(anyhow!("PERCENTILE requires numeric values")),
+        }
+    }
+
+    fn finalize(self: Box<Self>) -> DataValue {
+        if self.values.is_empty() {
+            return DataValue::Null;
+        }
+
+        let mut sorted = self.values.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Calculate the position in the sorted array
+        let position = (self.percentile / 100.0) * (sorted.len() - 1) as f64;
+        let lower = position.floor() as usize;
+        let upper = position.ceil() as usize;
+
+        if lower == upper {
+            DataValue::Float(sorted[lower])
+        } else {
+            // Linear interpolation between two values
+            let weight = position - lower as f64;
+            DataValue::Float(sorted[lower] * (1.0 - weight) + sorted[upper] * weight)
+        }
+    }
+
+    fn clone_box(&self) -> Box<dyn AggregateState> {
+        Box::new(PercentileState {
+            values: self.values.clone(),
+            percentile: self.percentile,
         })
     }
 

@@ -259,6 +259,40 @@ impl VarianceState {
             DataValue::Float(self.stddev())
         }
     }
+
+    #[must_use]
+    pub fn variance_sample(&self) -> f64 {
+        if self.count <= 1 {
+            return 0.0;
+        }
+        let mean = self.sum / self.count as f64;
+        let variance_n = (self.sum_of_squares / self.count as f64) - (mean * mean);
+        // Convert from population variance to sample variance
+        variance_n * (self.count as f64 / (self.count - 1) as f64)
+    }
+
+    #[must_use]
+    pub fn stddev_sample(&self) -> f64 {
+        self.variance_sample().sqrt()
+    }
+
+    #[must_use]
+    pub fn finalize_variance_sample(self) -> DataValue {
+        if self.count <= 1 {
+            DataValue::Null
+        } else {
+            DataValue::Float(self.variance_sample())
+        }
+    }
+
+    #[must_use]
+    pub fn finalize_stddev_sample(self) -> DataValue {
+        if self.count <= 1 {
+            DataValue::Null
+        } else {
+            DataValue::Float(self.stddev_sample())
+        }
+    }
 }
 
 /// State for PERCENTILE aggregation
@@ -516,19 +550,24 @@ impl AggregateRegistry {
         };
         use functions::{
             AvgFunction, CountFunction, CountStarFunction, MaxFunction, MedianFunction,
-            MinFunction, ModeFunction, PercentileFunction, StdDevFunction, StringAggFunction,
-            SumFunction, VarianceFunction,
+            MinFunction, ModeFunction, PercentileFunction, StdDevFunction, StdDevPopFunction,
+            StdDevSampFunction, StringAggFunction, VarPopFunction, VarSampFunction,
+            VarianceFunction,
         };
 
         let functions: Vec<Box<dyn AggregateFunction>> = vec![
             Box::new(CountFunction),
             Box::new(CountStarFunction),
-            Box::new(SumFunction),
+            // Box::new(SumFunction), // MIGRATED to new registry
             Box::new(AvgFunction),
             Box::new(MinFunction),
             Box::new(MaxFunction),
             Box::new(StdDevFunction),
+            Box::new(StdDevPopFunction),
+            Box::new(StdDevSampFunction),
             Box::new(VarianceFunction),
+            Box::new(VarPopFunction),
+            Box::new(VarSampFunction),
             Box::new(MedianFunction),
             Box::new(ModeFunction),
             Box::new(PercentileFunction),
@@ -557,7 +596,16 @@ impl AggregateRegistry {
 
     #[must_use]
     pub fn is_aggregate(&self, name: &str) -> bool {
-        self.get(name).is_some() || name.to_uppercase() == "COUNT" // COUNT(*) special case
+        use crate::sql::aggregate_functions::AggregateFunctionRegistry;
+
+        // Check this registry
+        if self.get(name).is_some() || name.to_uppercase() == "COUNT" {
+            return true;
+        }
+
+        // Also check new registry for migrated functions
+        let new_registry = AggregateFunctionRegistry::new();
+        new_registry.contains(name)
     }
 }
 
@@ -570,11 +618,18 @@ impl Default for AggregateRegistry {
 /// Check if an expression contains aggregate functions
 pub fn contains_aggregate(expr: &crate::recursive_parser::SqlExpression) -> bool {
     use crate::recursive_parser::SqlExpression;
+    use crate::sql::aggregate_functions::AggregateFunctionRegistry;
 
     match expr {
         SqlExpression::FunctionCall { name, args, .. } => {
+            // Check old registry
             let registry = AggregateRegistry::new();
             if registry.is_aggregate(name) {
+                return true;
+            }
+            // Check new registry for migrated functions
+            let new_registry = AggregateFunctionRegistry::new();
+            if new_registry.contains(name) {
                 return true;
             }
             // Check nested expressions

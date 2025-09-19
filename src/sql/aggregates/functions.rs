@@ -403,6 +403,134 @@ impl AggregateFunction for PercentileFunction {
 /// MODE(column) - finds the most frequently occurring value
 pub struct ModeFunction;
 
+/// STDDEV_POP(column) - computes population standard deviation (same as STDDEV)
+pub struct StdDevPopFunction;
+
+/// STDDEV_SAMP(column) - computes sample standard deviation
+pub struct StdDevSampFunction;
+
+/// VAR_POP(column) - computes population variance (same as VARIANCE)
+pub struct VarPopFunction;
+
+/// VAR_SAMP(column) - computes sample variance
+pub struct VarSampFunction;
+
+impl AggregateFunction for StdDevPopFunction {
+    fn name(&self) -> &'static str {
+        "STDDEV_POP"
+    }
+
+    fn init(&self) -> AggregateState {
+        AggregateState::Variance(VarianceState::new())
+    }
+
+    fn accumulate(&self, state: &mut AggregateState, value: &DataValue) -> Result<()> {
+        if let AggregateState::Variance(ref mut var_state) = state {
+            var_state.add(value)?;
+        }
+        Ok(())
+    }
+
+    fn finalize(&self, state: AggregateState) -> DataValue {
+        if let AggregateState::Variance(var_state) = state {
+            var_state.finalize_stddev()
+        } else {
+            DataValue::Null
+        }
+    }
+
+    fn requires_numeric(&self) -> bool {
+        true
+    }
+}
+
+impl AggregateFunction for StdDevSampFunction {
+    fn name(&self) -> &'static str {
+        "STDDEV_SAMP"
+    }
+
+    fn init(&self) -> AggregateState {
+        AggregateState::Variance(VarianceState::new())
+    }
+
+    fn accumulate(&self, state: &mut AggregateState, value: &DataValue) -> Result<()> {
+        if let AggregateState::Variance(ref mut var_state) = state {
+            var_state.add(value)?;
+        }
+        Ok(())
+    }
+
+    fn finalize(&self, state: AggregateState) -> DataValue {
+        if let AggregateState::Variance(var_state) = state {
+            var_state.finalize_stddev_sample()
+        } else {
+            DataValue::Null
+        }
+    }
+
+    fn requires_numeric(&self) -> bool {
+        true
+    }
+}
+
+impl AggregateFunction for VarPopFunction {
+    fn name(&self) -> &'static str {
+        "VAR_POP"
+    }
+
+    fn init(&self) -> AggregateState {
+        AggregateState::Variance(VarianceState::new())
+    }
+
+    fn accumulate(&self, state: &mut AggregateState, value: &DataValue) -> Result<()> {
+        if let AggregateState::Variance(ref mut var_state) = state {
+            var_state.add(value)?;
+        }
+        Ok(())
+    }
+
+    fn finalize(&self, state: AggregateState) -> DataValue {
+        if let AggregateState::Variance(var_state) = state {
+            var_state.finalize_variance()
+        } else {
+            DataValue::Null
+        }
+    }
+
+    fn requires_numeric(&self) -> bool {
+        true
+    }
+}
+
+impl AggregateFunction for VarSampFunction {
+    fn name(&self) -> &'static str {
+        "VAR_SAMP"
+    }
+
+    fn init(&self) -> AggregateState {
+        AggregateState::Variance(VarianceState::new())
+    }
+
+    fn accumulate(&self, state: &mut AggregateState, value: &DataValue) -> Result<()> {
+        if let AggregateState::Variance(ref mut var_state) = state {
+            var_state.add(value)?;
+        }
+        Ok(())
+    }
+
+    fn finalize(&self, state: AggregateState) -> DataValue {
+        if let AggregateState::Variance(var_state) = state {
+            var_state.finalize_variance_sample()
+        } else {
+            DataValue::Null
+        }
+    }
+
+    fn requires_numeric(&self) -> bool {
+        true
+    }
+}
+
 impl AggregateFunction for ModeFunction {
     fn name(&self) -> &'static str {
         "MODE"
