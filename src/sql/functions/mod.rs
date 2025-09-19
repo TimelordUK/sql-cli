@@ -26,6 +26,7 @@ pub mod random;
 pub mod roman;
 pub mod solar_system;
 pub mod statistics;
+pub mod string_fun;
 pub mod string_methods;
 pub mod string_utils;
 pub mod text_processing;
@@ -480,6 +481,10 @@ impl FunctionRegistry {
     /// Register string method functions
     fn register_string_methods(&mut self) {
         use number_words::{ToOrdinal, ToOrdinalWords, ToWords};
+        use string_fun::{
+            InitCapFunction, MorseCodeFunction, PigLatinFunction, ProperFunction, ReverseFunction,
+            Rot13Function, ScrambleFunction, SoundexFunction,
+        };
         use string_utils::{LPadFunction, RPadFunction, RepeatFunction};
         use text_processing::{CleanText, ExtractWords, StripPunctuation, Tokenize, WordCount};
 
@@ -489,6 +494,16 @@ impl FunctionRegistry {
         self.register(Box::new(RepeatFunction));
         self.register(Box::new(LPadFunction));
         self.register(Box::new(RPadFunction));
+
+        // String fun & transformation functions
+        self.register(Box::new(ReverseFunction));
+        self.register(Box::new(InitCapFunction));
+        self.register(Box::new(ProperFunction));
+        self.register(Box::new(Rot13Function));
+        self.register(Box::new(SoundexFunction));
+        self.register(Box::new(PigLatinFunction));
+        self.register(Box::new(MorseCodeFunction));
+        self.register(Box::new(ScrambleFunction));
 
         // Number to words functions
         self.register(Box::new(ToWords));
