@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::data::datatable::DataValue;
 
 pub mod astronomy;
+pub mod base_conversion;
 pub mod case_convert;
 pub mod chemistry;
 pub mod comparison;
@@ -565,6 +566,9 @@ impl FunctionRegistry {
 
     /// Register mathematical functions
     fn register_mathematical_functions(&mut self) {
+        use base_conversion::{
+            FromBase, FromBinary, FromHex, FromOctal, ToBase, ToBinary, ToHex, ToOctal,
+        };
         use mathematics::{
             IsPrimeFunction, NextPrimeFunction, NthPrimeFunction, PrevPrimeFunction,
             PrimeCountFunction, PrimeFunction, PrimePiFunction,
@@ -597,6 +601,16 @@ impl FunctionRegistry {
         self.register(Box::new(SinhFunction));
         self.register(Box::new(CoshFunction));
         self.register(Box::new(TanhFunction));
+
+        // Base conversion functions
+        self.register(Box::new(ToBase));
+        self.register(Box::new(FromBase));
+        self.register(Box::new(ToBinary));
+        self.register(Box::new(FromBinary));
+        self.register(Box::new(ToHex));
+        self.register(Box::new(FromHex));
+        self.register(Box::new(ToOctal));
+        self.register(Box::new(FromOctal));
 
         // General math functions
         math::register_math_functions(self);
