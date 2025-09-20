@@ -5,6 +5,67 @@ All notable changes to SQL CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.50.0] - 2025-09-21
+
+### 🚀 CTE Testing & SQL Enhancement Release
+
+This release introduces powerful CTE (Common Table Expression) testing capabilities in the Neovim plugin, significant SQL formatter improvements, and enhanced parser features for better quoted identifier handling.
+
+### ✨ New Features
+
+#### **CTE Testing Framework (Neovim Plugin)**
+- **Interactive CTE testing** - Test CTEs incrementally with `<leader>sC` keybinding
+- **Query preview modal** - See exact SQL before execution with options to Execute/Yank/Cancel
+- **Smart cursor detection** - Automatically detects which CTE the cursor is in
+- **CLI-based parser** - Uses `--cte-info` flag for robust CTE structure analysis
+- **CTE analysis popup** - View CTE dependencies and structure with `<leader>sA`
+- **RANGE() query support** - Properly handles CTEs that use RANGE() without external data
+
+#### **SQL Formatter Enhancements**
+- **Quoted identifier preservation** - Maintains double quotes and brackets throughout AST
+- **ColumnRef with QuoteStyle** - New AST structure preserves quote information
+- **Improved reformatting** - WHERE clauses now preserve quoted column names
+- **Better GO handling** - Case-insensitive terminator detection (GO/go/Go)
+
+#### **Query Rewriter Framework**
+- **Expression hoisting suggestions** - Analyzes queries for unsupported expressions
+- **CTE transformation patterns** - Suggests moving complex expressions to CTEs
+- **`--analyze-rewrite` flag** - New CLI flag for query rewrite analysis
+
+#### **Parser Improvements**
+- **CTE name handling** - Fixed parsing of CTE names with underscores (dates_1, inventory_2)
+- **Comment handling** - Better handling of queries with leading comments
+- **Query boundary detection** - Improved detection between CTEs and main SELECT
+
+### 🔧 Technical Improvements
+
+#### **AST Restructuring**
+- **QuoteStyle enum** - Tracks None, DoubleQuotes, or Brackets
+- **ColumnRef struct** - Replaces String for column references
+- **Formatter updates** - All formatters updated to preserve quote styles
+- **Parser updates** - Parser now captures and preserves quote information
+
+#### **CTE Parser Enhancements**
+- **JSON null handling** - Fixed Lua errors with null columns from CLI parser
+- **Parenthesis tracking** - Accurate CTE boundary detection
+- **WITH clause variations** - Handles WITH on same line as CTE or separate line
+- **Main SELECT detection** - Stops at main SELECT to avoid including entire query
+
+### 🐛 Bug Fixes
+
+- **Fixed CTE test execution** - Corrected argument count in executor.execute_query call
+- **Fixed DUAL table fallback** - RANGE queries no longer show "DUMMY X"
+- **Fixed lowercase GO** - Terminator detection now case-insensitive
+- **Fixed CTE name patterns** - Underscores in CTE names now properly recognized
+- **Fixed query extraction** - Comments before WITH no longer included in test query
+- **Fixed formatter jumping** - SELECT no longer jumps to previous GO line
+
+### 📚 Documentation
+
+- **CLAUDE.md updates** - Added agent delegation guidelines
+- **Function roadmap** - Updated with completed and pending functions
+- **Test examples** - Added complex CTE testing examples
+
 ## [1.49.0] - 2025-09-20
 
 ### 🎯 Aggregate Registry Migration & Developer Experience
