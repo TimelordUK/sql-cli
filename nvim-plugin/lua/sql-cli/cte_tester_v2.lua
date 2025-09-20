@@ -19,10 +19,12 @@ function M.test_cte_at_cursor(config, state)
   end
 
   -- Extract query lines
+  vim.notify(string.format("Extracting lines %d to %d from buffer", start_line, end_line), vim.log.levels.INFO)
   local query_lines = {}
   for i = start_line, end_line do
     table.insert(query_lines, lines[i])
   end
+  vim.notify(string.format("Extracted %d lines", #query_lines), vim.log.levels.INFO)
 
   -- Use CLI to parse CTEs
   local cte_parser_cli = require('sql-cli.cte_parser_cli')
@@ -106,33 +108,38 @@ function M.test_cte_at_cursor(config, state)
   -- Generate test query
   local test_query = M.generate_simple_test_query(query_lines, target_cte, result.ctes)
 
-  -- Show full debug info - always show what we're about to submit
-  vim.notify(string.format("=== CTE Test Query ===\n%s\n=== End Query ===", test_query), vim.log.levels.INFO)
+  -- Show the query in a modal for confirmation
+  M.show_query_confirmation_modal(test_query, function(action)
+    if action == "execute" then
+      -- Debug: show data file status
+      local data_file = state:get_data_file()
+      if data_file then
+        vim.notify(string.format("Data file: %s", data_file), vim.log.levels.INFO)
+      else
+        vim.notify("No data file set", vim.log.levels.INFO)
+      end
 
-  -- Debug: show data file status
-  local data_file = state:get_data_file()
-  if data_file then
-    vim.notify(string.format("Data file: %s", data_file), vim.log.levels.INFO)
-  else
-    vim.notify("No data file set", vim.log.levels.INFO)
-  end
+      -- For CTE testing with RANGE, temporarily clear the data file
+      -- since RANGE doesn't need an external data source
+      local saved_data_file = state:get_data_file()
+      if test_query:match("FROM%s+RANGE%s*%(") then
+        state:set_data_file(nil)
+        vim.notify("Clearing data file for RANGE query", vim.log.levels.DEBUG)
+      end
 
-  -- For CTE testing with RANGE, temporarily clear the data file
-  -- since RANGE doesn't need an external data source
-  local saved_data_file = state:get_data_file()
-  if test_query:match("FROM%s+RANGE%s*%(") then
-    state:set_data_file(nil)
-    vim.notify("Clearing data file for RANGE query", vim.log.levels.DEBUG)
-  end
+      -- Execute the test query
+      local executor = require('sql-cli.executor')
+      executor.execute_query(test_query, config, state)
 
-  -- Execute the test query
-  local executor = require('sql-cli.executor')
-  executor.execute_query(test_query, config, state)
-
-  -- Restore the data file
-  if saved_data_file then
-    state:set_data_file(saved_data_file)
-  end
+      -- Restore the data file
+      if saved_data_file then
+        state:set_data_file(saved_data_file)
+      end
+    elseif action == "yank" then
+      vim.fn.setreg('+', test_query)
+      vim.notify("CTE test query yanked to clipboard", vim.log.levels.INFO)
+    end
+  end)
 end
 
 -- Generate a simple test query for a CTE
@@ -163,13 +170,16 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
   for i, line in ipairs(query_lines) do
     local upper = line:upper()
 
-    -- Look for WITH to start
+
+    -- Look for WITH to start (be more permissive)
     if not with_found then
-      if upper:match("^%s*WITH%s") or upper:match("^%s*%-%-.*WITH%s") then
+      if upper:match("WITH%s") or upper:match("WITH$") then
         with_found = true
+        vim.notify("Found WITH clause", vim.log.levels.DEBUG)
         -- Check if first CTE is on same line
         if line:match("WITH%s+([%w_]+)%s+AS%s*%(") then
           current_cte_idx = 1
+          vim.notify("First CTE on same line as WITH", vim.log.levels.DEBUG)
         end
       end
     else
@@ -185,6 +195,7 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
           if #test_lines > 0 then
             test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
           end
+          vim.notify(string.format("Stopping - past target CTE"), vim.log.levels.DEBUG)
           break
         end
       end
@@ -204,10 +215,13 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
       if current_cte_idx == target_position and paren_depth == 0 and line:match("%)") then
         -- Remove trailing comma if present
         test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
+        vim.notify(string.format("Target CTE complete at line %d", i), vim.log.levels.DEBUG)
         break
       end
     end
   end
+
+  vim.notify(string.format("Total lines collected: %d", #test_lines), vim.log.levels.DEBUG)
 
   -- Final cleanup: ensure no trailing comma
   if #test_lines > 0 then
@@ -238,10 +252,12 @@ function M.test_cte_in_new_buffer(config, state)
   end
 
   -- Extract query lines
+  vim.notify(string.format("Extracting lines %d to %d from buffer", start_line, end_line), vim.log.levels.INFO)
   local query_lines = {}
   for i = start_line, end_line do
     table.insert(query_lines, lines[i])
   end
+  vim.notify(string.format("Extracted %d lines", #query_lines), vim.log.levels.INFO)
 
   -- Use CLI to parse CTEs
   local cte_parser_cli = require('sql-cli.cte_parser_cli')
@@ -262,6 +278,91 @@ function M.test_cte_in_new_buffer(config, state)
   vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(test_query, "\n"))
 
   vim.notify("Created test query for CTE: " .. target_cte.name, vim.log.levels.INFO)
+end
+
+-- Show query confirmation modal
+function M.show_query_confirmation_modal(query, callback)
+  -- Split query into lines for display
+  local lines = vim.split(query, "\n")
+
+  -- Add header and footer
+  table.insert(lines, 1, "═══════════════════════════════════════════════════════")
+  table.insert(lines, 2, "               CTE TEST QUERY PREVIEW")
+  table.insert(lines, 3, "═══════════════════════════════════════════════════════")
+  table.insert(lines, 4, "")
+  table.insert(lines, "")
+  table.insert(lines, "═══════════════════════════════════════════════════════")
+  table.insert(lines, "  [Enter] Execute  |  [y] Yank to clipboard  |  [Esc] Cancel")
+  table.insert(lines, "═══════════════════════════════════════════════════════")
+
+  -- Calculate window size
+  local width = 80
+  local height = math.min(#lines + 2, 30)  -- Max 30 lines
+
+  -- Find longest line for better width calculation
+  for _, line in ipairs(lines) do
+    width = math.max(width, #line + 4)
+  end
+  width = math.min(width, 120)  -- Cap at 120 chars wide
+
+  -- Get editor dimensions
+  local editor_width = vim.o.columns
+  local editor_height = vim.o.lines
+
+  -- Calculate centered position
+  local col = math.floor((editor_width - width) / 2)
+  local row = math.floor((editor_height - height) / 2)
+
+  -- Create buffer
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].filetype = 'sql'
+
+  -- Window options
+  local opts = {
+    relative = 'editor',
+    width = width,
+    height = height,
+    col = col,
+    row = row,
+    style = 'minimal',
+    border = 'rounded',
+    title = ' CTE Test Query ',
+    title_pos = 'center',
+  }
+
+  -- Create window
+  local win = vim.api.nvim_open_win(buf, true, opts)
+
+  -- Set keymaps
+  local function close_and_callback(action)
+    vim.api.nvim_win_close(win, true)
+    if callback then
+      callback(action)
+    end
+  end
+
+  -- Enter to execute
+  vim.keymap.set('n', '<CR>', function()
+    close_and_callback("execute")
+  end, { buffer = buf, silent = true })
+
+  -- y to yank
+  vim.keymap.set('n', 'y', function()
+    close_and_callback("yank")
+  end, { buffer = buf, silent = true })
+  vim.keymap.set('n', 'Y', function()
+    close_and_callback("yank")
+  end, { buffer = buf, silent = true })
+
+  -- Escape or q to cancel
+  vim.keymap.set('n', '<Esc>', function()
+    close_and_callback("cancel")
+  end, { buffer = buf, silent = true })
+  vim.keymap.set('n', 'q', function()
+    close_and_callback("cancel")
+  end, { buffer = buf, silent = true })
 end
 
 return M
