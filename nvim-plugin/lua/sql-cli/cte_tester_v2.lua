@@ -38,16 +38,70 @@ function M.test_cte_at_cursor(config, state)
     return
   end
 
-  -- Find which CTE we're in (or default to last)
+  -- Find which CTE we're in based on cursor position
   local relative_cursor = cursor_line - start_line + 1
   local target_cte = nil
-  local target_index = result.total  -- Default to last CTE
 
-  -- For simplicity, just test the first or last CTE for now
-  -- Could enhance this to detect cursor position
+  -- Try to determine which CTE the cursor is in by analyzing the query
+  -- We'll count CTE definitions and track line numbers
+  local cte_line_ranges = {}
+  local current_cte_idx = 0
+  local paren_depth = 0
+  local cte_start_line = nil
+
+  for i, line in ipairs(query_lines) do
+    local upper = line:upper()
+
+    -- Check for CTE definition
+    if line:match("^%s*([%w_]+)%s+AS%s*%(") or
+       (upper:match("WITH%s+") and line:match("WITH%s+([%w_]+)%s+AS%s*%(")) then
+      -- New CTE starts
+      current_cte_idx = current_cte_idx + 1
+      cte_start_line = i
+      paren_depth = 0
+    end
+
+    -- Track parentheses to find CTE end
+    if cte_start_line then
+      for char in line:gmatch(".") do
+        if char == "(" then paren_depth = paren_depth + 1 end
+        if char == ")" then paren_depth = paren_depth - 1 end
+      end
+
+      -- If parentheses balanced, CTE ends here
+      if paren_depth == 0 and line:match("%)") then
+        table.insert(cte_line_ranges, {
+          cte_index = current_cte_idx,
+          start_line = cte_start_line,
+          end_line = i
+        })
+        cte_start_line = nil
+      end
+    end
+  end
+
+  -- Find which CTE range contains the cursor
+  local target_index = result.total  -- Default to last
+  vim.notify(string.format("Cursor at relative line %d", relative_cursor), vim.log.levels.DEBUG)
+
+  for _, range in ipairs(cte_line_ranges) do
+    vim.notify(string.format("CTE %d: lines %d-%d", range.cte_index, range.start_line, range.end_line), vim.log.levels.DEBUG)
+    if relative_cursor >= range.start_line and relative_cursor <= range.end_line then
+      target_index = range.cte_index
+      vim.notify(string.format("Cursor in CTE %d", range.cte_index), vim.log.levels.DEBUG)
+      break
+    end
+  end
+
+  -- Get the target CTE (result.ctes is 1-indexed array from JSON, target_index is 1-based)
   target_cte = result.ctes[target_index]
 
-  vim.notify(string.format("Testing CTE: %s", target_cte.name), vim.log.levels.INFO)
+  if not target_cte then
+    vim.notify(string.format("Could not find CTE at index %d (total: %d)", target_index, result.total), vim.log.levels.ERROR)
+    return
+  end
+
+  vim.notify(string.format("Testing CTE: %s (CTE #%d of %d)", target_cte.name, target_index, result.total), vim.log.levels.INFO)
 
   -- Generate test query
   local test_query = M.generate_simple_test_query(query_lines, target_cte, result.ctes)
@@ -62,13 +116,28 @@ end
 
 -- Generate a simple test query for a CTE
 function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
-  -- More robust approach: track parentheses carefully
+  -- Build test query by including all CTEs up to and including the target
   local test_lines = {}
   local with_found = false
   local paren_depth = 0
-  local current_cte_count = 0
-  local target_index = target_cte.index + 1  -- Convert 0-based to 1-based
+  local current_cte_idx = 0
   local inside_cte = false
+
+  -- Find which position our target CTE is in (1-based)
+  local target_position = nil
+  for idx, cte in ipairs(all_ctes) do
+    if cte.name == target_cte.name then
+      target_position = idx
+      break
+    end
+  end
+
+  if not target_position then
+    vim.notify(string.format("Target CTE %s not found in list", target_cte.name), vim.log.levels.ERROR)
+    return ""
+  end
+
+  vim.notify(string.format("Building query for CTE '%s' at position %d", target_cte.name, target_position), vim.log.levels.DEBUG)
 
   for i, line in ipairs(query_lines) do
     local upper = line:upper()
@@ -78,29 +147,38 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
       with_found = true
       table.insert(test_lines, line)
 
-      -- Check if CTE name is on same line (WITH name AS ())
+      -- Check if CTE name is on same line
       if line:match("WITH%s+([%w_]+)%s+AS%s*%(") then
-        current_cte_count = 1
+        current_cte_idx = 1
         inside_cte = true
-        -- Count opening parens on this line
+        -- Count parens
         for char in line:gmatch(".") do
           if char == "(" then paren_depth = paren_depth + 1 end
           if char == ")" then paren_depth = paren_depth - 1 end
         end
-        -- Check if CTE closes on same line
-        if paren_depth == 0 and current_cte_count >= target_index then
-          -- Remove trailing comma if present
-          local last_line = test_lines[#test_lines]
-          test_lines[#test_lines] = last_line:gsub(",%s*$", "")
+        -- Check if we're done
+        if paren_depth == 0 and current_cte_idx >= target_position then
+          -- Remove trailing comma
+          test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
           break
         end
       end
     elseif with_found then
-      -- Check for new CTE starting (name AS ())
-      local cte_match = line:match("^%s*([%w_]+)%s+AS%s*%(")
-      if cte_match then
-        current_cte_count = current_cte_count + 1
+      -- Check for new CTE starting
+      local cte_name = line:match("^%s*([%w_]+)%s+AS%s*%(")
+      if cte_name then
+        current_cte_idx = current_cte_idx + 1
         inside_cte = true
+        vim.notify(string.format("Found CTE %d: %s", current_cte_idx, cte_name), vim.log.levels.DEBUG)
+
+        -- If this is beyond our target, stop before adding this line
+        if current_cte_idx > target_position then
+          -- Remove trailing comma from previous line if present
+          if #test_lines > 0 then
+            test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
+          end
+          break
+        end
       end
 
       -- Track parentheses
@@ -109,31 +187,25 @@ function M.generate_simple_test_query(query_lines, target_cte, all_ctes)
         if char == ")" then paren_depth = paren_depth - 1 end
       end
 
-      -- Add the line if we haven't exceeded our target
-      if current_cte_count <= target_index then
-        table.insert(test_lines, line)
+      -- Add the line
+      table.insert(test_lines, line)
 
-        -- Check if current CTE closed
-        if inside_cte and paren_depth == 0 then
-          inside_cte = false
-          -- If this was our target CTE, we're done
-          if current_cte_count == target_index then
-            -- Remove trailing comma from last line if present
-            local last_line = test_lines[#test_lines]
-            test_lines[#test_lines] = last_line:gsub(",%s*$", "")
-            break
-          end
+      -- Check if current CTE closed
+      if inside_cte and paren_depth == 0 then
+        inside_cte = false
+        -- If this was our target CTE, we're done
+        if current_cte_idx == target_position then
+          -- Remove trailing comma from last line
+          test_lines[#test_lines] = test_lines[#test_lines]:gsub(",%s*$", "")
+          break
         end
-      else
-        break  -- We've passed our target
       end
     end
   end
 
-  -- Ensure no trailing comma on last CTE line
+  -- Ensure no trailing comma
   if #test_lines > 0 then
-    local last_line = test_lines[#test_lines]
-    test_lines[#test_lines] = last_line:gsub("%)%s*,$", ")")
+    test_lines[#test_lines] = test_lines[#test_lines]:gsub("%)%s*,$", ")")
   end
 
   -- Add SELECT from target CTE
