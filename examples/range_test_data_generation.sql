@@ -153,57 +153,59 @@ ORDER BY grade;
 GO
 
 -- 5. Generate Network Traffic Simulation
-WITH time_slots AS (
-    SELECT value AS minute FROM RANGE(0, 59)
-),
-traffic AS (
-    SELECT 
-        minute,
-        TEXTJOIN(':', 1, minute, '00') AS time_label,
-        -- Simulate traffic with peaks
-        CASE 
-            WHEN minute BETWEEN 10 AND 20 THEN 100 + (minute * 5)
-            WHEN minute BETWEEN 40 AND 50 THEN 150 + (minute * 3)
-            ELSE 50 + (minute % 10) * 10
-        END AS requests_per_minute,
-        CASE 
-            WHEN minute % 5 = 0 THEN 'Checkpoint'
-            ELSE 'Normal'
-        END AS monitoring_flag
-    FROM time_slots
-)
-SELECT 
-    time_label,
-    requests_per_minute,
-    monitoring_flag,
-    SUM(requests_per_minute) OVER (ORDER BY minute) AS cumulative_requests,
-    requests_per_minute - LAG(requests_per_minute, 1, 0) OVER (ORDER BY minute) AS change_from_prev
-FROM traffic
-WHERE minute <= 20
-ORDER BY minute;
+WITH
+    time_slots AS (
+        SELECT value AS minute
+        FROM RANGE(0, 59)
+    ),
+    traffic AS (
+        SELECT
+            minute,
+            TEXTJOIN(':', 1, minute, '00') AS time_label,
+            CASE
+        WHEN minute >= 10 AND minute <= 20 THEN 100 + minute * 5
+        WHEN minute >= 40 AND minute <= 50 THEN 150 + minute * 3
+        ELSE 50 + minute % 10 * 10
+    END AS requests_per_minute,
+            CASE
+        WHEN minute % 5 = 0 THEN 'Checkpoint'
+        ELSE 'Normal'
+    END AS monitoring_flag
+        FROM time_slots
+    ),
+    lagged AS (
+        SELECT
+            minute,
+            time_label,
+            requests_per_minute,
+            monitoring_flag,
+            SUM(requests_per_minute) OVER (ORDER BY minute ASC) AS cumulative_requests,
+            LAG(requests_per_minute, 1, 0) OVER (ORDER BY minute ASC) AS lag_change_from_prev
+        FROM traffic
+    )
+SELECT *
+FROM lagged;
 GO
 
 -- 6. Generate Factorial-like Sequences
-WITH numbers AS (
-    SELECT value AS n FROM RANGE(1, 10)
-),
-factorials AS (
+WITH nums AS (
+   SELECT value AS n FROM RANGE(1, 10)
+), 
+facts AS (
     SELECT 
-        n,
-        n AS term,
-        -- Simulate factorial growth pattern
-        POWER(n, 2) AS squared,
-        POWER(n, 3) AS cubed
-    FROM numbers
+       n,
+       POWER(n, 2) AS squared,
+       POWER(n, 3) AS cubed
+    FROM nums
+), 
+calcs as (
+    select
+    *,
+    SUM_N(n) AS sum_to_n,
+    SUM_N_SQR(n)  AS sum_of_squares,
+    SUM_N_CUBE(n) AS sum_of_cubes
+    from facts
 )
-SELECT 
-    n,
-    term,
-    squared,
-    cubed,
-    SUM(term) OVER (ORDER BY n) AS sum_to_n,
-    SUM(squared) OVER (ORDER BY n) AS sum_of_squares,
-    SUM(cubed) OVER (ORDER BY n) AS sum_of_cubes
-FROM factorials
+SELECT * from calcs
 ORDER BY n;
 GO
