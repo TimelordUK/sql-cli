@@ -36,6 +36,7 @@ SELECT * FROM data WHERE amount > 1000 ORDER BY date DESC LIMIT 10
 ### 🖥️ **Interactive TUI Mode** (Default)
 Launch the full vim-inspired terminal interface for data exploration:
 
+![Description](docs/images/screenshot-20250920-211407.png)
 ```bash
 # Interactive mode - explore your data with vim keybindings
 sql-cli data.csv
@@ -64,6 +65,8 @@ See [nvim-plugin/README.md](nvim-plugin/README.md) for installation and full fea
 
 ### 🚀 **Non-Interactive Query Mode**
 Execute SQL queries directly from the command line - perfect for scripting and automation:
+
+![Description](docs/images/screenshot-20250920-212340.png)
 
 ```bash
 # Run a query and get CSV output
