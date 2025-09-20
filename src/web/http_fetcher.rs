@@ -1,7 +1,9 @@
-// HTTP fetcher for WEB CTEs
+// HTTP fetcher for WEB CTEs (now supports file:// URLs too)
 use anyhow::{Context, Result};
 use regex::Regex;
+use std::fs::File;
 use std::io::Cursor;
+use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, info};
 
@@ -24,10 +26,16 @@ impl WebDataFetcher {
         Ok(Self { client })
     }
 
-    /// Fetch data from a WEB CTE specification
+    /// Fetch data from a WEB CTE specification (supports http://, https://, and file:// URLs)
     pub fn fetch(&self, spec: &WebCTESpec, table_name: &str) -> Result<DataTable> {
         info!("Fetching data from URL: {}", spec.url);
 
+        // Check if this is a file:// URL
+        if spec.url.starts_with("file://") {
+            return self.fetch_file(spec, table_name);
+        }
+
+        // Regular HTTP/HTTPS handling
         // Build request
         let mut request = self.client.get(&spec.url);
 
@@ -73,27 +81,95 @@ impl WebDataFetcher {
         info!("Using format: {:?} for {}", format, spec.url);
 
         // Parse based on format
+        self.parse_data(bytes.to_vec(), format, table_name, "web", &spec.url)
+    }
+
+    /// Fetch data from a file:// URL
+    fn fetch_file(&self, spec: &WebCTESpec, table_name: &str) -> Result<DataTable> {
+        // Extract path from file:// URL
+        let file_path = if spec.url.starts_with("file://") {
+            &spec.url[7..] // Remove "file://" prefix
+        } else {
+            &spec.url
+        };
+
+        info!("Reading local file: {}", file_path);
+
+        // Check if file exists
+        let path = Path::new(file_path);
+        if !path.exists() {
+            return Err(anyhow::anyhow!("File not found: {}", file_path));
+        }
+
+        // Open file
+        let file =
+            File::open(path).with_context(|| format!("Failed to open file: {}", file_path))?;
+
+        // Get file size for memory checks
+        let metadata = file.metadata()?;
+        let file_size = metadata.len();
+        debug!("File size: {} bytes", file_size);
+
+        // Determine format from extension or spec
+        let format = match &spec.format {
+            Some(fmt) => fmt.clone(),
+            None => self.detect_format(file_path, ""),
+        };
+
+        info!("Using format: {:?} for {}", format, file_path);
+
+        // Parse based on format
+        match format {
+            DataFormat::CSV => load_csv_from_reader(file, table_name, "file", file_path)
+                .with_context(|| format!("Failed to parse CSV from {}", file_path)),
+            DataFormat::JSON => load_json_from_reader(file, table_name, "file", file_path)
+                .with_context(|| format!("Failed to parse JSON from {}", file_path)),
+            DataFormat::Auto => {
+                // For files, we can't retry with the same reader, so determine based on extension
+                if file_path.ends_with(".json") {
+                    let file = File::open(path)?;
+                    load_json_from_reader(file, table_name, "file", file_path)
+                        .with_context(|| format!("Failed to parse JSON from {}", file_path))
+                } else {
+                    // Default to CSV for auto-detect with files
+                    let file = File::open(path)?;
+                    load_csv_from_reader(file, table_name, "file", file_path)
+                        .with_context(|| format!("Failed to parse CSV from {}", file_path))
+                }
+            }
+        }
+    }
+
+    /// Parse data bytes based on format
+    fn parse_data(
+        &self,
+        bytes: Vec<u8>,
+        format: DataFormat,
+        table_name: &str,
+        source_type: &str,
+        source_path: &str,
+    ) -> Result<DataTable> {
         match format {
             DataFormat::CSV => {
                 let reader = Cursor::new(bytes);
-                load_csv_from_reader(reader, table_name, "web", &spec.url)
-                    .with_context(|| format!("Failed to parse CSV from {}", spec.url))
+                load_csv_from_reader(reader, table_name, source_type, source_path)
+                    .with_context(|| format!("Failed to parse CSV from {}", source_path))
             }
             DataFormat::JSON => {
                 let reader = Cursor::new(bytes);
-                load_json_from_reader(reader, table_name, "web", &spec.url)
-                    .with_context(|| format!("Failed to parse JSON from {}", spec.url))
+                load_json_from_reader(reader, table_name, source_type, source_path)
+                    .with_context(|| format!("Failed to parse JSON from {}", source_path))
             }
             DataFormat::Auto => {
                 // Try CSV first, then JSON
                 let reader_csv = Cursor::new(bytes.clone());
-                match load_csv_from_reader(reader_csv, table_name, "web", &spec.url) {
+                match load_csv_from_reader(reader_csv, table_name, source_type, source_path) {
                     Ok(table) => Ok(table),
                     Err(_) => {
                         debug!("CSV parsing failed, trying JSON");
                         let reader_json = Cursor::new(bytes);
-                        load_json_from_reader(reader_json, table_name, "web", &spec.url)
-                            .with_context(|| format!("Failed to parse data from {}", spec.url))
+                        load_json_from_reader(reader_json, table_name, source_type, source_path)
+                            .with_context(|| format!("Failed to parse data from {}", source_path))
                     }
                 }
             }

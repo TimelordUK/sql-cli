@@ -169,7 +169,7 @@ SELECT
     ocean_proximity,
     FORMAT_CURRENCY(median_income * 10000, 'USD') AS annual_income,
     FORMAT_CURRENCY(median_house_value, 'USD') AS house_price,
-    ROUND(median_house_value / median_income * 10000, 2) AS price_income_ratio,
+    ROUND(median_house_value / (median_income * 10000), 2) AS price_income_ratio,
     ROUND(total_rooms / households, 1) AS rooms_per_household,
     housing_median_age AS age
 FROM house_prices_sample

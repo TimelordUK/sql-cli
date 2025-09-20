@@ -555,12 +555,57 @@ LIMIT 10;
 
 **WEB CTE Features:**
 - **Syntax**: `WITH WEB table_name AS (URL 'url' FORMAT JSON HEADERS (...))`
-- **Custom Headers**: Use HEADERS block with key-value pairs
+- **URL Schemes**: Supports `http://`, `https://`, and `file://` for local files
+- **Local Files**: Use `file://` URLs to load CSV/JSON files as CTEs
+- **Custom Headers**: Use HEADERS block with key-value pairs (HTTP only)
 - **Authentication**: `'Authorization': 'Bearer ${TOKEN}'` pattern
 - **Multiple APIs**: Multiple WEB CTEs in the same query
 - **JOIN with Local Data**: Seamlessly combine API data with CSV/JSON files
-- **Format Support**: JSON (CSV support coming soon)
-- **Examples**: See `examples/web_cte.sql` and `examples/web_cte_auth.sql`
+- **Format Support**: JSON and CSV (auto-detected or specified)
+- **Examples**: See `examples/web_cte.sql`, `examples/web_cte_auth.sql`, and `examples/file_cte.sql`
+
+### 📁 **File CTEs - Dynamic Local File Loading**
+Load CSV and JSON files dynamically as CTEs without pre-registering them:
+
+```sql
+-- Load local CSV files using file:// URLs
+WITH WEB sales AS (
+    URL 'file://data/sales_data.csv'
+    FORMAT CSV
+)
+SELECT region, SUM(sales_amount) as total
+FROM sales
+GROUP BY region;
+
+-- Join multiple local files
+WITH
+    WEB customers AS (URL 'file://data/customers.csv'),
+    WEB orders AS (URL 'file://data/orders.json' FORMAT JSON)
+SELECT
+    c.name,
+    COUNT(o.order_id) as order_count
+FROM customers c
+LEFT JOIN orders o ON c.id = o.customer_id
+GROUP BY c.name;
+
+-- Mix local files with web APIs
+WITH
+    WEB local_data AS (URL 'file://data/products.csv'),
+    WEB api_prices AS (URL 'https://api.example.com/prices' FORMAT JSON)
+SELECT
+    l.product_name,
+    l.category,
+    a.current_price
+FROM local_data l
+JOIN api_prices a ON l.product_id = a.id;
+```
+
+**File CTE Benefits:**
+- No need to specify file on command line
+- Dynamically load different files in the same query
+- Mix and match local files with web APIs
+- Reuse existing web CTE infrastructure
+- Support for both absolute and relative paths
 
 ### 🧠 **Smart Type Handling**
 - **Automatic Coercion**: String methods work on numbers (`quantity.Contains('5')`)
