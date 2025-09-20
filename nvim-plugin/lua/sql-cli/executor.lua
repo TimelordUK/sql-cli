@@ -338,7 +338,9 @@ function M.build_command(query, show_plan, config, state)
     table.insert(cmd_parts, "--execution-plan")
   end
 
-  return table.concat(cmd_parts, " ")
+  local cmd = table.concat(cmd_parts, " ")
+  vim.notify(string.format("Executing command: %s", cmd:sub(1, 500)), vim.log.levels.DEBUG)
+  return cmd
 end
 
 -- Run SQL CLI command

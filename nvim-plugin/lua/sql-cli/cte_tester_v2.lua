@@ -109,9 +109,30 @@ function M.test_cte_at_cursor(config, state)
   -- Show full debug info - always show what we're about to submit
   vim.notify(string.format("=== CTE Test Query ===\n%s\n=== End Query ===", test_query), vim.log.levels.INFO)
 
+  -- Debug: show data file status
+  local data_file = state:get_data_file()
+  if data_file then
+    vim.notify(string.format("Data file: %s", data_file), vim.log.levels.INFO)
+  else
+    vim.notify("No data file set", vim.log.levels.INFO)
+  end
+
+  -- For CTE testing with RANGE, temporarily clear the data file
+  -- since RANGE doesn't need an external data source
+  local saved_data_file = state:get_data_file()
+  if test_query:match("FROM%s+RANGE%s*%(") then
+    state:set_data_file(nil)
+    vim.notify("Clearing data file for RANGE query", vim.log.levels.DEBUG)
+  end
+
   -- Execute the test query
   local executor = require('sql-cli.executor')
-  executor.execute_query(test_query, config, state, false)
+  executor.execute_query(test_query, config, state)
+
+  -- Restore the data file
+  if saved_data_file then
+    state:set_data_file(saved_data_file)
+  end
 end
 
 -- Generate a simple test query for a CTE
